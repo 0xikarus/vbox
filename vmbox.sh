@@ -234,21 +234,39 @@ ensure_ready() {
   wait_for_service "$deployment_id"
 }
 
-wait_for_persistent_data() {
-  local deadline=$((SECONDS + 90)) consecutive=0
-  while ((SECONDS < deadline)); do
-    if railway ssh "${target[@]}" --service "$service_name" \
-      'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1; then
-      consecutive=$((consecutive + 1))
-      if ((consecutive >= 2)); then
-        return 0
-      fi
-    else
-      consecutive=0
+persistent_data_mounted() {
+  local -a ssh_command=(railway ssh "${target[@]}" --service "$service_name")
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 30 "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1
+  else
+    "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1
+  fi
+}
+
+ensure_persistent_data() {
+  local redeploy_result deployment_id attempt
+  echo "vmbox: verifying persistent /data mount" >&2
+  if persistent_data_mounted; then
+    echo "vmbox: persistent /data is ready" >&2
+    return 0
+  fi
+
+  echo "vmbox: /data is attached but missing from the running container; redeploying once" >&2
+  redeploy_result="$(railway redeploy "${target[@]}" --service "$service_name" --yes --json)"
+  deployment_id="$(jq -rs 'map(select(type == "object")) | last | .deploymentId // .id // empty' \
+    <<<"$redeploy_result")"
+  [[ -n "$deployment_id" ]] || die "Railway did not return a repair deployment ID"
+  wait_for_service "$deployment_id"
+
+  for attempt in {1..6}; do
+    if persistent_data_mounted; then
+      echo "vmbox: persistent /data is ready after repair redeploy" >&2
+      return 0
     fi
+    echo "vmbox: waiting for repaired /data mount ($attempt/6)" >&2
     sleep 2
   done
-  die "persistent /data mount did not become ready for '$service_name'"
+  die "persistent /data mount is still missing after repair redeploy for '$service_name'"
 }
 
 show_box_welcome() {
@@ -1282,7 +1300,7 @@ open_box() {
 
   ((created == 0)) || select_components_for_new_box
   ensure_ready "$service"
-  ((created == 0)) || wait_for_persistent_data
+  ensure_persistent_data
   ((created == 0)) || select_credentials_for_new_box
   attach "${remote_command[@]}"
 }

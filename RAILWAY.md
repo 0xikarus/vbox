@@ -79,6 +79,8 @@ authenticated box as an authenticated device.
 ## Persistent data and cleanup
 
 The persistent home and workspace are `/data/home` and `/data/workspace`.
+Before connecting, vmbox verifies the live `/data` mount and automatically
+redeploys once when Railway's first container missed an attached volume.
 `vmbox clean` selects one or more boxes with `[ ]` checkboxes. Named cleanup
 uses `vmbox clean <box-id> [...]`; `vmbox clean --all` targets all services and
 active project volumes. `--yes` skips the final confirmation only. Pending

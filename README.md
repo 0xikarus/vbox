@@ -8,7 +8,9 @@ Each box is a separate Railway service named `vmbox-<box-id>`. There do not
 need to be any services beforehand. `vmbox start <box-id>` discovers an
 existing service or creates one, attaches a `/data` volume, deploys the VM
 image, waits for it to become ready, and opens a persistent tmux-backed Railway
-SSH session.
+SSH session. Before connecting, vmbox verifies that `/data` is a real container
+mount; if Railway attached the volume after the first container started, it
+redeploys the built image once and verifies the repaired mount.
 
 Container replacements lose processes but preserve `/data`. `vmbox <box-id>`
 creates a missing box and reconnects when the name already exists; explicit
