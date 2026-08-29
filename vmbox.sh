@@ -119,11 +119,15 @@ wait_for_service() {
 }
 
 ensure_ready() {
-  local service="$1" status deploy_result deployment_id volume_added=0
+  local service="$1" status deploy_result deployment_id output volume_added=0
 
   if ! jq -e 'any(.volumes[]?; .mountPath == "/data")' <<<"$service" >/dev/null; then
     echo "vmbox: attaching persistent /data volume" >&2
-    railway volume "${target[@]}" --service "$service_name" add --mount-path /data --json >/dev/null
+    link_service "$service_name"
+    if ! output="$(cd "$bundle" && railway volume add --mount-path /data --json 2>&1)"; then
+      printf '%s\n' "$output" >&2
+      die "could not attach /data to '$service_name'"
+    fi
     volume_added=1
   fi
 
