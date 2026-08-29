@@ -99,13 +99,13 @@ vmbox clean --all           # every box and active project volume
   visible `Confirm selection` row remains available. The same Enter-to-confirm
   shortcut works in every vmbox picker, making the default setup a quick series
   of Enter presses.
-  A second picker selects US West, US East, Europe West, or Southeast Asia and
-  applies that region before the first deployment.
-  After deployment, vmbox auto-detects Codex profile directories matching
-  `~/.codex*` and Claude directories matching `~/.claude*`, prioritizing
-  `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. The opt-in multi-select allows one
-  profile per tool. Nothing credential-related is copied by default; press `a`
-  to specify another profile directory.
+  The remaining preflight pickers select a Railway location, Codex/Claude
+  profiles, a GitHub account, and optional Markdown instructions. All questions
+  finish before vmbox creates or deploys the service. Profile discovery includes
+  `~/.codex*` and `~/.claude*`, prioritizing `CODEX_HOME` and
+  `CLAUDE_CONFIG_DIR`; `a` accepts another profile directory. Selected files are
+  uploaded only after the box is healthy, and nothing credential-related is
+  selected by default.
 - A chosen Codex profile uploads `auth.json`, `config.toml`, and named
   `*.config.toml` profile files. A chosen Claude profile uploads only
   `.credentials.json`, `settings.json`, and `.claude.json` when present. MCP

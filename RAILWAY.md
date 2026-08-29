@@ -34,7 +34,10 @@ selected by default: press Space to opt in to one account, then Enter. Use
 `vmbox github <box-id>` to resync GitHub authentication, permissions, Git
 protocol, and commit identity later.
 Every interactive picker uses Space to toggle or select and Enter to confirm;
-pressing Enter accepts the current defaults for a fast setup.
+pressing Enter accepts the current defaults for a fast setup. For a missing or
+partially created box, all component, region, agent-profile, GitHub, and Markdown
+questions finish before vmbox creates or deploys anything. Selected local files
+upload only after the box is healthy.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste resume
 commands. `resize [box-id]` changes per-replica vCPU/RAM limits; omit the ID to
 select a box with `[ ]`, then choose preset or custom limits.

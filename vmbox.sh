@@ -64,7 +64,9 @@ box; Railway continues to bill actual usage rather than the selected limits.
 reconnects when that name already exists.
 
 On a new box, choose optional Codex, Claude Code, Bun, and Foundry components
-and a Railway location before the first build. After deployment, opt-in
+and a Railway location, agent profiles, GitHub account, and Markdown instructions
+before any service is created or deployed. Selected credentials and instructions
+are uploaded only after the deployment is healthy. Opt-in
 selectors offer local agent profiles, a GitHub CLI account, and any readable
 `.md` instructions file. Credentials and instructions are never selected
 automatically. A chosen `.md` file is installed as both
@@ -661,7 +663,6 @@ select_components() {
   component_selected=(1 1 1 1)
   if [[ ! -t 0 || ! -t 1 ]]; then
     echo "vmbox: no interactive terminal; installing all optional components" >&2
-    apply_selected_components
     return 0
   fi
 
@@ -687,7 +688,7 @@ select_components() {
       printf '  [ Confirm selection ]\n'
     fi
 
-    IFS= read -rsn1 key || { component_selected=(1 1 1 1); apply_selected_components; return 0; }
+    IFS= read -rsn1 key || { component_selected=(1 1 1 1); return 0; }
     case "$key" in
       ' ')
         if ((selected < component_count)); then
@@ -698,50 +699,49 @@ select_components() {
       k) selected=$(((selected - 1 + option_count) % option_count)) ;;
       '')
         printf '\033[2J\033[H'
-        apply_selected_components
         return 0
         ;;
-      q) component_selected=(1 1 1 1); printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
+      q) component_selected=(1 1 1 1); printf '\033[2J\033[H'; return 0 ;;
       $'\e')
         rest=""
         IFS= read -rsn2 -t 0.1 rest || true
         case "$rest" in
           '[A') selected=$(((selected - 1 + option_count) % option_count)) ;;
           '[B') selected=$(((selected + 1) % option_count)) ;;
-          *) component_selected=(1 1 1 1); printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
+          *) component_selected=(1 1 1 1); printf '\033[2J\033[H'; return 0 ;;
         esac
         ;;
     esac
   done
 }
 
-select_components_for_new_box() {
-  local tty_fd
-  if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
-    select_components <&"$tty_fd" >&"$tty_fd"
-    exec {tty_fd}>&-
-  else
-    select_components
-  fi
-}
 
 declare -a region_ids=(us-west us-east eu-west southeast-asia)
 declare -a region_labels=("US West" "US East" "Europe West" "Southeast Asia")
+declare -a region_platform_ids=(us-west2 us-east4-eqdc4a europe-west4-drams3a asia-southeast1-eqsg3a)
+selected_region="$VMBOX_DEFAULT_REGION"
 
 apply_selected_region() {
-  local region="$1" item
-  local -a scaling=(iad=0)
+  local region="$1" service service_id region_id="" query variables result i
   [[ "$region" =~ ^[A-Za-z0-9-]+$ ]] || die "invalid Railway region '$region'"
-  echo "vmbox: selected Railway region: $region" >&2
-  link_service "$service_name"
-  for item in "${region_ids[@]}"; do
-    if [[ "$item" == "$region" ]]; then
-      scaling+=("$item=1")
-    else
-      scaling+=("$item=0")
-    fi
+  for i in "${!region_ids[@]}"; do
+    [[ "${region_ids[$i]}" == "$region" ]] && region_id="${region_platform_ids[$i]}"
   done
-  (cd "$bundle" && railway scale "${scaling[@]}" --json) >/dev/null
+  [[ -n "$region_id" ]] || die "unsupported Railway region '$region'"
+  service="$(find_service)"
+  [[ -n "$service" ]] || die "could not find '$service_name' to set its region"
+  service_id="$(jq -r '.id' <<<"$service")"
+  echo "vmbox: selected Railway region: $region" >&2
+  query='mutation setRegion($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) {
+    serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input)
+  }'
+  variables="$(jq -nc --arg serviceId "$service_id" --arg environmentId "$VMBOX_ENVIRONMENT_ID" \
+    --arg regionId "$region_id" \
+    '{serviceId: $serviceId, environmentId: $environmentId,
+      input: {multiRegionConfig: {($regionId): {numReplicas: 1}}}}')"
+  result="$(railway_api "$query" "$variables")"
+  jq -e '.serviceInstanceUpdate == true' <<<"$result" >/dev/null ||
+    die "Railway did not accept region '$region'"
 }
 
 select_region() {
@@ -759,7 +759,7 @@ select_region() {
 
   if [[ ! -t 0 || ! -t 1 ]]; then
     echo "vmbox: no interactive terminal; using region $VMBOX_DEFAULT_REGION" >&2
-    apply_selected_region "$VMBOX_DEFAULT_REGION"
+    selected_region="$VMBOX_DEFAULT_REGION"
     return 0
   fi
 
@@ -783,7 +783,7 @@ select_region() {
       printf '  [ Confirm location ]\n'
     fi
 
-    IFS= read -rsn1 key || { apply_selected_region "${region_ids[$chosen]}"; return 0; }
+    IFS= read -rsn1 key || { selected_region="${region_ids[$chosen]}"; return 0; }
     case "$key" in
       ' ') ((selected < region_count)) && chosen=$selected ;;
       j) selected=$(((selected + 1) % option_count)) ;;
@@ -791,32 +791,23 @@ select_region() {
       '')
         ((selected >= region_count)) || chosen=$selected
         printf '\033[2J\033[H'
-        apply_selected_region "${region_ids[$chosen]}"
+        selected_region="${region_ids[$chosen]}"
         return 0
         ;;
-      q) printf '\033[2J\033[H'; apply_selected_region "$VMBOX_DEFAULT_REGION"; return 0 ;;
+      q) printf '\033[2J\033[H'; selected_region="$VMBOX_DEFAULT_REGION"; return 0 ;;
       $'\e')
         rest=""
         IFS= read -rsn2 -t 0.1 rest || true
         case "$rest" in
           '[A') selected=$(((selected - 1 + option_count) % option_count)) ;;
           '[B') selected=$(((selected + 1) % option_count)) ;;
-          *) printf '\033[2J\033[H'; apply_selected_region "$VMBOX_DEFAULT_REGION"; return 0 ;;
+          *) printf '\033[2J\033[H'; selected_region="$VMBOX_DEFAULT_REGION"; return 0 ;;
         esac
         ;;
     esac
   done
 }
 
-select_region_for_new_box() {
-  local tty_fd
-  if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
-    select_region <&"$tty_fd" >&"$tty_fd"
-    exec {tty_fd}>&-
-  else
-    select_region
-  fi
-}
 
 
 declare -a profile_providers=() profile_sources=() profile_selected=()
@@ -993,7 +984,7 @@ profile_contents() {
 }
 
 select_profiles() {
-  local selected=0 key rest i marker label contents
+  local upload_after="${1:-1}" selected=0 key rest i marker label contents
   discover_profiles
   ((${#profile_sources[@]})) || {
     echo "vmbox: no local Codex or Claude profiles found" >&2
@@ -1021,21 +1012,25 @@ select_profiles() {
         printf '  [%s] %-7s %-18s %s\n' "$marker" "${profile_providers[$i]}" "$contents" "$label"
       fi
     done
-    IFS= read -rsn1 key || return
+    IFS= read -rsn1 key || { profile_selected=(); return; }
     case "$key" in
       ' ') toggle_profile_candidate "$selected" ;;
       a) add_custom_profile; selected=$((${#profile_sources[@]} - 1)) ;;
       j) selected=$(((selected + 1) % ${#profile_sources[@]})) ;;
       k) selected=$(((selected - 1 + ${#profile_sources[@]}) % ${#profile_sources[@]})) ;;
-      '') printf '\033[2J\033[H'; copy_selected_profiles; return ;;
-      q) printf '\033[2J\033[H'; echo "vmbox: agent profile upload skipped" >&2; return ;;
+      '')
+        printf '\033[2J\033[H'
+        [[ "$upload_after" == 0 ]] || copy_selected_profiles
+        return
+        ;;
+      q) profile_selected=(); printf '\033[2J\033[H'; echo "vmbox: agent profile upload skipped" >&2; return ;;
       $'\e')
         rest=""
         IFS= read -rsn2 -t 0.1 rest || true
         case "$rest" in
           '[A') selected=$(((selected - 1 + ${#profile_sources[@]}) % ${#profile_sources[@]})) ;;
           '[B') selected=$(((selected + 1) % ${#profile_sources[@]})) ;;
-          *) printf '\033[2J\033[H'; echo "vmbox: agent profile upload skipped" >&2; return ;;
+          *) profile_selected=(); printf '\033[2J\033[H'; echo "vmbox: agent profile upload skipped" >&2; return ;;
         esac
         ;;
     esac
@@ -1110,7 +1105,7 @@ copy_selected_instruction_file() {
 }
 
 select_instruction_file() {
-  local selected=0 key rest i marker label
+  local upload_after="${1:-1}" selected=0 key rest i marker label
   discover_instruction_files
   if [[ ! -t 0 || ! -t 1 ]]; then
     echo "vmbox: agent instruction upload skipped without an interactive terminal" >&2
@@ -1137,7 +1132,7 @@ select_instruction_file() {
         printf '  [%s] %s\n' "$marker" "$label"
       fi
     done
-    IFS= read -rsn1 key || return 0
+    IFS= read -rsn1 key || { instruction_selected=(); return 0; }
     case "$key" in
       ' ') ((${#instruction_sources[@]})) && toggle_instruction_file "$selected" ;;
       a)
@@ -1147,15 +1142,19 @@ select_instruction_file() {
         ;;
       j) ((${#instruction_sources[@]})) && selected=$(((selected + 1) % ${#instruction_sources[@]})) ;;
       k) ((${#instruction_sources[@]})) && selected=$(((selected - 1 + ${#instruction_sources[@]}) % ${#instruction_sources[@]})) ;;
-      '') printf '\033[2J\033[H'; copy_selected_instruction_file; return 0 ;;
-      q) printf '\033[2J\033[H'; echo "vmbox: agent instruction upload skipped" >&2; return 0 ;;
+      '')
+        printf '\033[2J\033[H'
+        [[ "$upload_after" == 0 ]] || copy_selected_instruction_file
+        return 0
+        ;;
+      q) instruction_selected=(); printf '\033[2J\033[H'; echo "vmbox: agent instruction upload skipped" >&2; return 0 ;;
       $'\e')
         rest=""
         IFS= read -rsn2 -t 0.1 rest || true
         case "$rest" in
           '[A') ((${#instruction_sources[@]})) && selected=$(((selected - 1 + ${#instruction_sources[@]}) % ${#instruction_sources[@]})) ;;
           '[B') ((${#instruction_sources[@]})) && selected=$(((selected + 1) % ${#instruction_sources[@]})) ;;
-          *) printf '\033[2J\033[H'; echo "vmbox: agent instruction upload skipped" >&2; return 0 ;;
+          *) instruction_selected=(); printf '\033[2J\033[H'; echo "vmbox: agent instruction upload skipped" >&2; return 0 ;;
         esac
         ;;
     esac
@@ -1268,7 +1267,7 @@ upload_github_account() {
 }
 
 select_github_account() {
-  local selected=0 key rest i marker
+  local upload_after="${1:-1}" selected=0 key rest i marker
   discover_github_accounts
   ((${#github_users[@]})) || {
     echo "vmbox: no authenticated local GitHub CLI accounts found; GitHub sync skipped" >&2
@@ -1293,20 +1292,24 @@ select_github_account() {
         printf '  [%s] %-24s %-24s %s\n' "$marker" "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
       fi
     done
-    IFS= read -rsn1 key || return 0
+    IFS= read -rsn1 key || { github_selected=(); return 0; }
     case "$key" in
       ' ') toggle_github_account "$selected" ;;
       j) selected=$(((selected + 1) % ${#github_users[@]})) ;;
       k) selected=$(((selected - 1 + ${#github_users[@]}) % ${#github_users[@]})) ;;
-      '') printf '\033[2J\033[H'; upload_selected_github_account; return 0 ;;
-      q) printf '\033[2J\033[H'; echo "vmbox: GitHub account sync skipped" >&2; return 0 ;;
+      '')
+        printf '\033[2J\033[H'
+        [[ "$upload_after" == 0 ]] || upload_selected_github_account
+        return 0
+        ;;
+      q) github_selected=(); printf '\033[2J\033[H'; echo "vmbox: GitHub account sync skipped" >&2; return 0 ;;
       $'\e')
         rest=""
         IFS= read -rsn2 -t 0.1 rest || true
         case "$rest" in
           '[A') selected=$(((selected - 1 + ${#github_users[@]}) % ${#github_users[@]})) ;;
           '[B') selected=$(((selected + 1) % ${#github_users[@]})) ;;
-          *) printf '\033[2J\033[H'; echo "vmbox: GitHub account sync skipped" >&2; return 0 ;;
+          *) github_selected=(); printf '\033[2J\033[H'; echo "vmbox: GitHub account sync skipped" >&2; return 0 ;;
         esac
         ;;
     esac
@@ -1318,12 +1321,20 @@ select_credentials() {
   select_github_account
 }
 select_new_box_setup() {
-  select_profiles
-  select_github_account
-  select_instruction_file
+  select_components
+  select_region
+  select_profiles 0
+  select_github_account 0
+  select_instruction_file 0
 }
 
-select_credentials_for_new_box() {
+apply_new_box_setup() {
+  copy_selected_profiles
+  upload_selected_github_account
+  copy_selected_instruction_file
+}
+
+select_setup_for_new_box() {
   local tty_fd
   if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
     select_new_box_setup <&"$tty_fd" >&"$tty_fd"
@@ -1421,6 +1432,16 @@ open_box() {
 
   if [[ -z "$service" ]]; then
     [[ "$requested_action" == start ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
+    created=1
+  elif [[ "$(jq -r '.status // empty' <<<"$service")" == "" ]] &&
+    ! jq -e 'any(.volumes[]?; .mountPath == "/data")' <<<"$service" >/dev/null; then
+    echo "vmbox: resuming incomplete first-time setup for '$service_name'" >&2
+    created=1
+  fi
+
+  ((created == 0)) || select_setup_for_new_box
+
+  if [[ -z "$service" ]]; then
     create_service
     for _ in {1..10}; do
       service="$(find_service)"
@@ -1428,14 +1449,15 @@ open_box() {
       sleep 1
     done
     [[ -n "$service" ]] || die "created '$service_name' but could not discover it"
-    created=1
   fi
 
-  ((created == 0)) || select_components_for_new_box
-  ((created == 0)) || select_region_for_new_box
+  if ((created)); then
+    apply_selected_components
+    apply_selected_region "$selected_region"
+  fi
   ensure_ready "$service"
   ensure_persistent_data
-  ((created == 0)) || select_credentials_for_new_box
+  ((created == 0)) || apply_new_box_setup
   attach "${remote_command[@]}"
 }
 
