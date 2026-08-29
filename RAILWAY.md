@@ -10,6 +10,7 @@ vmbox ls
 vmbox list
 vmbox start <box-id>
 vmbox resume <box-id>
+vmbox stop <box-id>
 vmbox cost [box-id]
 vmbox auth <box-id>
 ```
@@ -17,6 +18,10 @@ vmbox auth <box-id>
 `start` creates `vmbox-<box-id>` when missing and otherwise reconnects.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste
 resume commands.
+`stop` removes active compute while preserving the service and `/data`.
+`resume` deploys a stopped box again. Power-down stops tmux and all running
+processes; files and Codex history remain, so use `codex resume --last` after
+reconnecting.
 
 ## Leave Codex running
 

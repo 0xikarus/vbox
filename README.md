@@ -12,6 +12,9 @@ SSH session.
 
 Container replacements lose processes but preserve `/data`. Starting an
 existing box reconnects to the service; `resume` requires the box to exist.
+`vmbox stop <box-id>` removes the active deployment while preserving the
+service and volume. Resuming a stopped box deploys the installed bundle again.
+Running tmux and agent processes do not survive a power-down.
 
 ## Install
 
@@ -59,6 +62,7 @@ vmbox auth research         # choose local logins to copy
 vmbox start research
 vmbox start research        # reconnects when it already exists
 vmbox resume research       # fails when it does not exist
+vmbox stop research         # remove deployment, preserve /data
 vmbox clean                 # review and type "clean"
 vmbox clean --yes           # non-interactive
 ```
@@ -76,7 +80,12 @@ vmbox clean --yes           # non-interactive
   `CLAUDE_CONFIG_DIR`, and offers an opt-in multi-select. Nothing is copied by
   default; press `a` to specify another credential path.
 - `resume` connects only when the named box already exists. It accepts both a
-  box ID and the full name of an older, non-`vmbox-` service.
+  box ID and the full name of an older, non-`vmbox-` service. If the box is
+  powered down, it deploys the bundle again before connecting.
+- `stop` removes the active Railway deployment while retaining the service and
+  persistent volume. CPU/memory usage stops, but volume storage can still incur
+  cost. After resuming, use `codex resume --last` to reopen persisted Codex
+  history; tmux processes cannot survive a deployment removal.
 - `clean` deletes **every service** in the configured project and environment,
   then deletes **every persistent volume**, including mounted `/data`.
 

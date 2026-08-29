@@ -28,13 +28,16 @@ Usage:
   vmbox auth <box-id>
   vmbox start <box-id>
   vmbox resume <box-id>
+  vmbox stop <box-id>
   vmbox clean [--yes]
 
 Each box is a Railway service named vmbox-<box-id>. `start` creates, deploys,
 and attaches to the service when it does not exist; otherwise it attaches to
-the existing box. `clean` deletes every service in the configured project and
-environment plus every persistent volume after confirmation. `cost` shows accrued costs for the current
-Railway billing period.
+the existing box. `stop` removes its active deployment but preserves the
+service and /data volume; `resume` deploys it again. Running processes do not
+survive a stop. `clean` deletes every service and persistent volume in the
+configured project after confirmation. `cost` shows accrued costs for the
+current Railway billing period.
 
 Keep Codex and other work running when you leave:
   1. Press Ctrl-b
@@ -147,10 +150,12 @@ attach() {
 
 display_list() {
   jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
-    ["NAME", "STATUS", "ID", "RESUME"],
+    ["NAME", "STATUS", "ID", "RESUME", "STOP"],
     (.[] |
       (.name | if startswith($prefix) then .[($prefix | length):] else . end) as $box |
-      [.name, (.status // "NO_DEPLOYMENT"), .id, "vmbox resume \($box)"]
+      (.status // "NO_DEPLOYMENT") as $status |
+      [.name, $status, .id, "vmbox resume \($box)",
+       (if $status == "SUCCESS" then "vmbox stop \($box)" else "-" end)]
     ) | @tsv
   ' <<<"$1"
   tmux_help
@@ -338,6 +343,43 @@ copy_auth_to_box() {
   select_auth
 }
 
+stop_box() {
+  local service deployment_data active_deployment output status
+  box_id="$1"
+  validate_box_id "$box_id"
+  service_name="$VMBOX_SERVICE_PREFIX$box_id"
+  service="$(find_service)"
+  if [[ -z "$service" ]]; then
+    service_name="$box_id"
+    service="$(find_service)"
+  fi
+  [[ -n "$service" ]] || die "box '$box_id' does not exist"
+
+  status="$(jq -r '.status // "NO_DEPLOYMENT"' <<<"$service")"
+  case "$status" in
+    BUILDING|DEPLOYING|QUEUED|INITIALIZING|WAITING)
+      die "box '$box_id' has a deployment in progress ($status); wait for it, then stop again"
+      ;;
+  esac
+
+  deployment_data="$(railway deployment list "${target[@]}" \
+    --service "$service_name" --limit 100 --json)"
+  active_deployment="$(jq -r 'first(.[] | select(.status == "SUCCESS")) | .id // empty' \
+    <<<"$deployment_data")"
+  if [[ -z "$active_deployment" ]]; then
+    echo "Box '$box_id' is already powered down (service and /data preserved)."
+    return
+  fi
+
+  echo "vmbox: powering down '$service_name'; preserving its service and /data volume" >&2
+  if ! output="$(railway down "${target[@]}" --service "$service_name" --yes 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    die "could not power down box '$box_id'"
+  fi
+  echo "Box '$box_id' is powered down. Resume and redeploy with: vmbox resume $box_id"
+  echo "Files persist, but tmux/Codex processes stopped. Reopen Codex with: codex resume --last"
+}
+
 open_box() {
   local requested_action="$1" service created=0
   box_id="$2"
@@ -451,6 +493,11 @@ case "$action" in
   auth)
     [[ $# -eq 2 ]] || die "usage: vmbox auth <box-id>"
     copy_auth_to_box "$2"
+    ;;
+
+  stop)
+    [[ $# -eq 2 ]] || die "usage: vmbox stop <box-id>"
+    stop_box "$2"
     ;;
 
   start|resume)

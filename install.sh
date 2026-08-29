@@ -143,5 +143,10 @@ To leave Codex running inside tmux:
 Reconnect later:
   vmbox resume <box-id>
 
+Power down compute but preserve /data:
+  vmbox stop <box-id>
+
+After a power-down, tmux processes are gone; use `codex resume --last`.
+
 Run `vmbox help` at any time for the complete command guide.
 EOF
