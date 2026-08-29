@@ -595,6 +595,8 @@ apply_selected_components() {
 
 select_components() {
   local selected=0 key rest i marker
+  local component_count=${#component_ids[@]}
+  local option_count=$((component_count + 1))
   component_selected=(1 1 1 1)
   if [[ ! -t 0 || ! -t 1 ]]; then
     echo "vmbox: no interactive terminal; installing all optional components" >&2
@@ -605,7 +607,8 @@ select_components() {
   while true; do
     printf '\033[2J\033[HChoose components for this box\n'
     echo "Core tools (tmux, Git, gh, SSH, sudo) are always installed."
-    echo "↑/↓ or j/k: move  Space: toggle  Enter: install selected  q: keep all"
+    echo "↑/↓ or j/k: move  Space/Enter: toggle"
+    echo "Choose Confirm selection to continue; q keeps all defaults."
     echo "All optional components are selected by default."
     echo
     for i in "${!component_ids[@]}"; do
@@ -616,19 +619,38 @@ select_components() {
         printf '  [%s] %s\n' "$marker" "${component_labels[$i]}"
       fi
     done
+    echo
+    if ((selected == component_count)); then
+      printf '\033[1;36m> [ Confirm selection ]\033[0m\n'
+    else
+      printf '  [ Confirm selection ]\n'
+    fi
+
     IFS= read -rsn1 key || { component_selected=(1 1 1 1); apply_selected_components; return 0; }
     case "$key" in
-      ' ') ((component_selected[selected])) && component_selected[selected]=0 || component_selected[selected]=1 ;;
-      j) selected=$(((selected + 1) % ${#component_ids[@]})) ;;
-      k) selected=$(((selected - 1 + ${#component_ids[@]}) % ${#component_ids[@]})) ;;
-      '') printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
+      ' ')
+        if ((selected < component_count)); then
+          ((component_selected[selected])) && component_selected[selected]=0 || component_selected[selected]=1
+        fi
+        ;;
+      j) selected=$(((selected + 1) % option_count)) ;;
+      k) selected=$(((selected - 1 + option_count) % option_count)) ;;
+      '')
+        if ((selected < component_count)); then
+          ((component_selected[selected])) && component_selected[selected]=0 || component_selected[selected]=1
+        else
+          printf '\033[2J\033[H'
+          apply_selected_components
+          return 0
+        fi
+        ;;
       q) component_selected=(1 1 1 1); printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
       $'\e')
         rest=""
         IFS= read -rsn2 -t 0.1 rest || true
         case "$rest" in
-          '[A') selected=$(((selected - 1 + ${#component_ids[@]}) % ${#component_ids[@]})) ;;
-          '[B') selected=$(((selected + 1) % ${#component_ids[@]})) ;;
+          '[A') selected=$(((selected - 1 + option_count) % option_count)) ;;
+          '[B') selected=$(((selected + 1) % option_count)) ;;
           *) component_selected=(1 1 1 1); printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
         esac
         ;;

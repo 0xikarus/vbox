@@ -88,6 +88,7 @@ volume-deletion records are ignored.
 
 Core packages include tmux, Git, `gh`, SSH, sudo, Bubblewrap, Node.js, and npm.
 On first creation, select optional Codex, Claude Code, Bun, and Foundry tooling;
-all four are checked by default. The shell runs as root, so `apt-get update &&
+all four are checked by default. Choose `Confirm selection` after toggling tools.
+The shell runs as root, so `apt-get update &&
 apt-get install -y <package>` works without sudo. Manual package changes are
 ephemeral across redeploys; durable packages belong in the Dockerfile.

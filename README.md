@@ -93,6 +93,7 @@ vmbox clean --all           # every box and active project volume
 - `vmbox <id>`, `new`, and `start` provision a missing `vmbox-<id>` service or
   reconnect when that name already exists. Before the first build, choose
   optional Codex, Claude Code, Bun, and Foundry components; all are preselected.
+  Toggle tools with Space or Enter, then choose `Confirm selection` to continue.
   After deployment, vmbox auto-detects Codex profile directories matching
   `~/.codex*` and Claude directories matching `~/.claude*`, prioritizing
   `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. The opt-in multi-select allows one
