@@ -45,7 +45,9 @@ together and allows a custom directory with `a`. Nothing is selected by
 default. The selected profile's login and portable configuration files are
 uploaded, including MCP settings from Codex `config.toml` or Claude
 `.claude.json`/`settings.json`. Histories, caches, sessions, and databases are
-excluded. Run `vmbox auth <box-id>` to reopen the picker later.
+excluded. Every file is verified by checksum, and uploaded logins are checked
+with the agent's authentication-status command inside the box. Run
+`vmbox auth <box-id>` to reopen the picker later.
 
 Selected files are streamed over Railway SSH to `/data/home`, never committed
 or baked into the image. Treat the resulting box as an authenticated device.

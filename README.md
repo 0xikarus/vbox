@@ -82,10 +82,12 @@ vmbox clean --yes           # non-interactive
   allows one profile per tool, so Codex and Claude can be uploaded together.
   Nothing is copied by default; press `a` to specify another profile directory.
 - A chosen Codex profile uploads `auth.json`, `config.toml`, and named
-  `*.config.toml` profile files. A chosen Claude profile uploads
-  `.credentials.json`, `settings.json`, `.claude.json`, and `CLAUDE.md` when
-  present. This includes MCP definitions stored in the agents' normal config
-  files, but intentionally excludes histories, caches, sessions, and databases.
+  `*.config.toml` profile files. A chosen Claude profile uploads only
+  `.credentials.json`, `settings.json`, and `.claude.json` when present. MCP
+  definitions in those machine-readable configs are included; Markdown files,
+  histories, caches, sessions, and databases are intentionally excluded.
+  Every uploaded file is verified by checksum. When a login is included,
+  vmbox also confirms that the corresponding CLI recognizes it inside the box.
   `vmbox auth <box-id>` reopens the same profile picker for an existing box.
 - `resume` connects only when the named box already exists. It accepts both a
   box ID and the full name of an older, non-`vmbox-` service. If the box is
@@ -122,6 +124,5 @@ to stop the running shell/session. This guide appears after installation, in
 
 Never commit Railway tokens, private keys, seed phrases, `.env` files, or agent
 credentials. Selected profile files are streamed over Railway SSH to fixed
-paths under `/data/home`; directories use mode `0700`, credential/config files
-use mode `0600`, and `CLAUDE.md` uses mode `0644`. They are never added to the
-Docker image or Git repository.
+paths under `/data/home`; directories use mode `0700` and files use mode
+`0600`. They are never added to the Docker image or Git repository.

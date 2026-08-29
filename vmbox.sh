@@ -227,7 +227,7 @@ profile_has_files() {
     claude)
       [[ "$source" == "$HOME/.claude" && -r "$HOME/.claude.json" ]] && return 0
       [[ -r "$source/.credentials.json" || -r "$source/settings.json" ||
-         -r "$source/.claude.json" || -r "$source/CLAUDE.md" ]] && return 0
+         -r "$source/.claude.json" ]] && return 0
       ;;
   esac
   return 1
@@ -294,12 +294,39 @@ add_custom_profile() {
 
 copy_profile_file() {
   local source="$1" remote_dir="$2" remote_file="$3" mode="${4:-600}"
+  local local_sha remote_output remote_sha
   [[ -f "$source" && -r "$source" ]] || return 0
   echo "vmbox: copying $(basename -- "$source") to $remote_file" >&2
-  railway ssh "${target[@]}" --service "$service_name" \
-    "umask 077; mkdir -p '$remote_dir'; chmod 700 '$remote_dir'; cat > '$remote_file'; chmod '$mode' '$remote_file'" \
-    < "$source" >/dev/null
+  local_sha="$(sha256sum "$source" | awk '{print $1}')"
+  remote_output="$(railway ssh "${target[@]}" --service "$service_name" \
+    "umask 077; mkdir -p '$remote_dir'; chmod 700 '$remote_dir'; cat > '$remote_file'; chmod '$mode' '$remote_file'; sha256sum '$remote_file'" \
+    < "$source")"
+  remote_sha="$(grep -Eo '[0-9a-f]{64}' <<<"$remote_output" | tail -1 || true)"
+  [[ -n "$remote_sha" && "$remote_sha" == "$local_sha" ]] ||
+    die "upload verification failed for $remote_file"
   copied_files=$((copied_files + 1))
+}
+
+verify_profile_login() {
+  local provider="$1"
+  case "$provider" in
+    codex)
+      if railway ssh "${target[@]}" --service "$service_name" \
+        "HOME=/data/home CODEX_HOME=/data/home/.codex codex login status >/dev/null 2>&1" >/dev/null; then
+        echo "vmbox: Codex login recognized inside the box" >&2
+      else
+        echo "vmbox: warning: Codex did not recognize the uploaded login; run 'codex login' inside the box" >&2
+      fi
+      ;;
+    claude)
+      if railway ssh "${target[@]}" --service "$service_name" \
+        "HOME=/data/home CLAUDE_CONFIG_DIR=/data/home/.claude claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null" >/dev/null; then
+        echo "vmbox: Claude login recognized inside the box" >&2
+      else
+        echo "vmbox: warning: Claude did not recognize the uploaded login; run 'claude auth login' inside the box" >&2
+      fi
+      ;;
+  esac
 }
 
 copy_selected_profiles() {
@@ -319,16 +346,17 @@ copy_selected_profiles() {
           [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]] || continue
           copy_profile_file "$path" /data/home/.codex "/data/home/.codex/$base"
         done
+        [[ ! -r "$source/auth.json" ]] || verify_profile_login codex
         ;;
       claude)
         copy_profile_file "$source/.credentials.json" /data/home/.claude /data/home/.claude/.credentials.json
         copy_profile_file "$source/settings.json" /data/home/.claude /data/home/.claude/settings.json
-        copy_profile_file "$source/CLAUDE.md" /data/home/.claude /data/home/.claude/CLAUDE.md 644
         if [[ "$source" == "$HOME/.claude" && -r "$HOME/.claude.json" ]]; then
           copy_profile_file "$HOME/.claude.json" /data/home /data/home/.claude.json
         else
           copy_profile_file "$source/.claude.json" /data/home /data/home/.claude.json
         fi
+        [[ ! -r "$source/.credentials.json" ]] || verify_profile_login claude
         ;;
     esac
     copied_profiles=$((copied_profiles + 1))
@@ -352,7 +380,7 @@ profile_contents() {
     claude)
       [[ "$source" == "$HOME/.claude" && -r "$HOME/.claude.json" ]] && result="config/MCP"
       [[ -r "$source/.credentials.json" ]] && result="login"
-      if [[ -r "$source/settings.json" || -r "$source/.claude.json" || -r "$source/CLAUDE.md" ]]; then
+      if [[ -r "$source/settings.json" || -r "$source/.claude.json" ]]; then
         result="${result:+$result+}config/MCP"
       fi
       ;;
