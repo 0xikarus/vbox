@@ -96,6 +96,8 @@ vmbox clean --all           # every box and active project volume
   reconnect when that name already exists. Before the first build, choose
   optional Codex, Claude Code, Bun, and Foundry components; all are preselected.
   Toggle tools with Space or Enter, then choose `Confirm selection` to continue.
+  A second picker selects US West, US East, Europe West, or Southeast Asia and
+  applies that region before the first deployment.
   After deployment, vmbox auto-detects Codex profile directories matching
   `~/.codex*` and Claude directories matching `~/.claude*`, prioritizing
   `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. The opt-in multi-select allows one
@@ -121,9 +123,10 @@ vmbox clean --all           # every box and active project volume
   access, its existing repository/org permissions are preserved, and Git commit
   name/email are derived from the selected GitHub account. Run
   `vmbox github <box-id>` to resync GitHub separately.
-- Every start or resume prints a welcome card with the service ID, deployment
-  status, region, vCPU/RAM limits, replica count, persistent storage, private
-  container IP, current public egress IP, workspace, and reconnect guidance.
+- Every new tmux session prints a welcome card inside the box with the service
+  ID, deployment status, region, vCPU/RAM limits, replica count, storage, IPs,
+  workspace, and detach guidance. The tmux status bar keeps name, specs, and
+  region visible; resumes refresh that status.
 - `resume` connects only when the named box already exists. It accepts both a
   box ID and the full name of an older, non-`vmbox-` service. If the box is
   powered down, it deploys the bundle again before connecting.

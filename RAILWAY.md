@@ -38,10 +38,10 @@ commands. `resize [box-id]` changes per-replica vCPU/RAM limits; omit the ID to
 select a box with `[ ]`, then choose preset or custom limits.
 `stop` removes active compute while preserving the service and `/data`.
 `resume` deploys a stopped box again. `vmbox <box-id>` also reconnects whenever
-that name already exists. Every connection prints CPU/RAM limits, status,
-region, service ID, replica count, storage, private and current public egress
-IPs, workspace, and detach/resume guidance. Power-down stops tmux processes;
-files and Codex history remain, so use `codex resume --last` after reconnecting.
+that name already exists. New tmux sessions print the full specs/IP/detach
+banner inside the pane, and the persistent status bar shows box name, CPU/RAM,
+and region. Power-down stops tmux processes; files and Codex history remain, so
+use `codex resume --last` after reconnecting.
 
 ## Leave Codex running
 
@@ -91,6 +91,8 @@ volume-deletion records are ignored.
 Core packages include tmux, Git, `gh`, SSH, sudo, Bubblewrap, Node.js, and npm.
 On first creation, select optional Codex, Claude Code, Bun, and Foundry tooling;
 all four are checked by default. Choose `Confirm selection` after toggling tools.
-The shell runs as root, so `apt-get update &&
-apt-get install -y <package>` works without sudo. Manual package changes are
-ephemeral across redeploys; durable packages belong in the Dockerfile.
+Then select US West, US East, Europe West, or Southeast Asia and confirm the
+location. `VMBOX_DEFAULT_REGION` controls the preselected and non-interactive
+default. The shell runs as root, so `apt-get update && apt-get install -y
+<package>` works without sudo. Manual package changes are ephemeral across
+redeploys; durable packages belong in the Dockerfile.

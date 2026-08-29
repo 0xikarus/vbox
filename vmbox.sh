@@ -14,6 +14,7 @@ fi
 : "${VMBOX_ENVIRONMENT_ID:=be38d867-15fd-4174-af7d-89b54c330daa}"
 : "${VMBOX_SERVICE_PREFIX:=vmbox-}"
 : "${VMBOX_DEPLOY_TIMEOUT:=900}"
+: "${VMBOX_DEFAULT_REGION:=us-east}"
 
 bundle="${VMBOX_BUNDLE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/vmbox/service}"
 target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
@@ -63,10 +64,11 @@ box; Railway continues to bill actual usage rather than the selected limits.
 reconnects when that name already exists.
 
 On a new box, choose optional Codex, Claude Code, Bun, and Foundry components
-before the first build. After deployment, opt-in selectors offer local agent
-profiles, a GitHub CLI account, and any readable `.md` instructions file.
-Credentials and instructions are never selected automatically. A chosen `.md`
-file is installed as both `/data/workspace/AGENTS.md` and `CLAUDE.md`.
+and a Railway location before the first build. After deployment, opt-in
+selectors offer local agent profiles, a GitHub CLI account, and any readable
+`.md` instructions file. Credentials and instructions are never selected
+automatically. A chosen `.md` file is installed as both
+`/data/workspace/AGENTS.md` and `CLAUDE.md`.
 Append `-- COMMAND [ARG...]` to start a command directly inside the tmux session.
 Its standard input remains connected to the caller.
 
@@ -269,9 +271,14 @@ ensure_persistent_data() {
   die "persistent /data mount is still missing after repair redeploy for '$service_name'"
 }
 
+box_welcome=""
+box_status=""
+
 show_box_welcome() {
   local service service_id status regions replicas volume_size limits specs limit_source
   local remote_info private_ip public_ip
+  box_status=""
+  box_welcome=""
   service="$(find_service)"
   [[ -n "$service" ]] || return 0
   service_id="$(jq -r '.id' <<<"$service")"
@@ -292,10 +299,11 @@ show_box_welcome() {
     'private_ip=$(hostname -I 2>/dev/null | cut -d" " -f1); public_ip=$(curl -fsS --max-time 3 https://api.ipify.org 2>/dev/null || true); printf "%s\t%s\n" "$private_ip" "$public_ip"' \
     2>/dev/null || true)"
   IFS=$'\t' read -r private_ip public_ip <<<"$(tail -1 <<<"$remote_info")"
+  box_status=" vmbox $box_id | $specs | $regions "
   [[ -n "$private_ip" ]] || private_ip="unavailable"
   [[ -n "$public_ip" ]] || public_ip="unavailable"
 
-  cat >&2 <<EOF
+  box_welcome="$(cat <<EOF_BANNER
 
 Box ready
   Name:              $box_id
@@ -307,20 +315,54 @@ Box ready
   Public egress IP:  $public_ip (current, not guaranteed static)
   Persistent data:   /data ($volume_size MB used)
   Workspace:         /data/workspace
-EOF
+
+Keep this session running:
+  Detach:            Ctrl-b, release both keys, then d
+  Reconnect:         vmbox resume $box_id
+  Avoid:             exit (ends the shell/session)
+EOF_BANNER
+)"
 }
 
 attach() {
+  local welcome_b64 prepare_script
   show_box_welcome
-  tmux_help
-  echo >&2
-  echo "Connecting now. Later, resume this box with: vmbox resume $box_id" >&2
+  welcome_b64="$(printf '%s\n' "$box_welcome" | base64 | tr -d '\n')"
+  prepare_script="$(cat <<'EOF_PREPARE'
+session="$1"
+banner="$2"
+status="$3"
+shift 3
+mkdir -p /data/home
+printf '%s' "$banner" | base64 -d > /data/home/.vmbox-welcome
+chmod 0644 /data/home/.vmbox-welcome
+if tmux has-session -t "$session" 2>/dev/null; then
+  if (($#)); then
+    tmux new-window -t "$session" -c /data/workspace \
+      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "$@"
+  fi
+else
+  if (($#)); then
+    tmux new-session -d -s "$session" -c /data/workspace \
+      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "$@"
+  else
+    tmux new-session -d -s "$session" -c /data/workspace \
+      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec bash -l'
+  fi
+fi
+tmux set-option -t "$session" status-left-length 100
+tmux set-option -t "$session" status-left "$status"
+EOF_PREPARE
+)"
+
+  echo "vmbox: preparing tmux with box specs inside the session" >&2
   if (($#)); then
     echo "vmbox: starting forwarded command in tmux: $1" >&2
-    railway ssh "${target[@]}" --service "$service_name" --session "$box_id" "$@"
-  else
-    railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
   fi
+  railway ssh "${target[@]}" --service "$service_name" \
+    bash -lc "$prepare_script" bash "$box_id" "$welcome_b64" "$box_status" "$@" \
+    </dev/null >/dev/null
+  railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
 }
 
 display_list() {
@@ -685,6 +727,95 @@ select_components_for_new_box() {
     select_components
   fi
 }
+
+declare -a region_ids=(us-west us-east eu-west southeast-asia)
+declare -a region_labels=("US West" "US East" "Europe West" "Southeast Asia")
+
+apply_selected_region() {
+  local region="$1"
+  [[ "$region" =~ ^[A-Za-z0-9-]+$ ]] || die "invalid Railway region '$region'"
+  echo "vmbox: selected Railway region: $region" >&2
+  link_service "$service_name"
+  (cd "$bundle" && railway scale "$region=1" --json) >/dev/null
+}
+
+select_region() {
+  local selected=0 chosen=-1 key rest i marker region_count option_count
+  region_count=${#region_ids[@]}
+  option_count=$((region_count + 1))
+  for i in "${!region_ids[@]}"; do
+    if [[ "${region_ids[$i]}" == "$VMBOX_DEFAULT_REGION" ]]; then
+      selected=$i
+      chosen=$i
+      break
+    fi
+  done
+  ((chosen >= 0)) || die "VMBOX_DEFAULT_REGION must be one of: ${region_ids[*]}"
+
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "vmbox: no interactive terminal; using region $VMBOX_DEFAULT_REGION" >&2
+    apply_selected_region "$VMBOX_DEFAULT_REGION"
+    return 0
+  fi
+
+  while true; do
+    printf '\033[2J\033[HChoose a Railway location for this box\n'
+    echo "↑/↓ or j/k: move  Space/Enter: select"
+    echo "Choose Confirm location to continue; q keeps the configured default."
+    echo
+    for i in "${!region_ids[@]}"; do
+      ((i == chosen)) && marker=x || marker=' '
+      if ((i == selected)); then
+        printf '\033[1;36m> [%s] %-20s %s\033[0m\n' "$marker" "${region_labels[$i]}" "${region_ids[$i]}"
+      else
+        printf '  [%s] %-20s %s\n' "$marker" "${region_labels[$i]}" "${region_ids[$i]}"
+      fi
+    done
+    echo
+    if ((selected == region_count)); then
+      printf '\033[1;36m> [ Confirm location ]\033[0m\n'
+    else
+      printf '  [ Confirm location ]\n'
+    fi
+
+    IFS= read -rsn1 key || { apply_selected_region "${region_ids[$chosen]}"; return 0; }
+    case "$key" in
+      ' ') ((selected < region_count)) && chosen=$selected ;;
+      j) selected=$(((selected + 1) % option_count)) ;;
+      k) selected=$(((selected - 1 + option_count) % option_count)) ;;
+      '')
+        if ((selected < region_count)); then
+          chosen=$selected
+        else
+          printf '\033[2J\033[H'
+          apply_selected_region "${region_ids[$chosen]}"
+          return 0
+        fi
+        ;;
+      q) printf '\033[2J\033[H'; apply_selected_region "$VMBOX_DEFAULT_REGION"; return 0 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + option_count) % option_count)) ;;
+          '[B') selected=$(((selected + 1) % option_count)) ;;
+          *) printf '\033[2J\033[H'; apply_selected_region "$VMBOX_DEFAULT_REGION"; return 0 ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+select_region_for_new_box() {
+  local tty_fd
+  if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
+    select_region <&"$tty_fd" >&"$tty_fd"
+    exec {tty_fd}>&-
+  else
+    select_region
+  fi
+}
+
 
 declare -a profile_providers=() profile_sources=() profile_selected=()
 
@@ -1299,6 +1430,7 @@ open_box() {
   fi
 
   ((created == 0)) || select_components_for_new_box
+  ((created == 0)) || select_region_for_new_box
   ensure_ready "$service"
   ensure_persistent_data
   ((created == 0)) || select_credentials_for_new_box
