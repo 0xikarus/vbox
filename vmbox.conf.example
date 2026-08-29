@@ -1,5 +1,4 @@
 # Stable Railway target IDs. These are identifiers, not credentials.
 VMBOX_PROJECT_ID="c9671604-0a68-47ee-abe8-16c72922d391"
-VMBOX_SERVICE_ID="24746a92-81e4-4479-924b-b8f3c9986f98"
 VMBOX_ENVIRONMENT_ID="be38d867-15fd-4174-af7d-89b54c330daa"
-VMBOX_WORKSPACE_ROOT="/data/workspace"
+VMBOX_SERVICE_PREFIX="vmbox-"

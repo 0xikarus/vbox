@@ -4,154 +4,174 @@ set -euo pipefail
 
 config_file="${VMBOX_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/vmbox/config}"
 credentials_file="${VMBOX_CREDENTIALS:-$(dirname -- "$config_file")/credentials}"
-state_dir="${VMBOX_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/vmbox/boxes}"
 
-if [[ -f "$config_file" ]]; then
-  # shellcheck source=/dev/null
-  . "$config_file"
-fi
-
+[[ -f "$config_file" ]] && . "$config_file"
 if [[ -z "${RAILWAY_API_TOKEN:-}" && -z "${RAILWAY_TOKEN:-}" && -f "$credentials_file" ]]; then
-  # shellcheck source=/dev/null
   . "$credentials_file"
 fi
 
 : "${VMBOX_PROJECT_ID:=c9671604-0a68-47ee-abe8-16c72922d391}"
-: "${VMBOX_SERVICE_ID:=24746a92-81e4-4479-924b-b8f3c9986f98}"
 : "${VMBOX_ENVIRONMENT_ID:=be38d867-15fd-4174-af7d-89b54c330daa}"
-: "${VMBOX_WORKSPACE_ROOT:=/data/workspace}"
+: "${VMBOX_SERVICE_PREFIX:=vmbox-}"
+: "${VMBOX_DEPLOY_TIMEOUT:=900}"
+
+bundle="${VMBOX_BUNDLE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/vmbox/service}"
+target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
 
 usage() {
   cat <<'EOF'
 Usage:
   vmbox ls
-  vmbox start <box-id> [remote-workspace]
+  vmbox start <box-id>
   vmbox resume <box-id>
+  vmbox clean [--yes]
 
-A box is a named tmux session inside a Railway service. `start` records the
-stable Railway project/service/environment IDs and workspace locally. `resume`
-uses that record and recreates the tmux session at the same workspace if a
-container replacement removed the process state.
+Each box is a Railway service named vmbox-<box-id>. `start` creates, deploys,
+and attaches to the service when it does not exist; otherwise it attaches to
+the existing box. `clean` deletes every service in the configured project and
+environment after confirmation.
 EOF
 }
 
-die() {
-  echo "vmbox: $*" >&2
-  exit 1
-}
-
-require_command() {
-  command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
-}
+die() { echo "vmbox: $*" >&2; exit 1; }
+require() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
 
 validate_box_id() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
     die "invalid box ID '$1'; use letters, numbers, dots, dashes, or underscores"
 }
 
-validate_workspace() {
-  [[ "$1" =~ ^/data/workspace(/[A-Za-z0-9._-]+)*$ ]] ||
-    die "workspace must be /data/workspace or a child directory"
+services() { railway service list "${target[@]}" --json; }
+
+find_service() {
+  services | jq -c --arg name "$service_name" \
+    'first(.[] | select(.name == $name)) // empty'
 }
 
-set_target() {
-  target=(
-    --project "$project_id"
-    --service "$service_id"
-    --environment "$environment_id"
-  )
+link_service() {
+  local args=("${target[@]}")
+  [[ -n "${1:-}" ]] && args+=(--service "$1")
+  (cd "$bundle" && railway link "${args[@]}" --json >/dev/null)
 }
 
-load_defaults() {
-  project_id="$VMBOX_PROJECT_ID"
-  service_id="$VMBOX_SERVICE_ID"
-  environment_id="$VMBOX_ENVIRONMENT_ID"
+create_service() {
+  [[ -f "$bundle/Dockerfile" ]] || die "deployment bundle missing; rerun install.sh"
+  echo "vmbox: provisioning Railway service '$service_name'" >&2
+  link_service ""
+  (cd "$bundle" && railway add --service "$service_name" --json >/dev/null)
 }
 
-load_box() {
-  local record="$state_dir/$1"
-  [[ -f "$record" ]] || die "unknown box '$1'; use: vmbox start $1"
-  IFS=$'\t' read -r project_id service_id environment_id workspace < "$record"
-  [[ -n "$project_id" && -n "$service_id" && -n "$environment_id" && -n "$workspace" ]] ||
-    die "invalid box record: $record"
-  validate_workspace "$workspace"
+wait_for_service() {
+  local deployment_id="${1:-}" deadline=$((SECONDS + VMBOX_DEPLOY_TIMEOUT)) data status
+  while ((SECONDS < deadline)); do
+    data="$(cd "$bundle" && railway deployment list \
+      --service "$service_name" --environment "$VMBOX_ENVIRONMENT_ID" \
+      --limit 20 --json)"
+    status="$(jq -r --arg id "$deployment_id" '
+      if $id == "" then .[0].status // empty
+      else first(.[] | select(.id == $id) | .status) // empty end
+    ' <<<"$data")"
+    case "$status" in
+      SUCCESS) echo "vmbox: '$service_name' is ready" >&2; return ;;
+      FAILED|CRASHED|REMOVED) die "deployment for '$service_name' ended with $status" ;;
+    esac
+    echo "vmbox: waiting for '$service_name' (${status:-queued})" >&2
+    sleep 5
+  done
+  die "deployment timed out after ${VMBOX_DEPLOY_TIMEOUT}s"
 }
 
-box_exists() {
-  railway ssh "${target[@]}" \
-    "tmux has-session -t '=$box_id'" >/dev/null 2>&1
+ensure_ready() {
+  local service="$1" status deploy_result deployment_id volume_added=0
+  link_service "$service_name"
+
+  if ! jq -e 'any(.volumes[]?; .mountPath == "/data")' <<<"$service" >/dev/null; then
+    echo "vmbox: attaching persistent /data volume" >&2
+    (cd "$bundle" && railway volume add --mount-path /data --json >/dev/null)
+    volume_added=1
+  fi
+
+  status="$(jq -r '.status // empty' <<<"$service")"
+  case "$volume_added:$status" in
+    0:SUCCESS) return ;;
+    0:BUILDING|0:DEPLOYING|0:QUEUED|0:INITIALIZING|0:WAITING) wait_for_service; return ;;
+  esac
+
+  echo "vmbox: deploying '$service_name'" >&2
+  deploy_result="$(railway up "$bundle" --path-as-root --detach --json \
+    --service "$service_name" "${target[@]}")"
+  deployment_id="$(jq -rs 'map(select(type == "object")) | last | .deploymentId // .id // empty' \
+    <<<"$deploy_result")"
+  wait_for_service "$deployment_id"
 }
 
-attach_box() {
-  railway ssh "${target[@]}" --session "$box_id"
+attach() {
+  railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
 }
 
 action="${1:-ls}"
-box_id="${2:-}"
-workspace=""
-project_id=""
-service_id=""
-environment_id=""
-declare -a target
+if [[ "$action" == -h || "$action" == --help || "$action" == help ]]; then
+  usage
+  exit
+fi
 
-require_command railway
+require railway
+require jq
 
 case "$action" in
   ls)
     [[ $# -eq 1 ]] || die "usage: vmbox ls"
-    load_defaults
-    set_target
-    output="$(railway ssh "${target[@]}" \
-      'tmux list-sessions -F "#{session_name} windows=#{session_windows} attached=#{session_attached}" 2>/dev/null || true')"
-    if [[ -n "$output" ]]; then
-      printf '%s\n' "$output"
+    list="$(services)"
+    if [[ "$(jq 'length' <<<"$list")" == 0 ]]; then
+      echo "No boxes."
     else
-      echo "No running boxes."
+      jq -r '["NAME", "STATUS", "ID"], (.[] | [.name, (.status // "NO_DEPLOYMENT"), .id]) | @tsv' <<<"$list"
     fi
     ;;
 
-  start)
-    [[ $# -ge 2 && $# -le 3 ]] || die "usage: vmbox start <box-id> [remote-workspace]"
+  start|resume)
+    [[ $# -eq 2 ]] || die "usage: vmbox $action <box-id>"
+    box_id="$2"
     validate_box_id "$box_id"
-    load_defaults
-    workspace="${3:-$VMBOX_WORKSPACE_ROOT/$box_id}"
-    validate_workspace "$workspace"
-    set_target
+    service_name="$VMBOX_SERVICE_PREFIX$box_id"
+    service="$(find_service)"
 
-    box_exists && die "box '$box_id' already exists; use: vmbox resume $box_id"
-
-    railway ssh "${target[@]}" \
-      "mkdir -p '$workspace' && tmux new-session -d -s '$box_id' -c '$workspace'"
-
-    mkdir -p "$state_dir"
-    printf '%s\t%s\t%s\t%s\n' \
-      "$project_id" "$service_id" "$environment_id" "$workspace" > "$state_dir/$box_id"
-    chmod 600 "$state_dir/$box_id"
-
-    attach_box
-    ;;
-
-  resume)
-    [[ $# -eq 2 ]] || die "usage: vmbox resume <box-id>"
-    validate_box_id "$box_id"
-    load_box "$box_id"
-    set_target
-
-    if ! box_exists; then
-      echo "vmbox: recreating '$box_id' at $workspace (previous process state is unavailable)" >&2
-      railway ssh "${target[@]}" \
-        "mkdir -p '$workspace' && tmux new-session -d -s '$box_id' -c '$workspace'"
+    if [[ -z "$service" ]]; then
+      [[ "$action" == start ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
+      create_service
+      for _ in {1..10}; do
+        service="$(find_service)"
+        [[ -n "$service" ]] && break
+        sleep 1
+      done
+      [[ -n "$service" ]] || die "created '$service_name' but could not discover it"
     fi
 
-    attach_box
+    ensure_ready "$service"
+    attach
     ;;
 
-  -h|--help|help)
-    usage
+  clean)
+    [[ $# -eq 1 || ($# -eq 2 && "${2:-}" == --yes) ]] || die "usage: vmbox clean [--yes]"
+    list="$(services)"
+    count="$(jq 'length' <<<"$list")"
+    if [[ "$count" == 0 ]]; then
+      echo "No services to delete."
+      exit
+    fi
+
+    jq -r '.[] | "  \(.name) (\(.id))"' <<<"$list" >&2
+    if [[ "${2:-}" != --yes ]]; then
+      [[ -t 0 ]] || die "confirmation required; use: vmbox clean --yes"
+      read -rp "Delete all $count services from project $VMBOX_PROJECT_ID? Type 'clean': " answer
+      [[ "$answer" == clean ]] || die "cancelled"
+    fi
+
+    while IFS= read -r service_id; do
+      railway service delete "${target[@]}" --service "$service_id" --yes --json >/dev/null
+    done < <(jq -r '.[].id' <<<"$list")
+    echo "Deleted $count services."
     ;;
 
-  *)
-    usage >&2
-    exit 2
-    ;;
+  *) usage >&2; exit 2 ;;
 esac

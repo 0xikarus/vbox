@@ -6,6 +6,7 @@ root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 bin="${VMBOX_INSTALL_DIR:-$HOME/.local/bin}"
 config="${XDG_CONFIG_HOME:-$HOME/.config}/vmbox"
 credentials="$config/credentials"
+bundle="${XDG_DATA_HOME:-$HOME/.local/share}/vmbox/service"
 rc="${VMBOX_SHELL_RC:-}"
 update_rc=1
 save_token=0
@@ -44,13 +45,18 @@ clean_rc() {
 
 if ((uninstall)); then
   rm -f "$bin/vmbox" "$config/env.sh" "$credentials"
+  rm -f "$bundle/Dockerfile" "$bundle/entrypoint.sh" "$bundle/railway.json" "$bundle/.dockerignore"
+  rm -f "$bundle/.railway/config.json"
+  rmdir "$bundle/.railway" "$bundle" 2>/dev/null || true
   clean_rc
-  echo "Removed vmbox and its token; configuration and box records were preserved."
+  echo "Removed vmbox, its deployment bundle, and token; configuration was preserved."
   exit
 fi
 
-mkdir -p "$bin" "$config"
+mkdir -p "$bin" "$config" "$bundle"
 install -m 755 "$root/vmbox.sh" "$bin/vmbox"
+install -m 755 "$root/entrypoint.sh" "$bundle/entrypoint.sh"
+install -m 644 "$root/Dockerfile" "$root/railway.json" "$root/.dockerignore" "$bundle/"
 [[ -f "$config/config" ]] || install -m 600 "$root/vmbox.conf.example" "$config/config"
 
 if ((save_token)); then
