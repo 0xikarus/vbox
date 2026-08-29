@@ -88,7 +88,9 @@ update_railway
 mkdir -p "$bin" "$config" "$bundle"
 install -m 755 "$root/vmbox.sh" "$bin/vmbox"
 install -m 755 "$root/entrypoint.sh" "$bundle/entrypoint.sh"
-install -m 644 "$root/Dockerfile" "$root/railway.json" "$root/.dockerignore" "$bundle/"
+install -m 644 "$root/Dockerfile" "$root/.dockerignore" "$bundle/"
+# Remove deprecated Config as Code left by older vmbox installations.
+rm -f "$bundle/railway.json" "$bundle/railway.toml"
 [[ -f "$config/config" ]] || install -m 600 "$root/vmbox.conf.example" "$config/config"
 
 if ((save_token)); then
