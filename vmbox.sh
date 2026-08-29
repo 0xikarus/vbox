@@ -21,6 +21,8 @@ target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
 usage() {
   cat <<'EOF'
 Usage:
+  vmbox <box-id>
+  vmbox new <box-id>
   vmbox help
   vmbox list
   vmbox ls
@@ -31,13 +33,13 @@ Usage:
   vmbox stop <box-id>
   vmbox clean [--yes]
 
-Each box is a Railway service named vmbox-<box-id>. `start` creates, deploys,
-and attaches to the service when it does not exist; otherwise it attaches to
-the existing box. `stop` removes its active deployment but preserves the
-service and /data volume; `resume` deploys it again. Running processes do not
-survive a stop. `clean` deletes every service and persistent volume in the
-configured project after confirmation. `cost` shows accrued costs for the
-current Railway billing period.
+Each box is a Railway service named vmbox-<box-id>. `<box-id>`, `new`, and
+`start` create, deploy, and attach to the service when it does not exist;
+otherwise they attach to the existing box. `stop` removes its active deployment
+but preserves the service and /data volume; `resume` deploys it again. Running
+processes do not survive a stop. `clean` deletes every service and persistent
+volume in the configured project after confirmation. `cost` shows accrued
+costs for the current Railway billing period.
 
 On a new box, choose one detected Codex profile and one Claude profile. Their
 login and portable config files, including MCP settings, persist under /data.
@@ -581,8 +583,9 @@ case "$action" in
     stop_box "$2"
     ;;
 
-  start|resume)
+  new|start|resume)
     [[ $# -eq 2 ]] || die "usage: vmbox $action <box-id>"
+    [[ "$action" == new ]] && action=start
     open_box "$action" "$2"
     ;;
 
@@ -623,5 +626,12 @@ case "$action" in
     echo "Deleted $count service(s) and all project volumes."
     ;;
 
-  *) usage >&2; exit 2 ;;
+  *)
+    if (($# == 1)); then
+      open_box start "$action"
+    else
+      usage >&2
+      exit 2
+    fi
+    ;;
 esac

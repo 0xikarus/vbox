@@ -59,8 +59,9 @@ vmbox ls                    # script-friendly table
 vmbox cost                  # current-period project/service costs
 vmbox cost research         # cost for one box
 vmbox auth research         # choose local agent profiles to upload
-vmbox start research
-vmbox start research        # reconnects when it already exists
+vmbox research              # create if missing, otherwise connect
+vmbox new research          # same as above
+vmbox start research        # same as above
 vmbox resume research       # fails when it does not exist
 vmbox stop research         # remove deployment, preserve /data
 vmbox clean                 # review and type "clean"
@@ -73,13 +74,13 @@ vmbox clean --yes           # non-interactive
   with its copy-paste `vmbox resume ...` command and tmux detach reminder.
 - `cost` shows accrued current-period totals split into CPU, memory, volume,
   egress, and backups.
-- `start` provisions a missing `vmbox-<id>` service or connects to an existing
-  one. Partial provisioning is repaired on the next run. For a newly created
-  box it auto-detects Codex profile directories matching `~/.codex*` and
-  Claude profile directories matching `~/.claude*`, prioritizing `CODEX_HOME`
-  and `CLAUDE_CONFIG_DIR`. The opt-in multi-select allows one profile per tool,
-  so Codex and Claude can be uploaded together. Nothing is copied by default;
-  press `a` to specify another profile directory.
+- `vmbox <id>`, `new`, and `start` provision a missing `vmbox-<id>` service or
+  connect to an existing one. Partial provisioning is repaired on the next
+  run. For a newly created box it auto-detects Codex profile directories
+  matching `~/.codex*` and Claude profile directories matching `~/.claude*`,
+  prioritizing `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. The opt-in multi-select
+  allows one profile per tool, so Codex and Claude can be uploaded together.
+  Nothing is copied by default; press `a` to specify another profile directory.
 - A chosen Codex profile uploads `auth.json`, `config.toml`, and named
   `*.config.toml` profile files. A chosen Claude profile uploads
   `.credentials.json`, `settings.json`, `.claude.json`, and `CLAUDE.md` when

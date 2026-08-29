@@ -8,6 +8,8 @@ help` for the authoritative CLI guide.
 ```bash
 vmbox ls
 vmbox list
+vmbox <box-id>
+vmbox new <box-id>
 vmbox start <box-id>
 vmbox resume <box-id>
 vmbox stop <box-id>
@@ -15,7 +17,8 @@ vmbox cost [box-id]
 vmbox auth <box-id>
 ```
 
-`start` creates `vmbox-<box-id>` when missing and otherwise reconnects.
+`vmbox <box-id>`, `new`, and `start` create `vmbox-<box-id>` when missing and
+otherwise reconnect.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste
 resume commands.
 `stop` removes active compute while preserving the service and `/data`.
