@@ -98,8 +98,10 @@ vmbox clean --yes           # non-interactive
   Every uploaded file is verified by checksum. When a login is included,
   vmbox also confirms that the corresponding CLI recognizes it inside the box.
   `vmbox auth <box-id>` reopens the same profile picker for an existing box.
-- New boxes also offer a selector for locally authenticated GitHub CLI accounts.
-  The chosen token is streamed into the box, `gh auth setup-git` configures Git
+- New boxes also offer an explicit opt-in selector for locally authenticated
+  GitHub CLI accounts. Nothing is selected by default: use Space to select one
+  account and Enter to continue. The chosen token is streamed into the box,
+  `gh auth setup-git` configures Git
   access, its existing repository/org permissions are preserved, and Git commit
   name/email are derived from the selected GitHub account. Run
   `vmbox github <box-id>` to resync GitHub separately.

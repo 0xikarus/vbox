@@ -22,7 +22,8 @@ vmbox new <box-id> -- claude "fix active tickets, then commit"
 `vmbox <box-id>`, `new`, and `start` create `vmbox-<box-id>` when missing and
 otherwise reconnect.
 Anything after `--` is started directly in the tmux-backed session with stdin
-forwarded. New boxes also offer a local GitHub CLI account selector; use
+forwarded. New boxes also offer a local GitHub CLI account selector. Nothing is
+selected by default: press Space to opt in to one account, then Enter. Use
 `vmbox github <box-id>` to resync GitHub authentication, permissions, Git
 protocol, and commit identity later.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste

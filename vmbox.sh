@@ -45,9 +45,10 @@ costs for the current Railway billing period.
 On a new box, choose one detected Codex profile and one Claude profile. Their
 login and portable config files, including MCP settings, persist under /data.
 `vmbox auth <box-id>` opens the same picker again.
-A new box also offers a local GitHub CLI account. Its token, repository/org
-permissions, HTTPS/SSH protocol, and Git commit identity are configured remotely.
-
+A new box also offers an explicit opt-in GitHub CLI account selector. Nothing
+is selected by default; press Space to select one account, then Enter. Its token,
+repository/org permissions, HTTPS/SSH protocol, and Git commit identity are
+configured remotely.
 Append `-- COMMAND [ARG...]` to start a command directly inside the tmux session.
 Its standard input remains connected to the caller.
 
@@ -474,13 +475,14 @@ select_profiles() {
     esac
   done
 }
-declare -a github_hosts=() github_users=() github_protocols=()
+declare -a github_hosts=() github_users=() github_protocols=() github_selected=()
 
 discover_github_accounts() {
   local output line host="" user protocol last=-1
   github_hosts=()
   github_users=()
   github_protocols=()
+  github_selected=()
   command -v gh >/dev/null 2>&1 || return 0
   output="$(gh auth status 2>&1 || true)"
   while IFS= read -r line; do
@@ -493,6 +495,7 @@ discover_github_accounts() {
       github_hosts+=("$host")
       github_users+=("$user")
       github_protocols+=(https)
+      github_selected+=(0)
       last=$((${#github_users[@]} - 1))
     elif ((last >= 0)) && [[ "$line" =~ Git[[:space:]]operations[[:space:]]protocol:[[:space:]]+([^[:space:]]+) ]]; then
       protocol="${BASH_REMATCH[1]}"
@@ -500,6 +503,29 @@ discover_github_accounts() {
     fi
   done <<<"$output"
   return 0
+}
+
+toggle_github_account() {
+  local selected_index="$1" i
+  if ((github_selected[selected_index])); then
+    github_selected[selected_index]=0
+    return 0
+  fi
+  for i in "${!github_selected[@]}"; do
+    github_selected[i]=0
+  done
+  github_selected[selected_index]=1
+}
+
+upload_selected_github_account() {
+  local i
+  for i in "${!github_selected[@]}"; do
+    if ((github_selected[i])); then
+      upload_github_account "$i"
+      return 0
+    fi
+  done
+  echo "vmbox: GitHub account sync skipped (nothing selected)" >&2
 }
 
 upload_github_account() {
@@ -555,7 +581,7 @@ upload_github_account() {
 }
 
 select_github_account() {
-  local selected=0 key rest i
+  local selected=0 key rest i marker
   discover_github_accounts
   ((${#github_users[@]})) || {
     echo "vmbox: no authenticated local GitHub CLI accounts found; GitHub sync skipped" >&2
@@ -568,21 +594,24 @@ select_github_account() {
 
   while true; do
     printf '\033[2J\033[HChoose a GitHub CLI account for this box\n'
-    echo "↑/↓ or j/k: move  Enter: securely sync account/token  q: skip"
-    echo "The selected token keeps its existing repository and organization permissions."
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: continue  q: skip"
+    echo "Nothing is selected by default. Select at most one account."
+    echo "A selected token keeps its existing repository and organization permissions."
     echo
     for i in "${!github_users[@]}"; do
+      ((github_selected[i])) && marker=x || marker=' '
       if ((i == selected)); then
-        printf '\033[1;36m> %-24s %-24s %s\033[0m\n' "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
+        printf '\033[1;36m> [%s] %-24s %-24s %s\033[0m\n' "$marker" "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
       else
-        printf '  %-24s %-24s %s\n' "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
+        printf '  [%s] %-24s %-24s %s\n' "$marker" "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
       fi
     done
     IFS= read -rsn1 key || return 0
     case "$key" in
+      ' ') toggle_github_account "$selected" ;;
       j) selected=$(((selected + 1) % ${#github_users[@]})) ;;
       k) selected=$(((selected - 1 + ${#github_users[@]}) % ${#github_users[@]})) ;;
-      '') printf '\033[2J\033[H'; upload_github_account "$selected"; return 0 ;;
+      '') printf '\033[2J\033[H'; upload_selected_github_account; return 0 ;;
       q) printf '\033[2J\033[H'; echo "vmbox: GitHub account sync skipped" >&2; return 0 ;;
       $'\e')
         rest=""
