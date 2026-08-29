@@ -15,10 +15,16 @@ vmbox resume <box-id>
 vmbox stop <box-id>
 vmbox cost [box-id]
 vmbox auth <box-id>
+vmbox github <box-id>
+vmbox new <box-id> -- claude "fix active tickets, then commit"
 ```
 
 `vmbox <box-id>`, `new`, and `start` create `vmbox-<box-id>` when missing and
 otherwise reconnect.
+Anything after `--` is started directly in the tmux-backed session with stdin
+forwarded. New boxes also offer a local GitHub CLI account selector; use
+`vmbox github <box-id>` to resync GitHub authentication, permissions, Git
+protocol, and commit identity later.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste
 resume commands.
 `stop` removes active compute while preserving the service and `/data`.
@@ -55,9 +61,10 @@ or baked into the image. Treat the resulting box as an authenticated device.
 ## Persistent data and cleanup
 
 The persistent home and workspace are `/data/home` and `/data/workspace`.
-`vmbox clean` permanently deletes every service and every volume in the
-configured project/environment, including all mounted `/data`. It asks for
-the word `clean`; `vmbox clean --yes` skips that confirmation.
+`vmbox clean` permanently deletes every service and every active volume in the
+configured project/environment, including all mounted `/data`. It asks for the
+word `clean`; `vmbox clean --yes` skips that confirmation. Volume records
+already pending deletion are ignored and never passed to Railway's selector.
 
 ## Container notes
 

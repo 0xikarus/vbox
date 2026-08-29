@@ -21,15 +21,16 @@ target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
 usage() {
   cat <<'EOF'
 Usage:
-  vmbox <box-id>
-  vmbox new <box-id>
+  vmbox <box-id> [-- COMMAND [ARG...]]
+  vmbox new <box-id> [-- COMMAND [ARG...]]
   vmbox help
   vmbox list
   vmbox ls
   vmbox cost [box-id]
   vmbox auth <box-id>
-  vmbox start <box-id>
-  vmbox resume <box-id>
+  vmbox github <box-id>
+  vmbox start <box-id> [-- COMMAND [ARG...]]
+  vmbox resume <box-id> [-- COMMAND [ARG...]]
   vmbox stop <box-id>
   vmbox clean [--yes]
 
@@ -44,6 +45,11 @@ costs for the current Railway billing period.
 On a new box, choose one detected Codex profile and one Claude profile. Their
 login and portable config files, including MCP settings, persist under /data.
 `vmbox auth <box-id>` opens the same picker again.
+A new box also offers a local GitHub CLI account. Its token, repository/org
+permissions, HTTPS/SSH protocol, and Git commit identity are configured remotely.
+
+Append `-- COMMAND [ARG...]` to start a command directly inside the tmux session.
+Its standard input remains connected to the caller.
 
 Keep Codex and other work running when you leave:
   1. Press Ctrl-b
@@ -77,7 +83,33 @@ validate_box_id() {
 }
 
 services() { railway service list "${target[@]}" --json; }
-volumes() { railway volume "${target[@]}" list --json; }
+volumes() {
+  railway volume "${target[@]}" list --json | jq '
+    .volumes = ((.volumes // []) |
+      map(select(.isPendingDeletion != true and (.deletedAt // null) == null)))
+  '
+}
+
+delete_volume_if_active() {
+  local volume_id="$1" current output
+  current="$(volumes)"
+  jq -e --arg id "$volume_id" 'any(.volumes[]; .id == $id)' \
+    <<<"$current" >/dev/null || return 0
+
+  if output="$(railway volume "${target[@]}" delete \
+    --volume "$volume_id" --yes --json </dev/null 2>&1)"; then
+    return 0
+  fi
+
+  current="$(volumes)"
+  if ! jq -e --arg id "$volume_id" 'any(.volumes[]; .id == $id)' \
+    <<<"$current" >/dev/null; then
+    echo "vmbox: volume $volume_id was already pending deletion; skipped" >&2
+    return 0
+  fi
+  printf '%s\n' "$output" >&2
+  die "could not delete volume $volume_id"
+}
 
 find_service() {
   services | jq -c --arg name "$service_name" \
@@ -155,7 +187,12 @@ attach() {
   tmux_help
   echo >&2
   echo "Connecting now. Later, resume this box with: vmbox resume $box_id" >&2
-  railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
+  if (($#)); then
+    echo "vmbox: starting forwarded command in tmux: $1" >&2
+    railway ssh "${target[@]}" --service "$service_name" --session "$box_id" "$@"
+  else
+    railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
+  fi
 }
 
 display_list() {
@@ -437,6 +474,133 @@ select_profiles() {
     esac
   done
 }
+declare -a github_hosts=() github_users=() github_protocols=()
+
+discover_github_accounts() {
+  local output line host="" user protocol last=-1
+  github_hosts=()
+  github_users=()
+  github_protocols=()
+  command -v gh >/dev/null 2>&1 || return 0
+  output="$(gh auth status 2>&1 || true)"
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[^[:space:]] ]]; then
+      host="$line"
+      [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || host=""
+    elif [[ -n "$host" && "$line" =~ account[[:space:]]+([^[:space:]]+) ]]; then
+      user="${BASH_REMATCH[1]}"
+      [[ "$user" =~ ^[A-Za-z0-9-]+$ ]] || continue
+      github_hosts+=("$host")
+      github_users+=("$user")
+      github_protocols+=(https)
+      last=$((${#github_users[@]} - 1))
+    elif ((last >= 0)) && [[ "$line" =~ Git[[:space:]]operations[[:space:]]protocol:[[:space:]]+([^[:space:]]+) ]]; then
+      protocol="${BASH_REMATCH[1]}"
+      [[ "$protocol" == ssh || "$protocol" == https ]] && github_protocols[last]="$protocol"
+    fi
+  done <<<"$output"
+  return 0
+}
+
+upload_github_account() {
+  local index="$1" host user protocol token remote_output remote_user
+  local git_name git_email identity_synced=0
+  host="${github_hosts[$index]}"
+  user="${github_users[$index]}"
+  protocol="${github_protocols[$index]}"
+
+  if ! railway ssh "${target[@]}" --service "$service_name" \
+    "command -v gh >/dev/null 2>&1" >/dev/null; then
+    echo "vmbox: warning: GitHub CLI is missing in this deployment; redeploy the box with the current image" >&2
+    return 0
+  fi
+  if ! token="$(gh auth token --hostname "$host" --user "$user" 2>/dev/null)"; then
+    echo "vmbox: warning: could not read the local gh token for $user@$host" >&2
+    return 0
+  fi
+
+  git_name="$(GH_TOKEN="$token" GH_HOST="$host" gh api user --jq '.name // .login' 2>/dev/null || printf '%s' "$user")"
+  git_email="$(GH_TOKEN="$token" GH_HOST="$host" gh api user --jq '.email // empty' 2>/dev/null || true)"
+  [[ -n "$git_email" ]] || git_email="$user@users.noreply.github.com"
+
+  echo "vmbox: securely syncing GitHub account $user@$host ($protocol)" >&2
+  if ! printf '%s\n' "$token" | railway ssh "${target[@]}" --service "$service_name" \
+    "umask 077; export HOME=/data/home; gh auth login --hostname '$host' --git-protocol '$protocol' --with-token >/dev/null && gh auth setup-git --hostname '$host' >/dev/null; chmod 700 /data/home/.config/gh; chmod 600 /data/home/.config/gh/hosts.yml" >/dev/null; then
+    unset token
+    echo "vmbox: warning: GitHub account sync failed for $user@$host" >&2
+    return 0
+  fi
+
+  if printf '%s\n%s\n' "$git_name" "$git_email" | railway ssh "${target[@]}" --service "$service_name" \
+    'export HOME=/data/home; IFS= read -r name; IFS= read -r email; git config --global user.name "$name"; git config --global user.email "$email"' >/dev/null; then
+    identity_synced=1
+  fi
+  unset token
+
+  if ! remote_output="$(railway ssh "${target[@]}" --service "$service_name" \
+    "HOME=/data/home GH_HOST='$host' gh api user --jq .login" 2>/dev/null)"; then
+    echo "vmbox: warning: GitHub credentials were stored, but the API login check failed" >&2
+    return 0
+  fi
+  remote_user="$(grep -Fx "$user" <<<"$remote_output" | tail -1 || true)"
+  if [[ "$remote_user" == "$user" ]]; then
+    if ((identity_synced)); then
+      echo "vmbox: GitHub account $user recognized; token permissions and Git commit identity are configured" >&2
+    else
+      echo "vmbox: GitHub account $user recognized; token permissions are preserved (Git identity sync failed)" >&2
+    fi
+  else
+    echo "vmbox: warning: GitHub API returned a different account after sync" >&2
+  fi
+}
+
+select_github_account() {
+  local selected=0 key rest i
+  discover_github_accounts
+  ((${#github_users[@]})) || {
+    echo "vmbox: no authenticated local GitHub CLI accounts found; GitHub sync skipped" >&2
+    return 0
+  }
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "vmbox: local GitHub account found; sync skipped without an interactive terminal" >&2
+    return 0
+  fi
+
+  while true; do
+    printf '\033[2J\033[HChoose a GitHub CLI account for this box\n'
+    echo "↑/↓ or j/k: move  Enter: securely sync account/token  q: skip"
+    echo "The selected token keeps its existing repository and organization permissions."
+    echo
+    for i in "${!github_users[@]}"; do
+      if ((i == selected)); then
+        printf '\033[1;36m> %-24s %-24s %s\033[0m\n' "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
+      else
+        printf '  %-24s %-24s %s\n' "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
+      fi
+    done
+    IFS= read -rsn1 key || return 0
+    case "$key" in
+      j) selected=$(((selected + 1) % ${#github_users[@]})) ;;
+      k) selected=$(((selected - 1 + ${#github_users[@]}) % ${#github_users[@]})) ;;
+      '') printf '\033[2J\033[H'; upload_github_account "$selected"; return 0 ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: GitHub account sync skipped" >&2; return 0 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + ${#github_users[@]}) % ${#github_users[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#github_users[@]})) ;;
+          *) printf '\033[2J\033[H'; echo "vmbox: GitHub account sync skipped" >&2; return 0 ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+select_credentials() {
+  select_profiles
+  select_github_account
+}
 
 copy_auth_to_box() {
   local service
@@ -451,7 +615,23 @@ copy_auth_to_box() {
   [[ -n "$service" ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
   [[ "$(jq -r '.status // empty' <<<"$service")" == SUCCESS ]] ||
     die "box '$box_id' is not ready; repair it first with: vmbox start $box_id"
-  select_profiles
+  select_credentials
+}
+
+sync_github_to_box() {
+  local service
+  box_id="$1"
+  validate_box_id "$box_id"
+  service_name="$VMBOX_SERVICE_PREFIX$box_id"
+  service="$(find_service)"
+  if [[ -z "$service" ]]; then
+    service_name="$box_id"
+    service="$(find_service)"
+  fi
+  [[ -n "$service" ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
+  [[ "$(jq -r '.status // empty' <<<"$service")" == SUCCESS ]] ||
+    die "box '$box_id' is not ready; repair it first with: vmbox start $box_id"
+  select_github_account
 }
 
 stop_box() {
@@ -493,7 +673,11 @@ stop_box() {
 
 open_box() {
   local requested_action="$1" service created=0
+  local -a remote_command
   box_id="$2"
+  shift 2
+  if [[ "${1:-}" == -- ]]; then shift; fi
+  remote_command=("$@")
   validate_box_id "$box_id"
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
   service="$(find_service)"
@@ -516,8 +700,8 @@ open_box() {
   fi
 
   ensure_ready "$service"
-  ((created == 0)) || select_profiles
-  attach
+  ((created == 0)) || select_credentials
+  attach "${remote_command[@]}"
 }
 
 select_box() {
@@ -606,15 +790,20 @@ case "$action" in
     copy_auth_to_box "$2"
     ;;
 
+  github)
+    [[ $# -eq 2 ]] || die "usage: vmbox github <box-id>"
+    sync_github_to_box "$2"
+    ;;
+
   stop)
     [[ $# -eq 2 ]] || die "usage: vmbox stop <box-id>"
     stop_box "$2"
     ;;
 
   new|start|resume)
-    [[ $# -eq 2 ]] || die "usage: vmbox $action <box-id>"
+    [[ $# -ge 2 ]] || die "usage: vmbox $action <box-id> [-- COMMAND [ARG...]]"
     [[ "$action" == new ]] && action=start
-    open_box "$action" "$2"
+    open_box "$action" "$2" "${@:3}"
     ;;
 
   clean)
@@ -649,14 +838,14 @@ case "$action" in
     # Refresh after deleting services so already-removed volumes are not targeted.
     volume_list="$(volumes)"
     while IFS= read -r volume_id; do
-      railway volume "${target[@]}" delete --volume "$volume_id" --yes --json >/dev/null
+      delete_volume_if_active "$volume_id"
     done < <(jq -r '.volumes[].id' <<<"$volume_list")
-    echo "Deleted $count service(s) and all project volumes."
+    echo "Deleted $count service(s) and all active project volumes."
     ;;
 
   *)
-    if (($# == 1)); then
-      open_box start "$action"
+    if (($# >= 1)); then
+      open_box start "$action" "${@:2}"
     else
       usage >&2
       exit 2

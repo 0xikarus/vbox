@@ -59,9 +59,13 @@ vmbox ls                    # script-friendly table
 vmbox cost                  # current-period project/service costs
 vmbox cost research         # cost for one box
 vmbox auth research         # choose local agent profiles to upload
+vmbox github research       # sync a selected local gh account
 vmbox research              # create if missing, otherwise connect
 vmbox new research          # same as above
 vmbox start research        # same as above
+vmbox new research -- claude "fix active tickets, then commit"
+vmbox research -- codex "review and fix the contracts"
+printf '%s' "prompt" | vmbox research -- claude -p
 vmbox resume research       # fails when it does not exist
 vmbox stop research         # remove deployment, preserve /data
 vmbox clean                 # review and type "clean"
@@ -74,6 +78,9 @@ vmbox clean --yes           # non-interactive
   with its copy-paste `vmbox resume ...` command and tmux detach reminder.
 - `cost` shows accrued current-period totals split into CPU, memory, volume,
   egress, and backups.
+- Append `-- COMMAND [ARG...]` to any box-opening form to run that command
+  directly in its tmux session. Arguments retain their boundaries and stdin is
+  forwarded, so pipes work as expected.
 - `vmbox <id>`, `new`, and `start` provision a missing `vmbox-<id>` service or
   connect to an existing one. Partial provisioning is repaired on the next
   run. For a newly created box it auto-detects Codex profile directories
@@ -89,6 +96,11 @@ vmbox clean --yes           # non-interactive
   Every uploaded file is verified by checksum. When a login is included,
   vmbox also confirms that the corresponding CLI recognizes it inside the box.
   `vmbox auth <box-id>` reopens the same profile picker for an existing box.
+- New boxes also offer a selector for locally authenticated GitHub CLI accounts.
+  The chosen token is streamed into the box, `gh auth setup-git` configures Git
+  access, its existing repository/org permissions are preserved, and Git commit
+  name/email are derived from the selected GitHub account. Run
+  `vmbox github <box-id>` to resync GitHub separately.
 - `resume` connects only when the named box already exists. It accepts both a
   box ID and the full name of an older, non-`vmbox-` service. If the box is
   powered down, it deploys the bundle again before connecting.
@@ -97,7 +109,9 @@ vmbox clean --yes           # non-interactive
   cost. After resuming, use `codex resume --last` to reopen persisted Codex
   history; tmux processes cannot survive a deployment removal.
 - `clean` deletes **every service** in the configured project and environment,
-  then deletes **every persistent volume**, including mounted `/data`.
+  then deletes **every active persistent volume**, including mounted `/data`.
+  Railway records already pending deletion are ignored, and `--yes` never opens
+  an interactive volume selector.
 
 The default target IDs live in `~/.config/vmbox/config`. Edit that file to use
 another Railway project/environment or change `VMBOX_SERVICE_PREFIX`.
@@ -105,7 +119,7 @@ another Railway project/environment or change `VMBOX_SERVICE_PREFIX`.
 ## VM image
 
 Each provisioned service receives a persistent volume at `/data`. The image
-includes tmux, Git, Node.js, npm, Codex CLI, Claude Code, Forge, Cast, Anvil,
+includes tmux, Git, GitHub CLI, Node.js, npm, Codex CLI, Claude Code, Forge, Cast, Anvil,
 Chisel, Bubblewrap, and sudo. The shell runs as root, so sudo is optional.
 Persistent home and workspace directories are `/data/home` and
 `/data/workspace`.
