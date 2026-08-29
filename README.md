@@ -81,6 +81,8 @@ vmbox clean --yes           # non-interactive
 - Append `-- COMMAND [ARG...]` to any box-opening form to run that command
   directly in its tmux session. Arguments retain their boundaries and stdin is
   forwarded, so pipes work as expected.
+  On a new box, interactive credential selectors use `/dev/tty`, leaving piped
+  prompt input untouched for the forwarded command.
 - `vmbox <id>`, `new`, and `start` provision a missing `vmbox-<id>` service or
   connect to an existing one. Partial provisioning is repaired on the next
   run. For a newly created box it auto-detects Codex profile directories

@@ -601,6 +601,16 @@ select_credentials() {
   select_profiles
   select_github_account
 }
+select_credentials_for_new_box() {
+  local tty_fd
+  if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
+    select_credentials <&"$tty_fd" >&"$tty_fd"
+    exec {tty_fd}>&-
+  else
+    select_credentials
+  fi
+}
+
 
 copy_auth_to_box() {
   local service
@@ -700,7 +710,7 @@ open_box() {
   fi
 
   ensure_ready "$service"
-  ((created == 0)) || select_credentials
+  ((created == 0)) || select_credentials_for_new_box
   attach "${remote_command[@]}"
 }
 
