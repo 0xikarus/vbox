@@ -2,110 +2,79 @@
 
 set -euo pipefail
 
-script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-install_dir="${VMBOX_INSTALL_DIR:-$HOME/.local/bin}"
-config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/vmbox"
-env_file="$config_dir/env.sh"
-update_shell=true
-uninstall=false
+root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+bin="${VMBOX_INSTALL_DIR:-$HOME/.local/bin}"
+config="${XDG_CONFIG_HOME:-$HOME/.config}/vmbox"
+credentials="$config/credentials"
+rc="${VMBOX_SHELL_RC:-}"
+update_rc=1
+save_token=0
+uninstall=0
 
 usage() {
-  cat <<'EOF'
-Usage: ./install.sh [options]
-
-Options:
-  --no-shell-update  Install without editing a shell startup file
-  --shell-rc PATH    Update this startup file instead of auto-detecting one
-  --uninstall        Remove the CLI and managed shell integration
-  -h, --help         Show this help
-
-Environment:
-  VMBOX_INSTALL_DIR  Binary directory (default: ~/.local/bin)
-  XDG_CONFIG_HOME    Configuration root (default: ~/.config)
-EOF
+  echo "Usage: ./install.sh [--workspace-token] [--no-shell-update] [--shell-rc PATH] [--uninstall]"
 }
 
-shell_rc="${VMBOX_SHELL_RC:-}"
-
-while [[ $# -gt 0 ]]; do
+while (($#)); do
   case "$1" in
-    --no-shell-update)
-      update_shell=false
-      shift
-      ;;
-    --shell-rc)
-      [[ $# -ge 2 ]] || { echo "Missing path after --shell-rc" >&2; exit 2; }
-      shell_rc="$2"
-      shift 2
-      ;;
-    --uninstall)
-      uninstall=true
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown option: $1" >&2
-      usage >&2
-      exit 2
-      ;;
+    --workspace-token) save_token=1 ;;
+    --no-shell-update) update_rc=0 ;;
+    --shell-rc) shift; rc="${1:?Missing path after --shell-rc}" ;;
+    --uninstall) uninstall=1 ;;
+    -h|--help) usage; exit ;;
+    *) usage >&2; echo "Unknown option: $1" >&2; exit 2 ;;
   esac
+  shift
 done
 
-if [[ -z "$shell_rc" ]]; then
-  case "${SHELL:-/bin/bash}" in
-    */zsh) shell_rc="${ZDOTDIR:-$HOME}/.zshrc" ;;
-    *) shell_rc="$HOME/.bashrc" ;;
-  esac
+if [[ -z "$rc" ]]; then
+  [[ "${SHELL:-}" == */zsh ]] && rc="${ZDOTDIR:-$HOME}/.zshrc" || rc="$HOME/.bashrc"
 fi
 
-source_line="[ -f \"$env_file\" ] && . \"$env_file\" # vmbox-service"
+path_line="export PATH=\"$bin:\$PATH\" # vmbox-service"
 
-remove_source_line() {
-  [[ -f "$shell_rc" ]] || return 0
-  local filtered
-  filtered="$(mktemp "${TMPDIR:-/tmp}/vmbox-rc.XXXXXX")"
-  grep -Fvx "$source_line" "$shell_rc" > "$filtered" || true
-  chmod --reference="$shell_rc" "$filtered" 2>/dev/null || chmod 0644 "$filtered"
-  mv "$filtered" "$shell_rc"
+clean_rc() {
+  [[ -f "$rc" ]] || return
+  local tmp
+  tmp="$(mktemp)"
+  grep -Fv '# vmbox-service' "$rc" > "$tmp" || true
+  cat "$tmp" > "$rc"
+  rm -f "$tmp"
 }
 
-if [[ "$uninstall" == true ]]; then
-  rm -f "$install_dir/vmbox" "$env_file"
-  remove_source_line
-  echo "Removed vmbox and its managed shell integration."
-  echo "Preserved configuration and box records."
-  exit 0
+if ((uninstall)); then
+  rm -f "$bin/vmbox" "$config/env.sh" "$credentials"
+  clean_rc
+  echo "Removed vmbox and its token; configuration and box records were preserved."
+  exit
 fi
 
-mkdir -p "$install_dir" "$config_dir"
-install -m 0755 "$script_dir/vmbox.sh" "$install_dir/vmbox"
+mkdir -p "$bin" "$config"
+install -m 755 "$root/vmbox.sh" "$bin/vmbox"
+[[ -f "$config/config" ]] || install -m 600 "$root/vmbox.conf.example" "$config/config"
 
-if [[ ! -f "$config_dir/config" ]]; then
-  install -m 0600 "$script_dir/vmbox.conf.example" "$config_dir/config"
-fi
-
-printf 'export PATH=%q:$PATH\n' "$install_dir" > "$env_file"
-chmod 0644 "$env_file"
-
-if [[ "$update_shell" == true ]]; then
-  mkdir -p "$(dirname "$shell_rc")"
-  touch "$shell_rc"
-  if ! grep -Fqx "$source_line" "$shell_rc"; then
-    printf '\n%s\n' "$source_line" >> "$shell_rc"
+if ((save_token)); then
+  token="${RAILWAY_API_TOKEN:-}"
+  if [[ -z "$token" ]]; then
+    [[ -t 0 ]] || { echo "Run this option in a terminal to enter the token securely." >&2; exit 1; }
+    read -rsp "Railway workspace token: " token
+    echo
   fi
+  [[ -n "$token" ]] || { echo "Token cannot be empty." >&2; exit 1; }
+  printf 'export RAILWAY_API_TOKEN=%q\n' "$token" > "$credentials"
+  chmod 600 "$credentials"
+  unset token
 fi
 
-"$install_dir/vmbox" --help >/dev/null
-
-echo "Installed vmbox at $install_dir/vmbox"
-echo "Configuration: $config_dir/config"
-if [[ "$update_shell" == true ]]; then
-  echo "Shell integration: $shell_rc"
-  echo "Open a new shell or run: source \"$shell_rc\""
-else
-  echo "Shell startup file unchanged (--no-shell-update)."
-  echo "Add $install_dir to PATH to invoke vmbox by name."
+if ((update_rc)); then
+  mkdir -p "$(dirname -- "$rc")"
+  touch "$rc"
+  clean_rc
+  printf '\n%s\n' "$path_line" >> "$rc"
 fi
+
+"$bin/vmbox" --help >/dev/null
+echo "Installed $bin/vmbox"
+echo "Configuration: $config/config"
+((save_token)) && echo "Workspace token: $credentials (mode 0600)"
+((update_rc)) && echo "Open a new shell or run: source \"$rc\"" || echo "Add $bin to PATH."

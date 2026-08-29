@@ -3,11 +3,17 @@
 set -euo pipefail
 
 config_file="${VMBOX_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/vmbox/config}"
+credentials_file="${VMBOX_CREDENTIALS:-$(dirname -- "$config_file")/credentials}"
 state_dir="${VMBOX_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/vmbox/boxes}"
 
 if [[ -f "$config_file" ]]; then
   # shellcheck source=/dev/null
   . "$config_file"
+fi
+
+if [[ -z "${RAILWAY_API_TOKEN:-}" && -z "${RAILWAY_TOKEN:-}" && -f "$credentials_file" ]]; then
+  # shellcheck source=/dev/null
+  . "$credentials_file"
 fi
 
 : "${VMBOX_PROJECT_ID:=c9671604-0a68-47ee-abe8-16c72922d391}"

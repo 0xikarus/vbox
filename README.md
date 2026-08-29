@@ -23,9 +23,21 @@ cd vmbox-service
 ./install.sh
 ```
 
+To authenticate with a Railway workspace token, let the installer request it
+without echoing it to the terminal:
+
+```bash
+./install.sh --workspace-token
+```
+
+The secret is stored as `RAILWAY_API_TOKEN` in
+`~/.config/vmbox/credentials` with mode `0600`; it is never added to `.bashrc`,
+printed, or committed. Railway calls this an account/workspace token. A
+project-scoped token instead uses `RAILWAY_TOKEN` and is not interchangeable.
+
 The installer places `vmbox` in `~/.local/bin`, creates
 `~/.config/vmbox/config` from `vmbox.conf.example`, and idempotently adds its
-managed PATH file to `.bashrc` or `.zshrc`. Open a new shell, or run the exact
+managed PATH entry to `.bashrc` or `.zshrc`. Open a new shell, or run the exact
 `source` command printed by the installer, and then use `vmbox` from anywhere.
 
 It never overwrites an existing configuration. To opt out of startup-file
@@ -36,7 +48,8 @@ changes or remove the installed command:
 ./install.sh --uninstall
 ```
 
-Uninstalling preserves configuration and box records.
+Uninstalling removes a locally stored workspace token and preserves the
+non-secret configuration and box records.
 
 ## Commands
 
