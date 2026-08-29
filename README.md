@@ -18,12 +18,25 @@ survive a container replacement.
 Requirements: Bash, the Railway CLI, an authenticated Railway account, and SSH.
 
 ```bash
+gh repo clone 0xikarus/vmbox-service
+cd vmbox-service
 ./install.sh
-source ~/.bashrc
 ```
 
-The installer places `vmbox` in `~/.local/bin` and creates
-`~/.config/vmbox/config` from `vmbox.conf.example`.
+The installer places `vmbox` in `~/.local/bin`, creates
+`~/.config/vmbox/config` from `vmbox.conf.example`, and idempotently adds its
+managed PATH file to `.bashrc` or `.zshrc`. Open a new shell, or run the exact
+`source` command printed by the installer, and then use `vmbox` from anywhere.
+
+It never overwrites an existing configuration. To opt out of startup-file
+changes or remove the installed command:
+
+```bash
+./install.sh --no-shell-update
+./install.sh --uninstall
+```
+
+Uninstalling preserves configuration and box records.
 
 ## Commands
 
