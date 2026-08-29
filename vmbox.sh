@@ -18,6 +18,19 @@ fi
 bundle="${VMBOX_BUNDLE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/vmbox/service}"
 target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
 
+quick_usage() {
+  cat <<'EOF_QUICK'
+vmbox <name>                 create or connect
+vmbox list                   choose a box
+vmbox ls                     list boxes
+vmbox cost [name]            show costs
+vmbox resize [name]          change CPU/RAM limits
+vmbox stop <name>            power down, keep /data
+vmbox clean [name ...]       delete selected boxes and /data
+vmbox help                   full command guide
+EOF_QUICK
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -1474,7 +1487,7 @@ clean_boxes() {
 }
 
 if (($# == 0)); then
-  usage
+  quick_usage
   exit
 fi
 

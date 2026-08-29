@@ -53,8 +53,8 @@ not delete Railway services; use `vmbox clean` first if that is intended.
 ## Commands
 
 ```bash
-vmbox                       # print help
-vmbox help
+vmbox                       # compact quick reference
+vmbox help                  # full command guide
 vmbox list                  # interactive picker; Enter resumes
 vmbox ls                    # script-friendly table
 vmbox cost                  # costs; deleted services are one aggregated row
