@@ -15,7 +15,10 @@ existing box reconnects to the service; `resume` requires the box to exist.
 
 ## Install
 
-Requirements: Bash, `jq`, the Railway CLI, and SSH.
+Requirements: Bash, `jq`, the Railway CLI, and SSH. The installer updates the
+Railway CLI automatically. If its self-updater leaves an old global package
+pinned, the installer refreshes `@railway/cli` with Bun or npm and verifies
+cost reporting support.
 
 ```bash
 gh repo clone 0xikarus/vmbox-service
@@ -50,6 +53,9 @@ vmbox                       # print help
 vmbox help
 vmbox list                  # interactive picker; Enter resumes
 vmbox ls                    # script-friendly table
+vmbox cost                  # current-period project/service costs
+vmbox cost research         # cost for one box
+vmbox auth research         # choose local logins to copy
 vmbox start research
 vmbox start research        # reconnects when it already exists
 vmbox resume research       # fails when it does not exist
@@ -60,13 +66,19 @@ vmbox clean --yes           # non-interactive
 - `list` opens an Up/Down selector; Enter resumes the highlighted box and
   `q`/Escape exits. When no TTY is available it prints the regular table.
 - `ls` prints every service in the configured project and environment together
-  with its copy-paste `vmbox resume ...` command.
+  with its copy-paste `vmbox resume ...` command and tmux detach reminder.
+- `cost` shows accrued current-period totals split into CPU, memory, volume,
+  egress, and backups.
 - `start` provisions a missing `vmbox-<id>` service or connects to an existing
-  one. Partial provisioning is repaired on the next run.
+  one. Partial provisioning is repaired on the next run. For a newly created
+  box it auto-detects `~/.codex*/auth.json` and
+  `~/.claude*/.credentials.json`, prioritizes `CODEX_HOME` and
+  `CLAUDE_CONFIG_DIR`, and offers an opt-in multi-select. Nothing is copied by
+  default; press `a` to specify another credential path.
 - `resume` connects only when the named box already exists. It accepts both a
   box ID and the full name of an older, non-`vmbox-` service.
 - `clean` deletes **every service** in the configured project and environment,
-  not only services whose names begin with `vmbox-`.
+  then deletes **every persistent volume**, including mounted `/data`.
 
 The default target IDs live in `~/.config/vmbox/config`. Edit that file to use
 another Railway project/environment or change `VMBOX_SERVICE_PREFIX`.
@@ -75,8 +87,23 @@ another Railway project/environment or change `VMBOX_SERVICE_PREFIX`.
 
 Each provisioned service receives a persistent volume at `/data`. The image
 includes tmux, Git, Node.js, npm, Codex CLI, Claude Code, Forge, Cast, Anvil,
-and Chisel. Persistent home and workspace directories are `/data/home` and
+Chisel, Bubblewrap, and sudo. The shell runs as root, so sudo is optional.
+Persistent home and workspace directories are `/data/home` and
 `/data/workspace`.
 
+## Leaving and resuming
+
+To leave Codex running inside tmux:
+
+1. Press `Ctrl-b`.
+2. Release both keys.
+3. Press `d`.
+
+Reconnect with `vmbox resume <box-id>`. Do not type `exit` unless you intend
+to stop the running shell/session. This guide appears after installation, in
+`vmbox help`, in `vmbox ls`, and before every connection.
+
 Never commit Railway tokens, private keys, seed phrases, `.env` files, or agent
-credentials.
+credentials. Selected login files are streamed over Railway SSH to fixed paths
+under `/data/home`; directories use mode `0700` and files use mode `0600`.
+They are never added to the Docker image or Git repository.

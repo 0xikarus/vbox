@@ -24,6 +24,8 @@ Usage:
   vmbox help
   vmbox list
   vmbox ls
+  vmbox cost [box-id]
+  vmbox auth <box-id>
   vmbox start <box-id>
   vmbox resume <box-id>
   vmbox clean [--yes]
@@ -31,7 +33,29 @@ Usage:
 Each box is a Railway service named vmbox-<box-id>. `start` creates, deploys,
 and attaches to the service when it does not exist; otherwise it attaches to
 the existing box. `clean` deletes every service in the configured project and
-environment after confirmation.
+environment plus every persistent volume after confirmation. `cost` shows accrued costs for the current
+Railway billing period.
+
+Keep Codex and other work running when you leave:
+  1. Press Ctrl-b
+  2. Release both keys
+  3. Press d
+
+Reconnect with: vmbox resume <box-id>
+Use `exit` only when you intend to stop the shell/session.
+EOF
+}
+
+tmux_help() {
+  cat >&2 <<'EOF'
+
+Leave this box without stopping Codex:
+  1. Press Ctrl-b
+  2. Release both keys
+  3. Press d
+
+Then reconnect with: vmbox resume <box-id>
+Typing `exit` can terminate the running shell/session.
 EOF
 }
 
@@ -44,6 +68,7 @@ validate_box_id() {
 }
 
 services() { railway service list "${target[@]}" --json; }
+volumes() { railway volume "${target[@]}" list --json; }
 
 find_service() {
   services | jq -c --arg name "$service_name" \
@@ -51,16 +76,23 @@ find_service() {
 }
 
 link_service() {
-  local args=("${target[@]}")
+  local args=("${target[@]}") output
   [[ -n "${1:-}" ]] && args+=(--service "$1")
-  (cd "$bundle" && railway link "${args[@]}" --json >/dev/null)
+  if ! output="$(cd "$bundle" && railway link "${args[@]}" --json 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    die "could not select the configured Railway project"
+  fi
 }
 
 create_service() {
+  local output
   [[ -f "$bundle/Dockerfile" ]] || die "deployment bundle missing; rerun install.sh"
   echo "vmbox: provisioning Railway service '$service_name'" >&2
   link_service ""
-  (cd "$bundle" && railway add --service "$service_name" --json >/dev/null)
+  if ! output="$(cd "$bundle" && railway add --service "$service_name" --json 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    die "could not create Railway service '$service_name'"
+  fi
 }
 
 wait_for_service() {
@@ -85,11 +117,10 @@ wait_for_service() {
 
 ensure_ready() {
   local service="$1" status deploy_result deployment_id volume_added=0
-  link_service "$service_name"
 
   if ! jq -e 'any(.volumes[]?; .mountPath == "/data")' <<<"$service" >/dev/null; then
     echo "vmbox: attaching persistent /data volume" >&2
-    (cd "$bundle" && railway volume add --mount-path /data --json >/dev/null)
+    railway volume "${target[@]}" --service "$service_name" add --mount-path /data --json >/dev/null
     volume_added=1
   fi
 
@@ -108,6 +139,9 @@ ensure_ready() {
 }
 
 attach() {
+  tmux_help
+  echo >&2
+  echo "Connecting now. Later, resume this box with: vmbox resume $box_id" >&2
   railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
 }
 
@@ -119,10 +153,193 @@ display_list() {
       [.name, (.status // "NO_DEPLOYMENT"), .id, "vmbox resume \($box)"]
     ) | @tsv
   ' <<<"$1"
+  tmux_help
+}
+
+show_cost() {
+  local requested="${1:-}" data period_start period_end service service_id
+  railway usage projects --help >/dev/null 2>&1 ||
+    die "Railway CLI is too old for cost reporting; rerun vmbox-service/install.sh"
+
+  data="$(railway usage projects --project "$VMBOX_PROJECT_ID" --period current --json)"
+  period_start="$(jq -r '.billingPeriod.start[0:10]' <<<"$data")"
+  period_end="$(jq -r '.billingPeriod.end[0:10]' <<<"$data")"
+  printf 'Accrued Railway cost, current billing period (%s to %s)\n\n' "$period_start" "$period_end"
+  printf '%-28s %11s %11s %11s %11s %11s %11s\n' \
+    NAME TOTAL CPU MEMORY VOLUME EGRESS BACKUP
+
+  if [[ -n "$requested" ]]; then
+    validate_box_id "$requested"
+    service_name="$VMBOX_SERVICE_PREFIX$requested"
+    service="$(find_service)"
+    if [[ -z "$service" ]]; then
+      service_name="$requested"
+      service="$(find_service)"
+    fi
+    [[ -n "$service" ]] || die "box '$requested' does not exist"
+    service_id="$(jq -r '.id' <<<"$service")"
+    jq -r --arg id "$service_id" --arg name "$service_name" '
+      (first(.services[] | select(.id == $id)) //
+      {name: $name, totalDollars: 0, cpuDollars: 0, memoryDollars: 0,
+       volumeDollars: 0, egressDollars: 0, backupDollars: 0}) |
+      [.name, .totalDollars, .cpuDollars, .memoryDollars, .volumeDollars,
+       .egressDollars, .backupDollars] | @tsv
+    ' <<<"$data"
+  else
+    jq -r '.services[] |
+      [.name, .totalDollars, .cpuDollars, .memoryDollars, .volumeDollars,
+       .egressDollars, .backupDollars] | @tsv
+    ' <<<"$data"
+  fi | while IFS=$'\t' read -r name total cpu memory volume egress backup; do
+    printf '%-28s $%10.6f $%10.6f $%10.6f $%10.6f $%10.6f $%10.6f\n' \
+      "$name" "$total" "$cpu" "$memory" "$volume" "$egress" "$backup"
+  done
+
+  if [[ -z "$requested" ]]; then
+    printf '\nProject total: $%.6f\n' "$(jq -r '.currentUsageDollars' <<<"$data")"
+  fi
+}
+
+declare -a auth_providers=() auth_sources=() auth_selected=()
+
+add_auth_candidate() {
+  local provider="$1" source="$2" existing
+  [[ -f "$source" && -r "$source" ]] || return
+  for existing in "${auth_sources[@]:-}"; do
+    [[ "$existing" == "$source" ]] && return
+  done
+  auth_providers+=("$provider")
+  auth_sources+=("$source")
+  auth_selected+=(0)
+}
+
+discover_auth() {
+  local path
+  auth_providers=()
+  auth_sources=()
+  auth_selected=()
+  [[ -n "${CODEX_HOME:-}" ]] && add_auth_candidate codex "$CODEX_HOME/auth.json"
+  for path in "$HOME"/.codex*/auth.json; do add_auth_candidate codex "$path"; done
+  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
+    add_auth_candidate claude "$CLAUDE_CONFIG_DIR/.credentials.json"
+  fi
+  for path in "$HOME"/.claude*/.credentials.json; do add_auth_candidate claude "$path"; done
+}
+
+toggle_auth_candidate() {
+  local selected_index="$1" provider="${auth_providers[$1]}" i
+  if ((auth_selected[selected_index])); then
+    auth_selected[selected_index]=0
+    return
+  fi
+  for i in "${!auth_selected[@]}"; do
+    [[ "${auth_providers[$i]}" == "$provider" ]] && auth_selected[i]=0
+  done
+  auth_selected[selected_index]=1
+}
+
+add_custom_auth() {
+  local provider source
+  printf '\033[2J\033[H'
+  read -rp "Tool for this credential [codex/claude]: " provider
+  case "${provider,,}" in
+    codex|claude) provider="${provider,,}" ;;
+    *) echo "vmbox: custom credential skipped (unknown tool)" >&2; sleep 1; return ;;
+  esac
+  read -erp "Credential file path: " source
+  [[ "$source" == '~/'* ]] && source="$HOME/${source#\~/}"
+  if [[ ! -f "$source" || ! -r "$source" ]]; then
+    echo "vmbox: custom credential must be a readable file" >&2
+    sleep 1
+    return
+  fi
+  add_auth_candidate "$provider" "$source"
+}
+
+copy_selected_auth() {
+  local i provider source remote_dir remote_file copied=0
+  for i in "${!auth_selected[@]}"; do
+    ((auth_selected[i])) || continue
+    provider="${auth_providers[$i]}"
+    source="${auth_sources[$i]}"
+    case "$provider" in
+      codex) remote_dir=/data/home/.codex; remote_file=/data/home/.codex/auth.json ;;
+      claude) remote_dir=/data/home/.claude; remote_file=/data/home/.claude/.credentials.json ;;
+    esac
+    echo "vmbox: copying selected $provider login to $remote_file" >&2
+    railway ssh "${target[@]}" --service "$service_name" \
+      "umask 077; mkdir -p '$remote_dir'; chmod 700 '$remote_dir'; cat > '$remote_file'; chmod 600 '$remote_file'" \
+      < "$source" >/dev/null
+    copied=$((copied + 1))
+  done
+  ((copied == 0)) ||
+    echo "vmbox: copied $copied login file(s); treat this box as an authenticated device" >&2
+}
+
+select_auth() {
+  local selected=0 key rest i marker label
+  discover_auth
+  ((${#auth_sources[@]})) || return
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "vmbox: local agent logins found; copy skipped without an interactive terminal" >&2
+    return
+  fi
+
+  while true; do
+    printf '\033[2J\033[HCopy local agent logins into this box?\n'
+    echo "Nothing is selected by default. Selected files grant account access."
+    echo "↑/↓ or j/k: move  Space: toggle  a: add path  Enter: continue  q: skip"
+    echo "Codex and Claude may be selected together; choose one profile per tool."
+    echo
+    for i in "${!auth_sources[@]}"; do
+      ((auth_selected[i])) && marker=x || marker=' '
+      label="${auth_sources[$i]}"
+      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      if ((i == selected)); then
+        printf '\033[1;36m> [%s] %-7s %s\033[0m\n' "$marker" "${auth_providers[$i]}" "$label"
+      else
+        printf '  [%s] %-7s %s\n' "$marker" "${auth_providers[$i]}" "$label"
+      fi
+    done
+    IFS= read -rsn1 key || return
+    case "$key" in
+      ' ') toggle_auth_candidate "$selected" ;;
+      a) add_custom_auth; selected=$((${#auth_sources[@]} - 1)) ;;
+      j) selected=$(((selected + 1) % ${#auth_sources[@]})) ;;
+      k) selected=$(((selected - 1 + ${#auth_sources[@]}) % ${#auth_sources[@]})) ;;
+      '') printf '\033[2J\033[H'; copy_selected_auth; return ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: agent login copy skipped" >&2; return ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + ${#auth_sources[@]}) % ${#auth_sources[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#auth_sources[@]})) ;;
+          *) printf '\033[2J\033[H'; echo "vmbox: agent login copy skipped" >&2; return ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+copy_auth_to_box() {
+  local service
+  box_id="$1"
+  validate_box_id "$box_id"
+  service_name="$VMBOX_SERVICE_PREFIX$box_id"
+  service="$(find_service)"
+  if [[ -z "$service" ]]; then
+    service_name="$box_id"
+    service="$(find_service)"
+  fi
+  [[ -n "$service" ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
+  [[ "$(jq -r '.status // empty' <<<"$service")" == SUCCESS ]] ||
+    die "box '$box_id' is not ready; repair it first with: vmbox start $box_id"
+  select_auth
 }
 
 open_box() {
-  local requested_action="$1" service
+  local requested_action="$1" service created=0
   box_id="$2"
   validate_box_id "$box_id"
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
@@ -142,9 +359,11 @@ open_box() {
       sleep 1
     done
     [[ -n "$service" ]] || die "created '$service_name' but could not discover it"
+    created=1
   fi
 
   ensure_ready "$service"
+  ((created == 0)) || select_auth
   attach
 }
 
@@ -224,6 +443,16 @@ case "$action" in
     fi
     ;;
 
+  cost)
+    [[ $# -le 2 ]] || die "usage: vmbox cost [box-id]"
+    show_cost "${2:-}"
+    ;;
+
+  auth)
+    [[ $# -eq 2 ]] || die "usage: vmbox auth <box-id>"
+    copy_auth_to_box "$2"
+    ;;
+
   start|resume)
     [[ $# -eq 2 ]] || die "usage: vmbox $action <box-id>"
     open_box "$action" "$2"
@@ -232,23 +461,38 @@ case "$action" in
   clean)
     [[ $# -eq 1 || ($# -eq 2 && "${2:-}" == --yes) ]] || die "usage: vmbox clean [--yes]"
     list="$(services)"
+    volume_list="$(volumes)"
     count="$(jq 'length' <<<"$list")"
-    if [[ "$count" == 0 ]]; then
-      echo "No services to delete."
+    volume_count="$(jq '.volumes | length' <<<"$volume_list")"
+    if [[ "$count" == 0 && "$volume_count" == 0 ]]; then
+      echo "No services or persistent volumes to delete."
       exit
     fi
 
-    jq -r '.[] | "  \(.name) (\(.id))"' <<<"$list" >&2
+    if ((count)); then
+      echo "Services:" >&2
+      jq -r '.[] | "  \(.name) (\(.id))"' <<<"$list" >&2
+    fi
+    if ((volume_count)); then
+      echo "Persistent volumes and /data:" >&2
+      jq -r '.volumes[] | "  \(.name) (\(.id), \(.currentSizeMB // 0) MB)"' <<<"$volume_list" >&2
+    fi
     if [[ "${2:-}" != --yes ]]; then
       [[ -t 0 ]] || die "confirmation required; use: vmbox clean --yes"
-      read -rp "Delete all $count services from project $VMBOX_PROJECT_ID? Type 'clean': " answer
+      read -rp "Permanently delete $count service(s) and $volume_count volume(s), including all /data? Type 'clean': " answer
       [[ "$answer" == clean ]] || die "cancelled"
     fi
 
     while IFS= read -r service_id; do
       railway service delete "${target[@]}" --service "$service_id" --yes --json >/dev/null
     done < <(jq -r '.[].id' <<<"$list")
-    echo "Deleted $count services."
+
+    # Refresh after deleting services so already-removed volumes are not targeted.
+    volume_list="$(volumes)"
+    while IFS= read -r volume_id; do
+      railway volume "${target[@]}" delete --volume "$volume_id" --yes --json >/dev/null
+    done < <(jq -r '.volumes[].id' <<<"$volume_list")
+    echo "Deleted $count service(s) and all project volumes."
     ;;
 
   *) usage >&2; exit 2 ;;

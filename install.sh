@@ -16,6 +16,36 @@ usage() {
   echo "Usage: ./install.sh [--workspace-token] [--no-shell-update] [--shell-rc PATH] [--uninstall]"
 }
 
+update_railway() {
+  command -v railway >/dev/null 2>&1 || {
+    echo "Railway CLI is required: https://docs.railway.com/guides/cli" >&2
+    exit 1
+  }
+
+  echo "Updating Railway CLI..."
+  railway upgrade --yes >/dev/null 2>&1 || true
+  if railway usage projects --help >/dev/null 2>&1; then
+    echo "Railway CLI: $(railway --version)"
+    return
+  fi
+
+  # Some older global installs remain pinned after Railway's self-upgrade.
+  if command -v bun >/dev/null 2>&1; then
+    bun add -g @railway/cli@latest
+  elif command -v npm >/dev/null 2>&1; then
+    npm install --global @railway/cli@latest
+  else
+    echo "Railway CLI is too old and neither Bun nor npm is available to update it." >&2
+    exit 1
+  fi
+
+  railway usage projects --help >/dev/null 2>&1 || {
+    echo "The active Railway CLI is still too old: $(command -v railway)" >&2
+    exit 1
+  }
+  echo "Railway CLI: $(railway --version)"
+}
+
 while (($#)); do
   case "$1" in
     --workspace-token) save_token=1 ;;
@@ -52,6 +82,8 @@ if ((uninstall)); then
   echo "Removed vmbox, its deployment bundle, and token; configuration was preserved."
   exit
 fi
+
+update_railway
 
 mkdir -p "$bin" "$config" "$bundle"
 install -m 755 "$root/vmbox.sh" "$bin/vmbox"
@@ -97,3 +129,19 @@ echo "Installed $bin/vmbox"
 echo "Configuration: $config/config"
 ((save_token)) && echo "Workspace token: $credentials (mode 0600)"
 ((update_rc)) && echo "Open a new shell or run: source \"$rc\"" || echo "Add $bin to PATH."
+
+cat <<'EOF'
+
+Quick start:
+  vmbox start <box-id>
+
+To leave Codex running inside tmux:
+  1. Press Ctrl-b
+  2. Release both keys
+  3. Press d
+
+Reconnect later:
+  vmbox resume <box-id>
+
+Run `vmbox help` at any time for the complete command guide.
+EOF

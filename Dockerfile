@@ -7,11 +7,13 @@ ENV PATH=/opt/foundry/bin:${PATH}
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       bash \
+      bubblewrap \
       ca-certificates \
       curl \
       git \
       jq \
       openssh-client \
+      sudo \
       tmux \
     && rm -rf /var/lib/apt/lists/*
 
@@ -25,6 +27,5 @@ RUN chmod 0755 /usr/local/bin/vmbox-entrypoint
 
 ENV HOME=/data/home
 WORKDIR /data/workspace
-VOLUME ["/data"]
 
 ENTRYPOINT ["/usr/local/bin/vmbox-entrypoint"]
