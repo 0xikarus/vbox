@@ -1,0 +1,6 @@
+.git
+.gitignore
+README.md
+install.sh
+vmbox.sh
+vmbox.conf.example
