@@ -46,7 +46,10 @@ not delete Railway services; use `vmbox clean` first if that is intended.
 ## Commands
 
 ```bash
-vmbox ls
+vmbox                       # print help
+vmbox help
+vmbox list                  # interactive picker; Enter resumes
+vmbox ls                    # script-friendly table
 vmbox start research
 vmbox start research        # reconnects when it already exists
 vmbox resume research       # fails when it does not exist
@@ -54,10 +57,14 @@ vmbox clean                 # review and type "clean"
 vmbox clean --yes           # non-interactive
 ```
 
-- `ls` lists every service in the configured project and environment.
+- `list` opens an Up/Down selector; Enter resumes the highlighted box and
+  `q`/Escape exits. When no TTY is available it prints the regular table.
+- `ls` prints every service in the configured project and environment together
+  with its copy-paste `vmbox resume ...` command.
 - `start` provisions a missing `vmbox-<id>` service or connects to an existing
   one. Partial provisioning is repaired on the next run.
-- `resume` connects only when the named box already exists.
+- `resume` connects only when the named box already exists. It accepts both a
+  box ID and the full name of an older, non-`vmbox-` service.
 - `clean` deletes **every service** in the configured project and environment,
   not only services whose names begin with `vmbox-`.
 

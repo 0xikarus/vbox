@@ -21,6 +21,8 @@ target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
 usage() {
   cat <<'EOF'
 Usage:
+  vmbox help
+  vmbox list
   vmbox ls
   vmbox start <box-id>
   vmbox resume <box-id>
@@ -109,7 +111,98 @@ attach() {
   railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
 }
 
-action="${1:-ls}"
+display_list() {
+  jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
+    ["NAME", "STATUS", "ID", "RESUME"],
+    (.[] |
+      (.name | if startswith($prefix) then .[($prefix | length):] else . end) as $box |
+      [.name, (.status // "NO_DEPLOYMENT"), .id, "vmbox resume \($box)"]
+    ) | @tsv
+  ' <<<"$1"
+}
+
+open_box() {
+  local requested_action="$1" service
+  box_id="$2"
+  validate_box_id "$box_id"
+  service_name="$VMBOX_SERVICE_PREFIX$box_id"
+  service="$(find_service)"
+
+  if [[ -z "$service" && "$requested_action" == resume ]]; then
+    service_name="$box_id"
+    service="$(find_service)"
+  fi
+
+  if [[ -z "$service" ]]; then
+    [[ "$requested_action" == start ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
+    create_service
+    for _ in {1..10}; do
+      service="$(find_service)"
+      [[ -n "$service" ]] && break
+      sleep 1
+    done
+    [[ -n "$service" ]] || die "created '$service_name' but could not discover it"
+  fi
+
+  ensure_ready "$service"
+  attach
+}
+
+select_box() {
+  local list="$1" selected=0 key rest row name status box i
+  local -a rows
+  mapfile -t rows < <(jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
+    .[] |
+    (.name | if startswith($prefix) then .[($prefix | length):] else . end) as $box |
+    [.name, (.status // "NO_DEPLOYMENT"), $box] | @tsv
+  ' <<<"$list")
+
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    display_list "$list"
+    return
+  fi
+
+  while true; do
+    printf '\033[2J\033[HSelect a box to resume  ↑/↓ or j/k: move  Enter: resume  q: quit\n\n'
+    for i in "${!rows[@]}"; do
+      IFS=$'\t' read -r name status box <<<"${rows[$i]}"
+      if ((i == selected)); then
+        printf '\033[1;36m> %-28s %-14s vmbox resume %s\033[0m\n' "$name" "$status" "$box"
+      else
+        printf '  %-28s %-14s vmbox resume %s\n' "$name" "$status" "$box"
+      fi
+    done
+
+    IFS= read -rsn1 key || return
+    case "$key" in
+      q) printf '\n'; return ;;
+      j) selected=$(((selected + 1) % ${#rows[@]})) ;;
+      k) selected=$(((selected - 1 + ${#rows[@]}) % ${#rows[@]})) ;;
+      '')
+        IFS=$'\t' read -r name status box <<<"${rows[$selected]}"
+        printf '\033[2J\033[H'
+        open_box resume "$box"
+        return
+        ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + ${#rows[@]}) % ${#rows[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#rows[@]})) ;;
+          *) printf '\n'; return ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+if (($# == 0)); then
+  usage
+  exit
+fi
+
+action="$1"
 if [[ "$action" == -h || "$action" == --help || "$action" == help ]]; then
   usage
   exit
@@ -119,36 +212,21 @@ require railway
 require jq
 
 case "$action" in
-  ls)
-    [[ $# -eq 1 ]] || die "usage: vmbox ls"
+  ls|list)
+    [[ $# -eq 1 ]] || die "usage: vmbox $action"
     list="$(services)"
     if [[ "$(jq 'length' <<<"$list")" == 0 ]]; then
       echo "No boxes."
+    elif [[ "$action" == list ]]; then
+      select_box "$list"
     else
-      jq -r '["NAME", "STATUS", "ID"], (.[] | [.name, (.status // "NO_DEPLOYMENT"), .id]) | @tsv' <<<"$list"
+      display_list "$list"
     fi
     ;;
 
   start|resume)
     [[ $# -eq 2 ]] || die "usage: vmbox $action <box-id>"
-    box_id="$2"
-    validate_box_id "$box_id"
-    service_name="$VMBOX_SERVICE_PREFIX$box_id"
-    service="$(find_service)"
-
-    if [[ -z "$service" ]]; then
-      [[ "$action" == start ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
-      create_service
-      for _ in {1..10}; do
-        service="$(find_service)"
-        [[ -n "$service" ]] && break
-        sleep 1
-      done
-      [[ -n "$service" ]] || die "created '$service_name' but could not discover it"
-    fi
-
-    ensure_ready "$service"
-    attach
+    open_box "$action" "$2"
     ;;
 
   clean)
