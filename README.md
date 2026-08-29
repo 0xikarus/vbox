@@ -6,11 +6,11 @@ Private tooling for disposable Railway development boxes with persistent data.
 
 Each box is a separate Railway service named `vmbox-<box-id>`. There do not
 need to be any services beforehand. `vmbox start <box-id>` discovers an
-existing service or creates one, attaches a `/data` volume, deploys the VM
-image, waits for it to become ready, and opens a persistent tmux-backed Railway
-SSH session. Before connecting, vmbox verifies that `/data` is a real container
-mount; if Railway attached the volume after the first container started, it
-redeploys the built image once and verifies the repaired mount.
+existing service or creates one, attaches a `/data` volume, and waits until
+Railway reports that exact service mount as `Ready`. Only then does it deploy
+the VM image and open the tmux-backed SSH session. Before connecting, vmbox
+verifies `/data` inside the container; a single repair redeploy remains as a
+fallback if Railway still started the container without the mount.
 
 Container replacements lose processes but preserve `/data`. `vmbox <box-id>`
 creates a missing box and reconnects when the name already exists; explicit
@@ -70,6 +70,7 @@ vmbox new research          # same as above
 vmbox start research        # same as above
 vmbox new research -- claude "fix active tickets, then commit"
 vmbox research -- codex "review and fix the contracts"
+vmbox research -- codex exec "fix active tickets, test, then commit"
 printf '%s' "prompt" | vmbox research -- claude -p
 vmbox resume research       # fails when it does not exist
 vmbox stop research         # remove deployment, preserve /data
@@ -90,22 +91,16 @@ vmbox clean --all           # every box and active project volume
 - Append `-- COMMAND [ARG...]` to any box-opening form to run that command
   directly in its tmux session. Arguments retain their boundaries and stdin is
   forwarded, so pipes work as expected.
-  On a new box, interactive credential selectors use `/dev/tty`, leaving piped
-  prompt input untouched for the forwarded command.
 - `vmbox <id>`, `new`, and `start` provision a missing `vmbox-<id>` service or
-  reconnect when that name already exists. Before the first build, choose
-  optional Codex, Claude Code, Bun, and Foundry components; all are preselected.
-  Toggle tools with Space; Enter immediately accepts the current choices. The
-  visible `Confirm selection` row remains available. The same Enter-to-confirm
-  shortcut works in every vmbox picker, making the default setup a quick series
-  of Enter presses.
-  The remaining preflight pickers select a Railway location, Codex/Claude
-  profiles, a GitHub account, and optional Markdown instructions. All questions
-  finish before vmbox creates or deploys the service. Profile discovery includes
-  `~/.codex*` and `~/.claude*`, prioritizing `CODEX_HOME` and
-  `CLAUDE_CONFIG_DIR`; `a` accepts another profile directory. Selected files are
-  uploaded only after the box is healthy, and nothing credential-related is
-  selected by default.
+  reconnect when that name already exists. Missing and partially created boxes
+  show one setup checklist containing components, region, detected Codex/Claude
+  profiles, GitHub, and Markdown instructions. Move with Up/Down, use Space to
+  select, and activate `[ Provision box ]` with Space or Enter. Enter does
+  nothing on ordinary rows; `q` cancels without provisioning.
+  Profile discovery includes `~/.codex*` and `~/.claude*`, prioritizing
+  `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. The add-path rows accept custom agent
+  profile and Markdown paths. Selected files upload only after the box is
+  healthy, and credentials are never selected by default.
 - A chosen Codex profile uploads `auth.json`, `config.toml`, and named
   `*.config.toml` profile files. A chosen Claude profile uploads only
   `.credentials.json`, `settings.json`, and `.claude.json` when present. MCP

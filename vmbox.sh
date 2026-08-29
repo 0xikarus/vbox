@@ -14,6 +14,7 @@ fi
 : "${VMBOX_ENVIRONMENT_ID:=be38d867-15fd-4174-af7d-89b54c330daa}"
 : "${VMBOX_SERVICE_PREFIX:=vmbox-}"
 : "${VMBOX_DEPLOY_TIMEOUT:=900}"
+: "${VMBOX_VOLUME_TIMEOUT:=60}"
 : "${VMBOX_DEFAULT_REGION:=us-east}"
 
 bundle="${VMBOX_BUNDLE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/vmbox/service}"
@@ -63,16 +64,16 @@ box; Railway continues to bill actual usage rather than the selected limits.
 `vmbox <box-id>` is create-or-resume shorthand: it creates a missing box and
 reconnects when that name already exists.
 
-On a new box, choose optional Codex, Claude Code, Bun, and Foundry components
-and a Railway location, agent profiles, GitHub account, and Markdown instructions
-before any service is created or deployed. Selected credentials and instructions
-are uploaded only after the deployment is healthy. Opt-in
-selectors offer local agent profiles, a GitHub CLI account, and any readable
-`.md` instructions file. Credentials and instructions are never selected
-automatically. A chosen `.md` file is installed as both
-`/data/workspace/AGENTS.md` and `CLAUDE.md`.
-Append `-- COMMAND [ARG...]` to start a command directly inside the tmux session.
-Its standard input remains connected to the caller.
+New boxes use one setup checklist for components, Railway location, agent profiles,
+GitHub, and Markdown instructions before any service is created or deployed.
+Move with Up/Down, select with Space, and activate `[ Provision box ]` with Space
+or Enter. Enter does nothing on other rows; q cancels without provisioning.
+Selected credentials and instructions upload only after the deployment is healthy.
+
+Task Codex interactively in tmux:
+  vmbox <box-id> -- codex "inspect active tickets, fix them, test, and commit"
+For a non-interactive one-off run, replace `codex` with `codex exec`.
+Standard input remains connected to forwarded commands.
 
 Keep Codex and other work running when you leave:
   1. Press Ctrl-b
@@ -218,6 +219,23 @@ wait_for_service() {
   die "deployment timed out after ${VMBOX_DEPLOY_TIMEOUT}s"
 }
 
+wait_for_volume_attachment() {
+  local deadline=$((SECONDS + VMBOX_VOLUME_TIMEOUT)) data
+  while ((SECONDS < deadline)); do
+    data="$(volumes)"
+    if jq -e --arg service "$service_name" '
+      any(.volumes[]?;
+        .serviceName == $service and .mountPath == "/data" and
+        ((.status // "") | ascii_downcase) == "ready")
+    ' <<<"$data" >/dev/null; then
+      echo "vmbox: persistent /data volume is attached and ready" >&2
+      return 0
+    fi
+    sleep 2
+  done
+  die "persistent /data volume did not become ready for '$service_name' before deployment"
+}
+
 ensure_ready() {
   local service="$1" status deploy_result deployment_id output volume_added=0
 
@@ -228,6 +246,7 @@ ensure_ready() {
       printf '%s\n' "$output" >&2
       die "could not attach /data to '$service_name'"
     fi
+    wait_for_volume_attachment
     volume_added=1
   fi
 
@@ -1320,12 +1339,151 @@ select_credentials() {
   select_profiles
   select_github_account
 }
+print_setup_row() {
+  local cursor="$1" row="$2" text="$3"
+  if ((cursor == row)); then
+    printf '\033[1;36m> %s\033[0m\n' "$text"
+  else
+    printf '  %s\n' "$text"
+  fi
+}
+
 select_new_box_setup() {
-  select_components
-  select_region
-  select_profiles 0
-  select_github_account 0
-  select_instruction_file 0
+  local selected=0 key rest i marker label contents line old_count
+  local component_start region_start profile_start add_profile_row github_start
+  local instruction_start add_instruction_row confirm_row row_count index
+
+  component_selected=(1 1 1 1)
+  selected_region="$VMBOX_DEFAULT_REGION"
+  discover_profiles
+  discover_github_accounts
+  discover_instruction_files
+
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "vmbox: no interactive terminal; using default components/region without credential uploads" >&2
+    return 0
+  fi
+
+  while true; do
+    component_start=0
+    region_start=${#component_ids[@]}
+    profile_start=$((region_start + ${#region_ids[@]}))
+    add_profile_row=$((profile_start + ${#profile_sources[@]}))
+    github_start=$((add_profile_row + 1))
+    instruction_start=$((github_start + ${#github_users[@]}))
+    add_instruction_row=$((instruction_start + ${#instruction_sources[@]}))
+    confirm_row=$((add_instruction_row + 1))
+    row_count=$((confirm_row + 1))
+    ((selected < row_count)) || selected=$confirm_row
+
+    printf '\033[2J\033[HNew box setup: %s\n' "$box_id"
+    echo "↑/↓ or j/k: move  Space: select/action  Enter: confirm only on Provision box  q: cancel"
+    echo "Nothing is provisioned until you activate Provision box."
+    echo
+
+    echo "Components (core tools are always installed)"
+    for i in "${!component_ids[@]}"; do
+      ((component_selected[i])) && marker=x || marker=' '
+      printf -v line '[%s] %s' "$marker" "${component_labels[$i]}"
+      print_setup_row "$selected" "$((component_start + i))" "$line"
+    done
+    echo
+
+    echo "Railway location"
+    for i in "${!region_ids[@]}"; do
+      [[ "${region_ids[$i]}" == "$selected_region" ]] && marker=x || marker=' '
+      printf -v line '[%s] %-20s %s' "$marker" "${region_labels[$i]}" "${region_ids[$i]}"
+      print_setup_row "$selected" "$((region_start + i))" "$line"
+    done
+    echo
+
+    echo "Codex / Claude profiles (optional; one per tool)"
+    if ((${#profile_sources[@]} == 0)); then echo "  (none found)"; fi
+    for i in "${!profile_sources[@]}"; do
+      ((profile_selected[i])) && marker=x || marker=' '
+      label="${profile_sources[$i]}"
+      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      contents="$(profile_contents "${profile_providers[$i]}" "${profile_sources[$i]}")"
+      printf -v line '[%s] %-7s %-18s %s' "$marker" "${profile_providers[$i]}" "$contents" "$label"
+      print_setup_row "$selected" "$((profile_start + i))" "$line"
+    done
+    print_setup_row "$selected" "$add_profile_row" '[ Add agent profile path ]'
+    echo
+
+    echo "GitHub CLI account (optional)"
+    if ((${#github_users[@]} == 0)); then echo "  (none found)"; fi
+    for i in "${!github_users[@]}"; do
+      ((github_selected[i])) && marker=x || marker=' '
+      printf -v line '[%s] %-24s %-20s %s' "$marker" "${github_users[$i]}" "${github_hosts[$i]}" "${github_protocols[$i]}"
+      print_setup_row "$selected" "$((github_start + i))" "$line"
+    done
+    echo
+
+    echo "Shared AGENTS.md / CLAUDE.md source (optional)"
+    if ((${#instruction_sources[@]} == 0)); then echo "  (none found)"; fi
+    for i in "${!instruction_sources[@]}"; do
+      ((instruction_selected[i])) && marker=x || marker=' '
+      label="${instruction_sources[$i]}"
+      [[ "$label" == "$PWD/"* ]] && label="./${label#"$PWD/"}"
+      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      printf -v line '[%s] %s' "$marker" "$label"
+      print_setup_row "$selected" "$((instruction_start + i))" "$line"
+    done
+    print_setup_row "$selected" "$add_instruction_row" '[ Add Markdown path ]'
+    echo
+    print_setup_row "$selected" "$confirm_row" '[ Provision box ]'
+
+    IFS= read -rsn1 key || { printf '\033[2J\033[H'; echo "vmbox: setup cancelled" >&2; return 1; }
+    case "$key" in
+      ' ')
+        if ((selected >= component_start && selected < region_start)); then
+          index=$((selected - component_start))
+          ((component_selected[index])) && component_selected[index]=0 || component_selected[index]=1
+        elif ((selected >= region_start && selected < profile_start)); then
+          index=$((selected - region_start))
+          selected_region="${region_ids[$index]}"
+        elif ((selected >= profile_start && selected < add_profile_row)); then
+          toggle_profile_candidate "$((selected - profile_start))"
+        elif ((selected == add_profile_row)); then
+          old_count=${#profile_sources[@]}
+          add_custom_profile
+          if ((${#profile_sources[@]} > old_count)); then
+            selected=$((profile_start + ${#profile_sources[@]} - 1))
+          fi
+        elif ((selected >= github_start && selected < instruction_start)); then
+          toggle_github_account "$((selected - github_start))"
+        elif ((selected >= instruction_start && selected < add_instruction_row)); then
+          toggle_instruction_file "$((selected - instruction_start))"
+        elif ((selected == add_instruction_row)); then
+          old_count=${#instruction_sources[@]}
+          add_custom_instruction_file || true
+          if ((${#instruction_sources[@]} > old_count)); then
+            selected=$((instruction_start + ${#instruction_sources[@]} - 1))
+          fi
+        elif ((selected == confirm_row)); then
+          printf '\033[2J\033[H'
+          return 0
+        fi
+        ;;
+      '')
+        if ((selected == confirm_row)); then
+          printf '\033[2J\033[H'
+          return 0
+        fi
+        ;;
+      j) selected=$(((selected + 1) % row_count)) ;;
+      k) selected=$(((selected - 1 + row_count) % row_count)) ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: setup cancelled; nothing provisioned" >&2; return 1 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + row_count) % row_count)) ;;
+          '[B') selected=$(((selected + 1) % row_count)) ;;
+        esac
+        ;;
+    esac
+  done
 }
 
 apply_new_box_setup() {
@@ -1335,13 +1493,13 @@ apply_new_box_setup() {
 }
 
 select_setup_for_new_box() {
-  local tty_fd
+  local tty_fd status
   if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
-    select_new_box_setup <&"$tty_fd" >&"$tty_fd"
+    if select_new_box_setup <&"$tty_fd" >&"$tty_fd"; then status=0; else status=$?; fi
     exec {tty_fd}>&-
-  else
-    select_new_box_setup
+    return "$status"
   fi
+  select_new_box_setup
 }
 
 
@@ -1434,12 +1592,15 @@ open_box() {
     [[ "$requested_action" == start ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
     created=1
   elif [[ "$(jq -r '.status // empty' <<<"$service")" == "" ]] &&
-    ! jq -e 'any(.volumes[]?; .mountPath == "/data")' <<<"$service" >/dev/null; then
+    ! jq -e '.deploymentStopped == true' <<<"$service" >/dev/null; then
     echo "vmbox: resuming incomplete first-time setup for '$service_name'" >&2
     created=1
   fi
 
-  ((created == 0)) || select_setup_for_new_box
+  if ((created)) && ! select_setup_for_new_box; then
+    echo "vmbox: box creation cancelled before provisioning" >&2
+    return 0
+  fi
 
   if [[ -z "$service" ]]; then
     create_service

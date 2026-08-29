@@ -28,16 +28,14 @@ into one `deleted services (N)` total; active boxes remain separate.
 
 `vmbox <box-id>`, `new`, and `start` create `vmbox-<box-id>` when missing and
 otherwise reconnect.
-Anything after `--` is started directly in the tmux-backed session with stdin
-forwarded. New boxes also offer a local GitHub CLI account selector. Nothing is
-selected by default: press Space to opt in to one account, then Enter. Use
-`vmbox github <box-id>` to resync GitHub authentication, permissions, Git
-protocol, and commit identity later.
-Every interactive picker uses Space to toggle or select and Enter to confirm;
-pressing Enter accepts the current defaults for a fast setup. For a missing or
-partially created box, all component, region, agent-profile, GitHub, and Markdown
-questions finish before vmbox creates or deploys anything. Selected local files
-upload only after the box is healthy.
+Anything after `--` starts directly in the tmux-backed session with stdin
+forwarded. To task Codex, run `vmbox <box-id> -- codex "your task"`; use
+`codex exec` instead for a non-interactive one-off run.
+Missing and partially created boxes show one checklist for components, region,
+agent profiles, GitHub, and Markdown. Up/Down moves, Space selects, and Space or
+Enter activates the final `[ Provision box ]` row. Enter does nothing on other
+rows, and `q` cancels without provisioning. Selected local files upload only
+after the box is healthy. Use `vmbox auth` or `vmbox github` to resync later.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste resume
 commands. `resize [box-id]` changes per-replica vCPU/RAM limits; omit the ID to
 select a box with `[ ]`, then choose preset or custom limits.
@@ -84,8 +82,9 @@ authenticated box as an authenticated device.
 ## Persistent data and cleanup
 
 The persistent home and workspace are `/data/home` and `/data/workspace`.
-Before connecting, vmbox verifies the live `/data` mount and automatically
-redeploys once when Railway's first container missed an attached volume.
+Before the first deploy, vmbox waits for Railway to report the service's `/data`
+volume as `Ready`. It then verifies the live mount and redeploys once only as a
+fallback if Railway started the container without it.
 `vmbox clean` selects one or more boxes with `[ ]` checkboxes. Named cleanup
 uses `vmbox clean <box-id> [...]`; `vmbox clean --all` targets all services and
 active project volumes. `--yes` skips the final confirmation only. Pending
