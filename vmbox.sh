@@ -39,6 +39,10 @@ survive a stop. `clean` deletes every service and persistent volume in the
 configured project after confirmation. `cost` shows accrued costs for the
 current Railway billing period.
 
+On a new box, choose one detected Codex profile and one Claude profile. Their
+login and portable config files, including MCP settings, persist under /data.
+`vmbox auth <box-id>` opens the same picker again.
+
 Keep Codex and other work running when you leave:
   1. Press Ctrl-b
   2. Release both keys
@@ -209,122 +213,195 @@ show_cost() {
   fi
 }
 
-declare -a auth_providers=() auth_sources=() auth_selected=()
+declare -a profile_providers=() profile_sources=() profile_selected=()
 
-add_auth_candidate() {
+profile_has_files() {
+  local provider="$1" source="$2" path
+  case "$provider" in
+    codex)
+      [[ -r "$source/auth.json" || -r "$source/config.toml" ]] && return 0
+      for path in "$source"/*.config.toml; do [[ -r "$path" ]] && return 0; done
+      ;;
+    claude)
+      [[ "$source" == "$HOME/.claude" && -r "$HOME/.claude.json" ]] && return 0
+      [[ -r "$source/.credentials.json" || -r "$source/settings.json" ||
+         -r "$source/.claude.json" || -r "$source/CLAUDE.md" ]] && return 0
+      ;;
+  esac
+  return 1
+}
+
+add_profile_candidate() {
   local provider="$1" source="$2" existing
-  [[ -f "$source" && -r "$source" ]] || return
-  for existing in "${auth_sources[@]:-}"; do
-    [[ "$existing" == "$source" ]] && return
+  [[ -d "$source" && -r "$source" ]] || return 0
+  profile_has_files "$provider" "$source" || return 0
+  for existing in "${profile_sources[@]:-}"; do
+    [[ "$existing" == "$source" ]] && return 0
   done
-  auth_providers+=("$provider")
-  auth_sources+=("$source")
-  auth_selected+=(0)
+  profile_providers+=("$provider")
+  profile_sources+=("$source")
+  profile_selected+=(0)
 }
 
-discover_auth() {
+discover_profiles() {
   local path
-  auth_providers=()
-  auth_sources=()
-  auth_selected=()
-  [[ -n "${CODEX_HOME:-}" ]] && add_auth_candidate codex "$CODEX_HOME/auth.json"
-  for path in "$HOME"/.codex*/auth.json; do add_auth_candidate codex "$path"; done
-  if [[ -n "${CLAUDE_CONFIG_DIR:-}" ]]; then
-    add_auth_candidate claude "$CLAUDE_CONFIG_DIR/.credentials.json"
-  fi
-  for path in "$HOME"/.claude*/.credentials.json; do add_auth_candidate claude "$path"; done
+  profile_providers=()
+  profile_sources=()
+  profile_selected=()
+  [[ -n "${CODEX_HOME:-}" ]] && add_profile_candidate codex "$CODEX_HOME"
+  for path in "$HOME"/.codex*; do add_profile_candidate codex "$path" || true; done
+  [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] && add_profile_candidate claude "$CLAUDE_CONFIG_DIR"
+  for path in "$HOME"/.claude*; do add_profile_candidate claude "$path" || true; done
 }
 
-toggle_auth_candidate() {
-  local selected_index="$1" provider="${auth_providers[$1]}" i
-  if ((auth_selected[selected_index])); then
-    auth_selected[selected_index]=0
+toggle_profile_candidate() {
+  local selected_index="$1" provider="${profile_providers[$1]}" i
+  if ((profile_selected[selected_index])); then
+    profile_selected[selected_index]=0
     return
   fi
-  for i in "${!auth_selected[@]}"; do
-    [[ "${auth_providers[$i]}" == "$provider" ]] && auth_selected[i]=0
+  for i in "${!profile_selected[@]}"; do
+    [[ "${profile_providers[$i]}" == "$provider" ]] && profile_selected[i]=0
   done
-  auth_selected[selected_index]=1
+  profile_selected[selected_index]=1
 }
 
-add_custom_auth() {
+add_custom_profile() {
   local provider source
   printf '\033[2J\033[H'
-  read -rp "Tool for this credential [codex/claude]: " provider
+  read -rp "Tool for this profile [codex/claude]: " provider
   case "${provider,,}" in
     codex|claude) provider="${provider,,}" ;;
-    *) echo "vmbox: custom credential skipped (unknown tool)" >&2; sleep 1; return ;;
+    *) echo "vmbox: custom profile skipped (unknown tool)" >&2; sleep 1; return ;;
   esac
-  read -erp "Credential file path: " source
+  read -erp "Profile directory path: " source
   [[ "$source" == '~/'* ]] && source="$HOME/${source#\~/}"
-  if [[ ! -f "$source" || ! -r "$source" ]]; then
-    echo "vmbox: custom credential must be a readable file" >&2
+  [[ -f "$source" ]] && source="$(dirname -- "$source")"
+  if [[ ! -d "$source" || ! -r "$source" ]]; then
+    echo "vmbox: custom profile must be a readable directory" >&2
     sleep 1
     return
   fi
-  add_auth_candidate "$provider" "$source"
+  if ! profile_has_files "$provider" "$source"; then
+    echo "vmbox: no supported $provider config or login files found in $source" >&2
+    sleep 1
+    return
+  fi
+  add_profile_candidate "$provider" "$source"
 }
 
-copy_selected_auth() {
-  local i provider source remote_dir remote_file copied=0
-  for i in "${!auth_selected[@]}"; do
-    ((auth_selected[i])) || continue
-    provider="${auth_providers[$i]}"
-    source="${auth_sources[$i]}"
+copy_profile_file() {
+  local source="$1" remote_dir="$2" remote_file="$3" mode="${4:-600}"
+  [[ -f "$source" && -r "$source" ]] || return 0
+  echo "vmbox: copying $(basename -- "$source") to $remote_file" >&2
+  railway ssh "${target[@]}" --service "$service_name" \
+    "umask 077; mkdir -p '$remote_dir'; chmod 700 '$remote_dir'; cat > '$remote_file'; chmod '$mode' '$remote_file'" \
+    < "$source" >/dev/null
+  copied_files=$((copied_files + 1))
+}
+
+copy_selected_profiles() {
+  local i provider source path base copied_profiles=0 copied_files=0
+  for i in "${!profile_selected[@]}"; do
+    ((profile_selected[i])) || continue
+    provider="${profile_providers[$i]}"
+    source="${profile_sources[$i]}"
+    echo "vmbox: installing selected $provider profile from $source" >&2
     case "$provider" in
-      codex) remote_dir=/data/home/.codex; remote_file=/data/home/.codex/auth.json ;;
-      claude) remote_dir=/data/home/.claude; remote_file=/data/home/.claude/.credentials.json ;;
+      codex)
+        copy_profile_file "$source/auth.json" /data/home/.codex /data/home/.codex/auth.json
+        copy_profile_file "$source/config.toml" /data/home/.codex /data/home/.codex/config.toml
+        for path in "$source"/*.config.toml; do
+          [[ -f "$path" ]] || continue
+          base="$(basename -- "$path")"
+          [[ "$base" =~ ^[A-Za-z0-9._-]+$ ]] || continue
+          copy_profile_file "$path" /data/home/.codex "/data/home/.codex/$base"
+        done
+        ;;
+      claude)
+        copy_profile_file "$source/.credentials.json" /data/home/.claude /data/home/.claude/.credentials.json
+        copy_profile_file "$source/settings.json" /data/home/.claude /data/home/.claude/settings.json
+        copy_profile_file "$source/CLAUDE.md" /data/home/.claude /data/home/.claude/CLAUDE.md 644
+        if [[ "$source" == "$HOME/.claude" && -r "$HOME/.claude.json" ]]; then
+          copy_profile_file "$HOME/.claude.json" /data/home /data/home/.claude.json
+        else
+          copy_profile_file "$source/.claude.json" /data/home /data/home/.claude.json
+        fi
+        ;;
     esac
-    echo "vmbox: copying selected $provider login to $remote_file" >&2
-    railway ssh "${target[@]}" --service "$service_name" \
-      "umask 077; mkdir -p '$remote_dir'; chmod 700 '$remote_dir'; cat > '$remote_file'; chmod 600 '$remote_file'" \
-      < "$source" >/dev/null
-    copied=$((copied + 1))
+    copied_profiles=$((copied_profiles + 1))
   done
-  ((copied == 0)) ||
-    echo "vmbox: copied $copied login file(s); treat this box as an authenticated device" >&2
+  if ((copied_profiles)); then
+    echo "vmbox: installed $copied_profiles agent profile(s), $copied_files file(s) total" >&2
+    echo "vmbox: these files persist in /data; treat this box as an authenticated device" >&2
+  fi
 }
 
-select_auth() {
-  local selected=0 key rest i marker label
-  discover_auth
-  ((${#auth_sources[@]})) || return
+profile_contents() {
+  local provider="$1" source="$2" item result=""
+  case "$provider" in
+    codex)
+      [[ -r "$source/auth.json" ]] && result="login"
+      [[ -r "$source/config.toml" ]] && result="${result:+$result+}config/MCP"
+      for item in "$source"/*.config.toml; do
+        [[ -r "$item" ]] && { result="${result:+$result+}profiles"; break; }
+      done
+      ;;
+    claude)
+      [[ "$source" == "$HOME/.claude" && -r "$HOME/.claude.json" ]] && result="config/MCP"
+      [[ -r "$source/.credentials.json" ]] && result="login"
+      if [[ -r "$source/settings.json" || -r "$source/.claude.json" || -r "$source/CLAUDE.md" ]]; then
+        result="${result:+$result+}config/MCP"
+      fi
+      ;;
+  esac
+  printf '%s' "${result:-config}"
+}
+
+select_profiles() {
+  local selected=0 key rest i marker label contents
+  discover_profiles
+  ((${#profile_sources[@]})) || {
+    echo "vmbox: no local Codex or Claude profiles found" >&2
+    return
+  }
   if [[ ! -t 0 || ! -t 1 ]]; then
-    echo "vmbox: local agent logins found; copy skipped without an interactive terminal" >&2
+    echo "vmbox: local agent profiles found; upload skipped without an interactive terminal" >&2
     return
   fi
 
   while true; do
-    printf '\033[2J\033[HCopy local agent logins into this box?\n'
-    echo "Nothing is selected by default. Selected files grant account access."
-    echo "↑/↓ or j/k: move  Space: toggle  a: add path  Enter: continue  q: skip"
-    echo "Codex and Claude may be selected together; choose one profile per tool."
+    printf '\033[2J\033[HChoose agent profiles for this box\n'
+    echo "Nothing is selected by default. Login and config/MCP files may grant account access."
+    echo "↑/↓ or j/k: move  Space: toggle  a: add path  Enter: upload  q: skip"
+    echo "You may select one Codex profile and one Claude profile."
     echo
-    for i in "${!auth_sources[@]}"; do
-      ((auth_selected[i])) && marker=x || marker=' '
-      label="${auth_sources[$i]}"
+    for i in "${!profile_sources[@]}"; do
+      ((profile_selected[i])) && marker=x || marker=' '
+      label="${profile_sources[$i]}"
       [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      contents="$(profile_contents "${profile_providers[$i]}" "${profile_sources[$i]}")"
       if ((i == selected)); then
-        printf '\033[1;36m> [%s] %-7s %s\033[0m\n' "$marker" "${auth_providers[$i]}" "$label"
+        printf '\033[1;36m> [%s] %-7s %-18s %s\033[0m\n' "$marker" "${profile_providers[$i]}" "$contents" "$label"
       else
-        printf '  [%s] %-7s %s\n' "$marker" "${auth_providers[$i]}" "$label"
+        printf '  [%s] %-7s %-18s %s\n' "$marker" "${profile_providers[$i]}" "$contents" "$label"
       fi
     done
     IFS= read -rsn1 key || return
     case "$key" in
-      ' ') toggle_auth_candidate "$selected" ;;
-      a) add_custom_auth; selected=$((${#auth_sources[@]} - 1)) ;;
-      j) selected=$(((selected + 1) % ${#auth_sources[@]})) ;;
-      k) selected=$(((selected - 1 + ${#auth_sources[@]}) % ${#auth_sources[@]})) ;;
-      '') printf '\033[2J\033[H'; copy_selected_auth; return ;;
-      q) printf '\033[2J\033[H'; echo "vmbox: agent login copy skipped" >&2; return ;;
+      ' ') toggle_profile_candidate "$selected" ;;
+      a) add_custom_profile; selected=$((${#profile_sources[@]} - 1)) ;;
+      j) selected=$(((selected + 1) % ${#profile_sources[@]})) ;;
+      k) selected=$(((selected - 1 + ${#profile_sources[@]}) % ${#profile_sources[@]})) ;;
+      '') printf '\033[2J\033[H'; copy_selected_profiles; return ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: agent profile upload skipped" >&2; return ;;
       $'\e')
         rest=""
         IFS= read -rsn2 -t 0.1 rest || true
         case "$rest" in
-          '[A') selected=$(((selected - 1 + ${#auth_sources[@]}) % ${#auth_sources[@]})) ;;
-          '[B') selected=$(((selected + 1) % ${#auth_sources[@]})) ;;
-          *) printf '\033[2J\033[H'; echo "vmbox: agent login copy skipped" >&2; return ;;
+          '[A') selected=$(((selected - 1 + ${#profile_sources[@]}) % ${#profile_sources[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#profile_sources[@]})) ;;
+          *) printf '\033[2J\033[H'; echo "vmbox: agent profile upload skipped" >&2; return ;;
         esac
         ;;
     esac
@@ -344,7 +421,7 @@ copy_auth_to_box() {
   [[ -n "$service" ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
   [[ "$(jq -r '.status // empty' <<<"$service")" == SUCCESS ]] ||
     die "box '$box_id' is not ready; repair it first with: vmbox start $box_id"
-  select_auth
+  select_profiles
 }
 
 stop_box() {
@@ -409,7 +486,7 @@ open_box() {
   fi
 
   ensure_ready "$service"
-  ((created == 0)) || select_auth
+  ((created == 0)) || select_profiles
   attach
 }
 

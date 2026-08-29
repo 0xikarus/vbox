@@ -58,7 +58,7 @@ vmbox list                  # interactive picker; Enter resumes
 vmbox ls                    # script-friendly table
 vmbox cost                  # current-period project/service costs
 vmbox cost research         # cost for one box
-vmbox auth research         # choose local logins to copy
+vmbox auth research         # choose local agent profiles to upload
 vmbox start research
 vmbox start research        # reconnects when it already exists
 vmbox resume research       # fails when it does not exist
@@ -75,10 +75,17 @@ vmbox clean --yes           # non-interactive
   egress, and backups.
 - `start` provisions a missing `vmbox-<id>` service or connects to an existing
   one. Partial provisioning is repaired on the next run. For a newly created
-  box it auto-detects `~/.codex*/auth.json` and
-  `~/.claude*/.credentials.json`, prioritizes `CODEX_HOME` and
-  `CLAUDE_CONFIG_DIR`, and offers an opt-in multi-select. Nothing is copied by
-  default; press `a` to specify another credential path.
+  box it auto-detects Codex profile directories matching `~/.codex*` and
+  Claude profile directories matching `~/.claude*`, prioritizing `CODEX_HOME`
+  and `CLAUDE_CONFIG_DIR`. The opt-in multi-select allows one profile per tool,
+  so Codex and Claude can be uploaded together. Nothing is copied by default;
+  press `a` to specify another profile directory.
+- A chosen Codex profile uploads `auth.json`, `config.toml`, and named
+  `*.config.toml` profile files. A chosen Claude profile uploads
+  `.credentials.json`, `settings.json`, `.claude.json`, and `CLAUDE.md` when
+  present. This includes MCP definitions stored in the agents' normal config
+  files, but intentionally excludes histories, caches, sessions, and databases.
+  `vmbox auth <box-id>` reopens the same profile picker for an existing box.
 - `resume` connects only when the named box already exists. It accepts both a
   box ID and the full name of an older, non-`vmbox-` service. If the box is
   powered down, it deploys the bundle again before connecting.
@@ -113,6 +120,7 @@ to stop the running shell/session. This guide appears after installation, in
 `vmbox help`, in `vmbox ls`, and before every connection.
 
 Never commit Railway tokens, private keys, seed phrases, `.env` files, or agent
-credentials. Selected login files are streamed over Railway SSH to fixed paths
-under `/data/home`; directories use mode `0700` and files use mode `0600`.
-They are never added to the Docker image or Git repository.
+credentials. Selected profile files are streamed over Railway SSH to fixed
+paths under `/data/home`; directories use mode `0700`, credential/config files
+use mode `0600`, and `CLAUDE.md` uses mode `0644`. They are never added to the
+Docker image or Git repository.
