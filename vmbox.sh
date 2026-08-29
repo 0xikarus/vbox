@@ -190,7 +190,7 @@ create_service() {
 }
 
 wait_for_service() {
-  local deployment_id="${1:-}" deadline=$((SECONDS + VMBOX_DEPLOY_TIMEOUT)) data status
+  local deployment_id="${1:-}" deadline=$((SECONDS + VMBOX_DEPLOY_TIMEOUT)) data status error
   while ((SECONDS < deadline)); do
     data="$(cd "$bundle" && railway deployment list \
       --service "$service_name" --environment "$VMBOX_ENVIRONMENT_ID" \
@@ -201,7 +201,14 @@ wait_for_service() {
     ' <<<"$data")"
     case "$status" in
       SUCCESS) echo "vmbox: '$service_name' is ready" >&2; return ;;
-      FAILED|CRASHED|REMOVED) die "deployment for '$service_name' ended with $status" ;;
+      FAILED|CRASHED|REMOVED)
+        error="$(jq -r --arg id "$deployment_id" '
+          (if $id == "" then .[0] else first(.[] | select(.id == $id)) end)
+          | .meta.configErrors[]? // empty
+        ' <<<"$data")"
+        [[ -z "$error" ]] || printf 'Railway: %s\n' "$error" >&2
+        die "deployment for '$service_name' ended with $status"
+        ;;
     esac
     echo "vmbox: waiting for '$service_name' (${status:-queued})" >&2
     sleep 5
@@ -457,8 +464,8 @@ select_resize_box() {
 
   while true; do
     printf '\033[2J\033[HChoose a box to resize\n'
-    echo "↑/↓ or j/k: move  Space: toggle  Enter: continue  q: cancel"
-    echo "Nothing is selected by default. Select one box."
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: confirm  q: cancel"
+    echo "Enter uses the highlighted box."
     echo
     for i in "${!rows[@]}"; do
       IFS=$'\t' read -r service_id name status box <<<"${rows[$i]}"
@@ -476,10 +483,7 @@ select_resize_box() {
       k) selected=$(((selected - 1 + ${#rows[@]}) % ${#rows[@]})) ;;
       '')
         printf '\033[2J\033[H'
-        if ((checked < 0)); then
-          echo "vmbox: resize cancelled (nothing selected)" >&2
-          return 1
-        fi
+        ((checked >= 0)) || checked=$selected
         IFS=$'\t' read -r service_id name status selected_resize_box <<<"${rows[$checked]}"
         return 0
         ;;
@@ -542,7 +546,7 @@ select_resize_limits() {
     printf '\033[2J\033[HResize %s\n' "$service_name"
     resource_limits_label "$current"
     echo "Limits cap usage; Railway bills actual CPU and RAM consumption."
-    echo "↑/↓ or j/k: move  Space: toggle  c: custom  Enter: apply  q: cancel"
+    echo "↑/↓ or j/k: move  Space: toggle  c: custom  Enter: confirm  q: cancel"
     echo
     for i in "${!labels[@]}"; do
       ((i == checked)) && marker=x || marker=' '
@@ -574,10 +578,7 @@ select_resize_limits() {
       k) selected=$(((selected - 1 + ${#labels[@]}) % ${#labels[@]})) ;;
       '')
         printf '\033[2J\033[H'
-        if ((checked < 0)); then
-          echo "vmbox: resize cancelled (nothing selected)" >&2
-          return 1
-        fi
+        ((checked >= 0)) || checked=$selected
         selected_resize_cpu="${cpus[$checked]}"
         selected_resize_memory="${memories[$checked]}"
         return 0
@@ -667,8 +668,8 @@ select_components() {
   while true; do
     printf '\033[2J\033[HChoose components for this box\n'
     echo "Core tools (tmux, Git, gh, SSH, sudo) are always installed."
-    echo "↑/↓ or j/k: move  Space/Enter: toggle"
-    echo "Choose Confirm selection to continue; q keeps all defaults."
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: confirm"
+    echo "Enter accepts the current choices; q keeps all defaults."
     echo "All optional components are selected by default."
     echo
     for i in "${!component_ids[@]}"; do
@@ -696,13 +697,9 @@ select_components() {
       j) selected=$(((selected + 1) % option_count)) ;;
       k) selected=$(((selected - 1 + option_count) % option_count)) ;;
       '')
-        if ((selected < component_count)); then
-          ((component_selected[selected])) && component_selected[selected]=0 || component_selected[selected]=1
-        else
-          printf '\033[2J\033[H'
-          apply_selected_components
-          return 0
-        fi
+        printf '\033[2J\033[H'
+        apply_selected_components
+        return 0
         ;;
       q) component_selected=(1 1 1 1); printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
       $'\e')
@@ -732,11 +729,19 @@ declare -a region_ids=(us-west us-east eu-west southeast-asia)
 declare -a region_labels=("US West" "US East" "Europe West" "Southeast Asia")
 
 apply_selected_region() {
-  local region="$1"
+  local region="$1" item
+  local -a scaling=(iad=0)
   [[ "$region" =~ ^[A-Za-z0-9-]+$ ]] || die "invalid Railway region '$region'"
   echo "vmbox: selected Railway region: $region" >&2
   link_service "$service_name"
-  (cd "$bundle" && railway scale "$region=1" --json) >/dev/null
+  for item in "${region_ids[@]}"; do
+    if [[ "$item" == "$region" ]]; then
+      scaling+=("$item=1")
+    else
+      scaling+=("$item=0")
+    fi
+  done
+  (cd "$bundle" && railway scale "${scaling[@]}" --json) >/dev/null
 }
 
 select_region() {
@@ -760,8 +765,8 @@ select_region() {
 
   while true; do
     printf '\033[2J\033[HChoose a Railway location for this box\n'
-    echo "↑/↓ or j/k: move  Space/Enter: select"
-    echo "Choose Confirm location to continue; q keeps the configured default."
+    echo "↑/↓ or j/k: move  Space: select  Enter: confirm"
+    echo "Enter accepts the highlighted location; q keeps the configured default."
     echo
     for i in "${!region_ids[@]}"; do
       ((i == chosen)) && marker=x || marker=' '
@@ -784,13 +789,10 @@ select_region() {
       j) selected=$(((selected + 1) % option_count)) ;;
       k) selected=$(((selected - 1 + option_count) % option_count)) ;;
       '')
-        if ((selected < region_count)); then
-          chosen=$selected
-        else
-          printf '\033[2J\033[H'
-          apply_selected_region "${region_ids[$chosen]}"
-          return 0
-        fi
+        ((selected >= region_count)) || chosen=$selected
+        printf '\033[2J\033[H'
+        apply_selected_region "${region_ids[$chosen]}"
+        return 0
         ;;
       q) printf '\033[2J\033[H'; apply_selected_region "$VMBOX_DEFAULT_REGION"; return 0 ;;
       $'\e')
@@ -1005,7 +1007,7 @@ select_profiles() {
   while true; do
     printf '\033[2J\033[HChoose agent profiles for this box\n'
     echo "Nothing is selected by default. Login and config/MCP files may grant account access."
-    echo "↑/↓ or j/k: move  Space: toggle  a: add path  Enter: upload  q: skip"
+    echo "↑/↓ or j/k: move  Space: toggle  a: add path  Enter: confirm  q: skip"
     echo "You may select one Codex profile and one Claude profile."
     echo
     for i in "${!profile_sources[@]}"; do
@@ -1118,7 +1120,7 @@ select_instruction_file() {
   while true; do
     printf '\033[2J\033[HChoose shared project instructions for this box\n'
     echo "The selected .md file is copied as both AGENTS.md and CLAUDE.md."
-    echo "↑/↓ or j/k: move  Space: toggle  a: add any .md path  Enter: upload  q: skip"
+    echo "↑/↓ or j/k: move  Space: toggle  a: add any .md path  Enter: confirm  q: skip"
     echo "Nothing is selected by default. Select at most one file."
     echo
     if ((${#instruction_sources[@]} == 0)); then
@@ -1279,7 +1281,7 @@ select_github_account() {
 
   while true; do
     printf '\033[2J\033[HChoose a GitHub CLI account for this box\n'
-    echo "↑/↓ or j/k: move  Space: toggle  Enter: continue  q: skip"
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: confirm  q: skip"
     echo "Nothing is selected by default. Select at most one account."
     echo "A selected token keeps its existing repository and organization permissions."
     echo
@@ -1504,7 +1506,7 @@ select_clean_boxes() {
   for _ in "${rows[@]}"; do checked+=(0); done
   while true; do
     printf '\033[2J\033[HChoose boxes to permanently delete\n'
-    echo "↑/↓ or j/k: move  Space: toggle  Enter: review  q: cancel"
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: confirm  q: cancel"
     echo "Deleting a box also deletes its persistent /data volume."
     echo
     ((checked[0])) && marker=x || marker=' '

@@ -95,7 +95,10 @@ vmbox clean --all           # every box and active project volume
 - `vmbox <id>`, `new`, and `start` provision a missing `vmbox-<id>` service or
   reconnect when that name already exists. Before the first build, choose
   optional Codex, Claude Code, Bun, and Foundry components; all are preselected.
-  Toggle tools with Space or Enter, then choose `Confirm selection` to continue.
+  Toggle tools with Space; Enter immediately accepts the current choices. The
+  visible `Confirm selection` row remains available. The same Enter-to-confirm
+  shortcut works in every vmbox picker, making the default setup a quick series
+  of Enter presses.
   A second picker selects US West, US East, Europe West, or Southeast Asia and
   applies that region before the first deployment.
   After deployment, vmbox auto-detects Codex profile directories matching
