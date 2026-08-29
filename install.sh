@@ -67,6 +67,19 @@ if ((save_token)); then
     echo
   fi
   [[ -n "$token" ]] || { echo "Token cannot be empty." >&2; exit 1; }
+  if ! (
+    unset RAILWAY_TOKEN
+    export RAILWAY_API_TOKEN="$token"
+    . "$config/config"
+    railway service list \
+      --project "$VMBOX_PROJECT_ID" \
+      --environment "$VMBOX_ENVIRONMENT_ID" \
+      --json >/dev/null
+  ); then
+    echo "Token was rejected or cannot access the configured Railway project." >&2
+    echo "No credential was changed." >&2
+    exit 1
+  fi
   printf 'export RAILWAY_API_TOKEN=%q\n' "$token" > "$credentials"
   chmod 600 "$credentials"
   unset token

@@ -28,7 +28,8 @@ The token prompt does not echo. The workspace token is stored as
 `RAILWAY_API_TOKEN` in `~/.config/vmbox/credentials` with mode `0600`; it is
 never written to the shell profile or repository. Railway SSH and service
 provisioning require an account/workspace token or an interactive Railway
-login; a project token is insufficient for SSH key management.
+login; a project token is insufficient for SSH key management. The installer
+tests access to the configured project before replacing a stored credential.
 
 The installer adds `vmbox` to `~/.local/bin`, copies the deployment bundle to
 `~/.local/share/vmbox/service`, creates `~/.config/vmbox/config`, and adds one
