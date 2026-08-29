@@ -10,18 +10,19 @@ existing service or creates one, attaches a `/data` volume, deploys the VM
 image, waits for it to become ready, and opens a persistent tmux-backed Railway
 SSH session.
 
-Container replacements lose processes but preserve `/data`. Starting an
-existing box reconnects to the service; `resume` requires the box to exist.
-`vmbox stop <box-id>` removes the active deployment while preserving the
-service and volume. Resuming a stopped box deploys the installed bundle again.
-Running tmux and agent processes do not survive a power-down.
+Container replacements lose processes but preserve `/data`. `vmbox <box-id>`
+creates a missing box and reconnects when the name already exists; explicit
+`resume` requires an existing box. `vmbox stop <box-id>` removes the active
+deployment while preserving the service and volume. Resuming a stopped box
+deploys the installed bundle again. Running tmux and agent processes do not
+survive a power-down.
 
 ## Install
 
-Requirements: Bash, `jq`, the Railway CLI, and SSH. The installer updates the
-Railway CLI automatically. If its self-updater leaves an old global package
-pinned, the installer refreshes `@railway/cli` with Bun or npm and verifies
-cost reporting support.
+Requirements: Bash, `curl`, `jq`, the Railway CLI, and SSH. The installer
+updates the Railway CLI automatically. If its self-updater leaves an old global
+package pinned, the installer refreshes `@railway/cli` with Bun or npm and
+verifies cost reporting support.
 
 ```bash
 gh repo clone 0xikarus/vmbox-service
@@ -56,8 +57,10 @@ vmbox                       # print help
 vmbox help
 vmbox list                  # interactive picker; Enter resumes
 vmbox ls                    # script-friendly table
-vmbox cost                  # current-period project/service costs
+vmbox cost                  # costs; deleted services are one aggregated row
 vmbox cost research         # cost for one box
+vmbox resize research       # choose preset/custom vCPU and RAM limits
+vmbox resize                # select a box first
 vmbox auth research         # choose local agent profiles to upload
 vmbox github research       # sync a selected local gh account
 vmbox research              # create if missing, otherwise connect
@@ -68,8 +71,9 @@ vmbox research -- codex "review and fix the contracts"
 printf '%s' "prompt" | vmbox research -- claude -p
 vmbox resume research       # fails when it does not exist
 vmbox stop research         # remove deployment, preserve /data
-vmbox clean                 # review and type "clean"
-vmbox clean --yes           # non-interactive
+vmbox clean                 # select one, several, or all boxes
+vmbox clean research --yes  # delete one named box without final prompt
+vmbox clean --all           # every box and active project volume
 ```
 
 - `list` opens an Up/Down selector; Enter resumes the highlighted box and
@@ -78,18 +82,22 @@ vmbox clean --yes           # non-interactive
   with its copy-paste `vmbox resume ...` command and tmux detach reminder.
 - `cost` shows accrued current-period totals split into CPU, memory, volume,
   egress, and backups.
+- `resize [box-id]` changes the same per-replica vCPU and RAM limits exposed in
+  Railway's UI. With no ID it opens a `[ ]` box selector, followed by preset or
+  custom limits. Limits cap usage; Railway bills actual consumption.
 - Append `-- COMMAND [ARG...]` to any box-opening form to run that command
   directly in its tmux session. Arguments retain their boundaries and stdin is
   forwarded, so pipes work as expected.
   On a new box, interactive credential selectors use `/dev/tty`, leaving piped
   prompt input untouched for the forwarded command.
 - `vmbox <id>`, `new`, and `start` provision a missing `vmbox-<id>` service or
-  connect to an existing one. Partial provisioning is repaired on the next
-  run. For a newly created box it auto-detects Codex profile directories
-  matching `~/.codex*` and Claude profile directories matching `~/.claude*`,
-  prioritizing `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. The opt-in multi-select
-  allows one profile per tool, so Codex and Claude can be uploaded together.
-  Nothing is copied by default; press `a` to specify another profile directory.
+  reconnect when that name already exists. Before the first build, choose
+  optional Codex, Claude Code, Bun, and Foundry components; all are preselected.
+  After deployment, vmbox auto-detects Codex profile directories matching
+  `~/.codex*` and Claude directories matching `~/.claude*`, prioritizing
+  `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. The opt-in multi-select allows one
+  profile per tool. Nothing credential-related is copied by default; press `a`
+  to specify another profile directory.
 - A chosen Codex profile uploads `auth.json`, `config.toml`, and named
   `*.config.toml` profile files. A chosen Claude profile uploads only
   `.credentials.json`, `settings.json`, and `.claude.json` when present. MCP
@@ -98,6 +106,11 @@ vmbox clean --yes           # non-interactive
   Every uploaded file is verified by checksum. When a login is included,
   vmbox also confirms that the corresponding CLI recognizes it inside the box.
   `vmbox auth <box-id>` reopens the same profile picker for an existing box.
+- A separate new-box instruction picker discovers root-level `.md` files and
+  accepts any readable Markdown path with `a`. One explicitly selected file is
+  checksum-verified and installed as both `/data/workspace/AGENTS.md` for Codex
+  and `/data/workspace/CLAUDE.md` for Claude. Nothing is selected by default;
+  profile discovery still intentionally excludes Markdown files.
 - New boxes also offer an explicit opt-in selector for locally authenticated
   GitHub CLI accounts. Nothing is selected by default: use Space to select one
   account and Enter to continue. The chosen token is streamed into the box,
@@ -105,6 +118,9 @@ vmbox clean --yes           # non-interactive
   access, its existing repository/org permissions are preserved, and Git commit
   name/email are derived from the selected GitHub account. Run
   `vmbox github <box-id>` to resync GitHub separately.
+- Every start or resume prints a welcome card with the service ID, deployment
+  status, region, vCPU/RAM limits, replica count, persistent storage, private
+  container IP, current public egress IP, workspace, and reconnect guidance.
 - `resume` connects only when the named box already exists. It accepts both a
   box ID and the full name of an older, non-`vmbox-` service. If the box is
   powered down, it deploys the bundle again before connecting.
@@ -112,21 +128,23 @@ vmbox clean --yes           # non-interactive
   persistent volume. CPU/memory usage stops, but volume storage can still incur
   cost. After resuming, use `codex resume --last` to reopen persisted Codex
   history; tmux processes cannot survive a deployment removal.
-- `clean` deletes **every service** in the configured project and environment,
-  then deletes **every active persistent volume**, including mounted `/data`.
-  Railway records already pending deletion are ignored, and `--yes` never opens
-  an interactive volume selector.
+- `clean` opens a checkbox multi-selector with individual boxes and `ALL BOXES`.
+  Named cleanup is available as `vmbox clean <box-id> [...]`; `--all` explicitly
+  includes every active project volume, including orphans. `--yes` skips the
+  final typed confirmation without broadening the selected targets. Records
+  already pending deletion are ignored.
 
 The default target IDs live in `~/.config/vmbox/config`. Edit that file to use
 another Railway project/environment or change `VMBOX_SERVICE_PREFIX`.
 
 ## VM image
 
-Each provisioned service receives a persistent volume at `/data`. The image
-includes tmux, Git, GitHub CLI, Node.js, npm, Codex CLI, Claude Code, Forge, Cast, Anvil,
-Chisel, Bubblewrap, and sudo. The shell runs as root, so sudo is optional.
-Persistent home and workspace directories are `/data/home` and
-`/data/workspace`.
+Each provisioned service receives a persistent volume at `/data`. Core tools
+include tmux, Git, GitHub CLI, Node.js/npm, Bubblewrap, SSH, and sudo. Before the
+first build, a checkbox picker lets you include Codex CLI, Claude Code, Bun, and
+Foundry (Forge, Cast, Anvil, and Chisel); all four are preselected. The shell
+runs as root, so sudo is optional. Persistent home and workspace directories
+are `/data/home` and `/data/workspace`.
 
 ## Leaving and resuming
 
@@ -142,5 +160,6 @@ to stop the running shell/session. This guide appears after installation, in
 
 Never commit Railway tokens, private keys, seed phrases, `.env` files, or agent
 credentials. Selected profile files are streamed over Railway SSH to fixed
-paths under `/data/home`; directories use mode `0700` and files use mode
-`0600`. They are never added to the Docker image or Git repository.
+paths under `/data/home`; the explicitly selected instruction Markdown is
+copied to `/data/workspace/AGENTS.md` and `CLAUDE.md`. None of these local files
+are added to the Docker image or Git repository.

@@ -27,28 +27,33 @@ Usage:
   vmbox list
   vmbox ls
   vmbox cost [box-id]
+  vmbox resize [box-id]
   vmbox auth <box-id>
   vmbox github <box-id>
   vmbox start <box-id> [-- COMMAND [ARG...]]
   vmbox resume <box-id> [-- COMMAND [ARG...]]
   vmbox stop <box-id>
-  vmbox clean [--yes]
+  vmbox clean [box-id ...] [--yes]
+  vmbox clean --all [--yes]
 
 Each box is a Railway service named vmbox-<box-id>. `<box-id>`, `new`, and
 `start` create, deploy, and attach to the service when it does not exist;
 otherwise they attach to the existing box. `stop` removes its active deployment
 but preserves the service and /data volume; `resume` deploys it again. Running
-processes do not survive a stop. `clean` deletes every service and persistent
-volume in the configured project after confirmation. `cost` shows accrued
-costs for the current Railway billing period.
+processes do not survive a stop. `clean` opens a checkbox selector, accepts
+named boxes, or uses `--all`; selected services and their /data volumes are
+deleted only after review. `cost` shows accrued costs for the current Railway
+billing period and combines removed boxes into one `deleted services (N)` row.
+`resize` changes the per-replica vCPU and RAM limits for one
+box; Railway continues to bill actual usage rather than the selected limits.
+`vmbox <box-id>` is create-or-resume shorthand: it creates a missing box and
+reconnects when that name already exists.
 
-On a new box, choose one detected Codex profile and one Claude profile. Their
-login and portable config files, including MCP settings, persist under /data.
-`vmbox auth <box-id>` opens the same picker again.
-A new box also offers an explicit opt-in GitHub CLI account selector. Nothing
-is selected by default; press Space to select one account, then Enter. Its token,
-repository/org permissions, HTTPS/SSH protocol, and Git commit identity are
-configured remotely.
+On a new box, choose optional Codex, Claude Code, Bun, and Foundry components
+before the first build. After deployment, opt-in selectors offer local agent
+profiles, a GitHub CLI account, and any readable `.md` instructions file.
+Credentials and instructions are never selected automatically. A chosen `.md`
+file is installed as both `/data/workspace/AGENTS.md` and `CLAUDE.md`.
 Append `-- COMMAND [ARG...]` to start a command directly inside the tmux session.
 Its standard input remains connected to the caller.
 
@@ -77,6 +82,38 @@ EOF
 
 die() { echo "vmbox: $*" >&2; exit 1; }
 require() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
+
+railway_api() {
+  local query="$1" variables="$2" payload response api_token=""
+  local -a headers=(-H "Content-Type: application/json")
+  require curl
+  if [[ -n "${RAILWAY_API_TOKEN:-}" ]]; then
+    headers+=(-H "Authorization: Bearer $RAILWAY_API_TOKEN")
+  elif [[ -n "${RAILWAY_TOKEN:-}" ]]; then
+    headers+=(-H "Project-Access-Token: $RAILWAY_TOKEN")
+  elif [[ -r "${RAILWAY_CONFIG_DIR:-$HOME/.railway}/config.json" ]]; then
+    api_token="$(jq -r '.user.token // .user.accessToken // empty' \
+      "${RAILWAY_CONFIG_DIR:-$HOME/.railway}/config.json")"
+    [[ -n "$api_token" ]] && headers+=(-H "Authorization: Bearer $api_token")
+  else
+    die "Railway API authentication required; rerun install.sh --workspace-token"
+  fi
+
+  ((${#headers[@]} >= 4)) ||
+    die "Railway API authentication required; rerun install.sh --workspace-token"
+
+  payload="$(jq -nc --arg query "$query" --argjson variables "$variables" \
+    '{query: $query, variables: $variables}')"
+  if ! response="$(curl -fsS https://backboard.railway.com/graphql/v2 \
+    "${headers[@]}" --data-binary "$payload")"; then
+    die "Railway API request failed"
+  fi
+  if jq -e '(.errors // []) | length > 0' <<<"$response" >/dev/null; then
+    jq -r '.errors[] | "vmbox: Railway API: \(.message)"' <<<"$response" >&2
+    return 1
+  fi
+  jq -c '.data' <<<"$response"
+}
 
 validate_box_id() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
@@ -184,7 +221,66 @@ ensure_ready() {
   wait_for_service "$deployment_id"
 }
 
+wait_for_persistent_data() {
+  local deadline=$((SECONDS + 90)) consecutive=0
+  while ((SECONDS < deadline)); do
+    if railway ssh "${target[@]}" --service "$service_name" \
+      'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1; then
+      consecutive=$((consecutive + 1))
+      if ((consecutive >= 2)); then
+        return 0
+      fi
+    else
+      consecutive=0
+    fi
+    sleep 2
+  done
+  die "persistent /data mount did not become ready for '$service_name'"
+}
+
+show_box_welcome() {
+  local service service_id status regions replicas volume_size limits specs limit_source
+  local remote_info private_ip public_ip
+  service="$(find_service)"
+  [[ -n "$service" ]] || return 0
+  service_id="$(jq -r '.id' <<<"$service")"
+  status="$(jq -r '.status // "UNKNOWN"' <<<"$service")"
+  regions="$(jq -r '[.regions[]?.name] | if length then join(", ") else "unknown" end' <<<"$service")"
+  replicas="$(jq -r '.replicas.running // .replicas.configured // 0' <<<"$service")"
+  volume_size="$(jq -r 'first(.volumes[]?) | .currentSizeMb // .currentSizeMB // 0' <<<"$service")"
+  limits="$(get_resource_limits "$service_id" 2>/dev/null || true)"
+  if [[ -n "$limits" ]]; then
+    specs="$(jq -r '(.override // .effective) | "\(.vCPUs) vCPU / \(.memoryGB) GB RAM"' <<<"$limits")"
+    limit_source="$(jq -r 'if .override then "custom limit" else "Railway plan default" end' <<<"$limits")"
+  else
+    specs="unavailable"
+    limit_source="resource API unavailable"
+  fi
+
+  remote_info="$(railway ssh "${target[@]}" --service "$service_name" \
+    'private_ip=$(hostname -I 2>/dev/null | cut -d" " -f1); public_ip=$(curl -fsS --max-time 3 https://api.ipify.org 2>/dev/null || true); printf "%s\t%s\n" "$private_ip" "$public_ip"' \
+    2>/dev/null || true)"
+  IFS=$'\t' read -r private_ip public_ip <<<"$(tail -1 <<<"$remote_info")"
+  [[ -n "$private_ip" ]] || private_ip="unavailable"
+  [[ -n "$public_ip" ]] || public_ip="unavailable"
+
+  cat >&2 <<EOF
+
+Box ready
+  Name:              $box_id
+  Service:           $service_name ($service_id)
+  Status / region:   $status / $regions
+  Specs:             $specs ($limit_source, per replica)
+  Running replicas:  $replicas
+  Private IP:        $private_ip
+  Public egress IP:  $public_ip (current, not guaranteed static)
+  Persistent data:   /data ($volume_size MB used)
+  Workspace:         /data/workspace
+EOF
+}
+
 attach() {
+  show_box_welcome
   tmux_help
   echo >&2
   echo "Connecting now. Later, resume this box with: vmbox resume $box_id" >&2
@@ -239,7 +335,23 @@ show_cost() {
        .egressDollars, .backupDollars] | @tsv
     ' <<<"$data"
   else
-    jq -r '.services[] |
+    jq -r '
+      .services as $services |
+      ($services | map(select(.name == "deleted service"))) as $deleted |
+      (($services | map(select(.name != "deleted service"))) +
+        (if ($deleted | length) > 0 then
+          [reduce $deleted[] as $service (
+            {name: ("deleted services (" + (($deleted | length) | tostring) + ")"),
+             totalDollars: 0, cpuDollars: 0, memoryDollars: 0,
+             volumeDollars: 0, egressDollars: 0, backupDollars: 0};
+            .totalDollars += ($service.totalDollars // 0) |
+            .cpuDollars += ($service.cpuDollars // 0) |
+            .memoryDollars += ($service.memoryDollars // 0) |
+            .volumeDollars += ($service.volumeDollars // 0) |
+            .egressDollars += ($service.egressDollars // 0) |
+            .backupDollars += ($service.backupDollars // 0)
+          )]
+        else [] end))[] |
       [.name, .totalDollars, .cpuDollars, .memoryDollars, .volumeDollars,
        .egressDollars, .backupDollars] | @tsv
     ' <<<"$data"
@@ -250,6 +362,274 @@ show_cost() {
 
   if [[ -z "$requested" ]]; then
     printf '\nProject total: $%.6f\n' "$(jq -r '.currentUsageDollars' <<<"$data")"
+  fi
+}
+
+selected_resize_box=""
+selected_resize_cpu=""
+selected_resize_memory=""
+
+select_resize_box() {
+  local list selected=0 checked=-1 key rest i marker
+  local name status box service_id
+  local -a rows
+  list="$(services)"
+  mapfile -t rows < <(jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
+    .[] |
+    (.name | if startswith($prefix) then .[($prefix | length):] else . end) as $box |
+    [.id, .name, (.status // "NO_DEPLOYMENT"), $box] | @tsv
+  ' <<<"$list")
+  ((${#rows[@]})) || die "no boxes available to resize"
+  [[ -t 0 && -t 1 ]] || die "vmbox resize without a box ID requires an interactive terminal"
+
+  while true; do
+    printf '\033[2J\033[HChoose a box to resize\n'
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: continue  q: cancel"
+    echo "Nothing is selected by default. Select one box."
+    echo
+    for i in "${!rows[@]}"; do
+      IFS=$'\t' read -r service_id name status box <<<"${rows[$i]}"
+      ((i == checked)) && marker=x || marker=' '
+      if ((i == selected)); then
+        printf '\033[1;36m> [%s] %-28s %-14s %s\033[0m\n' "$marker" "$name" "$status" "$box"
+      else
+        printf '  [%s] %-28s %-14s %s\n' "$marker" "$name" "$status" "$box"
+      fi
+    done
+    IFS= read -rsn1 key || return 1
+    case "$key" in
+      ' ') ((checked == selected)) && checked=-1 || checked=$selected ;;
+      j) selected=$(((selected + 1) % ${#rows[@]})) ;;
+      k) selected=$(((selected - 1 + ${#rows[@]}) % ${#rows[@]})) ;;
+      '')
+        printf '\033[2J\033[H'
+        if ((checked < 0)); then
+          echo "vmbox: resize cancelled (nothing selected)" >&2
+          return 1
+        fi
+        IFS=$'\t' read -r service_id name status selected_resize_box <<<"${rows[$checked]}"
+        return 0
+        ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: resize cancelled" >&2; return 1 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + ${#rows[@]}) % ${#rows[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#rows[@]})) ;;
+          *) printf '\033[2J\033[H'; echo "vmbox: resize cancelled" >&2; return 1 ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+get_resource_limits() {
+  local service_id="$1" query variables
+  query='query limits($serviceId: String!, $environmentId: String!) {
+    serviceInstanceLimitOverride(serviceId: $serviceId, environmentId: $environmentId)
+    serviceInstanceLimits(serviceId: $serviceId, environmentId: $environmentId)
+  }'
+  variables="$(jq -nc --arg serviceId "$service_id" \
+    --arg environmentId "$VMBOX_ENVIRONMENT_ID" \
+    '{serviceId: $serviceId, environmentId: $environmentId}')"
+  railway_api "$query" "$variables" | jq -c '
+    def normalized:
+      if . == null then null else
+        {vCPUs: (.vCPUs // .containers.cpu),
+         memoryGB: (.memoryGB // ((.containers.memoryBytes // 0) / 1000000000))}
+      end;
+    {override: (.serviceInstanceLimitOverride | normalized),
+     effective: (.serviceInstanceLimits | normalized)}
+  '
+}
+
+resource_limits_label() {
+  jq -r '
+    if .override then
+      "Current override: \(.override.vCPUs) vCPU / \(.override.memoryGB) GB RAM"
+    else
+      "Current override: none (Railway default: \(.effective.vCPUs) vCPU / \(.effective.memoryGB) GB RAM)"
+    end
+  ' <<<"$1"
+}
+
+valid_positive_number() {
+  jq -en --arg value "$1" 'try (($value | tonumber) > 0) catch false' >/dev/null
+}
+
+select_resize_limits() {
+  local current="$1" selected=1 checked=-1 key rest i marker cpu memory
+  local -a labels=("Tiny" "Standard (recommended)" "Large" "XL")
+  local -a cpus=(1 2 4 8)
+  local -a memories=(1 4 8 16)
+  [[ -t 0 && -t 1 ]] || die "choosing CPU/RAM limits requires an interactive terminal"
+
+  while true; do
+    printf '\033[2J\033[HResize %s\n' "$service_name"
+    resource_limits_label "$current"
+    echo "Limits cap usage; Railway bills actual CPU and RAM consumption."
+    echo "↑/↓ or j/k: move  Space: toggle  c: custom  Enter: apply  q: cancel"
+    echo
+    for i in "${!labels[@]}"; do
+      ((i == checked)) && marker=x || marker=' '
+      if ((i == selected)); then
+        printf '\033[1;36m> [%s] %-24s %s vCPU / %s GB RAM\033[0m\n' \
+          "$marker" "${labels[$i]}" "${cpus[$i]}" "${memories[$i]}"
+      else
+        printf '  [%s] %-24s %s vCPU / %s GB RAM\n' \
+          "$marker" "${labels[$i]}" "${cpus[$i]}" "${memories[$i]}"
+      fi
+    done
+    IFS= read -rsn1 key || return 1
+    case "$key" in
+      ' ') ((checked == selected)) && checked=-1 || checked=$selected ;;
+      c)
+        printf '\033[2J\033[H'
+        read -rp "vCPU limit: " cpu
+        read -rp "RAM limit in GB: " memory
+        if ! valid_positive_number "$cpu" || ! valid_positive_number "$memory"; then
+          echo "vmbox: CPU and RAM limits must be positive numbers" >&2
+          sleep 1
+          continue
+        fi
+        selected_resize_cpu="$cpu"
+        selected_resize_memory="$memory"
+        return 0
+        ;;
+      j) selected=$(((selected + 1) % ${#labels[@]})) ;;
+      k) selected=$(((selected - 1 + ${#labels[@]}) % ${#labels[@]})) ;;
+      '')
+        printf '\033[2J\033[H'
+        if ((checked < 0)); then
+          echo "vmbox: resize cancelled (nothing selected)" >&2
+          return 1
+        fi
+        selected_resize_cpu="${cpus[$checked]}"
+        selected_resize_memory="${memories[$checked]}"
+        return 0
+        ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: resize cancelled" >&2; return 1 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + ${#labels[@]}) % ${#labels[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#labels[@]})) ;;
+          *) printf '\033[2J\033[H'; echo "vmbox: resize cancelled" >&2; return 1 ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+apply_resource_limits() {
+  local service_id="$1" cpu="$2" memory="$3" query variables result verified
+  query='mutation resize($input: ServiceInstanceLimitsUpdateInput!) {
+    serviceInstanceLimitsUpdate(input: $input)
+  }'
+  variables="$(jq -nc --arg serviceId "$service_id" \
+    --arg environmentId "$VMBOX_ENVIRONMENT_ID" --argjson vCPUs "$cpu" \
+    --argjson memoryGB "$memory" \
+    '{input: {serviceId: $serviceId, environmentId: $environmentId,
+      vCPUs: $vCPUs, memoryGB: $memoryGB}}')"
+  result="$(railway_api "$query" "$variables")"
+  jq -e '.serviceInstanceLimitsUpdate == true' <<<"$result" >/dev/null ||
+    die "Railway did not accept the resource-limit update"
+  verified="$(get_resource_limits "$service_id")"
+  jq -e --argjson cpu "$cpu" --argjson memory "$memory" \
+    '.override.vCPUs == $cpu and .override.memoryGB == $memory' \
+    <<<"$verified" >/dev/null || die "Railway accepted resize but verification failed"
+  printf "Resized %s to %s vCPU / %s GB RAM.\n" "$service_name" "$cpu" "$memory"
+  echo "Railway bills actual usage; these values are per-replica ceilings."
+}
+
+resize_box() {
+  local requested="${1:-}" service service_id current
+  if [[ -z "$requested" ]]; then
+    select_resize_box || return 0
+    requested="$selected_resize_box"
+  fi
+  validate_box_id "$requested"
+  service_name="$VMBOX_SERVICE_PREFIX$requested"
+  service="$(find_service)"
+  if [[ -z "$service" ]]; then
+    service_name="$requested"
+    service="$(find_service)"
+  fi
+  [[ -n "$service" ]] || die "box '$requested' does not exist"
+  service_id="$(jq -r '.id' <<<"$service")"
+  current="$(get_resource_limits "$service_id")"
+  select_resize_limits "$current" || return 0
+  apply_resource_limits "$service_id" "$selected_resize_cpu" "$selected_resize_memory"
+}
+
+declare -a component_ids=(codex claude bun foundry)
+declare -a component_labels=("Codex CLI" "Claude Code" "Bun" "Foundry: Forge/Cast/Anvil/Chisel")
+declare -a component_selected=(1 1 1 1)
+
+apply_selected_components() {
+  local i joined=""
+  for i in "${!component_ids[@]}"; do
+    ((component_selected[i])) || continue
+    joined="${joined:+$joined,}${component_ids[$i]}"
+  done
+  [[ -n "$joined" ]] || joined=core
+  echo "vmbox: selected components: $joined" >&2
+  railway variable set "${target[@]}" --service "$service_name" --skip-deploys --json \
+    "VMBOX_COMPONENTS=$joined" >/dev/null
+}
+
+select_components() {
+  local selected=0 key rest i marker
+  component_selected=(1 1 1 1)
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "vmbox: no interactive terminal; installing all optional components" >&2
+    apply_selected_components
+    return 0
+  fi
+
+  while true; do
+    printf '\033[2J\033[HChoose components for this box\n'
+    echo "Core tools (tmux, Git, gh, SSH, sudo) are always installed."
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: install selected  q: keep all"
+    echo "All optional components are selected by default."
+    echo
+    for i in "${!component_ids[@]}"; do
+      ((component_selected[i])) && marker=x || marker=' '
+      if ((i == selected)); then
+        printf '\033[1;36m> [%s] %s\033[0m\n' "$marker" "${component_labels[$i]}"
+      else
+        printf '  [%s] %s\n' "$marker" "${component_labels[$i]}"
+      fi
+    done
+    IFS= read -rsn1 key || { component_selected=(1 1 1 1); apply_selected_components; return 0; }
+    case "$key" in
+      ' ') ((component_selected[selected])) && component_selected[selected]=0 || component_selected[selected]=1 ;;
+      j) selected=$(((selected + 1) % ${#component_ids[@]})) ;;
+      k) selected=$(((selected - 1 + ${#component_ids[@]}) % ${#component_ids[@]})) ;;
+      '') printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
+      q) component_selected=(1 1 1 1); printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + ${#component_ids[@]}) % ${#component_ids[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#component_ids[@]})) ;;
+          *) component_selected=(1 1 1 1); printf '\033[2J\033[H'; apply_selected_components; return 0 ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+select_components_for_new_box() {
+  local tty_fd
+  if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
+    select_components <&"$tty_fd" >&"$tty_fd"
+    exec {tty_fd}>&-
+  else
+    select_components
   fi
 }
 
@@ -475,6 +855,127 @@ select_profiles() {
     esac
   done
 }
+declare -a instruction_sources=() instruction_selected=()
+
+add_instruction_candidate() {
+  local source="$1" existing
+  [[ -f "$source" && -r "$source" ]] || return 0
+  [[ "${source,,}" == *.md ]] || return 0
+  source="$(realpath -e -- "$source" 2>/dev/null || printf '%s' "$source")"
+  for existing in "${instruction_sources[@]:-}"; do
+    [[ "$existing" == "$source" ]] && return 0
+  done
+  instruction_sources+=("$source")
+  instruction_selected+=(0)
+}
+
+discover_instruction_files() {
+  local path
+  instruction_sources=()
+  instruction_selected=()
+  [[ -n "${VMBOX_INSTRUCTIONS_FILE:-}" ]] &&
+    add_instruction_candidate "$VMBOX_INSTRUCTIONS_FILE"
+  for path in "$PWD"/*.[mM][dD]; do
+    add_instruction_candidate "$path"
+  done
+}
+
+toggle_instruction_file() {
+  local selected_index="$1" i
+  if ((instruction_selected[selected_index])); then
+    instruction_selected[selected_index]=0
+    return 0
+  fi
+  for i in "${!instruction_selected[@]}"; do
+    instruction_selected[i]=0
+  done
+  instruction_selected[selected_index]=1
+}
+
+add_custom_instruction_file() {
+  local source i
+  printf '\033[2J\033[H'
+  read -erp "Markdown instructions path: " source
+  [[ "$source" == '~/'* ]] && source="$HOME/${source#\~/}"
+  if [[ ! -f "$source" || ! -r "$source" || "${source,,}" != *.md ]]; then
+    echo "vmbox: instructions must be a readable .md file" >&2
+    sleep 1
+    return 1
+  fi
+  add_instruction_candidate "$source"
+  for i in "${!instruction_selected[@]}"; do
+    instruction_selected[i]=0
+  done
+  instruction_selected[$((${#instruction_selected[@]} - 1))]=1
+}
+
+copy_selected_instruction_file() {
+  local i source copied_files=0
+  for i in "${!instruction_selected[@]}"; do
+    ((instruction_selected[i])) || continue
+    source="${instruction_sources[$i]}"
+    echo "vmbox: installing shared agent instructions from $source" >&2
+    copy_profile_file "$source" /data/workspace /data/workspace/AGENTS.md 644
+    copy_profile_file "$source" /data/workspace /data/workspace/CLAUDE.md 644
+    echo "vmbox: installed instructions as /data/workspace/AGENTS.md and CLAUDE.md" >&2
+    return 0
+  done
+  echo "vmbox: agent instruction upload skipped (nothing selected)" >&2
+}
+
+select_instruction_file() {
+  local selected=0 key rest i marker label
+  discover_instruction_files
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "vmbox: agent instruction upload skipped without an interactive terminal" >&2
+    return 0
+  fi
+
+  while true; do
+    printf '\033[2J\033[HChoose shared project instructions for this box\n'
+    echo "The selected .md file is copied as both AGENTS.md and CLAUDE.md."
+    echo "↑/↓ or j/k: move  Space: toggle  a: add any .md path  Enter: upload  q: skip"
+    echo "Nothing is selected by default. Select at most one file."
+    echo
+    if ((${#instruction_sources[@]} == 0)); then
+      echo "  No .md files found in the current directory; press a to add a path."
+    fi
+    for i in "${!instruction_sources[@]}"; do
+      ((instruction_selected[i])) && marker=x || marker=' '
+      label="${instruction_sources[$i]}"
+      [[ "$label" == "$PWD/"* ]] && label="./${label#"$PWD/"}"
+      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      if ((i == selected)); then
+        printf '\033[1;36m> [%s] %s\033[0m\n' "$marker" "$label"
+      else
+        printf '  [%s] %s\n' "$marker" "$label"
+      fi
+    done
+    IFS= read -rsn1 key || return 0
+    case "$key" in
+      ' ') ((${#instruction_sources[@]})) && toggle_instruction_file "$selected" ;;
+      a)
+        if add_custom_instruction_file; then
+          selected=$((${#instruction_sources[@]} - 1))
+        fi
+        ;;
+      j) ((${#instruction_sources[@]})) && selected=$(((selected + 1) % ${#instruction_sources[@]})) ;;
+      k) ((${#instruction_sources[@]})) && selected=$(((selected - 1 + ${#instruction_sources[@]}) % ${#instruction_sources[@]})) ;;
+      '') printf '\033[2J\033[H'; copy_selected_instruction_file; return 0 ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: agent instruction upload skipped" >&2; return 0 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') ((${#instruction_sources[@]})) && selected=$(((selected - 1 + ${#instruction_sources[@]}) % ${#instruction_sources[@]})) ;;
+          '[B') ((${#instruction_sources[@]})) && selected=$(((selected + 1) % ${#instruction_sources[@]})) ;;
+          *) printf '\033[2J\033[H'; echo "vmbox: agent instruction upload skipped" >&2; return 0 ;;
+        esac
+        ;;
+    esac
+  done
+}
+
 declare -a github_hosts=() github_users=() github_protocols=() github_selected=()
 
 discover_github_accounts() {
@@ -630,13 +1131,19 @@ select_credentials() {
   select_profiles
   select_github_account
 }
+select_new_box_setup() {
+  select_profiles
+  select_github_account
+  select_instruction_file
+}
+
 select_credentials_for_new_box() {
   local tty_fd
   if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
-    select_credentials <&"$tty_fd" >&"$tty_fd"
+    select_new_box_setup <&"$tty_fd" >&"$tty_fd"
     exec {tty_fd}>&-
   else
-    select_credentials
+    select_new_box_setup
   fi
 }
 
@@ -738,7 +1245,9 @@ open_box() {
     created=1
   fi
 
+  ((created == 0)) || select_components_for_new_box
   ensure_ready "$service"
+  ((created == 0)) || wait_for_persistent_data
   ((created == 0)) || select_credentials_for_new_box
   attach "${remote_command[@]}"
 }
@@ -792,6 +1301,178 @@ select_box() {
   done
 }
 
+clean_all_selected=0
+declare -a clean_service_ids=() clean_service_names=()
+
+select_clean_boxes() {
+  local list selected=0 key rest i marker all_checked=0 box service_id name status
+  local -a rows checked
+  list="$(services)"
+  mapfile -t rows < <(jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
+    .[] |
+    (.name | if startswith($prefix) then .[($prefix | length):] else . end) as $box |
+    [.id, .name, (.status // "NO_DEPLOYMENT"), $box] | @tsv
+  ' <<<"$list")
+  ((${#rows[@]})) || die "no boxes available to select; use --all to remove orphan volumes"
+  [[ -t 0 && -t 1 ]] || die "interactive clean requires a terminal; specify box IDs or --all"
+  checked=(0)
+  for _ in "${rows[@]}"; do checked+=(0); done
+  while true; do
+    printf '\033[2J\033[HChoose boxes to permanently delete\n'
+    echo "↑/↓ or j/k: move  Space: toggle  Enter: review  q: cancel"
+    echo "Deleting a box also deletes its persistent /data volume."
+    echo
+    ((checked[0])) && marker=x || marker=' '
+    if ((selected == 0)); then
+      printf '\033[1;36m> [%s] ALL BOXES\033[0m\n' "$marker"
+    else
+      printf '  [%s] ALL BOXES\n' "$marker"
+    fi
+    for i in "${!rows[@]}"; do
+      IFS=$'\t' read -r service_id name status box <<<"${rows[$i]}"
+      ((checked[i + 1])) && marker=x || marker=' '
+      if ((selected == i + 1)); then
+        printf '\033[1;36m> [%s] %-28s %-14s %s\033[0m\n' "$marker" "$name" "$status" "$box"
+      else
+        printf '  [%s] %-28s %-14s %s\n' "$marker" "$name" "$status" "$box"
+      fi
+    done
+    IFS= read -rsn1 key || return 1
+    case "$key" in
+      ' ')
+        if ((selected == 0)); then
+          ((checked[0])) && all_checked=0 || all_checked=1
+          for i in "${!checked[@]}"; do checked[i]=$all_checked; done
+        else
+          ((checked[selected])) && checked[selected]=0 || checked[selected]=1
+          checked[0]=1
+          for ((i = 1; i < ${#checked[@]}; i++)); do
+            ((checked[i])) || { checked[0]=0; break; }
+          done
+        fi
+        ;;
+      j) selected=$(((selected + 1) % ${#checked[@]})) ;;
+      k) selected=$(((selected - 1 + ${#checked[@]}) % ${#checked[@]})) ;;
+      '')
+        clean_all_selected=0
+        clean_service_ids=()
+        clean_service_names=()
+        for i in "${!rows[@]}"; do
+          ((checked[i + 1])) || continue
+          IFS=$'\t' read -r service_id name status box <<<"${rows[$i]}"
+          clean_service_ids+=("$service_id")
+          clean_service_names+=("$name")
+        done
+        ((checked[0])) && clean_all_selected=1
+        printf '\033[2J\033[H'
+        ((${#clean_service_ids[@]})) || { echo "vmbox: clean cancelled (nothing selected)" >&2; return 1; }
+        return 0
+        ;;
+      q) printf '\033[2J\033[H'; echo "vmbox: clean cancelled" >&2; return 1 ;;
+      $'\e')
+        rest=""
+        IFS= read -rsn2 -t 0.1 rest || true
+        case "$rest" in
+          '[A') selected=$(((selected - 1 + ${#checked[@]}) % ${#checked[@]})) ;;
+          '[B') selected=$(((selected + 1) % ${#checked[@]})) ;;
+          *) printf '\033[2J\033[H'; echo "vmbox: clean cancelled" >&2; return 1 ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+add_clean_box_by_id() {
+  local requested="$1" service i
+  validate_box_id "$requested"
+  service_name="$VMBOX_SERVICE_PREFIX$requested"
+  service="$(find_service)"
+  if [[ -z "$service" ]]; then
+    service_name="$requested"
+    service="$(find_service)"
+  fi
+  [[ -n "$service" ]] || die "box '$requested' does not exist"
+  for i in "${!clean_service_ids[@]}"; do
+    [[ "${clean_service_ids[$i]}" == "$(jq -r '.id' <<<"$service")" ]] && return 0
+  done
+  clean_service_ids+=("$(jq -r '.id' <<<"$service")")
+  clean_service_names+=("$(jq -r '.name' <<<"$service")")
+}
+
+clean_boxes() {
+  local yes=0 all=0 arg answer i service_count volume_count
+  local list volume_list volume_id service_id
+  local -a requested=() clean_volume_ids=()
+  for arg in "$@"; do
+    case "$arg" in
+      --yes) yes=1 ;;
+      --all) all=1 ;;
+      --*) die "unknown clean option '$arg'" ;;
+      *) requested+=("$arg") ;;
+    esac
+  done
+  ((all == 0 || ${#requested[@]} == 0)) || die "use either --all or named boxes, not both"
+
+  clean_service_ids=()
+  clean_service_names=()
+  if ((all)); then
+    list="$(services)"
+    mapfile -t clean_service_ids < <(jq -r '.[].id' <<<"$list")
+    mapfile -t clean_service_names < <(jq -r '.[].name' <<<"$list")
+  elif ((${#requested[@]})); then
+    for arg in "${requested[@]}"; do add_clean_box_by_id "$arg"; done
+  else
+    select_clean_boxes || return 0
+    ((clean_all_selected == 0)) || all=1
+  fi
+
+  volume_list="$(volumes)"
+  if ((all)); then
+    mapfile -t clean_volume_ids < <(jq -r '.volumes[].id' <<<"$volume_list")
+  else
+    for i in "${!clean_service_names[@]}"; do
+      while IFS= read -r volume_id; do
+        [[ -n "$volume_id" ]] || continue
+        clean_volume_ids+=("$volume_id")
+      done < <(jq -r --arg name "${clean_service_names[$i]}" \
+        '.volumes[] | select(.serviceName == $name) | .id' <<<"$volume_list")
+    done
+  fi
+
+  service_count="${#clean_service_ids[@]}"
+  volume_count="${#clean_volume_ids[@]}"
+  if ((service_count == 0 && volume_count == 0)); then
+    echo "No selected services or active persistent volumes to delete."
+    return 0
+  fi
+  if ((service_count)); then
+    echo "Services:" >&2
+    for i in "${!clean_service_ids[@]}"; do
+      printf '  %s (%s)\n' "${clean_service_names[$i]}" "${clean_service_ids[$i]}" >&2
+    done
+  fi
+  if ((volume_count)); then
+    echo "Persistent volumes and /data:" >&2
+    for volume_id in "${clean_volume_ids[@]}"; do
+      jq -r --arg id "$volume_id" '.volumes[] | select(.id == $id) |
+        "  \(.name) (\(.id), \(.currentSizeMB // 0) MB)"' <<<"$volume_list" >&2
+    done
+  fi
+  if ((yes == 0)); then
+    [[ -t 0 ]] || die "confirmation required; rerun with --yes"
+    read -rp "Permanently delete $service_count service(s) and $volume_count volume(s)? Type 'clean': " answer
+    [[ "$answer" == clean ]] || die "cancelled"
+  fi
+
+  for service_id in "${clean_service_ids[@]}"; do
+    railway service delete "${target[@]}" --service "$service_id" --yes --json >/dev/null
+  done
+  for volume_id in "${clean_volume_ids[@]}"; do
+    delete_volume_if_active "$volume_id"
+  done
+  echo "Deleted $service_count service(s) and $volume_count active persistent volume(s)."
+}
+
 if (($# == 0)); then
   usage
   exit
@@ -824,6 +1505,11 @@ case "$action" in
     show_cost "${2:-}"
     ;;
 
+  resize)
+    [[ $# -le 2 ]] || die "usage: vmbox resize [box-id]"
+    resize_box "${2:-}"
+    ;;
+
   auth)
     [[ $# -eq 2 ]] || die "usage: vmbox auth <box-id>"
     copy_auth_to_box "$2"
@@ -846,40 +1532,7 @@ case "$action" in
     ;;
 
   clean)
-    [[ $# -eq 1 || ($# -eq 2 && "${2:-}" == --yes) ]] || die "usage: vmbox clean [--yes]"
-    list="$(services)"
-    volume_list="$(volumes)"
-    count="$(jq 'length' <<<"$list")"
-    volume_count="$(jq '.volumes | length' <<<"$volume_list")"
-    if [[ "$count" == 0 && "$volume_count" == 0 ]]; then
-      echo "No services or persistent volumes to delete."
-      exit
-    fi
-
-    if ((count)); then
-      echo "Services:" >&2
-      jq -r '.[] | "  \(.name) (\(.id))"' <<<"$list" >&2
-    fi
-    if ((volume_count)); then
-      echo "Persistent volumes and /data:" >&2
-      jq -r '.volumes[] | "  \(.name) (\(.id), \(.currentSizeMB // 0) MB)"' <<<"$volume_list" >&2
-    fi
-    if [[ "${2:-}" != --yes ]]; then
-      [[ -t 0 ]] || die "confirmation required; use: vmbox clean --yes"
-      read -rp "Permanently delete $count service(s) and $volume_count volume(s), including all /data? Type 'clean': " answer
-      [[ "$answer" == clean ]] || die "cancelled"
-    fi
-
-    while IFS= read -r service_id; do
-      railway service delete "${target[@]}" --service "$service_id" --yes --json >/dev/null
-    done < <(jq -r '.[].id' <<<"$list")
-
-    # Refresh after deleting services so already-removed volumes are not targeted.
-    volume_list="$(volumes)"
-    while IFS= read -r volume_id; do
-      delete_volume_if_active "$volume_id"
-    done < <(jq -r '.volumes[].id' <<<"$volume_list")
-    echo "Deleted $count service(s) and all active project volumes."
+    clean_boxes "${@:2}"
     ;;
 
   *)
