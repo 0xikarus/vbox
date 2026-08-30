@@ -21,16 +21,17 @@ vmbox clean                        # checkbox multi-selector
 vmbox clean <box-id> [--yes]
 vmbox clean --all [--yes]
 vmbox new <box-id> -- claude "fix active tickets, then commit"
+vmbox new <box-id> --detach -- codex "do the task, test, and commit"
 ```
 
 Project-wide cost output combines Railway's historical deleted-service rows
 into one `deleted services (N)` total; active boxes remain separate.
-
 `vmbox <box-id>`, `new`, and `start` create `vmbox-<box-id>` when missing and
-otherwise reconnect.
-Anything after `--` starts directly in the tmux-backed session with stdin
-forwarded. To task Codex, run `vmbox <box-id> -- codex "your task"`; use
-`codex exec` instead for a non-interactive one-off run.
+otherwise reconnect. Anything after `--` starts directly in the tmux-backed
+session. Add `--detach` before `--` to return as soon as the task starts,
+allowing several boxes to be launched in succession. Reconnect with `vmbox
+<box-id>`. Use `codex exec` for a non-interactive one-off run.
+
 Missing and partially created boxes show one checklist for components, region,
 agent profiles, GitHub, and Markdown. Up/Down moves, Space selects, and Space or
 Enter activates the final `[ Provision box ]` row. Enter does nothing on other
@@ -39,12 +40,14 @@ after the box is healthy. Use `vmbox auth` or `vmbox github` to resync later.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste resume
 commands. `resize [box-id]` changes per-replica vCPU/RAM limits; omit the ID to
 select a box with `[ ]`, then choose preset or custom limits.
+
 `stop` removes active compute while preserving the service and `/data`.
 `resume` deploys a stopped box again. `vmbox <box-id>` also reconnects whenever
-that name already exists. Each tmux connection opens a short specs/IP/detach
-popup inside the session, and the persistent status bar shows box name,
-CPU/RAM, and region. Power-down stops tmux processes; files and Codex history
-remain, so use `codex resume --last` after reconnecting.
+that name already exists. Each tmux session prints its specs/IP/detach banner
+inside the pane; a non-blocking status message repeats the detach shortcut.
+The persistent status bar shows box name, CPU/RAM, and region. Power-down stops
+tmux processes; files and Codex history remain, so use `codex resume --last`
+after reconnecting.
 
 ## Leave Codex running
 

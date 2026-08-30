@@ -36,8 +36,8 @@ EOF_QUICK
 usage() {
   cat <<'EOF'
 Usage:
-  vmbox <box-id> [-- COMMAND [ARG...]]
-  vmbox new <box-id> [-- COMMAND [ARG...]]
+  vmbox <box-id> [--detach] [-- COMMAND [ARG...]]
+  vmbox new <box-id> [--detach] [-- COMMAND [ARG...]]
   vmbox help
   vmbox list
   vmbox ls
@@ -45,8 +45,8 @@ Usage:
   vmbox resize [box-id]
   vmbox auth <box-id>
   vmbox github <box-id>
-  vmbox start <box-id> [-- COMMAND [ARG...]]
-  vmbox resume <box-id> [-- COMMAND [ARG...]]
+  vmbox start <box-id> [--detach] [-- COMMAND [ARG...]]
+  vmbox resume <box-id> [--detach] [-- COMMAND [ARG...]]
   vmbox stop <box-id>
   vmbox clean [box-id ...] [--yes]
   vmbox clean --all [--yes]
@@ -72,8 +72,10 @@ Selected credentials and instructions upload only after the deployment is health
 
 Task Codex interactively in tmux:
   vmbox <box-id> -- codex "inspect active tickets, fix them, test, and commit"
-For a non-interactive one-off run, replace `codex` with `codex exec`.
-Standard input remains connected to forwarded commands.
+Launch it in tmux and return immediately:
+  vmbox <box-id> --detach -- codex "inspect active tickets, fix them, test, and commit"
+Use `codex exec` for a non-interactive agent run. Without `--detach`, standard
+input stays connected to the forwarded command.
 
 Keep Codex and other work running when you leave:
   1. Press Ctrl-b
@@ -475,7 +477,8 @@ EOF_BANNER
 }
 
 attach() {
-  local welcome_b64 command_b64="" prepare_script decorate_script decorator_pid
+  local detached="$1" welcome_b64 command_b64="" prepare_script decorate_script decorator_pid
+  shift
   show_box_welcome
   welcome_b64="$(printf '%s\n' "$box_welcome" | base64 | tr -d '\n')"
   if (($#)); then
@@ -522,16 +525,17 @@ EOF_PREPARE
   railway ssh "${target[@]}" --service "$service_name" \
     bash -lc "$prepare_script" bash "$box_id" "$welcome_b64" "$box_status" "$command_b64" \
     </dev/null >/dev/null
+  if ((detached)); then
+    echo "vmbox: command is running detached in tmux on '$box_id'" >&2
+    echo "Reconnect with: vmbox $box_id" >&2
+    return 0
+  fi
   decorate_script="$(cat <<'EOF_DECORATE'
 session="$1"
 status="$2"
 for _ in {1..40}; do
   if tmux list-clients -t "$session" -F '#{client_name}' 2>/dev/null | grep -q .; then
-    tmux set-option -t "$session" status-left-length 100
-    tmux set-option -t "$session" status-left "$status"
-    tmux display-popup -t "$session": -E -w 80% -h 80% \
-      -T ' vmbox box specs ' 'cat /data/home/.vmbox-welcome; sleep 6' 2>/dev/null ||
-      tmux display-message -t "$session" -d 6000 "$status | Detach: Ctrl-b, then d"
+    tmux display-message -t "$session" -d 6000 "$status | Detach: Ctrl-b, then d"
     exit 0
   fi
   sleep 0.25
@@ -542,7 +546,10 @@ EOF_DECORATE
     bash -lc "$decorate_script" bash "$box_id" "$box_status" \
     </dev/null >/dev/null 2>&1 &
   decorator_pid=$!
-  railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
+  if ! railway ssh "${target[@]}" --service "$service_name" -- tmux attach-session -t "$box_id"; then
+    echo "vmbox: SSH attach failed; verify the Railway SSH host key, then reconnect" >&2
+    return 1
+  fi
   wait "$decorator_pid" 2>/dev/null || true
 }
 
@@ -1755,11 +1762,17 @@ stop_box() {
 }
 
 open_box() {
-  local requested_action="$1" service created=0
+  local requested_action="$1" service created=0 detached=0
   local -a remote_command
   box_id="$2"
   shift 2
-  if [[ "${1:-}" == -- ]]; then shift; fi
+  while (($#)); do
+    case "$1" in
+      -d|--detach) detached=1; shift ;;
+      --) shift; break ;;
+      *) break ;;
+    esac
+  done
   remote_command=("$@")
   validate_box_id "$box_id"
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
@@ -1801,7 +1814,7 @@ open_box() {
   ensure_ready "$service"
   ensure_persistent_data
   ((created == 0)) || apply_new_box_setup
-  attach "${remote_command[@]}"
+  attach "$detached" "${remote_command[@]}"
 }
 
 select_box() {
@@ -2078,7 +2091,7 @@ case "$action" in
     ;;
 
   new|start|resume)
-    [[ $# -ge 2 ]] || die "usage: vmbox $action <box-id> [-- COMMAND [ARG...]]"
+    [[ $# -ge 2 ]] || die "usage: vmbox $action <box-id> [--detach] [-- COMMAND [ARG...]]"
     [[ "$action" == new ]] && action=start
     open_box "$action" "$2" "${@:3}"
     ;;

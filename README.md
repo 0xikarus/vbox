@@ -36,6 +36,7 @@ persistent volume reaches `Ready` before the first deployment.
 vmbox work -- codex "review the contracts, fix issues, test, and commit"
 vmbox work -- codex exec "run this task non-interactively"
 vmbox work -- claude "fix active tickets, then commit"
+vmbox worker-a --detach -- codex "fix ticket 123, test, and commit"
 ```
 
 ## Detach without stopping work
