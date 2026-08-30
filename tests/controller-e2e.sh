@@ -28,11 +28,11 @@ db_password="$(openssl rand -hex 24)"
 docker run -d --name "$pg_name" \
   -e POSTGRES_PASSWORD="$db_password" -e POSTGRES_DB=vmbox \
   -p 127.0.0.1::5432 postgres:16-alpine >/dev/null
-for _ in $(seq 1 60); do
-  docker exec "$pg_name" pg_isready -U postgres -d vmbox >/dev/null 2>&1 && break
+for _ in $(seq 1 90); do
+  docker exec "$pg_name" psql -U postgres -d vmbox -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec "$pg_name" pg_isready -U postgres -d vmbox >/dev/null
+docker exec "$pg_name" psql -U postgres -d vmbox -v ON_ERROR_STOP=1 -Atqc 'SELECT 1' >/dev/null
 db_port="$(docker port "$pg_name" 5432/tcp | sed 's/.*://')"
 database_url="postgres://postgres:${db_password}@127.0.0.1:${db_port}/vmbox?sslmode=disable"
 encryption_key="$(openssl rand -base64 32 | tr -d '\n')"
