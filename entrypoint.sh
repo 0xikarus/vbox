@@ -4,7 +4,7 @@ set -euo pipefail
 
 export HOME="${HOME:-/data/home}"
 unset GH_TOKEN GITHUB_TOKEN
-mkdir -p "$HOME" "$HOME/bin" /data/workspace
+mkdir -p "$HOME" "$HOME/bin"
 
 configure_agent_trust() {
   local workspace="${1:-/data/workspace}"
@@ -75,6 +75,7 @@ if [[ "${1:-}" == --configure-agent-trust ]]; then
   exit 0
 fi
 
+mkdir -p /data/workspace
 configure_agent_trust "${VMBOX_WORKSPACE:-/data/workspace}"
 
 profile="$HOME/.profile"
