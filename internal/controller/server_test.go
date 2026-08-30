@@ -203,3 +203,14 @@ func TestImmutableImageAcceptsDockerImageIDOnlyForDocker(t *testing.T) {
 		t.Fatal("invalid hosted or malformed image accepted")
 	}
 }
+
+func TestAuthorizationValueRequiresExactScheme(t *testing.T) {
+	if value, ok := authorizationValue("Bearer token", "Bearer"); !ok || value != "token" {
+		t.Fatalf("valid authorization rejected: %q %v", value, ok)
+	}
+	for _, header := range []string{"token", "bearer token", "Bearer", "Bearer   "} {
+		if _, ok := authorizationValue(header, "Bearer"); ok {
+			t.Fatalf("invalid authorization accepted: %q", header)
+		}
+	}
+}

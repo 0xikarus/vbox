@@ -77,7 +77,11 @@ type handler func(http.ResponseWriter, *http.Request, Principal)
 
 func (s *Server) auth(next handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+		token, ok := authorizationValue(r.Header.Get("Authorization"), "Bearer")
+		if !ok {
+			writeError(w, http.StatusUnauthorized, fmt.Errorf("Bearer authorization is required"))
+			return
+		}
 		p, err := s.Store.Authenticate(r.Context(), token)
 		if err != nil {
 			writeError(w, 401, err)
@@ -101,7 +105,11 @@ func (s *Server) owner(next handler) http.HandlerFunc {
 }
 func (s *Server) boxAuth(next handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		value := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "VMBox "))
+		value, authorized := authorizationValue(r.Header.Get("Authorization"), "VMBox")
+		if !authorized {
+			writeError(w, http.StatusUnauthorized, fmt.Errorf("VMBox authorization is required"))
+			return
+		}
 		runID, lease, ok := strings.Cut(value, ".")
 		if !ok || runID != r.PathValue("id") {
 			writeError(w, http.StatusUnauthorized, fmt.Errorf("invalid box identity"))
@@ -837,4 +845,13 @@ func immutableImage(providerName, image string) bool {
 	}
 	decoded, err := hex.DecodeString(strings.TrimPrefix(image, "sha256:"))
 	return err == nil && len(decoded) == 32
+}
+
+func authorizationValue(header, scheme string) (string, bool) {
+	prefix := scheme + " "
+	if !strings.HasPrefix(header, prefix) {
+		return "", false
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(header, prefix))
+	return value, value != ""
 }
