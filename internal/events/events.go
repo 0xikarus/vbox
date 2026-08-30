@@ -168,8 +168,9 @@ func (s *Store) Sanitize(value string) string {
 	if !utf8.ValidString(value) {
 		value = strings.ToValidUTF8(value, "�")
 	}
-	if len(value) > s.preview {
-		value = value[len(value)-s.preview:]
+	runes := []rune(value)
+	if len(runes) > s.preview {
+		value = string(runes[len(runes)-s.preview:])
 	}
 	return value
 }

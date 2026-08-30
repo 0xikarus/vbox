@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
@@ -51,5 +52,16 @@ func TestEventSignatureCoversMutableFields(t *testing.T) {
 		if Verify([]byte("job-scoped-key"), changed) {
 			t.Fatalf("mutation %d retained a valid signature", i)
 		}
+	}
+}
+
+func TestSanitizeTruncatesOnRuneBoundary(t *testing.T) {
+	store, err := NewStore(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value := store.Sanitize(strings.Repeat("€", 600))
+	if !utf8.ValidString(value) || len([]rune(value)) != store.preview {
+		t.Fatalf("invalid UTF-8 preview: runes=%d valid=%v", len([]rune(value)), utf8.ValidString(value))
 	}
 }
