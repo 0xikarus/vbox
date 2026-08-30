@@ -40,15 +40,33 @@ func Discover(home string) ([]Profile, error) {
 			return nil, err
 		}
 	}
-	roots := map[string][]string{"codex": {filepath.Join(home, ".codex"), filepath.Join(home, ".config", "codex")}, "claude": {filepath.Join(home, ".claude")}, "opencode": {filepath.Join(home, ".config", "opencode")}}
+	patterns := map[string][]string{
+		"codex":    {filepath.Join(home, ".codex*"), filepath.Join(home, ".config", "codex*")},
+		"claude":   {filepath.Join(home, ".claude*")},
+		"opencode": {filepath.Join(home, ".config", "opencode*")},
+	}
 	var profiles []Profile
-	for component, candidates := range roots {
+	seen := make(map[string]bool)
+	for component, globs := range patterns {
 		definition := Registry[component]
+		var candidates []string
+		for _, pattern := range globs {
+			matches, err := filepath.Glob(pattern)
+			if err != nil {
+				return nil, err
+			}
+			candidates = append(candidates, matches...)
+		}
 		for _, root := range candidates {
+			key := component + "\x00" + filepath.Clean(root)
+			if seen[key] {
+				continue
+			}
 			info, err := os.Stat(root)
 			if err != nil || !info.IsDir() {
 				continue
 			}
+			seen[key] = true
 			files := safeFiles(root, append(append([]string{}, definition.AuthFiles...), definition.ConfigFiles...))
 			if len(files) > 0 {
 				profiles = append(profiles, Profile{Component: component, Name: filepath.Base(root), Directory: root, Files: files})
