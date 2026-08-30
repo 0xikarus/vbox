@@ -562,15 +562,20 @@ EOF_REPORT
 chmod 0755 /data/home/bin/vmbox-report
 unset GH_TOKEN GITHUB_TOKEN
 task_runner="$(cat <<'EOF_TASK'
+status_file=/data/home/.vmbox-task-status.json
+task_log=/data/home/.vmbox-task.log
+: > "$task_log"
+chmod 0600 "$task_log"
+exec > >(tee -a "$task_log") 2>&1
 cat /data/home/.vmbox-welcome
 printf '\n'
-status_file=/data/home/.vmbox-task-status.json
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 command_display="$(printf '%q ' "$@")"
 tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
 jq -n --arg state running --arg started_at "$started_at" \
-  --arg command "$command_display" \
-  '{state:$state, startedAt:$started_at, finishedAt:null, exitCode:null, command:$command}' > "$tmp"
+  --arg command "$command_display" --arg task_log "$task_log" \
+  '{state:$state, startedAt:$started_at, finishedAt:null, exitCode:null,
+    command:$command, taskLog:$task_log}' > "$tmp"
 chmod 0600 "$tmp"
 mv -f "$tmp" "$status_file"
 set +e
@@ -579,9 +584,16 @@ exit_code=$?
 set -e
 finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if ((exit_code == 0)); then task_state=completed; else task_state=failed; fi
+failure_message=""
+if ((exit_code != 0)); then
+  failure_message="$(tail -n 20 "$task_log" 2>/dev/null || true)"
+fi
 tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
-jq --arg state "$task_state" --arg finished_at "$finished_at" --argjson exit_code "$exit_code" \
-  '.state = $state | .finishedAt = $finished_at | .exitCode = $exit_code' "$status_file" > "$tmp"
+jq --arg state "$task_state" --arg finished_at "$finished_at" \
+  --argjson exit_code "$exit_code" --arg failure_message "$failure_message" \
+  '.state = $state | .finishedAt = $finished_at | .exitCode = $exit_code |
+   if $state == "failed" and ((.message // "") | length == 0)
+   then .message = $failure_message else . end' "$status_file" > "$tmp"
 chmod 0600 "$tmp"
 mv -f "$tmp" "$status_file"
 exit "$exit_code"

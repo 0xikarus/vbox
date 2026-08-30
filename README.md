@@ -46,6 +46,7 @@ vmbox worker-a --detach -- codex "fix ticket 123, test, and commit"
 ```
 
 Forwarded commands record `running`, `completed`, or `failed` under persistent
+Failure status includes the tail of the persistent task log for diagnosis.
 `/data`. Use `vmbox status <name>` or `vmbox wait <name>`; agents can add a
 human-readable update with `vmbox-report "message"`.
 

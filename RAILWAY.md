@@ -69,7 +69,7 @@ Reconnect with `vmbox resume <box-id>`. Do not type `exit` when you want Codex,
 Claude, Forge, or another process to keep running.
 
 Forwarded commands automatically record their command, timestamps, state, and
-exit code in `/data/home/.vmbox-task-status.json`. Query with `vmbox status
+exit code in `/data/home/.vmbox-task-status.json`. Query with `vmbox status Failure status also includes the tail of `/data/home/.vmbox-task.log`.
 <box-id>` or wait for completion with `vmbox wait <box-id>`. The installed
 `vmbox-report "message"` helper lets Codex or Claude publish a durable progress
 or result note that both commands display.
