@@ -55,6 +55,22 @@ func TestDockerE2E(t *testing.T) {
 	if err != nil || result.Stdout != "persisted" {
 		t.Fatalf("persistence stdout=%q err=%v", result.Stdout, err)
 	}
+	detached, err := p.Exec(ctx, name, []string{"sh", "-c", "sleep 0.2; printf detached >/data/e2e-detached"}, provider.ExecOptions{Detach: true})
+	if err != nil || !strings.HasPrefix(strings.TrimSpace(detached.Stdout), "run_") {
+		t.Fatalf("detached run id=%q err=%v", detached.Stdout, err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		result, err = p.Exec(ctx, name, []string{"cat", "/data/e2e-detached"}, provider.ExecOptions{})
+		if err == nil && result.ExitCode == 0 && result.Stdout == "detached" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("detached command did not finish: stdout=%q err=%v", result.Stdout, err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
 }
 func envOr(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {

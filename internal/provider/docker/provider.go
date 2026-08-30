@@ -133,7 +133,9 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if result, err := p.run(ctx, append([]string{"volume", "create"}, append(labelArgs, volume)...)...); err != nil || result.ExitCode != 0 {
 		return provider.Box{}, commandError("create volume", result, err)
 	}
-	if result, err := p.run(ctx, append([]string{"network", "create", "--driver", "bridge", "--internal"}, append(labelArgs, network)...)...); err != nil || (result.ExitCode != 0 && !strings.Contains(string(result.Stderr), "already exists")) {
+	// A dedicated bridge isolates boxes from one another while retaining the
+	// outbound connectivity development workloads need for Git and package APIs.
+	if result, err := p.run(ctx, append([]string{"network", "create", "--driver", "bridge"}, append(labelArgs, network)...)...); err != nil || (result.ExitCode != 0 && !strings.Contains(string(result.Stderr), "already exists")) {
 		return provider.Box{}, commandError("create network", result, err)
 	}
 	if err := p.verifyLabels(ctx, "volume", volume, req.Owner); err != nil {
@@ -422,10 +424,10 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	if opts.Interactive {
 		args = append(args, "--interactive", "--tty")
 	}
-	if opts.Detach {
-		args = append(args, "--detach")
-	}
 	args = append(args, container)
+	if opts.Detach {
+		args = append(args, "vmbox-runtime", "run", "--detach", "--")
+	}
 	args = append(args, argv...)
 	started := time.Now().UTC()
 	result, err := p.runner.Run(ctx, p.command(args...), opts.Stdin, opts.Stdout, opts.Stderr)

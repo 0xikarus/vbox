@@ -22,6 +22,20 @@ func TestExecPreservesExactArgv(t *testing.T) {
 		t.Fatalf("argv mismatch\n got: %#v\nwant: %#v", got, want)
 	}
 }
+func TestDetachedExecUsesGenericRuntime(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{ExitCode: 0}}}
+	p := New(Config{}, runner)
+	argv := []string{"tool", "--flag", "two words"}
+	_, err := p.Exec(context.Background(), "box", argv, provider.ExecOptions{Detach: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := append([]string{"docker", "container", "exec", "vmbox-box", "vmbox-runtime", "run", "--detach", "--"}, argv...)
+	if got := runner.Calls[0].Argv; !reflect.DeepEqual(got, want) {
+		t.Fatalf("argv mismatch\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
 func TestRejectsUnauthenticatedTCP(t *testing.T) {
 	p := New(Config{Host: "tcp://example:2375"}, &procexec.FakeRunner{})
 	if _, err := p.Validate(context.Background()); err == nil {
