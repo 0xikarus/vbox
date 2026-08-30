@@ -21,15 +21,16 @@ import (
 const defaultAPIURL = "https://api.sevalla.com/v3"
 
 type Config struct {
-	Token           string
-	APIURL          string
-	CompanyID       string
-	ProjectID       string
-	ClusterID       string
-	ResourceTypeID  string
-	DefaultImage    string
-	PreAttachedDisk string
-	HTTPClient      *http.Client
+	Token                      string
+	APIURL                     string
+	CompanyID                  string
+	ProjectID                  string
+	ClusterID                  string
+	ResourceTypeID             string
+	DefaultImage               string
+	DockerRegistryCredentialID string
+	PreAttachedDisk            string
+	HTTPClient                 *http.Client
 }
 
 type Provider struct {
@@ -279,6 +280,9 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 		payload["project_id"] = p.cfg.ProjectID
 	}
 	var app application
+	if p.cfg.DockerRegistryCredentialID != "" {
+		payload["docker_registry_credential_id"] = p.cfg.DockerRegistryCredentialID
+	}
 	if err := p.request(ctx, http.MethodPost, "/applications", payload, &app); err != nil {
 		return provider.Box{}, err
 	}
