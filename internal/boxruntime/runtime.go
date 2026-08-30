@@ -91,10 +91,12 @@ func (r *Runtime) Run(ctx context.Context, argv []string, stdout, stderr io.Writ
 	wg.Add(2)
 	pump := func(stream string, src io.Reader, dst io.Writer) {
 		defer wg.Done()
-		scanner := bufio.NewScanner(src)
-		scanner.Buffer(make([]byte, 64*1024), 1<<20)
-		for scanner.Scan() {
-			raw := append([]byte(nil), scanner.Bytes()...)
+		reader := bufio.NewReaderSize(src, 64*1024)
+		for {
+			raw, readErr := reader.ReadBytes('\n')
+			if len(raw) == 0 && readErr != nil {
+				break
+			}
 			mu.Lock()
 			now := time.Now().UTC()
 			run.LastOutputAt = &now
@@ -103,9 +105,12 @@ func (r *Runtime) Run(ctx context.Context, argv []string, stdout, stderr io.Writ
 			_, _ = r.append(store, v1.Event{RunID: runID, Type: "output", Stream: stream, Message: string(raw), Timestamp: now})
 			_ = store.WriteStatus(run)
 			if dst != nil {
-				_, _ = dst.Write(append(raw, '\n'))
+				_, _ = dst.Write(raw)
 			}
 			mu.Unlock()
+			if readErr != nil {
+				break
+			}
 		}
 	}
 	go pump("stdout", outPipe, stdout)

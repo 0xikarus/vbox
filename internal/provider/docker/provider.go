@@ -123,8 +123,11 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	} else if !errors.Is(err, provider.ErrNotFound) {
 		return provider.Box{}, err
 	}
-	if result, err := p.run(ctx, "image", "pull", req.Image); err != nil || result.ExitCode != 0 {
-		return provider.Box{}, commandError("pull image", result, err)
+	localImage, localErr := p.run(ctx, "image", "inspect", req.Image)
+	if localErr != nil || localImage.ExitCode != 0 {
+		if result, err := p.run(ctx, "image", "pull", req.Image); err != nil || result.ExitCode != 0 {
+			return provider.Box{}, commandError("pull image", result, err)
+		}
 	}
 	labelArgs := labels(req.Owner)
 	if result, err := p.run(ctx, append([]string{"volume", "create"}, append(labelArgs, volume)...)...); err != nil || result.ExitCode != 0 {
