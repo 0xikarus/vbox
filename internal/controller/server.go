@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -150,7 +151,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request, p Principal) 
 	if req.Image == "" {
 		req.Image = s.DefaultImage
 	}
-	if req.Provider != "incus" && !strings.Contains(req.Image, "@sha256:") {
+	if !immutableImage(req.Provider, req.Image) {
 		writeError(w, 400, fmt.Errorf("controller runs require an OCI image pinned by sha256 digest"))
 		return
 	}
@@ -822,4 +823,18 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})
+}
+
+func immutableImage(providerName, image string) bool {
+	if providerName == "incus" {
+		return true
+	}
+	if strings.Contains(image, "@sha256:") {
+		return true
+	}
+	if providerName != "docker" || !strings.HasPrefix(image, "sha256:") {
+		return false
+	}
+	decoded, err := hex.DecodeString(strings.TrimPrefix(image, "sha256:"))
+	return err == nil && len(decoded) == 32
 }

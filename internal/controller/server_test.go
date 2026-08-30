@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -191,4 +192,14 @@ func mustJSON(t *testing.T, value any) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestImmutableImageAcceptsDockerImageIDOnlyForDocker(t *testing.T) {
+	digest := "sha256:" + strings.Repeat("a", 64)
+	if !immutableImage("docker", digest) {
+		t.Fatal("valid Docker image ID rejected")
+	}
+	if immutableImage("railway", digest) || immutableImage("docker", "sha256:not-a-digest") {
+		t.Fatal("invalid hosted or malformed image accepted")
+	}
 }
