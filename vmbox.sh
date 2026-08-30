@@ -583,12 +583,14 @@ EOF_DECORATE
     echo "vmbox: SSH attach failed; verify the Railway SSH host key, then reconnect" >&2
     return 1
   fi
+  kill "$decorator_pid" 2>/dev/null || true
   wait "$decorator_pid" 2>/dev/null || true
   post_detach
 }
 
 post_detach() {
   local answer
+  echo "vmbox: checking accrued cost..." >&2
   echo
   if ! (show_detach_cost "$box_id"); then
     echo "vmbox: cost lookup failed; the box is still running" >&2
@@ -681,19 +683,13 @@ show_cost() {
 }
 
 show_detach_cost() {
-  local requested="$1" data service service_id total period_start period_end
+  local requested="$1" data active_name total period_start period_end
   railway usage projects --help >/dev/null 2>&1 || return 1
   data="$(railway usage projects --project "$VMBOX_PROJECT_ID" --period current --json)" || return 1
-  service_name="$VMBOX_SERVICE_PREFIX$requested"
-  service="$(find_service)"
-  if [[ -z "$service" ]]; then
-    service_name="$requested"
-    service="$(find_service)"
-  fi
-  [[ -n "$service" ]] || return 1
-  service_id="$(jq -r '.id' <<<"$service")"
-  total="$(jq -r --arg id "$service_id" \
-    '(first(.services[] | select(.id == $id)) // {totalDollars: 0}) | .totalDollars // 0' \
+  active_name="$VMBOX_SERVICE_PREFIX$requested"
+  total="$(jq -r --arg name "$active_name" --arg fallback "$requested" \
+    '(first(.services[] | select(.name == $name or .name == $fallback)) //
+      {totalDollars: 0}) | .totalDollars // 0' \
     <<<"$data")"
   period_start="$(jq -r '.billingPeriod.start[0:10]' <<<"$data")"
   period_end="$(jq -r '.billingPeriod.end[0:10]' <<<"$data")"
