@@ -28,6 +28,8 @@ vmbox <name>                 create or connect
 vmbox list                   choose a box
 vmbox ls                     list boxes
 vmbox cost [name]            show costs
+vmbox status <name>          show forwarded task status
+vmbox wait <name>            wait for task completion
 vmbox resize [name]          change CPU/RAM limits
 vmbox stop <name>            power down, keep /data
 vmbox clean [name ...]       delete selected boxes and /data
@@ -44,6 +46,8 @@ Usage:
   vmbox list
   vmbox ls
   vmbox cost [box-id]
+  vmbox status <box-id>
+  vmbox wait <box-id>
   vmbox resize [box-id]
   vmbox auth <box-id>
   vmbox github <box-id>
@@ -77,7 +81,10 @@ Task Codex interactively in tmux:
 Launch it in tmux and return immediately:
   vmbox <box-id> --detach -- codex "inspect active tickets, fix them, test, and commit"
 Use `codex exec` for a non-interactive agent run. Without `--detach`, standard
-input stays connected to the forwarded command.
+input stays connected to the forwarded command. Forwarded commands automatically
+record durable task state on `/data`; check it with `vmbox status <box-id>` or
+block until completion with `vmbox wait <box-id>`. Inside the box, agents can
+publish a progress/result note with `vmbox-report "message"`.
 
 Save a confirmed creation setup with the checkbox in the dialog. Reapply it with:
   vmbox new <box-id> --reuse [--detach] [-- COMMAND [ARG...]]
@@ -475,6 +482,7 @@ Box ready
   Public egress IP:  $public_ip (current, not guaranteed static)
   Persistent data:   /data ($volume_size MB used)
   Workspace:         /data/workspace
+  Agent callback:     vmbox-report "progress or result"
 
 Keep this session running:
   Detach:            Ctrl-b, release both keys, then d
@@ -487,7 +495,7 @@ EOF_BANNER
 configure_workspace_trust() {
   local verify_script
   [[ -r "$bundle/entrypoint.sh" ]] || die "deployment bundle missing; rerun install.sh"
-  echo "vmbox: trusting /data/workspace for Codex and Claude" >&2
+  echo "vmbox: enabling full-autonomy defaults for Codex and Claude" >&2
   railway ssh "${target[@]}" --service "$service_name" \
     env HOME=/data/home bash -s -- --configure-agent-trust \
     < "$bundle/entrypoint.sh" >/dev/null
@@ -500,13 +508,16 @@ awk '
   in_target && /^[[:space:]]*trust_level[[:space:]]*=[[:space:]]*"trusted"/ { found=1 }
   END { exit(found ? 0 : 1) }
 ' "$codex_config" &&
-jq -e '(.trustedDirectories // []) | index("/data/workspace") != null' \
+grep -Eq '^[[:space:]]*approval_policy[[:space:]]*=[[:space:]]*"never"' "$codex_config" &&
+grep -Eq '^[[:space:]]*sandbox_mode[[:space:]]*=[[:space:]]*"danger-full-access"' "$codex_config" &&
+jq -e '((.trustedDirectories // []) | index("/data/workspace") != null)
+          and (.permissions.defaultMode == "bypassPermissions")' \
   "$claude_settings" >/dev/null
 EOF_VERIFY_TRUST
 )"
   railway ssh "${target[@]}" --service "$service_name" \
     bash -lc "$verify_script" >/dev/null ||
-    die "could not verify Codex/Claude trust for /data/workspace"
+    die "could not verify Codex/Claude full-autonomy defaults"
 }
 attach() {
   local detached="$1" welcome_b64 command_b64="" prepare_script decorate_script decorator_pid
@@ -526,21 +537,67 @@ command=()
 if [[ -n "$command_payload" ]]; then
   mapfile -d '' -t command < <(printf '%s' "$command_payload" | base64 -d)
 fi
-mkdir -p /data/home
+mkdir -p /data/home /data/home/bin
 printf '%s' "$banner" | base64 -d > /data/home/.vmbox-welcome
 chmod 0644 /data/home/.vmbox-welcome
+cat > /data/home/bin/vmbox-report <<'EOF_REPORT'
+#!/usr/bin/env bash
+set -euo pipefail
+status_file=/data/home/.vmbox-task-status.json
+[[ $# -gt 0 ]] || { echo 'usage: vmbox-report <message>' >&2; exit 2; }
+message="$*"
+reported_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
+if jq -e 'type == "object"' "$status_file" >/dev/null 2>&1; then
+  jq --arg message "$message" --arg reported_at "$reported_at" \
+    '.message = $message | .reportedAt = $reported_at' "$status_file" > "$tmp"
+else
+  jq -n --arg message "$message" --arg reported_at "$reported_at" \
+    '{state:"reported", message:$message, reportedAt:$reported_at}' > "$tmp"
+fi
+chmod 0600 "$tmp"
+mv -f "$tmp" "$status_file"
+printf 'vmbox: report saved: %s\n' "$message"
+EOF_REPORT
+chmod 0755 /data/home/bin/vmbox-report
 unset GH_TOKEN GITHUB_TOKEN
+task_runner="$(cat <<'EOF_TASK'
+cat /data/home/.vmbox-welcome
+printf '\n'
+status_file=/data/home/.vmbox-task-status.json
+started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+command_display="$(printf '%q ' "$@")"
+tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
+jq -n --arg state running --arg started_at "$started_at" \
+  --arg command "$command_display" \
+  '{state:$state, startedAt:$started_at, finishedAt:null, exitCode:null, command:$command}' > "$tmp"
+chmod 0600 "$tmp"
+mv -f "$tmp" "$status_file"
+set +e
+"$@"
+exit_code=$?
+set -e
+finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+if ((exit_code == 0)); then task_state=completed; else task_state=failed; fi
+tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
+jq --arg state "$task_state" --arg finished_at "$finished_at" --argjson exit_code "$exit_code" \
+  '.state = $state | .finishedAt = $finished_at | .exitCode = $exit_code' "$status_file" > "$tmp"
+chmod 0600 "$tmp"
+mv -f "$tmp" "$status_file"
+exit "$exit_code"
+EOF_TASK
+)"
 if tmux has-session -t "$session" 2>/dev/null; then
   tmux set-environment -g -u GH_TOKEN 2>/dev/null || true
   tmux set-environment -g -u GITHUB_TOKEN 2>/dev/null || true
   if ((${#command[@]})); then
     tmux new-window -t "$session" -c /data/workspace \
-      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "${command[@]}"
+      bash -lc "$task_runner" bash "${command[@]}"
   fi
 else
   if ((${#command[@]})); then
     tmux new-session -d -s "$session" -c /data/workspace \
-      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "${command[@]}"
+      bash -lc "$task_runner" bash "${command[@]}"
   else
     tmux new-session -d -s "$session" -c /data/workspace \
       bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec bash -l'
@@ -560,6 +617,7 @@ EOF_PREPARE
     </dev/null >/dev/null
   if ((detached)); then
     echo "vmbox: command is running detached in tmux on '$box_id'" >&2
+    echo "Track it with: vmbox status $box_id   (or: vmbox wait $box_id)" >&2
     echo "Reconnect with: vmbox $box_id" >&2
     return 0
   fi
@@ -586,6 +644,85 @@ EOF_DECORATE
   kill "$decorator_pid" 2>/dev/null || true
   wait "$decorator_pid" 2>/dev/null || true
   post_detach
+}
+
+resolve_task_box() {
+  local requested="$1"
+  validate_box_id "$requested"
+  box_id="$requested"
+  service_name="$VMBOX_SERVICE_PREFIX$box_id"
+  task_service="$(find_service)"
+  if [[ -z "$task_service" ]]; then
+    service_name="$requested"
+    task_service="$(find_service)"
+  fi
+  [[ -n "$task_service" ]] || die "box '$requested' does not exist"
+  [[ "$(jq -r '.status // empty' <<<"$task_service")" == SUCCESS ]] ||
+    die "box '$requested' is not running; task status is retained on /data and becomes readable after resume"
+}
+
+render_task_status() {
+  local task_json="$1"
+  jq -r --arg box "$box_id" '
+    "Task on \($box): \(.state // "unknown")",
+    "  Command:   \(.command // "unavailable")",
+    "  Started:   \(.startedAt // "unavailable")",
+    (if .finishedAt then "  Finished:  \(.finishedAt)" else empty end),
+    (if .exitCode != null then "  Exit code: \(.exitCode)" else empty end),
+    (if .message then "  Report:    \(.message)" else empty end)
+  ' <<<"$task_json"
+}
+
+fetch_task_status() {
+  local output
+  output="$(railway ssh "${target[@]}" --service "$service_name" \
+    'if jq -e '\''type == "object"'\'' /data/home/.vmbox-task-status.json >/dev/null 2>&1; then printf "__VMBOX_TASK__"; jq -c . /data/home/.vmbox-task-status.json; fi' \
+    2>/dev/null || true)"
+  [[ "$output" == *"__VMBOX_TASK__"* ]] || return 1
+  printf '%s\n' "${output##*__VMBOX_TASK__}"
+}
+
+show_task_status() {
+  local task_json
+  resolve_task_box "$1"
+  task_json="$(fetch_task_status)" || die "no forwarded task has reported status on '$box_id'"
+  render_task_status "$task_json"
+  [[ "$(jq -r '.state // empty' <<<"$task_json")" != failed ]]
+}
+
+wait_for_task_status() {
+  local wait_script output task_json state
+  resolve_task_box "$1"
+  echo "vmbox: waiting for the task on '$box_id' (Ctrl-C stops waiting, not the task)" >&2
+  wait_script="$(cat <<'EOF_WAIT_TASK'
+status_file=/data/home/.vmbox-task-status.json
+last=""
+while true; do
+  if jq -e 'type == "object"' "$status_file" >/dev/null 2>&1; then
+    summary="$(jq -r '[.state // "unknown", .message // ""] | @tsv' "$status_file")"
+    if [[ "$summary" != "$last" ]]; then
+      printf 'vmbox: task %s\n' "$summary" >&2
+      last="$summary"
+    fi
+    state="$(jq -r '.state // empty' "$status_file")"
+    case "$state" in
+      completed|failed)
+        printf '__VMBOX_TASK__'
+        jq -c . "$status_file"
+        exit 0
+        ;;
+    esac
+  fi
+  sleep 3
+done
+EOF_WAIT_TASK
+)"
+  output="$(railway ssh "${target[@]}" --service "$service_name" bash -lc "$wait_script")"
+  [[ "$output" == *"__VMBOX_TASK__"* ]] || die "task-status connection ended before completion"
+  task_json="${output##*__VMBOX_TASK__}"
+  render_task_status "$task_json"
+  state="$(jq -r '.state // empty' <<<"$task_json")"
+  [[ "$state" == completed ]]
 }
 
 post_detach() {
@@ -2292,6 +2429,16 @@ case "$action" in
     else
       display_list "$list"
     fi
+    ;;
+
+  status)
+    [[ $# -eq 2 ]] || die "usage: vmbox status <box-id>"
+    show_task_status "$2"
+    ;;
+
+  wait)
+    [[ $# -eq 2 ]] || die "usage: vmbox wait <box-id>"
+    wait_for_task_status "$2"
     ;;
 
   cost)

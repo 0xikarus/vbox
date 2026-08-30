@@ -23,6 +23,8 @@ vmbox stop work               # stop compute; keep /data
 vmbox resume work             # redeploy and reconnect
 vmbox clean work --yes        # delete box and volume
 vmbox cost                    # current-period costs
+vmbox status work             # show detached task status
+vmbox wait work               # wait for detached task completion
 vmbox help                    # full command reference
 ```
 
@@ -31,8 +33,8 @@ credentials, and optional shared `AGENTS.md`/`CLAUDE.md` instructions. The
 persistent volume reaches `Ready` before the first deployment.
 Check `Save as reusable setup` to remember those selections, then reuse them
 without the dialog using `vmbox new worker-b --reuse`.
-Every box trusts `/data/workspace` in Codex and Claude while preserving existing
-agent configuration.
+Every box trusts `/data/workspace` and defaults Codex and Claude to unrestricted,
+non-interactive permission modes while preserving existing agent configuration.
 
 ## Forward a task
 
@@ -42,6 +44,11 @@ vmbox work -- codex exec "run this task non-interactively"
 vmbox work -- claude "fix active tickets, then commit"
 vmbox worker-a --detach -- codex "fix ticket 123, test, and commit"
 ```
+
+Forwarded commands record `running`, `completed`, or `failed` under persistent
+`/data`. Use `vmbox status <name>` or `vmbox wait <name>`; agents can add a
+human-readable update with `vmbox-report "message"`.
+
 
 ## Detach without stopping work
 
