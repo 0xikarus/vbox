@@ -55,6 +55,25 @@ func TestDeploymentIDPrefersSubmittedDeploymentOverService(t *testing.T) {
 	}
 }
 
+func TestEmptyDeploymentStatusIsStopped(t *testing.T) {
+	if got := state(""); got != provider.StateStopped {
+		t.Fatalf("state(empty) = %q, want %q", got, provider.StateStopped)
+	}
+}
+
+func TestResourcesMatchOnlyChecksRequestedLimits(t *testing.T) {
+	actual := provider.Resources{CPU: 2, MemoryMiB: 1024, DiskGiB: 20}
+	if !resourcesMatch(actual, provider.Resources{CPU: 2, MemoryMiB: 1024}) {
+		t.Fatal("matching requested limits were rejected")
+	}
+	if resourcesMatch(actual, provider.Resources{CPU: 4}) {
+		t.Fatal("mismatched requested CPU was accepted")
+	}
+	if resourcesMatch(actual, provider.Resources{MemoryMiB: 2048}) {
+		t.Fatal("mismatched requested memory was accepted")
+	}
+}
+
 func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
@@ -98,6 +117,9 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		}
 		if strings.Contains(joined, " redeploy ") {
 			deploy = i
+			if !strings.Contains(joined, " --from-source") {
+				t.Fatalf("Railway deployment must be restartable after down: %#v", call.Argv)
+			}
 		}
 	}
 	for _, call := range runner.Calls {

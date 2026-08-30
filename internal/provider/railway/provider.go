@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -249,7 +250,7 @@ func state(status string) provider.State {
 		return provider.StateRunning
 	case "FAILED", "CRASHED":
 		return provider.StateFailed
-	case "REMOVED", "NO_DEPLOYMENT":
+	case "", "REMOVED", "NO_DEPLOYMENT":
 		return provider.StateStopped
 	default:
 		return provider.StateProvisioning
@@ -343,7 +344,30 @@ func (p *Provider) Resize(ctx context.Context, id string, resources provider.Res
 	if err := p.setResources(ctx, service.ID, resources); err != nil {
 		return provider.Box{}, err
 	}
-	return p.Inspect(ctx, service.ID)
+	deadline := time.NewTimer(p.cfg.ReadyTimeout)
+	defer deadline.Stop()
+	var actual provider.Box
+	for {
+		actual, err = p.Inspect(ctx, service.ID)
+		if err != nil {
+			return provider.Box{}, err
+		}
+		if resourcesMatch(actual.Resources, resources) {
+			return actual, nil
+		}
+		select {
+		case <-ctx.Done():
+			return provider.Box{}, ctx.Err()
+		case <-deadline.C:
+			return provider.Box{}, fmt.Errorf("Railway resize for %s did not become effective: requested %+v, observed %+v", service.Name, resources, actual.Resources)
+		case <-time.After(p.cfg.PollInterval):
+		}
+	}
+}
+
+func resourcesMatch(actual, requested provider.Resources) bool {
+	return (requested.CPU <= 0 || math.Abs(actual.CPU-requested.CPU) < 0.000001) &&
+		(requested.MemoryMiB <= 0 || actual.MemoryMiB == requested.MemoryMiB)
 }
 
 func (p *Provider) Delete(ctx context.Context, id string, requested provider.Owner) error {
@@ -564,7 +588,7 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 	for _, item := range before {
 		known[item.ID] = true
 	}
-	result, submitErr := p.run(ctx, "redeploy", "--service", service, "--yes", "--json")
+	result, submitErr := p.run(ctx, "redeploy", "--service", service, "--yes", "--json", "--from-source")
 	id := deploymentID(result.Stdout)
 	if id == "" {
 		after, reconcileErr := p.deployments(ctx, service)

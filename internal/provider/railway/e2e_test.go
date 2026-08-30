@@ -49,13 +49,13 @@ func TestRailwayE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	box, err := p.Create(ctx, provider.CreateRequest{
-		Name: name, Image: "nginx:1.27-alpine", Region: "eu-west",
+		Name: name, Image: "nginx:1.27-alpine", Region: "ams",
 		Resources: provider.Resources{CPU: 1, MemoryMiB: 512, DiskGiB: 1}, Owner: owner,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if box.State != provider.StateRunning || box.Owner != owner || box.Storage == nil || box.Storage.MountPath != "/data" {
+	if box.State != provider.StateRunning || box.Owner != owner || box.Region != "ams" || box.Storage == nil || box.Storage.MountPath != "/data" {
 		t.Fatalf("created box = %+v", box)
 	}
 	if box.Resources.CPU != 1 || box.Resources.MemoryMiB != 512 {

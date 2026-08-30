@@ -23,7 +23,7 @@ func (p clusterTestProvider) Clusters(context.Context) ([]map[string]any, error)
 
 func TestSetupRegionsUseProviderIdentifiers(t *testing.T) {
 	railway := setupRegions(context.Background(), config.Context{Provider: "railway"}, "", nil)
-	want := map[string]bool{"eu-west": true, "us-west": true, "us-east": true, "southeast-asia": true}
+	want := map[string]bool{"ams": true, "sfo": true, "iad": true, "sin": true}
 	if len(railway) != len(want) {
 		t.Fatalf("Railway regions = %#v", railway)
 	}
@@ -45,7 +45,7 @@ func TestReusableSetupRestoresSelectionsAndSaveIntent(t *testing.T) {
 	if err := os.WriteFile(markdown, []byte("instructions"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	setup := defaultSetup(config.Context{Provider: "railway", Cluster: "us-east"})
+	setup := defaultSetup(config.Context{Provider: "railway", Cluster: "iad"})
 	setup.Save = false // Save is a UI-only choice and is intentionally not serialized.
 	setup.Instructions = []string{markdown}
 	file := config.File{LastSetups: map[string]config.CreationSetup{"test": setup}}

@@ -96,7 +96,7 @@ func (p *Provider) resources(ctx context.Context, serviceID string) (provider.Re
 	if err := json.Unmarshal(response.Data.Limits, &values); err != nil {
 		return provider.Resources{}, fmt.Errorf("decode Railway resource limit value: %w", err)
 	}
-	number := func(names ...string) float64 {
+	number := func(values map[string]any, names ...string) float64 {
 		for _, name := range names {
 			if value, ok := values[name].(float64); ok {
 				return value
@@ -104,7 +104,18 @@ func (p *Provider) resources(ctx context.Context, serviceID string) (provider.Re
 		}
 		return 0
 	}
-	return provider.Resources{CPU: number("vCPUs", "vcpus", "cpu"), MemoryMiB: int64(math.Round(number("memoryGB", "memoryGb", "memory") * 1024))}, nil
+	cpu := number(values, "vCPUs", "vcpus", "cpu")
+	memoryMiB := int64(math.Round(number(values, "memoryGB", "memoryGb", "memory") * 1024))
+	if containers, ok := values["containers"].(map[string]any); ok {
+		if cpu == 0 {
+			cpu = number(containers, "cpu", "vCPUs", "vcpus")
+		}
+		if memoryMiB == 0 {
+			memoryBytes := number(containers, "memoryBytes")
+			memoryMiB = int64(math.Round(memoryBytes / 1_000_000_000 * 1024))
+		}
+	}
+	return provider.Resources{CPU: cpu, MemoryMiB: memoryMiB}, nil
 }
 
 func decodeRailwayCost(data []byte, serviceName string) provider.Cost {

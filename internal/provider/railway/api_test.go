@@ -12,7 +12,7 @@ import (
 )
 
 func TestResourceLimitsUseCurrentRailwayAPI(t *testing.T) {
-	runner := &procexec.FakeRunner{Results: []procexec.Result{{}, {Stdout: []byte(`{"data":{"serviceInstanceLimits":{"vCPUs":2,"memoryGB":4}}}`)}}}
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{}, {Stdout: []byte(`{"data":{"serviceInstanceLimits":{"containers":{"cpu":2,"memoryBytes":4000000000,"pidLimit":1000}}}}`)}}}
 	p := New(Config{EnvironmentID: "environment"}, runner)
 	if err := p.setResources(context.Background(), "service", provider.Resources{CPU: 2, MemoryMiB: 4096}); err != nil {
 		t.Fatal(err)

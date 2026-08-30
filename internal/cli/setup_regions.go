@@ -30,10 +30,10 @@ func setupRegions(ctx context.Context, c config.Context, current string, p provi
 	}
 	switch c.Provider {
 	case "railway":
-		add("eu-west", "EU West · Amsterdam")
-		add("us-west", "US West · California")
-		add("us-east", "US East · Virginia")
-		add("southeast-asia", "Southeast Asia · Singapore")
+		add("ams", "EU West · Amsterdam")
+		add("sfo", "US West · California")
+		add("iad", "US East · Virginia")
+		add("sin", "Southeast Asia · Singapore")
 		add(current, current)
 	case "sevalla":
 		add(c.Cluster, c.Cluster)
