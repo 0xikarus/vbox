@@ -9,25 +9,26 @@ import (
 )
 
 type Context struct {
-	Name            string `json:"name"`
-	Provider        string `json:"provider"`
-	Controller      string `json:"controller,omitempty"`
-	Account         string `json:"account,omitempty"`
-	TokenEnv        string `json:"tokenEnv,omitempty"`
-	Project         string `json:"project,omitempty"`
-	Environment     string `json:"environment,omitempty"`
-	Company         string `json:"company,omitempty"`
-	Cluster         string `json:"cluster,omitempty"`
-	ResourceType    string `json:"resourceType,omitempty"`
-	Image           string `json:"image,omitempty"`
-	DockerContext   string `json:"dockerContext,omitempty"`
-	DockerHost      string `json:"dockerHost,omitempty"`
-	DockerTLSVerify bool   `json:"dockerTLSVerify,omitempty"`
-	DockerCertPath  string `json:"dockerCertPath,omitempty"`
-	IncusRemote     string `json:"incusRemote,omitempty"`
-	IncusProject    string `json:"incusProject,omitempty"`
-	IncusVM         bool   `json:"incusVm,omitempty"`
-	PreAttachedDisk string `json:"preAttachedDisk,omitempty"`
+	Name               string `json:"name"`
+	Provider           string `json:"provider"`
+	Controller         string `json:"controller,omitempty"`
+	Account            string `json:"account,omitempty"`
+	TokenEnv           string `json:"tokenEnv,omitempty"`
+	Project            string `json:"project,omitempty"`
+	Environment        string `json:"environment,omitempty"`
+	Company            string `json:"company,omitempty"`
+	Cluster            string `json:"cluster,omitempty"`
+	ResourceType       string `json:"resourceType,omitempty"`
+	Image              string `json:"image,omitempty"`
+	DockerContext      string `json:"dockerContext,omitempty"`
+	DockerHost         string `json:"dockerHost,omitempty"`
+	DockerTLSVerify    bool   `json:"dockerTLSVerify,omitempty"`
+	DockerCertPath     string `json:"dockerCertPath,omitempty"`
+	IncusRemote        string `json:"incusRemote,omitempty"`
+	IncusProject       string `json:"incusProject,omitempty"`
+	IncusVM            bool   `json:"incusVm,omitempty"`
+	PreAttachedDisk    string `json:"preAttachedDisk,omitempty"`
+	ProviderCredential string `json:"providerCredential,omitempty"`
 }
 type File struct {
 	Current  string             `json:"current"`

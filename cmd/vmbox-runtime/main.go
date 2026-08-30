@@ -87,7 +87,18 @@ func run() error {
 		if len(args) < 2 {
 			return fmt.Errorf("report requires a message")
 		}
-		return runtime.Report(os.Getenv("VMBOX_RUN_ID"), "progress", strings.Join(args[1:], " "))
+		kind := "progress"
+		start := 1
+		if args[1] == "--needs-input" {
+			kind = "needs_input"
+			start++
+		} else if args[1] == "--progress" {
+			start++
+		}
+		if start >= len(args) {
+			return fmt.Errorf("report requires a message")
+		}
+		return runtime.Report(os.Getenv("VMBOX_RUN_ID"), kind, strings.Join(args[start:], " "))
 	case "finish":
 		kind := "success"
 		i := 1

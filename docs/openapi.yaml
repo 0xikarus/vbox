@@ -65,11 +65,71 @@ paths:
         required: true
         content: {application/json: {schema: {type: object, required: [id, capabilities], properties: {id: {type: string}, capabilities: {type: object}}}}}
       responses: {'204': {description: Capacity advertisement recorded}}
+  /v1/users:
+    get:
+      description: Owner-only account member listing.
+      responses: {'200': {description: Account users}}
+    post:
+      description: Owner-only user creation. The access token is returned once.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateUser'}}}
+      responses: {'201': {description: User and one-time token created}, '403': {description: Owner role required}}
+  /v1/users/{id}:
+    delete:
+      description: Owner-only user disable and token revocation. The last owner cannot be removed.
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'204': {description: User disabled}, '403': {description: Owner role required}}
+  /v1/provider-credentials:
+    get:
+      description: Owner-only credential metadata listing; secret values are never returned.
+      responses: {'200': {description: Provider credential metadata}}
+  /v1/provider-credentials/{provider}/{name}:
+    put:
+      description: Owner-only encrypted create or rotation.
+      parameters:
+        - {name: provider, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PutSecret'}}}
+      responses: {'200': {description: Credential metadata}}
+    delete:
+      description: Owner-only credential removal.
+      parameters:
+        - {name: provider, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses: {'204': {description: Credential removed}}
+  /v1/notifications:
+    get:
+      description: Owner-only destination metadata listing; secrets are never returned.
+      responses: {'200': {description: Notification destinations}}
+  /v1/notifications/{kind}/{name}:
+    put:
+      description: Configure or rotate an encrypted webhook, Telegram, or Discord destination.
+      parameters:
+        - {name: kind, in: path, required: true, schema: {enum: [webhook, telegram, discord]}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PutNotification'}}}
+      responses: {'200': {description: Destination configured}}
+    delete:
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses: {'204': {description: Destination removed}}
+  /v1/notifications/{kind}/{name}/test:
+    post:
+      parameters:
+        - {name: kind, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses: {'204': {description: Test delivered}, '502': {description: Delivery failed}}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
   parameters:
-    ID: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    ID: {name: id, in: path, required: true, schema: {type: string}}
   schemas:
     Resources:
       type: object
@@ -102,13 +162,14 @@ components:
           description: Exact argv; no implicit shell interpolation.
         externalReference: {type: string}
         credentialReferences: {type: array, items: {type: string}, description: Opaque vault references, never secret values.}
+        providerCredential: {type: string, description: Account-scoped encrypted provider credential name.}
         lifecycle: {$ref: '#/components/schemas/Lifecycle'}
         notificationPolicy: {type: string}
     Run:
       type: object
       required: [id, accountId, provider, state, request, createdAt, updatedAt]
       properties:
-        id: {type: string, format: uuid}
+        id: {type: string}
         accountId: {type: string, format: uuid}
         boxId: {type: string}
         provider: {type: string}
@@ -123,9 +184,9 @@ components:
         updatedAt: {type: string, format: date-time}
     Event:
       type: object
-      required: [sequence, type, timestamp]
+      required: [id, sequence, type, timestamp]
       properties:
-        id: {type: string, format: uuid}
+        id: {type: string}
         sequence: {type: integer, minimum: 1}
         type: {enum: [state, output, heartbeat, progress, needs_input, resumed, success, failed, cleanup_requested]}
         state: {type: string}
@@ -138,7 +199,7 @@ components:
       type: object
       required: [id, accountId, runId, prompt, state, blocking, askedAt]
       properties:
-        id: {type: string, format: uuid}
+        id: {type: string}
         accountId: {type: string, format: uuid}
         runId: {type: string, format: uuid}
         prompt: {type: string}
@@ -148,3 +209,24 @@ components:
         expiresAt: {type: string, format: date-time}
         answer: {type: string}
         answeredBy: {type: string, format: uuid}
+    CreateUser:
+      type: object
+      required: [subject, role]
+      properties:
+        subject: {type: string, minLength: 1}
+        role: {enum: [owner, user]}
+    PutSecret:
+      type: object
+      required: [secret]
+      properties:
+        secret: {type: object, writeOnly: true, minProperties: 1}
+        config: {type: object, description: Non-secret provider configuration.}
+    PutNotification:
+      type: object
+      required: [secret]
+      properties:
+        secret: {type: object, writeOnly: true, minProperties: 1}
+        config: {type: object, description: Non-secret destination configuration.}
+        allowedUsers: {type: array, items: {type: string}}
+        allowedChats: {type: array, items: {type: string}, description: Telegram chats or Discord guild/channel identifiers.}
+        enabled: {type: boolean, default: true}

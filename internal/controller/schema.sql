@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
   account_id uuid NOT NULL REFERENCES accounts(id),
   subject text NOT NULL,
   role text NOT NULL CHECK (role IN ('owner', 'user')),
+  disabled_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id, subject)
 );
@@ -30,6 +31,22 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id, provider, name)
+);
+CREATE TABLE IF NOT EXISTS notification_destinations (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  kind text NOT NULL CHECK (kind IN ('webhook', 'telegram', 'discord')),
+  name text NOT NULL,
+  encrypted_secret text NOT NULL,
+  config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  allowed_users jsonb NOT NULL DEFAULT '[]'::jsonb,
+  allowed_chats jsonb NOT NULL DEFAULT '[]'::jsonb,
+  enabled boolean NOT NULL DEFAULT true,
+  last_error text,
+  last_attempt_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id, kind, name)
 );
 CREATE TABLE IF NOT EXISTS runs (
   id uuid PRIMARY KEY,
@@ -54,7 +71,7 @@ CREATE TABLE IF NOT EXISTS runs (
   UNIQUE(account_id, idempotency_key)
 );
 CREATE TABLE IF NOT EXISTS events (
-  id uuid PRIMARY KEY,
+  id text PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),
   run_id uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   sequence bigint NOT NULL,
@@ -69,7 +86,7 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS events_run_time_idx ON events(account_id, run_id, timestamp);
 CREATE TABLE IF NOT EXISTS questions (
-  id uuid PRIMARY KEY,
+  id text PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),
   run_id uuid NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
   prompt text NOT NULL,
@@ -98,3 +115,6 @@ CREATE TABLE IF NOT EXISTS hosts (
   last_seen_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id, id)
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_at timestamptz;
+ALTER TABLE events ALTER COLUMN id TYPE text USING id::text;
+ALTER TABLE questions ALTER COLUMN id TYPE text USING id::text;

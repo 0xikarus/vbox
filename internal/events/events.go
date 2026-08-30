@@ -2,6 +2,9 @@ package events
 
 import (
 	"bufio"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +18,40 @@ import (
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
+
+func Sign(key []byte, event v1.Event) (string, error) {
+	canonical := struct {
+		ID        string          `json:"id,omitempty"`
+		RunID     string          `json:"runId"`
+		Sequence  uint64          `json:"sequence"`
+		Type      string          `json:"type"`
+		State     v1.JobState     `json:"state,omitempty"`
+		Stream    string          `json:"stream,omitempty"`
+		Message   string          `json:"message,omitempty"`
+		Data      json.RawMessage `json:"data,omitempty"`
+		Timestamp time.Time       `json:"timestamp"`
+	}{event.ID, event.RunID, event.Sequence, event.Type, event.State, event.Stream, event.Message, event.Data, event.Timestamp.UTC()}
+	payload, err := json.Marshal(canonical)
+	if err != nil {
+		return "", err
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write(payload)
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+func Verify(key []byte, event v1.Event) bool {
+	provided, err := base64.RawURLEncoding.DecodeString(event.Signature)
+	if err != nil {
+		return false
+	}
+	expected, err := Sign(key, event)
+	if err != nil {
+		return false
+	}
+	decoded, _ := base64.RawURLEncoding.DecodeString(expected)
+	return hmac.Equal(decoded, provided)
+}
 
 var ansi = regexp.MustCompile(`(?:\x1B\[[0-?]*[ -/]*[@-~])|[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]`)
 
@@ -51,6 +88,13 @@ func (s *Store) Append(event v1.Event) (v1.Event, error) {
 	event.Sequence = s.sequence
 	if event.Timestamp.IsZero() {
 		event.Timestamp = time.Now().UTC()
+	}
+	if event.ID == "" {
+		prefix := event.RunID
+		if prefix == "" {
+			prefix = fmt.Sprintf("event_%d", event.Timestamp.UnixNano())
+		}
+		event.ID = fmt.Sprintf("%s:%d", prefix, event.Sequence)
 	}
 	event.Message = s.Sanitize(event.Message)
 	data, err := json.Marshal(event)

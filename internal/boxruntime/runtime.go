@@ -4,9 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -133,8 +131,8 @@ func (r *Runtime) Run(ctx context.Context, argv []string, stdout, stderr io.Writ
 			}
 		}
 	}()
-	waitErr := cmd.Wait()
 	wg.Wait()
+	waitErr := cmd.Wait()
 	close(done)
 	exit := 0
 	if waitErr != nil {
@@ -165,7 +163,15 @@ func (r *Runtime) RunDetached(argv []string) (string, error) {
 	if len(argv) == 0 {
 		return "", fmt.Errorf("command argv cannot be empty")
 	}
-	runID := ID("run_")
+	runID := os.Getenv("VMBOX_RUN_ID")
+	if runID == "" {
+		runID = ID("run_")
+	}
+	if store, err := r.StoreFor(runID); err == nil {
+		if _, err := store.ReadStatus(); err == nil {
+			return runID, nil
+		}
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		return "", err
@@ -249,9 +255,11 @@ func (r *Runtime) push(event v1.Event) error {
 	if controller == "" || key == "" || event.RunID == "" {
 		return nil
 	}
-	mac := hmac.New(sha256.New, []byte(key))
-	fmt.Fprintf(mac, "%s\n%d\n%s\n%s\n%s", event.RunID, event.Sequence, event.Type, event.Timestamp.UTC().Format(time.RFC3339Nano), event.Message)
-	event.Signature = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	var err error
+	event.Signature, err = events.Sign([]byte(key), event)
+	if err != nil {
+		return err
+	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err

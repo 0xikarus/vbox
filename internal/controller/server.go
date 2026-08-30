@@ -2,10 +2,8 @@ package controller
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,18 +14,27 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/events"
+	"github.com/0xikarus/vmbox-service/internal/notifications"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
+type ProviderResolver func(context.Context, string, string, string) (provider.Provider, error)
+type NotificationSink func(context.Context, v1.Run, string, v1.JobState, string, string)
+
 type Server struct {
-	Store         *Store
-	Providers     *provider.Registry
-	Logger        *slog.Logger
-	MaxConcurrent int
-	mu            sync.Mutex
-	recent        map[string][]time.Time
-	PublicURL     string
-	DefaultImage  string
+	Store          *Store
+	Providers      *provider.Registry
+	Logger         *slog.Logger
+	MaxConcurrent  int
+	mu             sync.Mutex
+	recent         map[string][]time.Time
+	PublicURL      string
+	DefaultImage   string
+	Resolve        ProviderResolver
+	HTTP           *http.Client
+	ReconcileEvery time.Duration
+	Deliver        NotificationSink
 }
 
 func NewServer(store *Store, providers *provider.Registry) *Server {
@@ -52,6 +59,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/questions", s.auth(s.questions))
 	mux.HandleFunc("POST /v1/questions/{id}/answer", s.auth(s.answer))
 	mux.HandleFunc("POST /v1/hosts/heartbeat", s.auth(s.hostHeartbeat))
+	mux.HandleFunc("GET /v1/users", s.owner(s.listUsers))
+	mux.HandleFunc("POST /v1/users", s.owner(s.createUser))
+	mux.HandleFunc("DELETE /v1/users/{id}", s.owner(s.removeUser))
+	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))
+	mux.HandleFunc("PUT /v1/provider-credentials/{provider}/{name}", s.owner(s.putProviderCredential))
+	mux.HandleFunc("DELETE /v1/provider-credentials/{provider}/{name}", s.owner(s.deleteProviderCredential))
+	mux.HandleFunc("GET /v1/notifications", s.owner(s.listNotifications))
+	mux.HandleFunc("PUT /v1/notifications/{kind}/{name}", s.owner(s.putNotification))
+	mux.HandleFunc("POST /v1/notifications/{kind}/{name}/test", s.owner(s.testNotification))
+	mux.HandleFunc("DELETE /v1/notifications/{kind}/{name}", s.owner(s.deleteNotification))
 	return securityHeaders(mux)
 }
 
@@ -71,6 +88,15 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 		}
 		next(w, r, p)
 	}
+}
+func (s *Server) owner(next handler) http.HandlerFunc {
+	return s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
+		if p.Role != "owner" {
+			writeError(w, http.StatusForbidden, fmt.Errorf("owner role required"))
+			return
+		}
+		next(w, r, p)
+	})
 }
 func (s *Server) boxAuth(next handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +154,7 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request, p Principal) 
 		writeError(w, 400, fmt.Errorf("controller runs require an OCI image pinned by sha256 digest"))
 		return
 	}
-	if _, err := s.Providers.Get(req.Provider); err != nil {
+	if _, err := s.provider(r.Context(), p.AccountID, req.Provider, req.ProviderCredential); err != nil {
 		writeError(w, 400, err)
 		return
 	}
@@ -147,11 +173,13 @@ func (s *Server) createRun(w http.ResponseWriter, r *http.Request, p Principal) 
 	}
 }
 func (s *Server) schedule(ctx context.Context, p Principal, run v1.Run) {
-	prov, err := s.Providers.Get(run.Provider)
+	prov, err := s.provider(ctx, p.AccountID, run.Provider, run.Request.ProviderCredential)
 	if err != nil {
+		s.fail(ctx, p, run, err)
 		return
 	}
 	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, "", v1.JobProvisioning, "", nil)
+	s.notify(ctx, run, "provisioning", v1.JobProvisioning, "box provisioning started", "")
 	name := run.Request.Box
 	if name == "" {
 		name = "run-" + strings.ReplaceAll(run.ID, "-", "")[:12]
@@ -162,17 +190,28 @@ func (s *Server) schedule(ctx context.Context, p Principal, run v1.Run) {
 		s.fail(ctx, p, run, err)
 		return
 	}
-	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, box.ID, v1.JobRunning, "", nil)
+	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, box.ID, v1.JobPreparing, "", nil)
 	_, err = prov.Exec(ctx, box.ID, run.Request.Command, provider.ExecOptions{Detach: true})
 	if err != nil {
 		s.fail(ctx, p, run, err)
 		return
 	}
+	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, box.ID, v1.JobRunning, "", nil)
+	run.BoxID = box.ID
+	s.notify(ctx, run, "ready", v1.JobRunning, "box is ready and command was accepted", "")
 }
 func (s *Server) fail(ctx context.Context, p Principal, run v1.Run, err error) {
 	code := 1
 	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, "", v1.JobFailed, err.Error(), &code)
 	s.Logger.Error("run failed", "run", run.ID, "error", err)
+	s.notify(ctx, run, "failed", v1.JobFailed, err.Error(), "")
+}
+
+func (s *Server) provider(ctx context.Context, accountID, name, credential string) (provider.Provider, error) {
+	if s.Resolve != nil {
+		return s.Resolve(ctx, accountID, name, credential)
+	}
+	return s.Providers.Get(name)
 }
 func (s *Server) getRun(w http.ResponseWriter, r *http.Request, p Principal) {
 	run, err := s.Store.GetRun(r.Context(), p.AccountID, r.PathValue("id"))
@@ -195,7 +234,7 @@ func (s *Server) runProvider(ctx context.Context, p Principal, id string) (v1.Ru
 	if err != nil {
 		return run, nil, err
 	}
-	prov, err := s.Providers.Get(run.Provider)
+	prov, err := s.provider(ctx, run.AccountID, run.Provider, run.Request.ProviderCredential)
 	return run, prov, err
 }
 func (s *Server) stopRun(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -210,6 +249,7 @@ func (s *Server) stopRun(w http.ResponseWriter, r *http.Request, p Principal) {
 		return
 	}
 	_ = s.Store.SetRunState(r.Context(), p.AccountID, run.ID, run.BoxID, v1.JobRetained, "stopped by user", nil)
+	s.notify(r.Context(), run, "stopped", v1.JobRetained, "stopped by user", "")
 	writeJSON(w, 200, box)
 }
 func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -224,6 +264,7 @@ func (s *Server) startRun(w http.ResponseWriter, r *http.Request, p Principal) {
 		return
 	}
 	_ = s.Store.SetRunState(r.Context(), p.AccountID, run.ID, run.BoxID, v1.JobRunning, "resumed by user", nil)
+	s.notify(r.Context(), run, "resumed", v1.JobRunning, "resumed by user", "")
 	writeJSON(w, 200, box)
 }
 func (s *Server) resizeRun(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -285,6 +326,7 @@ func (s *Server) deleteRun(w http.ResponseWriter, r *http.Request, p Principal) 
 		return
 	}
 	_ = s.Store.SetRunState(r.Context(), p.AccountID, run.ID, run.BoxID, v1.JobDeleted, "deleted by user", nil)
+	s.notify(r.Context(), run, "deleted", v1.JobDeleted, "deleted by user", "")
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) postEvent(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -295,18 +337,34 @@ func (s *Server) postEvent(w http.ResponseWriter, r *http.Request, p Principal) 
 	}
 	event.RunID = r.PathValue("id")
 	lease := r.Header.Get("X-VMBox-Lease")
-	mac := hmac.New(sha256.New, []byte(lease))
-	fmt.Fprintf(mac, "%s\n%d\n%s\n%s\n%s", event.RunID, event.Sequence, event.Type, event.Timestamp.UTC().Format(time.RFC3339Nano), event.Message)
-	signature, err := base64.RawURLEncoding.DecodeString(event.Signature)
-	if err != nil || !hmac.Equal(mac.Sum(nil), signature) {
+	if event.ID == "" || event.Sequence == 0 || event.Timestamp.IsZero() {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("event id, sequence, and timestamp are required"))
+		return
+	}
+	if !events.Verify([]byte(lease), event) {
 		writeError(w, http.StatusUnauthorized, fmt.Errorf("invalid event signature"))
 		return
 	}
-	if err := s.Store.AppendEvent(r.Context(), p, event); err != nil {
+	inserted, err := s.Store.AppendEvent(r.Context(), p, event)
+	if err != nil {
 		writeError(w, 400, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+	if !inserted {
+		return
+	}
+	if run, err := s.Store.GetRun(r.Context(), p.AccountID, event.RunID); err == nil {
+		questionID := ""
+		if event.Type == "needs_input" && len(event.Data) > 0 {
+			var data struct {
+				QuestionID string `json:"questionId"`
+			}
+			_ = json.Unmarshal(event.Data, &data)
+			questionID = data.QuestionID
+		}
+		go s.notify(context.Background(), run, event.Type, event.State, event.Message, questionID)
+	}
 	if event.State == v1.JobSucceeded || event.State == v1.JobFailed || event.State == v1.JobCancelled {
 		go s.applyLifecycle(context.Background(), p, event.RunID, event.State)
 	}
@@ -321,7 +379,7 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 		action = run.Request.Lifecycle.OnSuccess
 	}
 	if action == v1.LifecycleRetain {
-		_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, run.BoxID, v1.JobRetained, "", nil)
+		s.cleanupRun(ctx, p, run, action, "lifecycle policy")
 		return
 	}
 	grace := run.Request.Lifecycle.GracePeriod
@@ -335,15 +393,119 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 		return
 	case <-timer.C:
 	}
-	prov, err := s.Providers.Get(run.Provider)
+	s.cleanupRun(ctx, p, run, action, "lifecycle policy")
+}
+
+func (s *Server) StartReconciler(ctx context.Context) error {
+	if err := s.ReconcileNow(ctx); err != nil {
+		return err
+	}
+	interval := s.ReconcileEvery
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := s.ReconcileNow(ctx); err != nil {
+					s.Logger.Error("controller reconciliation failed", "error", err)
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+func (s *Server) ReconcileNow(ctx context.Context) error {
+	runs, err := s.Store.ListReconcileRuns(ctx)
 	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	for _, run := range runs {
+		p := Principal{AccountID: run.AccountID, Subject: "controller:reconciler"}
+		if maxTTLExpired(run, now) {
+			if run.BoxID == "" {
+				_ = s.Store.SetRunState(ctx, run.AccountID, run.ID, "", v1.JobDeleted, "maximum TTL expired before provisioning", nil)
+				s.notify(ctx, run, "ttl_expired", v1.JobDeleted, "maximum TTL expired", "")
+				continue
+			}
+			s.cleanupRun(ctx, p, run, v1.LifecycleDelete, "maximum TTL expired")
+			continue
+		}
+		switch run.State {
+		case v1.JobQueued, v1.JobProvisioning:
+			if run.BoxID == "" {
+				s.schedule(ctx, p, run)
+			}
+		case v1.JobPreparing:
+			// Provider creation and runtime detached launch are idempotent by box
+			// ownership and controller run ID, so this closes either crash window.
+			s.schedule(ctx, p, run)
+		case v1.JobRunning, v1.JobNeedsInput, v1.JobResuming:
+			prov, err := s.provider(ctx, run.AccountID, run.Provider, run.Request.ProviderCredential)
+			if err != nil {
+				s.Logger.Error("resolve provider during reconciliation", "run", run.ID, "error", err)
+				continue
+			}
+			actual, err := prov.Inspect(ctx, run.BoxID)
+			if errors.Is(err, provider.ErrNotFound) {
+				s.fail(ctx, p, run, fmt.Errorf("provider box disappeared"))
+				continue
+			}
+			if err != nil {
+				s.Logger.Error("inspect provider box", "run", run.ID, "error", err)
+				continue
+			}
+			if actual.State == provider.StateFailed {
+				s.fail(ctx, p, run, fmt.Errorf("provider reports failed box state"))
+				continue
+			}
+			desired := actual
+			desired.State = provider.StateRunning
+			if _, err := prov.Reconcile(ctx, desired); err != nil {
+				s.Logger.Error("reconcile provider box", "run", run.ID, "error", err)
+			}
+		case v1.JobSucceeded, v1.JobFailed, v1.JobCancelled:
+			finished := run.UpdatedAt
+			if run.FinishedAt != nil {
+				finished = *run.FinishedAt
+			}
+			if now.Before(finished.Add(run.Request.Lifecycle.GracePeriod)) {
+				continue
+			}
+			action := run.Request.Lifecycle.OnFailure
+			if run.State == v1.JobSucceeded {
+				action = run.Request.Lifecycle.OnSuccess
+			}
+			s.cleanupRun(ctx, p, run, action, "lifecycle reconciliation")
+		}
+	}
+	return nil
+}
+
+func (s *Server) cleanupRun(ctx context.Context, p Principal, run v1.Run, action v1.LifecycleAction, reason string) {
+	if action == v1.LifecycleRetain {
+		_ = s.Store.SetRunState(ctx, run.AccountID, run.ID, run.BoxID, v1.JobRetained, reason, nil)
+		s.notify(ctx, run, "retained", v1.JobRetained, reason, "")
 		return
 	}
-	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, run.BoxID, v1.JobCleaningUp, "", nil)
+	prov, err := s.provider(ctx, run.AccountID, run.Provider, run.Request.ProviderCredential)
+	if err != nil {
+		s.Logger.Error("resolve provider for cleanup", "run", run.ID, "error", err)
+		return
+	}
+	_ = s.Store.SetRunState(ctx, run.AccountID, run.ID, run.BoxID, v1.JobCleaningUp, reason, nil)
 	if action == v1.LifecycleStop {
 		_, err = prov.Stop(ctx, run.BoxID)
 		if err == nil {
-			_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, run.BoxID, v1.JobRetained, "", nil)
+			_ = s.Store.SetRunState(ctx, run.AccountID, run.ID, run.BoxID, v1.JobRetained, reason, nil)
+			s.notify(ctx, run, "stopped", v1.JobRetained, reason, "")
 		}
 		return
 	}
@@ -351,13 +513,14 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 	if name == "" {
 		name = "run-" + strings.ReplaceAll(run.ID, "-", "")[:12]
 	}
-	owner := provider.Owner{AccountID: p.AccountID, BoxID: name, RunID: run.ID, Lease: run.Lease}
+	owner := provider.Owner{AccountID: run.AccountID, BoxID: name, RunID: run.ID, Lease: run.Lease}
 	if err := prov.Delete(ctx, run.BoxID, owner); err != nil {
-		s.Logger.Error("lifecycle cleanup failed", "run", run.ID, "error", err)
-		_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, run.BoxID, v1.JobRetained, "cleanup failed: "+err.Error(), nil)
+		s.Logger.Error("cleanup failed", "run", run.ID, "error", err)
+		_ = s.Store.SetRunState(ctx, run.AccountID, run.ID, run.BoxID, v1.JobRetained, "cleanup failed: "+err.Error(), nil)
 		return
 	}
-	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, run.BoxID, v1.JobDeleted, "", nil)
+	_ = s.Store.SetRunState(ctx, run.AccountID, run.ID, run.BoxID, v1.JobDeleted, reason, nil)
+	s.notify(ctx, run, "deleted", v1.JobDeleted, reason, "")
 }
 func (s *Server) questions(w http.ResponseWriter, r *http.Request, p Principal) {
 	values, err := s.Store.ListQuestions(r.Context(), p)
@@ -385,6 +548,11 @@ func (s *Server) answer(w http.ResponseWriter, r *http.Request, p Principal) {
 		writeError(w, 409, err)
 		return
 	}
+	if question, err := s.Store.GetQuestion(r.Context(), p.AccountID, r.PathValue("id")); err == nil {
+		if run, err := s.Store.GetRun(r.Context(), p.AccountID, question.RunID); err == nil {
+			s.notify(r.Context(), run, "answer_accepted", v1.JobRunning, "answer accepted; job resumed", question.ID)
+		}
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 func (s *Server) hostHeartbeat(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -401,6 +569,232 @@ func (s *Server) hostHeartbeat(w http.ResponseWriter, r *http.Request, p Princip
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listUsers(w http.ResponseWriter, r *http.Request, p Principal) {
+	values, err := s.Store.ListUsers(r.Context(), p)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, values)
+}
+
+func (s *Server) createUser(w http.ResponseWriter, r *http.Request, p Principal) {
+	var req v1.CreateUserRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	value, err := s.Store.CreateUser(r.Context(), p, req)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, value)
+}
+
+func (s *Server) removeUser(w http.ResponseWriter, r *http.Request, p Principal) {
+	if err := s.Store.RemoveUser(r.Context(), p, r.PathValue("id")); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listProviderCredentials(w http.ResponseWriter, r *http.Request, p Principal) {
+	values, err := s.Store.ListProviderCredentials(r.Context(), p.AccountID)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, values)
+}
+
+func (s *Server) putProviderCredential(w http.ResponseWriter, r *http.Request, p Principal) {
+	var req v1.PutProviderCredentialRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	value, err := s.Store.PutProviderCredential(r.Context(), p, r.PathValue("provider"), r.PathValue("name"), req)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, value)
+}
+
+func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request, p Principal) {
+	if err := s.Store.DeleteProviderCredential(r.Context(), p, r.PathValue("provider"), r.PathValue("name")); err != nil {
+		writeError(w, 404, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request, p Principal) {
+	values, err := s.Store.ListNotifications(r.Context(), p.AccountID, false)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	result := make([]v1.NotificationDestination, 0, len(values))
+	for _, value := range values {
+		result = append(result, value.NotificationDestination)
+	}
+	writeJSON(w, 200, result)
+}
+
+func (s *Server) putNotification(w http.ResponseWriter, r *http.Request, p Principal) {
+	var req v1.PutNotificationRequest
+	if err := decodeJSON(r, &req); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	kind := r.PathValue("kind")
+	if (kind == "telegram" || kind == "discord") && (len(req.AllowedUsers) == 0 || len(req.AllowedChats) == 0) {
+		writeError(w, 400, fmt.Errorf("Telegram and Discord require non-empty user and chat/channel allowlists"))
+		return
+	}
+	value, err := s.Store.PutNotification(r.Context(), p, kind, r.PathValue("name"), req)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	writeJSON(w, 200, value)
+}
+
+func (s *Server) deleteNotification(w http.ResponseWriter, r *http.Request, p Principal) {
+	if err := s.Store.DeleteNotification(r.Context(), p, r.PathValue("kind"), r.PathValue("name")); err != nil {
+		writeError(w, 404, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) testNotification(w http.ResponseWriter, r *http.Request, p Principal) {
+	values, err := s.Store.ListNotifications(r.Context(), p.AccountID, true)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	for _, value := range values {
+		if value.Kind != r.PathValue("kind") || value.Name != r.PathValue("name") {
+			continue
+		}
+		adapter, err := s.notificationAdapter(value)
+		if err == nil {
+			errors := (notifications.Dispatcher{Adapters: []notifications.Adapter{adapter}}).Send(r.Context(), notifications.Delivery{AccountID: p.AccountID, Event: "test", Message: "vmbox notification test"})
+			err = errors[adapter.Name()]
+		}
+		s.Store.NotificationAttempt(r.Context(), p.AccountID, value.ID, err)
+		if err != nil {
+			writeError(w, 502, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	writeError(w, 404, fmt.Errorf("notification destination not found"))
+}
+
+func (s *Server) notify(ctx context.Context, run v1.Run, event string, state v1.JobState, message, questionID string) {
+	if s.Deliver != nil {
+		s.Deliver(ctx, run, event, state, message, questionID)
+		return
+	}
+	go func() {
+		deliveryCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		s.deliverNotifications(deliveryCtx, run, event, state, message, questionID)
+	}()
+}
+
+func (s *Server) deliverNotifications(ctx context.Context, run v1.Run, event string, state v1.JobState, message, questionID string) {
+	values, err := s.Store.ListNotifications(ctx, run.AccountID, true)
+	if err != nil {
+		s.Logger.Error("load notification destinations", "account", run.AccountID, "error", err)
+		return
+	}
+	if event == "output" {
+		message = ""
+	}
+	for _, value := range values {
+		if !value.Enabled {
+			continue
+		}
+		adapter, err := s.notificationAdapter(value)
+		if err == nil {
+			errors := (notifications.Dispatcher{Adapters: []notifications.Adapter{adapter}}).Send(ctx, notifications.Delivery{AccountID: run.AccountID, RunID: run.ID, Box: run.Request.Box, Event: event, State: state, Message: message, QuestionID: questionID})
+			err = errors[adapter.Name()]
+		}
+		s.Store.NotificationAttempt(ctx, run.AccountID, value.ID, err)
+		if err != nil {
+			s.Logger.Error("notification delivery failed", "destination", value.ID, "run", run.ID, "error", err)
+		}
+	}
+}
+
+func maxTTLExpired(run v1.Run, now time.Time) bool {
+	return run.Request.Lifecycle.MaxTTL > 0 && !run.CreatedAt.IsZero() && !now.Before(run.CreatedAt.Add(run.Request.Lifecycle.MaxTTL))
+}
+
+func (s *Server) notificationAdapter(value DecryptedNotification) (notifications.Adapter, error) {
+	var secret, config map[string]any
+	if err := json.Unmarshal(value.Secret, &secret); err != nil {
+		return nil, err
+	}
+	if len(value.Config) > 0 {
+		if err := json.Unmarshal(value.Config, &config); err != nil {
+			return nil, err
+		}
+	}
+	stringValue := func(values map[string]any, key string) string {
+		value, _ := values[key].(string)
+		return value
+	}
+	switch value.Kind {
+	case "webhook":
+		url := stringValue(secret, "url")
+		if url == "" {
+			return nil, fmt.Errorf("webhook URL is required")
+		}
+		return notifications.Webhook{URL: url, Secret: []byte(stringValue(secret, "signingSecret")), Client: s.HTTP}, nil
+	case "telegram":
+		chatID, err := strconv.ParseInt(stringValue(config, "chatId"), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("Telegram chatId: %w", err)
+		}
+		users := make(map[int64]bool)
+		chats := make(map[int64]bool)
+		for _, item := range value.AllowedUsers {
+			id, err := strconv.ParseInt(item, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("Telegram allowed user: %w", err)
+			}
+			users[id] = true
+		}
+		for _, item := range value.AllowedChats {
+			id, err := strconv.ParseInt(item, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("Telegram allowed chat: %w", err)
+			}
+			chats[id] = true
+		}
+		if !chats[chatID] {
+			return nil, fmt.Errorf("Telegram destination chatId must be allowlisted")
+		}
+		return notifications.Telegram{Token: stringValue(secret, "token"), ChatID: chatID, AllowedUsers: users, AllowedChats: chats, Client: s.HTTP}, nil
+	case "discord":
+		url := stringValue(secret, "webhookUrl")
+		if url == "" {
+			return nil, fmt.Errorf("Discord webhookUrl is required")
+		}
+		return notifications.Discord{WebhookURL: url, Client: s.HTTP}, nil
+	default:
+		return nil, fmt.Errorf("unsupported notification kind %q", value.Kind)
+	}
 }
 func decodeJSON(r *http.Request, v any) error {
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))

@@ -71,6 +71,12 @@ func (p *LifecyclePolicy) Normalize() error {
 	if p.GracePeriod == 0 {
 		p.GracePeriod = 5 * time.Minute
 	}
+	if p.MaxTTL < 0 {
+		return fmt.Errorf("maxTtl must be positive")
+	}
+	if p.GracePeriod < 0 {
+		return fmt.Errorf("gracePeriod cannot be negative")
+	}
 	return nil
 }
 
@@ -84,8 +90,63 @@ type CreateRunRequest struct {
 	Command              []string           `json:"command"`
 	ExternalReference    string             `json:"externalReference,omitempty"`
 	CredentialReferences []string           `json:"credentialReferences,omitempty"`
+	ProviderCredential   string             `json:"providerCredential,omitempty"`
 	Lifecycle            LifecyclePolicy    `json:"lifecycle"`
 	NotificationPolicy   string             `json:"notificationPolicy,omitempty"`
+}
+
+type User struct {
+	ID        string    `json:"id"`
+	AccountID string    `json:"accountId"`
+	Subject   string    `json:"subject"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+type CreateUserRequest struct {
+	Subject string `json:"subject"`
+	Role    string `json:"role"`
+}
+
+type CreatedUser struct {
+	User
+	Token string `json:"token"`
+}
+
+type ProviderCredential struct {
+	ID        string          `json:"id"`
+	AccountID string          `json:"accountId"`
+	Provider  string          `json:"provider"`
+	Name      string          `json:"name"`
+	Config    json.RawMessage `json:"config,omitempty"`
+	CreatedAt time.Time       `json:"createdAt"`
+	UpdatedAt time.Time       `json:"updatedAt"`
+}
+
+type PutProviderCredentialRequest struct {
+	Secret json.RawMessage `json:"secret"`
+	Config json.RawMessage `json:"config,omitempty"`
+}
+
+type NotificationDestination struct {
+	ID           string          `json:"id"`
+	AccountID    string          `json:"accountId"`
+	Kind         string          `json:"kind"`
+	Name         string          `json:"name"`
+	Config       json.RawMessage `json:"config,omitempty"`
+	AllowedUsers []string        `json:"allowedUsers,omitempty"`
+	AllowedChats []string        `json:"allowedChats,omitempty"`
+	Enabled      bool            `json:"enabled"`
+	CreatedAt    time.Time       `json:"createdAt"`
+	UpdatedAt    time.Time       `json:"updatedAt"`
+}
+
+type PutNotificationRequest struct {
+	Secret       json.RawMessage `json:"secret"`
+	Config       json.RawMessage `json:"config,omitempty"`
+	AllowedUsers []string        `json:"allowedUsers,omitempty"`
+	AllowedChats []string        `json:"allowedChats,omitempty"`
+	Enabled      *bool           `json:"enabled,omitempty"`
 }
 
 type Run struct {

@@ -97,6 +97,7 @@ type Telegram struct {
 	Token        string
 	ChatID       int64
 	AllowedUsers map[int64]bool
+	AllowedChats map[int64]bool
 	Client       *http.Client
 	Answerer     Answerer
 	AccountID    string
@@ -125,6 +126,9 @@ func (t Telegram) HandleUpdate(ctx context.Context, body io.Reader) error {
 	var update struct {
 		Message struct {
 			Text string `json:"text"`
+			Chat struct {
+				ID int64 `json:"id"`
+			} `json:"chat"`
 			From struct {
 				ID int64 `json:"id"`
 			} `json:"from"`
@@ -136,6 +140,9 @@ func (t Telegram) HandleUpdate(ctx context.Context, body io.Reader) error {
 	if !t.AllowedUsers[update.Message.From.ID] {
 		return fmt.Errorf("Telegram user is not allowlisted")
 	}
+	if len(t.AllowedChats) > 0 && !t.AllowedChats[update.Message.Chat.ID] {
+		return fmt.Errorf("Telegram chat is not allowlisted")
+	}
 	fields := strings.SplitN(strings.TrimSpace(update.Message.Text), " ", 3)
 	if len(fields) != 3 || fields[0] != "/answer" {
 		return fmt.Errorf("expected /answer QUESTION_ID TEXT")
@@ -144,12 +151,14 @@ func (t Telegram) HandleUpdate(ctx context.Context, body io.Reader) error {
 }
 
 type Discord struct {
-	WebhookURL   string
-	PublicKey    ed25519.PublicKey
-	AllowedUsers map[string]bool
-	Client       *http.Client
-	Answerer     Answerer
-	AccountID    string
+	WebhookURL      string
+	PublicKey       ed25519.PublicKey
+	AllowedUsers    map[string]bool
+	AllowedGuilds   map[string]bool
+	AllowedChannels map[string]bool
+	Client          *http.Client
+	Answerer        Answerer
+	AccountID       string
 }
 
 func (Discord) Name() string { return "discord" }
@@ -168,7 +177,9 @@ func (d Discord) HandleInteraction(ctx context.Context, signature, timestamp str
 		return fmt.Errorf("invalid Discord interaction signature")
 	}
 	var interaction struct {
-		Member struct {
+		GuildID   string `json:"guild_id"`
+		ChannelID string `json:"channel_id"`
+		Member    struct {
 			User struct {
 				ID string `json:"id"`
 			} `json:"user"`
@@ -188,6 +199,12 @@ func (d Discord) HandleInteraction(ctx context.Context, signature, timestamp str
 	user := interaction.Member.User.ID
 	if !d.AllowedUsers[user] {
 		return fmt.Errorf("Discord user is not allowlisted")
+	}
+	if len(d.AllowedGuilds) > 0 && !d.AllowedGuilds[interaction.GuildID] {
+		return fmt.Errorf("Discord guild is not allowlisted")
+	}
+	if len(d.AllowedChannels) > 0 && !d.AllowedChannels[interaction.ChannelID] {
+		return fmt.Errorf("Discord channel is not allowlisted")
 	}
 	question := strings.TrimPrefix(interaction.Data.CustomID, "answer:")
 	answer := ""

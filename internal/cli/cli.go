@@ -3,12 +3,16 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strconv"
@@ -31,10 +35,19 @@ type App struct {
 	Environ    map[string]string
 	HTTP       *http.Client
 	ConfigPath string
+	Runner     procexec.Runner
+}
+
+type stringList []string
+
+func (s *stringList) String() string { return strings.Join(*s, ",") }
+func (s *stringList) Set(value string) error {
+	*s = append(*s, value)
+	return nil
 }
 
 func New() *App {
-	return &App{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Environ: envMap(), HTTP: &http.Client{Timeout: 75 * time.Second}}
+	return &App{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Environ: envMap(), HTTP: &http.Client{Timeout: 75 * time.Second}, Runner: procexec.OSRunner{}}
 }
 func envMap() map[string]string {
 	result := make(map[string]string)
@@ -84,6 +97,9 @@ parsed:
 	active, err := file.Active(contextName)
 	if err != nil {
 		return err
+	}
+	if args[0] == "controller" {
+		return a.provisionController(ctx, file, active, args[1:])
 	}
 	mode := "standalone"
 	if active.Controller != "" && !standalone {
@@ -168,6 +184,7 @@ func (a *App) context(file config.File, args []string) error {
 		fs.StringVar(&ctx.IncusProject, "incus-project", "", "Incus project")
 		fs.BoolVar(&ctx.IncusVM, "incus-vm", false, "use QEMU VMs")
 		fs.StringVar(&ctx.PreAttachedDisk, "pre-attached-disk", "", "manual Sevalla disk ID")
+		fs.StringVar(&ctx.ProviderCredential, "provider-credential", "", "controller provider credential name")
 		fs.StringVar(&ctx.TokenEnv, "token-env", "VMBOX_CONTROLLER_TOKEN", "environment variable containing controller token")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
@@ -186,6 +203,158 @@ func (a *App) context(file config.File, args []string) error {
 	default:
 		return fmt.Errorf("unknown context command %q", args[0])
 	}
+}
+
+func (a *App) provisionController(ctx context.Context, file config.File, c config.Context, args []string) error {
+	if len(args) == 0 || (args[0] != "init" && args[0] != "ensure") {
+		return fmt.Errorf("usage: vmbox controller init|ensure --endpoint HTTPS_URL [--yes]")
+	}
+	operation := args[0]
+	fs := flag.NewFlagSet("controller "+operation, flag.ContinueOnError)
+	fs.SetOutput(a.Err)
+	endpoint := fs.String("endpoint", a.Environ["VMBOX_CONTROLLER_URL"], "public controller HTTPS endpoint")
+	account := fs.String("account", "default", "initial account name")
+	owner := fs.String("owner", "owner", "initial owner subject")
+	yes := fs.Bool("yes", false, "confirm billable provisioning")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if operation == "ensure" && c.Controller != "" {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.Controller, "/")+"/healthz", nil)
+		if err == nil {
+			if resp, requestErr := a.HTTP.Do(req); requestErr == nil {
+				_ = resp.Body.Close()
+				if resp.StatusCode == http.StatusOK {
+					fmt.Fprintln(a.Out, "controller is healthy; no provisioning changes required")
+					return nil
+				}
+			}
+		}
+	}
+	if operation == "init" && c.Controller != "" {
+		return fmt.Errorf("context %q already has controller %s; use controller ensure", c.Name, c.Controller)
+	}
+	if c.Provider != "railway" {
+		return fmt.Errorf("controller provisioning currently requires a Railway context")
+	}
+	if c.Project == "" || c.Environment == "" || c.Image == "" || !strings.Contains(c.Image, "@sha256:") {
+		return fmt.Errorf("Railway project, environment, and a digest-pinned context image are required")
+	}
+	if *endpoint == "" || !strings.HasPrefix(*endpoint, "https://") {
+		return fmt.Errorf("--endpoint must be the controller's public HTTPS URL")
+	}
+	fmt.Fprintf(a.Out, "Controller plan\n  provider: Railway\n  project: %s\n  environment: %s\n  service: vmbox-controller\n  database: vmbox-postgres\n  endpoint: %s\n", c.Project, c.Environment, *endpoint)
+	if !*yes {
+		return fmt.Errorf("provisioning may create billable infrastructure; review the plan and rerun with --yes")
+	}
+	runner := a.Runner
+	if _, ok := runner.(procexec.OSRunner); ok {
+		token := a.Environ["RAILWAY_API_TOKEN"]
+		if token == "" {
+			return fmt.Errorf("RAILWAY_API_TOKEN is required")
+		}
+		runner = procexec.OSRunner{Env: map[string]string{"RAILWAY_API_TOKEN": token, "RAILWAY_TOKEN": token}}
+	}
+	target := []string{"--project", c.Project, "--environment", c.Environment}
+	run := func(argv ...string) (procexec.Result, error) {
+		full := append([]string{"railway"}, argv...)
+		full = append(full, target...)
+		result, err := runner.Run(ctx, full, nil, nil, nil)
+		if err != nil {
+			return result, err
+		}
+		if result.ExitCode != 0 {
+			action := "Railway command"
+			if len(argv) > 0 {
+				action = "Railway " + argv[0]
+			}
+			return result, fmt.Errorf("%s failed with exit %d", action, result.ExitCode)
+		}
+		return result, nil
+	}
+	listed, err := run("service", "list", "--json")
+	if err != nil {
+		return err
+	}
+	var services []struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(listed.Stdout, &services); err != nil {
+		return fmt.Errorf("decode Railway services: %w", err)
+	}
+	hasController, hasDatabase := false, false
+	for _, service := range services {
+		hasController = hasController || service.Name == "vmbox-controller"
+		hasDatabase = hasDatabase || service.Name == "vmbox-postgres"
+	}
+	if !hasDatabase {
+		if _, err := run("add", "--database", "postgres", "--service", "vmbox-postgres"); err != nil {
+			return err
+		}
+	}
+	created := false
+	if !hasController {
+		if _, err := run("service", "create", "--name", "vmbox-controller", "--json"); err != nil {
+			return err
+		}
+		created = true
+	}
+	variables := []string{"variables", "set", "--service", "vmbox-controller", "--skip-deploys",
+		"DATABASE_URL=${{vmbox-postgres.DATABASE_URL}}",
+		"VMBOX_CONTROLLER_URL=" + strings.TrimRight(*endpoint, "/"),
+		"VMBOX_IMAGE=" + c.Image,
+	}
+	tokenText := ""
+	if created {
+		encryption, err := randomBytes(32)
+		if err != nil {
+			return err
+		}
+		ownerToken, err := randomBytes(32)
+		if err != nil {
+			return err
+		}
+		tokenText = base64.RawURLEncoding.EncodeToString(ownerToken)
+		tokenHash := sha256.Sum256([]byte(tokenText))
+		variables = append(variables,
+			"VMBOX_ENCRYPTION_KEY="+base64.RawURLEncoding.EncodeToString(encryption),
+			"VMBOX_BOOTSTRAP_TOKEN_HASH="+base64.RawURLEncoding.EncodeToString(tokenHash[:]),
+			"VMBOX_ACCOUNT_NAME="+*account,
+			"VMBOX_OWNER_SUBJECT="+*owner,
+		)
+	}
+	if _, err := run(variables...); err != nil {
+		return err
+	}
+	if _, err := run("service", "update", "--service", "vmbox-controller", "--image", c.Image, "--json"); err != nil {
+		return err
+	}
+	if _, err := run("redeploy", "--service", "vmbox-controller", "--yes", "--json"); err != nil {
+		return err
+	}
+	c.Controller = strings.TrimRight(*endpoint, "/")
+	c.Account = *account
+	if c.TokenEnv == "" {
+		c.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
+	}
+	file.Contexts[c.Name] = c
+	if err := config.Save(a.ConfigPath, file); err != nil {
+		return err
+	}
+	if created {
+		fmt.Fprintf(a.Out, "controller provisioned; save this owner token now (shown once):\n%s=%s\n", c.TokenEnv, tokenText)
+	} else {
+		fmt.Fprintln(a.Out, "controller configuration ensured; existing accounts and tokens were preserved")
+	}
+	return nil
+}
+
+func randomBytes(size int) ([]byte, error) {
+	value := make([]byte, size)
+	if _, err := rand.Read(value); err != nil {
+		return nil, err
+	}
+	return value, nil
 }
 
 func (a *App) provider(ctx config.Context) (provider.Provider, error) {
@@ -381,7 +550,7 @@ func (a *App) controller(ctx context.Context, c config.Context, args []string) e
 		if len(argv) == 0 {
 			argv = []string{"tmux", "new-session", "-A", "-s", "vmbox"}
 		}
-		req := v1.CreateRunRequest{Provider: c.Provider, Box: name, Image: c.Image, Region: c.Cluster, Command: argv, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}}
+		req := v1.CreateRunRequest{Provider: c.Provider, ProviderCredential: c.ProviderCredential, Box: name, Image: c.Image, Region: c.Cluster, Command: argv, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}}
 		var run v1.Run
 		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/runs", req, &run, map[string]string{"Idempotency-Key": "cli-" + name + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)})
 		if err != nil {
@@ -490,6 +659,131 @@ func (a *App) controller(ctx context.Context, c config.Context, args []string) e
 		}
 		_, err := a.request(ctx, c, token, http.MethodPost, "/v1/questions/"+args[1]+"/answer", v1.AnswerRequest{Answer: strings.Join(args[2:], " ")}, nil, nil)
 		return err
+	case "users":
+		if len(args) < 2 {
+			return fmt.Errorf("users requires list, add, or remove")
+		}
+		switch args[1] {
+		case "list":
+			var users []v1.User
+			_, err := a.request(ctx, c, token, http.MethodGet, "/v1/users", nil, &users, nil)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(a.Out).Encode(users)
+		case "add":
+			if len(args) < 3 {
+				return fmt.Errorf("users add requires SUBJECT [--role owner|user]")
+			}
+			fs := flag.NewFlagSet("users add", flag.ContinueOnError)
+			fs.SetOutput(a.Err)
+			role := fs.String("role", "user", "owner or user")
+			if err := fs.Parse(args[3:]); err != nil {
+				return err
+			}
+			var created v1.CreatedUser
+			_, err := a.request(ctx, c, token, http.MethodPost, "/v1/users", v1.CreateUserRequest{Subject: args[2], Role: *role}, &created, nil)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(a.Out).Encode(created)
+		case "remove":
+			if len(args) != 3 {
+				return fmt.Errorf("users remove requires USER_ID")
+			}
+			_, err := a.request(ctx, c, token, http.MethodDelete, "/v1/users/"+url.PathEscape(args[2]), nil, nil, nil)
+			return err
+		default:
+			return fmt.Errorf("unknown users command %q", args[1])
+		}
+	case "credentials":
+		if len(args) < 2 {
+			return fmt.Errorf("credentials requires list, set, or remove")
+		}
+		if args[1] == "list" {
+			var values []v1.ProviderCredential
+			_, err := a.request(ctx, c, token, http.MethodGet, "/v1/provider-credentials", nil, &values, nil)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(a.Out).Encode(values)
+		}
+		if len(args) < 4 {
+			return fmt.Errorf("credentials %s requires PROVIDER NAME", args[1])
+		}
+		path := "/v1/provider-credentials/" + url.PathEscape(args[2]) + "/" + url.PathEscape(args[3])
+		switch args[1] {
+		case "set":
+			fs := flag.NewFlagSet("credentials set", flag.ContinueOnError)
+			fs.SetOutput(a.Err)
+			secretEnv := fs.String("secret-env", "", "environment variable containing a JSON secret object")
+			configText := fs.String("config", "{}", "non-secret provider config JSON")
+			if err := fs.Parse(args[4:]); err != nil {
+				return err
+			}
+			if *secretEnv == "" || a.Environ[*secretEnv] == "" {
+				return fmt.Errorf("--secret-env must name a non-empty environment variable")
+			}
+			req := v1.PutProviderCredentialRequest{Secret: json.RawMessage(a.Environ[*secretEnv]), Config: json.RawMessage(*configText)}
+			var value v1.ProviderCredential
+			_, err := a.request(ctx, c, token, http.MethodPut, path, req, &value, nil)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(a.Out).Encode(value)
+		case "remove":
+			_, err := a.request(ctx, c, token, http.MethodDelete, path, nil, nil, nil)
+			return err
+		default:
+			return fmt.Errorf("unknown credentials command %q", args[1])
+		}
+	case "notifications":
+		if len(args) < 2 {
+			return fmt.Errorf("notifications requires list, setup, test, or remove")
+		}
+		if args[1] == "list" {
+			var values []v1.NotificationDestination
+			_, err := a.request(ctx, c, token, http.MethodGet, "/v1/notifications", nil, &values, nil)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(a.Out).Encode(values)
+		}
+		if len(args) < 4 {
+			return fmt.Errorf("notifications %s requires KIND NAME", args[1])
+		}
+		path := "/v1/notifications/" + url.PathEscape(args[2]) + "/" + url.PathEscape(args[3])
+		switch args[1] {
+		case "setup":
+			fs := flag.NewFlagSet("notifications setup", flag.ContinueOnError)
+			fs.SetOutput(a.Err)
+			secretEnv := fs.String("secret-env", "", "environment variable containing a JSON secret object")
+			configText := fs.String("config", "{}", "non-secret destination config JSON")
+			var users, chats stringList
+			fs.Var(&users, "allow-user", "allowed Telegram/Discord user ID (repeatable)")
+			fs.Var(&chats, "allow-chat", "allowed chat, channel, or guild ID (repeatable)")
+			if err := fs.Parse(args[4:]); err != nil {
+				return err
+			}
+			if *secretEnv == "" || a.Environ[*secretEnv] == "" {
+				return fmt.Errorf("--secret-env must name a non-empty environment variable")
+			}
+			req := v1.PutNotificationRequest{Secret: json.RawMessage(a.Environ[*secretEnv]), Config: json.RawMessage(*configText), AllowedUsers: users, AllowedChats: chats}
+			var value v1.NotificationDestination
+			_, err := a.request(ctx, c, token, http.MethodPut, path, req, &value, nil)
+			if err != nil {
+				return err
+			}
+			return json.NewEncoder(a.Out).Encode(value)
+		case "test":
+			_, err := a.request(ctx, c, token, http.MethodPost, path+"/test", map[string]any{}, nil, nil)
+			return err
+		case "remove":
+			_, err := a.request(ctx, c, token, http.MethodDelete, path, nil, nil, nil)
+			return err
+		default:
+			return fmt.Errorf("unknown notifications command %q", args[1])
+		}
 	default:
 		return fmt.Errorf("unknown controller command %q", args[0])
 	}
@@ -546,6 +840,9 @@ Usage:
   vmbox resize <box> --cpu N --memory MiB | clean <box> --yes | cost <box>
   vmbox context add|use|list | provider validate
   vmbox questions | answer <question-id> <text>
+  vmbox controller init|ensure --endpoint HTTPS_URL [--yes]
+  vmbox users list|add|remove | credentials list|set|remove
+  vmbox notifications list|setup|test|remove
 
 Everything following -- is forwarded as an exact argv vector. Use bash -lc
 explicitly when shell parsing is desired. A configured controller is mandatory

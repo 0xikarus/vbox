@@ -39,6 +39,8 @@ Docker supports local, named, SSH, and mutually authenticated TLS contexts. An u
 
 The controller requires PostgreSQL and never stores repositories. Bootstrap prints a one-time owner token; store it in a password manager or environment, not in this repository.
 
+Controller owners can use `vmbox controller init|ensure`, manage exactly `owner` and `user` account roles with `vmbox users`, store account-scoped encrypted provider credentials with `vmbox credentials`, and configure/test/remove webhook, Telegram, and Discord delivery with `vmbox notifications`. See [controller operations](docs/CONTROLLER.md).
+
 ```bash
 export DATABASE_URL='postgres://...'
 vmbox-controller bootstrap

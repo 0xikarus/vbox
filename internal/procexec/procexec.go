@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"strings"
 )
 
 type Result struct {
@@ -19,13 +21,31 @@ type Runner interface {
 	Run(context.Context, []string, io.Reader, io.Writer, io.Writer) (Result, error)
 }
 
-type OSRunner struct{}
+type OSRunner struct {
+	// Env overlays the current process environment for this runner only. It is
+	// used by account-scoped provider instances without changing global state.
+	Env map[string]string
+}
 
-func (OSRunner) Run(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (Result, error) {
+func (r OSRunner) Run(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (Result, error) {
 	if len(argv) == 0 || argv[0] == "" {
 		return Result{}, fmt.Errorf("empty argv")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	if len(r.Env) > 0 {
+		cmd.Env = os.Environ()
+		for key, value := range r.Env {
+			prefix := key + "="
+			filtered := cmd.Env[:0]
+			for _, item := range cmd.Env {
+				if !strings.HasPrefix(item, prefix) {
+					filtered = append(filtered, item)
+				}
+			}
+			cmd.Env = filtered
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	cmd.Stdin = stdin
 	var outBuf, errBuf bytes.Buffer
 	if stdout == nil {
