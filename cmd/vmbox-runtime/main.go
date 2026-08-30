@@ -84,21 +84,11 @@ func run() error {
 		}
 		return nil
 	case "report":
-		if len(args) < 2 {
-			return fmt.Errorf("report requires a message")
+		kind, message, err := parseReport(args[1:])
+		if err != nil {
+			return err
 		}
-		kind := "progress"
-		start := 1
-		if args[1] == "--needs-input" {
-			kind = "needs_input"
-			start++
-		} else if args[1] == "--progress" {
-			start++
-		}
-		if start >= len(args) {
-			return fmt.Errorf("report requires a message")
-		}
-		return runtime.Report(os.Getenv("VMBOX_RUN_ID"), kind, strings.Join(args[start:], " "))
+		return runtime.Report(os.Getenv("VMBOX_RUN_ID"), kind, message)
 	case "finish":
 		kind := "success"
 		i := 1
@@ -156,4 +146,25 @@ func run() error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func parseReport(args []string) (kind, message string, err error) {
+	if len(args) == 0 {
+		return "", "", fmt.Errorf("report requires a message")
+	}
+	kind = "progress"
+	if strings.HasPrefix(args[0], "--") {
+		switch args[0] {
+		case "--progress":
+		case "--needs-input":
+			kind = "needs_input"
+		default:
+			return "", "", fmt.Errorf("unknown report option %q", args[0])
+		}
+		args = args[1:]
+	}
+	if len(args) == 0 {
+		return "", "", fmt.Errorf("report requires a message")
+	}
+	return kind, strings.Join(args, " "), nil
 }
