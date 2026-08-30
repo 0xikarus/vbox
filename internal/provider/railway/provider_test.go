@@ -71,15 +71,18 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		{Stdout: []byte(`{"id":"deployment-new"}`)},
 		{Stdout: []byte(`[{"id":"deployment-new","status":"SUCCESS"},{"id":"deployment-other","status":"FAILED"}]`)},
 		{Stdout: []byte(services)},
-		{Stdout: []byte(`{"VMBOX_ACCOUNT_ID":"standalone","VMBOX_BOX_ID":"box"}`)},
+		{Stdout: []byte(`{"VMBOX_ACCOUNT_ID":"standalone","VMBOX_BOX_ID":"box","VMBOX_CPU":"2","VMBOX_MEMORY_MIB":"4096","VMBOX_DISK_GIB":"10"}`)},
 	}}
 	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
-	box, err := p.Create(context.Background(), provider.CreateRequest{Name: "box", Owner: provider.Owner{AccountID: "standalone", BoxID: "box"}, Resources: provider.Resources{DiskGiB: 10}})
+	box, err := p.Create(context.Background(), provider.CreateRequest{Name: "box", Owner: provider.Owner{AccountID: "standalone", BoxID: "box"}, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if box.Name != "box" {
 		t.Fatalf("box=%+v", box)
+	}
+	if box.Resources.CPU != 2 || box.Resources.MemoryMiB != 4096 || box.Resources.DiskGiB != 10 || box.Storage.SizeGiB != 10 {
+		t.Fatalf("reconstructed specs=%+v storage=%+v", box.Resources, box.Storage)
 	}
 	volume, deploy := -1, -1
 	for i, call := range runner.Calls {

@@ -166,6 +166,18 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 		}
 	}
 	metadata := map[string]string{"VMBOX_MANAGED": "true", "VMBOX_ACCOUNT_ID": req.Owner.AccountID, "VMBOX_BOX_ID": req.Owner.BoxID, "VMBOX_RUN_ID": req.Owner.RunID, "VMBOX_LEASE": req.Owner.Lease, "VMBOX_IMAGE": req.Image}
+	if req.Region != "" {
+		metadata["VMBOX_REGION"] = req.Region
+	}
+	if req.Resources.CPU > 0 {
+		metadata["VMBOX_CPU"] = strconv.FormatFloat(req.Resources.CPU, 'f', -1, 64)
+	}
+	if req.Resources.MemoryMiB > 0 {
+		metadata["VMBOX_MEMORY_MIB"] = strconv.FormatInt(req.Resources.MemoryMiB, 10)
+	}
+	if req.Resources.DiskGiB > 0 {
+		metadata["VMBOX_DISK_GIB"] = strconv.FormatInt(req.Resources.DiskGiB, 10)
+	}
 	if len(req.Components) > 0 {
 		metadata["VMBOX_COMPONENTS"] = strings.Join(req.Components, ",")
 	}
@@ -248,7 +260,13 @@ func (p *Provider) inspectService(ctx context.Context, service service) (provide
 	if len(service.Regions) > 0 {
 		region = service.Regions[0].Name
 	}
-	return provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: state(service.Status), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data"}}, nil
+	if region == "" {
+		region = values["VMBOX_REGION"]
+	}
+	cpu, _ := strconv.ParseFloat(values["VMBOX_CPU"], 64)
+	memory, _ := strconv.ParseInt(values["VMBOX_MEMORY_MIB"], 10, 64)
+	disk, _ := strconv.ParseInt(values["VMBOX_DISK_GIB"], 10, 64)
+	return provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: state(service.Status), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}, nil
 }
 
 func (p *Provider) Inspect(ctx context.Context, id string) (provider.Box, error) {
