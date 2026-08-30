@@ -125,6 +125,19 @@ paths:
         - {name: kind, in: path, required: true, schema: {type: string}}
         - {name: name, in: path, required: true, schema: {type: string}}
       responses: {'204': {description: Test delivered}, '502': {description: Delivery failed}}
+  /v1/integrations/{kind}/{account}/{name}:
+    post:
+      security: []
+      description: Provider-authenticated Telegram webhook or Discord interaction callback. External identities must be allowlisted and mapped to active controller users before they may answer a question.
+      parameters:
+        - {name: kind, in: path, required: true, schema: {enum: [telegram, discord]}}
+        - {name: account, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Discord interaction response}
+        '204': {description: Telegram update accepted}
+        '400': {description: Invalid or unauthorized interaction payload}
+        '401': {description: Invalid Telegram webhook secret}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}

@@ -70,6 +70,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/notifications/{kind}/{name}", s.owner(s.putNotification))
 	mux.HandleFunc("POST /v1/notifications/{kind}/{name}/test", s.owner(s.testNotification))
 	mux.HandleFunc("DELETE /v1/notifications/{kind}/{name}", s.owner(s.deleteNotification))
+	mux.HandleFunc("POST /v1/integrations/{kind}/{account}/{name}", s.notificationInbound)
 	return securityHeaders(mux)
 }
 
@@ -671,6 +672,10 @@ func (s *Server) putNotification(w http.ResponseWriter, r *http.Request, p Princ
 	kind := r.PathValue("kind")
 	if (kind == "telegram" || kind == "discord") && (len(req.AllowedUsers) == 0 || len(req.AllowedChats) == 0) {
 		writeError(w, 400, fmt.Errorf("Telegram and Discord require non-empty user and chat/channel allowlists"))
+		return
+	}
+	if err := validateInteractiveNotification(kind, req); err != nil {
+		writeError(w, 400, err)
 		return
 	}
 	value, err := s.Store.PutNotification(r.Context(), p, kind, r.PathValue("name"), req)

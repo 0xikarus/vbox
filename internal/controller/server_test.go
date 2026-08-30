@@ -14,6 +14,7 @@ import (
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/events"
 	"github.com/0xikarus/vmbox-service/internal/provider"
+	"github.com/0xikarus/vmbox-service/internal/secrets"
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
@@ -212,5 +213,39 @@ func TestAuthorizationValueRequiresExactScheme(t *testing.T) {
 		if _, ok := authorizationValue(header, "Bearer"); ok {
 			t.Fatalf("invalid authorization accepted: %q", header)
 		}
+	}
+}
+
+func TestTelegramIntegrationAuthenticatesMapsAndAuditsAnswer(t *testing.T) {
+	store, mock := testStore(t)
+	envelope, err := secrets.New([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Envelope = envelope
+	secret, err := envelope.Seal("account-a", []byte(`{"token":"bot-token","webhookSecret":"hook-secret"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	columns := []string{"id", "account_id", "kind", "name", "encrypted_secret", "config", "allowed_users", "allowed_chats", "enabled", "created_at", "updated_at"}
+	config := []byte(`{"chatId":"9","userMap":{"7":"user-7"}}`)
+	mock.ExpectQuery(`SELECT id::text,account_id::text,kind,name,encrypted_secret`).WithArgs("account-a", "telegram", "team").WillReturnRows(sqlmock.NewRows(columns).AddRow("destination-1", "account-a", "telegram", "team", secret, config, []byte(`["7"]`), []byte(`["9"]`), true, time.Now(), time.Now()))
+	mock.ExpectQuery(`SELECT role,subject FROM users`).WithArgs("account-a", "user-7").WillReturnRows(sqlmock.NewRows([]string{"role", "subject"}).AddRow("user", "alice"))
+	mock.ExpectBegin()
+	mock.ExpectExec(`UPDATE questions SET state='answered'`).WithArgs("account-a", "user-7", "q_1", "ship it").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account-a", "user-7", "q_1").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`UPDATE runs SET state='running'`).WithArgs("account-a", "q_1").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	server := NewServer(store, provider.NewRegistry())
+	req := httptest.NewRequest(http.MethodPost, "/v1/integrations/telegram/account-a/team", strings.NewReader(`{"message":{"text":"/answer q_1 ship it","from":{"id":7},"chat":{"id":9}}}`))
+	req.Header.Set("X-Telegram-Bot-Api-Secret-Token", "hook-secret")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

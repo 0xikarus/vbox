@@ -45,10 +45,13 @@ vmbox notifications setup webhook ops --secret-env WEBHOOK_JSON
 vmbox notifications test webhook ops
 vmbox notifications remove webhook ops
 
-export TELEGRAM_JSON='{"token":"..."}'
+export TELEGRAM_JSON='{"token":"...","webhookSecret":"random-secret"}'
 vmbox notifications setup telegram team --secret-env TELEGRAM_JSON \
-  --config '{"chatId":"123"}' --allow-user 456 --allow-chat 123
+  --config '{"chatId":"123","userMap":{"456":"CONTROLLER-USER-UUID"}}' \
+  --allow-user 456 --allow-chat 123
 ```
+
+For two-way `needs_input` replies, point Telegram's webhook or Discord's Interaction Endpoint URL at `https://CONTROLLER/v1/integrations/KIND/ACCOUNT_ID/NAME`. Telegram verifies `X-Telegram-Bot-Api-Secret-Token`; Discord verifies every Ed25519 signature. Each external user ID must be both allowlisted and mapped in `config.userMap` to an active controller user UUID, so accepted answers retain tenant boundaries and audit identity. Telegram users reply with `/answer QUESTION_ID TEXT`; Discord notifications include an Answer button and modal. Discord secrets require `webhookUrl` and `publicKey`; optional `config.allowedGuilds` narrows accepted guilds.
 
 The API requires bearer authentication and `Idempotency-Key` for run creation. Reusing a key with a different request is rejected. Controller-created OCI runs require an immutable `@sha256:` image. It applies an account rate limit and records state, ordered events, heartbeats, last visible output, questions, answers, and audit data. On every startup and then periodically, the controller reconciles durable runs with providers, resumes interrupted provisioning/cleanup, detects missing or failed boxes, and enforces every run's absolute `maxTtl`. The controller contains no GitHub, repository, agent, model, prompt, or source-indexing logic.
 

@@ -34,7 +34,7 @@ type Adapter interface {
 	Send(context.Context, Delivery) error
 }
 type Answerer interface {
-	Answer(context.Context, string, string, string) error
+	Answer(context.Context, string, string, string, string) error
 }
 
 type Dispatcher struct {
@@ -101,6 +101,7 @@ type Telegram struct {
 	Client       *http.Client
 	Answerer     Answerer
 	AccountID    string
+	UserMap      map[string]string
 }
 
 func (Telegram) Name() string { return "telegram" }
@@ -111,8 +112,7 @@ func (t Telegram) Send(ctx context.Context, value Delivery) error {
 	text := fmt.Sprintf("vmbox %s · %s\n%s", value.Box, value.State, value.Message)
 	body := map[string]any{"chat_id": t.ChatID, "text": text}
 	if value.QuestionID != "" {
-		button := map[string]string{"text": "Answer", "callback_data": "answer:" + value.QuestionID}
-		body["reply_markup"] = map[string]any{"inline_keyboard": [][]map[string]string{{button}}}
+		body["text"] = text + "\nReply with: /answer " + value.QuestionID + " YOUR ANSWER"
 	}
 	data, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.telegram.org/bot"+t.Token+"/sendMessage", bytes.NewReader(data))
@@ -147,7 +147,11 @@ func (t Telegram) HandleUpdate(ctx context.Context, body io.Reader) error {
 	if len(fields) != 3 || fields[0] != "/answer" {
 		return fmt.Errorf("expected /answer QUESTION_ID TEXT")
 	}
-	return t.Answerer.Answer(ctx, t.AccountID, fields[1], fields[2])
+	userID := t.UserMap[strconv.FormatInt(update.Message.From.ID, 10)]
+	if userID == "" {
+		return fmt.Errorf("Telegram user is not mapped to a controller user")
+	}
+	return t.Answerer.Answer(ctx, t.AccountID, userID, fields[1], fields[2])
 }
 
 type Discord struct {
@@ -159,11 +163,16 @@ type Discord struct {
 	Client          *http.Client
 	Answerer        Answerer
 	AccountID       string
+	UserMap         map[string]string
 }
 
 func (Discord) Name() string { return "discord" }
 func (d Discord) Send(ctx context.Context, value Delivery) error {
-	data, _ := json.Marshal(map[string]any{"content": fmt.Sprintf("vmbox **%s** · **%s**\n%s", value.Box, value.State, value.Message), "allowed_mentions": map[string]any{"parse": []string{}}})
+	body := map[string]any{"content": fmt.Sprintf("vmbox **%s** · **%s**\n%s", value.Box, value.State, value.Message), "allowed_mentions": map[string]any{"parse": []string{}}}
+	if value.QuestionID != "" {
+		body["components"] = []any{map[string]any{"type": 1, "components": []any{map[string]any{"type": 2, "style": 1, "label": "Answer", "custom_id": "answer:" + value.QuestionID}}}}
+	}
+	data, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.WebhookURL, bytes.NewReader(data))
 	if err != nil {
 		return err
@@ -171,12 +180,13 @@ func (d Discord) Send(ctx context.Context, value Delivery) error {
 	req.Header.Set("Content-Type", "application/json")
 	return send(d.Client, req)
 }
-func (d Discord) HandleInteraction(ctx context.Context, signature, timestamp string, body []byte) error {
+func (d Discord) HandleInteraction(ctx context.Context, signature, timestamp string, body []byte) (map[string]any, error) {
 	sig, err := hex.DecodeString(signature)
 	if err != nil || !ed25519.Verify(d.PublicKey, append([]byte(timestamp), body...), sig) {
-		return fmt.Errorf("invalid Discord interaction signature")
+		return nil, fmt.Errorf("invalid Discord interaction signature")
 	}
 	var interaction struct {
+		Type      int    `json:"type"`
 		GuildID   string `json:"guild_id"`
 		ChannelID string `json:"channel_id"`
 		Member    struct {
@@ -194,19 +204,50 @@ func (d Discord) HandleInteraction(ctx context.Context, signature, timestamp str
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &interaction); err != nil {
-		return err
+		return nil, err
+	}
+	if interaction.Type == 1 {
+		return map[string]any{"type": 1}, nil
 	}
 	user := interaction.Member.User.ID
 	if !d.AllowedUsers[user] {
-		return fmt.Errorf("Discord user is not allowlisted")
+		return nil, fmt.Errorf("Discord user is not allowlisted")
 	}
 	if len(d.AllowedGuilds) > 0 && !d.AllowedGuilds[interaction.GuildID] {
-		return fmt.Errorf("Discord guild is not allowlisted")
+		return nil, fmt.Errorf("Discord guild is not allowlisted")
 	}
 	if len(d.AllowedChannels) > 0 && !d.AllowedChannels[interaction.ChannelID] {
-		return fmt.Errorf("Discord channel is not allowlisted")
+		return nil, fmt.Errorf("Discord channel is not allowlisted")
 	}
 	question := strings.TrimPrefix(interaction.Data.CustomID, "answer:")
+	if question == interaction.Data.CustomID || question == "" {
+		return nil, fmt.Errorf("invalid Discord answer interaction")
+	}
+	userID := d.UserMap[user]
+	if userID == "" {
+		return nil, fmt.Errorf("Discord user is not mapped to a controller user")
+	}
+	if interaction.Type == 3 {
+		modal := map[string]any{
+			"type": 9,
+			"data": map[string]any{
+				"custom_id": interaction.Data.CustomID,
+				"title":     "Answer vmbox",
+				"components": []any{
+					map[string]any{
+						"type": 1,
+						"components": []any{
+							map[string]any{"type": 4, "custom_id": "answer", "label": "Answer", "style": 2, "required": true},
+						},
+					},
+				},
+			},
+		}
+		return modal, nil
+	}
+	if interaction.Type != 5 {
+		return nil, fmt.Errorf("unsupported Discord interaction type")
+	}
 	answer := ""
 	for _, row := range interaction.Data.Components {
 		for _, item := range row.Components {
@@ -215,10 +256,13 @@ func (d Discord) HandleInteraction(ctx context.Context, signature, timestamp str
 			}
 		}
 	}
-	if question == interaction.Data.CustomID || answer == "" {
-		return fmt.Errorf("invalid Discord answer interaction")
+	if answer == "" {
+		return nil, fmt.Errorf("invalid Discord answer interaction")
 	}
-	return d.Answerer.Answer(ctx, d.AccountID, question, answer)
+	if err := d.Answerer.Answer(ctx, d.AccountID, userID, question, answer); err != nil {
+		return nil, err
+	}
+	return map[string]any{"type": 4, "data": map[string]any{"content": "Answer accepted", "flags": 64}}, nil
 }
 
 func send(client *http.Client, req *http.Request) error {
