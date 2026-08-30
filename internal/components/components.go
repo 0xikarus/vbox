@@ -88,7 +88,7 @@ func safeFiles(root string, names []string) []string {
 			continue
 		}
 		path := filepath.Join(root, name)
-		info, err := os.Stat(path)
+		info, err := os.Lstat(path)
 		if err == nil && info.Mode().IsRegular() {
 			result = append(result, path)
 		}
@@ -105,6 +105,25 @@ func ValidateInstructions(paths []string) (available, missing []string) {
 		available = append(available, path)
 	}
 	return
+}
+
+// ProfileAt validates one explicitly selected application profile. Only files
+// declared by the application component are returned; Markdown files are
+// excluded even if a profile directory contains them.
+func ProfileAt(application, root string) (Profile, error) {
+	definition, err := Get(application)
+	if err != nil {
+		return Profile{}, err
+	}
+	info, err := os.Stat(root)
+	if err != nil || !info.IsDir() {
+		return Profile{}, fmt.Errorf("application profile is not a readable directory: %s", root)
+	}
+	files := safeFiles(root, append(append([]string{}, definition.AuthFiles...), definition.ConfigFiles...))
+	if len(files) == 0 {
+		return Profile{}, fmt.Errorf("no supported %s profile files found in %s", application, root)
+	}
+	return Profile{Component: application, Name: filepath.Base(root), Directory: root, Files: files}, nil
 }
 func Get(id string) (Component, error) {
 	component, ok := Registry[id]

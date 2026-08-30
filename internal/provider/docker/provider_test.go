@@ -5,6 +5,7 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +21,19 @@ func TestExecPreservesExactArgv(t *testing.T) {
 	want := append([]string{"docker", "--context", "ssh-builder", "container", "exec", "vmbox-box"}, argv...)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv mismatch\n got: %#v\nwant: %#v", got, want)
+	}
+}
+
+func TestExecKeepsStdinOpenWithoutAllocatingTTY(t *testing.T) {
+	runner := &procexec.FakeRunner{}
+	p := New(Config{}, runner)
+	_, err := p.Exec(context.Background(), "box", []string{"vmbox-runtime", "put-file", "/data/file", "0600"}, provider.ExecOptions{Stdin: strings.NewReader("secret")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"docker", "container", "exec", "--interactive", "vmbox-box", "vmbox-runtime", "put-file", "/data/file", "0600"}
+	if !reflect.DeepEqual(runner.Calls[0].Argv, want) {
+		t.Fatalf("argv=%#v want=%#v", runner.Calls[0].Argv, want)
 	}
 }
 func TestDetachedExecUsesGenericRuntime(t *testing.T) {

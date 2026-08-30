@@ -11,9 +11,10 @@ rc="${VMBOX_SHELL_RC:-}"
 update_rc=1
 save_token=0
 uninstall=0
+go_cli=0
 
 usage() {
-  echo "Usage: ./install.sh [--workspace-token] [--no-shell-update] [--shell-rc PATH] [--uninstall]"
+  echo "Usage: ./install.sh [--go-cli] [--workspace-token] [--no-shell-update] [--shell-rc PATH] [--uninstall]"
 }
 
 update_railway() {
@@ -49,6 +50,7 @@ update_railway() {
 while (($#)); do
   case "$1" in
     --workspace-token) save_token=1 ;;
+    --go-cli) go_cli=1 ;;
     --no-shell-update) update_rc=0 ;;
     --shell-rc) shift; rc="${1:?Missing path after --shell-rc}" ;;
     --uninstall) uninstall=1 ;;
@@ -84,11 +86,27 @@ if ((uninstall)); then
   exit
 fi
 
-update_railway
+if ((go_cli == 0 || save_token)); then
+  update_railway
+fi
 
 mkdir -p "$bin" "$config" "$bundle"
 chmod 700 "$config"
-install -m 755 "$root/vmbox.sh" "$bin/vmbox"
+if ((go_cli)); then
+  command -v go >/dev/null 2>&1 || {
+    echo "Go 1.26 or newer is required for --go-cli." >&2
+    exit 1
+  }
+  go_tmp="$(mktemp "$bin/.vmbox-go.XXXXXX")"
+  if ! (cd "$root" && go build -trimpath -o "$go_tmp" ./cmd/vmbox); then
+    rm -f "$go_tmp"
+    exit 1
+  fi
+  chmod 755 "$go_tmp"
+  mv -f "$go_tmp" "$bin/vmbox"
+else
+  install -m 755 "$root/vmbox.sh" "$bin/vmbox"
+fi
 install -m 755 "$root/entrypoint.sh" "$bundle/entrypoint.sh"
 install -m 644 "$root/Dockerfile" "$root/.dockerignore" "$bundle/"
 # Remove deprecated Config as Code left by older vmbox installations.

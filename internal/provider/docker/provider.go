@@ -423,6 +423,8 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	args := []string{"container", "exec"}
 	if opts.Interactive {
 		args = append(args, "--interactive", "--tty")
+	} else if opts.Stdin != nil {
+		args = append(args, "--interactive")
 	}
 	args = append(args, container)
 	if opts.Detach {

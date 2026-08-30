@@ -1,0 +1,885 @@
+package cli
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/components"
+	"github.com/0xikarus/vmbox-service/internal/config"
+	"github.com/0xikarus/vmbox-service/internal/provider"
+)
+
+var errSetupCancelled = errors.New("box setup cancelled")
+
+type runOptions struct {
+	name, region, workspace, notification, onSuccess, onFailure, maxTTL string
+	detach, reuse                                                       bool
+	cpu                                                                 float64
+	memory, disk                                                        int64
+	argv                                                                []string
+	components                                                          []string
+	profiles                                                            []config.ApplicationProfile
+	instructions                                                        []string
+	github                                                              *config.GitHubCredential
+	componentsSet, resourcesSet, regionSet, workspaceSet                bool
+}
+
+func parseRunOptions(args []string) (runOptions, error) {
+	var result runOptions
+	if len(args) == 0 {
+		return result, fmt.Errorf("box name is required")
+	}
+	result.name = args[0]
+	value := func(i *int, arg, name string) (string, error) {
+		if text, ok := strings.CutPrefix(arg, name+"="); ok {
+			return text, nil
+		}
+		*i++
+		if *i >= len(args) {
+			return "", fmt.Errorf("%s requires a value", name)
+		}
+		return args[*i], nil
+	}
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			result.argv = append([]string(nil), args[i+1:]...)
+			break
+		}
+		switch {
+		case arg == "--detach" || arg == "-d":
+			result.detach = true
+		case arg == "--reuse":
+			result.reuse = true
+		case arg == "--component" || strings.HasPrefix(arg, "--component="):
+			text, err := value(&i, arg, "--component")
+			if err != nil {
+				return result, err
+			}
+			if _, err := components.Get(text); err != nil {
+				return result, err
+			}
+			result.components = append(result.components, text)
+			result.componentsSet = true
+		case arg == "--application-profile" || strings.HasPrefix(arg, "--application-profile="):
+			text, err := value(&i, arg, "--application-profile")
+			if err != nil {
+				return result, err
+			}
+			application, path, ok := strings.Cut(text, "=")
+			if !ok || application == "" || path == "" {
+				return result, fmt.Errorf("--application-profile requires APPLICATION=PATH")
+			}
+			if _, err := components.Get(application); err != nil {
+				return result, err
+			}
+			result.profiles = append(result.profiles, config.ApplicationProfile{Application: application, Path: path})
+		case arg == "--github-credential" || strings.HasPrefix(arg, "--github-credential="):
+			text, err := value(&i, arg, "--github-credential")
+			if err != nil {
+				return result, err
+			}
+			parts := strings.Split(text, ":")
+			if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || parts[1] == "" {
+				return result, fmt.Errorf("--github-credential requires HOST:USER[:ssh|https]")
+			}
+			protocol := "https"
+			if len(parts) == 3 {
+				protocol = parts[2]
+			}
+			if protocol != "ssh" && protocol != "https" {
+				return result, fmt.Errorf("GitHub protocol must be ssh or https")
+			}
+			result.github = &config.GitHubCredential{Host: parts[0], User: parts[1], Protocol: protocol}
+		case arg == "--instructions" || strings.HasPrefix(arg, "--instructions="):
+			text, err := value(&i, arg, "--instructions")
+			if err != nil {
+				return result, err
+			}
+			result.instructions = append(result.instructions, text)
+		case arg == "--region" || strings.HasPrefix(arg, "--region="):
+			text, err := value(&i, arg, "--region")
+			if err != nil {
+				return result, err
+			}
+			result.region, result.regionSet = text, true
+		case arg == "--cpu" || strings.HasPrefix(arg, "--cpu="):
+			text, err := value(&i, arg, "--cpu")
+			if err != nil {
+				return result, err
+			}
+			result.cpu, err = strconv.ParseFloat(text, 64)
+			if err != nil || result.cpu <= 0 {
+				return result, fmt.Errorf("--cpu must be positive")
+			}
+			result.resourcesSet = true
+		case arg == "--memory" || strings.HasPrefix(arg, "--memory="):
+			text, err := value(&i, arg, "--memory")
+			if err != nil {
+				return result, err
+			}
+			result.memory, err = strconv.ParseInt(text, 10, 64)
+			if err != nil || result.memory <= 0 {
+				return result, fmt.Errorf("--memory must be positive MiB")
+			}
+			result.resourcesSet = true
+		case arg == "--disk" || strings.HasPrefix(arg, "--disk="):
+			text, err := value(&i, arg, "--disk")
+			if err != nil {
+				return result, err
+			}
+			result.disk, err = strconv.ParseInt(text, 10, 64)
+			if err != nil || result.disk <= 0 {
+				return result, fmt.Errorf("--disk must be positive GiB")
+			}
+			result.resourcesSet = true
+		case arg == "--workspace" || strings.HasPrefix(arg, "--workspace="):
+			text, err := value(&i, arg, "--workspace")
+			if err != nil {
+				return result, err
+			}
+			result.workspace, result.workspaceSet = text, true
+		case arg == "--notification-policy" || strings.HasPrefix(arg, "--notification-policy="):
+			text, err := value(&i, arg, "--notification-policy")
+			if err != nil {
+				return result, err
+			}
+			result.notification = text
+		case arg == "--on-success" || strings.HasPrefix(arg, "--on-success="):
+			text, err := value(&i, arg, "--on-success")
+			if err != nil {
+				return result, err
+			}
+			result.onSuccess = text
+		case arg == "--on-failure" || strings.HasPrefix(arg, "--on-failure="):
+			text, err := value(&i, arg, "--on-failure")
+			if err != nil {
+				return result, err
+			}
+			result.onFailure = text
+		case arg == "--max-ttl" || strings.HasPrefix(arg, "--max-ttl="):
+			text, err := value(&i, arg, "--max-ttl")
+			if err != nil {
+				return result, err
+			}
+			if _, err := time.ParseDuration(text); err != nil {
+				return result, fmt.Errorf("--max-ttl: %w", err)
+			}
+			result.maxTTL = text
+		default:
+			return result, fmt.Errorf("unknown box option %q", arg)
+		}
+	}
+	return result, provider.ValidateName(result.name)
+}
+
+func defaultSetup(c config.Context) config.CreationSetup {
+	ids := make([]string, 0, len(components.Registry))
+	for id := range components.Registry {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return config.CreationSetup{Version: 1, Region: c.Cluster, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, Components: ids, Workspace: "/data/workspace", OnSuccess: "delete", OnFailure: "retain", MaxTTL: "8h"}
+}
+
+func applyRunOptions(setup *config.CreationSetup, opts runOptions) {
+	if opts.componentsSet {
+		setup.Components = append([]string(nil), opts.components...)
+	}
+	if opts.regionSet {
+		setup.Region = opts.region
+	}
+	if opts.resourcesSet {
+		if opts.cpu > 0 {
+			setup.Resources.CPU = opts.cpu
+		}
+		if opts.memory > 0 {
+			setup.Resources.MemoryMiB = opts.memory
+		}
+		if opts.disk > 0 {
+			setup.Resources.DiskGiB = opts.disk
+		}
+	}
+	if opts.workspaceSet {
+		setup.Workspace = opts.workspace
+	}
+	if len(opts.profiles) > 0 {
+		setup.ApplicationProfiles = append([]config.ApplicationProfile(nil), opts.profiles...)
+	}
+	if opts.github != nil {
+		copy := *opts.github
+		setup.GitHub = &copy
+	}
+	if len(opts.instructions) > 0 {
+		setup.Instructions = append([]string(nil), opts.instructions...)
+	}
+	if opts.notification != "" {
+		setup.NotificationPolicy = opts.notification
+	}
+	if opts.onSuccess != "" {
+		setup.OnSuccess = opts.onSuccess
+	}
+	if opts.onFailure != "" {
+		setup.OnFailure = opts.onFailure
+	}
+	if opts.maxTTL != "" {
+		setup.MaxTTL = opts.maxTTL
+	}
+}
+
+type githubAccount struct{ Host, User, Protocol string }
+
+func (a *App) discoverGitHub(ctx context.Context) []githubAccount {
+	if a.Runner == nil {
+		return nil
+	}
+	result, err := a.Runner.Run(ctx, []string{"gh", "auth", "status"}, nil, nil, nil)
+	if err != nil && len(result.Stdout) == 0 && len(result.Stderr) == 0 {
+		return nil
+	}
+	text := string(append(append([]byte(nil), result.Stdout...), result.Stderr...))
+	var accounts []githubAccount
+	host := ""
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if line != "" && line[0] != ' ' && line[0] != '\t' {
+			host = strings.TrimSuffix(trimmed, ":")
+			continue
+		}
+		if host == "" {
+			continue
+		}
+		var user string
+		if marker := " as "; strings.Contains(trimmed, marker) {
+			user = strings.Fields(strings.SplitN(trimmed, marker, 2)[1])[0]
+		} else if marker := "account "; strings.Contains(trimmed, marker) {
+			user = strings.Fields(strings.SplitN(trimmed, marker, 2)[1])[0]
+		}
+		if user != "" {
+			accounts = append(accounts, githubAccount{Host: host, User: strings.Trim(user, "()"), Protocol: "https"})
+			continue
+		}
+		if len(accounts) > 0 && strings.Contains(trimmed, "protocol:") {
+			protocol := strings.TrimSpace(strings.SplitN(trimmed, "protocol:", 2)[1])
+			if protocol == "ssh" || protocol == "https" {
+				accounts[len(accounts)-1].Protocol = protocol
+			}
+		}
+	}
+	return accounts
+}
+
+func instructionCandidates(environ map[string]string) []string {
+	seen := make(map[string]bool)
+	var result []string
+	add := func(path string) {
+		if path == "" || seen[path] || strings.ToLower(filepath.Ext(path)) != ".md" {
+			return
+		}
+		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+			absolute, _ := filepath.Abs(path)
+			seen[absolute] = true
+			result = append(result, absolute)
+		}
+	}
+	add(environ["VMBOX_INSTRUCTIONS_FILE"])
+	matches, _ := filepath.Glob("*.[mM][dD]")
+	for _, path := range matches {
+		add(path)
+	}
+	sort.Strings(result)
+	return result
+}
+
+type setupRow struct {
+	kind  string
+	index int
+	label string
+}
+
+func (a *App) configureSetup(ctx context.Context, c config.Context, boxName string, setup config.CreationSetup, argv []string) (config.CreationSetup, error) {
+	home := a.Environ["HOME"]
+	profiles, _ := components.Discover(home)
+	github := a.discoverGitHub(ctx)
+	instructions := instructionCandidates(a.Environ)
+	selectedComponents := make(map[string]bool)
+	for _, id := range setup.Components {
+		selectedComponents[id] = true
+	}
+	selectedProfiles := make(map[string]bool)
+	selectedGitHub := -1
+	selectedInstructions := make(map[string]bool)
+	resourcePresets := []provider.Resources{{CPU: 1, MemoryMiB: 2048, DiskGiB: 10}, {CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, {CPU: 4, MemoryMiB: 8192, DiskGiB: 20}}
+	resourceNames := []string{"Small", "Standard", "Large"}
+	resourceSelected := 1
+	for i, value := range resourcePresets {
+		if value == setup.Resources {
+			resourceSelected = i
+		}
+	}
+	var rows []setupRow
+	ids := make([]string, 0, len(components.Registry))
+	for id := range components.Registry {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for i, id := range ids {
+		rows = append(rows, setupRow{kind: "component", index: i, label: id})
+	}
+	for i, name := range resourceNames {
+		rows = append(rows, setupRow{kind: "resource", index: i, label: name})
+	}
+	for i, profile := range profiles {
+		rows = append(rows, setupRow{kind: "profile", index: i, label: profile.Component + "  " + profile.Directory})
+	}
+	for i, account := range github {
+		rows = append(rows, setupRow{kind: "github", index: i, label: account.User + "@" + account.Host + " (" + account.Protocol + ")"})
+	}
+	for i, path := range instructions {
+		rows = append(rows, setupRow{kind: "instructions", index: i, label: path})
+	}
+	rows = append(rows, setupRow{kind: "confirm", label: "Confirm and create"})
+	cursor := 0
+	reader := bufio.NewReader(a.In)
+	for {
+		fmt.Fprint(a.Out, "\033[2J\033[H")
+		fmt.Fprintf(a.Out, "New box configuration: %s\n", boxName)
+		fmt.Fprintln(a.Out, "↑/↓ or j/k: move  Space: toggle/select  Enter: only on Confirm  q: cancel")
+		command, _ := json.Marshal(argv)
+		if len(argv) == 0 {
+			command, _ = json.Marshal(defaultSession(false))
+		}
+		fmt.Fprintf(a.Out, "Context  %s / %s    Region  %s    Workspace  %s\n", c.Name, c.Provider, setup.Region, setup.Workspace)
+		fmt.Fprintf(a.Out, "Exact argv  %s    Reuse  saved after complete setup\n", command)
+		fmt.Fprintln(a.Out, "Components")
+		last := ""
+		for i, row := range rows {
+			if row.kind != last && row.kind != "component" {
+				switch row.kind {
+				case "resource":
+					fmt.Fprintln(a.Out, "Resources")
+				case "profile":
+					fmt.Fprintln(a.Out, "Application profiles (auth/config only; never Markdown)")
+				case "github":
+					fmt.Fprintln(a.Out, "GitHub credential")
+				case "instructions":
+					fmt.Fprintln(a.Out, "Markdown instructions")
+				case "confirm":
+					fmt.Fprintf(a.Out, "Notifications  %s    Lifecycle  %s/%s max %s\n", emptyLabel(setup.NotificationPolicy), setup.OnSuccess, setup.OnFailure, setup.MaxTTL)
+				}
+			}
+			last = row.kind
+			marker := " "
+			switch row.kind {
+			case "component":
+				if selectedComponents[row.label] {
+					marker = "x"
+				}
+			case "resource":
+				if resourceSelected == row.index {
+					marker = "x"
+				}
+				value := resourcePresets[row.index]
+				row.label = fmt.Sprintf("%-9s %.0f CPU / %d MiB / %d GiB", row.label, value.CPU, value.MemoryMiB, value.DiskGiB)
+			case "profile":
+				if selectedProfiles[profiles[row.index].Component+"\x00"+profiles[row.index].Directory] {
+					marker = "x"
+				}
+			case "github":
+				if selectedGitHub == row.index {
+					marker = "x"
+				}
+			case "instructions":
+				if selectedInstructions[instructions[row.index]] {
+					marker = "x"
+				}
+			case "confirm":
+				marker = ">"
+			}
+			prefix := "  "
+			if i == cursor {
+				prefix = "> "
+			}
+			if row.kind == "confirm" {
+				fmt.Fprintf(a.Out, "%s[ %s ]\n", prefix, row.label)
+			} else {
+				fmt.Fprintf(a.Out, "%s[%s] %s\n", prefix, marker, row.label)
+			}
+		}
+		key, err := reader.ReadByte()
+		if err != nil {
+			return setup, errSetupCancelled
+		}
+		switch key {
+		case 'q':
+			return setup, errSetupCancelled
+		case 'j':
+			cursor = (cursor + 1) % len(rows)
+		case 'k':
+			cursor = (cursor - 1 + len(rows)) % len(rows)
+		case '\n', '\r':
+			if rows[cursor].kind != "confirm" {
+				continue
+			}
+			setup.Components = setup.Components[:0]
+			for _, id := range ids {
+				if selectedComponents[id] {
+					setup.Components = append(setup.Components, id)
+				}
+			}
+			setup.Resources = resourcePresets[resourceSelected]
+			setup.ApplicationProfiles = nil
+			for _, profile := range profiles {
+				if selectedProfiles[profile.Component+"\x00"+profile.Directory] {
+					setup.ApplicationProfiles = append(setup.ApplicationProfiles, config.ApplicationProfile{Application: profile.Component, Path: profile.Directory})
+				}
+			}
+			setup.GitHub = nil
+			if selectedGitHub >= 0 {
+				account := github[selectedGitHub]
+				setup.GitHub = &config.GitHubCredential{Host: account.Host, User: account.User, Protocol: account.Protocol}
+			}
+			setup.Instructions = nil
+			for _, path := range instructions {
+				if selectedInstructions[path] {
+					setup.Instructions = append(setup.Instructions, path)
+				}
+			}
+			fmt.Fprint(a.Out, "\033[2J\033[H")
+			return setup, nil
+		case ' ':
+			row := rows[cursor]
+			switch row.kind {
+			case "component":
+				selectedComponents[row.label] = !selectedComponents[row.label]
+			case "resource":
+				resourceSelected = row.index
+			case "profile":
+				key := profiles[row.index].Component + "\x00" + profiles[row.index].Directory
+				selectedProfiles[key] = !selectedProfiles[key]
+			case "github":
+				if selectedGitHub == row.index {
+					selectedGitHub = -1
+				} else {
+					selectedGitHub = row.index
+				}
+			case "instructions":
+				path := instructions[row.index]
+				selectedInstructions[path] = !selectedInstructions[path]
+			}
+		case 0x1b:
+			first, _ := reader.ReadByte()
+			second, _ := reader.ReadByte()
+			if first == '[' && second == 'A' {
+				cursor = (cursor - 1 + len(rows)) % len(rows)
+			} else if first == '[' && second == 'B' {
+				cursor = (cursor + 1) % len(rows)
+			}
+		}
+	}
+}
+
+func emptyLabel(value string) string {
+	if value == "" {
+		return "none"
+	}
+	return value
+}
+
+func defaultSession(detach bool) []string {
+	argv := []string{"tmux", "new-session", "-A"}
+	if detach {
+		argv = append(argv, "-d")
+	}
+	return append(argv, "-s", "vmbox", "vmbox-runtime", "welcome")
+}
+
+type upload struct {
+	path string
+	mode string
+	data []byte
+}
+
+type preparedSetup struct {
+	setup       config.CreationSetup
+	uploads     []upload
+	githubToken string
+}
+
+func profileDestination(application, source string) (string, error) {
+	base := filepath.Base(source)
+	switch application {
+	case "codex":
+		return filepath.Join("/data/home/.codex", base), nil
+	case "claude":
+		return filepath.Join("/data/home/.claude", base), nil
+	case "opencode":
+		return filepath.Join("/data/home/.config/opencode", base), nil
+	default:
+		return "", fmt.Errorf("%s has no uploadable application profile", application)
+	}
+}
+
+func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (preparedSetup, error) {
+	prepared := preparedSetup{setup: setup}
+	workspace := filepath.Clean(prepared.setup.Workspace)
+	if workspace != "/data/workspace" && !strings.HasPrefix(workspace, "/data/workspace/") {
+		return prepared, fmt.Errorf("workspace must be /data/workspace or a directory below it")
+	}
+	prepared.setup.Workspace = workspace
+	for _, selected := range prepared.setup.ApplicationProfiles {
+		profile, err := components.ProfileAt(selected.Application, selected.Path)
+		if err != nil {
+			fmt.Fprintf(a.Err, "vmbox: saved application profile missing; skipped: %s (%v)\n", selected.Path, err)
+			continue
+		}
+		for _, path := range profile.Files {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return prepared, err
+			}
+			destination, err := profileDestination(selected.Application, path)
+			if err != nil {
+				return prepared, err
+			}
+			prepared.uploads = append(prepared.uploads, upload{path: destination, mode: "0600", data: data})
+		}
+	}
+	available, missing := components.ValidateInstructions(prepared.setup.Instructions)
+	for _, path := range missing {
+		fmt.Fprintf(a.Err, "vmbox: Markdown instruction file missing; skipped: %s\n", path)
+	}
+	if len(available) > 0 {
+		var combined bytes.Buffer
+		for _, path := range available {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return prepared, err
+			}
+			fmt.Fprintf(&combined, "<!-- vmbox source: %s -->\n", path)
+			combined.Write(data)
+			if combined.Len() == 0 || combined.Bytes()[combined.Len()-1] != '\n' {
+				combined.WriteByte('\n')
+			}
+		}
+		prepared.uploads = append(prepared.uploads,
+			upload{path: filepath.Join(workspace, "AGENTS.md"), mode: "0644", data: append([]byte(nil), combined.Bytes()...)},
+			upload{path: filepath.Join(workspace, "CLAUDE.md"), mode: "0644", data: append([]byte(nil), combined.Bytes()...)})
+	}
+	if prepared.setup.GitHub != nil {
+		credential := prepared.setup.GitHub
+		result, err := a.Runner.Run(ctx, []string{"gh", "auth", "token", "--hostname", credential.Host, "--user", credential.User}, nil, nil, nil)
+		if err != nil || result.ExitCode != 0 || len(bytes.TrimSpace(result.Stdout)) == 0 {
+			fmt.Fprintf(a.Err, "vmbox: selected GitHub credential is unavailable; skipped: %s@%s\n", credential.User, credential.Host)
+		} else {
+			prepared.githubToken = strings.TrimSpace(string(result.Stdout))
+		}
+	}
+	return prepared, nil
+}
+
+func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name string, prepared preparedSetup) error {
+	for _, item := range prepared.uploads {
+		result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "put-file", item.path, item.mode}, provider.ExecOptions{Stdin: bytes.NewReader(item.data), Stdout: io.Discard, Stderr: a.Err})
+		if err != nil {
+			return fmt.Errorf("upload %s: %w", item.path, err)
+		}
+		if result.ExitCode != 0 {
+			return fmt.Errorf("upload %s exited with status %d", item.path, result.ExitCode)
+		}
+	}
+	if prepared.githubToken != "" && prepared.setup.GitHub != nil {
+		credential := prepared.setup.GitHub
+		result, err := p.Exec(ctx, name, []string{"gh", "auth", "login", "--hostname", credential.Host, "--git-protocol", credential.Protocol, "--with-token"}, provider.ExecOptions{Stdin: strings.NewReader(prepared.githubToken + "\n"), Stdout: io.Discard, Stderr: a.Err})
+		if err != nil || result.ExitCode != 0 {
+			return fmt.Errorf("upload GitHub credential for %s@%s failed", credential.User, credential.Host)
+		}
+		result, err = p.Exec(ctx, name, []string{"gh", "auth", "setup-git", "--hostname", credential.Host}, provider.ExecOptions{Stdout: io.Discard, Stderr: a.Err})
+		if err != nil || result.ExitCode != 0 {
+			return fmt.Errorf("configure GitHub credential for %s@%s failed", credential.User, credential.Host)
+		}
+	}
+	result, err := p.Exec(ctx, name, []string{"vmbox-entrypoint", "--configure-agent-trust", prepared.setup.Workspace}, provider.ExecOptions{Stdout: io.Discard, Stderr: a.Err})
+	if err != nil || result.ExitCode != 0 {
+		return fmt.Errorf("initialize workspace trust for application profiles")
+	}
+	return nil
+}
+
+func welcome(box provider.Box, contextName, cost string) []byte {
+	connection := box.Connection.Transport
+	if box.Connection.Endpoint != "" {
+		connection += " " + box.Connection.Endpoint
+	}
+	storage := "unavailable"
+	if box.Storage != nil {
+		storage = fmt.Sprintf("%d GiB at %s", box.Storage.SizeGiB, box.Storage.MountPath)
+	}
+	return []byte(fmt.Sprintf("vmbox %s is ready\nProvider: %s (%s)  Region: %s\nSpecs: %.2g CPU / %d MiB RAM / %s\nConnection: %s  Workspace: /data/workspace  State: %s\nCost: %s\nDetach: press Ctrl-b, release both keys, then press d\nUseful: vmbox status %s | vmbox stop %s | vmbox cost %s\n\n", box.Name, box.Provider, contextName, box.Region, box.Resources.CPU, box.Resources.MemoryMiB, storage, connection, box.State, cost, box.Name, box.Name, box.Name))
+}
+
+func (a *App) uploadWelcome(ctx context.Context, p provider.Provider, box provider.Box, contextName string) error {
+	if p.Name() == "sevalla" {
+		// Sevalla's exact-command endpoint has no stdin channel. The runtime
+		// renders the same welcome from non-secret VMBOX_* creation metadata.
+		return nil
+	}
+	cost := "unavailable; use vmbox cost " + box.Name
+	if usage, err := p.Usage(ctx, box.Name); err == nil {
+		if usage.Cost.Available {
+			cost = fmt.Sprintf("%.4f %s accrued", usage.Cost.Accrued, usage.Cost.Currency)
+		} else if usage.Cost.Detail != "" {
+			cost = usage.Cost.Detail
+		}
+	}
+	result, err := p.Exec(ctx, box.Name, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0644"}, provider.ExecOptions{Stdin: bytes.NewReader(welcome(box, contextName, cost)), Stdout: io.Discard, Stderr: a.Err})
+	if err != nil {
+		return err
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("write in-session welcome exited with status %d", result.ExitCode)
+	}
+	return nil
+}
+
+func loadSetup(file config.File, contextName string) (config.CreationSetup, error) {
+	setup, ok := file.LastSetups[contextName]
+	if !ok || setup.Version != 1 {
+		return setup, fmt.Errorf("no complete reusable setup is saved for context %q", contextName)
+	}
+	return setup, nil
+}
+
+func saveSetup(path string, file config.File, contextName string, setup config.CreationSetup) error {
+	if file.LastSetups == nil {
+		file.LastSetups = make(map[string]config.CreationSetup)
+	}
+	setup.Version = 1
+	setup.SavedAt = time.Now().UTC()
+	file.LastSetups[contextName] = setup
+	return config.Save(path, file)
+}
+
+func (a *App) selectStandaloneBox(ctx context.Context, p provider.Provider, title string) (string, error) {
+	boxes, err := p.List(ctx)
+	if err != nil {
+		return "", err
+	}
+	if len(boxes) == 0 {
+		return "", fmt.Errorf("no boxes are available")
+	}
+	sort.Slice(boxes, func(i, j int) bool { return boxes[i].Name < boxes[j].Name })
+	if a.IsTerminal == nil || !a.IsTerminal() {
+		for _, box := range boxes {
+			fmt.Fprintf(a.Out, "%s\t%s\n", box.Name, box.State)
+		}
+		return "", fmt.Errorf("selection requires an interactive terminal")
+	}
+	reader := bufio.NewReader(a.In)
+	cursor, selected := 0, -1
+	confirm := len(boxes)
+	for {
+		fmt.Fprint(a.Out, "\033[2J\033[H")
+		fmt.Fprintln(a.Out, title)
+		fmt.Fprintln(a.Out, "↑/↓ or j/k: move  Space: select  Enter: only on Confirm  q: cancel")
+		for i, box := range boxes {
+			prefix, marker := "  ", " "
+			if cursor == i {
+				prefix = "> "
+			}
+			if selected == i {
+				marker = "x"
+			}
+			fmt.Fprintf(a.Out, "%s[%s] %-24s %s\n", prefix, marker, box.Name, box.State)
+		}
+		prefix := "  "
+		if cursor == confirm {
+			prefix = "> "
+		}
+		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
+		key, readErr := reader.ReadByte()
+		if readErr != nil {
+			return "", errSetupCancelled
+		}
+		switch key {
+		case 'q':
+			return "", errSetupCancelled
+		case 'j':
+			cursor = (cursor + 1) % (len(boxes) + 1)
+		case 'k':
+			cursor = (cursor - 1 + len(boxes) + 1) % (len(boxes) + 1)
+		case ' ':
+			if cursor < len(boxes) {
+				if selected == cursor {
+					selected = -1
+				} else {
+					selected = cursor
+				}
+			}
+		case '\n', '\r':
+			if cursor == confirm && selected >= 0 {
+				fmt.Fprint(a.Out, "\033[2J\033[H")
+				return boxes[selected].Name, nil
+			}
+		case 0x1b:
+			first, _ := reader.ReadByte()
+			second, _ := reader.ReadByte()
+			if first == '[' && second == 'A' {
+				cursor = (cursor - 1 + len(boxes) + 1) % (len(boxes) + 1)
+			} else if first == '[' && second == 'B' {
+				cursor = (cursor + 1) % (len(boxes) + 1)
+			}
+		}
+	}
+}
+
+func (a *App) selectStandaloneResize(ctx context.Context, p provider.Provider, args []string) (string, []string, error) {
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		return args[0], args[1:], nil
+	}
+	name, err := a.selectStandaloneBox(ctx, p, "Select a box to resize")
+	return name, args, err
+}
+
+func (a *App) selectResizeResources(title string) (provider.Resources, error) {
+	presets := []provider.Resources{{CPU: 1, MemoryMiB: 2048}, {CPU: 2, MemoryMiB: 4096}, {CPU: 4, MemoryMiB: 8192}}
+	labels := []string{"Small", "Standard", "Large"}
+	if a.IsTerminal == nil || !a.IsTerminal() {
+		return provider.Resources{}, fmt.Errorf("choosing resize limits requires an interactive terminal or explicit --cpu/--memory")
+	}
+	reader := bufio.NewReader(a.In)
+	cursor, selected := 0, 1
+	for {
+		fmt.Fprint(a.Out, "\033[2J\033[H")
+		fmt.Fprintln(a.Out, title)
+		fmt.Fprintln(a.Out, "↑/↓ or j/k: move  Space: select  Enter: only on Confirm  q: cancel")
+		for i, value := range presets {
+			prefix, marker := "  ", " "
+			if cursor == i {
+				prefix = "> "
+			}
+			if selected == i {
+				marker = "x"
+			}
+			fmt.Fprintf(a.Out, "%s[%s] %-10s %.0f CPU / %d MiB RAM\n", prefix, marker, labels[i], value.CPU, value.MemoryMiB)
+		}
+		prefix := "  "
+		if cursor == len(presets) {
+			prefix = "> "
+		}
+		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
+		key, err := reader.ReadByte()
+		if err != nil {
+			return provider.Resources{}, errSetupCancelled
+		}
+		switch key {
+		case 'q':
+			return provider.Resources{}, errSetupCancelled
+		case 'j':
+			cursor = (cursor + 1) % (len(presets) + 1)
+		case 'k':
+			cursor = (cursor - 1 + len(presets) + 1) % (len(presets) + 1)
+		case ' ':
+			if cursor < len(presets) {
+				selected = cursor
+			}
+		case '\n', '\r':
+			if cursor == len(presets) {
+				fmt.Fprint(a.Out, "\033[2J\033[H")
+				return presets[selected], nil
+			}
+		case 0x1b:
+			first, _ := reader.ReadByte()
+			second, _ := reader.ReadByte()
+			if first == '[' && second == 'A' {
+				cursor = (cursor - 1 + len(presets) + 1) % (len(presets) + 1)
+			} else if first == '[' && second == 'B' {
+				cursor = (cursor + 1) % (len(presets) + 1)
+			}
+		}
+	}
+}
+
+func (a *App) selectControllerRun(ctx context.Context, c config.Context, token, title string) (string, error) {
+	var runs []v1.Run
+	if _, err := a.request(ctx, c, token, "GET", "/v1/runs", nil, &runs, nil); err != nil {
+		return "", err
+	}
+	if len(runs) == 0 {
+		return "", fmt.Errorf("no runs are available")
+	}
+	sort.Slice(runs, func(i, j int) bool { return runs[i].CreatedAt.After(runs[j].CreatedAt) })
+	if a.IsTerminal == nil || !a.IsTerminal() {
+		for _, run := range runs {
+			fmt.Fprintf(a.Out, "%s\t%s\t%s\n", run.ID, run.Request.Box, run.State)
+		}
+		return "", fmt.Errorf("selection requires an interactive terminal")
+	}
+	reader := bufio.NewReader(a.In)
+	cursor, selected := 0, -1
+	for {
+		fmt.Fprint(a.Out, "\033[2J\033[H")
+		fmt.Fprintln(a.Out, title)
+		fmt.Fprintln(a.Out, "↑/↓ or j/k: move  Space: select  Enter: only on Confirm  q: cancel")
+		for i, run := range runs {
+			prefix, marker := "  ", " "
+			if cursor == i {
+				prefix = "> "
+			}
+			if selected == i {
+				marker = "x"
+			}
+			fmt.Fprintf(a.Out, "%s[%s] %-24s %-18s %s\n", prefix, marker, run.Request.Box, run.ID, run.State)
+		}
+		prefix := "  "
+		if cursor == len(runs) {
+			prefix = "> "
+		}
+		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
+		key, err := reader.ReadByte()
+		if err != nil {
+			return "", errSetupCancelled
+		}
+		switch key {
+		case 'q':
+			return "", errSetupCancelled
+		case 'j':
+			cursor = (cursor + 1) % (len(runs) + 1)
+		case 'k':
+			cursor = (cursor - 1 + len(runs) + 1) % (len(runs) + 1)
+		case ' ':
+			if cursor < len(runs) {
+				if selected == cursor {
+					selected = -1
+				} else {
+					selected = cursor
+				}
+			}
+		case '\n', '\r':
+			if cursor == len(runs) && selected >= 0 {
+				fmt.Fprint(a.Out, "\033[2J\033[H")
+				return runs[selected].ID, nil
+			}
+		case 0x1b:
+			first, _ := reader.ReadByte()
+			second, _ := reader.ReadByte()
+			if first == '[' && second == 'A' {
+				cursor = (cursor - 1 + len(runs) + 1) % (len(runs) + 1)
+			} else if first == '[' && second == 'B' {
+				cursor = (cursor + 1) % (len(runs) + 1)
+			}
+		}
+	}
+}

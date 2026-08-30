@@ -36,6 +36,7 @@ type App struct {
 	HTTP       *http.Client
 	ConfigPath string
 	Runner     procexec.Runner
+	IsTerminal func() bool
 }
 
 type stringList []string
@@ -47,7 +48,18 @@ func (s *stringList) Set(value string) error {
 }
 
 func New() *App {
-	return &App{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Environ: envMap(), HTTP: &http.Client{Timeout: 75 * time.Second}, Runner: procexec.OSRunner{}}
+	a := &App{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Environ: envMap(), HTTP: &http.Client{Timeout: 75 * time.Second}, Runner: procexec.OSRunner{}}
+	a.IsTerminal = func() bool { return charDevice(a.In) && charDevice(a.Out) }
+	return a
+}
+
+func charDevice(value any) bool {
+	file, ok := value.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := file.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 func envMap() map[string]string {
 	result := make(map[string]string)
@@ -121,13 +133,13 @@ parsed:
 		return err
 	}
 	if mode == "controller" {
-		return a.controller(ctx, active, args)
+		return a.controller(ctx, file, active, args)
 	}
 	p, err := a.provider(active)
 	if err != nil {
 		return err
 	}
-	return a.standalone(ctx, p, active, args)
+	return a.standalone(ctx, file, p, active, args)
 }
 
 func (a *App) context(file config.File, args []string) error {
@@ -184,6 +196,7 @@ func (a *App) context(file config.File, args []string) error {
 		fs.StringVar(&ctx.IncusProject, "incus-project", "", "Incus project")
 		fs.BoolVar(&ctx.IncusVM, "incus-vm", false, "use QEMU VMs")
 		fs.StringVar(&ctx.PreAttachedDisk, "pre-attached-disk", "", "manual Sevalla disk ID")
+		fs.StringVar(&ctx.DockerRegistryCredentialID, "docker-registry-credential-id", "", "Sevalla Docker registry credential ID")
 		fs.StringVar(&ctx.ProviderCredential, "provider-credential", "", "controller provider credential name")
 		fs.StringVar(&ctx.TokenEnv, "token-env", "VMBOX_CONTROLLER_TOKEN", "environment variable containing controller token")
 		if err := fs.Parse(args[2:]); err != nil {
@@ -364,7 +377,7 @@ func (a *App) provider(ctx config.Context) (provider.Provider, error) {
 	case "railway":
 		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: a.Environ["RAILWAY_API_TOKEN"], DefaultImage: ctx.Image}, procexec.OSRunner{}), nil
 	case "sevalla":
-		return sevallaprovider.New(sevallaprovider.Config{Token: a.Environ["SEVALLA_API_TOKEN"], APIURL: a.Environ["SEVALLA_API_URL"], CompanyID: ctx.Company, ProjectID: ctx.Project, ClusterID: ctx.Cluster, ResourceTypeID: ctx.ResourceType, DefaultImage: ctx.Image, PreAttachedDisk: ctx.PreAttachedDisk, HTTPClient: a.HTTP}), nil
+		return sevallaprovider.New(sevallaprovider.Config{Token: a.Environ["SEVALLA_API_TOKEN"], APIURL: a.Environ["SEVALLA_API_URL"], CompanyID: ctx.Company, ProjectID: ctx.Project, ClusterID: ctx.Cluster, ResourceTypeID: ctx.ResourceType, DefaultImage: ctx.Image, DockerRegistryCredentialID: ctx.DockerRegistryCredentialID, PreAttachedDisk: ctx.PreAttachedDisk, HTTPClient: a.HTTP}), nil
 	case "incus":
 		return incusprovider.New(incusprovider.Config{Remote: ctx.IncusRemote, Project: ctx.IncusProject, DefaultImage: ctx.Image, VM: ctx.IncusVM}, procexec.OSRunner{}), nil
 	default:
@@ -373,49 +386,93 @@ func (a *App) provider(ctx config.Context) (provider.Provider, error) {
 }
 
 func splitRun(args []string) (name string, detach, reuse bool, argv []string, err error) {
-	if len(args) == 0 {
-		return "", false, false, nil, fmt.Errorf("box name is required")
-	}
-	name = args[0]
-	i := 1
-	for i < len(args) && args[i] != "--" {
-		switch args[i] {
-		case "--detach", "-d":
-			detach = true
-		case "--reuse":
-			reuse = true
-		default:
-			return "", false, false, nil, fmt.Errorf("unknown box option %q", args[i])
-		}
-		i++
-	}
-	if i < len(args) && args[i] == "--" {
-		argv = append([]string(nil), args[i+1:]...)
-	}
-	return
+	opts, parseErr := parseRunOptions(args)
+	return opts.name, opts.detach, opts.reuse, opts.argv, parseErr
 }
-func (a *App) standalone(ctx context.Context, p provider.Provider, c config.Context, args []string) error {
+func (a *App) standalone(ctx context.Context, file config.File, p provider.Provider, c config.Context, args []string) error {
 	command := args[0]
 	switch command {
 	case "new", "create", "run":
-		name, detach, _, argv, err := splitRun(args[1:])
+		opts, err := parseRunOptions(args[1:])
 		if err != nil {
 			return err
 		}
-		if command == "run" {
-			if _, err := p.Inspect(ctx, name); err != nil {
-				return err
+		box, inspectErr := p.Inspect(ctx, opts.name)
+		created := false
+		if inspectErr == nil {
+			if opts.reuse {
+				fmt.Fprintf(a.Err, "vmbox: --reuse ignored because %q already exists\n", opts.name)
 			}
+			if box.State == provider.StateStopped || box.State == provider.StateFailed {
+				box, err = p.Start(ctx, box.ID)
+				if err != nil {
+					return err
+				}
+			}
+		} else if !errors.Is(inspectErr, provider.ErrNotFound) {
+			return inspectErr
+		} else if command == "run" {
+			return fmt.Errorf("box %q does not exist", opts.name)
 		} else {
-			_, err = p.Create(ctx, provider.CreateRequest{Name: name, Image: c.Image, Region: c.Cluster, Owner: provider.Owner{AccountID: "standalone", BoxID: name}, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}})
+			setup := defaultSetup(c)
+			if opts.reuse {
+				setup, err = loadSetup(file, c.Name)
+				if err != nil {
+					return err
+				}
+			}
+			applyRunOptions(&setup, opts)
+			if !opts.reuse && a.IsTerminal != nil && a.IsTerminal() {
+				previewArgv := opts.argv
+				if len(previewArgv) == 0 {
+					previewArgv = defaultSession(opts.detach)
+				}
+				setup, err = a.configureSetup(ctx, c, opts.name, setup, previewArgv)
+				if errors.Is(err, errSetupCancelled) {
+					fmt.Fprintln(a.Err, "vmbox: setup cancelled; nothing was provisioned")
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+			}
+			prepared, err := a.prepareSetup(ctx, setup)
 			if err != nil {
 				return err
 			}
+			if p.Name() == "sevalla" && (len(prepared.uploads) > 0 || prepared.githubToken != "") {
+				return fmt.Errorf("Sevalla's direct-command API has no stdin upload channel; remove local profile, GitHub, and Markdown uploads; nothing was provisioned")
+			}
+			setupEnv := map[string]string{
+				"VMBOX_NAME": opts.name, "VMBOX_PROVIDER": p.Name(), "VMBOX_REGION": prepared.setup.Region,
+				"VMBOX_CPU":        strconv.FormatFloat(prepared.setup.Resources.CPU, 'f', -1, 64),
+				"VMBOX_MEMORY_MIB": strconv.FormatInt(prepared.setup.Resources.MemoryMiB, 10),
+				"VMBOX_DISK_GIB":   strconv.FormatInt(prepared.setup.Resources.DiskGiB, 10), "VMBOX_WORKSPACE": prepared.setup.Workspace,
+				"VMBOX_COST": "use vmbox cost " + opts.name,
+			}
+			box, err = p.Create(ctx, provider.CreateRequest{Name: opts.name, Image: c.Image, Region: prepared.setup.Region, Owner: provider.Owner{AccountID: "standalone", BoxID: opts.name}, Resources: prepared.setup.Resources, Components: prepared.setup.Components, Env: setupEnv})
+			if err != nil {
+				return err
+			}
+			created = true
+			if err := a.uploadPrepared(ctx, p, opts.name, prepared); err != nil {
+				return err
+			}
+			if err := saveSetup(a.ConfigPath, file, c.Name, prepared.setup); err != nil {
+				return fmt.Errorf("save complete reusable setup: %w", err)
+			}
+			fmt.Fprintf(a.Err, "vmbox: saved complete reusable setup for context %s\n", c.Name)
 		}
-		if len(argv) == 0 {
-			argv = []string{"tmux", "new-session", "-A", "-s", "vmbox"}
+		if err := a.uploadWelcome(ctx, p, box, c.Name); err != nil {
+			return err
 		}
-		result, err := p.Exec(ctx, name, argv, provider.ExecOptions{Interactive: !detach, Detach: detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err})
+		if created {
+			fmt.Fprintf(a.Err, "vmbox: box %q is ready\n", opts.name)
+		}
+		if len(opts.argv) == 0 {
+			opts.argv = defaultSession(opts.detach)
+		}
+		result, err := p.Exec(ctx, opts.name, opts.argv, provider.ExecOptions{Interactive: !opts.detach, Detach: opts.detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err})
 		if err != nil {
 			return err
 		}
@@ -472,16 +529,25 @@ func (a *App) standalone(ctx context.Context, p provider.Provider, c config.Cont
 		}
 		return json.NewEncoder(a.Out).Encode(box)
 	case "resize":
-		if len(args) < 2 {
-			return fmt.Errorf("resize requires a box")
-		}
-		fs := flag.NewFlagSet("resize", flag.ContinueOnError)
-		cpu := fs.Float64("cpu", 0, "CPU limit")
-		memory := fs.Int64("memory", 0, "memory MiB")
-		if err := fs.Parse(args[2:]); err != nil {
+		name, flagArgs, err := a.selectStandaloneResize(ctx, p, args[1:])
+		if err != nil {
 			return err
 		}
-		box, err := p.Resize(ctx, args[1], provider.Resources{CPU: *cpu, MemoryMiB: *memory})
+		fs := flag.NewFlagSet("resize", flag.ContinueOnError)
+		fs.SetOutput(a.Err)
+		cpu := fs.Float64("cpu", 0, "CPU limit")
+		memory := fs.Int64("memory", 0, "memory MiB")
+		if err := fs.Parse(flagArgs); err != nil {
+			return err
+		}
+		resources := provider.Resources{CPU: *cpu, MemoryMiB: *memory}
+		if resources.CPU == 0 && resources.MemoryMiB == 0 {
+			resources, err = a.selectResizeResources("Choose new limits for " + name)
+			if err != nil {
+				return err
+			}
+		}
+		box, err := p.Resize(ctx, name, resources)
 		if err != nil {
 			return err
 		}
@@ -519,45 +585,89 @@ func (a *App) standalone(ctx context.Context, p provider.Provider, c config.Cont
 		if len(args) != 1 {
 			return fmt.Errorf("bare 'vmbox resume' opens selection; named resume is intentionally unsupported")
 		}
-		boxes, err := p.List(ctx)
+		name, err := a.selectStandaloneBox(ctx, p, "Select a box to resume")
 		if err != nil {
 			return err
 		}
-		for _, box := range boxes {
-			fmt.Fprintln(a.Out, box.Name)
-		}
-		return nil
+		return a.standalone(ctx, file, p, c, []string{"new", name})
 	default:
 		if strings.HasPrefix(command, "-") {
 			return fmt.Errorf("unknown command %q", command)
 		}
 		next := append([]string{"new", command}, args[1:]...)
-		return a.standalone(ctx, p, c, next)
+		return a.standalone(ctx, file, p, c, next)
 	}
 }
 
-func (a *App) controller(ctx context.Context, c config.Context, args []string) error {
+func (a *App) controller(ctx context.Context, file config.File, c config.Context, args []string) error {
 	token := a.Environ[c.TokenEnv]
 	if token == "" {
 		return fmt.Errorf("controller token environment %s is empty; refusing standalone fallback", c.TokenEnv)
 	}
 	switch args[0] {
 	case "new", "create", "run":
-		name, _, _, argv, err := splitRun(args[1:])
+		opts, err := parseRunOptions(args[1:])
 		if err != nil {
 			return err
 		}
-		if len(argv) == 0 {
-			argv = []string{"tmux", "new-session", "-A", "-s", "vmbox"}
+		if args[0] != "run" {
+			var existing []v1.Run
+			if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/runs", nil, &existing, nil); err != nil {
+				return err
+			}
+			for _, candidate := range existing {
+				if candidate.Request.Box != opts.name || candidate.State == v1.JobDeleted {
+					continue
+				}
+				var box provider.Box
+				_, err := a.request(ctx, c, token, http.MethodPost, "/v1/runs/"+candidate.ID+"/start", map[string]any{}, &box, nil)
+				if err != nil {
+					return err
+				}
+				return json.NewEncoder(a.Out).Encode(box)
+			}
 		}
-		req := v1.CreateRunRequest{Provider: c.Provider, ProviderCredential: c.ProviderCredential, Box: name, Image: c.Image, Region: c.Cluster, Command: argv, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}}
+		setup := defaultSetup(c)
+		if opts.reuse {
+			setup, err = loadSetup(file, c.Name)
+			if err != nil {
+				return err
+			}
+		}
+		applyRunOptions(&setup, opts)
+		if !opts.reuse && a.IsTerminal != nil && a.IsTerminal() {
+			previewArgv := opts.argv
+			if len(previewArgv) == 0 {
+				previewArgv = defaultSession(true)
+			}
+			setup, err = a.configureSetup(ctx, c, opts.name, setup, previewArgv)
+			if errors.Is(err, errSetupCancelled) {
+				fmt.Fprintln(a.Err, "vmbox: setup cancelled; nothing was submitted")
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+		}
+		prepared, err := a.prepareSetup(ctx, setup)
+		if err != nil {
+			return err
+		}
+		if len(prepared.setup.ApplicationProfiles) > 0 || prepared.setup.GitHub != nil || len(prepared.setup.Instructions) > 0 {
+			return fmt.Errorf("local application profiles, GitHub credentials, and Markdown instructions require standalone creation; nothing was submitted")
+		}
+		if len(opts.argv) == 0 {
+			opts.argv = defaultSession(true)
+		}
+		lifecycle := v1.LifecyclePolicy{OnSuccess: v1.LifecycleAction(prepared.setup.OnSuccess), OnFailure: v1.LifecycleAction(prepared.setup.OnFailure), MaxTTLText: prepared.setup.MaxTTL}
+		req := v1.CreateRunRequest{Provider: c.Provider, ProviderCredential: c.ProviderCredential, Box: opts.name, Image: c.Image, Region: prepared.setup.Region, Command: opts.argv, Resources: prepared.setup.Resources, Components: prepared.setup.Components, NotificationPolicy: prepared.setup.NotificationPolicy, Lifecycle: lifecycle}
 		var run v1.Run
-		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/runs", req, &run, map[string]string{"Idempotency-Key": "cli-" + name + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)})
+		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/runs", req, &run, map[string]string{"Idempotency-Key": "cli-" + opts.name + "-" + strconv.FormatInt(time.Now().UnixNano(), 36)})
 		if err != nil {
 			return err
 		}
 		fmt.Fprintf(a.Out, "accepted %s (%d)\n", run.ID, status)
-		return nil
+		return saveSetup(a.ConfigPath, file, c.Name, prepared.setup)
 	case "status":
 		if len(args) != 2 {
 			return fmt.Errorf("status requires a run ID")
@@ -586,17 +696,48 @@ func (a *App) controller(ctx context.Context, c config.Context, args []string) e
 		}
 		return json.NewEncoder(a.Out).Encode(box)
 	case "resize":
-		if len(args) < 2 {
-			return fmt.Errorf("resize requires a run ID")
+		runID := ""
+		var err error
+		flagArgs := args[1:]
+		if len(flagArgs) > 0 && !strings.HasPrefix(flagArgs[0], "-") {
+			runID = flagArgs[0]
+			flagArgs = flagArgs[1:]
+		} else {
+			runID, err = a.selectControllerRun(ctx, c, token, "Select a run to resize")
+			if err != nil {
+				return err
+			}
 		}
 		fs := flag.NewFlagSet("resize", flag.ContinueOnError)
+		fs.SetOutput(a.Err)
 		cpu := fs.Float64("cpu", 0, "CPU limit")
 		memory := fs.Int64("memory", 0, "memory MiB")
-		if err := fs.Parse(args[2:]); err != nil {
+		if err := fs.Parse(flagArgs); err != nil {
+			return err
+		}
+		resources := provider.Resources{CPU: *cpu, MemoryMiB: *memory}
+		if resources.CPU == 0 && resources.MemoryMiB == 0 {
+			resources, err = a.selectResizeResources("Choose new limits for " + runID)
+			if err != nil {
+				return err
+			}
+		}
+		var box provider.Box
+		_, err = a.request(ctx, c, token, http.MethodPost, "/v1/runs/"+runID+"/resize", resources, &box, nil)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(a.Out).Encode(box)
+	case "resume":
+		if len(args) != 1 {
+			return fmt.Errorf("bare 'vmbox resume' opens selection; named resume is intentionally unsupported")
+		}
+		runID, err := a.selectControllerRun(ctx, c, token, "Select a run to resume")
+		if err != nil {
 			return err
 		}
 		var box provider.Box
-		_, err := a.request(ctx, c, token, http.MethodPost, "/v1/runs/"+args[1]+"/resize", provider.Resources{CPU: *cpu, MemoryMiB: *memory}, &box, nil)
+		_, err = a.request(ctx, c, token, http.MethodPost, "/v1/runs/"+runID+"/start", map[string]any{}, &box, nil)
 		if err != nil {
 			return err
 		}
@@ -834,10 +975,10 @@ func (a *App) usage() {
 
 Usage:
   vmbox [--context NAME] [--standalone] <box> [--detach] [-- COMMAND [ARG...]]
-  vmbox new|create <box> [--detach] [-- COMMAND [ARG...]]
+  vmbox new|create <box> [--reuse] [--detach] [creation options] [-- COMMAND [ARG...]]
   vmbox run <box> [--detach] -- COMMAND [ARG...]
   vmbox ls | status <box> | logs <box> [--follow] | stop <box>
-  vmbox resize <box> --cpu N --memory MiB | clean <box> --yes | cost <box>
+  vmbox resume | resize [box] --cpu N --memory MiB | clean <box> --yes | cost <box>
   vmbox context add|use|list | provider validate
   vmbox questions | answer <question-id> <text>
   vmbox controller init|ensure --endpoint HTTPS_URL [--yes]
@@ -847,5 +988,9 @@ Usage:
 Everything following -- is forwarded as an exact argv vector. Use bash -lc
 explicitly when shell parsing is desired. A configured controller is mandatory
 unless --standalone is supplied; controller failures never silently fall back.
+
+Creation options include --component ID, --application-profile APP=PATH,
+--github-credential HOST:USER[:ssh|https], --instructions PATH, --region,
+--cpu, --memory, --disk, --workspace, notification, and lifecycle choices.
 `)
 }

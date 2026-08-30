@@ -185,7 +185,14 @@ func (s *Server) schedule(ctx context.Context, p Principal, run v1.Run) {
 		name = "run-" + strings.ReplaceAll(run.ID, "-", "")[:12]
 	}
 	owner := provider.Owner{AccountID: p.AccountID, BoxID: name, RunID: run.ID, Lease: run.Lease}
-	box, err := prov.Create(ctx, provider.CreateRequest{Name: name, Image: run.Request.Image, Region: run.Request.Region, Resources: run.Request.Resources, Owner: owner, Components: run.Request.Components, Env: map[string]string{"VMBOX_RUN_ID": run.ID, "VMBOX_EVENT_KEY": run.Lease, "VMBOX_CONTROLLER_URL": s.PublicURL}})
+	box, err := prov.Create(ctx, provider.CreateRequest{Name: name, Image: run.Request.Image, Region: run.Request.Region, Resources: run.Request.Resources, Owner: owner, Components: run.Request.Components, Env: map[string]string{
+		"VMBOX_RUN_ID": run.ID, "VMBOX_EVENT_KEY": run.Lease, "VMBOX_CONTROLLER_URL": s.PublicURL,
+		"VMBOX_NAME": name, "VMBOX_PROVIDER": run.Provider, "VMBOX_REGION": run.Request.Region,
+		"VMBOX_CPU":        strconv.FormatFloat(run.Request.Resources.CPU, 'f', -1, 64),
+		"VMBOX_MEMORY_MIB": strconv.FormatInt(run.Request.Resources.MemoryMiB, 10),
+		"VMBOX_DISK_GIB":   strconv.FormatInt(run.Request.Resources.DiskGiB, 10), "VMBOX_WORKSPACE": "/data/workspace",
+		"VMBOX_COST": "use vmbox cost " + name,
+	}})
 	if err != nil {
 		s.fail(ctx, p, run, err)
 		return

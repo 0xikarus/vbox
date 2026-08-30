@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,9 +32,64 @@ func run() error {
 		args = append([]string{"ask"}, args...)
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox-runtime run [--detach] -- COMMAND [ARG...] | exec-json DATA | report | ask")
+		return fmt.Errorf("usage: vmbox-runtime run [--detach] -- COMMAND [ARG...] | exec-json DATA | put-file PATH MODE | welcome | report | ask")
 	}
 	switch args[0] {
+	case "put-file":
+		if len(args) != 3 {
+			return fmt.Errorf("put-file requires PATH MODE")
+		}
+		path := filepath.Clean(args[1])
+		if path != "/data" && !strings.HasPrefix(path, "/data/") {
+			return fmt.Errorf("put-file destination must be below /data")
+		}
+		mode, err := strconv.ParseUint(args[2], 8, 9)
+		if err != nil {
+			return fmt.Errorf("invalid put-file mode: %w", err)
+		}
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			return err
+		}
+		tmp, err := os.CreateTemp(filepath.Dir(path), ".vmbox-upload-*")
+		if err != nil {
+			return err
+		}
+		tmpPath := tmp.Name()
+		defer os.Remove(tmpPath)
+		if err := tmp.Chmod(os.FileMode(mode)); err != nil {
+			tmp.Close()
+			return err
+		}
+		if _, err := io.Copy(tmp, io.LimitReader(os.Stdin, 16<<20)); err != nil {
+			tmp.Close()
+			return err
+		}
+		if err := tmp.Sync(); err != nil {
+			tmp.Close()
+			return err
+		}
+		if err := tmp.Close(); err != nil {
+			return err
+		}
+		return os.Rename(tmpPath, path)
+	case "welcome":
+		welcome := filepath.Join(os.Getenv("HOME"), ".vmbox-welcome")
+		if data, err := os.ReadFile(welcome); err == nil {
+			_, _ = os.Stdout.Write(data)
+			if len(data) == 0 || data[len(data)-1] != '\n' {
+				fmt.Println()
+			}
+		} else {
+			fmt.Printf("vmbox %s is ready\nProvider: %s  Region: %s\nSpecs: %s CPU / %s MiB RAM / %s GiB disk\nWorkspace: %s\nCost: %s\nDetach: press Ctrl-b, release both keys, then press d\n\n",
+				os.Getenv("VMBOX_NAME"), os.Getenv("VMBOX_PROVIDER"), os.Getenv("VMBOX_REGION"), os.Getenv("VMBOX_CPU"), os.Getenv("VMBOX_MEMORY_MIB"), os.Getenv("VMBOX_DISK_GIB"), os.Getenv("VMBOX_WORKSPACE"), os.Getenv("VMBOX_COST"))
+		}
+		shell := os.Getenv("SHELL")
+		if shell == "" {
+			shell = "/bin/bash"
+		}
+		cmd := exec.Command(shell, "-l")
+		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+		return cmd.Run()
 	case "exec-json":
 		if len(args) != 2 {
 			return fmt.Errorf("exec-json requires one encoded argv")

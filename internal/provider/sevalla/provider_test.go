@@ -134,3 +134,47 @@ func TestCreateRefusesSameNameOwnedByAnotherAccount(t *testing.T) {
 		t.Fatalf("Create error = %v, want ownership mismatch", err)
 	}
 }
+
+func TestCreateSubmitsDockerRegistryCredentialID(t *testing.T) {
+	const appID = "11111111-1111-4111-8111-111111111111"
+	created := false
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.URL.Path == "/applications" && r.Method == http.MethodGet:
+			if created {
+				json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": appID, "display_name": "vmbox-box", "status": "deploymentSuccess"}}})
+			} else {
+				json.NewEncoder(w).Encode(map[string]any{"data": []any{}})
+			}
+		case r.URL.Path == "/applications" && r.Method == http.MethodPost:
+			json.NewDecoder(r.Body).Decode(&payload)
+			created = true
+			json.NewEncoder(w).Encode(map[string]any{"id": appID, "display_name": "vmbox-box"})
+		case strings.HasSuffix(r.URL.Path, "/env-vars") && r.Method == http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{})
+		case strings.HasSuffix(r.URL.Path, "/env-vars") && r.Method == http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{
+				map[string]any{"Key": "VMBOX_ACCOUNT_ID", "Value": "standalone"},
+				map[string]any{"Key": "VMBOX_BOX_ID", "Value": "box"},
+			}})
+		case strings.HasSuffix(r.URL.Path, "/processes"):
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{}})
+		case strings.HasSuffix(r.URL.Path, "/deployments") && r.Method == http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{"id": "deployment", "status": "success"})
+		case r.URL.Path == "/applications/"+appID:
+			json.NewEncoder(w).Encode(map[string]any{"id": appID, "display_name": "vmbox-box", "status": "deploymentSuccess"})
+		default:
+			http.Error(w, r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	p := New(Config{Token: "token", APIURL: server.URL, HTTPClient: server.Client(), ProjectID: "project", ClusterID: "cluster", DockerRegistryCredentialID: "registry-credential"})
+	if _, err := p.Create(context.Background(), provider.CreateRequest{Name: "box", Owner: provider.Owner{AccountID: "standalone", BoxID: "box"}}); err != nil {
+		t.Fatal(err)
+	}
+	if payload["docker_registry_credential_id"] != "registry-credential" {
+		t.Fatalf("payload=%#v", payload)
+	}
+}

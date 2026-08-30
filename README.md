@@ -6,6 +6,10 @@ Provider-neutral development boxes with exact-argv jobs, durable `/data`, and an
 
 Go 1.26 or newer is required.
 
+Install the Go CLI directly with `./install.sh --go-cli`. Running `install.sh`
+without that flag keeps the legacy shell installation path available during
+migration.
+
 ```bash
 go build ./cmd/vmbox
 go build ./cmd/vmbox-controller
@@ -26,12 +30,24 @@ vmbox context add railway --provider railway --project PROJECT_ID --environment 
 vmbox context add ubuntu --provider incus --incus-remote build-host
 
 vmbox --context local-docker new worker --detach -- bun test
+vmbox --context local-docker new review \
+  --application-profile codex="$HOME/.codex-work" \
+  --github-credential github.com:octocat:ssh \
+  --instructions "$PWD/AGENTS.md"
+vmbox --context local-docker new next-worker --reuse
 vmbox --context local-docker run worker -- printf '%s\n' 'exact argv'
+vmbox --context local-docker resume
+vmbox --context local-docker resize
 vmbox --context local-docker stop worker
 vmbox --context local-docker clean worker --yes
 ```
 
 Everything after `--` is forwarded as an argument vector. vmbox never inserts a shell. Use `bash -lc '...'` explicitly when shell expansion is intended.
+
+New boxes collect every choice before provisioning and save the last complete,
+secret-free setup per context. `--reuse` reloads it. Application profiles,
+GitHub credentials, and Markdown instructions are independently selected;
+Markdown is installed only as workspace instructions, never as authentication.
 
 Docker supports local, named, SSH, and mutually authenticated TLS contexts. An unauthenticated TCP daemon is rejected. Docker and Incus control sockets are never mounted into workloads. Sevalla uses its v3 JSON API and official WebSocket terminal, not CLI output or dashboard scraping.
 
