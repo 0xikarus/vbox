@@ -41,10 +41,10 @@ commands. `resize [box-id]` changes per-replica vCPU/RAM limits; omit the ID to
 select a box with `[ ]`, then choose preset or custom limits.
 `stop` removes active compute while preserving the service and `/data`.
 `resume` deploys a stopped box again. `vmbox <box-id>` also reconnects whenever
-that name already exists. New tmux sessions print the full specs/IP/detach
-banner inside the pane, and the persistent status bar shows box name, CPU/RAM,
-and region. Power-down stops tmux processes; files and Codex history remain, so
-use `codex resume --last` after reconnecting.
+that name already exists. Each tmux connection opens a short specs/IP/detach
+popup inside the session, and the persistent status bar shows box name,
+CPU/RAM, and region. Power-down stops tmux processes; files and Codex history
+remain, so use `codex resume --last` after reconnecting.
 
 ## Leave Codex running
 
@@ -76,7 +76,9 @@ Nothing is selected automatically.
 
 Selected credential files are streamed over Railway SSH to `/data/home`, never
 committed or baked into the image. GitHub authentication is a separate opt-in
-checkbox and is never synced merely because `gh` is installed. Treat an
+checkbox and is never synced merely because `gh` is installed. Ambient Railway
+`GH_TOKEN` and `GITHUB_TOKEN` values are removed from the container and tmux;
+only the explicitly selected stored GitHub CLI account is used. Treat an
 authenticated box as an authenticated device.
 
 ## Persistent data and cleanup

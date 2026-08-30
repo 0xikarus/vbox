@@ -115,16 +115,17 @@ vmbox clean --all           # every box and active project volume
   and `/data/workspace/CLAUDE.md` for Claude. Nothing is selected by default;
   profile discovery still intentionally excludes Markdown files.
 - New boxes also offer an explicit opt-in selector for locally authenticated
-  GitHub CLI accounts. Nothing is selected by default: use Space to select one
-  account and Enter to continue. The chosen token is streamed into the box,
-  `gh auth setup-git` configures Git
-  access, its existing repository/org permissions are preserved, and Git commit
-  name/email are derived from the selected GitHub account. Run
-  `vmbox github <box-id>` to resync GitHub separately.
-- Every new tmux session prints a welcome card inside the box with the service
-  ID, deployment status, region, vCPU/RAM limits, replica count, storage, IPs,
-  workspace, and detach guidance. The tmux status bar keeps name, specs, and
-  region visible; resumes refresh that status.
+  GitHub CLI accounts. Nothing is selected by default. The chosen token is
+  streamed into the box, `gh auth setup-git` configures Git access, its existing
+  repository/org permissions are preserved, and Git commit name/email are
+  derived from the selected account. Ambient project-level `GH_TOKEN` and
+  `GITHUB_TOKEN` values are removed at the container and tmux boundaries, so a
+  box without an explicit selection does not silently inherit GitHub access.
+  Run `vmbox github <box-id>` to resync GitHub separately.
+- Every tmux connection opens a short welcome popup inside the box with the
+  service ID, deployment status, region, vCPU/RAM limits, replica count,
+  storage, IPs, workspace, and detach guidance. The tmux status bar keeps name,
+  specs, and region visible; resumes refresh both.
 - `resume` connects only when the named box already exists. It accepts both a
   box ID and the full name of an older, non-`vmbox-` service. If the box is
   powered down, it deploys the bundle again before connecting.

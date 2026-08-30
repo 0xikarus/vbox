@@ -122,9 +122,10 @@ railway_api() {
 
   payload="$(jq -nc --arg query "$query" --argjson variables "$variables" \
     '{query: $query, variables: $variables}')"
-  if ! response="$(curl -fsS https://backboard.railway.com/graphql/v2 \
+  if ! response="$(curl -fsS --connect-timeout 10 --max-time 45 https://backboard.railway.com/graphql/v2 \
     "${headers[@]}" --data-binary "$payload")"; then
-    die "Railway API request failed"
+    echo "vmbox: Railway API request failed" >&2
+    return 1
   fi
   if jq -e '(.errors // []) | length > 0' <<<"$response" >/dev/null; then
     jq -r '.errors[] | "vmbox: Railway API: \(.message)"' <<<"$response" >&2
@@ -133,17 +134,52 @@ railway_api() {
   jq -c '.data' <<<"$response"
 }
 
+railway_api_retry() {
+  local query="$1" variables="$2" attempt output
+  for attempt in 1 2 3 4 5; do
+    if output="$(railway_api "$query" "$variables")"; then
+      printf '%s\n' "$output"
+      return 0
+    fi
+    if ((attempt < 5)); then
+      echo "vmbox: Railway API update failed (attempt $attempt/5); retrying" >&2
+      sleep 2
+    fi
+  done
+  return 1
+}
+
 validate_box_id() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ||
     die "invalid box ID '$1'; use letters, numbers, dots, dashes, or underscores"
 }
 
-services() { railway service list "${target[@]}" --json; }
+railway_retry() {
+  local attempt output status
+  for attempt in 1 2 3 4 5; do
+    if output="$("$@" 2>&1)"; then
+      printf '%s\n' "$output"
+      return 0
+    else
+      status=$?
+    fi
+    if ((attempt < 5)); then
+      echo "vmbox: Railway request failed (attempt $attempt/5); retrying" >&2
+      sleep 2
+    fi
+  done
+  printf '%s\n' "$output" >&2
+  return "$status"
+}
+
+services() { railway_retry railway service list "${target[@]}" --json; }
 volumes() {
-  railway volume "${target[@]}" list --json | jq '
+  local data
+  data="$(railway_retry railway volume "${target[@]}" list --json)" || return
+  jq '
     .volumes = ((.volumes // []) |
       map(select(.isPendingDeletion != true and (.deletedAt // null) == null)))
-  '
+  ' <<<"$data"
 }
 
 delete_volume_if_active() {
@@ -172,32 +208,52 @@ find_service() {
     'first(.[] | select(.name == $name)) // empty'
 }
 
-link_service() {
-  local args=("${target[@]}") output
-  [[ -n "${1:-}" ]] && args+=(--service "$1")
-  if ! output="$(cd "$bundle" && railway link "${args[@]}" --json 2>&1)"; then
-    printf '%s\n' "$output" >&2
-    die "could not select the configured Railway project"
-  fi
+service_has_deployment_history() {
+  local data
+  data="$(railway_retry railway deployment list "${target[@]}" \
+    --service "$service_name" --limit 1 --json)" || return
+  [[ "$(jq 'length' <<<"$data")" != 0 ]]
 }
 
 create_service() {
-  local output
+  local query variables result created_id created_name service attempt check
   [[ -f "$bundle/Dockerfile" ]] || die "deployment bundle missing; rerun install.sh"
-  echo "vmbox: provisioning Railway service '$service_name'" >&2
-  link_service ""
-  if ! output="$(cd "$bundle" && railway add --service "$service_name" --json 2>&1)"; then
-    printf '%s\n' "$output" >&2
-    die "could not create Railway service '$service_name'"
-  fi
+  echo "vmbox: creating Railway service '$service_name'" >&2
+  query='mutation createService($input: ServiceCreateInput!) {
+    serviceCreate(input: $input) { id name }
+  }'
+  variables="$(jq -nc --arg projectId "$VMBOX_PROJECT_ID" \
+    --arg environmentId "$VMBOX_ENVIRONMENT_ID" --arg name "$service_name" \
+    '{input: {projectId: $projectId, environmentId: $environmentId, name: $name}}')"
+  for attempt in 1 2 3; do
+    if result="$(railway_api "$query" "$variables")"; then
+      created_id="$(jq -r '.serviceCreate.id // empty' <<<"$result")"
+      created_name="$(jq -r '.serviceCreate.name // empty' <<<"$result")"
+      [[ -n "$created_id" && "$created_name" == "$service_name" ]] && return 0
+    fi
+    for check in 1 2 3 4 5; do
+      service="$(find_service 2>/dev/null || true)"
+      [[ -z "$service" ]] || {
+        echo "vmbox: service creation recovered after an interrupted API response" >&2
+        return 0
+      }
+      sleep 1
+    done
+    ((attempt == 3)) || echo "vmbox: retrying service creation ($attempt/3)" >&2
+  done
+  die "Railway did not create service '$service_name'"
 }
 
 wait_for_service() {
   local deployment_id="${1:-}" deadline=$((SECONDS + VMBOX_DEPLOY_TIMEOUT)) data status error
   while ((SECONDS < deadline)); do
-    data="$(cd "$bundle" && railway deployment list \
-      --service "$service_name" --environment "$VMBOX_ENVIRONMENT_ID" \
-      --limit 20 --json)"
+    if ! data="$(railway_retry railway deployment list "${target[@]}" \
+      --service "$service_name" \
+      --limit 20 --json)"; then
+      echo "vmbox: deployment status temporarily unavailable; retrying" >&2
+      sleep 5
+      continue
+    fi
     status="$(jq -r --arg id "$deployment_id" '
       if $id == "" then .[0].status // empty
       else first(.[] | select(.id == $id) | .status) // empty end
@@ -219,6 +275,69 @@ wait_for_service() {
   die "deployment timed out after ${VMBOX_DEPLOY_TIMEOUT}s"
 }
 
+create_data_volume() {
+  local service_id="$1" region="$2" query variables result volume_id
+  local data attempt check
+  echo "vmbox: creating persistent /data volume" >&2
+  query='mutation createVolume($input: VolumeCreateInput!) {
+    volumeCreate(input: $input) { id }
+  }'
+  variables="$(jq -nc --arg projectId "$VMBOX_PROJECT_ID" \
+    --arg environmentId "$VMBOX_ENVIRONMENT_ID" --arg serviceId "$service_id" \
+    --arg mountPath /data --arg region "$region" \
+    '{input: {projectId: $projectId, environmentId: $environmentId,
+      serviceId: $serviceId, mountPath: $mountPath, region: $region}}')"
+  for attempt in 1 2 3; do
+    if result="$(railway_api "$query" "$variables")"; then
+      volume_id="$(jq -r '.volumeCreate.id // empty' <<<"$result")"
+      [[ -n "$volume_id" ]] && return 0
+    fi
+    for check in 1 2 3 4 5; do
+      data="$(volumes 2>/dev/null || true)"
+      if jq -e --arg service "$service_name" \
+        'any(.volumes[]?; .serviceName == $service and .mountPath == "/data")' \
+        <<<"$data" >/dev/null 2>&1; then
+        echo "vmbox: volume creation recovered after an interrupted API response" >&2
+        return 0
+      fi
+      sleep 1
+    done
+    ((attempt == 3)) || echo "vmbox: retrying volume creation ($attempt/3)" >&2
+  done
+  die "Railway did not create /data for '$service_name'"
+}
+
+deploy_bundle() {
+  local previous_data previous_id submit_output deployment_id data attempt
+  previous_data="$(railway_retry railway deployment list "${target[@]}" \
+    --service "$service_name" --limit 1 --json 2>/dev/null || printf '[]')"
+  previous_id="$(jq -r '.[0].id // empty' <<<"$previous_data")"
+
+  if submit_output="$(railway up "$bundle" --path-as-root --detach --json \
+    --service "$service_name" "${target[@]}" 2>&1)"; then
+    deployment_id="$(jq -rs \
+      'map(select(type == "object")) | last | .deploymentId // .id // empty' \
+      <<<"$submit_output")"
+    printf '%s' "$deployment_id"
+    return 0
+  fi
+
+  echo "vmbox: deployment submission was interrupted; checking Railway before retrying" >&2
+  for attempt in {1..10}; do
+    data="$(railway_retry railway deployment list "${target[@]}" \
+      --service "$service_name" --limit 1 --json 2>/dev/null || printf '[]')"
+    deployment_id="$(jq -r '.[0].id // empty' <<<"$data")"
+    if [[ -n "$deployment_id" && "$deployment_id" != "$previous_id" ]]; then
+      echo "vmbox: recovered submitted deployment '$deployment_id'" >&2
+      printf '%s' "$deployment_id"
+      return 0
+    fi
+    sleep 2
+  done
+  printf '%s\n' "$submit_output" >&2
+  return 1
+}
+
 wait_for_volume_attachment() {
   local deadline=$((SECONDS + VMBOX_VOLUME_TIMEOUT)) data
   while ((SECONDS < deadline)); do
@@ -237,15 +356,14 @@ wait_for_volume_attachment() {
 }
 
 ensure_ready() {
-  local service="$1" status deploy_result deployment_id output volume_added=0
+  local service="$1" status deployment_id volume_added=0
+  local service_id volume_region
 
   if ! jq -e 'any(.volumes[]?; .mountPath == "/data")' <<<"$service" >/dev/null; then
-    echo "vmbox: attaching persistent /data volume" >&2
-    link_service "$service_name"
-    if ! output="$(cd "$bundle" && railway volume add --mount-path /data --json 2>&1)"; then
-      printf '%s\n' "$output" >&2
-      die "could not attach /data to '$service_name'"
-    fi
+    service_id="$(jq -r '.id' <<<"$service")"
+    volume_region="$(jq -r 'first(.regions[]?.name) // empty' <<<"$service")"
+    [[ -n "$volume_region" ]] || volume_region="$(platform_region_id "$selected_region")"
+    create_data_volume "$service_id" "$volume_region"
     wait_for_volume_attachment
     volume_added=1
   fi
@@ -257,20 +375,24 @@ ensure_ready() {
   esac
 
   echo "vmbox: deploying '$service_name'" >&2
-  deploy_result="$(railway up "$bundle" --path-as-root --detach --json \
-    --service "$service_name" "${target[@]}")"
-  deployment_id="$(jq -rs 'map(select(type == "object")) | last | .deploymentId // .id // empty' \
-    <<<"$deploy_result")"
+  if ! deployment_id="$(deploy_bundle)"; then
+    die "could not submit deployment for '$service_name'"
+  fi
   wait_for_service "$deployment_id"
 }
 
 persistent_data_mounted() {
+  local attempt
   local -a ssh_command=(railway ssh "${target[@]}" --service "$service_name")
-  if command -v timeout >/dev/null 2>&1; then
-    timeout 30 "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1
-  else
-    "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1
-  fi
+  for attempt in 1 2 3; do
+    if command -v timeout >/dev/null 2>&1; then
+      timeout 30 "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1 && return 0
+    else
+      "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1 && return 0
+    fi
+    ((attempt == 3)) || { echo "vmbox: /data mount check failed; retrying ($attempt/3)" >&2; sleep 2; }
+  done
+  return 1
 }
 
 ensure_persistent_data() {
@@ -353,26 +475,36 @@ EOF_BANNER
 }
 
 attach() {
-  local welcome_b64 prepare_script
+  local welcome_b64 command_b64="" prepare_script decorate_script decorator_pid
   show_box_welcome
   welcome_b64="$(printf '%s\n' "$box_welcome" | base64 | tr -d '\n')"
+  if (($#)); then
+    command_b64="$(printf '%s\0' "$@" | base64 | tr -d '\n')"
+  fi
   prepare_script="$(cat <<'EOF_PREPARE'
 session="$1"
 banner="$2"
 status="$3"
-shift 3
+command_payload="$4"
+command=()
+if [[ -n "$command_payload" ]]; then
+  mapfile -d '' -t command < <(printf '%s' "$command_payload" | base64 -d)
+fi
 mkdir -p /data/home
 printf '%s' "$banner" | base64 -d > /data/home/.vmbox-welcome
 chmod 0644 /data/home/.vmbox-welcome
+unset GH_TOKEN GITHUB_TOKEN
 if tmux has-session -t "$session" 2>/dev/null; then
-  if (($#)); then
+  tmux set-environment -g -u GH_TOKEN 2>/dev/null || true
+  tmux set-environment -g -u GITHUB_TOKEN 2>/dev/null || true
+  if ((${#command[@]})); then
     tmux new-window -t "$session" -c /data/workspace \
-      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "$@"
+      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "${command[@]}"
   fi
 else
-  if (($#)); then
+  if ((${#command[@]})); then
     tmux new-session -d -s "$session" -c /data/workspace \
-      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "$@"
+      bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec "$@"' bash "${command[@]}"
   else
     tmux new-session -d -s "$session" -c /data/workspace \
       bash -lc 'cat /data/home/.vmbox-welcome; printf "\n"; exec bash -l'
@@ -388,9 +520,30 @@ EOF_PREPARE
     echo "vmbox: starting forwarded command in tmux: $1" >&2
   fi
   railway ssh "${target[@]}" --service "$service_name" \
-    bash -lc "$prepare_script" bash "$box_id" "$welcome_b64" "$box_status" "$@" \
+    bash -lc "$prepare_script" bash "$box_id" "$welcome_b64" "$box_status" "$command_b64" \
     </dev/null >/dev/null
+  decorate_script="$(cat <<'EOF_DECORATE'
+session="$1"
+status="$2"
+for _ in {1..40}; do
+  if tmux list-clients -t "$session" -F '#{client_name}' 2>/dev/null | grep -q .; then
+    tmux set-option -t "$session" status-left-length 100
+    tmux set-option -t "$session" status-left "$status"
+    tmux display-popup -t "$session": -E -w 80% -h 80% \
+      -T ' vmbox box specs ' 'cat /data/home/.vmbox-welcome; sleep 6' 2>/dev/null ||
+      tmux display-message -t "$session" -d 6000 "$status | Detach: Ctrl-b, then d"
+    exit 0
+  fi
+  sleep 0.25
+done
+EOF_DECORATE
+)"
+  railway ssh "${target[@]}" --service "$service_name" \
+    bash -lc "$decorate_script" bash "$box_id" "$box_status" \
+    </dev/null >/dev/null 2>&1 &
+  decorator_pid=$!
   railway ssh "${target[@]}" --service "$service_name" --session "$box_id"
+  wait "$decorator_pid" 2>/dev/null || true
 }
 
 display_list() {
@@ -628,7 +781,7 @@ apply_resource_limits() {
     --argjson memoryGB "$memory" \
     '{input: {serviceId: $serviceId, environmentId: $environmentId,
       vCPUs: $vCPUs, memoryGB: $memoryGB}}')"
-  result="$(railway_api "$query" "$variables")"
+  result="$(railway_api_retry "$query" "$variables")"
   jq -e '.serviceInstanceLimitsUpdate == true' <<<"$result" >/dev/null ||
     die "Railway did not accept the resource-limit update"
   verified="$(get_resource_limits "$service_id")"
@@ -663,16 +816,34 @@ declare -a component_ids=(codex claude bun foundry)
 declare -a component_labels=("Codex CLI" "Claude Code" "Bun" "Foundry: Forge/Cast/Anvil/Chisel")
 declare -a component_selected=(1 1 1 1)
 
-apply_selected_components() {
+selected_components_value() {
   local i joined=""
   for i in "${!component_ids[@]}"; do
     ((component_selected[i])) || continue
     joined="${joined:+$joined,}${component_ids[$i]}"
   done
-  [[ -n "$joined" ]] || joined=core
+  printf '%s' "${joined:-core}"
+}
+
+apply_selected_components() {
+  local service service_id joined query variables result
+  service="$(find_service)"
+  [[ -n "$service" ]] || die "could not find '$service_name' to configure components"
+  service_id="$(jq -r '.id' <<<"$service")"
+  joined="$(selected_components_value)"
   echo "vmbox: selected components: $joined" >&2
-  railway variable set "${target[@]}" --service "$service_name" --skip-deploys --json \
-    "VMBOX_COMPONENTS=$joined" >/dev/null
+  query='mutation setComponents($input: VariableCollectionUpsertInput!) {
+    variableCollectionUpsert(input: $input)
+  }'
+  variables="$(jq -nc --arg projectId "$VMBOX_PROJECT_ID" \
+    --arg environmentId "$VMBOX_ENVIRONMENT_ID" --arg serviceId "$service_id" \
+    --arg components "$joined" \
+    '{input: {projectId: $projectId, environmentId: $environmentId,
+      serviceId: $serviceId, skipDeploys: true, replace: false,
+      variables: {VMBOX_COMPONENTS: $components}}}')"
+  result="$(railway_api_retry "$query" "$variables")"
+  jq -e '.variableCollectionUpsert == true' <<<"$result" >/dev/null ||
+    die "Railway did not accept component configuration for '$service_name'"
 }
 
 select_components() {
@@ -738,6 +909,17 @@ select_components() {
 declare -a region_ids=(us-west us-east eu-west southeast-asia)
 declare -a region_labels=("US West" "US East" "Europe West" "Southeast Asia")
 declare -a region_platform_ids=(us-west2 us-east4-eqdc4a europe-west4-drams3a asia-southeast1-eqsg3a)
+
+platform_region_id() {
+  local requested="$1" i
+  for i in "${!region_ids[@]}"; do
+    if [[ "${region_ids[$i]}" == "$requested" ]]; then
+      printf '%s' "${region_platform_ids[$i]}"
+      return 0
+    fi
+  done
+  return 1
+}
 selected_region="$VMBOX_DEFAULT_REGION"
 
 apply_selected_region() {
@@ -758,7 +940,7 @@ apply_selected_region() {
     --arg regionId "$region_id" \
     '{serviceId: $serviceId, environmentId: $environmentId,
       input: {multiRegionConfig: {($regionId): {numReplicas: 1}}}}')"
-  result="$(railway_api "$query" "$variables")"
+  result="$(railway_api_retry "$query" "$variables")"
   jq -e '.serviceInstanceUpdate == true' <<<"$result" >/dev/null ||
     die "Railway did not accept region '$region'"
 }
@@ -1256,7 +1438,7 @@ upload_github_account() {
 
   echo "vmbox: securely syncing GitHub account $user@$host ($protocol)" >&2
   if ! printf '%s\n' "$token" | railway ssh "${target[@]}" --service "$service_name" \
-    "umask 077; export HOME=/data/home; gh auth login --hostname '$host' --git-protocol '$protocol' --with-token >/dev/null && gh auth setup-git --hostname '$host' >/dev/null; chmod 700 /data/home/.config/gh; chmod 600 /data/home/.config/gh/hosts.yml" >/dev/null; then
+    "umask 077; export HOME=/data/home; unset GH_TOKEN GITHUB_TOKEN; gh auth login --hostname '$host' --git-protocol '$protocol' --with-token >/dev/null && gh auth setup-git --hostname '$host' >/dev/null; chmod 700 /data/home/.config/gh; chmod 600 /data/home/.config/gh/hosts.yml" >/dev/null; then
     unset token
     echo "vmbox: warning: GitHub account sync failed for $user@$host" >&2
     return 0
@@ -1269,7 +1451,7 @@ upload_github_account() {
   unset token
 
   if ! remote_output="$(railway ssh "${target[@]}" --service "$service_name" \
-    "HOME=/data/home GH_HOST='$host' gh api user --jq .login" 2>/dev/null)"; then
+    "export HOME=/data/home GH_HOST='$host'; unset GH_TOKEN GITHUB_TOKEN; gh api user --jq .login" 2>/dev/null)"; then
     echo "vmbox: warning: GitHub credentials were stored, but the API login check failed" >&2
     return 0
   fi
@@ -1592,7 +1774,7 @@ open_box() {
     [[ "$requested_action" == start ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
     created=1
   elif [[ "$(jq -r '.status // empty' <<<"$service")" == "" ]] &&
-    ! jq -e '.deploymentStopped == true' <<<"$service" >/dev/null; then
+    ! service_has_deployment_history; then
     echo "vmbox: resuming incomplete first-time setup for '$service_name'" >&2
     created=1
   fi
