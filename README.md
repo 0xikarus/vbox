@@ -45,10 +45,10 @@ vmbox work -- claude "fix active tickets, then commit"
 vmbox worker-a --detach -- codex "fix ticket 123, test, and commit"
 ```
 
-Forwarded commands record `running`, `completed`, or `failed` under persistent
-Failure status includes the tail of the persistent task log for diagnosis.
-`/data`. Use `vmbox status <name>` or `vmbox wait <name>`; agents can add a
-human-readable update with `vmbox-report "message"`.
+Forwarded commands record `running`, `completed`, `failed`, or `interrupted`
+under persistent `/data`. Restarts mark stale tasks as interrupted; failures
+include the persistent task-log tail. Use `vmbox status <name>` or `vmbox wait
+<name>`; agents can report progress with `vmbox-report "message"`.
 
 
 ## Detach without stopping work
@@ -64,5 +64,8 @@ Reconnect with `vmbox resume work`. After powering down, files remain in
 
 Credentials are opt-in and stored under `/data/home`. Configuration lives in
 `~/.config/vmbox/config`.
+
+`vmbox clean --all` removes only services and attached volumes whose names use
+the configured `VMBOX_SERVICE_PREFIX`; unrelated project resources are ignored.
 
 See [RAILWAY.md](RAILWAY.md) for detailed operational and agent documentation.

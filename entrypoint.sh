@@ -12,8 +12,10 @@ configure_agent_trust() {
   local tmp
 
   mkdir -p "$codex_dir" "$claude_dir"
+  chmod 700 "$codex_dir" "$claude_dir"
   touch "$codex_config"
-  tmp="$(mktemp)"
+  chmod 600 "$codex_config"
+  tmp="$(mktemp "$codex_dir/.config.toml.XXXXXX")"
   awk -v target='[projects."/data/workspace"]' '
     BEGIN {
       in_top=1
@@ -47,19 +49,19 @@ configure_agent_trust() {
       }
     }
   ' "$codex_config" > "$tmp"
-  install -m 600 "$tmp" "$codex_config"
-  rm -f "$tmp"
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$codex_config"
 
   if [[ ! -e "$claude_settings" ]]; then
     printf '{"permissions":{"defaultMode":"bypassPermissions"},"trustedDirectories":["/data/workspace"]}\n' > "$claude_settings"
   elif jq -e 'type == "object"' "$claude_settings" >/dev/null 2>&1; then
-    tmp="$(mktemp)"
+    tmp="$(mktemp "$claude_dir/.settings.json.XXXXXX")"
     jq --arg dir /data/workspace \
       '.trustedDirectories = (((.trustedDirectories // []) + [$dir]) | unique)
        | .permissions = ((.permissions // {}) | .defaultMode = "bypassPermissions")' \
       "$claude_settings" > "$tmp"
-    install -m 600 "$tmp" "$claude_settings"
-    rm -f "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$claude_settings"
   else
     echo "vmbox: warning: $claude_settings is not valid JSON; agent defaults were not changed" >&2
   fi

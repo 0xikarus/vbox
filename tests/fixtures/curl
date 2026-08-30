@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+: "${VMBOX_TEST_STATE:?}"
+printf '%q ' "$@" >"$VMBOX_TEST_STATE/curl.args"
+for argument in "$@"; do
+  if [[ "$argument" == @/dev/fd/* ]]; then
+    grep -Fqx "Authorization: Bearer ${VMBOX_TEST_EXPECT_TOKEN:?}" "${argument#@}" || exit 65
+  fi
+done
+cat >/dev/null
+printf '{"data":{"ok":true}}\n'
