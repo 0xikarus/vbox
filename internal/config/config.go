@@ -26,6 +26,7 @@ type GitHubCredential struct {
 // local profile identities and paths; credential material is rediscovered and
 // uploaded from the laptop when the setup is used.
 type CreationSetup struct {
+	Save                bool                 `json:"-"`
 	Version             int                  `json:"version"`
 	SavedAt             time.Time            `json:"savedAt"`
 	Region              string               `json:"region,omitempty"`

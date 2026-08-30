@@ -149,7 +149,7 @@ func TestControllerInitEnsuresInfrastructureAndSavesContext(t *testing.T) {
 	if err := app.Run(context.Background(), []string{"controller", "init", "--endpoint", "https://controller.example", "--yes"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.Calls) != 6 {
+	if len(runner.Calls) != 12 {
 		t.Fatalf("calls=%d: %#v", len(runner.Calls), runner.Calls)
 	}
 	wantPrefix := []string{"railway", "service", "list", "--json", "--project", "p", "--environment", "e"}
@@ -157,9 +157,15 @@ func TestControllerInitEnsuresInfrastructureAndSavesContext(t *testing.T) {
 		t.Fatalf("list argv=%#v", runner.Calls[0].Argv)
 	}
 	for _, call := range runner.Calls {
-		for _, arg := range call.Argv {
-			if strings.Contains(arg, "RAILWAY_API_TOKEN") {
-				t.Fatalf("provider token leaked into argv: %#v", call.Argv)
+		joined := strings.Join(call.Argv, " ")
+		if strings.Contains(joined, " variable set ") {
+			if call.Stdin == "" {
+				t.Fatalf("controller variable write did not use stdin: %#v", call)
+			}
+			for _, arg := range call.Argv {
+				if arg == call.Stdin {
+					t.Fatalf("controller variable leaked into argv: %#v", call)
+				}
 			}
 		}
 	}
@@ -352,7 +358,7 @@ func TestUnifiedScreenAndSelectorsRequireVisibleConfirm(t *testing.T) {
 	var out bytes.Buffer
 	app.In, app.Out, app.Err = strings.NewReader("\nq"), &out, &bytes.Buffer{}
 	app.Runner = &procexec.FakeRunner{}
-	_, err := app.configureSetup(context.Background(), config.Context{Name: "test", Provider: "docker"}, "worker", defaultSetup(config.Context{}), []string{"printf", "two words"})
+	_, err := app.configureSetup(context.Background(), config.Context{Name: "test", Provider: "docker"}, nil, "worker", defaultSetup(config.Context{}), []string{"printf", "two words"})
 	if !errors.Is(err, errSetupCancelled) {
 		t.Fatalf("Enter outside Confirm accepted setup: %v", err)
 	}

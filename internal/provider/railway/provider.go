@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,12 +17,13 @@ import (
 )
 
 type Config struct {
-	ProjectID     string
-	EnvironmentID string
-	Token         string
-	DefaultImage  string
-	PollInterval  time.Duration
-	ReadyTimeout  time.Duration
+	ProjectID        string
+	EnvironmentID    string
+	Token            string
+	TokenEnvironment string
+	DefaultImage     string
+	PollInterval     time.Duration
+	ReadyTimeout     time.Duration
 }
 
 type Provider struct {
@@ -33,6 +35,9 @@ func New(cfg Config, runner procexec.Runner) *Provider {
 	if runner == nil {
 		runner = procexec.OSRunner{}
 	}
+	if cfg.TokenEnvironment == "" {
+		cfg.TokenEnvironment = "RAILWAY_API_TOKEN"
+	}
 	if cfg.DefaultImage == "" {
 		cfg.DefaultImage = "ghcr.io/0xikarus/vmbox-service:latest"
 	}
@@ -42,23 +47,30 @@ func New(cfg Config, runner procexec.Runner) *Provider {
 	if cfg.ReadyTimeout <= 0 {
 		cfg.ReadyTimeout = 15 * time.Minute
 	}
-	if cfg.Token != "" {
+	if cfg.Token != "" && (cfg.TokenEnvironment == "RAILWAY_API_TOKEN" || cfg.TokenEnvironment == "RAILWAY_TOKEN") {
+		other := "RAILWAY_API_TOKEN"
+		if cfg.TokenEnvironment == other {
+			other = "RAILWAY_TOKEN"
+		}
 		switch value := runner.(type) {
 		case procexec.OSRunner:
 			env := make(map[string]string, len(value.Env)+1)
 			for key, item := range value.Env {
 				env[key] = item
 			}
-			env["RAILWAY_API_TOKEN"] = cfg.Token
+			env[cfg.TokenEnvironment] = cfg.Token
 			value.Env = env
+			value.Unset = append(value.Unset, other)
 			runner = value
 		case *procexec.OSRunner:
 			env := make(map[string]string, len(value.Env)+1)
 			for key, item := range value.Env {
 				env[key] = item
 			}
-			env["RAILWAY_API_TOKEN"] = cfg.Token
-			runner = &procexec.OSRunner{Env: env}
+			env[cfg.TokenEnvironment] = cfg.Token
+			unset := append([]string(nil), value.Unset...)
+			unset = append(unset, other)
+			runner = &procexec.OSRunner{Env: env, Unset: unset}
 		}
 	}
 	return &Provider{cfg: cfg, runner: runner}
@@ -73,11 +85,17 @@ func (p *Provider) command(args ...string) []string {
 	return append(append([]string{"railway"}, args...), p.target()...)
 }
 func (p *Provider) run(ctx context.Context, args ...string) (procexec.Result, error) {
-	return p.runner.Run(ctx, p.command(args...), nil, nil, nil)
+	return p.runInput(ctx, nil, args...)
+}
+func (p *Provider) runInput(ctx context.Context, stdin io.Reader, args ...string) (procexec.Result, error) {
+	return p.runner.Run(ctx, p.command(args...), stdin, nil, nil)
 }
 
 func (p *Provider) Validate(ctx context.Context) (provider.Capabilities, error) {
 	cap := provider.Capabilities{Provider: p.Name(), Architectures: []string{"linux/amd64"}, Interactive: true, Detached: true, ExactArgv: true, PersistentStorage: true, AutomatedStorage: true, Resize: true, Metrics: true, Cost: true, ControllerCompatible: true}
+	if p.cfg.TokenEnvironment != "RAILWAY_API_TOKEN" && p.cfg.TokenEnvironment != "RAILWAY_TOKEN" {
+		return cap, fmt.Errorf("Railway token environment must be RAILWAY_API_TOKEN or RAILWAY_TOKEN")
+	}
 	if p.cfg.ProjectID == "" || p.cfg.EnvironmentID == "" {
 		return cap, fmt.Errorf("Railway project and environment IDs are required")
 	}
@@ -135,6 +153,7 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	}
 	var service service
 	var result procexec.Result
+	var err error
 	existing, resolveErr := p.resolve(ctx, req.Name)
 	if resolveErr == nil {
 		box, inspectErr := p.inspectService(ctx, existing)
@@ -153,7 +172,7 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 			return provider.Box{}, resolveErr
 		}
 		var createErr error
-		result, createErr = p.run(ctx, "service", "create", "--name", serviceName(req.Name), "--json")
+		result, createErr = p.createService(ctx, serviceName(req.Name))
 		if createErr != nil || result.ExitCode != 0 {
 			if _, reconcileErr := p.resolve(ctx, req.Name); reconcileErr != nil {
 				return provider.Box{}, railwayError("create service", result, createErr)
@@ -184,41 +203,39 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	for key, value := range req.Env {
 		metadata[key] = value
 	}
-	args := []string{"variables", "set", "--service", service.Name, "--skip-deploys"}
+	keys := make([]string, 0, len(metadata))
 	for key, value := range metadata {
 		if value != "" {
-			args = append(args, key+"="+value)
+			keys = append(keys, key)
 		}
 	}
-	result, err := p.run(ctx, args...)
-	if err != nil || result.ExitCode != 0 {
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := metadata[key]
+		result, err = p.runInput(ctx, strings.NewReader(value), "variable", "set", key, "--stdin", "--service", service.Name, "--skip-deploys")
+		if err == nil && result.ExitCode == 0 {
+			continue
+		}
 		values, reconcileErr := p.variables(ctx, service.Name)
-		if reconcileErr != nil || values["VMBOX_ACCOUNT_ID"] != req.Owner.AccountID || values["VMBOX_BOX_ID"] != req.Owner.BoxID || (req.Owner.Lease != "" && values["VMBOX_LEASE"] != req.Owner.Lease) {
-			return provider.Box{}, railwayError("set ownership variables", result, err)
+		if reconcileErr != nil || values[key] != value {
+			return provider.Box{}, railwayError("set variable "+key, result, err)
 		}
 	}
 	if _, err := p.CreateStorage(ctx, service.ID, req.Resources); err != nil {
 		return provider.Box{}, err
 	}
-	// Deploy the shared OCI runtime. Railway accepts image sources directly.
 	image := req.Image
 	if image == "" {
 		image = p.cfg.DefaultImage
 	}
-	update := []string{"service", "update", "--service", service.Name, "--image", image}
-	if req.Region != "" {
-		update = append(update, "--region", req.Region)
+	if err := p.setResources(ctx, service.ID, req.Resources); err != nil {
+		return provider.Box{}, err
 	}
-	if req.Resources.CPU > 0 {
-		update = append(update, "--cpu", strconv.FormatFloat(req.Resources.CPU, 'f', -1, 64))
+	if err := p.setRegion(ctx, service.ID, req.Region); err != nil {
+		return provider.Box{}, err
 	}
-	if req.Resources.MemoryMiB > 0 {
-		update = append(update, "--memory", strconv.FormatInt(req.Resources.MemoryMiB, 10))
-	}
-	update = append(update, "--json")
-	result, err = p.run(ctx, update...)
-	if err != nil || result.ExitCode != 0 {
-		return provider.Box{}, railwayError("configure image", result, err)
+	if err := p.connectImage(ctx, service.Name, image); err != nil {
+		return provider.Box{}, err
 	}
 	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
 		return provider.Box{}, err
@@ -266,7 +283,16 @@ func (p *Provider) inspectService(ctx context.Context, service service) (provide
 	cpu, _ := strconv.ParseFloat(values["VMBOX_CPU"], 64)
 	memory, _ := strconv.ParseInt(values["VMBOX_MEMORY_MIB"], 10, 64)
 	disk, _ := strconv.ParseInt(values["VMBOX_DISK_GIB"], 10, 64)
-	return provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: state(service.Status), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}, nil
+	box := provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: state(service.Status), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}
+	if actual, resourceErr := p.resources(ctx, service.ID); resourceErr == nil {
+		if actual.CPU > 0 {
+			box.Resources.CPU = actual.CPU
+		}
+		if actual.MemoryMiB > 0 {
+			box.Resources.MemoryMiB = actual.MemoryMiB
+		}
+	}
+	return box, nil
 }
 
 func (p *Provider) Inspect(ctx context.Context, id string) (provider.Box, error) {
@@ -314,16 +340,8 @@ func (p *Provider) Resize(ctx context.Context, id string, resources provider.Res
 	if err != nil {
 		return provider.Box{}, err
 	}
-	args := []string{"service", "update", "--service", service.Name}
-	if resources.CPU > 0 {
-		args = append(args, "--cpu", strconv.FormatFloat(resources.CPU, 'f', -1, 64))
-	}
-	if resources.MemoryMiB > 0 {
-		args = append(args, "--memory", strconv.FormatInt(resources.MemoryMiB, 10))
-	}
-	result, err := p.run(ctx, args...)
-	if err != nil || result.ExitCode != 0 {
-		return provider.Box{}, railwayError("resize", result, err)
+	if err := p.setResources(ctx, service.ID, resources); err != nil {
+		return provider.Box{}, err
 	}
 	return p.Inspect(ctx, service.ID)
 }
@@ -343,15 +361,14 @@ func (p *Provider) Delete(ctx context.Context, id string, requested provider.Own
 	if err != nil {
 		return err
 	}
+	for _, volumeID := range volumeIDs {
+		if err := p.deleteVolume(ctx, volumeID); err != nil {
+			return err
+		}
+	}
 	result, err := p.run(ctx, "service", "delete", "--service", box.ID, "--yes", "--json")
 	if err != nil || result.ExitCode != 0 {
 		return railwayError("delete service", result, err)
-	}
-	for _, volumeID := range volumeIDs {
-		result, err = p.run(ctx, "volume", "delete", "--volume", volumeID, "--yes", "--json")
-		if err != nil || result.ExitCode != 0 {
-			return railwayError("delete owned volume", result, err)
-		}
 	}
 	return nil
 }
@@ -364,7 +381,7 @@ type railwayVolume struct {
 }
 
 func (p *Provider) volumes(ctx context.Context) ([]railwayVolume, error) {
-	result, err := p.run(ctx, "volume", "list", "--json")
+	result, err := p.runVolume(ctx, "", nil, "list", "--json")
 	if err != nil || result.ExitCode != 0 {
 		return nil, railwayError("list volumes", result, err)
 	}
@@ -419,7 +436,7 @@ func (p *Provider) CreateStorage(ctx context.Context, id string, resources provi
 		return provider.Storage{}, listErr
 	}
 	if !exists {
-		result, createErr = p.run(ctx, "volume", "add", "--service", service.Name, "--mount-path", "/data", "--json")
+		result, createErr = p.runVolume(ctx, service.ID, nil, "add", "--mount-path", "/data", "--json")
 		if createErr != nil || result.ExitCode != 0 {
 			values, listErr = p.volumes(ctx)
 			if _, reconciled := find(values); listErr != nil || !reconciled {
@@ -462,9 +479,8 @@ func (p *Provider) Deploy(ctx context.Context, id, image string) (provider.Box, 
 		return provider.Box{}, err
 	}
 	if image != "" {
-		result, err := p.run(ctx, "service", "update", "--service", service.Name, "--image", image, "--json")
-		if err != nil || result.ExitCode != 0 {
-			return provider.Box{}, railwayError("update image", result, err)
+		if err := p.connectImage(ctx, service.Name, image); err != nil {
+			return provider.Box{}, err
 		}
 	}
 	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
@@ -630,11 +646,17 @@ func (p *Provider) Usage(ctx context.Context, id string) (provider.Usage, error)
 	if err != nil {
 		return provider.Usage{}, err
 	}
-	result, err := p.run(ctx, "usage", "--service", service.Name, "--json")
+	result, err := p.runner.Run(ctx, []string{"railway", "usage", "projects", "--project", p.cfg.ProjectID, "--period", "current", "--json"}, nil, nil, nil)
 	if err != nil || result.ExitCode != 0 {
-		return provider.Usage{}, railwayError("usage", result, err)
+		detail := "Railway billing usage is unavailable for this credential"
+		if strings.Contains(strings.ToLower(string(result.Stderr)), "unauthorized") {
+			detail = "Railway project tokens cannot read workspace billing; use an account/workspace token for accrued cost"
+		} else if err != nil {
+			detail = "Railway billing usage unavailable: " + err.Error()
+		}
+		return provider.Usage{ObservedAt: time.Now().UTC(), Cost: provider.Cost{Available: false, Currency: "USD", Detail: detail}}, nil
 	}
-	return provider.Usage{ObservedAt: time.Now().UTC(), Cost: provider.Cost{Available: true, Currency: "USD", Detail: strings.TrimSpace(string(result.Stdout))}}, nil
+	return provider.Usage{ObservedAt: time.Now().UTC(), Cost: decodeRailwayCost(result.Stdout, service.Name)}, nil
 }
 
 func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {

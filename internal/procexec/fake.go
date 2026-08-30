@@ -6,7 +6,10 @@ import (
 	"sync"
 )
 
-type Call struct{ Argv []string }
+type Call struct {
+	Argv  []string
+	Stdin string
+}
 
 type FakeRunner struct {
 	mu      sync.Mutex
@@ -15,10 +18,14 @@ type FakeRunner struct {
 	Errors  []error
 }
 
-func (f *FakeRunner) Run(_ context.Context, argv []string, _ io.Reader, stdout, stderr io.Writer) (Result, error) {
+func (f *FakeRunner) Run(_ context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (Result, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.Calls = append(f.Calls, Call{Argv: append([]string(nil), argv...)})
+	var input []byte
+	if stdin != nil {
+		input, _ = io.ReadAll(stdin)
+	}
+	f.Calls = append(f.Calls, Call{Argv: append([]string(nil), argv...), Stdin: string(input)})
 	i := len(f.Calls) - 1
 	var result Result
 	if i < len(f.Results) {

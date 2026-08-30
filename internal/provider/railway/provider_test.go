@@ -62,10 +62,16 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		{Stdout: []byte(`{"id":"service-id"}`)},
 		{Stdout: []byte(services)},
 		{},
+		{},
+		{},
+		{},
+		{},
+		{},
 		{Stdout: []byte(services)},
 		{Stdout: []byte(`{"volumes":[]}`)},
 		{Stdout: []byte(`{"id":"volume-id"}`)},
 		{Stdout: []byte(`{"volumes":[{"id":"volume-id","serviceName":"vmbox-box","mountPath":"/data","status":"READY"}]}`)},
+		{},
 		{},
 		{Stdout: []byte(`[]`)},
 		{Stdout: []byte(`{"id":"deployment-new"}`)},
@@ -76,7 +82,7 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	box, err := p.Create(context.Background(), provider.CreateRequest{Name: "box", Owner: provider.Owner{AccountID: "standalone", BoxID: "box"}, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("create: %v calls=%#v", err, runner.Calls)
 	}
 	if box.Name != "box" {
 		t.Fatalf("box=%+v", box)
@@ -87,11 +93,23 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 	volume, deploy := -1, -1
 	for i, call := range runner.Calls {
 		joined := strings.Join(call.Argv, " ")
-		if strings.Contains(joined, "volume add") {
+		if strings.Contains(joined, " volume ") && strings.Contains(joined, " add ") {
 			volume = i
 		}
 		if strings.Contains(joined, " redeploy ") {
 			deploy = i
+		}
+	}
+	for _, call := range runner.Calls {
+		if strings.Contains(strings.Join(call.Argv, " "), " variable set ") {
+			if call.Stdin == "" {
+				t.Fatal("Railway variable write did not use stdin")
+			}
+			for _, arg := range call.Argv {
+				if arg == call.Stdin {
+					t.Fatalf("variable value leaked into argv: %#v", call)
+				}
+			}
 		}
 	}
 	if volume < 0 || deploy < 0 || volume >= deploy {

@@ -573,6 +573,9 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	if opts.Interactive {
 		return p.interactive(ctx, app, processes[0], argv, opts)
 	}
+	if opts.Stdin != nil {
+		return p.execStdin(ctx, app, processes[0], argv, opts)
+	}
 	started := time.Now().UTC()
 	var output struct {
 		Stdout   string `json:"stdout"`

@@ -25,6 +25,8 @@ type OSRunner struct {
 	// Env overlays the current process environment for this runner only. It is
 	// used by account-scoped provider instances without changing global state.
 	Env map[string]string
+	// Unset removes inherited variables before Env is applied.
+	Unset []string
 }
 
 func (r OSRunner) Run(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (Result, error) {
@@ -32,17 +34,24 @@ func (r OSRunner) Run(ctx context.Context, argv []string, stdin io.Reader, stdou
 		return Result{}, fmt.Errorf("empty argv")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	if len(r.Env) > 0 {
+	if len(r.Env) > 0 || len(r.Unset) > 0 {
 		cmd.Env = os.Environ()
-		for key, value := range r.Env {
-			prefix := key + "="
-			filtered := cmd.Env[:0]
-			for _, item := range cmd.Env {
-				if !strings.HasPrefix(item, prefix) {
-					filtered = append(filtered, item)
-				}
+		removed := make(map[string]bool, len(r.Env)+len(r.Unset))
+		for _, key := range r.Unset {
+			removed[key] = true
+		}
+		for key := range r.Env {
+			removed[key] = true
+		}
+		filtered := cmd.Env[:0]
+		for _, item := range cmd.Env {
+			key, _, _ := strings.Cut(item, "=")
+			if !removed[key] {
+				filtered = append(filtered, item)
 			}
-			cmd.Env = filtered
+		}
+		cmd.Env = filtered
+		for key, value := range r.Env {
 			cmd.Env = append(cmd.Env, key+"="+value)
 		}
 	}

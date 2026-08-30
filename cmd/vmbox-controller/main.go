@@ -129,8 +129,19 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 		if token == "" {
 			return nil, fmt.Errorf("Railway credential token is required")
 		}
-		runner := procexec.OSRunner{Env: map[string]string{"RAILWAY_API_TOKEN": token, "RAILWAY_TOKEN": token}}
-		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, DefaultImage: stringValue(config, "image")}, runner), nil
+		tokenEnvironment := stringValue(config, "tokenEnvironment")
+		if tokenEnvironment == "" {
+			tokenEnvironment = "RAILWAY_API_TOKEN"
+		}
+		if tokenEnvironment != "RAILWAY_API_TOKEN" && tokenEnvironment != "RAILWAY_TOKEN" {
+			return nil, fmt.Errorf("Railway tokenEnvironment must be RAILWAY_API_TOKEN or RAILWAY_TOKEN")
+		}
+		other := "RAILWAY_API_TOKEN"
+		if tokenEnvironment == other {
+			other = "RAILWAY_TOKEN"
+		}
+		runner := procexec.OSRunner{Env: map[string]string{tokenEnvironment: token}, Unset: []string{other}}
+		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image")}, runner), nil
 	case "sevalla":
 		return sevallaprovider.New(sevallaprovider.Config{Token: stringValue(secret, "token"), APIURL: stringValue(config, "apiUrl"), CompanyID: stringValue(config, "companyId"), ProjectID: stringValue(config, "projectId"), ClusterID: stringValue(config, "clusterId"), ResourceTypeID: stringValue(config, "resourceTypeId"), DefaultImage: stringValue(config, "image"), DockerRegistryCredentialID: stringValue(config, "dockerRegistryCredentialId"), PreAttachedDisk: stringValue(config, "preAttachedDisk")}), nil
 	case "docker":

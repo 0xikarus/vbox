@@ -191,7 +191,7 @@ func defaultSetup(c config.Context) config.CreationSetup {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	return config.CreationSetup{Version: 1, Region: c.Cluster, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, Components: ids, Workspace: "/data/workspace", OnSuccess: "delete", OnFailure: "retain", MaxTTL: "8h"}
+	return config.CreationSetup{Version: 1, Save: true, Region: c.Cluster, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, Components: ids, Workspace: "/data/workspace", OnSuccess: "delete", OnFailure: "retain", MaxTTL: "8h"}
 }
 
 func applyRunOptions(setup *config.CreationSetup, opts runOptions) {
@@ -304,23 +304,60 @@ func instructionCandidates(environ map[string]string) []string {
 }
 
 type setupRow struct {
+	value string
 	kind  string
 	index int
 	label string
 }
 
-func (a *App) configureSetup(ctx context.Context, c config.Context, boxName string, setup config.CreationSetup, argv []string) (config.CreationSetup, error) {
+func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.Provider, boxName string, setup config.CreationSetup, argv []string) (config.CreationSetup, error) {
 	home := a.Environ["HOME"]
 	profiles, _ := components.Discover(home)
 	github := a.discoverGitHub(ctx)
 	instructions := instructionCandidates(a.Environ)
+	instructionSeen := make(map[string]bool)
+	for _, path := range instructions {
+		instructionSeen[path] = true
+	}
+	for _, path := range setup.Instructions {
+		absolute, _ := filepath.Abs(path)
+		if info, err := os.Stat(absolute); err == nil && info.Mode().IsRegular() && !instructionSeen[absolute] {
+			instructions = append(instructions, absolute)
+			instructionSeen[absolute] = true
+		}
+	}
+	sort.Strings(instructions)
+	regions := setupRegions(ctx, c, setup.Region, p)
+	regionSelected := -1
+	for i, region := range regions {
+		if region.ID == setup.Region {
+			regionSelected = i
+		}
+	}
+	if regionSelected < 0 && len(regions) > 0 {
+		regionSelected = 0
+	}
 	selectedComponents := make(map[string]bool)
 	for _, id := range setup.Components {
 		selectedComponents[id] = true
 	}
 	selectedProfiles := make(map[string]bool)
+	for _, profile := range setup.ApplicationProfiles {
+		selectedProfiles[profile.Application+"\x00"+profile.Path] = true
+	}
 	selectedGitHub := -1
+	if setup.GitHub != nil {
+		for i, account := range github {
+			if account.Host == setup.GitHub.Host && account.User == setup.GitHub.User && account.Protocol == setup.GitHub.Protocol {
+				selectedGitHub = i
+			}
+		}
+	}
 	selectedInstructions := make(map[string]bool)
+	for _, path := range setup.Instructions {
+		absolute, _ := filepath.Abs(path)
+		selectedInstructions[absolute] = true
+	}
 	resourcePresets := []provider.Resources{{CPU: 1, MemoryMiB: 2048, DiskGiB: 10}, {CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, {CPU: 4, MemoryMiB: 8192, DiskGiB: 20}}
 	resourceNames := []string{"Small", "Standard", "Large"}
 	resourceSelected := 1
@@ -335,6 +372,9 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, boxName stri
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
+	for i, region := range regions {
+		rows = append(rows, setupRow{kind: "region", index: i, value: region.ID, label: region.Label + "  [" + region.ID + "]"})
+	}
 	for i, id := range ids {
 		rows = append(rows, setupRow{kind: "component", index: i, label: id})
 	}
@@ -350,6 +390,7 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, boxName stri
 	for i, path := range instructions {
 		rows = append(rows, setupRow{kind: "instructions", index: i, label: path})
 	}
+	rows = append(rows, setupRow{kind: "save", label: "Save this setup for --reuse"})
 	rows = append(rows, setupRow{kind: "confirm", label: "Confirm and create"})
 	cursor := 0
 	reader := bufio.NewReader(a.In)
@@ -361,13 +402,20 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, boxName stri
 		if len(argv) == 0 {
 			command, _ = json.Marshal(defaultSession(false))
 		}
-		fmt.Fprintf(a.Out, "Context  %s / %s    Region  %s    Workspace  %s\n", c.Name, c.Provider, setup.Region, setup.Workspace)
-		fmt.Fprintf(a.Out, "Exact argv  %s    Reuse  saved after complete setup\n", command)
-		fmt.Fprintln(a.Out, "Components")
+		displayRegion := setup.Region
+		if regionSelected >= 0 {
+			displayRegion = regions[regionSelected].ID
+		}
+		fmt.Fprintf(a.Out, "Context  %s / %s    Region  %s    Workspace  %s\n", c.Name, c.Provider, displayRegion, setup.Workspace)
+		fmt.Fprintf(a.Out, "Exact argv  %s    Save for --reuse  %t\n", command, setup.Save)
 		last := ""
 		for i, row := range rows {
-			if row.kind != last && row.kind != "component" {
+			if row.kind != last {
 				switch row.kind {
+				case "region":
+					fmt.Fprintln(a.Out, "Location")
+				case "component":
+					fmt.Fprintln(a.Out, "Components")
 				case "resource":
 					fmt.Fprintln(a.Out, "Resources")
 				case "profile":
@@ -376,6 +424,8 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, boxName stri
 					fmt.Fprintln(a.Out, "GitHub credential")
 				case "instructions":
 					fmt.Fprintln(a.Out, "Markdown instructions")
+				case "save":
+					fmt.Fprintln(a.Out, "Reuse")
 				case "confirm":
 					fmt.Fprintf(a.Out, "Notifications  %s    Lifecycle  %s/%s max %s\n", emptyLabel(setup.NotificationPolicy), setup.OnSuccess, setup.OnFailure, setup.MaxTTL)
 				}
@@ -383,6 +433,14 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, boxName stri
 			last = row.kind
 			marker := " "
 			switch row.kind {
+			case "region":
+				if regionSelected == row.index {
+					marker = "x"
+				}
+			case "save":
+				if setup.Save {
+					marker = "x"
+				}
 			case "component":
 				if selectedComponents[row.label] {
 					marker = "x"
@@ -440,6 +498,9 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, boxName stri
 				}
 			}
 			setup.Resources = resourcePresets[resourceSelected]
+			if regionSelected >= 0 {
+				setup.Region = regions[regionSelected].ID
+			}
 			setup.ApplicationProfiles = nil
 			for _, profile := range profiles {
 				if selectedProfiles[profile.Component+"\x00"+profile.Directory] {
@@ -462,6 +523,10 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, boxName stri
 		case ' ':
 			row := rows[cursor]
 			switch row.kind {
+			case "region":
+				regionSelected = row.index
+			case "save":
+				setup.Save = !setup.Save
 			case "component":
 				selectedComponents[row.label] = !selectedComponents[row.label]
 			case "resource":
@@ -631,11 +696,6 @@ func welcome(box provider.Box, contextName, cost string) []byte {
 }
 
 func (a *App) uploadWelcome(ctx context.Context, p provider.Provider, box provider.Box, contextName string) error {
-	if p.Name() == "sevalla" {
-		// Sevalla's exact-command endpoint has no stdin channel. The runtime
-		// renders the same welcome from non-secret VMBOX_* creation metadata.
-		return nil
-	}
 	cost := "unavailable; use vmbox cost " + box.Name
 	if usage, err := p.Usage(ctx, box.Name); err == nil {
 		if usage.Cost.Available {
@@ -659,6 +719,7 @@ func loadSetup(file config.File, contextName string) (config.CreationSetup, erro
 	if !ok || setup.Version != 1 {
 		return setup, fmt.Errorf("no complete reusable setup is saved for context %q", contextName)
 	}
+	setup.Save = true
 	return setup, nil
 }
 

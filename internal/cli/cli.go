@@ -262,17 +262,17 @@ func (a *App) provisionController(ctx context.Context, file config.File, c confi
 	}
 	runner := a.Runner
 	if _, ok := runner.(procexec.OSRunner); ok {
-		token := a.Environ["RAILWAY_API_TOKEN"]
-		if token == "" {
-			return fmt.Errorf("RAILWAY_API_TOKEN is required")
+		token, tokenEnvironment, err := railwayToken(a.Environ)
+		if err != nil {
+			return err
 		}
-		runner = procexec.OSRunner{Env: map[string]string{"RAILWAY_API_TOKEN": token, "RAILWAY_TOKEN": token}}
+		runner = railwayRunner(token, tokenEnvironment)
 	}
 	target := []string{"--project", c.Project, "--environment", c.Environment}
-	run := func(argv ...string) (procexec.Result, error) {
+	runInput := func(stdin io.Reader, argv ...string) (procexec.Result, error) {
 		full := append([]string{"railway"}, argv...)
 		full = append(full, target...)
-		result, err := runner.Run(ctx, full, nil, nil, nil)
+		result, err := runner.Run(ctx, full, stdin, nil, nil)
 		if err != nil {
 			return result, err
 		}
@@ -285,6 +285,7 @@ func (a *App) provisionController(ctx context.Context, file config.File, c confi
 		}
 		return result, nil
 	}
+	run := func(argv ...string) (procexec.Result, error) { return runInput(nil, argv...) }
 	listed, err := run("service", "list", "--json")
 	if err != nil {
 		return err
@@ -307,15 +308,15 @@ func (a *App) provisionController(ctx context.Context, file config.File, c confi
 	}
 	created := false
 	if !hasController {
-		if _, err := run("service", "create", "--name", "vmbox-controller", "--json"); err != nil {
+		if _, err := run("add", "--service", "vmbox-controller", "--json"); err != nil {
 			return err
 		}
 		created = true
 	}
-	variables := []string{"variables", "set", "--service", "vmbox-controller", "--skip-deploys",
-		"DATABASE_URL=${{vmbox-postgres.DATABASE_URL}}",
-		"VMBOX_CONTROLLER_URL=" + strings.TrimRight(*endpoint, "/"),
-		"VMBOX_IMAGE=" + c.Image,
+	variables := map[string]string{
+		"DATABASE_URL":         "${{vmbox-postgres.DATABASE_URL}}",
+		"VMBOX_CONTROLLER_URL": strings.TrimRight(*endpoint, "/"),
+		"VMBOX_IMAGE":          c.Image,
 	}
 	tokenText := ""
 	if created {
@@ -329,17 +330,22 @@ func (a *App) provisionController(ctx context.Context, file config.File, c confi
 		}
 		tokenText = base64.RawURLEncoding.EncodeToString(ownerToken)
 		tokenHash := sha256.Sum256([]byte(tokenText))
-		variables = append(variables,
-			"VMBOX_ENCRYPTION_KEY="+base64.RawURLEncoding.EncodeToString(encryption),
-			"VMBOX_BOOTSTRAP_TOKEN_HASH="+base64.RawURLEncoding.EncodeToString(tokenHash[:]),
-			"VMBOX_ACCOUNT_NAME="+*account,
-			"VMBOX_OWNER_SUBJECT="+*owner,
-		)
+		variables["VMBOX_ENCRYPTION_KEY"] = base64.RawURLEncoding.EncodeToString(encryption)
+		variables["VMBOX_BOOTSTRAP_TOKEN_HASH"] = base64.RawURLEncoding.EncodeToString(tokenHash[:])
+		variables["VMBOX_ACCOUNT_NAME"] = *account
+		variables["VMBOX_OWNER_SUBJECT"] = *owner
 	}
-	if _, err := run(variables...); err != nil {
-		return err
+	keys := make([]string, 0, len(variables))
+	for key := range variables {
+		keys = append(keys, key)
 	}
-	if _, err := run("service", "update", "--service", "vmbox-controller", "--image", c.Image, "--json"); err != nil {
+	sort.Strings(keys)
+	for _, key := range keys {
+		if _, err := runInput(strings.NewReader(variables[key]), "variable", "set", key, "--stdin", "--service", "vmbox-controller", "--skip-deploys"); err != nil {
+			return err
+		}
+	}
+	if _, err := run("service", "source", "connect", "--service", "vmbox-controller", "--image", c.Image, "--json"); err != nil {
 		return err
 	}
 	if _, err := run("redeploy", "--service", "vmbox-controller", "--yes", "--json"); err != nil {
@@ -375,7 +381,11 @@ func (a *App) provider(ctx config.Context) (provider.Provider, error) {
 	case "docker":
 		return dockerprovider.New(dockerprovider.Config{Context: ctx.DockerContext, Host: ctx.DockerHost, TLSVerify: ctx.DockerTLSVerify, CertPath: ctx.DockerCertPath, DefaultImage: ctx.Image}, procexec.OSRunner{}), nil
 	case "railway":
-		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: a.Environ["RAILWAY_API_TOKEN"], DefaultImage: ctx.Image}, procexec.OSRunner{}), nil
+		token, tokenEnvironment, err := railwayToken(a.Environ)
+		if err != nil {
+			return nil, err
+		}
+		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: ctx.Image}, railwayRunner(token, tokenEnvironment)), nil
 	case "sevalla":
 		return sevallaprovider.New(sevallaprovider.Config{Token: a.Environ["SEVALLA_API_TOKEN"], APIURL: a.Environ["SEVALLA_API_URL"], CompanyID: ctx.Company, ProjectID: ctx.Project, ClusterID: ctx.Cluster, ResourceTypeID: ctx.ResourceType, DefaultImage: ctx.Image, DockerRegistryCredentialID: ctx.DockerRegistryCredentialID, PreAttachedDisk: ctx.PreAttachedDisk, HTTPClient: a.HTTP}), nil
 	case "incus":
@@ -427,7 +437,7 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				if len(previewArgv) == 0 {
 					previewArgv = defaultSession(opts.detach)
 				}
-				setup, err = a.configureSetup(ctx, c, opts.name, setup, previewArgv)
+				setup, err = a.configureSetup(ctx, c, p, opts.name, setup, previewArgv)
 				if errors.Is(err, errSetupCancelled) {
 					fmt.Fprintln(a.Err, "vmbox: setup cancelled; nothing was provisioned")
 					return nil
@@ -439,9 +449,6 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			prepared, err := a.prepareSetup(ctx, setup)
 			if err != nil {
 				return err
-			}
-			if p.Name() == "sevalla" && (len(prepared.uploads) > 0 || prepared.githubToken != "") {
-				return fmt.Errorf("Sevalla's direct-command API has no stdin upload channel; remove local profile, GitHub, and Markdown uploads; nothing was provisioned")
 			}
 			setupEnv := map[string]string{
 				"VMBOX_NAME": opts.name, "VMBOX_PROVIDER": p.Name(), "VMBOX_REGION": prepared.setup.Region,
@@ -458,10 +465,12 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			if err := a.uploadPrepared(ctx, p, opts.name, prepared); err != nil {
 				return err
 			}
-			if err := saveSetup(a.ConfigPath, file, c.Name, prepared.setup); err != nil {
-				return fmt.Errorf("save complete reusable setup: %w", err)
+			if prepared.setup.Save {
+				if err := saveSetup(a.ConfigPath, file, c.Name, prepared.setup); err != nil {
+					return fmt.Errorf("save complete reusable setup: %w", err)
+				}
+				fmt.Fprintf(a.Err, "vmbox: saved complete reusable setup for context %s\n", c.Name)
 			}
-			fmt.Fprintf(a.Err, "vmbox: saved complete reusable setup for context %s\n", c.Name)
 		}
 		if err := a.uploadWelcome(ctx, p, box, c.Name); err != nil {
 			return err
@@ -640,7 +649,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			if len(previewArgv) == 0 {
 				previewArgv = defaultSession(true)
 			}
-			setup, err = a.configureSetup(ctx, c, opts.name, setup, previewArgv)
+			setup, err = a.configureSetup(ctx, c, nil, opts.name, setup, previewArgv)
 			if errors.Is(err, errSetupCancelled) {
 				fmt.Fprintln(a.Err, "vmbox: setup cancelled; nothing was submitted")
 				return nil
@@ -667,7 +676,10 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			return err
 		}
 		fmt.Fprintf(a.Out, "accepted %s (%d)\n", run.ID, status)
-		return saveSetup(a.ConfigPath, file, c.Name, prepared.setup)
+		if prepared.setup.Save {
+			return saveSetup(a.ConfigPath, file, c.Name, prepared.setup)
+		}
+		return nil
 	case "status":
 		if len(args) != 2 {
 			return fmt.Errorf("status requires a run ID")
