@@ -22,6 +22,7 @@ vmbox clean <box-id> [--yes]
 vmbox clean --all [--yes]
 vmbox new <box-id> -- claude "fix active tickets, then commit"
 vmbox new <box-id> --detach -- codex "do the task, test, and commit"
+vmbox new <box-id> --reuse --detach -- codex "reuse setup and run task"
 ```
 
 Project-wide cost output combines Railway's historical deleted-service rows
@@ -37,6 +38,10 @@ agent profiles, GitHub, and Markdown. Up/Down moves, Space selects, and Space or
 Enter activates the final `[ Provision box ]` row. Enter does nothing on other
 rows, and `q` cancels without provisioning. Selected local files upload only
 after the box is healthy. Use `vmbox auth` or `vmbox github` to resync later.
+Check `[ ] Save as reusable setup (--reuse)` before provisioning to store the
+confirmed selections. `--reuse` reloads them before any Railway service is
+created. The preset stores component/region choices and local profile, GitHub,
+and Markdown identifiers or paths—not tokens or credential file contents.
 `list` is an interactive Up/Down picker; `ls` prints IDs and copy-paste resume
 commands. `resize [box-id]` changes per-replica vCPU/RAM limits; omit the ID to
 select a box with `[ ]`, then choose preset or custom limits.
@@ -57,6 +62,9 @@ Inside the tmux session:
 2. Release both keys.
 3. Press `d`.
 
+After detaching, vmbox shows that box's accrued current-period cost and asks
+whether to permanently delete its service and `/data`. Enter keeps it running;
+answering `y` stops the tmux tasks and irreversibly removes the box and volume.
 Reconnect with `vmbox resume <box-id>`. Do not type `exit` when you want
 Codex, Claude, Forge, or another process to keep running.
 
@@ -71,6 +79,10 @@ uploaded, including MCP settings from Codex `config.toml` or Claude
 excluded. Every file is verified by checksum, and uploaded logins are checked
 with the agent's authentication-status command inside the box. Run
 `vmbox auth <box-id>` to reopen the picker later.
+On startup and after profile upload, vmbox idempotently adds `/data/workspace`
+as a trusted Codex project in `/data/home/.codex/config.toml` and as a Claude
+trusted directory in `/data/home/.claude/settings.json`. Existing MCP and agent
+settings are preserved.
 
 On first creation, another opt-in picker accepts any readable `.md` path. The
 selected file is checksum-verified and copied to `/data/workspace/AGENTS.md`

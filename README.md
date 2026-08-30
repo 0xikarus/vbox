@@ -29,6 +29,10 @@ vmbox help                    # full command reference
 Creation uses one screen for tools, region, optional Codex/Claude and GitHub
 credentials, and optional shared `AGENTS.md`/`CLAUDE.md` instructions. The
 persistent volume reaches `Ready` before the first deployment.
+Check `Save as reusable setup` to remember those selections, then reuse them
+without the dialog using `vmbox new worker-b --reuse`.
+Every box trusts `/data/workspace` in Codex and Claude while preserving existing
+agent configuration.
 
 ## Forward a task
 
@@ -45,6 +49,8 @@ vmbox worker-a --detach -- codex "fix ticket 123, test, and commit"
 2. Release both keys.
 3. Press `d`.
 
+vmbox then shows the box's accrued cost and offers to permanently delete the
+Railway service and `/data`; pressing Enter keeps it running.
 Reconnect with `vmbox resume work`. After powering down, files remain in
 `/data`; use `codex resume --last` to reopen Codex history.
 

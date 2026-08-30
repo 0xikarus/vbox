@@ -6,6 +6,7 @@ config_file="${VMBOX_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/vmbox/config}"
 credentials_file="${VMBOX_CREDENTIALS:-$(dirname -- "$config_file")/credentials}"
 
 [[ -f "$config_file" ]] && . "$config_file"
+reuse_file="${VMBOX_REUSE_FILE:-$(dirname -- "$config_file")/reuse.json}"
 if [[ -z "${RAILWAY_API_TOKEN:-}" && -z "${RAILWAY_TOKEN:-}" && -f "$credentials_file" ]]; then
   . "$credentials_file"
 fi
@@ -16,6 +17,7 @@ fi
 : "${VMBOX_DEPLOY_TIMEOUT:=900}"
 : "${VMBOX_VOLUME_TIMEOUT:=60}"
 : "${VMBOX_DEFAULT_REGION:=us-east}"
+: "${VMBOX_POST_DETACH_PROMPT:=1}"
 
 bundle="${VMBOX_BUNDLE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/vmbox/service}"
 target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
@@ -36,8 +38,8 @@ EOF_QUICK
 usage() {
   cat <<'EOF'
 Usage:
-  vmbox <box-id> [--detach] [-- COMMAND [ARG...]]
-  vmbox new <box-id> [--detach] [-- COMMAND [ARG...]]
+  vmbox <box-id> [--reuse] [--detach] [-- COMMAND [ARG...]]
+  vmbox new <box-id> [--reuse] [--detach] [-- COMMAND [ARG...]]
   vmbox help
   vmbox list
   vmbox ls
@@ -45,8 +47,8 @@ Usage:
   vmbox resize [box-id]
   vmbox auth <box-id>
   vmbox github <box-id>
-  vmbox start <box-id> [--detach] [-- COMMAND [ARG...]]
-  vmbox resume <box-id> [--detach] [-- COMMAND [ARG...]]
+  vmbox start <box-id> [--reuse] [--detach] [-- COMMAND [ARG...]]
+  vmbox resume <box-id> [--reuse] [--detach] [-- COMMAND [ARG...]]
   vmbox stop <box-id>
   vmbox clean [box-id ...] [--yes]
   vmbox clean --all [--yes]
@@ -77,10 +79,16 @@ Launch it in tmux and return immediately:
 Use `codex exec` for a non-interactive agent run. Without `--detach`, standard
 input stays connected to the forwarded command.
 
+Save a confirmed creation setup with the checkbox in the dialog. Reapply it with:
+  vmbox new <box-id> --reuse [--detach] [-- COMMAND [ARG...]]
+The preset stores selections and local identifiers/paths, never credential contents.
+
 Keep Codex and other work running when you leave:
   1. Press Ctrl-b
   2. Release both keys
   3. Press d
+After detaching, vmbox shows this box's current-period cost and asks whether to
+permanently delete its Railway service and /data volume. Enter keeps it running.
 
 Reconnect with: vmbox resume <box-id>
 Use `exit` only when you intend to stop the shell/session.
@@ -476,9 +484,34 @@ EOF_BANNER
 )"
 }
 
+configure_workspace_trust() {
+  local verify_script
+  [[ -r "$bundle/entrypoint.sh" ]] || die "deployment bundle missing; rerun install.sh"
+  echo "vmbox: trusting /data/workspace for Codex and Claude" >&2
+  railway ssh "${target[@]}" --service "$service_name" \
+    env HOME=/data/home bash -s -- --configure-agent-trust \
+    < "$bundle/entrypoint.sh" >/dev/null
+  verify_script="$(cat <<'EOF_VERIFY_TRUST'
+codex_config=/data/home/.codex/config.toml
+claude_settings=/data/home/.claude/settings.json
+awk '
+  $0 == "[projects.\"/data/workspace\"]" { in_target=1; next }
+  in_target && /^\[/ { in_target=0 }
+  in_target && /^[[:space:]]*trust_level[[:space:]]*=[[:space:]]*"trusted"/ { found=1 }
+  END { exit(found ? 0 : 1) }
+' "$codex_config" &&
+jq -e '(.trustedDirectories // []) | index("/data/workspace") != null' \
+  "$claude_settings" >/dev/null
+EOF_VERIFY_TRUST
+)"
+  railway ssh "${target[@]}" --service "$service_name" \
+    bash -lc "$verify_script" >/dev/null ||
+    die "could not verify Codex/Claude trust for /data/workspace"
+}
 attach() {
   local detached="$1" welcome_b64 command_b64="" prepare_script decorate_script decorator_pid
   shift
+  configure_workspace_trust
   show_box_welcome
   welcome_b64="$(printf '%s\n' "$box_welcome" | base64 | tr -d '\n')"
   if (($#)); then
@@ -551,6 +584,27 @@ EOF_DECORATE
     return 1
   fi
   wait "$decorator_pid" 2>/dev/null || true
+  post_detach
+}
+
+post_detach() {
+  local answer
+  echo
+  if ! (show_detach_cost "$box_id"); then
+    echo "vmbox: cost lookup failed; the box is still running" >&2
+  fi
+  [[ "$VMBOX_POST_DETACH_PROMPT" == 1 ]] || return 0
+  [[ -t 0 && -t 1 ]] || return 0
+  echo
+  read -r -p "Permanently delete '$box_id' and its /data volume now? [y/N] " answer
+  case "$answer" in
+    y|Y|yes|YES)
+      clean_boxes "$box_id" --yes
+      ;;
+    *)
+      echo "Kept '$box_id' running. Reconnect with: vmbox $box_id"
+      ;;
+  esac
 }
 
 display_list() {
@@ -624,6 +678,27 @@ show_cost() {
   if [[ -z "$requested" ]]; then
     printf '\nProject total: $%.6f\n' "$(jq -r '.currentUsageDollars' <<<"$data")"
   fi
+}
+
+show_detach_cost() {
+  local requested="$1" data service service_id total period_start period_end
+  railway usage projects --help >/dev/null 2>&1 || return 1
+  data="$(railway usage projects --project "$VMBOX_PROJECT_ID" --period current --json)" || return 1
+  service_name="$VMBOX_SERVICE_PREFIX$requested"
+  service="$(find_service)"
+  if [[ -z "$service" ]]; then
+    service_name="$requested"
+    service="$(find_service)"
+  fi
+  [[ -n "$service" ]] || return 1
+  service_id="$(jq -r '.id' <<<"$service")"
+  total="$(jq -r --arg id "$service_id" \
+    '(first(.services[] | select(.id == $id)) // {totalDollars: 0}) | .totalDollars // 0' \
+    <<<"$data")"
+  period_start="$(jq -r '.billingPeriod.start[0:10]' <<<"$data")"
+  period_end="$(jq -r '.billingPeriod.end[0:10]' <<<"$data")"
+  printf "Accrued Railway cost for '%s' (%s to %s): $%.6f\n" \
+    "$requested" "$period_start" "$period_end" "$total"
 }
 
 selected_resize_box=""
@@ -1528,6 +1603,147 @@ select_credentials() {
   select_profiles
   select_github_account
 }
+
+save_reusable_setup=0
+
+write_reusable_setup() (
+  local i tmp saved_at components_json profiles_json github_json instructions_json
+  local -a selected_component_ids=() profile_pairs=()
+  for i in "${!component_ids[@]}"; do
+    ((component_selected[i])) && selected_component_ids+=("${component_ids[$i]}")
+  done
+  components_json="$(jq -nc --args '$ARGS.positional' "${selected_component_ids[@]}")"
+
+  for i in "${!profile_selected[@]}"; do
+    ((profile_selected[i])) || continue
+    profile_pairs+=("${profile_providers[$i]}" "${profile_sources[$i]}")
+  done
+  profiles_json="$(jq -nc --args '
+    $ARGS.positional as $values |
+    [range(0; ($values | length); 2) as $i |
+      {provider: $values[$i], source: $values[$i + 1]}]
+  ' "${profile_pairs[@]}")"
+
+  github_json="null"
+  for i in "${!github_selected[@]}"; do
+    ((github_selected[i])) || continue
+    github_json="$(jq -nc --arg host "${github_hosts[$i]}" \
+      --arg user "${github_users[$i]}" --arg protocol "${github_protocols[$i]}" \
+      '{host: $host, user: $user, protocol: $protocol}')"
+    break
+  done
+
+  instructions_json="null"
+  for i in "${!instruction_selected[@]}"; do
+    ((instruction_selected[i])) || continue
+    instructions_json="$(jq -nc --arg source "${instruction_sources[$i]}" '$source')"
+    break
+  done
+
+  mkdir -p "$(dirname -- "$reuse_file")"
+  tmp="$(mktemp "${reuse_file}.tmp.XXXXXX")"
+  saved_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if ! jq -n --arg savedAt "$saved_at" --arg region "$selected_region" \
+    --argjson components "$components_json" --argjson profiles "$profiles_json" \
+    --argjson github "$github_json" --argjson instructions "$instructions_json" \
+    '{version: 1, savedAt: $savedAt, components: $components, region: $region,
+      profiles: $profiles, github: $github, instructions: $instructions}' >"$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$reuse_file"
+  echo "vmbox: saved reusable setup to $reuse_file" >&2
+)
+
+load_reusable_setup() {
+  local data saved_component saved_region provider source host user protocol
+  local saved_instruction i found profile_summary="" github_summary="none" instruction_summary="none"
+  [[ -r "$reuse_file" ]] ||
+    die "no reusable setup saved; check 'Save as reusable setup' when creating a box"
+  if ! data="$(jq -ce '
+    select(.version == 1 and (.components | type == "array") and
+      (.region | type == "string") and (.profiles | type == "array"))
+  ' "$reuse_file")"; then
+    die "reusable setup is invalid: $reuse_file"
+  fi
+
+  component_selected=(0 0 0 0)
+  while IFS= read -r saved_component; do
+    found=0
+    for i in "${!component_ids[@]}"; do
+      if [[ "${component_ids[$i]}" == "$saved_component" ]]; then
+        component_selected[i]=1
+        found=1
+        break
+      fi
+    done
+    ((found)) || die "reusable setup contains unsupported component '$saved_component'"
+  done < <(jq -r '.components[]' <<<"$data")
+
+  saved_region="$(jq -r '.region' <<<"$data")"
+  platform_region_id "$saved_region" >/dev/null ||
+    die "reusable setup contains unsupported region '$saved_region'"
+  selected_region="$saved_region"
+
+  discover_profiles
+  while IFS=$'\t' read -r provider source; do
+    [[ "$provider" == codex || "$provider" == claude ]] ||
+      die "reusable setup contains unsupported profile provider '$provider'"
+    add_profile_candidate "$provider" "$source"
+    found=0
+    for i in "${!profile_sources[@]}"; do
+      if [[ "${profile_providers[$i]}" == "$provider" && "${profile_sources[$i]}" == "$source" ]]; then
+        toggle_profile_candidate "$i"
+        profile_summary="${profile_summary:+$profile_summary, }$provider:$source"
+        found=1
+        break
+      fi
+    done
+    ((found)) || die "saved $provider profile is no longer available: $source"
+  done < <(jq -r '.profiles[] | [.provider, .source] | @tsv' <<<"$data")
+
+  discover_github_accounts
+  if [[ "$(jq -r '.github // empty' <<<"$data")" != "" ]]; then
+    IFS=$'\t' read -r host user protocol < <(jq -r '.github | [.host, .user, .protocol] | @tsv' <<<"$data")
+    [[ "$protocol" == ssh || "$protocol" == https ]] ||
+      die "reusable setup contains unsupported GitHub protocol '$protocol'"
+    found=0
+    for i in "${!github_users[@]}"; do
+      if [[ "${github_hosts[$i]}" == "$host" && "${github_users[$i]}" == "$user" ]]; then
+        github_selected[i]=1
+        github_protocols[i]="$protocol"
+        github_summary="$user@$host ($protocol)"
+        found=1
+        break
+      fi
+    done
+    ((found)) || die "saved GitHub account is not currently authenticated: $user@$host"
+  fi
+
+  discover_instruction_files
+  saved_instruction="$(jq -r '.instructions // empty' <<<"$data")"
+  if [[ -n "$saved_instruction" ]]; then
+    add_instruction_candidate "$saved_instruction"
+    found=0
+    for i in "${!instruction_sources[@]}"; do
+      if [[ "${instruction_sources[$i]}" == "$saved_instruction" ]]; then
+        instruction_selected[i]=1
+        instruction_summary="$saved_instruction"
+        found=1
+        break
+      fi
+    done
+    ((found)) || die "saved Markdown instructions are no longer available: $saved_instruction"
+  fi
+
+  echo "vmbox: reusing setup saved $(jq -r '.savedAt // "at an unknown time"' <<<"$data")" >&2
+  echo "  components: $(selected_components_value)" >&2
+  echo "  region: $selected_region" >&2
+  echo "  profiles: ${profile_summary:-none}" >&2
+  echo "  GitHub: $github_summary" >&2
+  echo "  instructions: $instruction_summary" >&2
+}
 print_setup_row() {
   local cursor="$1" row="$2" text="$3"
   if ((cursor == row)); then
@@ -1540,10 +1756,11 @@ print_setup_row() {
 select_new_box_setup() {
   local selected=0 key rest i marker label contents line old_count
   local component_start region_start profile_start add_profile_row github_start
-  local instruction_start add_instruction_row confirm_row row_count index
+  local instruction_start add_instruction_row save_row confirm_row row_count index
 
   component_selected=(1 1 1 1)
   selected_region="$VMBOX_DEFAULT_REGION"
+  save_reusable_setup=0
   discover_profiles
   discover_github_accounts
   discover_instruction_files
@@ -1561,7 +1778,8 @@ select_new_box_setup() {
     github_start=$((add_profile_row + 1))
     instruction_start=$((github_start + ${#github_users[@]}))
     add_instruction_row=$((instruction_start + ${#instruction_sources[@]}))
-    confirm_row=$((add_instruction_row + 1))
+    save_row=$((add_instruction_row + 1))
+    confirm_row=$((save_row + 1))
     row_count=$((confirm_row + 1))
     ((selected < row_count)) || selected=$confirm_row
 
@@ -1620,6 +1838,8 @@ select_new_box_setup() {
     done
     print_setup_row "$selected" "$add_instruction_row" '[ Add Markdown path ]'
     echo
+    ((save_reusable_setup)) && marker=x || marker=' '
+    print_setup_row "$selected" "$save_row" "[$marker] Save as reusable setup (--reuse)"
     print_setup_row "$selected" "$confirm_row" '[ Provision box ]'
 
     IFS= read -rsn1 key || { printf '\033[2J\033[H'; echo "vmbox: setup cancelled" >&2; return 1; }
@@ -1649,6 +1869,8 @@ select_new_box_setup() {
           if ((${#instruction_sources[@]} > old_count)); then
             selected=$((instruction_start + ${#instruction_sources[@]} - 1))
           fi
+        elif ((selected == save_row)); then
+          ((save_reusable_setup)) && save_reusable_setup=0 || save_reusable_setup=1
         elif ((selected == confirm_row)); then
           printf '\033[2J\033[H'
           return 0
@@ -1762,13 +1984,14 @@ stop_box() {
 }
 
 open_box() {
-  local requested_action="$1" service created=0 detached=0
+  local requested_action="$1" service created=0 detached=0 reuse_setup=0
   local -a remote_command
   box_id="$2"
   shift 2
   while (($#)); do
     case "$1" in
       -d|--detach) detached=1; shift ;;
+      --reuse) reuse_setup=1; shift ;;
       --) shift; break ;;
       *) break ;;
     esac
@@ -1792,9 +2015,19 @@ open_box() {
     created=1
   fi
 
-  if ((created)) && ! select_setup_for_new_box; then
-    echo "vmbox: box creation cancelled before provisioning" >&2
-    return 0
+  if ((created)); then
+    if ((reuse_setup)); then
+      load_reusable_setup
+    else
+      if ! select_setup_for_new_box; then
+        echo "vmbox: box creation cancelled before provisioning" >&2
+        return 0
+      fi
+      ((save_reusable_setup == 0)) || write_reusable_setup ||
+        die "could not save reusable setup to $reuse_file"
+    fi
+  elif ((reuse_setup)); then
+    echo "vmbox: --reuse ignored because '$box_id' already exists" >&2
   fi
 
   if [[ -z "$service" ]]; then
@@ -2091,7 +2324,7 @@ case "$action" in
     ;;
 
   new|start|resume)
-    [[ $# -ge 2 ]] || die "usage: vmbox $action <box-id> [--detach] [-- COMMAND [ARG...]]"
+    [[ $# -ge 2 ]] || die "usage: vmbox $action <box-id> [--reuse] [--detach] [-- COMMAND [ARG...]]"
     [[ "$action" == new ]] && action=start
     open_box "$action" "$2" "${@:3}"
     ;;

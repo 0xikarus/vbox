@@ -3,6 +3,10 @@ VMBOX_PROJECT_ID="c9671604-0a68-47ee-abe8-16c72922d391"
 VMBOX_ENVIRONMENT_ID="be38d867-15fd-4174-af7d-89b54c330daa"
 VMBOX_SERVICE_PREFIX="vmbox-"
 VMBOX_DEFAULT_REGION="us-east"
+# Set to 0 to show cost without asking to delete after tmux disconnects.
+# VMBOX_POST_DETACH_PROMPT=0
+# Reusable choices are stored with mode 0600 at ~/.config/vmbox/reuse.json.
+# VMBOX_REUSE_FILE="/absolute/path/to/reuse.json"
 
 # Optional default shown first in the new-box Markdown picker.
 # VMBOX_INSTRUCTIONS_FILE="/absolute/path/to/project-instructions.md"
