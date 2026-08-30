@@ -1,0 +1,150 @@
+openapi: 3.1.0
+info:
+  title: vmbox controller API
+  version: v1alpha1
+  description: Repository-neutral box, run, event, question, lifecycle, cost, quota, and notification contracts.
+servers:
+  - url: https://controller.example
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      security: []
+      responses:
+        '200': {description: Healthy}
+  /v1/runs:
+    post:
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 255}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/CreateRun'}
+      responses:
+        '202':
+          description: Accepted
+          content: {application/json: {schema: {$ref: '#/components/schemas/Run'}}}
+        '200':
+          description: Existing idempotent run
+          content: {application/json: {schema: {$ref: '#/components/schemas/Run'}}}
+  /v1/runs/{id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses:
+        '200':
+          description: Run
+          content: {application/json: {schema: {$ref: '#/components/schemas/Run'}}}
+  /v1/runs/{id}/events:
+    post:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/Event'}}}
+      responses: {'204': {description: Idempotently recorded}}
+  /v1/questions:
+    get:
+      responses:
+        '200':
+          description: Open questions
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/Question'}}}}
+  /v1/questions/{id}/answer:
+    post:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [answer], properties: {answer: {type: string, minLength: 1}}}}}
+      responses: {'204': {description: Answer accepted exactly once}, '409': {description: Stale or already answered}}
+  /v1/hosts/heartbeat:
+    post:
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [id, capabilities], properties: {id: {type: string}, capabilities: {type: object}}}}}
+      responses: {'204': {description: Capacity advertisement recorded}}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  parameters:
+    ID: {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+  schemas:
+    Resources:
+      type: object
+      properties:
+        cpu: {type: number, exclusiveMinimum: 0}
+        memoryMiB: {type: integer, minimum: 128}
+        diskGiB: {type: integer, minimum: 1}
+    Lifecycle:
+      type: object
+      properties:
+        onSuccess: {enum: [delete, retain, stop], default: delete}
+        onFailure: {enum: [delete, retain, stop], default: retain}
+        maxTtl: {type: string, default: 8h}
+        gracePeriod: {type: string, default: 5m}
+    CreateRun:
+      type: object
+      required: [provider, command]
+      properties:
+        provider: {enum: [railway, sevalla, docker, incus]}
+        box: {type: string}
+        resources: {$ref: '#/components/schemas/Resources'}
+        region: {type: string}
+        image: {type: string, description: OCI digest is recommended and recorded in box metadata.}
+        components: {type: array, items: {type: string}}
+        command:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items: {type: string}
+          description: Exact argv; no implicit shell interpolation.
+        externalReference: {type: string}
+        credentialReferences: {type: array, items: {type: string}, description: Opaque vault references, never secret values.}
+        lifecycle: {$ref: '#/components/schemas/Lifecycle'}
+        notificationPolicy: {type: string}
+    Run:
+      type: object
+      required: [id, accountId, provider, state, request, createdAt, updatedAt]
+      properties:
+        id: {type: string, format: uuid}
+        accountId: {type: string, format: uuid}
+        boxId: {type: string}
+        provider: {type: string}
+        state: {enum: [queued, provisioning, preparing, running, needs_input, resuming, succeeded, failed, cancelled, cleaning_up, deleted, retained]}
+        request: {$ref: '#/components/schemas/CreateRun'}
+        exitCode: {type: integer}
+        summary: {type: string}
+        lastOutputAt: {type: string, format: date-time}
+        lastHeartbeatAt: {type: string, format: date-time}
+        lastActivity: {type: string, maxLength: 512}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    Event:
+      type: object
+      required: [sequence, type, timestamp]
+      properties:
+        id: {type: string, format: uuid}
+        sequence: {type: integer, minimum: 1}
+        type: {enum: [state, output, heartbeat, progress, needs_input, resumed, success, failed, cleanup_requested]}
+        state: {type: string}
+        stream: {enum: [stdout, stderr]}
+        message: {type: string, maxLength: 512}
+        data: {type: object}
+        timestamp: {type: string, format: date-time}
+        signature: {type: string}
+    Question:
+      type: object
+      required: [id, accountId, runId, prompt, state, blocking, askedAt]
+      properties:
+        id: {type: string, format: uuid}
+        accountId: {type: string, format: uuid}
+        runId: {type: string, format: uuid}
+        prompt: {type: string}
+        state: {enum: [open, answered, timed_out, cancelled]}
+        blocking: {type: boolean}
+        askedAt: {type: string, format: date-time}
+        expiresAt: {type: string, format: date-time}
+        answer: {type: string}
+        answeredBy: {type: string, format: uuid}
