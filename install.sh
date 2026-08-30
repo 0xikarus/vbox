@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-root="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+root="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 bin="${VMBOX_INSTALL_DIR:-$HOME/.local/bin}"
 config="${XDG_CONFIG_HOME:-$HOME/.config}/vmbox"
 credentials="$config/credentials"
@@ -62,7 +62,8 @@ if [[ -z "$rc" ]]; then
   [[ "${SHELL:-}" == */zsh ]] && rc="${ZDOTDIR:-$HOME}/.zshrc" || rc="$HOME/.bashrc"
 fi
 
-path_line="export PATH=\"$bin:\$PATH\" # vmbox-service"
+printf -v quoted_bin '%q' "$bin"
+path_line="export PATH=$quoted_bin:\$PATH # vmbox-service"
 
 clean_rc() {
   [[ -f "$rc" ]] || return
@@ -86,6 +87,7 @@ fi
 update_railway
 
 mkdir -p "$bin" "$config" "$bundle"
+chmod 700 "$config"
 install -m 755 "$root/vmbox.sh" "$bin/vmbox"
 install -m 755 "$root/entrypoint.sh" "$bundle/entrypoint.sh"
 install -m 644 "$root/Dockerfile" "$root/.dockerignore" "$bundle/"
@@ -114,8 +116,10 @@ if ((save_token)); then
     echo "No credential was changed." >&2
     exit 1
   fi
-  printf 'export RAILWAY_API_TOKEN=%q\n' "$token" > "$credentials"
-  chmod 600 "$credentials"
+  credential_tmp="$(mktemp "$config/.credentials.XXXXXX")"
+  printf 'export RAILWAY_API_TOKEN=%q\n' "$token" > "$credential_tmp"
+  chmod 600 "$credential_tmp"
+  mv -f "$credential_tmp" "$credentials"
   unset token
 fi
 

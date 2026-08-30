@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+if [[ "${1:-} ${2:-}" == "auth status" ]]; then
+  cat <<'EOF'
+github.com
+  ✓ Logged in to github.com as octocat (/tmp/hosts.yml)
+  ✓ Git operations for github.com configured to use ssh protocol.
+  ✓ Token: masked
+EOF
+  exit 0
+fi
+printf 'unexpected gh invocation\n' >&2
+exit 64

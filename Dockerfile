@@ -18,6 +18,7 @@ RUN apt-get update \
       sudo \
       unzip \
       tmux \
+      util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 ARG VMBOX_COMPONENTS=codex,claude,bun,foundry

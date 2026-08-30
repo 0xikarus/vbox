@@ -69,8 +69,10 @@ Reconnect with `vmbox resume <box-id>`. Do not type `exit` when you want Codex,
 Claude, Forge, or another process to keep running.
 
 Forwarded commands automatically record their command, timestamps, state, and
-exit code in `/data/home/.vmbox-task-status.json`. Query with `vmbox status Failure status also includes the tail of `/data/home/.vmbox-task.log`.
-<box-id>` or wait for completion with `vmbox wait <box-id>`. The installed
+exit code in `/data/home/.vmbox-task-status.json`. Query with `vmbox status
+<box-id>` or wait for completion with `vmbox wait <box-id>`. Interrupted tasks
+are detected after a restart; failures include the tail of `.vmbox-task.log`.
+The installed
 `vmbox-report "message"` helper lets Codex or Claude publish a durable progress
 or result note that both commands display.
 
@@ -112,9 +114,12 @@ Before the first deploy, vmbox waits for Railway to report the service's `/data`
 volume as `Ready`. It then verifies the live mount and redeploys once only as a
 fallback if Railway started the container without it.
 `vmbox clean` selects one or more boxes with `[ ]` checkboxes. Named cleanup
-uses `vmbox clean <box-id> [...]`; `vmbox clean --all` targets all services and
-active project volumes. `--yes` skips the final confirmation only. Pending
-volume-deletion records are ignored.
+uses `vmbox clean <box-id> [...]`; `vmbox clean --all` targets only services and
+volumes using `VMBOX_SERVICE_PREFIX`, never unrelated project resources.
+`--yes` skips the final confirmation only. Pending volume-deletion records are
+ignored. Set `VMBOX_ALLOW_LEGACY_SERVICES=1` temporarily to operate on legacy
+unprefixed boxes; the safer default prevents named commands from targeting
+unrelated services.
 
 ## Container notes
 

@@ -5,9 +5,15 @@ set -euo pipefail
 config_file="${VMBOX_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/vmbox/config}"
 credentials_file="${VMBOX_CREDENTIALS:-$(dirname -- "$config_file")/credentials}"
 
-[[ -f "$config_file" ]] && . "$config_file"
+[[ -f "$config_file" ]] && {
+  # The config location is intentionally user-selectable.
+  # shellcheck disable=SC1090
+  . "$config_file"
+}
 reuse_file="${VMBOX_REUSE_FILE:-$(dirname -- "$config_file")/reuse.json}"
 if [[ -z "${RAILWAY_API_TOKEN:-}" && -z "${RAILWAY_TOKEN:-}" && -f "$credentials_file" ]]; then
+  # The credential location follows the config location.
+  # shellcheck disable=SC1090
   . "$credentials_file"
 fi
 
@@ -18,6 +24,16 @@ fi
 : "${VMBOX_VOLUME_TIMEOUT:=60}"
 : "${VMBOX_DEFAULT_REGION:=us-east}"
 : "${VMBOX_POST_DETACH_PROMPT:=1}"
+: "${VMBOX_ALLOW_LEGACY_SERVICES:=0}"
+
+if [[ ! "$VMBOX_SERVICE_PREFIX" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+  echo "vmbox: VMBOX_SERVICE_PREFIX must use letters, numbers, dots, dashes, or underscores" >&2
+  exit 1
+fi
+if [[ "$VMBOX_ALLOW_LEGACY_SERVICES" != 0 && "$VMBOX_ALLOW_LEGACY_SERVICES" != 1 ]]; then
+  echo "vmbox: VMBOX_ALLOW_LEGACY_SERVICES must be 0 or 1" >&2
+  exit 1
+fi
 
 bundle="${VMBOX_BUNDLE_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/vmbox/service}"
 target=(--project "$VMBOX_PROJECT_ID" --environment "$VMBOX_ENVIRONMENT_ID")
@@ -63,7 +79,9 @@ otherwise they attach to the existing box. `stop` removes its active deployment
 but preserves the service and /data volume; `resume` deploys it again. Running
 processes do not survive a stop. `clean` opens a checkbox selector, accepts
 named boxes, or uses `--all`; selected services and their /data volumes are
-deleted only after review. `cost` shows accrued costs for the current Railway
+deleted only after review. `--all` is limited to resources whose service names
+use `VMBOX_SERVICE_PREFIX`; unrelated project resources are never selected.
+`cost` shows accrued costs for the current Railway
 billing period and combines removed boxes into one `deleted services (N)` row.
 `resize` changes the per-replica vCPU and RAM limits for one
 box; Railway continues to bill actual usage rather than the selected limits.
@@ -118,32 +136,44 @@ EOF
 die() { echo "vmbox: $*" >&2; exit 1; }
 require() { command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"; }
 
+display_path() {
+  if [[ "$1" == "$HOME/"* ]]; then
+    printf '\176/%s' "${1#"$HOME/"}"
+  else
+    printf '%s' "$1"
+  fi
+}
+
 railway_api() {
-  local query="$1" variables="$2" payload response api_token=""
-  local -a headers=(-H "Content-Type: application/json")
+  local query="$1" variables="$2" payload response api_token="" auth_header="" header_fd
   require curl
   if [[ -n "${RAILWAY_API_TOKEN:-}" ]]; then
-    headers+=(-H "Authorization: Bearer $RAILWAY_API_TOKEN")
+    auth_header="Authorization: Bearer $RAILWAY_API_TOKEN"
   elif [[ -n "${RAILWAY_TOKEN:-}" ]]; then
-    headers+=(-H "Project-Access-Token: $RAILWAY_TOKEN")
+    auth_header="Project-Access-Token: $RAILWAY_TOKEN"
   elif [[ -r "${RAILWAY_CONFIG_DIR:-$HOME/.railway}/config.json" ]]; then
     api_token="$(jq -r '.user.token // .user.accessToken // empty' \
       "${RAILWAY_CONFIG_DIR:-$HOME/.railway}/config.json")"
-    [[ -n "$api_token" ]] && headers+=(-H "Authorization: Bearer $api_token")
+    [[ -z "$api_token" ]] || auth_header="Authorization: Bearer $api_token"
   else
     die "Railway API authentication required; rerun install.sh --workspace-token"
   fi
 
-  ((${#headers[@]} >= 4)) ||
+  [[ -n "$auth_header" ]] ||
     die "Railway API authentication required; rerun install.sh --workspace-token"
 
   payload="$(jq -nc --arg query "$query" --argjson variables "$variables" \
     '{query: $query, variables: $variables}')"
+  # Keep bearer credentials out of the process argument list. curl reads the
+  # sensitive header from an inherited anonymous file descriptor instead.
+  exec {header_fd}<<<"$auth_header"
   if ! response="$(curl -fsS --connect-timeout 10 --max-time 45 https://backboard.railway.com/graphql/v2 \
-    "${headers[@]}" --data-binary "$payload")"; then
+    -H "Content-Type: application/json" -H "@/dev/fd/$header_fd" --data-binary @- <<<"$payload")"; then
+    exec {header_fd}<&-
     echo "vmbox: Railway API request failed" >&2
     return 1
   fi
+  exec {header_fd}<&-
   if jq -e '(.errors // []) | length > 0' <<<"$response" >/dev/null; then
     jq -r '.errors[] | "vmbox: Railway API: \(.message)"' <<<"$response" >&2
     return 1
@@ -190,6 +220,10 @@ railway_retry() {
 }
 
 services() { railway_retry railway service list "${target[@]}" --json; }
+managed_services() {
+  services | jq -c --arg prefix "$VMBOX_SERVICE_PREFIX" \
+    '[.[] | select(.name | startswith($prefix))]'
+}
 volumes() {
   local data
   data="$(railway_retry railway volume "${target[@]}" list --json)" || return
@@ -200,24 +234,61 @@ volumes() {
 }
 
 delete_volume_if_active() {
-  local volume_id="$1" current output
-  current="$(volumes)"
-  jq -e --arg id "$volume_id" 'any(.volumes[]; .id == $id)' \
-    <<<"$current" >/dev/null || return 0
-
-  if output="$(railway volume "${target[@]}" delete \
-    --volume "$volume_id" --yes --json </dev/null 2>&1)"; then
-    return 0
-  fi
-
-  current="$(volumes)"
+  local volume_id="$1" current output="" attempt
+  for attempt in 1 2 3; do
+    current="$(volumes)" || return 1
+    jq -e --arg id "$volume_id" 'any(.volumes[]; .id == $id)' \
+      <<<"$current" >/dev/null || return 0
+    if output="$(railway volume "${target[@]}" delete \
+      --volume "$volume_id" --yes --json </dev/null 2>&1)"; then
+      for _ in 1 2 3 4 5; do
+        current="$(volumes)" || return 1
+        jq -e --arg id "$volume_id" 'any(.volumes[]; .id == $id)' \
+          <<<"$current" >/dev/null || return 0
+        sleep 1
+      done
+      output="Railway accepted deletion, but volume $volume_id is still active"
+    fi
+    ((attempt == 3)) || echo "vmbox: volume deletion response was interrupted; reconciling" >&2
+  done
+  current="$(volumes)" || return 1
   if ! jq -e --arg id "$volume_id" 'any(.volumes[]; .id == $id)' \
     <<<"$current" >/dev/null; then
-    echo "vmbox: volume $volume_id was already pending deletion; skipped" >&2
+    echo "vmbox: volume $volume_id is already deleted or pending deletion" >&2
     return 0
   fi
   printf '%s\n' "$output" >&2
-  die "could not delete volume $volume_id"
+  echo "vmbox: could not delete volume $volume_id" >&2
+  return 1
+}
+
+delete_service_if_active() {
+  local service_id="$1" current output="" attempt
+  for attempt in 1 2 3; do
+    current="$(services)" || return 1
+    jq -e --arg id "$service_id" 'any(.[]; .id == $id)' \
+      <<<"$current" >/dev/null || return 0
+    if output="$(railway service delete "${target[@]}" \
+      --service "$service_id" --yes --json </dev/null 2>&1)"; then
+      for _ in 1 2 3 4 5; do
+        current="$(services)" || return 1
+        jq -e --arg id "$service_id" 'any(.[]; .id == $id)' \
+          <<<"$current" >/dev/null || return 0
+        sleep 1
+      done
+      output="Railway accepted deletion, but service $service_id is still visible"
+    fi
+    ((attempt == 3)) || echo "vmbox: service deletion response was interrupted; reconciling" >&2
+  done
+  current="$(services)" || return 1
+  if ! jq -e --arg id "$service_id" 'any(.[]; .id == $id)' \
+    <<<"$current" >/dev/null; then
+    echo "vmbox: service $service_id is already deleted" >&2
+    return 0
+  fi
+  printf '%s\n' "$output" >&2
+  echo "vmbox: could not delete service $service_id" >&2
+  return 1
 }
 
 find_service() {
@@ -233,7 +304,7 @@ service_has_deployment_history() {
 }
 
 create_service() {
-  local query variables result created_id created_name service attempt check
+  local query variables result created_id created_name service attempt
   [[ -f "$bundle/Dockerfile" ]] || die "deployment bundle missing; rerun install.sh"
   echo "vmbox: creating Railway service '$service_name'" >&2
   query='mutation createService($input: ServiceCreateInput!) {
@@ -248,7 +319,7 @@ create_service() {
       created_name="$(jq -r '.serviceCreate.name // empty' <<<"$result")"
       [[ -n "$created_id" && "$created_name" == "$service_name" ]] && return 0
     fi
-    for check in 1 2 3 4 5; do
+    for _ in 1 2 3 4 5; do
       service="$(find_service 2>/dev/null || true)"
       [[ -z "$service" ]] || {
         echo "vmbox: service creation recovered after an interrupted API response" >&2
@@ -294,7 +365,7 @@ wait_for_service() {
 
 create_data_volume() {
   local service_id="$1" region="$2" query variables result volume_id
-  local data attempt check
+  local data attempt
   echo "vmbox: creating persistent /data volume" >&2
   query='mutation createVolume($input: VolumeCreateInput!) {
     volumeCreate(input: $input) { id }
@@ -309,7 +380,7 @@ create_data_volume() {
       volume_id="$(jq -r '.volumeCreate.id // empty' <<<"$result")"
       [[ -n "$volume_id" ]] && return 0
     fi
-    for check in 1 2 3 4 5; do
+    for _ in 1 2 3 4 5; do
       data="$(volumes 2>/dev/null || true)"
       if jq -e --arg service "$service_name" \
         'any(.volumes[]?; .serviceName == $service and .mountPath == "/data")' \
@@ -325,21 +396,27 @@ create_data_volume() {
 }
 
 deploy_bundle() {
-  local previous_data previous_id submit_output deployment_id data attempt
+  local previous_data previous_id submit_output="" deployment_id="" data attempt submit_status=0
   previous_data="$(railway_retry railway deployment list "${target[@]}" \
     --service "$service_name" --limit 1 --json 2>/dev/null || printf '[]')"
   previous_id="$(jq -r '.[0].id // empty' <<<"$previous_data")"
 
   if submit_output="$(railway up "$bundle" --path-as-root --detach --json \
     --service "$service_name" "${target[@]}" 2>&1)"; then
-    deployment_id="$(jq -rs \
-      'map(select(type == "object")) | last | .deploymentId // .id // empty' \
-      <<<"$submit_output")"
+    submit_status=0
+  else
+    submit_status=$?
+  fi
+
+  deployment_id="$(jq -rs \
+    'map(select(type == "object")) | last | .deploymentId // .id // empty' \
+    <<<"$submit_output" 2>/dev/null || true)"
+  if [[ -n "$deployment_id" && "$deployment_id" != "$previous_id" ]]; then
     printf '%s' "$deployment_id"
     return 0
   fi
 
-  echo "vmbox: deployment submission was interrupted; checking Railway before retrying" >&2
+  echo "vmbox: reconciling deployment submission with Railway" >&2
   for attempt in {1..10}; do
     data="$(railway_retry railway deployment list "${target[@]}" \
       --service "$service_name" --limit 1 --json 2>/dev/null || printf '[]')"
@@ -352,6 +429,8 @@ deploy_bundle() {
     sleep 2
   done
   printf '%s\n' "$submit_output" >&2
+  ((submit_status == 0)) &&
+    echo "vmbox: Railway accepted the upload but no new deployment became visible" >&2
   return 1
 }
 
@@ -374,16 +453,19 @@ wait_for_volume_attachment() {
 
 ensure_ready() {
   local service="$1" status deployment_id volume_added=0
-  local service_id volume_region
+  local service_id volume_region volume_data
 
-  if ! jq -e 'any(.volumes[]?; .mountPath == "/data")' <<<"$service" >/dev/null; then
+  volume_data="$(volumes)"
+  if ! jq -e --arg service "$service_name" '
+    any(.volumes[]?; .serviceName == $service and .mountPath == "/data")
+  ' <<<"$volume_data" >/dev/null; then
     service_id="$(jq -r '.id' <<<"$service")"
     volume_region="$(jq -r 'first(.regions[]?.name) // empty' <<<"$service")"
     [[ -n "$volume_region" ]] || volume_region="$(platform_region_id "$selected_region")"
     create_data_volume "$service_id" "$volume_region"
-    wait_for_volume_attachment
     volume_added=1
   fi
+  wait_for_volume_attachment
 
   status="$(jq -r '.status // empty' <<<"$service")"
   case "$volume_added:$status" in
@@ -413,7 +495,7 @@ persistent_data_mounted() {
 }
 
 ensure_persistent_data() {
-  local redeploy_result deployment_id attempt
+  local redeploy_result="" deployment_id="" previous_data previous_id data attempt
   echo "vmbox: verifying persistent /data mount" >&2
   if persistent_data_mounted; then
     echo "vmbox: persistent /data is ready" >&2
@@ -421,10 +503,27 @@ ensure_persistent_data() {
   fi
 
   echo "vmbox: /data is attached but missing from the running container; redeploying once" >&2
-  redeploy_result="$(railway redeploy "${target[@]}" --service "$service_name" --yes --json)"
+  previous_data="$(railway_retry railway deployment list "${target[@]}" \
+    --service "$service_name" --limit 1 --json 2>/dev/null || printf '[]')"
+  previous_id="$(jq -r '.[0].id // empty' <<<"$previous_data")"
+  if ! redeploy_result="$(railway redeploy "${target[@]}" \
+    --service "$service_name" --yes --json 2>&1)"; then
+    echo "vmbox: repair redeploy response was interrupted; reconciling" >&2
+  fi
   deployment_id="$(jq -rs 'map(select(type == "object")) | last | .deploymentId // .id // empty' \
-    <<<"$redeploy_result")"
-  [[ -n "$deployment_id" ]] || die "Railway did not return a repair deployment ID"
+    <<<"$redeploy_result" 2>/dev/null || true)"
+  if [[ -z "$deployment_id" || "$deployment_id" == "$previous_id" ]]; then
+    echo "vmbox: reconciling repair redeploy with Railway" >&2
+    for attempt in {1..10}; do
+      data="$(railway_retry railway deployment list "${target[@]}" \
+        --service "$service_name" --limit 1 --json 2>/dev/null || printf '[]')"
+      deployment_id="$(jq -r '.[0].id // empty' <<<"$data")"
+      [[ -n "$deployment_id" && "$deployment_id" != "$previous_id" ]] && break
+      deployment_id=""
+      sleep 2
+    done
+  fi
+  [[ -n "$deployment_id" ]] || die "Railway did not create a repair deployment"
   wait_for_service "$deployment_id"
 
   for attempt in {1..6}; do
@@ -520,7 +619,7 @@ EOF_VERIFY_TRUST
     die "could not verify Codex/Claude full-autonomy defaults"
 }
 attach() {
-  local detached="$1" welcome_b64 command_b64="" prepare_script decorate_script decorator_pid
+  local detached="$1" welcome_b64 command_b64="" prepare_script decorate_script decorator_pid attach_status=0
   shift
   configure_workspace_trust
   show_box_welcome
@@ -544,9 +643,13 @@ cat > /data/home/bin/vmbox-report <<'EOF_REPORT'
 #!/usr/bin/env bash
 set -euo pipefail
 status_file=/data/home/.vmbox-task-status.json
+lock_file=/data/home/.vmbox-task-status.lock
 [[ $# -gt 0 ]] || { echo 'usage: vmbox-report <message>' >&2; exit 2; }
-message="$*"
+message="$(printf '%s' "$*" | tr -d '\001-\010\013\014\016-\037\177')"
 reported_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+umask 077
+exec 9>>"$lock_file"
+flock 9
 tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
 if jq -e 'type == "object"' "$status_file" >/dev/null 2>&1; then
   jq --arg message "$message" --arg reported_at "$reported_at" \
@@ -563,21 +666,28 @@ chmod 0755 /data/home/bin/vmbox-report
 unset GH_TOKEN GITHUB_TOKEN
 task_runner="$(cat <<'EOF_TASK'
 status_file=/data/home/.vmbox-task-status.json
+lock_file=/data/home/.vmbox-task-status.lock
 task_log=/data/home/.vmbox-task.log
-: > "$task_log"
-chmod 0600 "$task_log"
+umask 077
+rm -f -- "$task_log"
+: >"$task_log"
 exec > >(tee -a "$task_log") 2>&1
 cat /data/home/.vmbox-welcome
 printf '\n'
 started_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 command_display="$(printf '%q ' "$@")"
+boot_id="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+exec 9>>"$lock_file"
+flock 9
 tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
 jq -n --arg state running --arg started_at "$started_at" \
   --arg command "$command_display" --arg task_log "$task_log" \
+  --arg boot_id "$boot_id" --argjson runner_pid "$$" \
   '{state:$state, startedAt:$started_at, finishedAt:null, exitCode:null,
-    command:$command, taskLog:$task_log}' > "$tmp"
+    command:$command, taskLog:$task_log, bootId:$boot_id, runnerPid:$runner_pid}' > "$tmp"
 chmod 0600 "$tmp"
 mv -f "$tmp" "$status_file"
+flock -u 9
 set +e
 "$@"
 exit_code=$?
@@ -586,8 +696,9 @@ finished_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if ((exit_code == 0)); then task_state=completed; else task_state=failed; fi
 failure_message=""
 if ((exit_code != 0)); then
-  failure_message="$(tail -n 20 "$task_log" 2>/dev/null || true)"
+  failure_message="$(tail -n 20 "$task_log" 2>/dev/null | tr -d '\001-\010\013\014\016-\037\177' || true)"
 fi
+flock 9
 tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
 jq --arg state "$task_state" --arg finished_at "$finished_at" \
   --argjson exit_code "$exit_code" --arg failure_message "$failure_message" \
@@ -596,9 +707,20 @@ jq --arg state "$task_state" --arg finished_at "$finished_at" \
    then .message = $failure_message else . end' "$status_file" > "$tmp"
 chmod 0600 "$tmp"
 mv -f "$tmp" "$status_file"
+flock -u 9
 exit "$exit_code"
 EOF_TASK
 )"
+if ((${#command[@]})) && jq -e '.state == "running"' /data/home/.vmbox-task-status.json >/dev/null 2>&1; then
+  running_pid="$(jq -r '.runnerPid // empty' /data/home/.vmbox-task-status.json)"
+  running_boot="$(jq -r '.bootId // empty' /data/home/.vmbox-task-status.json)"
+  current_boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+  if [[ "$running_pid" =~ ^[0-9]+$ && -n "$running_boot" && "$running_boot" == "$current_boot" ]] &&
+    kill -0 "$running_pid" 2>/dev/null; then
+    echo "vmbox: a forwarded task is already running (PID $running_pid); wait for it or reconnect" >&2
+    exit 75
+  fi
+fi
 if tmux has-session -t "$session" 2>/dev/null; then
   tmux set-environment -g -u GH_TOKEN 2>/dev/null || true
   tmux set-environment -g -u GITHUB_TOKEN 2>/dev/null || true
@@ -649,12 +771,17 @@ EOF_DECORATE
     bash -lc "$decorate_script" bash "$box_id" "$box_status" \
     </dev/null >/dev/null 2>&1 &
   decorator_pid=$!
-  if ! railway ssh "${target[@]}" --service "$service_name" -- tmux attach-session -t "$box_id"; then
-    echo "vmbox: SSH attach failed; verify the Railway SSH host key, then reconnect" >&2
-    return 1
+  if railway ssh "${target[@]}" --service "$service_name" -- tmux attach-session -t "$box_id"; then
+    attach_status=0
+  else
+    attach_status=$?
   fi
   kill "$decorator_pid" 2>/dev/null || true
   wait "$decorator_pid" 2>/dev/null || true
+  if ((attach_status != 0)); then
+    echo "vmbox: SSH attach failed; verify the Railway SSH host key, then reconnect" >&2
+    return "$attach_status"
+  fi
   post_detach
 }
 
@@ -664,7 +791,7 @@ resolve_task_box() {
   box_id="$requested"
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
   task_service="$(find_service)"
-  if [[ -z "$task_service" ]]; then
+  if [[ -z "$task_service" && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
     service_name="$requested"
     task_service="$(find_service)"
   fi
@@ -685,13 +812,47 @@ render_task_status() {
   ' <<<"$task_json"
 }
 
+extract_task_json() {
+  awk 'found { print; exit } $0 == "__VMBOX_TASK__" { found=1 }'
+}
+
 fetch_task_status() {
-  local output
+  local fetch_script output task_json
+  fetch_script="$(cat <<'EOF_FETCH_TASK'
+status_file=/data/home/.vmbox-task-status.json
+lock_file=/data/home/.vmbox-task-status.lock
+umask 077
+exec 9>>"$lock_file"
+flock 9
+if jq -e 'type == "object"' "$status_file" >/dev/null 2>&1; then
+  state="$(jq -r '.state // empty' "$status_file")"
+  pid="$(jq -r '.runnerPid // empty' "$status_file")"
+  boot="$(jq -r '.bootId // empty' "$status_file")"
+  current_boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+  if [[ "$state" == running && "$pid" =~ ^[0-9]+$ && -n "$boot" ]] &&
+    { [[ "$boot" != "$current_boot" ]] || ! kill -0 "$pid" 2>/dev/null; }; then
+    tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
+    now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    jq --arg now "$now" '
+      .state = "interrupted" | .finishedAt = $now | .exitCode = null |
+      if ((.message // "") | length) == 0 then
+        .message = "task process is no longer running (box restarted or task was terminated)"
+      else . end
+    ' "$status_file" >"$tmp"
+    chmod 0600 "$tmp"
+    mv -f "$tmp" "$status_file"
+  fi
+  printf '__VMBOX_TASK__\n'
+  jq -c . "$status_file"
+fi
+EOF_FETCH_TASK
+)"
   output="$(railway ssh "${target[@]}" --service "$service_name" \
-    'if jq -e '\''type == "object"'\'' /data/home/.vmbox-task-status.json >/dev/null 2>&1; then printf "__VMBOX_TASK__"; jq -c . /data/home/.vmbox-task-status.json; fi' \
+    bash -lc "$fetch_script" \
     2>/dev/null || true)"
-  [[ "$output" == *"__VMBOX_TASK__"* ]] || return 1
-  printf '%s\n' "${output##*__VMBOX_TASK__}"
+  task_json="$(extract_task_json <<<"$output")"
+  jq -e 'type == "object"' <<<"$task_json" >/dev/null 2>&1 || return 1
+  printf '%s\n' "$task_json"
 }
 
 show_task_status() {
@@ -699,7 +860,8 @@ show_task_status() {
   resolve_task_box "$1"
   task_json="$(fetch_task_status)" || die "no forwarded task has reported status on '$box_id'"
   render_task_status "$task_json"
-  [[ "$(jq -r '.state // empty' <<<"$task_json")" != failed ]]
+  [[ "$(jq -r '.state // empty' <<<"$task_json")" != failed &&
+     "$(jq -r '.state // empty' <<<"$task_json")" != interrupted ]]
 }
 
 wait_for_task_status() {
@@ -708,9 +870,30 @@ wait_for_task_status() {
   echo "vmbox: waiting for the task on '$box_id' (Ctrl-C stops waiting, not the task)" >&2
   wait_script="$(cat <<'EOF_WAIT_TASK'
 status_file=/data/home/.vmbox-task-status.json
+lock_file=/data/home/.vmbox-task-status.lock
 last=""
 while true; do
+  umask 077
+  exec 9>>"$lock_file"
+  flock 9
   if jq -e 'type == "object"' "$status_file" >/dev/null 2>&1; then
+    state="$(jq -r '.state // empty' "$status_file")"
+    pid="$(jq -r '.runnerPid // empty' "$status_file")"
+    boot="$(jq -r '.bootId // empty' "$status_file")"
+    current_boot="$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)"
+    if [[ "$state" == running && "$pid" =~ ^[0-9]+$ && -n "$boot" ]] &&
+      { [[ "$boot" != "$current_boot" ]] || ! kill -0 "$pid" 2>/dev/null; }; then
+      tmp="$(mktemp /data/home/.vmbox-task-status.XXXXXX)"
+      now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      jq --arg now "$now" '
+        .state = "interrupted" | .finishedAt = $now | .exitCode = null |
+        if ((.message // "") | length) == 0 then
+          .message = "task process is no longer running (box restarted or task was terminated)"
+        else . end
+      ' "$status_file" >"$tmp"
+      chmod 0600 "$tmp"
+      mv -f "$tmp" "$status_file"
+    fi
     summary="$(jq -r '[.state // "unknown", .message // ""] | @tsv' "$status_file")"
     if [[ "$summary" != "$last" ]]; then
       printf 'vmbox: task %s\n' "$summary" >&2
@@ -718,20 +901,23 @@ while true; do
     fi
     state="$(jq -r '.state // empty' "$status_file")"
     case "$state" in
-      completed|failed)
-        printf '__VMBOX_TASK__'
+      completed|failed|interrupted)
+        printf '__VMBOX_TASK__\n'
         jq -c . "$status_file"
         exit 0
         ;;
     esac
   fi
+  flock -u 9
+  exec 9>&-
   sleep 3
 done
 EOF_WAIT_TASK
 )"
   output="$(railway ssh "${target[@]}" --service "$service_name" bash -lc "$wait_script")"
-  [[ "$output" == *"__VMBOX_TASK__"* ]] || die "task-status connection ended before completion"
-  task_json="${output##*__VMBOX_TASK__}"
+  task_json="$(extract_task_json <<<"$output")"
+  jq -e 'type == "object"' <<<"$task_json" >/dev/null 2>&1 ||
+    die "task-status connection ended before completion"
   render_task_status "$task_json"
   state="$(jq -r '.state // empty' <<<"$task_json")"
   [[ "$state" == completed ]]
@@ -787,7 +973,7 @@ show_cost() {
     validate_box_id "$requested"
     service_name="$VMBOX_SERVICE_PREFIX$requested"
     service="$(find_service)"
-    if [[ -z "$service" ]]; then
+    if [[ -z "$service" && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
       service_name="$requested"
       service="$(find_service)"
     fi
@@ -854,7 +1040,7 @@ select_resize_box() {
   local list selected=0 checked=-1 key rest i marker
   local name status box service_id
   local -a rows
-  list="$(services)"
+  list="$(managed_services)"
   mapfile -t rows < <(jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
     .[] |
     (.name | if startswith($prefix) then .[($prefix | length):] else . end) as $box |
@@ -1028,7 +1214,7 @@ resize_box() {
   validate_box_id "$requested"
   service_name="$VMBOX_SERVICE_PREFIX$requested"
   service="$(find_service)"
-  if [[ -z "$service" ]]; then
+  if [[ -z "$service" && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
     service_name="$requested"
     service="$(find_service)"
   fi
@@ -1259,6 +1445,10 @@ profile_has_files() {
 add_profile_candidate() {
   local provider="$1" source="$2" existing
   [[ -d "$source" && -r "$source" ]] || return 0
+  if [[ "$source" == *$'\n'* || "$source" == *$'\t'* ]]; then
+    echo "vmbox: profile path contains unsupported control characters; skipped" >&2
+    return 0
+  fi
   profile_has_files "$provider" "$source" || return 0
   for existing in "${profile_sources[@]:-}"; do
     [[ "$existing" == "$source" ]] && return 0
@@ -1300,7 +1490,7 @@ add_custom_profile() {
     *) echo "vmbox: custom profile skipped (unknown tool)" >&2; sleep 1; return ;;
   esac
   read -erp "Profile directory path: " source
-  [[ "$source" == '~/'* ]] && source="$HOME/${source#\~/}"
+  [[ "$source" == $'\x7e/'* ]] && source="$HOME/${source:2}"
   [[ -f "$source" ]] && source="$(dirname -- "$source")"
   if [[ ! -d "$source" || ! -r "$source" ]]; then
     echo "vmbox: custom profile must be a readable directory" >&2
@@ -1432,7 +1622,7 @@ select_profiles() {
     for i in "${!profile_sources[@]}"; do
       ((profile_selected[i])) && marker=x || marker=' '
       label="${profile_sources[$i]}"
-      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      label="$(display_path "$label")"
       contents="$(profile_contents "${profile_providers[$i]}" "${profile_sources[$i]}")"
       if ((i == selected)); then
         printf '\033[1;36m> [%s] %-7s %-18s %s\033[0m\n' "$marker" "${profile_providers[$i]}" "$contents" "$label"
@@ -1471,6 +1661,10 @@ add_instruction_candidate() {
   [[ -f "$source" && -r "$source" ]] || return 0
   [[ "${source,,}" == *.md ]] || return 0
   source="$(realpath -e -- "$source" 2>/dev/null || printf '%s' "$source")"
+  if [[ "$source" == *$'\n'* || "$source" == *$'\t'* ]]; then
+    echo "vmbox: Markdown path contains unsupported control characters; skipped" >&2
+    return 0
+  fi
   for existing in "${instruction_sources[@]:-}"; do
     [[ "$existing" == "$source" ]] && return 0
   done
@@ -1505,7 +1699,7 @@ add_custom_instruction_file() {
   local source i
   printf '\033[2J\033[H'
   read -erp "Markdown instructions path: " source
-  [[ "$source" == '~/'* ]] && source="$HOME/${source#\~/}"
+  [[ "$source" == $'\x7e/'* ]] && source="$HOME/${source:2}"
   if [[ ! -f "$source" || ! -r "$source" || "${source,,}" != *.md ]]; then
     echo "vmbox: instructions must be a readable .md file" >&2
     sleep 1
@@ -1553,7 +1747,7 @@ select_instruction_file() {
       ((instruction_selected[i])) && marker=x || marker=' '
       label="${instruction_sources[$i]}"
       [[ "$label" == "$PWD/"* ]] && label="./${label#"$PWD/"}"
-      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      label="$(display_path "$label")"
       if ((i == selected)); then
         printf '\033[1;36m> [%s] %s\033[0m\n' "$marker" "$label"
       else
@@ -1603,6 +1797,14 @@ discover_github_accounts() {
     if [[ "$line" =~ ^[^[:space:]] ]]; then
       host="$line"
       [[ "$host" =~ ^[A-Za-z0-9.-]+$ ]] || host=""
+    elif [[ -n "$host" && "$line" =~ Logged[[:space:]]+in[[:space:]]+to[[:space:]]+[^[:space:]]+[[:space:]]+as[[:space:]]+([^[:space:]]+) ]]; then
+      user="${BASH_REMATCH[1]}"
+      [[ "$user" =~ ^[A-Za-z0-9-]+$ ]] || continue
+      github_hosts+=("$host")
+      github_users+=("$user")
+      github_protocols+=(https)
+      github_selected+=(0)
+      last=$((${#github_users[@]} - 1))
     elif [[ -n "$host" && "$line" =~ account[[:space:]]+([^[:space:]]+) ]]; then
       user="${BASH_REMATCH[1]}"
       [[ "$user" =~ ^[A-Za-z0-9-]+$ ]] || continue
@@ -1614,6 +1816,8 @@ discover_github_accounts() {
     elif ((last >= 0)) && [[ "$line" =~ Git[[:space:]]operations[[:space:]]protocol:[[:space:]]+([^[:space:]]+) ]]; then
       protocol="${BASH_REMATCH[1]}"
       [[ "$protocol" == ssh || "$protocol" == https ]] && github_protocols[last]="$protocol"
+    elif ((last >= 0)) && [[ "$line" =~ configured[[:space:]]+to[[:space:]]+use[[:space:]]+(ssh|https)[[:space:]]+protocol ]]; then
+      github_protocols[last]="${BASH_REMATCH[1]}"
     fi
   done <<<"$output"
   return 0
@@ -1644,7 +1848,7 @@ upload_selected_github_account() {
 
 upload_github_account() {
   local index="$1" host user protocol token remote_output remote_user
-  local git_name git_email identity_synced=0
+  local git_name git_email git_name_b64 git_email_b64 identity_synced=0
   host="${github_hosts[$index]}"
   user="${github_users[$index]}"
   protocol="${github_protocols[$index]}"
@@ -1671,8 +1875,11 @@ upload_github_account() {
     return 0
   fi
 
-  if printf '%s\n%s\n' "$git_name" "$git_email" | railway ssh "${target[@]}" --service "$service_name" \
-    'export HOME=/data/home; IFS= read -r name; IFS= read -r email; git config --global user.name "$name"; git config --global user.email "$email"' >/dev/null; then
+  git_name_b64="$(printf '%s' "$git_name" | base64 | tr -d '\n')"
+  git_email_b64="$(printf '%s' "$git_email" | base64 | tr -d '\n')"
+  if railway ssh "${target[@]}" --service "$service_name" \
+    bash -lc 'export HOME=/data/home; name="$(printf %s "$1" | base64 -d)"; email="$(printf %s "$2" | base64 -d)"; git config --global user.name "$name"; git config --global user.email "$email"' \
+    bash "$git_name_b64" "$git_email_b64" >/dev/null; then
     identity_synced=1
   fi
   unset token
@@ -1757,7 +1964,7 @@ write_reusable_setup() (
   for i in "${!component_ids[@]}"; do
     ((component_selected[i])) && selected_component_ids+=("${component_ids[$i]}")
   done
-  components_json="$(jq -nc --args '$ARGS.positional' "${selected_component_ids[@]}")"
+  components_json="$(jq -nc --args '$ARGS.positional' -- "${selected_component_ids[@]}")"
 
   for i in "${!profile_selected[@]}"; do
     ((profile_selected[i])) || continue
@@ -1767,7 +1974,7 @@ write_reusable_setup() (
     $ARGS.positional as $values |
     [range(0; ($values | length); 2) as $i |
       {provider: $values[$i], source: $values[$i + 1]}]
-  ' "${profile_pairs[@]}")"
+  ' -- "${profile_pairs[@]}")"
 
   github_json="null"
   for i in "${!github_selected[@]}"; do
@@ -1954,7 +2161,7 @@ select_new_box_setup() {
     for i in "${!profile_sources[@]}"; do
       ((profile_selected[i])) && marker=x || marker=' '
       label="${profile_sources[$i]}"
-      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      label="$(display_path "$label")"
       contents="$(profile_contents "${profile_providers[$i]}" "${profile_sources[$i]}")"
       printf -v line '[%s] %-7s %-18s %s' "$marker" "${profile_providers[$i]}" "$contents" "$label"
       print_setup_row "$selected" "$((profile_start + i))" "$line"
@@ -1977,7 +2184,7 @@ select_new_box_setup() {
       ((instruction_selected[i])) && marker=x || marker=' '
       label="${instruction_sources[$i]}"
       [[ "$label" == "$PWD/"* ]] && label="./${label#"$PWD/"}"
-      [[ "$label" == "$HOME/"* ]] && label="~/${label#"$HOME/"}"
+      label="$(display_path "$label")"
       printf -v line '[%s] %s' "$marker" "$label"
       print_setup_row "$selected" "$((instruction_start + i))" "$line"
     done
@@ -2065,7 +2272,7 @@ copy_auth_to_box() {
   validate_box_id "$box_id"
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
   service="$(find_service)"
-  if [[ -z "$service" ]]; then
+  if [[ -z "$service" && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
     service_name="$box_id"
     service="$(find_service)"
   fi
@@ -2081,7 +2288,7 @@ sync_github_to_box() {
   validate_box_id "$box_id"
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
   service="$(find_service)"
-  if [[ -z "$service" ]]; then
+  if [[ -z "$service" && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
     service_name="$box_id"
     service="$(find_service)"
   fi
@@ -2092,12 +2299,12 @@ sync_github_to_box() {
 }
 
 stop_box() {
-  local service deployment_data active_deployment output status
+  local service deployment_data active_deployment output="" status attempt down_status=0
   box_id="$1"
   validate_box_id "$box_id"
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
   service="$(find_service)"
-  if [[ -z "$service" ]]; then
+  if [[ -z "$service" && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
     service_name="$box_id"
     service="$(find_service)"
   fi
@@ -2110,8 +2317,14 @@ stop_box() {
       ;;
   esac
 
-  deployment_data="$(railway deployment list "${target[@]}" \
+  deployment_data="$(railway_retry railway deployment list "${target[@]}" \
     --service "$service_name" --limit 100 --json)"
+  status="$(jq -r '.[0].status // "NO_DEPLOYMENT"' <<<"$deployment_data")"
+  case "$status" in
+    BUILDING|DEPLOYING|QUEUED|INITIALIZING|WAITING)
+      die "box '$box_id' has a deployment in progress ($status); wait for it, then stop again"
+      ;;
+  esac
   active_deployment="$(jq -r 'first(.[] | select(.status == "SUCCESS")) | .id // empty' \
     <<<"$deployment_data")"
   if [[ -z "$active_deployment" ]]; then
@@ -2120,9 +2333,25 @@ stop_box() {
   fi
 
   echo "vmbox: powering down '$service_name'; preserving its service and /data volume" >&2
-  if ! output="$(railway down "${target[@]}" --service "$service_name" --yes 2>&1)"; then
-    printf '%s\n' "$output" >&2
-    die "could not power down box '$box_id'"
+  if output="$(railway down "${target[@]}" --service "$service_name" --yes 2>&1)"; then
+    down_status=0
+  else
+    down_status=$?
+    echo "vmbox: power-down response was interrupted; reconciling" >&2
+  fi
+  for attempt in {1..10}; do
+    deployment_data="$(railway_retry railway deployment list "${target[@]}" \
+      --service "$service_name" --limit 100 --json)"
+    if ! jq -e 'any(.[]; .status == "SUCCESS")' <<<"$deployment_data" >/dev/null; then
+      down_status=0
+      break
+    fi
+    sleep 1
+  done
+  if ((down_status != 0)) || jq -e 'any(.[]; .status == "SUCCESS")' \
+    <<<"$deployment_data" >/dev/null; then
+    [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+    die "could not verify that box '$box_id' powered down"
   fi
   echo "Box '$box_id' is powered down. Resume and redeploy with: vmbox resume $box_id"
   echo "Files persist, but tmux/Codex processes stopped. Reopen Codex with: codex resume --last"
@@ -2138,7 +2367,8 @@ open_box() {
       -d|--detach) detached=1; shift ;;
       --reuse) reuse_setup=1; shift ;;
       --) shift; break ;;
-      *) break ;;
+      -*) die "unknown box option '$1'" ;;
+      *) die "put -- before the forwarded command (for example: vmbox $box_id -- $1 ...)" ;;
     esac
   done
   remote_command=("$@")
@@ -2146,7 +2376,7 @@ open_box() {
   service_name="$VMBOX_SERVICE_PREFIX$box_id"
   service="$(find_service)"
 
-  if [[ -z "$service" && "$requested_action" == resume ]]; then
+  if [[ -z "$service" && "$requested_action" == resume && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
     service_name="$box_id"
     service="$(find_service)"
   fi
@@ -2250,7 +2480,7 @@ declare -a clean_service_ids=() clean_service_names=()
 select_clean_boxes() {
   local list selected=0 key rest i marker all_checked=0 box service_id name status
   local -a rows checked
-  list="$(services)"
+  list="$(managed_services)"
   mapfile -t rows < <(jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
     .[] |
     (.name | if startswith($prefix) then .[($prefix | length):] else . end) as $box |
@@ -2330,7 +2560,7 @@ add_clean_box_by_id() {
   validate_box_id "$requested"
   service_name="$VMBOX_SERVICE_PREFIX$requested"
   service="$(find_service)"
-  if [[ -z "$service" ]]; then
+  if [[ -z "$service" && "$VMBOX_ALLOW_LEGACY_SERVICES" == 1 ]]; then
     service_name="$requested"
     service="$(find_service)"
   fi
@@ -2343,7 +2573,7 @@ add_clean_box_by_id() {
 }
 
 clean_boxes() {
-  local yes=0 all=0 arg answer i service_count volume_count
+  local yes=0 all=0 arg answer i service_count volume_count failures=0
   local list volume_list volume_id service_id
   local -a requested=() clean_volume_ids=()
   for arg in "$@"; do
@@ -2359,7 +2589,7 @@ clean_boxes() {
   clean_service_ids=()
   clean_service_names=()
   if ((all)); then
-    list="$(services)"
+    list="$(managed_services)"
     mapfile -t clean_service_ids < <(jq -r '.[].id' <<<"$list")
     mapfile -t clean_service_names < <(jq -r '.[].name' <<<"$list")
   elif ((${#requested[@]})); then
@@ -2371,7 +2601,9 @@ clean_boxes() {
 
   volume_list="$(volumes)"
   if ((all)); then
-    mapfile -t clean_volume_ids < <(jq -r '.volumes[].id' <<<"$volume_list")
+    mapfile -t clean_volume_ids < <(jq -r --arg prefix "$VMBOX_SERVICE_PREFIX" '
+      .volumes[] | select((.serviceName // "") | startswith($prefix)) | .id
+    ' <<<"$volume_list")
   else
     for i in "${!clean_service_names[@]}"; do
       while IFS= read -r volume_id; do
@@ -2408,13 +2640,21 @@ clean_boxes() {
   fi
 
   for service_id in "${clean_service_ids[@]}"; do
-    railway service delete "${target[@]}" --service "$service_id" --yes --json >/dev/null
+    delete_service_if_active "$service_id" || failures=$((failures + 1))
   done
+  if ((failures)); then
+    die "$failures service deletion(s) failed; volumes were preserved to avoid data loss"
+  fi
   for volume_id in "${clean_volume_ids[@]}"; do
-    delete_volume_if_active "$volume_id"
+    delete_volume_if_active "$volume_id" || failures=$((failures + 1))
   done
+  ((failures == 0)) || die "$failures persistent volume deletion(s) failed"
   echo "Deleted $service_count service(s) and $volume_count active persistent volume(s)."
 }
+
+if [[ "${VMBOX_TEST_SOURCE_ONLY:-0}" == 1 ]]; then
+  return 0 2>/dev/null || exit 0
+fi
 
 if (($# == 0)); then
   quick_usage
@@ -2433,7 +2673,7 @@ require jq
 case "$action" in
   ls|list)
     [[ $# -eq 1 ]] || die "usage: vmbox $action"
-    list="$(services)"
+    list="$(managed_services)"
     if [[ "$(jq 'length' <<<"$list")" == 0 ]]; then
       echo "No boxes."
     elif [[ "$action" == list ]]; then
