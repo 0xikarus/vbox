@@ -221,7 +221,7 @@ func (p *Provider) Inspect(ctx context.Context, id string) (provider.Box, error)
 		pids = *r.HostConfig.PidsLimit
 	}
 	owner := provider.Owner{AccountID: r.Config.Labels[labelAccount], BoxID: r.Config.Labels[labelBox], RunID: r.Config.Labels[labelRun], Lease: r.Config.Labels[labelLease]}
-	return provider.Box{ID: r.ID, Name: id, Provider: p.Name(), State: state, ProviderState: r.State.Status, Image: r.Config.Image, ImageDigest: r.Image, Owner: owner, Labels: r.Config.Labels, CreatedAt: created, UpdatedAt: time.Now().UTC(), Resources: provider.Resources{CPU: float64(r.HostConfig.NanoCPUs) / 1e9, MemoryMiB: r.HostConfig.Memory / (1024 * 1024), PIDs: pids}, Storage: &provider.Storage{Name: volume, MountPath: "/data"}, Connection: provider.Connection{Transport: "docker-exec", Endpoint: p.cfg.Context}}, nil
+	return provider.Box{ID: id, Name: id, Provider: p.Name(), State: state, ProviderState: r.State.Status, Image: r.Config.Image, ImageDigest: r.Image, Owner: owner, Labels: r.Config.Labels, CreatedAt: created, UpdatedAt: time.Now().UTC(), Resources: provider.Resources{CPU: float64(r.HostConfig.NanoCPUs) / 1e9, MemoryMiB: r.HostConfig.Memory / (1024 * 1024), PIDs: pids}, Storage: &provider.Storage{Name: volume, MountPath: "/data"}, Connection: provider.Connection{Transport: "docker-exec", Endpoint: p.cfg.Context}}, nil
 }
 
 func (p *Provider) List(ctx context.Context) ([]provider.Box, error) {

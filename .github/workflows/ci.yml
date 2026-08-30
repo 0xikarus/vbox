@@ -25,3 +25,4 @@ jobs:
         with: {go-version: '1.26.x', cache: true}
       - run: docker build -t vmbox:e2e .
       - run: VMBOX_E2E_DOCKER=1 VMBOX_E2E_IMAGE=vmbox:e2e go test -v ./internal/provider/docker -run TestDockerE2E
+      - run: VMBOX_E2E_IMAGE=vmbox:e2e bash tests/controller-e2e.sh

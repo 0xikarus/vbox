@@ -111,7 +111,7 @@ func (s *Store) bootstrap(ctx context.Context, accountName, subject string, toke
 	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens(id,account_id,user_id,token_hash) VALUES($1,$2,$3,$4)`, tokenID, p.AccountID, p.UserID, tokenHash); err != nil {
 		return p, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id) VALUES($1,$2,'account.bootstrap','account',$2)`, p.AccountID, p.UserID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id) VALUES($1,$2,'account.bootstrap','account',$3)`, p.AccountID, p.UserID, p.UserID); err != nil {
 		return p, err
 	}
 	return p, tx.Commit()

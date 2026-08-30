@@ -35,6 +35,9 @@ func TestDockerE2E(t *testing.T) {
 		t.Fatalf("state=%s", box.State)
 	}
 	argv := []string{"printf", "%s", `$HOME; $(touch /tmp/not-run)`}
+	if box.ID != name {
+		t.Fatalf("stable box ID=%q want=%q", box.ID, name)
+	}
 	result, err := p.Exec(ctx, name, argv, provider.ExecOptions{})
 	if err != nil {
 		t.Fatal(err)
