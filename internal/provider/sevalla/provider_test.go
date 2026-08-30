@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateAndExactArgvExercise(t *testing.T) {
@@ -20,7 +21,7 @@ func TestValidateAndExactArgvExercise(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/resources/clusters":
-			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "cluster"}}, "total": 1, "offset": 0, "limit": 1})
+			json.NewEncoder(w).Encode([]any{map[string]any{"id": "cluster"}})
 		case "/applications":
 			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": "11111111-1111-4111-8111-111111111111", "display_name": "vmbox-box", "name": "vmbox-box", "status": "deploymentSuccess"}}, "total": 1, "offset": 0, "limit": 100})
 		case "/applications/11111111-1111-4111-8111-111111111111/processes":
@@ -37,7 +38,7 @@ func TestValidateAndExactArgvExercise(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	p := New(Config{Token: "token", APIURL: server.URL, ProjectID: "project", HTTPClient: server.Client()})
+	p := New(Config{Token: "token", APIURL: server.URL, HTTPClient: server.Client()})
 	cap, err := p.Validate(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -59,10 +60,77 @@ func TestValidateAndExactArgvExercise(t *testing.T) {
 	}
 }
 
+func TestDeployWaitsForExactDeployment(t *testing.T) {
+	const appID = "11111111-1111-4111-8111-111111111111"
+	const processID = "22222222-2222-4222-8222-222222222222"
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/applications":
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": appID, "display_name": "vmbox-box", "status": "deploymentSuccess", "docker_image": "image"}}})
+		case "/applications/" + appID + "/deployments":
+			var body map[string]any
+			json.NewDecoder(r.Body).Decode(&body)
+			if body["docker_image"] != "image" {
+				t.Errorf("deployment image = %#v", body["docker_image"])
+			}
+			json.NewEncoder(w).Encode(map[string]any{"id": "33333333-3333-4333-8333-333333333333", "status": "waiting"})
+		case "/applications/" + appID + "/deployments/33333333-3333-4333-8333-333333333333":
+			polls++
+			json.NewEncoder(w).Encode(map[string]any{"id": "33333333-3333-4333-8333-333333333333", "status": "success"})
+		case "/applications/" + appID:
+			json.NewEncoder(w).Encode(map[string]any{"id": appID, "display_name": "vmbox-box", "status": "deploymentSuccess", "docker_image": "image"})
+		case "/applications/" + appID + "/env-vars":
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"Key": "VMBOX_BOX_ID", "Value": "box"}, map[string]any{"Key": "VMBOX_ACCOUNT_ID", "Value": "standalone"}}})
+		case "/applications/" + appID + "/processes":
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": processID}}})
+		default:
+			http.Error(w, r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	p := New(Config{Token: "token", APIURL: server.URL, HTTPClient: server.Client()})
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err := p.Deploy(ctx, "box", "image"); err != nil {
+		t.Fatal(err)
+	}
+	if polls != 1 {
+		t.Fatalf("deployment polls = %d", polls)
+	}
+}
+
 func TestCreateStorageReportsPublicAPIGap(t *testing.T) {
 	p := New(Config{})
 	_, err := p.CreateStorage(context.Background(), "box", provider.Resources{DiskGiB: 10})
 	if err == nil || !strings.Contains(err.Error(), "no application-disk create endpoint") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestCreateRefusesSameNameOwnedByAnotherAccount(t *testing.T) {
+	const appID = "11111111-1111-4111-8111-111111111111"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/applications":
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"id": appID, "display_name": "vmbox-box"}}})
+		case "/applications/" + appID + "/env-vars":
+			json.NewEncoder(w).Encode(map[string]any{"data": []any{
+				map[string]any{"Key": "VMBOX_ACCOUNT_ID", "Value": "other-account"},
+				map[string]any{"Key": "VMBOX_BOX_ID", "Value": "box"},
+			}})
+		default:
+			http.Error(w, r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	p := New(Config{Token: "token", APIURL: server.URL, HTTPClient: server.Client()})
+	_, err := p.Create(context.Background(), provider.CreateRequest{
+		Name: "box", Region: "cluster", Owner: provider.Owner{AccountID: "account", BoxID: "box"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "ownership mismatch") {
+		t.Fatalf("Create error = %v, want ownership mismatch", err)
 	}
 }

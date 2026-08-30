@@ -172,28 +172,77 @@ type page[T any] struct {
 	Total, Offset, Limit int
 }
 
+type listResponse[T any] struct{ Data []T }
+
+func (r *listResponse[T]) UnmarshalJSON(data []byte) error {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) > 0 && trimmed[0] == '[' {
+		return json.Unmarshal(trimmed, &r.Data)
+	}
+	var wrapped page[T]
+	if err := json.Unmarshal(trimmed, &wrapped); err != nil {
+		return err
+	}
+	r.Data = wrapped.Data
+	return nil
+}
+
 func (p *Provider) Validate(ctx context.Context) (provider.Capabilities, error) {
 	cap := provider.Capabilities{Provider: p.Name(), Architectures: []string{"linux/amd64"}, Interactive: true, Detached: true, ExactArgv: true, PersistentStorage: p.cfg.PreAttachedDisk != "", AutomatedStorage: false, Resize: true, Metrics: true, Cost: true, ControllerCompatible: true, Warnings: []string{"Sevalla has no documented application-disk mutation API; /data must be manually pre-attached and is capability-gated"}}
-	var clusters page[json.RawMessage]
+	var clusters listResponse[json.RawMessage]
 	if err := p.request(ctx, http.MethodGet, "/resources/clusters?limit=1", nil, &clusters); err != nil {
 		return cap, err
-	}
-	if p.cfg.ProjectID == "" {
-		return cap, fmt.Errorf("Sevalla project ID is required")
 	}
 	return cap, nil
 }
 
 func (p *Provider) Clusters(ctx context.Context) ([]map[string]any, error) {
-	var result page[map[string]any]
+	var result listResponse[map[string]any]
 	err := p.request(ctx, http.MethodGet, "/resources/clusters?limit=100", nil, &result)
 	return result.Data, err
 }
 
 func (p *Provider) ResourceTypes(ctx context.Context) ([]map[string]any, error) {
-	var result page[map[string]any]
+	var result listResponse[map[string]any]
 	err := p.request(ctx, http.MethodGet, "/resources/process-resource-types?limit=100", nil, &result)
 	return result.Data, err
+}
+
+type deployment struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+func (p *Provider) deploy(ctx context.Context, appID, image string) error {
+	payload := map[string]any{}
+	if image != "" {
+		payload["docker_image"] = image
+	}
+	var current deployment
+	if err := p.request(ctx, http.MethodPost, "/applications/"+url.PathEscape(appID)+"/deployments", payload, &current); err != nil {
+		return err
+	}
+	if current.ID == "" {
+		return fmt.Errorf("Sevalla returned no deployment ID")
+	}
+	wait, cancel := context.WithTimeout(ctx, 15*time.Minute)
+	defer cancel()
+	for {
+		switch strings.ToLower(current.Status) {
+		case "success":
+			return nil
+		case "failed", "cancelled", "skipped":
+			return fmt.Errorf("Sevalla deployment %s ended with %s", current.ID, current.Status)
+		}
+		select {
+		case <-wait.Done():
+			return fmt.Errorf("wait for Sevalla deployment %s: %w", current.ID, wait.Err())
+		case <-time.After(2 * time.Second):
+		}
+		if err := p.request(wait, http.MethodGet, "/applications/"+url.PathEscape(appID)+"/deployments/"+url.PathEscape(current.ID), nil, &current); err != nil {
+			return err
+		}
+	}
 }
 
 func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (provider.Box, error) {
@@ -214,11 +263,21 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 		return provider.Box{}, fmt.Errorf("Sevalla cluster ID is required; discover it with provider validate")
 	}
 	if existing, err := p.resolve(ctx, req.Name); err == nil {
-		return p.toBox(existing, req.Owner), nil
+		actual, ownerErr := p.owner(ctx, existing.ID)
+		if ownerErr != nil {
+			return provider.Box{}, fmt.Errorf("verify existing Sevalla application ownership: %w", ownerErr)
+		}
+		if ownerErr := provider.VerifyOwner(actual, req.Owner); ownerErr != nil {
+			return provider.Box{}, ownerErr
+		}
+		return p.Inspect(ctx, existing.ID)
 	} else if !errors.Is(err, provider.ErrNotFound) {
 		return provider.Box{}, err
 	}
-	payload := map[string]any{"display_name": "vmbox-" + req.Name, "cluster_id": cluster, "source": "dockerImage", "project_id": p.cfg.ProjectID, "docker_image": req.Image}
+	payload := map[string]any{"display_name": "vmbox-" + req.Name, "cluster_id": cluster, "source": "dockerImage", "docker_image": req.Image}
+	if p.cfg.ProjectID != "" {
+		payload["project_id"] = p.cfg.ProjectID
+	}
 	var app application
 	if err := p.request(ctx, http.MethodPost, "/applications", payload, &app); err != nil {
 		return provider.Box{}, err
@@ -248,10 +307,10 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 			return provider.Box{}, err
 		}
 	}
-	if err := p.request(ctx, http.MethodPost, "/applications/"+url.PathEscape(app.ID)+"/deployments", map[string]any{}, nil); err != nil {
+	if err := p.deploy(ctx, app.ID, req.Image); err != nil {
 		return provider.Box{}, fmt.Errorf("initial deploy: %w", err)
 	}
-	return p.toBox(app, req.Owner), nil
+	return p.Inspect(ctx, app.ID)
 }
 
 func (p *Provider) resolve(ctx context.Context, id string) (application, error) {
@@ -384,7 +443,7 @@ func (p *Provider) Resize(ctx context.Context, id string, resources provider.Res
 	if err := p.request(ctx, http.MethodPatch, "/applications/"+url.PathEscape(app.ID)+"/processes/"+url.PathEscape(processes[0].ID), map[string]any{"resource_type_id": resourceID}, nil); err != nil {
 		return provider.Box{}, err
 	}
-	if err := p.request(ctx, http.MethodPost, "/applications/"+url.PathEscape(app.ID)+"/deployments", map[string]any{}, nil); err != nil {
+	if err := p.deploy(ctx, app.ID, app.Image); err != nil {
 		return provider.Box{}, err
 	}
 	return p.Inspect(ctx, app.ID)
@@ -445,7 +504,10 @@ func (p *Provider) Deploy(ctx context.Context, id, image string) (provider.Box, 
 			return provider.Box{}, err
 		}
 	}
-	if err := p.request(ctx, http.MethodPost, "/applications/"+url.PathEscape(app.ID)+"/deployments", map[string]any{}, nil); err != nil {
+	if image == "" {
+		image = app.Image
+	}
+	if err := p.deploy(ctx, app.ID, image); err != nil {
 		return provider.Box{}, err
 	}
 	return p.Inspect(ctx, app.ID)
@@ -472,7 +534,7 @@ func (p *Provider) Logs(ctx context.Context, id string, opts provider.LogOptions
 	}
 	query := "?limit=" + strconv.Itoa(max(1, min(1000, opts.Tail)))
 	var result json.RawMessage
-	if err := p.request(ctx, http.MethodGet, "/applications/"+url.PathEscape(app.ID)+"/logs/runtime"+query, nil, &result); err != nil {
+	if err := p.request(ctx, http.MethodGet, "/applications/"+url.PathEscape(app.ID)+"/runtime-logs"+query, nil, &result); err != nil {
 		return err
 	}
 	_, err = dst.Write(append(result, '\n'))
@@ -566,6 +628,13 @@ func (p *Provider) interactive(ctx context.Context, app application, process pro
 	defer ws.Close(websocket.StatusNormalClosure, "detached")
 	conn := websocket.NetConn(ctx, ws, websocket.MessageText)
 	defer conn.Close()
+	// Sevalla upgrades the socket before the remote shell is ready to receive
+	// input. Commands sent immediately after Dial are silently discarded.
+	select {
+	case <-ctx.Done():
+		return provider.ExecResult{}, ctx.Err()
+	case <-time.After(time.Second):
+	}
 	if _, err := io.WriteString(conn, "exec tmux attach-session -t vmbox\n"); err != nil {
 		return provider.ExecResult{}, err
 	}
