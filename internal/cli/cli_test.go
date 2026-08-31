@@ -266,8 +266,23 @@ func TestCreateAliasesResumeExistingAndPersistReusableSetup(t *testing.T) {
 		t.Fatalf("saved=%+v", saved.LastSetups["test"])
 	}
 	last := p.exec[len(p.exec)-1].argv
-	if !reflect.DeepEqual(last, []string{"tmux", "new-session", "-A", "-d", "-s", "vmbox", "vmbox-runtime", "welcome"}) {
+	if !reflect.DeepEqual(last, []string{"sh", "-c", `tmux has-session -t vmbox 2>/dev/null || exec tmux new-session -d -s vmbox -c /data/workspace vmbox-runtime welcome`}) {
 		t.Fatalf("resume argv=%#v", last)
+	}
+}
+
+func TestTaskStatusForwardsOptionalRuntimeRunID(t *testing.T) {
+	p := newCLIProvider()
+	p.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning}
+	app := New()
+	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
+	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"task-status", "worker", "run_123"}); err != nil {
+		t.Fatal(err)
+	}
+	last := p.exec[len(p.exec)-1].argv
+	if !reflect.DeepEqual(last, []string{"vmbox-runtime", "status", "run_123"}) {
+		t.Fatalf("task-status argv=%#v", last)
 	}
 }
 
@@ -378,6 +393,22 @@ func TestUnifiedScreenAndSelectorsRequireVisibleConfirm(t *testing.T) {
 	resources, err := app.selectResizeResources("Resize")
 	if err != nil || resources.CPU != 2 || resources.MemoryMiB != 4096 {
 		t.Fatalf("resources=%+v err=%v", resources, err)
+	}
+}
+
+func TestUnifiedScreenPreservesExplicitCustomResources(t *testing.T) {
+	app := New()
+	var out bytes.Buffer
+	app.In, app.Out, app.Err = strings.NewReader("q"), &out, &bytes.Buffer{}
+	app.Runner = &procexec.FakeRunner{}
+	setup := defaultSetup(config.Context{})
+	setup.Resources = provider.Resources{CPU: 1, MemoryMiB: 512, DiskGiB: 7}
+	_, err := app.configureSetup(context.Background(), config.Context{Name: "test", Provider: "docker"}, nil, "worker", setup, nil)
+	if !errors.Is(err, errSetupCancelled) {
+		t.Fatalf("configureSetup error = %v", err)
+	}
+	if !strings.Contains(out.String(), "[x] Custom") || !strings.Contains(out.String(), "1 CPU / 512 MiB / 7 GiB") {
+		t.Fatalf("screen=%q", out.String())
 	}
 }
 

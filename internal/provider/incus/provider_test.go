@@ -22,3 +22,21 @@ func TestExecPreservesExactArgv(t *testing.T) {
 		t.Fatalf("got %#v want %#v", runner.Calls[1].Argv, want)
 	}
 }
+
+func TestBoxRestoresImageRegionAndDiskSpecs(t *testing.T) {
+	p := New(Config{Remote: "ubuntu-host"}, &procexec.FakeRunner{})
+	box := p.toBox(instance{Name: "vmbox-worker", Status: "Running", Config: map[string]string{
+		"limits.cpu": "2", "limits.memory": "4096MiB", "user.vmbox.disk-gib": "20", "user.vmbox.image": "images:ubuntu/24.04",
+	}})
+	if box.Image != "images:ubuntu/24.04" || box.Region != "ubuntu-host" || box.Resources.DiskGiB != 20 || box.Storage == nil || box.Storage.SizeGiB != 20 {
+		t.Fatalf("box=%+v storage=%+v", box, box.Storage)
+	}
+}
+
+func TestDeleteStorageIsIdempotentWhenVolumeIsAbsent(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{ExitCode: 1, Stderr: []byte("storage volume not found")}}}
+	p := New(Config{}, runner)
+	if err := p.DeleteStorage(context.Background(), provider.Storage{Name: "vmbox-worker-data"}, provider.Owner{AccountID: "account", BoxID: "worker"}); err != nil {
+		t.Fatal(err)
+	}
+}

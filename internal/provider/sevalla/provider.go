@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/provider"
+	providerbootstrap "github.com/0xikarus/vmbox-service/internal/provider/bootstrap"
 	"github.com/coder/websocket"
 )
 
@@ -43,7 +44,7 @@ func New(cfg Config) *Provider {
 		cfg.APIURL = defaultAPIURL
 	}
 	if cfg.DefaultImage == "" {
-		cfg.DefaultImage = "ghcr.io/0xikarus/vmbox-service:latest"
+		cfg.DefaultImage = "node:22-bookworm-slim"
 	}
 	client := cfg.HTTPClient
 	if client == nil {
@@ -305,8 +306,11 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if err != nil {
 		return provider.Box{}, err
 	}
-	if len(processes) > 0 && p.cfg.ResourceTypeID != "" {
-		input := map[string]any{"resource_type_id": p.cfg.ResourceTypeID, "scaling_strategy": map[string]any{"type": "manual", "config": map[string]any{"instanceCount": 1}}}
+	if len(processes) > 0 {
+		input := map[string]any{"entrypoint": "sleep infinity", "scaling_strategy": map[string]any{"type": "manual", "config": map[string]any{"instanceCount": 1}}}
+		if p.cfg.ResourceTypeID != "" {
+			input["resource_type_id"] = p.cfg.ResourceTypeID
+		}
 		if err := p.request(ctx, http.MethodPatch, "/applications/"+url.PathEscape(app.ID)+"/processes/"+url.PathEscape(processes[0].ID), input, nil); err != nil {
 			return provider.Box{}, err
 		}
@@ -315,6 +319,13 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 		return provider.Box{}, fmt.Errorf("initial deploy: %w", err)
 	}
 	return p.Inspect(ctx, app.ID)
+}
+
+func (p *Provider) Bootstrap(ctx context.Context, id string, request provider.BootstrapRequest) error {
+	exec := func(ctx context.Context, argv []string, stdin io.Reader) (provider.ExecResult, error) {
+		return p.Exec(ctx, id, argv, provider.ExecOptions{Stdin: stdin})
+	}
+	return providerbootstrap.Install(ctx, request, exec)
 }
 
 func (p *Provider) resolve(ctx context.Context, id string) (application, error) {
@@ -417,7 +428,7 @@ func (p *Provider) Start(ctx context.Context, id string) (provider.Box, error) {
 	if err := p.request(ctx, http.MethodPost, "/applications/"+url.PathEscape(app.ID)+"/activate", nil, nil); err != nil {
 		return provider.Box{}, err
 	}
-	return p.Inspect(ctx, app.ID)
+	return p.waitApplicationState(ctx, app.ID, false)
 }
 
 func (p *Provider) Stop(ctx context.Context, id string) (provider.Box, error) {
@@ -428,7 +439,32 @@ func (p *Provider) Stop(ctx context.Context, id string) (provider.Box, error) {
 	if err := p.request(ctx, http.MethodPost, "/applications/"+url.PathEscape(app.ID)+"/suspend", nil, nil); err != nil {
 		return provider.Box{}, err
 	}
-	return p.Inspect(ctx, app.ID)
+	return p.waitApplicationState(ctx, app.ID, true)
+}
+
+func (p *Provider) waitApplicationState(ctx context.Context, appID string, suspended bool) (provider.Box, error) {
+	deadline := time.NewTimer(10 * time.Minute)
+	defer deadline.Stop()
+	for {
+		var app application
+		if err := p.request(ctx, http.MethodGet, "/applications/"+url.PathEscape(appID), nil, &app); err != nil {
+			return provider.Box{}, err
+		}
+		ready := app.Suspended == suspended
+		if !suspended {
+			ready = ready && app.Status == "deploymentSuccess"
+		}
+		if ready {
+			return p.Inspect(ctx, appID)
+		}
+		select {
+		case <-ctx.Done():
+			return provider.Box{}, ctx.Err()
+		case <-deadline.C:
+			return provider.Box{}, fmt.Errorf("Sevalla application %s did not reach suspended=%t", appID, suspended)
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 func (p *Provider) Resize(ctx context.Context, id string, resources provider.Resources) (provider.Box, error) {
@@ -570,6 +606,9 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	if err != nil || len(processes) == 0 {
 		return provider.ExecResult{}, fmt.Errorf("Sevalla process unavailable: %w", err)
 	}
+	if opts.Detach {
+		argv = append([]string{"vmbox-runtime", "run", "--detach", "--"}, argv...)
+	}
 	if opts.Interactive {
 		return p.interactive(ctx, app, processes[0], argv, opts)
 	}
@@ -581,9 +620,6 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 		Stdout   string `json:"stdout"`
 		Stderr   string `json:"stderr"`
 		ExitCode int    `json:"exit_code"`
-	}
-	if opts.Detach {
-		argv = append([]string{"vmbox-runtime", "run", "--detach", "--"}, argv...)
 	}
 	input := map[string]any{"command": argv, "timeout": 60}
 	path := "/applications/" + url.PathEscape(app.ID) + "/processes/" + url.PathEscape(processes[0].ID) + "/exec"
@@ -601,27 +637,6 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 
 func (p *Provider) interactive(ctx context.Context, app application, process process, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 	started := time.Now().UTC()
-	execPath := "/applications/" + url.PathEscape(app.ID) + "/processes/" + url.PathEscape(process.ID) + "/exec"
-	var check struct {
-		ExitCode int `json:"exit_code"`
-	}
-	if err := p.request(ctx, http.MethodPost, execPath, map[string]any{"command": []string{"tmux", "has-session", "-t", "vmbox"}, "timeout": 15}, &check); err != nil {
-		return provider.ExecResult{}, err
-	}
-	if check.ExitCode != 0 {
-		tmuxArgv := []string{"tmux", "new-session", "-d", "-s", "vmbox", "--"}
-		tmuxArgv = append(tmuxArgv, argv...)
-		var created struct {
-			Stderr   string `json:"stderr"`
-			ExitCode int    `json:"exit_code"`
-		}
-		if err := p.request(ctx, http.MethodPost, execPath, map[string]any{"command": tmuxArgv, "timeout": 15}, &created); err != nil {
-			return provider.ExecResult{}, err
-		}
-		if created.ExitCode != 0 {
-			return provider.ExecResult{}, fmt.Errorf("create Sevalla tmux session: %s", created.Stderr)
-		}
-	}
 	connection, err := p.Connection(ctx, app.ID)
 	if err != nil {
 		return provider.ExecResult{}, err
@@ -642,7 +657,7 @@ func (p *Provider) interactive(ctx context.Context, app application, process pro
 		return provider.ExecResult{}, ctx.Err()
 	case <-time.After(time.Second):
 	}
-	if _, err := io.WriteString(conn, "exec tmux attach-session -t vmbox\n"); err != nil {
+	if _, err := io.WriteString(conn, "exec "+shellCommand(argv)+"\n"); err != nil {
 		return provider.ExecResult{}, err
 	}
 	stdin := opts.Stdin
@@ -665,6 +680,14 @@ func (p *Provider) interactive(ctx context.Context, app application, process pro
 		}
 	}
 	return provider.ExecResult{ExitCode: 0, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+}
+
+func shellCommand(argv []string) string {
+	quoted := make([]string, len(argv))
+	for i, value := range argv {
+		quoted[i] = "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+	}
+	return strings.Join(quoted, " ")
 }
 
 func (p *Provider) Reconcile(ctx context.Context, desired provider.Box) (provider.Box, error) {

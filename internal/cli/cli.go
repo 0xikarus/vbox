@@ -27,6 +27,7 @@ import (
 	incusprovider "github.com/0xikarus/vmbox-service/internal/provider/incus"
 	railwayprovider "github.com/0xikarus/vmbox-service/internal/provider/railway"
 	sevallaprovider "github.com/0xikarus/vmbox-service/internal/provider/sevalla"
+	"golang.org/x/term"
 )
 
 type App struct {
@@ -60,6 +61,18 @@ func charDevice(value any) bool {
 	}
 	info, err := file.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+func makeRaw(reader io.Reader) (func(), error) {
+	file, ok := reader.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return func() {}, nil
+	}
+	state, err := term.MakeRaw(int(file.Fd()))
+	if err != nil {
+		return nil, err
+	}
+	return func() { _ = term.Restore(int(file.Fd()), state) }, nil
 }
 func envMap() map[string]string {
 	result := make(map[string]string)
@@ -184,6 +197,7 @@ func (a *App) context(file config.File, args []string) error {
 		fs.StringVar(&ctx.Account, "account", "", "controller account label")
 		fs.StringVar(&ctx.Project, "project", "", "project ID")
 		fs.StringVar(&ctx.Environment, "environment", "", "environment ID")
+		fs.BoolVar(&ctx.RailwayCLIAuth, "railway-cli-auth", false, "use the local Railway CLI login when no token environment is set")
 		fs.StringVar(&ctx.Company, "company", "", "company ID")
 		fs.StringVar(&ctx.Cluster, "cluster", "", "cluster ID")
 		fs.StringVar(&ctx.ResourceType, "resource-type", "", "resource type ID")
@@ -264,9 +278,21 @@ func (a *App) provisionController(ctx context.Context, file config.File, c confi
 	if _, ok := runner.(procexec.OSRunner); ok {
 		token, tokenEnvironment, err := railwayToken(a.Environ)
 		if err != nil {
-			return err
+			if !c.RailwayCLIAuth || a.Environ["RAILWAY_TOKEN"] != "" || a.Environ["RAILWAY_API_TOKEN"] != "" {
+				return err
+			}
+			localRunner, _, runnerErr := railwayRunner("", "", a.Environ)
+			if runnerErr != nil {
+				return runnerErr
+			}
+			runner = localRunner
+		} else {
+			tokenRunner, _, runnerErr := railwayRunner(token, tokenEnvironment, a.Environ)
+			if runnerErr != nil {
+				return runnerErr
+			}
+			runner = tokenRunner
 		}
-		runner = railwayRunner(token, tokenEnvironment)
 	}
 	target := []string{"--project", c.Project, "--environment", c.Environment}
 	runInput := func(stdin io.Reader, argv ...string) (procexec.Result, error) {
@@ -383,9 +409,20 @@ func (a *App) provider(ctx config.Context) (provider.Provider, error) {
 	case "railway":
 		token, tokenEnvironment, err := railwayToken(a.Environ)
 		if err != nil {
-			return nil, err
+			if !ctx.RailwayCLIAuth || a.Environ["RAILWAY_TOKEN"] != "" || a.Environ["RAILWAY_API_TOKEN"] != "" {
+				return nil, err
+			}
+			runner, knownHosts, runnerErr := railwayRunner("", "", a.Environ)
+			if runnerErr != nil {
+				return nil, runnerErr
+			}
+			return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, DefaultImage: ctx.Image, SSHKnownHostsFile: knownHosts}, runner), nil
 		}
-		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: ctx.Image}, railwayRunner(token, tokenEnvironment)), nil
+		runner, knownHosts, runnerErr := railwayRunner(token, tokenEnvironment, a.Environ)
+		if runnerErr != nil {
+			return nil, runnerErr
+		}
+		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: ctx.Image, SSHKnownHostsFile: knownHosts}, runner), nil
 	case "sevalla":
 		return sevallaprovider.New(sevallaprovider.Config{Token: a.Environ["SEVALLA_API_TOKEN"], APIURL: a.Environ["SEVALLA_API_URL"], CompanyID: ctx.Company, ProjectID: ctx.Project, ClusterID: ctx.Cluster, ResourceTypeID: ctx.ResourceType, DefaultImage: ctx.Image, DockerRegistryCredentialID: ctx.DockerRegistryCredentialID, PreAttachedDisk: ctx.PreAttachedDisk, HTTPClient: a.HTTP}), nil
 	case "incus":
@@ -409,6 +446,12 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		}
 		box, inspectErr := p.Inspect(ctx, opts.name)
 		created := false
+		// An empty selection means "keep the components recorded inside an
+		// existing box". New boxes replace it with their configured selection.
+		var bootstrapComponents []string
+		if opts.componentsSet {
+			bootstrapComponents = append([]string(nil), opts.components...)
+		}
 		if inspectErr == nil {
 			if opts.reuse {
 				fmt.Fprintf(a.Err, "vmbox: --reuse ignored because %q already exists\n", opts.name)
@@ -432,6 +475,7 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				}
 			}
 			applyRunOptions(&setup, opts)
+			bootstrapComponents = append([]string(nil), setup.Components...)
 			if !opts.reuse && a.IsTerminal != nil && a.IsTerminal() {
 				previewArgv := opts.argv
 				if len(previewArgv) == 0 {
@@ -455,13 +499,21 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				"VMBOX_CPU":        strconv.FormatFloat(prepared.setup.Resources.CPU, 'f', -1, 64),
 				"VMBOX_MEMORY_MIB": strconv.FormatInt(prepared.setup.Resources.MemoryMiB, 10),
 				"VMBOX_DISK_GIB":   strconv.FormatInt(prepared.setup.Resources.DiskGiB, 10), "VMBOX_WORKSPACE": prepared.setup.Workspace,
-				"VMBOX_COST": "use vmbox cost " + opts.name,
+				"VMBOX_COST":  "use vmbox cost " + opts.name,
+				"HOME":        "/data/home",
+				"SHELL":       "/bin/bash",
+				"BUN_INSTALL": "/opt/bun",
+				"FOUNDRY_DIR": "/opt/foundry",
+				"PATH":        "/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 			}
 			box, err = p.Create(ctx, provider.CreateRequest{Name: opts.name, Image: c.Image, Region: prepared.setup.Region, Owner: provider.Owner{AccountID: "standalone", BoxID: opts.name}, Resources: prepared.setup.Resources, Components: prepared.setup.Components, Env: setupEnv})
 			if err != nil {
 				return err
 			}
 			created = true
+			if err := a.ensureBootstrap(ctx, p, opts.name, bootstrapComponents, false); err != nil {
+				return err
+			}
 			if err := a.uploadPrepared(ctx, p, opts.name, prepared); err != nil {
 				return err
 			}
@@ -472,6 +524,11 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				fmt.Fprintf(a.Err, "vmbox: saved complete reusable setup for context %s\n", c.Name)
 			}
 		}
+		if !created {
+			if err := a.ensureBootstrap(ctx, p, opts.name, bootstrapComponents, !opts.componentsSet); err != nil {
+				return err
+			}
+		}
 		if err := a.uploadWelcome(ctx, p, box, c.Name); err != nil {
 			return err
 		}
@@ -480,8 +537,19 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		}
 		if len(opts.argv) == 0 {
 			opts.argv = defaultSession(opts.detach)
+		} else if !opts.detach {
+			opts.argv = interactiveSession(opts.argv)
 		}
-		result, err := p.Exec(ctx, opts.name, opts.argv, provider.ExecOptions{Interactive: !opts.detach, Detach: opts.detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err})
+		restore := func() {}
+		if !opts.detach {
+			restore, err = makeRaw(a.In)
+			if err != nil {
+				return fmt.Errorf("configure interactive terminal: %w", err)
+			}
+		}
+		result, execErr := p.Exec(ctx, opts.name, opts.argv, provider.ExecOptions{Interactive: !opts.detach, Detach: opts.detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err})
+		restore()
+		err = execErr
 		if err != nil {
 			return err
 		}
@@ -504,6 +572,22 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			return err
 		}
 		return json.NewEncoder(a.Out).Encode(box)
+	case "task-status":
+		if len(args) < 2 || len(args) > 3 {
+			return fmt.Errorf("task-status requires a box and optional run ID")
+		}
+		argv := []string{"vmbox-runtime", "status"}
+		if len(args) == 3 {
+			argv = append(argv, args[2])
+		}
+		result, err := p.Exec(ctx, args[1], argv, provider.ExecOptions{Stdout: a.Out, Stderr: a.Err})
+		if err != nil {
+			return err
+		}
+		if result.ExitCode != 0 {
+			return fmt.Errorf("task-status exited with status %d", result.ExitCode)
+		}
+		return nil
 	case "logs":
 		if len(args) < 2 {
 			return fmt.Errorf("logs requires a box")
@@ -989,7 +1073,7 @@ Usage:
   vmbox [--context NAME] [--standalone] <box> [--detach] [-- COMMAND [ARG...]]
   vmbox new|create <box> [--reuse] [--detach] [creation options] [-- COMMAND [ARG...]]
   vmbox run <box> [--detach] -- COMMAND [ARG...]
-  vmbox ls | status <box> | logs <box> [--follow] | stop <box>
+  vmbox ls | status <box> | task-status <box> [run-id] | logs <box> [--follow] | stop <box>
   vmbox resume | resize [box] --cpu N --memory MiB | clean <box> --yes | cost <box>
   vmbox context add|use|list | provider validate
   vmbox questions | answer <question-id> <text>

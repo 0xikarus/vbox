@@ -116,6 +116,24 @@ type ExecResult struct {
 	FinishedAt time.Time `json:"finishedAt,omitempty"`
 }
 
+// BootstrapRequest contains the provider-neutral runtime payload installed
+// into a newly created or resumed generic Linux image. Providers select the
+// binary matching the workload architecture and transport it without placing
+// its bytes or credentials in process arguments.
+type BootstrapRequest struct {
+	Components        []string
+	RestoreComponents bool
+	RuntimeBinaries   map[string][]byte
+	Entrypoint        []byte
+}
+
+// Bootstrapper is implemented by providers that can turn a standard
+// Debian/Ubuntu-compatible image into a vmbox workload. Bootstrap must be
+// idempotent because the CLI invokes it on both creation and resume.
+type Bootstrapper interface {
+	Bootstrap(context.Context, string, BootstrapRequest) error
+}
+
 type Capabilities struct {
 	Provider             string   `json:"provider"`
 	Architectures        []string `json:"architectures"`

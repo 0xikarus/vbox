@@ -15,16 +15,18 @@ import (
 
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
+	providerbootstrap "github.com/0xikarus/vmbox-service/internal/provider/bootstrap"
 )
 
 type Config struct {
-	ProjectID        string
-	EnvironmentID    string
-	Token            string
-	TokenEnvironment string
-	DefaultImage     string
-	PollInterval     time.Duration
-	ReadyTimeout     time.Duration
+	ProjectID         string
+	EnvironmentID     string
+	Token             string
+	TokenEnvironment  string
+	DefaultImage      string
+	SSHKnownHostsFile string
+	PollInterval      time.Duration
+	ReadyTimeout      time.Duration
 }
 
 type Provider struct {
@@ -40,7 +42,7 @@ func New(cfg Config, runner procexec.Runner) *Provider {
 		cfg.TokenEnvironment = "RAILWAY_API_TOKEN"
 	}
 	if cfg.DefaultImage == "" {
-		cfg.DefaultImage = "ghcr.io/0xikarus/vmbox-service:latest"
+		cfg.DefaultImage = "node:22-bookworm-slim"
 	}
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 2 * time.Second
@@ -229,19 +231,53 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if image == "" {
 		image = p.cfg.DefaultImage
 	}
+	if err := p.connectImage(ctx, service.Name, image); err != nil {
+		return provider.Box{}, err
+	}
 	if err := p.setResources(ctx, service.ID, req.Resources); err != nil {
 		return provider.Box{}, err
 	}
 	if err := p.setRegion(ctx, service.ID, req.Region); err != nil {
 		return provider.Box{}, err
 	}
-	if err := p.connectImage(ctx, service.Name, image); err != nil {
+	if err := p.setStartCommand(ctx, service.ID, "sleep infinity"); err != nil {
 		return provider.Box{}, err
 	}
 	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
 		return provider.Box{}, err
 	}
 	return p.Inspect(ctx, service.ID)
+}
+
+func (p *Provider) Bootstrap(ctx context.Context, id string, request provider.BootstrapRequest) error {
+	service, err := p.resolve(ctx, id)
+	if err != nil {
+		return err
+	}
+	exec := func(ctx context.Context, argv []string, stdin io.Reader) (provider.ExecResult, error) {
+		sshArgs := append([]string{"railway", "ssh"}, p.target()...)
+		sshArgs = append(sshArgs, "--service", service.Name)
+		sshArgs = append(sshArgs, argv...)
+		started := time.Now().UTC()
+		result, err := p.runSSH(ctx, sshArgs, stdin, nil, nil)
+		if err != nil {
+			return provider.ExecResult{}, err
+		}
+		return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+	}
+	return providerbootstrap.Install(ctx, request, exec)
+}
+
+func (p *Provider) runSSH(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (procexec.Result, error) {
+	result, err := p.runner.Run(ctx, argv, stdin, stdout, stderr)
+	if p.cfg.SSHKnownHostsFile == "" || !strings.Contains(string(result.Stderr), "REMOTE HOST IDENTIFICATION HAS CHANGED") {
+		return result, err
+	}
+	removed, removeErr := p.runner.Run(ctx, []string{"ssh-keygen", "-f", p.cfg.SSHKnownHostsFile, "-R", "ssh.railway.com"}, nil, nil, nil)
+	if removeErr != nil || removed.ExitCode != 0 {
+		return result, err
+	}
+	return p.runner.Run(ctx, argv, stdin, stdout, stderr)
 }
 
 func state(status string) provider.State {
@@ -700,7 +736,7 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	sshArgs := append([]string{"railway", "ssh"}, p.target()...)
 	sshArgs = append(sshArgs, "--service", service.Name)
 	sshArgs = append(sshArgs, remote...)
-	result, err := p.runner.Run(ctx, sshArgs, opts.Stdin, opts.Stdout, opts.Stderr)
+	result, err := p.runSSH(ctx, sshArgs, opts.Stdin, opts.Stdout, opts.Stderr)
 	if err != nil {
 		return provider.ExecResult{}, err
 	}

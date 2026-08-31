@@ -50,6 +50,21 @@ func TestDetachedExecUsesGenericRuntime(t *testing.T) {
 	}
 }
 
+func TestInspectTreatsExitedAsStoppedAndRestoresDiskSpec(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`[{"Id":"container-id","Created":"2026-08-30T00:00:00Z","Config":{"Image":"node:22-bookworm-slim","Env":["VMBOX_DISK_GIB=10"],"Labels":{"dev.vmbox.account":"standalone","dev.vmbox.box":"box"}},"State":{"Status":"exited","Running":false},"HostConfig":{"NanoCpus":2000000000,"Memory":4294967296},"Image":"sha256:image"}]`)}}}
+	p := New(Config{}, runner)
+	box, err := p.Inspect(context.Background(), "box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if box.State != provider.StateStopped {
+		t.Fatalf("state=%s", box.State)
+	}
+	if box.Resources.DiskGiB != 10 || box.Storage == nil || box.Storage.SizeGiB != 10 {
+		t.Fatalf("resources=%+v storage=%+v", box.Resources, box.Storage)
+	}
+}
+
 func TestRejectsUnauthenticatedTCP(t *testing.T) {
 	p := New(Config{Host: "tcp://example:2375"}, &procexec.FakeRunner{})
 	if _, err := p.Validate(context.Background()); err == nil {

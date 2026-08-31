@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -33,10 +32,6 @@ func (p *Provider) execStdin(ctx context.Context, app application, process proce
 	if len(input) > maxSevallaStdin {
 		return provider.ExecResult{}, fmt.Errorf("Sevalla stdin exceeds %d bytes", maxSevallaStdin)
 	}
-	encodedArgv, err := json.Marshal(argv)
-	if err != nil {
-		return provider.ExecResult{}, err
-	}
 	nonceBytes := make([]byte, 12)
 	if _, err := rand.Read(nonceBytes); err != nil {
 		return provider.ExecResult{}, err
@@ -44,8 +39,7 @@ func (p *Provider) execStdin(ctx context.Context, app application, process proce
 	nonce := hex.EncodeToString(nonceBytes)
 	ready, done := "__VMBOX_STDIN_READY_"+nonce+"__", "__VMBOX_STDIN_DONE_"+nonce+"__"
 	end := done + "_END"
-	encodedCommand := base64.StdEncoding.EncodeToString(encodedArgv)
-	command := "stty -echo; printf '" + ready + "\\n'; mapfile -d '' -t __vmbox_argv < <(printf %s '" + encodedCommand + "' | base64 -d | jq -j '.[] | ., \"\\u0000\"'); base64 -d | \"${__vmbox_argv[@]}\"; code=$?; stty echo; printf '\\n" + done + ":%s\\n" + end + "\\n' \"$code\"\n"
+	command := "stty -echo; printf '" + ready + "\\n'; base64 -d | " + shellCommand(argv) + "; code=$?; stty echo; printf '\\n" + done + ":%s\\n" + end + "\\n' \"$code\"\n"
 
 	connection, err := p.Connection(ctx, app.ID)
 	if err != nil {
@@ -71,8 +65,7 @@ func (p *Provider) execStdin(ctx context.Context, app application, process proce
 	if _, err := readTerminalUntil(conn, ready, nil); err != nil {
 		return provider.ExecResult{}, fmt.Errorf("wait for Sevalla stdin readiness: %w", err)
 	}
-	payload := base64.StdEncoding.EncodeToString(input) + "\n\x04"
-	if _, err := io.WriteString(conn, payload); err != nil {
+	if err := writeBase64Input(conn, input); err != nil {
 		return provider.ExecResult{}, err
 	}
 	output, err := readTerminalUntil(conn, end, nil)
@@ -96,6 +89,27 @@ func (p *Provider) execStdin(ctx context.Context, app application, process proce
 		_, _ = io.WriteString(opts.Stdout, output[:position])
 	}
 	return provider.ExecResult{ExitCode: exitCode, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+}
+
+// Linux N_TTY canonical input is capped at 4096 bytes per line. Keep each
+// base64 line below that as well as below Sevalla's WebSocket message limit.
+const sevallaStdinFrame = 3 << 10
+
+// websocket.NetConn maps every Write to a WebSocket message. Sevalla accepts
+// multi-megabyte stdin streams but rejects a single message of that size, so
+// keep frames small. Newlines are valid base64 whitespace and also prevent a
+// PTY's canonical input buffer from accumulating one enormous line.
+func writeBase64Input(dst io.Writer, input []byte) error {
+	encoded := base64.StdEncoding.EncodeToString(input)
+	for len(encoded) > 0 {
+		size := min(len(encoded), sevallaStdinFrame)
+		if _, err := io.WriteString(dst, encoded[:size]+"\n"); err != nil {
+			return err
+		}
+		encoded = encoded[size:]
+	}
+	_, err := io.WriteString(dst, "\n\x04")
+	return err
 }
 
 func readTerminalUntil(conn net.Conn, marker string, output io.Writer) (string, error) {

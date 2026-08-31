@@ -12,6 +12,7 @@ import (
 
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
+	providerbootstrap "github.com/0xikarus/vmbox-service/internal/provider/bootstrap"
 )
 
 type Config struct {
@@ -118,7 +119,7 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 		image = p.cfg.DefaultImage
 	}
 	name := p.target(instanceName(req.Name))
-	args := []string{"launch", image, name, "--config", "security.privileged=false", "--config", "user.vmbox.managed=true", "--config", "user.vmbox.account=" + req.Owner.AccountID, "--config", "user.vmbox.box=" + req.Owner.BoxID, "--config", "user.vmbox.run=" + req.Owner.RunID, "--config", "user.vmbox.lease=" + req.Owner.Lease}
+	args := []string{"launch", image, name, "--config", "security.privileged=false", "--config", "user.vmbox.managed=true", "--config", "user.vmbox.account=" + req.Owner.AccountID, "--config", "user.vmbox.box=" + req.Owner.BoxID, "--config", "user.vmbox.run=" + req.Owner.RunID, "--config", "user.vmbox.lease=" + req.Owner.Lease, "--config", "user.vmbox.image=" + image, "--config", "user.vmbox.disk-gib=" + strconv.FormatInt(req.Resources.DiskGiB, 10)}
 	for key, value := range req.Env {
 		args = append(args, "--config", "environment."+key+"="+value)
 	}
@@ -145,6 +146,24 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	return p.Inspect(ctx, req.Name)
 }
 
+func (p *Provider) Bootstrap(ctx context.Context, id string, request provider.BootstrapRequest) error {
+	row, err := p.resolve(ctx, id)
+	if err != nil {
+		return err
+	}
+	exec := func(ctx context.Context, argv []string, stdin io.Reader) (provider.ExecResult, error) {
+		args := []string{"exec", p.target(row.Name), "--"}
+		args = append(args, argv...)
+		started := time.Now().UTC()
+		result, err := p.runner.Run(ctx, p.command(args...), stdin, nil, nil)
+		if err != nil {
+			return provider.ExecResult{}, err
+		}
+		return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+	}
+	return providerbootstrap.Install(ctx, request, exec)
+}
+
 func (p *Provider) toBox(row instance) provider.Box {
 	state := provider.StateStopped
 	if row.Status == "Running" {
@@ -154,8 +173,9 @@ func (p *Provider) toBox(row instance) provider.Box {
 	}
 	cpu, _ := strconv.ParseFloat(row.Config["limits.cpu"], 64)
 	memory := parseMiB(row.Config["limits.memory"])
+	disk, _ := strconv.ParseInt(row.Config["user.vmbox.disk-gib"], 10, 64)
 	name := strings.TrimPrefix(row.Name, "vmbox-")
-	return provider.Box{ID: row.Name, Name: name, Provider: p.Name(), State: state, ProviderState: row.Status, Owner: provider.Owner{AccountID: row.Config["user.vmbox.account"], BoxID: row.Config["user.vmbox.box"], RunID: row.Config["user.vmbox.run"], Lease: row.Config["user.vmbox.lease"]}, Resources: provider.Resources{CPU: cpu, MemoryMiB: memory}, CreatedAt: row.CreatedAt, UpdatedAt: row.LastUsedAt, Connection: provider.Connection{Transport: "incus-exec", Endpoint: p.target(row.Name)}, Storage: &provider.Storage{Name: instanceName(name) + "-data", MountPath: "/data"}}
+	return provider.Box{ID: row.Name, Name: name, Provider: p.Name(), State: state, ProviderState: row.Status, Image: row.Config["user.vmbox.image"], Region: p.cfg.Remote, Owner: provider.Owner{AccountID: row.Config["user.vmbox.account"], BoxID: row.Config["user.vmbox.box"], RunID: row.Config["user.vmbox.run"], Lease: row.Config["user.vmbox.lease"]}, Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, CreatedAt: row.CreatedAt, UpdatedAt: row.LastUsedAt, Connection: provider.Connection{Transport: "incus-exec", Endpoint: p.target(row.Name)}, Storage: &provider.Storage{Name: instanceName(name) + "-data", MountPath: "/data", SizeGiB: disk}}
 }
 func parseMiB(value string) int64 {
 	value = strings.TrimSuffix(value, "MiB")
@@ -278,6 +298,9 @@ func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, 
 	for key, dst := range map[string]*string{"user.vmbox.account": &actual.AccountID, "user.vmbox.box": &actual.BoxID, "user.vmbox.lease": &actual.Lease} {
 		result, err := p.run(ctx, "storage", "volume", "get", p.target("default"), storage.Name, key)
 		if err != nil || result.ExitCode != 0 {
+			if strings.Contains(strings.ToLower(string(result.Stderr)), "not found") || strings.Contains(strings.ToLower(string(result.Stderr)), "doesn't exist") {
+				return nil
+			}
 			return incusError("inspect storage ownership", result, err)
 		}
 		*dst = strings.TrimSpace(string(result.Stdout))

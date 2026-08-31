@@ -13,6 +13,7 @@ import (
 
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
+	providerbootstrap "github.com/0xikarus/vmbox-service/internal/provider/bootstrap"
 )
 
 const (
@@ -42,7 +43,7 @@ func New(cfg Config, runner procexec.Runner) *Provider {
 		runner = procexec.OSRunner{}
 	}
 	if cfg.DefaultImage == "" {
-		cfg.DefaultImage = "ghcr.io/0xikarus/vmbox-service:latest"
+		cfg.DefaultImage = "node:22-bookworm-slim"
 	}
 	return &Provider{cfg: cfg, runner: runner}
 }
@@ -161,6 +162,8 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	args = append(args, req.Image)
 	if len(req.Command) > 0 {
 		args = append(args, req.Command...)
+	} else {
+		args = append(args, "sleep", "infinity")
 	}
 	if result, err := p.run(ctx, args...); err != nil || result.ExitCode != 0 {
 		return provider.Box{}, commandError("create container", result, err)
@@ -171,6 +174,25 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	return p.Inspect(ctx, req.Name)
 }
 
+func (p *Provider) Bootstrap(ctx context.Context, id string, request provider.BootstrapRequest) error {
+	container, _, _ := names(id)
+	exec := func(ctx context.Context, argv []string, stdin io.Reader) (provider.ExecResult, error) {
+		args := []string{"container", "exec"}
+		if stdin != nil {
+			args = append(args, "--interactive")
+		}
+		args = append(args, container)
+		args = append(args, argv...)
+		started := time.Now().UTC()
+		result, err := p.runner.Run(ctx, p.command(args...), stdin, nil, nil)
+		if err != nil {
+			return provider.ExecResult{}, err
+		}
+		return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+	}
+	return providerbootstrap.Install(ctx, request, exec)
+}
+
 type inspectData struct {
 	ID      string `json:"Id"`
 	Name    string `json:"Name"`
@@ -178,6 +200,7 @@ type inspectData struct {
 	Config  struct {
 		Image  string            `json:"Image"`
 		Cmd    []string          `json:"Cmd"`
+		Env    []string          `json:"Env"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	State struct {
@@ -212,7 +235,7 @@ func (p *Provider) Inspect(ctx context.Context, id string) (provider.Box, error)
 	state := provider.StateStopped
 	if r.State.Running {
 		state = provider.StateRunning
-	} else if r.State.Status == "dead" || r.State.Status == "exited" {
+	} else if r.State.Status == "dead" {
 		state = provider.StateFailed
 	}
 	created, _ := time.Parse(time.RFC3339Nano, r.Created)
@@ -220,8 +243,15 @@ func (p *Provider) Inspect(ctx context.Context, id string) (provider.Box, error)
 	if r.HostConfig.PidsLimit != nil {
 		pids = *r.HostConfig.PidsLimit
 	}
+	diskGiB := int64(0)
+	for _, item := range r.Config.Env {
+		if value, ok := strings.CutPrefix(item, "VMBOX_DISK_GIB="); ok {
+			diskGiB, _ = strconv.ParseInt(value, 10, 64)
+			break
+		}
+	}
 	owner := provider.Owner{AccountID: r.Config.Labels[labelAccount], BoxID: r.Config.Labels[labelBox], RunID: r.Config.Labels[labelRun], Lease: r.Config.Labels[labelLease]}
-	return provider.Box{ID: id, Name: id, Provider: p.Name(), State: state, ProviderState: r.State.Status, Image: r.Config.Image, ImageDigest: r.Image, Owner: owner, Labels: r.Config.Labels, CreatedAt: created, UpdatedAt: time.Now().UTC(), Resources: provider.Resources{CPU: float64(r.HostConfig.NanoCPUs) / 1e9, MemoryMiB: r.HostConfig.Memory / (1024 * 1024), PIDs: pids}, Storage: &provider.Storage{Name: volume, MountPath: "/data"}, Connection: provider.Connection{Transport: "docker-exec", Endpoint: p.cfg.Context}}, nil
+	return provider.Box{ID: id, Name: id, Provider: p.Name(), State: state, ProviderState: r.State.Status, Image: r.Config.Image, ImageDigest: r.Image, Owner: owner, Labels: r.Config.Labels, CreatedAt: created, UpdatedAt: time.Now().UTC(), Resources: provider.Resources{CPU: float64(r.HostConfig.NanoCPUs) / 1e9, MemoryMiB: r.HostConfig.Memory / (1024 * 1024), DiskGiB: diskGiB, PIDs: pids}, Storage: &provider.Storage{Name: volume, MountPath: "/data", SizeGiB: diskGiB}, Connection: provider.Connection{Transport: "docker-exec", Endpoint: p.cfg.Context}}, nil
 }
 
 func (p *Provider) List(ctx context.Context) ([]provider.Box, error) {

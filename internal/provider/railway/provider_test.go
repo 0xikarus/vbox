@@ -35,6 +35,25 @@ func TestExecEncodesExactArgvWithoutShell(t *testing.T) {
 	}
 }
 
+func TestExecRetriesRotatedHostKeyOnlyInIsolatedFile(t *testing.T) {
+	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(services)},
+		{ExitCode: 255, Stderr: []byte("WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!")},
+		{},
+		{Stdout: []byte("ok")},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHKnownHostsFile: "/isolated/railway-known-hosts"}, runner)
+	result, err := p.Exec(context.Background(), "box", []string{"printf", "ok"}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 || result.Stdout != "ok" {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	want := []string{"ssh-keygen", "-f", "/isolated/railway-known-hosts", "-R", "ssh.railway.com"}
+	if got := runner.Calls[2].Argv; !reflect.DeepEqual(got, want) {
+		t.Fatalf("host-key cleanup=%#v want=%#v", got, want)
+	}
+}
+
 func TestConfiguredTokenIsOnlyInProcessEnvironment(t *testing.T) {
 	p := New(Config{ProjectID: "project", EnvironmentID: "environment", Token: "configured-secret"}, procexec.OSRunner{})
 	runner, ok := p.runner.(procexec.OSRunner)
@@ -58,6 +77,24 @@ func TestDeploymentIDPrefersSubmittedDeploymentOverService(t *testing.T) {
 func TestEmptyDeploymentStatusIsStopped(t *testing.T) {
 	if got := state(""); got != provider.StateStopped {
 		t.Fatalf("state(empty) = %q, want %q", got, provider.StateStopped)
+	}
+}
+
+func TestSetRegionUsesMultiRegionConfigAndClearsDefaults(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`{"data":{"serviceInstanceUpdate":true}}`)}}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	if err := p.setRegion(context.Background(), "service", "ams"); err != nil {
+		t.Fatal(err)
+	}
+	call := runner.Calls[0].Argv
+	variables := ""
+	for i, value := range call {
+		if value == "--variables" && i+1 < len(call) {
+			variables = call[i+1]
+		}
+	}
+	if !strings.Contains(variables, `"multiRegionConfig"`) || !strings.Contains(variables, `"ams":{"numReplicas":1}`) || !strings.Contains(variables, `"iad":null`) {
+		t.Fatalf("variables=%s", variables)
 	}
 }
 
@@ -90,6 +127,7 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		{Stdout: []byte(`{"volumes":[]}`)},
 		{Stdout: []byte(`{"id":"volume-id"}`)},
 		{Stdout: []byte(`{"volumes":[{"id":"volume-id","serviceName":"vmbox-box","mountPath":"/data","status":"READY"}]}`)},
+		{},
 		{},
 		{},
 		{Stdout: []byte(`[]`)},

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -32,9 +33,12 @@ func run() error {
 		args = append([]string{"ask"}, args...)
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox-runtime run [--detach] -- COMMAND [ARG...] | exec-json DATA | put-file PATH MODE | welcome | report | ask")
+		return fmt.Errorf("usage: vmbox-runtime health | run [--detach] -- COMMAND [ARG...] | exec-json DATA | put-file PATH MODE | welcome | report | ask")
 	}
 	switch args[0] {
+	case "health":
+		fmt.Println("ok")
+		return nil
 	case "put-file":
 		if len(args) != 3 {
 			return fmt.Errorf("put-file requires PATH MODE")
@@ -197,9 +201,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		data, _ := strconv.Unquote(strconv.Quote(fmt.Sprintf("%+v", status)))
-		fmt.Println(data)
-		return nil
+		return json.NewEncoder(os.Stdout).Encode(status)
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}

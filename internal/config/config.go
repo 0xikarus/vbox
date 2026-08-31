@@ -50,6 +50,7 @@ type Context struct {
 	TokenEnv                   string `json:"tokenEnv,omitempty"`
 	Project                    string `json:"project,omitempty"`
 	Environment                string `json:"environment,omitempty"`
+	RailwayCLIAuth             bool   `json:"railwayCliAuth,omitempty"`
 	Company                    string `json:"company,omitempty"`
 	Cluster                    string `json:"cluster,omitempty"`
 	ResourceType               string `json:"resourceType,omitempty"`

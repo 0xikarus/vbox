@@ -310,7 +310,26 @@ type setupRow struct {
 	label string
 }
 
+type crlfWriter struct{ io.Writer }
+
+func (w crlfWriter) Write(data []byte) (int, error) {
+	converted := bytes.ReplaceAll(data, []byte("\n"), []byte("\r\n"))
+	if _, err := w.Writer.Write(converted); err != nil {
+		return 0, err
+	}
+	return len(data), nil
+}
+
 func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.Provider, boxName string, setup config.CreationSetup, argv []string) (config.CreationSetup, error) {
+	restore, err := makeRaw(a.In)
+	if err != nil {
+		return setup, fmt.Errorf("configure setup terminal: %w", err)
+	}
+	defer restore()
+	output := a.Out
+	if charDevice(a.Out) {
+		output = crlfWriter{a.Out}
+	}
 	home := a.Environ["HOME"]
 	profiles, _ := components.Discover(home)
 	github := a.discoverGitHub(ctx)
@@ -360,11 +379,16 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 	}
 	resourcePresets := []provider.Resources{{CPU: 1, MemoryMiB: 2048, DiskGiB: 10}, {CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, {CPU: 4, MemoryMiB: 8192, DiskGiB: 20}}
 	resourceNames := []string{"Small", "Standard", "Large"}
-	resourceSelected := 1
+	resourceSelected := -1
 	for i, value := range resourcePresets {
 		if value == setup.Resources {
 			resourceSelected = i
 		}
+	}
+	if resourceSelected < 0 {
+		resourcePresets = append([]provider.Resources{setup.Resources}, resourcePresets...)
+		resourceNames = append([]string{"Custom"}, resourceNames...)
+		resourceSelected = 0
 	}
 	var rows []setupRow
 	ids := make([]string, 0, len(components.Registry))
@@ -395,9 +419,9 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 	cursor := 0
 	reader := bufio.NewReader(a.In)
 	for {
-		fmt.Fprint(a.Out, "\033[2J\033[H")
-		fmt.Fprintf(a.Out, "New box configuration: %s\n", boxName)
-		fmt.Fprintln(a.Out, "↑/↓ or j/k: move  Space: toggle/select  Enter: only on Confirm  q: cancel")
+		fmt.Fprint(output, "\033[2J\033[H")
+		fmt.Fprintf(output, "New box configuration: %s\n", boxName)
+		fmt.Fprintln(output, "↑/↓ or j/k: move  Space: toggle/select  Enter: only on Confirm  q: cancel")
 		command, _ := json.Marshal(argv)
 		if len(argv) == 0 {
 			command, _ = json.Marshal(defaultSession(false))
@@ -406,28 +430,28 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 		if regionSelected >= 0 {
 			displayRegion = regions[regionSelected].ID
 		}
-		fmt.Fprintf(a.Out, "Context  %s / %s    Region  %s    Workspace  %s\n", c.Name, c.Provider, displayRegion, setup.Workspace)
-		fmt.Fprintf(a.Out, "Exact argv  %s    Save for --reuse  %t\n", command, setup.Save)
+		fmt.Fprintf(output, "Context  %s / %s    Region  %s    Workspace  %s\n", c.Name, c.Provider, displayRegion, setup.Workspace)
+		fmt.Fprintf(output, "Exact argv  %s    Save for --reuse  %t\n", command, setup.Save)
 		last := ""
 		for i, row := range rows {
 			if row.kind != last {
 				switch row.kind {
 				case "region":
-					fmt.Fprintln(a.Out, "Location")
+					fmt.Fprintln(output, "Location")
 				case "component":
-					fmt.Fprintln(a.Out, "Components")
+					fmt.Fprintln(output, "Components")
 				case "resource":
-					fmt.Fprintln(a.Out, "Resources")
+					fmt.Fprintln(output, "Resources")
 				case "profile":
-					fmt.Fprintln(a.Out, "Application profiles (auth/config only; never Markdown)")
+					fmt.Fprintln(output, "Application profiles (auth/config only; never Markdown)")
 				case "github":
-					fmt.Fprintln(a.Out, "GitHub credential")
+					fmt.Fprintln(output, "GitHub credential")
 				case "instructions":
-					fmt.Fprintln(a.Out, "Markdown instructions")
+					fmt.Fprintln(output, "Markdown instructions")
 				case "save":
-					fmt.Fprintln(a.Out, "Reuse")
+					fmt.Fprintln(output, "Reuse")
 				case "confirm":
-					fmt.Fprintf(a.Out, "Notifications  %s    Lifecycle  %s/%s max %s\n", emptyLabel(setup.NotificationPolicy), setup.OnSuccess, setup.OnFailure, setup.MaxTTL)
+					fmt.Fprintf(output, "Notifications  %s    Lifecycle  %s/%s max %s\n", emptyLabel(setup.NotificationPolicy), setup.OnSuccess, setup.OnFailure, setup.MaxTTL)
 				}
 			}
 			last = row.kind
@@ -471,9 +495,9 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 				prefix = "> "
 			}
 			if row.kind == "confirm" {
-				fmt.Fprintf(a.Out, "%s[ %s ]\n", prefix, row.label)
+				fmt.Fprintf(output, "%s[ %s ]\n", prefix, row.label)
 			} else {
-				fmt.Fprintf(a.Out, "%s[%s] %s\n", prefix, marker, row.label)
+				fmt.Fprintf(output, "%s[%s] %s\n", prefix, marker, row.label)
 			}
 		}
 		key, err := reader.ReadByte()
@@ -518,7 +542,7 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 					setup.Instructions = append(setup.Instructions, path)
 				}
 			}
-			fmt.Fprint(a.Out, "\033[2J\033[H")
+			fmt.Fprint(output, "\033[2J\033[H")
 			return setup, nil
 		case ' ':
 			row := rows[cursor]
@@ -564,11 +588,15 @@ func emptyLabel(value string) string {
 }
 
 func defaultSession(detach bool) []string {
-	argv := []string{"tmux", "new-session", "-A"}
 	if detach {
-		argv = append(argv, "-d")
+		return []string{"sh", "-c", `tmux has-session -t vmbox 2>/dev/null || exec tmux new-session -d -s vmbox -c /data/workspace vmbox-runtime welcome`}
 	}
-	return append(argv, "-s", "vmbox", "vmbox-runtime", "welcome")
+	return []string{"tmux", "new-session", "-A", "-s", "vmbox", "-c", "/data/workspace", "vmbox-runtime", "welcome"}
+}
+
+func interactiveSession(argv []string) []string {
+	result := []string{"tmux", "new-session", "-A", "-s", "vmbox", "-c", "/data/workspace", "--"}
+	return append(result, argv...)
 }
 
 type upload struct {
@@ -681,6 +709,62 @@ func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name stri
 		return fmt.Errorf("initialize workspace trust for application profiles")
 	}
 	return nil
+}
+
+func (a *App) ensureBootstrap(ctx context.Context, p provider.Provider, name string, selected []string, restoreComponents bool) error {
+	bootstrapper, ok := p.(provider.Bootstrapper)
+	if !ok {
+		return nil
+	}
+	request, err := a.bootstrapRequest(selected)
+	if err != nil {
+		return err
+	}
+	request.RestoreComponents = restoreComponents
+	fmt.Fprintf(a.Err, "vmbox: ensuring runtime and selected tools in %q\n", name)
+	if err := bootstrapper.Bootstrap(ctx, name, request); err != nil {
+		return fmt.Errorf("bootstrap box %q: %w", name, err)
+	}
+	return nil
+}
+
+func (a *App) bootstrapRequest(selected []string) (provider.BootstrapRequest, error) {
+	assetDir := a.Environ["VMBOX_RUNTIME_ASSET_DIR"]
+	if assetDir == "" {
+		dataHome := a.Environ["XDG_DATA_HOME"]
+		if dataHome == "" {
+			home := a.Environ["HOME"]
+			if home == "" {
+				var err error
+				home, err = os.UserHomeDir()
+				if err != nil {
+					return provider.BootstrapRequest{}, err
+				}
+			}
+			dataHome = filepath.Join(home, ".local", "share")
+		}
+		assetDir = filepath.Join(dataHome, "vmbox", "runtime")
+	}
+	request := provider.BootstrapRequest{Components: append([]string(nil), selected...), RuntimeBinaries: make(map[string][]byte)}
+	for _, arch := range []string{"amd64", "arm64"} {
+		path := filepath.Join(assetDir, "vmbox-runtime-linux-"+arch)
+		data, err := os.ReadFile(path)
+		if err == nil {
+			request.RuntimeBinaries[arch] = data
+		} else if !os.IsNotExist(err) {
+			return provider.BootstrapRequest{}, fmt.Errorf("read runtime asset %s: %w", path, err)
+		}
+	}
+	entrypointPath := filepath.Join(assetDir, "vmbox-entrypoint")
+	entrypoint, err := os.ReadFile(entrypointPath)
+	if err != nil {
+		return provider.BootstrapRequest{}, fmt.Errorf("read runtime asset %s: %w (reinstall with ./install.sh --go-cli)", entrypointPath, err)
+	}
+	request.Entrypoint = entrypoint
+	if len(request.RuntimeBinaries) == 0 {
+		return provider.BootstrapRequest{}, fmt.Errorf("no workload runtime assets found in %s; reinstall with ./install.sh --go-cli", assetDir)
+	}
+	return request, nil
 }
 
 func welcome(box provider.Box, contextName, cost string) []byte {

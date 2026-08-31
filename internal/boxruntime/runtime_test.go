@@ -46,3 +46,24 @@ func TestDetachedControllerRunIDIsStableAndIdempotent(t *testing.T) {
 		t.Fatalf("run ID=%q", id)
 	}
 }
+
+func TestRuntimeEnvironmentReplacesInheritedEmptyValues(t *testing.T) {
+	t.Setenv("VMBOX_RUN_ID", "")
+	t.Setenv("VMBOX_RUNTIME_DIR", "old")
+	values := runtimeEnvironment("run-new", "/data/.vmbox")
+	foundRun, foundRoot := 0, 0
+	for _, value := range values {
+		switch value {
+		case "VMBOX_RUN_ID=run-new":
+			foundRun++
+		case "VMBOX_RUNTIME_DIR=/data/.vmbox":
+			foundRoot++
+		}
+		if value == "VMBOX_RUN_ID=" || value == "VMBOX_RUNTIME_DIR=old" {
+			t.Fatalf("stale runtime environment retained: %q", value)
+		}
+	}
+	if foundRun != 1 || foundRoot != 1 {
+		t.Fatalf("run entries=%d root entries=%d", foundRun, foundRoot)
+	}
+}

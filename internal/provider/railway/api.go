@@ -44,10 +44,21 @@ func (p *Provider) setRegion(ctx context.Context, serviceID, region string) erro
 	if region == "" {
 		return nil
 	}
-	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID, "input": map[string]any{"region": region}}
+	regions := map[string]any{"pdx": nil, "ams": nil, "sfo": nil, "iad": nil, "sin": nil}
+	regions[region] = map[string]any{"numReplicas": 1}
+	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID, "input": map[string]any{"multiRegionConfig": regions}}
 	result, err := p.api(ctx, serviceUpdateMutation, variables)
 	if err != nil || result.ExitCode != 0 {
 		return railwayError("set region", result, err)
+	}
+	return nil
+}
+
+func (p *Provider) setStartCommand(ctx context.Context, serviceID, command string) error {
+	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID, "input": map[string]any{"startCommand": command}}
+	result, err := p.api(ctx, serviceUpdateMutation, variables)
+	if err != nil || result.ExitCode != 0 {
+		return railwayError("set start command", result, err)
 	}
 	return nil
 }

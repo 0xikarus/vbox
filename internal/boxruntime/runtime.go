@@ -71,7 +71,7 @@ func (r *Runtime) Run(ctx context.Context, argv []string, stdout, stderr io.Writ
 	}
 	_, _ = r.append(store, v1.Event{RunID: runID, Type: "state", State: v1.JobRunning, Message: "command started"})
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), "VMBOX_RUN_ID="+runID, "VMBOX_RUNTIME_DIR="+r.Root)
+	cmd.Env = runtimeEnvironment(runID, r.Root)
 	outPipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return run, err
@@ -179,7 +179,7 @@ func (r *Runtime) RunDetached(argv []string) (string, error) {
 	args := []string{"run", "--internal-background", "--"}
 	args = append(args, argv...)
 	cmd := exec.Command(executable, args...)
-	cmd.Env = append(os.Environ(), "VMBOX_RUN_ID="+runID, "VMBOX_RUNTIME_DIR="+r.Root)
+	cmd.Env = runtimeEnvironment(runID, r.Root)
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
@@ -188,6 +188,18 @@ func (r *Runtime) RunDetached(argv []string) (string, error) {
 		return "", err
 	}
 	return runID, cmd.Process.Release()
+}
+
+func runtimeEnvironment(runID, root string) []string {
+	result := make([]string, 0, len(os.Environ())+2)
+	for _, item := range os.Environ() {
+		key, _, ok := strings.Cut(item, "=")
+		if ok && (key == "VMBOX_RUN_ID" || key == "VMBOX_RUNTIME_DIR") {
+			continue
+		}
+		result = append(result, item)
+	}
+	return append(result, "VMBOX_RUN_ID="+runID, "VMBOX_RUNTIME_DIR="+root)
 }
 
 func (r *Runtime) CurrentRunID() (string, error) {
