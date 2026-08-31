@@ -39,7 +39,18 @@ func (p *Provider) execStdin(ctx context.Context, app application, process proce
 	nonce := hex.EncodeToString(nonceBytes)
 	ready, done := "__VMBOX_STDIN_READY_"+nonce+"__", "__VMBOX_STDIN_DONE_"+nonce+"__"
 	end := done + "_END"
-	command := "stty -echo; printf '" + ready + "\\n'; base64 -d | " + shellCommand(argv) + "; code=$?; stty echo; printf '\\n" + done + ":%s\\n" + end + "\\n' \"$code\"\n"
+	// The terminal echoes the submitted command before the shell runs it. Do
+	// not put raw protocol markers in that command: otherwise the reader can
+	// mistake the echo for readiness or completion and race ahead of `stty
+	// -echo`. Decode the random markers only after the shell starts executing.
+	readyEncoded := base64.StdEncoding.EncodeToString([]byte(ready))
+	doneEncoded := base64.StdEncoding.EncodeToString([]byte(done))
+	endEncoded := base64.StdEncoding.EncodeToString([]byte(end))
+	command := "ready=$(printf %s '" + readyEncoded + "' | base64 -d); " +
+		"done=$(printf %s '" + doneEncoded + "' | base64 -d); " +
+		"end=$(printf %s '" + endEncoded + "' | base64 -d); " +
+		"stty -echo; printf '%s\\n' \"$ready\"; base64 -d | " + shellCommand(argv) +
+		"; code=$?; stty echo; printf '\\n%s:%s\\n%s\\n' \"$done\" \"$code\" \"$end\"\n"
 
 	connection, err := p.Connection(ctx, app.ID)
 	if err != nil {
