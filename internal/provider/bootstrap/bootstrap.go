@@ -35,7 +35,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
   exit 1
 fi
 apt-get update -qq
-packages="bash bubblewrap ca-certificates curl git jq openssh-client sudo tmux unzip util-linux"
+packages="bash bubblewrap ca-certificates curl gh git jq openssh-client sudo tmux unzip util-linux"
 case ",$components," in
   *,codex,*|*,claude,*|*,opencode,*)
     command -v npm >/dev/null 2>&1 || packages="$packages nodejs npm"
@@ -153,6 +153,8 @@ func Install(ctx context.Context, request provider.BootstrapRequest, exec Exec) 
 
 func assetFingerprint(request provider.BootstrapRequest) string {
 	hash := sha256.New()
+	_, _ = io.WriteString(hash, installScript)
+	_, _ = io.WriteString(hash, finalizeScript)
 	_, _ = hash.Write(request.Entrypoint)
 	architectures := make([]string, 0, len(request.RuntimeBinaries))
 	for architecture := range request.RuntimeBinaries {
