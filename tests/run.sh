@@ -37,7 +37,7 @@ run_vmbox() {
 }
 
 bash -n "$repo/vmbox.sh" "$repo/install.sh" "$repo/entrypoint.sh" \
-  "$fixtures/railway" "$fixtures/gh" "$fixtures/curl" "$repo/tests/run.sh"
+  "$fixtures/railway" "$fixtures/gh" "$fixtures/curl" "$fixtures/go" "$repo/tests/run.sh"
 pass 'all Bash files parse'
 
 for marker in EOF_VERIFY_TRUST EOF_PREPARE EOF_REPORT EOF_TASK EOF_DECORATE EOF_FETCH_TASK EOF_WAIT_TASK; do
@@ -188,6 +188,13 @@ jq -e '.state == "completed" and .exitCode == 0 and .message == "progress update
   fail 'task status mode is not 0600'
 pass 'task runner and progress reporter update shared state safely'
 
+new_state workspace-trust
+HOME="$VMBOX_TEST_STATE/home" "$repo/entrypoint.sh" --configure-agent-trust /data/workspace/example
+grep -Fq '[projects."/data/workspace/example"]' "$VMBOX_TEST_STATE/home/.codex/config.toml"
+jq -e '.trustedDirectories | index("/data/workspace/example") != null' \
+  "$VMBOX_TEST_STATE/home/.claude/settings.json" >/dev/null
+pass 'runtime initializes Codex and Claude trust for the configured workspace'
+
 new_state installer
 install_bin="$VMBOX_TEST_STATE/bin with \$dollar"
 shell_rc="$VMBOX_TEST_STATE/test.rc"
@@ -198,6 +205,15 @@ HOME="$VMBOX_TEST_STATE/home" PATH="$fixtures:$PATH" \
 resolved_path="$(PATH=/usr/bin:/bin bash -c '. "$1"; printf %s "$PATH"' bash "$shell_rc")"
 [[ "${resolved_path%%:*}" == "$install_bin" ]] || fail 'installer wrote an unsafe PATH expression'
 pass 'installer safely quotes unusual installation paths'
+
+new_state go-installer
+HOME="$VMBOX_TEST_STATE/home" PATH="$fixtures:$PATH" \
+  VMBOX_INSTALL_DIR="$VMBOX_TEST_STATE/bin" VMBOX_SHELL_RC="$VMBOX_TEST_STATE/test.rc" \
+  XDG_CONFIG_HOME="$VMBOX_TEST_STATE/config" XDG_DATA_HOME="$VMBOX_TEST_STATE/data" \
+  "$repo/install.sh" --go-cli >"$VMBOX_TEST_STATE/output" 2>&1
+"$VMBOX_TEST_STATE/bin/vmbox" --help | grep -Fq 'Go vmbox test binary'
+[[ ! -s "$VMBOX_TEST_STATE/railway.log" ]] || fail 'Go CLI installation unnecessarily required Railway'
+pass 'installer offers an explicit Go CLI path'
 
 new_state token-installer
 saved_token='token value with shell metacharacters $`"'

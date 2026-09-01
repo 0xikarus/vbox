@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+output=""
+while (($#)); do
+  if [[ "$1" == -o ]]; then
+    output="$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+[[ -n "$output" ]]
+printf '#!/usr/bin/env bash\nprintf "Go vmbox test binary\\n"\n' >"$output"
+chmod 755 "$output"

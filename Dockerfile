@@ -1,3 +1,12 @@
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS build
+ARG TARGETOS TARGETARCH
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd ./cmd
+COPY internal ./internal
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-runtime ./cmd/vmbox-runtime
+
 FROM node:22-bookworm-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -21,11 +30,12 @@ RUN apt-get update \
       util-linux \
     && rm -rf /var/lib/apt/lists/*
 
-ARG VMBOX_COMPONENTS=codex,claude,bun,foundry
+ARG VMBOX_COMPONENTS=codex,claude,opencode,bun,foundry
 RUN set -eux; \
     packages=""; \
     case ",$VMBOX_COMPONENTS," in *,codex,*) packages="$packages @openai/codex" ;; esac; \
     case ",$VMBOX_COMPONENTS," in *,claude,*) packages="$packages @anthropic-ai/claude-code" ;; esac; \
+    case ",$VMBOX_COMPONENTS," in *,opencode,*) packages="$packages opencode-ai" ;; esac; \
     if [ -n "$packages" ]; then npm install --global $packages; fi
 
 RUN set -eux; \
@@ -41,7 +51,11 @@ RUN set -eux; \
     esac
 
 COPY entrypoint.sh /usr/local/bin/vmbox-entrypoint
-RUN chmod 0755 /usr/local/bin/vmbox-entrypoint
+COPY --from=build /out/vmbox-runtime /usr/local/bin/vmbox-runtime
+RUN chmod 0755 /usr/local/bin/vmbox-entrypoint /usr/local/bin/vmbox-runtime \
+    && ln -s vmbox-runtime /usr/local/bin/vmbox-report \
+    && ln -s vmbox-runtime /usr/local/bin/vmbox-finish \
+    && ln -s vmbox-runtime /usr/local/bin/vmbox-ask
 
 ENV HOME=/data/home
 WORKDIR /data/workspace

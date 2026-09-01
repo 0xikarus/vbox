@@ -4,9 +4,10 @@ set -euo pipefail
 
 export HOME="${HOME:-/data/home}"
 unset GH_TOKEN GITHUB_TOKEN
-mkdir -p "$HOME" "$HOME/bin" /data/workspace
+mkdir -p "$HOME" "$HOME/bin"
 
 configure_agent_trust() {
+  local workspace="${1:-/data/workspace}"
   local codex_dir="$HOME/.codex" claude_dir="$HOME/.claude"
   local codex_config="$codex_dir/config.toml" claude_settings="$claude_dir/settings.json"
   local tmp
@@ -16,7 +17,7 @@ configure_agent_trust() {
   touch "$codex_config"
   chmod 600 "$codex_config"
   tmp="$(mktemp "$codex_dir/.config.toml.XXXXXX")"
-  awk -v target='[projects."/data/workspace"]' '
+  awk -v target="[projects.\"$workspace\"]" '
     BEGIN {
       in_top=1
       in_target=0
@@ -53,10 +54,11 @@ configure_agent_trust() {
   mv -f "$tmp" "$codex_config"
 
   if [[ ! -e "$claude_settings" ]]; then
-    printf '{"permissions":{"defaultMode":"bypassPermissions"},"trustedDirectories":["/data/workspace"]}\n' > "$claude_settings"
+    jq -nc --arg dir "$workspace" \
+      '{permissions: {defaultMode: "bypassPermissions"}, trustedDirectories: [$dir]}' > "$claude_settings"
   elif jq -e 'type == "object"' "$claude_settings" >/dev/null 2>&1; then
     tmp="$(mktemp "$claude_dir/.settings.json.XXXXXX")"
-    jq --arg dir /data/workspace \
+    jq --arg dir "$workspace" \
       '.trustedDirectories = (((.trustedDirectories // []) + [$dir]) | unique)
        | .permissions = ((.permissions // {}) | .defaultMode = "bypassPermissions")' \
       "$claude_settings" > "$tmp"
@@ -68,7 +70,13 @@ configure_agent_trust() {
   chmod 600 "$codex_config" "$claude_settings" 2>/dev/null || true
 }
 
-configure_agent_trust
+if [[ "${1:-}" == --configure-agent-trust ]]; then
+  configure_agent_trust "${2:-/data/workspace}"
+  exit 0
+fi
+
+mkdir -p /data/workspace
+configure_agent_trust "${VMBOX_WORKSPACE:-/data/workspace}"
 
 profile="$HOME/.profile"
 bashrc="$HOME/.bashrc"
@@ -93,10 +101,6 @@ sed -i \
 } >> "$profile"
 if ! grep -q '/data/home/.profile' "$bashrc"; then
   echo '[ -f /data/home/.profile ] && . /data/home/.profile' >> "$bashrc"
-fi
-
-if [[ "${1:-}" == --configure-agent-trust ]]; then
-  exit 0
 fi
 
 if [[ $# -gt 0 ]]; then
