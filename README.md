@@ -17,7 +17,7 @@ go build ./cmd/vmbox-hostd
 go test ./...
 ```
 
-No custom workload image is required. Docker, Railway, and Sevalla default to
+No custom workload image is required. Docker and Railway default to
 the upstream `node:22-bookworm-slim` image; Incus defaults to the official
 Ubuntu 24.04 image. On first start, vmbox installs the selected tools and its
 small runtime helpers. Reopening the box is idempotent and preserves `/data`.
@@ -28,7 +28,6 @@ Contexts contain provider identifiers, never credential values. Provider tokens 
 
 ```bash
 vmbox context add local-docker --provider docker --docker-context default
-vmbox context add sevalla-prod --provider sevalla --company COMPANY_ID --project PROJECT_ID --cluster CLUSTER_ID
 vmbox context add railway --provider railway --project PROJECT_ID --environment ENVIRONMENT_ID
 # Or, for standalone use with an existing `railway login` session:
 vmbox context add railway-local --provider railway --project PROJECT_ID --environment ENVIRONMENT_ID --railway-cli-auth
@@ -58,7 +57,7 @@ secret-free setup per context. `--reuse` reloads it. Application profiles,
 GitHub credentials, and Markdown instructions are independently selected;
 Markdown is installed only as workspace instructions, never as authentication.
 
-Docker supports local, named, SSH, and mutually authenticated TLS contexts. An unauthenticated TCP daemon is rejected. Docker and Incus control sockets are never mounted into workloads. Sevalla uses its v3 JSON API and official WebSocket terminal, not CLI output or dashboard scraping. Override `--image` only when you need a different Debian/Ubuntu-compatible OCI base.
+Docker supports local, named, SSH, and mutually authenticated TLS contexts. An unauthenticated TCP daemon is rejected. Docker and Incus control sockets are never mounted into workloads. Override `--image` only when you need a different Debian/Ubuntu-compatible OCI base.
 
 ## Controller
 

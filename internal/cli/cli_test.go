@@ -213,10 +213,10 @@ func TestContextContainsNoAmbientToken(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	app := New()
 	app.ConfigPath = path
-	app.Environ = map[string]string{"SEVALLA_API_TOKEN": "super-secret"}
+	app.Environ = map[string]string{"RAILWAY_API_TOKEN": "super-secret"}
 	app.Out = &bytes.Buffer{}
 	app.Err = &bytes.Buffer{}
-	if err := app.Run(context.Background(), []string{"context", "add", "sev", "--provider", "sevalla", "--project", "p", "--cluster", "c", "--docker-registry-credential-id", "registry-credential"}); err != nil {
+	if err := app.Run(context.Background(), []string{"context", "add", "railway", "--provider", "railway", "--project", "p", "--environment", "production"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -233,12 +233,20 @@ func TestContextContainsNoAmbientToken(t *testing.T) {
 	if info.Mode().Perm() != 0600 {
 		t.Fatalf("mode=%o", info.Mode().Perm())
 	}
-	loaded, err := config.Load(path)
-	if err != nil {
-		t.Fatal(err)
+}
+
+func TestContextRejectsRemovedProvider(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	app := New()
+	app.ConfigPath = path
+	app.Out = &bytes.Buffer{}
+	app.Err = &bytes.Buffer{}
+	err := app.Run(context.Background(), []string{"context", "add", "old", "--provider", "sevalla"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported provider") {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if loaded.Contexts["sev"].DockerRegistryCredentialID != "registry-credential" {
-		t.Fatalf("context=%+v", loaded.Contexts["sev"])
+	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("removed provider created config: %v", statErr)
 	}
 }
 

@@ -12,15 +12,6 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 )
 
-type clusterTestProvider struct {
-	*cliProvider
-	clusters []map[string]any
-}
-
-func (p clusterTestProvider) Clusters(context.Context) ([]map[string]any, error) {
-	return p.clusters, nil
-}
-
 func TestSetupRegionsUseProviderIdentifiers(t *testing.T) {
 	railway := setupRegions(context.Background(), config.Context{Provider: "railway"}, "", nil)
 	want := map[string]bool{"ams": true, "sfo": true, "iad": true, "sin": true}
@@ -31,12 +22,6 @@ func TestSetupRegionsUseProviderIdentifiers(t *testing.T) {
 		if !want[region.ID] {
 			t.Fatalf("unexpected Railway region %#v", region)
 		}
-	}
-
-	p := clusterTestProvider{cliProvider: newCLIProvider(), clusters: []map[string]any{{"id": "s3", "display_name": "Europe West"}}}
-	sevalla := setupRegions(context.Background(), config.Context{Provider: "sevalla"}, "", p)
-	if len(sevalla) != 1 || sevalla[0].ID != "s3" || !strings.Contains(sevalla[0].Label, "Europe West") {
-		t.Fatalf("Sevalla regions = %#v", sevalla)
 	}
 }
 

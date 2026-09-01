@@ -26,7 +26,6 @@ import (
 	dockerprovider "github.com/0xikarus/vmbox-service/internal/provider/docker"
 	incusprovider "github.com/0xikarus/vmbox-service/internal/provider/incus"
 	railwayprovider "github.com/0xikarus/vmbox-service/internal/provider/railway"
-	sevallaprovider "github.com/0xikarus/vmbox-service/internal/provider/sevalla"
 	"golang.org/x/term"
 )
 
@@ -198,9 +197,7 @@ func (a *App) context(file config.File, args []string) error {
 		fs.StringVar(&ctx.Project, "project", "", "project ID")
 		fs.StringVar(&ctx.Environment, "environment", "", "environment ID")
 		fs.BoolVar(&ctx.RailwayCLIAuth, "railway-cli-auth", false, "use the local Railway CLI login when no token environment is set")
-		fs.StringVar(&ctx.Company, "company", "", "company ID")
 		fs.StringVar(&ctx.Cluster, "cluster", "", "cluster ID")
-		fs.StringVar(&ctx.ResourceType, "resource-type", "", "resource type ID")
 		fs.StringVar(&ctx.Image, "image", "", "default OCI image")
 		fs.StringVar(&ctx.DockerContext, "docker-context", "", "Docker context")
 		fs.StringVar(&ctx.DockerHost, "docker-host", "", "Docker host")
@@ -209,8 +206,6 @@ func (a *App) context(file config.File, args []string) error {
 		fs.StringVar(&ctx.IncusRemote, "incus-remote", "", "Incus remote")
 		fs.StringVar(&ctx.IncusProject, "incus-project", "", "Incus project")
 		fs.BoolVar(&ctx.IncusVM, "incus-vm", false, "use QEMU VMs")
-		fs.StringVar(&ctx.PreAttachedDisk, "pre-attached-disk", "", "manual Sevalla disk ID")
-		fs.StringVar(&ctx.DockerRegistryCredentialID, "docker-registry-credential-id", "", "Sevalla Docker registry credential ID")
 		fs.StringVar(&ctx.ProviderCredential, "provider-credential", "", "controller provider credential name")
 		fs.StringVar(&ctx.TokenEnv, "token-env", "VMBOX_CONTROLLER_TOKEN", "environment variable containing controller token")
 		if err := fs.Parse(args[2:]); err != nil {
@@ -218,6 +213,11 @@ func (a *App) context(file config.File, args []string) error {
 		}
 		if ctx.Provider == "" {
 			return fmt.Errorf("--provider is required")
+		}
+		switch ctx.Provider {
+		case "docker", "incus", "railway":
+		default:
+			return fmt.Errorf("unsupported provider %q (available: docker, incus, railway)", ctx.Provider)
 		}
 		if ctx.DockerHost != "" && strings.HasPrefix(ctx.DockerHost, "tcp://") && !ctx.DockerTLSVerify {
 			return fmt.Errorf("unauthenticated Docker TCP is forbidden")
@@ -423,8 +423,6 @@ func (a *App) provider(ctx config.Context) (provider.Provider, error) {
 			return nil, runnerErr
 		}
 		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: ctx.Image, SSHKnownHostsFile: knownHosts}, runner), nil
-	case "sevalla":
-		return sevallaprovider.New(sevallaprovider.Config{Token: a.Environ["SEVALLA_API_TOKEN"], APIURL: a.Environ["SEVALLA_API_URL"], CompanyID: ctx.Company, ProjectID: ctx.Project, ClusterID: ctx.Cluster, ResourceTypeID: ctx.ResourceType, DefaultImage: ctx.Image, DockerRegistryCredentialID: ctx.DockerRegistryCredentialID, PreAttachedDisk: ctx.PreAttachedDisk, HTTPClient: a.HTTP}), nil
 	case "incus":
 		return incusprovider.New(incusprovider.Config{Remote: ctx.IncusRemote, Project: ctx.IncusProject, DefaultImage: ctx.Image, VM: ctx.IncusVM}, procexec.OSRunner{}), nil
 	default:

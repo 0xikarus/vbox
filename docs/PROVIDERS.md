@@ -2,7 +2,7 @@
 
 All providers implement one lifecycle contract: validate, create/inspect/list, start/stop/resize/delete, storage, deploy, connect, logs, usage, exact argv, and reconciliation. Destructive operations compare account, box, and lease ownership before acting and are idempotent.
 
-Docker, Railway, and Sevalla use the upstream `node:22-bookworm-slim` image by
+Docker and Railway use the upstream `node:22-bookworm-slim` image by
 default. The CLI bootstraps the selected components plus tmux and
 `vmbox-runtime` after the provider reports the workload ready; it does not
 require a vmbox-owned registry image. Incus uses `images:ubuntu/24.04`.
@@ -24,16 +24,6 @@ require a vmbox-owned registry image. Incus uses `images:ubuntu/24.04`.
 - SSH invokes `vmbox-runtime` with encoded JSON argv, avoiding shell parsing.
 - Railway SSH uses a vmbox-only known-hosts file. Endpoint rotation is retried by removing only the stale Railway entry from that isolated file; normal `~/.ssh/known_hosts` is never changed.
 - Stop preserves service and storage; cleanup deletes the verified service before its exact attached volume.
-
-## Sevalla
-
-- One application per box, sourced from the selected Linux/AMD64 OCI image.
-- Private image pulls can select a Sevalla `--docker-registry-credential-id`; controller credential config uses `dockerRegistryCredentialId`.
-- Clusters and process resource types are discovered from `/v3/resources`.
-- Direct commands use the documented `command: []` endpoint and return separate stdout, stderr, and exit status.
-- Interactive sessions use the official authenticated WebSocket terminal and attach to the shared tmux runtime.
-- Suspend/activate, deploy, logs, metrics, resize, rate-limit backoff, and asynchronous deletion reconciliation are implemented.
-- Sevalla's public v3 API currently has no application-disk create/update/delete endpoint. Automated `/data` is therefore reported unavailable. A manually pre-attached disk can be declared with `--pre-attached-disk`; vmbox never calls undocumented APIs or scrapes the dashboard.
 
 ## Ubuntu/Incus
 

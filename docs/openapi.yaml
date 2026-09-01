@@ -161,7 +161,7 @@ components:
       type: object
       required: [provider, command]
       properties:
-        provider: {enum: [railway, sevalla, docker, incus]}
+        provider: {enum: [railway, docker, incus]}
         box: {type: string}
         resources: {$ref: '#/components/schemas/Resources'}
         region: {type: string}

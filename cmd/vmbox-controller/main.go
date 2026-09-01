@@ -19,7 +19,6 @@ import (
 	dockerprovider "github.com/0xikarus/vmbox-service/internal/provider/docker"
 	incusprovider "github.com/0xikarus/vmbox-service/internal/provider/incus"
 	railwayprovider "github.com/0xikarus/vmbox-service/internal/provider/railway"
-	sevallaprovider "github.com/0xikarus/vmbox-service/internal/provider/sevalla"
 	"github.com/0xikarus/vmbox-service/internal/secrets"
 )
 
@@ -142,8 +141,6 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 		}
 		runner := procexec.OSRunner{Env: map[string]string{tokenEnvironment: token}, Unset: []string{other}}
 		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image")}, runner), nil
-	case "sevalla":
-		return sevallaprovider.New(sevallaprovider.Config{Token: stringValue(secret, "token"), APIURL: stringValue(config, "apiUrl"), CompanyID: stringValue(config, "companyId"), ProjectID: stringValue(config, "projectId"), ClusterID: stringValue(config, "clusterId"), ResourceTypeID: stringValue(config, "resourceTypeId"), DefaultImage: stringValue(config, "image"), DockerRegistryCredentialID: stringValue(config, "dockerRegistryCredentialId"), PreAttachedDisk: stringValue(config, "preAttachedDisk")}), nil
 	case "docker":
 		return dockerprovider.New(dockerprovider.Config{Context: stringValue(config, "context"), Host: stringValue(config, "host"), TLSVerify: boolValue(config, "tlsVerify"), CertPath: stringValue(config, "certPath"), DefaultImage: stringValue(config, "image")}, procexec.OSRunner{}), nil
 	case "incus":
