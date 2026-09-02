@@ -558,7 +558,16 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if created {
 			fmt.Fprintf(a.Err, "vmbox: box %q is ready\n", opts.name)
 		}
-		if len(opts.argv) == 0 {
+		sessionAttacher, nativeSession := p.(provider.SessionAttacher)
+		if !opts.detach && nativeSession {
+			sessionCommand := append([]string(nil), opts.argv...)
+			if len(sessionCommand) == 0 {
+				sessionCommand = []string{"vmbox-runtime", "welcome"}
+			}
+			if err := ensureTmuxSession(ctx, p, opts.name, sessionCommand); err != nil {
+				return err
+			}
+		} else if len(opts.argv) == 0 {
 			opts.argv = defaultSession(opts.detach)
 		} else if !opts.detach {
 			opts.argv = interactiveSession(opts.argv)
@@ -570,7 +579,14 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				return fmt.Errorf("configure interactive terminal: %w", err)
 			}
 		}
-		result, execErr := p.Exec(ctx, opts.name, opts.argv, provider.ExecOptions{Interactive: !opts.detach, Detach: opts.detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err})
+		execOptions := provider.ExecOptions{Interactive: !opts.detach, Detach: opts.detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err}
+		var result provider.ExecResult
+		var execErr error
+		if !opts.detach && nativeSession {
+			result, execErr = sessionAttacher.AttachSession(ctx, opts.name, "vmbox", execOptions)
+		} else {
+			result, execErr = p.Exec(ctx, opts.name, opts.argv, execOptions)
+		}
 		restore()
 		err = execErr
 		if err != nil {

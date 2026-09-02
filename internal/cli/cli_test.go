@@ -40,6 +40,16 @@ type progressBootstrapProvider struct {
 	delay time.Duration
 }
 
+type sessionCLIProvider struct {
+	*cliProvider
+	attached []string
+}
+
+func (p *sessionCLIProvider) AttachSession(_ context.Context, name, session string, _ provider.ExecOptions) (provider.ExecResult, error) {
+	p.attached = append(p.attached, name+":"+session)
+	return provider.ExecResult{}, nil
+}
+
 func (p *progressBootstrapProvider) Bootstrap(ctx context.Context, _ string, _ provider.BootstrapRequest) error {
 	select {
 	case <-time.After(p.delay):
@@ -297,6 +307,30 @@ func TestCreateAliasesResumeExistingAndPersistReusableSetup(t *testing.T) {
 	last := p.exec[len(p.exec)-1].argv
 	if !reflect.DeepEqual(last, []string{"sh", "-c", `tmux has-session -t vmbox 2>/dev/null || exec tmux new-session -d -s vmbox -c /data/workspace vmbox-runtime welcome`}) {
 		t.Fatalf("resume argv=%#v", last)
+	}
+}
+
+func TestInteractiveResumeUsesProviderNativeTmuxSession(t *testing.T) {
+	base := newCLIProvider()
+	base.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning, Owner: provider.Owner{AccountID: "standalone", BoxID: "worker"}}
+	p := &sessionCLIProvider{cliProvider: base}
+	app := New()
+	app.In, app.Out, app.Err = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
+	file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
+	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "worker"}); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(p.attached, []string{"worker:vmbox"}) {
+		t.Fatalf("attached=%#v", p.attached)
+	}
+	foundSessionCheck := false
+	for _, call := range p.exec {
+		if reflect.DeepEqual(call.argv, []string{"tmux", "has-session", "-t", "vmbox"}) {
+			foundSessionCheck = true
+		}
+	}
+	if !foundSessionCheck {
+		t.Fatalf("tmux session was not prepared: %#v", p.exec)
 	}
 }
 

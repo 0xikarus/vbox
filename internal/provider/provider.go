@@ -134,6 +134,12 @@ type Bootstrapper interface {
 	Bootstrap(context.Context, string, BootstrapRequest) error
 }
 
+// SessionAttacher lets providers use their native interactive transport after
+// vmbox has prepared a named tmux session inside the workload.
+type SessionAttacher interface {
+	AttachSession(context.Context, string, string, ExecOptions) (ExecResult, error)
+}
+
 type Capabilities struct {
 	Provider             string   `json:"provider"`
 	Architectures        []string `json:"architectures"`

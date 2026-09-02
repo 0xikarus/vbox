@@ -763,6 +763,29 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 }
 
+func (p *Provider) AttachSession(ctx context.Context, id, session string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if session == "" {
+		return provider.ExecResult{}, fmt.Errorf("tmux session name cannot be empty")
+	}
+	service, err := p.resolve(ctx, id)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	started := time.Now().UTC()
+	sshArgs := append([]string{"railway", "ssh"}, p.target()...)
+	sshArgs = append(sshArgs, "--service", service.Name, "--session", session)
+	var result procexec.Result
+	if attached, ok := p.runner.(procexec.AttachedRunner); ok {
+		result, err = attached.RunAttached(ctx, sshArgs, opts.Stdin, opts.Stdout, opts.Stderr)
+	} else {
+		result, err = p.runner.Run(ctx, sshArgs, opts.Stdin, opts.Stdout, opts.Stderr)
+	}
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	return provider.ExecResult{ExitCode: result.ExitCode, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+}
+
 func (p *Provider) Reconcile(ctx context.Context, desired provider.Box) (provider.Box, error) {
 	actual, err := p.Inspect(ctx, desired.ID)
 	if err != nil {

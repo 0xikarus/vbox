@@ -1,6 +1,7 @@
 package procexec
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -15,5 +16,16 @@ func TestOSRunnerUnsetsInheritedEnvironment(t *testing.T) {
 	}
 	if got := strings.TrimSpace(string(result.Stdout)); got != "|selected" {
 		t.Fatalf("environment=%q", got)
+	}
+}
+
+func TestRunAttachedWritesDirectlyWithoutCapture(t *testing.T) {
+	var stdout bytes.Buffer
+	result, err := (OSRunner{}).RunAttached(context.Background(), []string{"sh", "-c", "printf attached"}, nil, &stdout, nil)
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("result=%+v error=%v", result, err)
+	}
+	if stdout.String() != "attached" || len(result.Stdout) != 0 {
+		t.Fatalf("stdout=%q captured=%q", stdout.String(), result.Stdout)
 	}
 }

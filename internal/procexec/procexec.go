@@ -21,6 +21,13 @@ type Runner interface {
 	Run(context.Context, []string, io.Reader, io.Writer, io.Writer) (Result, error)
 }
 
+// AttachedRunner connects the child directly to the supplied streams without
+// capture pipes. Interactive SSH clients need the original terminal file
+// descriptors in order to allocate and resize a remote pseudo-terminal.
+type AttachedRunner interface {
+	RunAttached(context.Context, []string, io.Reader, io.Writer, io.Writer) (Result, error)
+}
+
 type OSRunner struct {
 	// Env overlays the current process environment for this runner only. It is
 	// used by account-scoped provider instances without changing global state.
@@ -30,8 +37,46 @@ type OSRunner struct {
 }
 
 func (r OSRunner) Run(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (Result, error) {
+	cmd, err := r.command(ctx, argv)
+	if err != nil {
+		return Result{}, err
+	}
+	cmd.Stdin = stdin
+	var outBuf, errBuf bytes.Buffer
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	cmd.Stdout = io.MultiWriter(stdout, &outBuf)
+	cmd.Stderr = io.MultiWriter(stderr, &errBuf)
+	err = cmd.Run()
+	result := Result{Stdout: outBuf.Bytes(), Stderr: errBuf.Bytes()}
+	return commandResult(result, err)
+}
+
+func (r OSRunner) RunAttached(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (Result, error) {
+	cmd, err := r.command(ctx, argv)
+	if err != nil {
+		return Result{}, err
+	}
+	cmd.Stdin = stdin
+	if stdout == nil {
+		stdout = io.Discard
+	}
+	if stderr == nil {
+		stderr = io.Discard
+	}
+	cmd.Stdout = stdout
+	cmd.Stderr = stderr
+	err = cmd.Run()
+	return commandResult(Result{}, err)
+}
+
+func (r OSRunner) command(ctx context.Context, argv []string) (*exec.Cmd, error) {
 	if len(argv) == 0 || argv[0] == "" {
-		return Result{}, fmt.Errorf("empty argv")
+		return nil, fmt.Errorf("empty argv")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	if len(r.Env) > 0 || len(r.Unset) > 0 {
@@ -55,18 +100,10 @@ func (r OSRunner) Run(ctx context.Context, argv []string, stdin io.Reader, stdou
 			cmd.Env = append(cmd.Env, key+"="+value)
 		}
 	}
-	cmd.Stdin = stdin
-	var outBuf, errBuf bytes.Buffer
-	if stdout == nil {
-		stdout = io.Discard
-	}
-	if stderr == nil {
-		stderr = io.Discard
-	}
-	cmd.Stdout = io.MultiWriter(stdout, &outBuf)
-	cmd.Stderr = io.MultiWriter(stderr, &errBuf)
-	err := cmd.Run()
-	result := Result{Stdout: outBuf.Bytes(), Stderr: errBuf.Bytes()}
+	return cmd, nil
+}
+
+func commandResult(result Result, err error) (Result, error) {
 	if err == nil {
 		return result, nil
 	}

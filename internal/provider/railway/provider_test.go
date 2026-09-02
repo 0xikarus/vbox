@@ -35,6 +35,24 @@ func TestExecEncodesExactArgvWithoutShell(t *testing.T) {
 	}
 }
 
+func TestAttachSessionUsesRailwayNativeSessionWithoutRemoteCommand(t *testing.T) {
+	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(services)}, {}}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	result, err := p.AttachSession(context.Background(), "box", "vmbox", provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("result=%+v error=%v", result, err)
+	}
+	got := runner.Calls[1].Argv
+	want := []string{"railway", "ssh", "--project", "project", "--environment", "environment", "--service", "vmbox-box", "--session", "vmbox"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("session argv=%#v", got)
+	}
+	if strings.Contains(strings.Join(got, " "), "exec-json") {
+		t.Fatalf("native session unexpectedly supplied a remote command: %#v", got)
+	}
+}
+
 func TestExecRetriesRotatedHostKeyOnlyInIsolatedFile(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
