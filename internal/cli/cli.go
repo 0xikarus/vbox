@@ -30,14 +30,15 @@ import (
 )
 
 type App struct {
-	In         io.Reader
-	Out, Err   io.Writer
-	Environ    map[string]string
-	HTTP       *http.Client
-	ConfigPath string
-	WorkingDir string
-	Runner     procexec.Runner
-	IsTerminal func() bool
+	In               io.Reader
+	Out, Err         io.Writer
+	Environ          map[string]string
+	HTTP             *http.Client
+	ConfigPath       string
+	WorkingDir       string
+	ProgressInterval time.Duration
+	Runner           procexec.Runner
+	IsTerminal       func() bool
 }
 
 type stringList []string
@@ -49,7 +50,7 @@ func (s *stringList) Set(value string) error {
 }
 
 func New() *App {
-	a := &App{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Environ: envMap(), HTTP: &http.Client{Timeout: 75 * time.Second}, Runner: procexec.OSRunner{}}
+	a := &App{In: os.Stdin, Out: os.Stdout, Err: os.Stderr, Environ: envMap(), HTTP: &http.Client{Timeout: 75 * time.Second}, ProgressInterval: 10 * time.Second, Runner: procexec.OSRunner{}}
 	a.IsTerminal = func() bool { return charDevice(a.In) && charDevice(a.Out) }
 	return a
 }
@@ -545,9 +546,11 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				return err
 			}
 		}
+		fmt.Fprintf(a.Err, "vmbox: preparing tmux session for %q\n", opts.name)
 		if err := a.uploadWelcome(ctx, p, box, c.Name); err != nil {
 			return err
 		}
+		fmt.Fprintf(a.Err, "vmbox: tmux session metadata is ready\n")
 		if created {
 			fmt.Fprintf(a.Err, "vmbox: box %q is ready\n", opts.name)
 		}
