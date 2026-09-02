@@ -1083,7 +1083,8 @@ Usage:
   vmbox [--context NAME] [--standalone] <box> [--detach] [-- COMMAND [ARG...]]
   vmbox new|create <box> [--reuse] [--detach] [creation options] [-- COMMAND [ARG...]]
   vmbox run <box> [--detach] -- COMMAND [ARG...]
-  vmbox ls | status <box> | task-status <box> [run-id] | logs <box> [--follow] | stop <box>
+  vmbox ls | status <box> | task-status <box> [run-id] | logs <box> [--follow]
+  vmbox stop <box> | start <box>
   vmbox resume | resize [box] --cpu N --memory MiB | clean <box> --yes | cost <box>
   vmbox context add|use|list | provider validate
   vmbox questions | answer <question-id> <text>
@@ -1095,6 +1096,9 @@ Everything following -- is forwarded as an exact argv vector. Use bash -lc
 explicitly when shell parsing is desired. Contexts without a controller run
 standalone. A configured controller is used automatically; --standalone bypasses
 it explicitly, and controller failures never silently fall back.
+
+For Railway, stop removes only the active deployment. The service and /data stay
+intact; vmbox <box> or vmbox resume redeploys it. Only clean deletes the box.
 
 Creation options include --component ID, --application-profile APP=PATH,
 --github-credential HOST:USER[:ssh|https], --instructions PATH, --region,

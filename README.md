@@ -21,6 +21,9 @@ No custom workload image is required. Docker and Railway default to
 the upstream `node:22-bookworm-slim` image; Incus defaults to the official
 Ubuntu 24.04 image. On first start, vmbox installs the selected tools and its
 small runtime helpers. Reopening the box is idempotent and preserves `/data`.
+On Railway, `vmbox stop BOX` removes the active deployment but preserves the
+service and volume. `vmbox BOX` or `vmbox resume` redeploys it; only
+`vmbox clean BOX --yes` permanently deletes the service and `/data`.
 
 ## Standalone
 
