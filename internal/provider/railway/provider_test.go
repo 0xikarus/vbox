@@ -177,6 +177,59 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 	}
 }
 
+func TestStopPowersDownDeploymentAndStartRedeploysService(t *testing.T) {
+	running := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
+	stopped := `[{"id":"service-id","name":"vmbox-box","status":"NO_DEPLOYMENT"}]`
+	variables := `{"VMBOX_ACCOUNT_ID":"standalone","VMBOX_BOX_ID":"box","VMBOX_CPU":"2","VMBOX_MEMORY_MIB":"4096","VMBOX_DISK_GIB":"10"}`
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(running)},
+		{},
+		{Stdout: []byte(stopped)},
+		{Stdout: []byte(variables)},
+		{},
+		{Stdout: []byte(stopped)},
+		{Stdout: []byte(`[]`)},
+		{Stdout: []byte(`{"id":"deployment-new"}`)},
+		{Stdout: []byte(`[{"id":"deployment-new","status":"SUCCESS"}]`)},
+		{Stdout: []byte(running)},
+		{Stdout: []byte(variables)},
+		{},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+
+	box, err := p.Stop(context.Background(), "box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if box.State != provider.StateStopped || box.ProviderState != "NO_DEPLOYMENT" {
+		t.Fatalf("stopped box=%+v", box)
+	}
+
+	box, err = p.Start(context.Background(), "box")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if box.State != provider.StateRunning {
+		t.Fatalf("resumed box=%+v", box)
+	}
+
+	commands := make([]string, 0, len(runner.Calls))
+	for _, call := range runner.Calls {
+		command := strings.Join(call.Argv, " ")
+		commands = append(commands, command)
+		if strings.Contains(command, " service delete ") || strings.Contains(command, " volume delete ") {
+			t.Fatalf("power lifecycle deleted persistent resources: %s", command)
+		}
+	}
+	joined := strings.Join(commands, "\n")
+	if !strings.Contains(joined, "railway down --service vmbox-box --yes") {
+		t.Fatalf("stop did not remove the active deployment:\n%s", joined)
+	}
+	if !strings.Contains(joined, "railway redeploy --service vmbox-box --yes --json --from-source") {
+		t.Fatalf("start did not redeploy the preserved service:\n%s", joined)
+	}
+}
+
 func TestInterruptedSubmissionReconcilesExactNewDeployment(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
 	runner := &procexec.FakeRunner{

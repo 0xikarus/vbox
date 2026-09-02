@@ -13,8 +13,9 @@ The legacy `vmbox.sh`, `RAILWAY.md`, and shell configuration remain as a migrati
 4. Existing services named `vmbox-*` can be inspected by the Railway adapter. Review ownership variables before allowing Go CLI cleanup.
 5. Create one box with the desired components, resources, application profiles,
    GitHub identity, and explicit `--instructions PATH` values. The Go CLI saves
-   that complete secret-free setup per context; later creation can pass
-   `--reuse`. Missing saved local files are reported and skipped. Credential
+   that complete secret-free setup per context and working directory; later
+   creation from that same directory can pass `--reuse`. Missing saved local
+   files are reported and skipped. Credential
    files and Markdown instruction files remain independent, and Markdown is
    never inferred from an authentication profile.
 

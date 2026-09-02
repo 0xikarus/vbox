@@ -21,6 +21,9 @@ No custom workload image is required. Docker and Railway default to
 the upstream `node:22-bookworm-slim` image; Incus defaults to the official
 Ubuntu 24.04 image. On first start, vmbox installs the selected tools and its
 small runtime helpers. Reopening the box is idempotent and preserves `/data`.
+On Railway, `vmbox stop BOX` removes the active deployment but preserves the
+service and volume. `vmbox BOX` or `vmbox resume` redeploys it; only
+`vmbox clean BOX --yes` permanently deletes the service and `/data`.
 
 ## Standalone
 
@@ -54,7 +57,8 @@ Detached commands print a run ID. `task-status` returns durable JSON state and
 the last visible output line for that run.
 
 New boxes collect every choice before provisioning and save the last complete,
-secret-free setup per context. `--reuse` reloads it. Application profiles,
+secret-free setup per context and working directory. `--reuse` reloads it only
+from that same directory. Application profiles,
 GitHub credentials, and Markdown instructions are independently selected;
 Markdown is installed only as workspace instructions, never as authentication.
 
