@@ -134,7 +134,11 @@ parsed:
 	if active.Controller != "" && !standalone {
 		mode = "controller"
 	}
-	fmt.Fprintf(a.Err, "vmbox: mode=%s account=%s context=%s provider=%s\n", mode, active.Account, active.Name, active.Provider)
+	fmt.Fprintf(a.Err, "vmbox: %s · context %s · provider %s", mode, active.Name, active.Provider)
+	if active.Account != "" {
+		fmt.Fprintf(a.Err, " · account %s", active.Account)
+	}
+	fmt.Fprintln(a.Err)
 	if args[0] == "provider" {
 		if len(args) != 2 || args[1] != "validate" {
 			return fmt.Errorf("usage: vmbox provider validate")
@@ -577,11 +581,18 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		}
 		return nil
 	case "ls", "list":
+		jsonOutput, err := parseListOutput(args)
+		if err != nil {
+			return err
+		}
 		boxes, err := p.List(ctx)
 		if err != nil {
 			return err
 		}
-		return json.NewEncoder(a.Out).Encode(boxes)
+		if jsonOutput {
+			return json.NewEncoder(a.Out).Encode(boxes)
+		}
+		return writeBoxList(a.Out, boxes)
 	case "status":
 		if len(args) != 2 {
 			return fmt.Errorf("status requires a box")
@@ -798,12 +809,19 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		}
 		return json.NewEncoder(a.Out).Encode(run)
 	case "ls", "list":
-		var runs []v1.Run
-		_, err := a.request(ctx, c, token, http.MethodGet, "/v1/runs", nil, &runs, nil)
+		jsonOutput, err := parseListOutput(args)
 		if err != nil {
 			return err
 		}
-		return json.NewEncoder(a.Out).Encode(runs)
+		var runs []v1.Run
+		_, err = a.request(ctx, c, token, http.MethodGet, "/v1/runs", nil, &runs, nil)
+		if err != nil {
+			return err
+		}
+		if jsonOutput {
+			return json.NewEncoder(a.Out).Encode(runs)
+		}
+		return writeRunList(a.Out, runs)
 	case "stop", "start":
 		if len(args) != 2 {
 			return fmt.Errorf("%s requires a run ID", args[0])
@@ -1096,7 +1114,7 @@ Usage:
   vmbox [--context NAME] [--standalone] <box> [--detach] [-- COMMAND [ARG...]]
   vmbox new|create <box> [--reuse] [--detach] [creation options] [-- COMMAND [ARG...]]
   vmbox run <box> [--detach] -- COMMAND [ARG...]
-  vmbox ls | status <box> | task-status <box> [run-id] | logs <box> [--follow]
+  vmbox ls [--json] | status <box> | task-status <box> [run-id] | logs <box> [--follow]
   vmbox stop <box> | start <box>
   vmbox resume | resize [box] --cpu N --memory MiB | clean <box> --yes | cost <box>
   vmbox context add|use|list | provider validate
@@ -1113,8 +1131,11 @@ it explicitly, and controller failures never silently fall back.
 For Railway, stop removes only the active deployment. The service and /data stay
 intact; vmbox <box> or vmbox resume redeploys it. Only clean deletes the box.
 
-Creation options include --component ID, --application-profile APP=PATH,
---github-credential HOST:USER[:ssh|https], --instructions PATH, --region,
---cpu, --memory, --disk, --workspace, notification, and lifecycle choices.
+Creation options:
+  Tools/auth:     --component ID, --application-profile APP=PATH,
+                  --github-credential HOST:USER[:ssh|https], --instructions PATH
+  Location/size:  --region ID, --cpu N, --memory MiB, --disk GiB, --workspace PATH
+  Automation:     --notification-policy NAME, --on-success ACTION,
+                  --on-failure ACTION, --max-ttl DURATION
 `)
 }
