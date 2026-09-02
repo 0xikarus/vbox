@@ -165,7 +165,7 @@ fi
 
 "$bin/vmbox" --help >/dev/null
 echo "Installed $bin/vmbox"
-echo "Configuration: $config/config"
+echo "Configuration: $config/config.json"
 ((save_token)) && echo "Workspace token: $credentials (mode 0600)"
 ((update_rc)) && echo "Open a new shell or run: source \"$rc\"" || echo "Add $bin to PATH."
 

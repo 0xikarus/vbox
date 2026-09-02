@@ -111,6 +111,9 @@ parsed:
 	if err != nil {
 		return err
 	}
+	if file.MigratedFrom != "" {
+		fmt.Fprintf(a.Err, "vmbox: imported existing Railway setup from %s\n", file.MigratedFrom)
+	}
 	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		a.usage()
 		return nil
@@ -1080,8 +1083,9 @@ Usage:
   vmbox notifications list|setup|test|remove
 
 Everything following -- is forwarded as an exact argv vector. Use bash -lc
-explicitly when shell parsing is desired. A configured controller is mandatory
-unless --standalone is supplied; controller failures never silently fall back.
+explicitly when shell parsing is desired. Contexts without a controller run
+standalone. A configured controller is used automatically; --standalone bypasses
+it explicitly, and controller failures never silently fall back.
 
 Creation options include --component ID, --application-profile APP=PATH,
 --github-credential HOST:USER[:ssh|https], --instructions PATH, --region,

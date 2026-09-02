@@ -25,6 +25,7 @@ small runtime helpers. Reopening the box is idempotent and preserves `/data`.
 ## Standalone
 
 Contexts contain provider identifiers, never credential values. Provider tokens stay in their documented environment variables.
+An existing shell installation is imported automatically from `~/.config/vmbox/config` on first Go CLI use; only its Railway project, environment, and region are migrated, never credentials.
 
 ```bash
 vmbox context add local-docker --provider docker --docker-context default
