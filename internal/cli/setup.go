@@ -716,7 +716,11 @@ func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (pre
 }
 
 func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name string, prepared preparedSetup) error {
-	for _, item := range prepared.uploads {
+	if len(prepared.uploads) > 0 {
+		fmt.Fprintf(a.Err, "vmbox: syncing %d selected agent/instruction file(s)\n", len(prepared.uploads))
+	}
+	for index, item := range prepared.uploads {
+		fmt.Fprintf(a.Err, "vmbox: syncing file %d/%d: %s\n", index+1, len(prepared.uploads), item.path)
 		result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "put-file", item.path, item.mode}, provider.ExecOptions{Stdin: bytes.NewReader(item.data), Stdout: io.Discard, Stderr: a.Err})
 		if err != nil {
 			return fmt.Errorf("upload %s: %w", item.path, err)
@@ -727,6 +731,7 @@ func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name stri
 	}
 	if prepared.githubToken != "" && prepared.setup.GitHub != nil {
 		credential := prepared.setup.GitHub
+		fmt.Fprintf(a.Err, "vmbox: syncing GitHub credential for %s@%s\n", credential.User, credential.Host)
 		result, err := p.Exec(ctx, name, []string{"gh", "auth", "login", "--hostname", credential.Host, "--git-protocol", credential.Protocol, "--with-token"}, provider.ExecOptions{Stdin: strings.NewReader(prepared.githubToken + "\n"), Stdout: io.Discard, Stderr: a.Err})
 		if err != nil || result.ExitCode != 0 {
 			return fmt.Errorf("upload GitHub credential for %s@%s failed", credential.User, credential.Host)
@@ -735,11 +740,14 @@ func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name stri
 		if err != nil || result.ExitCode != 0 {
 			return fmt.Errorf("configure GitHub credential for %s@%s failed", credential.User, credential.Host)
 		}
+		fmt.Fprintf(a.Err, "vmbox: GitHub credential is ready\n")
 	}
+	fmt.Fprintf(a.Err, "vmbox: configuring agent trust for %s\n", prepared.setup.Workspace)
 	result, err := p.Exec(ctx, name, []string{"vmbox-entrypoint", "--configure-agent-trust", prepared.setup.Workspace}, provider.ExecOptions{Stdout: io.Discard, Stderr: a.Err})
 	if err != nil || result.ExitCode != 0 {
 		return fmt.Errorf("initialize workspace trust for application profiles")
 	}
+	fmt.Fprintf(a.Err, "vmbox: agent trust is ready\n")
 	return nil
 }
 
@@ -753,11 +761,45 @@ func (a *App) ensureBootstrap(ctx context.Context, p provider.Provider, name str
 		return err
 	}
 	request.RestoreComponents = restoreComponents
-	fmt.Fprintf(a.Err, "vmbox: ensuring runtime and selected tools in %q\n", name)
-	if err := bootstrapper.Bootstrap(ctx, name, request); err != nil {
-		return fmt.Errorf("bootstrap box %q: %w", name, err)
+	selection := strings.Join(selected, ", ")
+	if restoreComponents {
+		selection = "saved component selection"
+	} else if selection == "" {
+		selection = "core runtime only"
 	}
-	return nil
+	started := time.Now()
+	fmt.Fprintf(a.Err, "vmbox: bootstrapping %q (%s); first install may take a few minutes\n", name, selection)
+	done := make(chan error, 1)
+	go func() {
+		done <- bootstrapper.Bootstrap(ctx, name, request)
+	}()
+	interval := a.ProgressInterval
+	if interval <= 0 {
+		interval = 10 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				return fmt.Errorf("bootstrap box %q: %w", name, err)
+			}
+			fmt.Fprintf(a.Err, "vmbox: runtime and tools are ready in %q (%s)\n", name, elapsedLabel(time.Since(started)))
+			return nil
+		case <-ticker.C:
+			fmt.Fprintf(a.Err, "vmbox: still bootstrapping %q (%s elapsed)\n", name, elapsedLabel(time.Since(started)))
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func elapsedLabel(elapsed time.Duration) string {
+	if elapsed < time.Second {
+		return "<1s"
+	}
+	return elapsed.Round(time.Second).String()
 }
 
 func (a *App) bootstrapRequest(selected []string) (provider.BootstrapRequest, error) {

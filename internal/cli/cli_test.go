@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/config"
@@ -32,6 +33,20 @@ type cliProvider struct {
 	exec    []providerExecCall
 	resized []string
 	start   []string
+}
+
+type progressBootstrapProvider struct {
+	*cliProvider
+	delay time.Duration
+}
+
+func (p *progressBootstrapProvider) Bootstrap(ctx context.Context, _ string, _ provider.BootstrapRequest) error {
+	select {
+	case <-time.After(p.delay):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 func newCLIProvider() *cliProvider  { return &cliProvider{boxes: make(map[string]provider.Box)} }
@@ -404,6 +419,37 @@ func TestProfilesGitHubAndMarkdownUploadIndependently(t *testing.T) {
 	}
 	if !foundAuth || !foundMarkdown || !foundGitHub {
 		t.Fatalf("auth=%v markdown=%v github=%v calls=%#v", foundAuth, foundMarkdown, foundGitHub, p.exec)
+	}
+	progress := app.Err.(*bytes.Buffer).String()
+	for _, expected := range []string{"syncing 3 selected agent/instruction file(s)", "syncing GitHub credential for octocat@github.com", "GitHub credential is ready", "configuring agent trust", "tmux session metadata is ready"} {
+		if !strings.Contains(progress, expected) {
+			t.Fatalf("progress missing %q: %s", expected, progress)
+		}
+	}
+}
+
+func TestBootstrapReportsSelectionHeartbeatAndCompletion(t *testing.T) {
+	assets := t.TempDir()
+	if err := os.WriteFile(filepath.Join(assets, "vmbox-entrypoint"), []byte("entrypoint"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(assets, "vmbox-runtime-linux-amd64"), []byte("runtime"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := &progressBootstrapProvider{cliProvider: newCLIProvider(), delay: 8 * time.Millisecond}
+	app := New()
+	var stderr bytes.Buffer
+	app.Err = &stderr
+	app.Environ = map[string]string{"VMBOX_RUNTIME_ASSET_DIR": assets}
+	app.ProgressInterval = time.Millisecond
+	if err := app.ensureBootstrap(context.Background(), p, "worker", []string{"codex", "bun"}, false); err != nil {
+		t.Fatal(err)
+	}
+	progress := stderr.String()
+	for _, expected := range []string{"bootstrapping \"worker\" (codex, bun)", "still bootstrapping \"worker\"", "runtime and tools are ready in \"worker\""} {
+		if !strings.Contains(progress, expected) {
+			t.Fatalf("progress missing %q: %s", expected, progress)
+		}
 	}
 }
 
