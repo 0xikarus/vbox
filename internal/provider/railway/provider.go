@@ -163,8 +163,14 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 		if inspectErr != nil {
 			return provider.Box{}, inspectErr
 		}
-		if err := provider.VerifyOwner(box.Owner, req.Owner); err != nil {
-			return provider.Box{}, err
+		if box.Owner.BoxID == "" && box.Owner.AccountID == req.Owner.AccountID {
+			// A prior creation may have been interrupted after writing the account
+			// marker but before the remaining metadata and source. Reconcile that
+			// exact vmbox-prefixed service instead of trying to start it incomplete.
+		} else {
+			if err := provider.VerifyOwner(box.Owner, req.Owner); err != nil {
+				return provider.Box{}, err
+			}
 		}
 		if status := strings.ToUpper(existing.Status); status != "" && status != "NO_DEPLOYMENT" {
 			return box, nil
@@ -626,7 +632,13 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 	}
 	result, submitErr := p.run(ctx, "redeploy", "--service", service, "--yes", "--json", "--from-source")
 	id := deploymentID(result.Stdout)
-	if id == "" {
+	visibilityTimeout := 30 * time.Second
+	if p.cfg.ReadyTimeout < visibilityTimeout {
+		visibilityTimeout = p.cfg.ReadyTimeout
+	}
+	visibilityDeadline := time.NewTimer(visibilityTimeout)
+	defer visibilityDeadline.Stop()
+	for id == "" {
 		after, reconcileErr := p.deployments(ctx, service)
 		if reconcileErr == nil {
 			var candidates []string
@@ -641,13 +653,21 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 				return fmt.Errorf("Railway deployment submission was interrupted and reconciled to multiple new deployments; refusing to guess")
 			}
 		}
-	}
-	if id == "" {
-		if submitErr != nil || result.ExitCode != 0 {
-			return railwayError("submit deployment", result, submitErr)
+		if id != "" {
+			break
 		}
-		return fmt.Errorf("Railway deployment submission returned no deployment ID and could not be reconciled")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-visibilityDeadline.C:
+			if submitErr != nil || result.ExitCode != 0 {
+				return railwayError("submit deployment", result, submitErr)
+			}
+			return fmt.Errorf("Railway accepted the deployment submission, but no deployment record became visible before timeout")
+		case <-time.After(p.cfg.PollInterval):
+		}
 	}
+	visibilityDeadline.Stop()
 	deadline := time.NewTimer(p.cfg.ReadyTimeout)
 	defer deadline.Stop()
 	for {

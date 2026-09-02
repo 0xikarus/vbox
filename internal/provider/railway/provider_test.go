@@ -74,6 +74,23 @@ func TestDeploymentIDPrefersSubmittedDeploymentOverService(t *testing.T) {
 	}
 }
 
+func TestDeploymentSubmissionPollsUntilRecordBecomesVisible(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`[]`)},
+		{Stdout: []byte(`{}`)},
+		{Stdout: []byte(`[]`)},
+		{Stdout: []byte(`[{"id":"deployment-new","status":"BUILDING"}]`)},
+		{Stdout: []byte(`[{"id":"deployment-new","status":"SUCCESS"}]`)},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	if err := p.submitAndWaitDeployment(context.Background(), "vmbox-box"); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Calls) != 5 {
+		t.Fatalf("calls=%#v", runner.Calls)
+	}
+}
+
 func TestEmptyDeploymentStatusIsStopped(t *testing.T) {
 	if got := state(""); got != provider.StateStopped {
 		t.Fatalf("state(empty) = %q, want %q", got, provider.StateStopped)

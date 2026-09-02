@@ -321,6 +321,41 @@ func (w crlfWriter) Write(data []byte) (int, error) {
 	return len(data), nil
 }
 
+func readMenuKey(reader *bufio.Reader) (byte, error) {
+	key, err := reader.ReadByte()
+	if err != nil {
+		return 0, errSetupCancelled
+	}
+	switch key {
+	case 'q', 'Q', 0x03, 0x04:
+		return 0, errSetupCancelled
+	case 0x1b:
+		// Arrow keys normally arrive in one buffered ESC [ A/B sequence. A bare
+		// Escape must cancel immediately instead of blocking for two more bytes.
+		if reader.Buffered() < 2 {
+			return 0, errSetupCancelled
+		}
+		first, err := reader.ReadByte()
+		if err != nil || first != '[' {
+			return 0, errSetupCancelled
+		}
+		second, err := reader.ReadByte()
+		if err != nil {
+			return 0, errSetupCancelled
+		}
+		switch second {
+		case 'A':
+			return 'k', nil
+		case 'B':
+			return 'j', nil
+		default:
+			return 0, errSetupCancelled
+		}
+	default:
+		return key, nil
+	}
+}
+
 func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.Provider, boxName string, setup config.CreationSetup, argv []string) (config.CreationSetup, error) {
 	restore, err := makeRaw(a.In)
 	if err != nil {
@@ -416,13 +451,14 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 		rows = append(rows, setupRow{kind: "instructions", index: i, label: path})
 	}
 	rows = append(rows, setupRow{kind: "save", label: "Save this setup for --reuse in this working directory"})
+	rows = append(rows, setupRow{kind: "cancel", label: "Cancel"})
 	rows = append(rows, setupRow{kind: "confirm", label: "Confirm and create"})
 	cursor := 0
 	reader := bufio.NewReader(a.In)
 	for {
 		fmt.Fprint(output, "\033[2J\033[H")
 		fmt.Fprintf(output, "New box configuration: %s\n", boxName)
-		fmt.Fprintln(output, "↑/↓ or j/k: move  Space: toggle/select  Enter: only on Confirm  q: cancel")
+		fmt.Fprintln(output, "↑/↓ or j/k: move  Space: toggle/select  Enter: Cancel/Confirm  q/Esc/Ctrl-C: cancel")
 		command, _ := json.Marshal(argv)
 		if len(argv) == 0 {
 			command, _ = json.Marshal(defaultSession(false))
@@ -488,31 +524,34 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 				if selectedInstructions[instructions[row.index]] {
 					marker = "x"
 				}
-			case "confirm":
+			case "cancel", "confirm":
 				marker = ">"
 			}
 			prefix := "  "
 			if i == cursor {
 				prefix = "> "
 			}
-			if row.kind == "confirm" {
+			if row.kind == "cancel" || row.kind == "confirm" {
 				fmt.Fprintf(output, "%s[ %s ]\n", prefix, row.label)
 			} else {
 				fmt.Fprintf(output, "%s[%s] %s\n", prefix, marker, row.label)
 			}
 		}
-		key, err := reader.ReadByte()
+		key, err := readMenuKey(reader)
 		if err != nil {
+			fmt.Fprint(output, "\033[2J\033[H")
 			return setup, errSetupCancelled
 		}
 		switch key {
-		case 'q':
-			return setup, errSetupCancelled
 		case 'j':
 			cursor = (cursor + 1) % len(rows)
 		case 'k':
 			cursor = (cursor - 1 + len(rows)) % len(rows)
 		case '\n', '\r':
+			if rows[cursor].kind == "cancel" {
+				fmt.Fprint(output, "\033[2J\033[H")
+				return setup, errSetupCancelled
+			}
 			if rows[cursor].kind != "confirm" {
 				continue
 			}
@@ -568,14 +607,6 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 			case "instructions":
 				path := instructions[row.index]
 				selectedInstructions[path] = !selectedInstructions[path]
-			}
-		case 0x1b:
-			first, _ := reader.ReadByte()
-			second, _ := reader.ReadByte()
-			if first == '[' && second == 'A' {
-				cursor = (cursor - 1 + len(rows)) % len(rows)
-			} else if first == '[' && second == 'B' {
-				cursor = (cursor + 1) % len(rows)
 			}
 		}
 	}
@@ -896,13 +927,11 @@ func (a *App) selectStandaloneBox(ctx context.Context, p provider.Provider, titl
 			prefix = "> "
 		}
 		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
-		key, readErr := reader.ReadByte()
+		key, readErr := readMenuKey(reader)
 		if readErr != nil {
 			return "", errSetupCancelled
 		}
 		switch key {
-		case 'q':
-			return "", errSetupCancelled
 		case 'j':
 			cursor = (cursor + 1) % (len(boxes) + 1)
 		case 'k':
@@ -919,14 +948,6 @@ func (a *App) selectStandaloneBox(ctx context.Context, p provider.Provider, titl
 			if cursor == confirm && selected >= 0 {
 				fmt.Fprint(a.Out, "\033[2J\033[H")
 				return boxes[selected].Name, nil
-			}
-		case 0x1b:
-			first, _ := reader.ReadByte()
-			second, _ := reader.ReadByte()
-			if first == '[' && second == 'A' {
-				cursor = (cursor - 1 + len(boxes) + 1) % (len(boxes) + 1)
-			} else if first == '[' && second == 'B' {
-				cursor = (cursor + 1) % (len(boxes) + 1)
 			}
 		}
 	}
@@ -967,13 +988,11 @@ func (a *App) selectResizeResources(title string) (provider.Resources, error) {
 			prefix = "> "
 		}
 		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
-		key, err := reader.ReadByte()
+		key, err := readMenuKey(reader)
 		if err != nil {
 			return provider.Resources{}, errSetupCancelled
 		}
 		switch key {
-		case 'q':
-			return provider.Resources{}, errSetupCancelled
 		case 'j':
 			cursor = (cursor + 1) % (len(presets) + 1)
 		case 'k':
@@ -986,14 +1005,6 @@ func (a *App) selectResizeResources(title string) (provider.Resources, error) {
 			if cursor == len(presets) {
 				fmt.Fprint(a.Out, "\033[2J\033[H")
 				return presets[selected], nil
-			}
-		case 0x1b:
-			first, _ := reader.ReadByte()
-			second, _ := reader.ReadByte()
-			if first == '[' && second == 'A' {
-				cursor = (cursor - 1 + len(presets) + 1) % (len(presets) + 1)
-			} else if first == '[' && second == 'B' {
-				cursor = (cursor + 1) % (len(presets) + 1)
 			}
 		}
 	}
@@ -1035,13 +1046,11 @@ func (a *App) selectControllerRun(ctx context.Context, c config.Context, token, 
 			prefix = "> "
 		}
 		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
-		key, err := reader.ReadByte()
+		key, err := readMenuKey(reader)
 		if err != nil {
 			return "", errSetupCancelled
 		}
 		switch key {
-		case 'q':
-			return "", errSetupCancelled
 		case 'j':
 			cursor = (cursor + 1) % (len(runs) + 1)
 		case 'k':
@@ -1058,14 +1067,6 @@ func (a *App) selectControllerRun(ctx context.Context, c config.Context, token, 
 			if cursor == len(runs) && selected >= 0 {
 				fmt.Fprint(a.Out, "\033[2J\033[H")
 				return runs[selected].ID, nil
-			}
-		case 0x1b:
-			first, _ := reader.ReadByte()
-			second, _ := reader.ReadByte()
-			if first == '[' && second == 'A' {
-				cursor = (cursor - 1 + len(runs) + 1) % (len(runs) + 1)
-			} else if first == '[' && second == 'B' {
-				cursor = (cursor + 1) % (len(runs) + 1)
 			}
 		}
 	}

@@ -454,7 +454,11 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if opts.componentsSet {
 			bootstrapComponents = append([]string(nil), opts.components...)
 		}
-		if inspectErr == nil {
+		repairing := inspectErr == nil && box.Owner.BoxID == ""
+		if repairing && box.Owner.AccountID != "standalone" {
+			return fmt.Errorf("Railway service for %q exists without complete vmbox ownership; refusing to adopt it", opts.name)
+		}
+		if inspectErr == nil && !repairing {
 			if opts.reuse {
 				fmt.Fprintf(a.Err, "vmbox: --reuse ignored because %q already exists\n", opts.name)
 			}
@@ -464,11 +468,17 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 					return err
 				}
 			}
-		} else if !errors.Is(inspectErr, provider.ErrNotFound) {
+		} else if inspectErr != nil && !errors.Is(inspectErr, provider.ErrNotFound) {
 			return inspectErr
 		} else if command == "run" {
+			if repairing {
+				return fmt.Errorf("box %q has an incomplete prior creation; rerun vmbox new %s to repair it", opts.name, opts.name)
+			}
 			return fmt.Errorf("box %q does not exist", opts.name)
 		} else {
+			if repairing {
+				fmt.Fprintf(a.Err, "vmbox: repairing incomplete Railway service for %q\n", opts.name)
+			}
 			workingDirectory, err := a.workingDirectory()
 			if err != nil {
 				return err

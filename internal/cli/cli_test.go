@@ -285,6 +285,26 @@ func TestCreateAliasesResumeExistingAndPersistReusableSetup(t *testing.T) {
 	}
 }
 
+func TestNewRepairsIncompleteOwnedServiceInsteadOfStartingIt(t *testing.T) {
+	dir := t.TempDir()
+	p := newCLIProvider()
+	p.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateStopped, Owner: provider.Owner{AccountID: "standalone"}}
+	app := New()
+	app.ConfigPath, app.WorkingDir = filepath.Join(dir, "config.json"), dir
+	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	app.IsTerminal = func() bool { return false }
+	file := config.File{Current: "test", Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
+	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "worker", "--detach", "--component", "bun"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.created) != 1 || len(p.start) != 0 {
+		t.Fatalf("create calls=%d start calls=%d", len(p.created), len(p.start))
+	}
+	if p.created[0].Owner.BoxID != "worker" || !strings.Contains(app.Err.(*bytes.Buffer).String(), "repairing incomplete Railway service") {
+		t.Fatalf("request=%+v stderr=%q", p.created[0], app.Err.(*bytes.Buffer).String())
+	}
+}
+
 func TestTaskStatusForwardsOptionalRuntimeRunID(t *testing.T) {
 	p := newCLIProvider()
 	p.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning}
@@ -396,7 +416,7 @@ func TestUnifiedScreenAndSelectorsRequireVisibleConfirm(t *testing.T) {
 	if !errors.Is(err, errSetupCancelled) {
 		t.Fatalf("Enter outside Confirm accepted setup: %v", err)
 	}
-	if !strings.Contains(out.String(), "Enter: only on Confirm") || !strings.Contains(out.String(), "[ Confirm and create ]") || !strings.Contains(out.String(), `["printf","two words"]`) {
+	if !strings.Contains(out.String(), "Enter: Cancel/Confirm") || !strings.Contains(out.String(), "[ Cancel ]") || !strings.Contains(out.String(), "[ Confirm and create ]") || !strings.Contains(out.String(), `["printf","two words"]`) {
 		t.Fatalf("screen=%q", out.String())
 	}
 
@@ -432,17 +452,22 @@ func TestUnifiedScreenPreservesExplicitCustomResources(t *testing.T) {
 }
 
 func TestCreationCancellationHappensBeforeProviderMutation(t *testing.T) {
-	p := newCLIProvider()
-	app := New()
-	app.In, app.Out, app.Err = strings.NewReader("q"), &bytes.Buffer{}, &bytes.Buffer{}
-	app.IsTerminal = func() bool { return true }
-	app.Runner = &procexec.FakeRunner{}
-	file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
-	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "worker"}); err != nil {
-		t.Fatal(err)
-	}
-	if len(p.created) != 0 || len(p.exec) != 0 {
-		t.Fatalf("provider mutated before confirmation: creates=%d exec=%d", len(p.created), len(p.exec))
+	for name, input := range map[string]string{"q": "q", "uppercase-q": "Q", "escape": "\x1b", "ctrl-c": "\x03", "visible-cancel": "kk\n"} {
+		t.Run(name, func(t *testing.T) {
+			p := newCLIProvider()
+			app := New()
+			app.In, app.Out, app.Err = strings.NewReader(input), &bytes.Buffer{}, &bytes.Buffer{}
+			app.IsTerminal = func() bool { return true }
+			app.Runner = &procexec.FakeRunner{}
+			app.Environ = map[string]string{"HOME": t.TempDir()}
+			file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
+			if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "worker"}); err != nil {
+				t.Fatal(err)
+			}
+			if len(p.created) != 0 || len(p.exec) != 0 {
+				t.Fatalf("provider mutated before confirmation: creates=%d exec=%d", len(p.created), len(p.exec))
+			}
+		})
 	}
 }
 
