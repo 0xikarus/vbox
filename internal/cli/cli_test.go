@@ -251,11 +251,13 @@ func TestContextRejectsRemovedProvider(t *testing.T) {
 }
 
 func TestCreateAliasesResumeExistingAndPersistReusableSetup(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.json")
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
 	file := config.File{Current: "test", Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
 	p := newCLIProvider()
 	app := New()
 	app.ConfigPath, app.Out, app.Err = path, &bytes.Buffer{}, &bytes.Buffer{}
+	app.WorkingDir = dir
 	app.IsTerminal = func() bool { return false }
 	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"create", "worker", "--detach"}); err != nil {
 		t.Fatal(err)
@@ -270,8 +272,12 @@ func TestCreateAliasesResumeExistingAndPersistReusableSetup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if saved.LastSetups["test"].Version != 1 || saved.LastSetups["test"].Resources.MemoryMiB != 4096 {
-		t.Fatalf("saved=%+v", saved.LastSetups["test"])
+	reused, err := loadSetup(saved, "test", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused.Version != 1 || reused.Resources.MemoryMiB != 4096 || reused.WorkingDirectory != dir {
+		t.Fatalf("saved=%+v", reused)
 	}
 	last := p.exec[len(p.exec)-1].argv
 	if !reflect.DeepEqual(last, []string{"sh", "-c", `tmux has-session -t vmbox 2>/dev/null || exec tmux new-session -d -s vmbox -c /data/workspace vmbox-runtime welcome`}) {
@@ -306,6 +312,7 @@ func TestReuseReloadsExplicitMarkdownPathsAndReportsMissing(t *testing.T) {
 	var stderr bytes.Buffer
 	app := New()
 	app.ConfigPath, app.Out, app.Err = path, &bytes.Buffer{}, &stderr
+	app.WorkingDir = dir
 	app.IsTerminal = func() bool { return false }
 	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "one", "--detach", "--instructions", instructions, "--cpu", "4"}); err != nil {
 		t.Fatal(err)
@@ -330,8 +337,12 @@ func TestReuseReloadsExplicitMarkdownPathsAndReportsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(reloaded.LastSetups["test"].Instructions, []string{instructions}) {
-		t.Fatalf("instructions=%#v", reloaded.LastSetups["test"].Instructions)
+	reused, err := loadSetup(reloaded, "test", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reused.Instructions, []string{instructions}) {
+		t.Fatalf("instructions=%#v", reused.Instructions)
 	}
 }
 

@@ -35,6 +35,7 @@ type App struct {
 	Environ    map[string]string
 	HTTP       *http.Client
 	ConfigPath string
+	WorkingDir string
 	Runner     procexec.Runner
 	IsTerminal func() bool
 }
@@ -468,9 +469,13 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		} else if command == "run" {
 			return fmt.Errorf("box %q does not exist", opts.name)
 		} else {
+			workingDirectory, err := a.workingDirectory()
+			if err != nil {
+				return err
+			}
 			setup := defaultSetup(c)
 			if opts.reuse {
-				setup, err = loadSetup(file, c.Name)
+				setup, err = loadSetup(file, c.Name, workingDirectory)
 				if err != nil {
 					return err
 				}
@@ -519,10 +524,10 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				return err
 			}
 			if prepared.setup.Save {
-				if err := saveSetup(a.ConfigPath, file, c.Name, prepared.setup); err != nil {
+				if err := saveSetup(a.ConfigPath, file, c.Name, workingDirectory, prepared.setup); err != nil {
 					return fmt.Errorf("save complete reusable setup: %w", err)
 				}
-				fmt.Fprintf(a.Err, "vmbox: saved complete reusable setup for context %s\n", c.Name)
+				fmt.Fprintf(a.Err, "vmbox: saved reusable setup for context %s in %s\n", c.Name, workingDirectory)
 			}
 		}
 		if !created {
@@ -721,9 +726,13 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 				return json.NewEncoder(a.Out).Encode(box)
 			}
 		}
+		workingDirectory, err := a.workingDirectory()
+		if err != nil {
+			return err
+		}
 		setup := defaultSetup(c)
 		if opts.reuse {
-			setup, err = loadSetup(file, c.Name)
+			setup, err = loadSetup(file, c.Name, workingDirectory)
 			if err != nil {
 				return err
 			}
@@ -762,7 +771,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		}
 		fmt.Fprintf(a.Out, "accepted %s (%d)\n", run.ID, status)
 		if prepared.setup.Save {
-			return saveSetup(a.ConfigPath, file, c.Name, prepared.setup)
+			return saveSetup(a.ConfigPath, file, c.Name, workingDirectory, prepared.setup)
 		}
 		return nil
 	case "status":

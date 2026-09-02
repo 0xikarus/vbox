@@ -31,6 +31,7 @@ type CreationSetup struct {
 	Save                bool                 `json:"-"`
 	Version             int                  `json:"version"`
 	SavedAt             time.Time            `json:"savedAt"`
+	WorkingDirectory    string               `json:"workingDirectory,omitempty"`
 	Region              string               `json:"region,omitempty"`
 	Resources           provider.Resources   `json:"resources"`
 	Components          []string             `json:"components,omitempty"`

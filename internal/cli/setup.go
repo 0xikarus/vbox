@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -414,7 +415,7 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 	for i, path := range instructions {
 		rows = append(rows, setupRow{kind: "instructions", index: i, label: path})
 	}
-	rows = append(rows, setupRow{kind: "save", label: "Save this setup for --reuse"})
+	rows = append(rows, setupRow{kind: "save", label: "Save this setup for --reuse in this working directory"})
 	rows = append(rows, setupRow{kind: "confirm", label: "Confirm and create"})
 	cursor := 0
 	reader := bufio.NewReader(a.In)
@@ -798,22 +799,63 @@ func (a *App) uploadWelcome(ctx context.Context, p provider.Provider, box provid
 	return nil
 }
 
-func loadSetup(file config.File, contextName string) (config.CreationSetup, error) {
-	setup, ok := file.LastSetups[contextName]
+func normalizeWorkingDirectory(directory string) (string, error) {
+	if strings.TrimSpace(directory) == "" {
+		return "", fmt.Errorf("working directory is empty")
+	}
+	absolute, err := filepath.Abs(directory)
+	if err != nil {
+		return "", fmt.Errorf("resolve working directory: %w", err)
+	}
+	return filepath.Clean(absolute), nil
+}
+
+func setupScopeKey(contextName, workingDirectory string) (string, string, error) {
+	directory, err := normalizeWorkingDirectory(workingDirectory)
+	if err != nil {
+		return "", "", err
+	}
+	digest := sha256.Sum256([]byte(directory))
+	return fmt.Sprintf("%s:%x", contextName, digest), directory, nil
+}
+
+func (a *App) workingDirectory() (string, error) {
+	directory := a.WorkingDir
+	if directory == "" {
+		var err error
+		directory, err = os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("get working directory: %w", err)
+		}
+	}
+	return normalizeWorkingDirectory(directory)
+}
+
+func loadSetup(file config.File, contextName, workingDirectory string) (config.CreationSetup, error) {
+	key, directory, err := setupScopeKey(contextName, workingDirectory)
+	if err != nil {
+		return config.CreationSetup{}, err
+	}
+	setup, ok := file.LastSetups[key]
 	if !ok || setup.Version != 1 {
-		return setup, fmt.Errorf("no complete reusable setup is saved for context %q", contextName)
+		return setup, fmt.Errorf("no complete reusable setup is saved for context %q in %s", contextName, directory)
 	}
 	setup.Save = true
 	return setup, nil
 }
 
-func saveSetup(path string, file config.File, contextName string, setup config.CreationSetup) error {
+func saveSetup(path string, file config.File, contextName, workingDirectory string, setup config.CreationSetup) error {
 	if file.LastSetups == nil {
 		file.LastSetups = make(map[string]config.CreationSetup)
 	}
+	key, directory, err := setupScopeKey(contextName, workingDirectory)
+	if err != nil {
+		return err
+	}
 	setup.Version = 1
 	setup.SavedAt = time.Now().UTC()
-	file.LastSetups[contextName] = setup
+	setup.WorkingDirectory = directory
+	file.LastSetups[key] = setup
 	return config.Save(path, file)
 }
 

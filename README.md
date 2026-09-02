@@ -54,7 +54,8 @@ Detached commands print a run ID. `task-status` returns durable JSON state and
 the last visible output line for that run.
 
 New boxes collect every choice before provisioning and save the last complete,
-secret-free setup per context. `--reuse` reloads it. Application profiles,
+secret-free setup per context and working directory. `--reuse` reloads it only
+from that same directory. Application profiles,
 GitHub credentials, and Markdown instructions are independently selected;
 Markdown is installed only as workspace instructions, never as authentication.
 

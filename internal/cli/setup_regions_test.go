@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -26,6 +27,7 @@ func TestSetupRegionsUseProviderIdentifiers(t *testing.T) {
 }
 
 func TestReusableSetupRestoresSelectionsAndSaveIntent(t *testing.T) {
+	directory := t.TempDir()
 	markdown := t.TempDir() + "/instructions.md"
 	if err := os.WriteFile(markdown, []byte("instructions"), 0o600); err != nil {
 		t.Fatal(err)
@@ -33,8 +35,15 @@ func TestReusableSetupRestoresSelectionsAndSaveIntent(t *testing.T) {
 	setup := defaultSetup(config.Context{Provider: "railway", Cluster: "iad"})
 	setup.Save = false // Save is a UI-only choice and is intentionally not serialized.
 	setup.Instructions = []string{markdown}
-	file := config.File{LastSetups: map[string]config.CreationSetup{"test": setup}}
-	loaded, err := loadSetup(file, "test")
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := saveSetup(path, config.File{}, "test", directory, setup); err != nil {
+		t.Fatal(err)
+	}
+	file, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := loadSetup(file, "test", directory)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +60,10 @@ func TestReusableSetupRestoresSelectionsAndSaveIntent(t *testing.T) {
 		t.Fatalf("configureSetup error = %v", err)
 	}
 	screen := out.String()
-	if !strings.Contains(screen, "[x] US East") || !strings.Contains(screen, "[x] "+markdown) || !strings.Contains(screen, "[x] Save this setup for --reuse") {
+	if !strings.Contains(screen, "[x] US East") || !strings.Contains(screen, "[x] "+markdown) || !strings.Contains(screen, "[x] Save this setup for --reuse in this working directory") {
 		t.Fatalf("saved selections were not restored: %q", screen)
+	}
+	if _, err := loadSetup(file, "test", t.TempDir()); err == nil || !strings.Contains(err.Error(), "no complete reusable setup") {
+		t.Fatalf("cross-directory reuse error = %v", err)
 	}
 }
