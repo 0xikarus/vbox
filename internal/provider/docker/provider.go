@@ -456,7 +456,7 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	} else if opts.Stdin != nil {
 		args = append(args, "--interactive")
 	}
-	args = append(args, container)
+	args = append(args, "--user", provider.WorkloadUser, "--env", "HOME="+provider.WorkloadHome, "--env", "USER="+provider.WorkloadUser, "--env", "LOGNAME="+provider.WorkloadUser, "--env", "SHELL=/bin/bash", "--env", "PATH="+provider.WorkloadPath, "--workdir", "/data/workspace", container)
 	if opts.Detach {
 		args = append(args, "vmbox-runtime", "run", "--detach", "--")
 	}

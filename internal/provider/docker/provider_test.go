@@ -18,7 +18,8 @@ func TestExecPreservesExactArgv(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := runner.Calls[0].Argv
-	want := append([]string{"docker", "--context", "ssh-builder", "container", "exec", "vmbox-box"}, argv...)
+	want := []string{"docker", "--context", "ssh-builder", "container", "exec", "--user", "vmbox", "--env", "HOME=/data/home", "--env", "USER=vmbox", "--env", "LOGNAME=vmbox", "--env", "SHELL=/bin/bash", "--env", "PATH=" + provider.WorkloadPath, "--workdir", "/data/workspace", "vmbox-box"}
+	want = append(want, argv...)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv mismatch\n got: %#v\nwant: %#v", got, want)
 	}
@@ -31,7 +32,7 @@ func TestExecKeepsStdinOpenWithoutAllocatingTTY(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"docker", "container", "exec", "--interactive", "vmbox-box", "vmbox-runtime", "put-file", "/data/file", "0600"}
+	want := []string{"docker", "container", "exec", "--interactive", "--user", "vmbox", "--env", "HOME=/data/home", "--env", "USER=vmbox", "--env", "LOGNAME=vmbox", "--env", "SHELL=/bin/bash", "--env", "PATH=" + provider.WorkloadPath, "--workdir", "/data/workspace", "vmbox-box", "vmbox-runtime", "put-file", "/data/file", "0600"}
 	if !reflect.DeepEqual(runner.Calls[0].Argv, want) {
 		t.Fatalf("argv=%#v want=%#v", runner.Calls[0].Argv, want)
 	}
@@ -44,7 +45,8 @@ func TestDetachedExecUsesGenericRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := append([]string{"docker", "container", "exec", "vmbox-box", "vmbox-runtime", "run", "--detach", "--"}, argv...)
+	want := []string{"docker", "container", "exec", "--user", "vmbox", "--env", "HOME=/data/home", "--env", "USER=vmbox", "--env", "LOGNAME=vmbox", "--env", "SHELL=/bin/bash", "--env", "PATH=" + provider.WorkloadPath, "--workdir", "/data/workspace", "vmbox-box", "vmbox-runtime", "run", "--detach", "--"}
+	want = append(want, argv...)
 	if got := runner.Calls[0].Argv; !reflect.DeepEqual(got, want) {
 		t.Fatalf("argv mismatch\n got: %#v\nwant: %#v", got, want)
 	}

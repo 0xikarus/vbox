@@ -748,9 +748,9 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 		return provider.ExecResult{}, err
 	}
 	encoded, _ := json.Marshal(argv)
-	remote := []string{"vmbox-runtime", "exec-json", base64.RawURLEncoding.EncodeToString(encoded)}
+	remote := provider.AsWorkloadUser([]string{"vmbox-runtime", "exec-json", base64.RawURLEncoding.EncodeToString(encoded)})
 	if opts.Detach {
-		remote = append([]string{"vmbox-runtime", "run", "--detach", "--"}, argv...)
+		remote = provider.AsWorkloadUser(append([]string{"vmbox-runtime", "run", "--detach", "--"}, argv...))
 	}
 	started := time.Now().UTC()
 	sshArgs := append([]string{"railway", "ssh"}, p.target()...)
@@ -763,12 +763,18 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 }
 
-func (p *Provider) AttachSession(ctx context.Context, id, session string, opts provider.ExecOptions) (provider.ExecResult, error) {
+func (p *Provider) AttachSession(ctx context.Context, id, session string, command []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 	if session == "" {
 		return provider.ExecResult{}, fmt.Errorf("tmux session name cannot be empty")
 	}
+	if len(command) == 0 {
+		return provider.ExecResult{}, fmt.Errorf("tmux session command cannot be empty")
+	}
 	service, err := p.resolve(ctx, id)
 	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	if err := p.ensureSession(ctx, service.Name, session, command, opts.Stderr); err != nil {
 		return provider.ExecResult{}, err
 	}
 	started := time.Now().UTC()
@@ -784,6 +790,65 @@ func (p *Provider) AttachSession(ctx context.Context, id, session string, opts p
 		return provider.ExecResult{}, err
 	}
 	return provider.ExecResult{ExitCode: result.ExitCode, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+}
+
+func (p *Provider) ensureSession(ctx context.Context, service, session string, command []string, stderr io.Writer) error {
+	run := func(argv ...string) (procexec.Result, error) {
+		sshArgs := append([]string{"railway", "ssh"}, p.target()...)
+		sshArgs = append(sshArgs, "--service", service)
+		sshArgs = append(sshArgs, argv...)
+		return p.runSSH(ctx, sshArgs, nil, nil, nil)
+	}
+	check, err := run("tmux", "has-session", "-t", session)
+	if err != nil {
+		return fmt.Errorf("check tmux session: %w", err)
+	}
+	if check.ExitCode == 0 {
+		marker, markerErr := run("tmux", "show-environment", "-t", session, "VMBOX_SESSION_USER")
+		if markerErr == nil && marker.ExitCode == 0 && strings.TrimSpace(string(marker.Stdout)) == "VMBOX_SESSION_USER="+provider.WorkloadUser {
+			return nil
+		}
+		panes, panesErr := run("tmux", "list-panes", "-t", session, "-F", "#{pane_current_command}")
+		if panesErr == nil && panes.ExitCode == 0 && idleSession(string(panes.Stdout)) {
+			killed, killErr := run("tmux", "kill-session", "-t", session)
+			if killErr != nil || killed.ExitCode != 0 {
+				return fmt.Errorf("replace legacy root tmux session")
+			}
+		} else {
+			if stderr != nil {
+				fmt.Fprintln(stderr, "vmbox: existing active tmux session predates the non-root migration; it will be preserved until the box is stopped")
+			}
+			return nil
+		}
+	}
+	encoded, _ := json.Marshal(command)
+	pane := provider.AsWorkloadUser([]string{"vmbox-runtime", "direct-json", base64.RawURLEncoding.EncodeToString(encoded)})
+	create := []string{"tmux", "new-session", "-d", "-s", session, "-c", "/data/workspace", "--"}
+	create = append(create, pane...)
+	created, err := run(create...)
+	if err != nil || created.ExitCode != 0 {
+		return fmt.Errorf("create tmux session exited with status %d", created.ExitCode)
+	}
+	marked, err := run("tmux", "set-environment", "-t", session, "VMBOX_SESSION_USER", provider.WorkloadUser)
+	if err != nil || marked.ExitCode != 0 {
+		return fmt.Errorf("mark tmux session user")
+	}
+	return nil
+}
+
+func idleSession(output string) bool {
+	values := strings.Fields(strings.ToLower(output))
+	if len(values) == 0 {
+		return false
+	}
+	for _, value := range values {
+		switch value {
+		case "bash", "sh", "zsh", "fish", "dash":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (p *Provider) Reconcile(ctx context.Context, desired provider.Box) (provider.Box, error) {

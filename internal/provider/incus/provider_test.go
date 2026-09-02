@@ -17,7 +17,7 @@ func TestExecPreservesExactArgv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := append([]string{"incus", "exec", "host:vmbox-box", "--"}, argv...)
+	want := append([]string{"incus", "exec", "host:vmbox-box", "--"}, provider.AsWorkloadUser(argv)...)
 	if !reflect.DeepEqual(runner.Calls[1].Argv, want) {
 		t.Fatalf("got %#v want %#v", runner.Calls[1].Argv, want)
 	}

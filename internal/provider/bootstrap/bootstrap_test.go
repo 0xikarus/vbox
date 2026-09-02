@@ -29,6 +29,9 @@ func TestInstallStreamsMatchingRuntimeAndIsIdempotent(t *testing.T) {
 			if stdin == nil || argv[len(argv)-1] != "codex,foundry" {
 				t.Fatalf("install argv=%#v stdin=%v", argv, stdin)
 			}
+			if !strings.Contains(argv[2], "useradd --uid 10001") || !strings.Contains(argv[2], "NOPASSWD:ALL") {
+				t.Fatalf("bootstrap does not create the passwordless sudo user")
+			}
 			return provider.ExecResult{}, nil
 		case 4, 5:
 			data, err := io.ReadAll(stdin)

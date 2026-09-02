@@ -45,8 +45,8 @@ type sessionCLIProvider struct {
 	attached []string
 }
 
-func (p *sessionCLIProvider) AttachSession(_ context.Context, name, session string, _ provider.ExecOptions) (provider.ExecResult, error) {
-	p.attached = append(p.attached, name+":"+session)
+func (p *sessionCLIProvider) AttachSession(_ context.Context, name, session string, command []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+	p.attached = append(p.attached, name+":"+session+":"+strings.Join(command, " "))
 	return provider.ExecResult{}, nil
 }
 
@@ -320,17 +320,8 @@ func TestInteractiveResumeUsesProviderNativeTmuxSession(t *testing.T) {
 	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "worker"}); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(p.attached, []string{"worker:vmbox"}) {
+	if !reflect.DeepEqual(p.attached, []string{"worker:vmbox:vmbox-runtime welcome"}) {
 		t.Fatalf("attached=%#v", p.attached)
-	}
-	foundSessionCheck := false
-	for _, call := range p.exec {
-		if reflect.DeepEqual(call.argv, []string{"tmux", "has-session", "-t", "vmbox"}) {
-			foundSessionCheck = true
-		}
-	}
-	if !foundSessionCheck {
-		t.Fatalf("tmux session was not prepared: %#v", p.exec)
 	}
 }
 

@@ -95,6 +95,10 @@ Claude `permissions.defaultMode = "bypassPermissions"`. These modes permit
 commands without approval and are intentionally unrestricted inside the box.
 Existing MCP, allow/deny rules, and other agent settings are preserved.
 
+Interactive shells and forwarded tasks run as the unprivileged `vmbox` user,
+with `/data/home` as its home and `/data/workspace` as its working directory.
+Use `sudo` only for system changes; it is passwordless inside the disposable box.
+
 On first creation, another opt-in picker accepts any readable `.md` path. The
 selected file is checksum-verified and copied to `/data/workspace/AGENTS.md`
 and `/data/workspace/CLAUDE.md`, giving Codex and Claude the same instructions.

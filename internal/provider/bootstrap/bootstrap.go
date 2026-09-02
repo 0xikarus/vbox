@@ -43,6 +43,14 @@ case ",$components," in
 esac
 apt-get install -y -qq --no-install-recommends $packages
 rm -rf /var/lib/apt/lists/*
+if ! getent group vmbox >/dev/null 2>&1; then groupadd --gid 10001 vmbox; fi
+if ! id -u vmbox >/dev/null 2>&1; then
+  useradd --uid 10001 --gid vmbox --home-dir /data/home --shell /bin/bash --no-create-home vmbox
+fi
+install -d -m 0750 /etc/sudoers.d
+printf '%s\n' 'vmbox ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/vmbox
+chmod 0440 /etc/sudoers.d/vmbox
+chown -R vmbox:vmbox /data/home /data/workspace /data/.vmbox
 npm_packages=""
 case ",$components," in *,codex,*) npm_packages="$npm_packages @openai/codex" ;; esac
 case ",$components," in *,claude,*) npm_packages="$npm_packages @anthropic-ai/claude-code" ;; esac
@@ -80,6 +88,7 @@ ln -sfn vmbox-runtime /usr/local/bin/vmbox-report
 ln -sfn vmbox-runtime /usr/local/bin/vmbox-finish
 ln -sfn vmbox-runtime /usr/local/bin/vmbox-ask
 HOME=/data/home /usr/local/bin/vmbox-entrypoint --configure-agent-trust /data/workspace
+chown -R vmbox:vmbox /data/home /data/workspace /data/.vmbox
 printf '%s\n' "$components" >/usr/local/lib/vmbox-bootstrap-components
 printf '%s\n' "$components" >/data/.vmbox/components
 printf '%s\n' "$fingerprint" >/usr/local/lib/vmbox-bootstrap-fingerprint

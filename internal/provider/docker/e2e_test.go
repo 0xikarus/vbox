@@ -45,6 +45,14 @@ func TestDockerE2E(t *testing.T) {
 	if result.Stdout != argv[2] {
 		t.Fatalf("argv changed: %q", result.Stdout)
 	}
+	result, err = p.Exec(ctx, name, []string{"id", "-u"}, provider.ExecOptions{})
+	if err != nil || strings.TrimSpace(result.Stdout) != "10001" {
+		t.Fatalf("workload user=%q err=%v", result.Stdout, err)
+	}
+	result, err = p.Exec(ctx, name, []string{"sudo", "-n", "id", "-u"}, provider.ExecOptions{})
+	if err != nil || strings.TrimSpace(result.Stdout) != "0" {
+		t.Fatalf("passwordless sudo=%q err=%v", result.Stdout, err)
+	}
 	if _, err := p.Exec(ctx, name, []string{"sh", "-c", "printf persisted >/data/e2e"}, provider.ExecOptions{}); err != nil {
 		t.Fatal(err)
 	}

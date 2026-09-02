@@ -30,6 +30,13 @@ RUN apt-get update \
       util-linux \
     && rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --gid 10001 vmbox \
+    && useradd --uid 10001 --gid vmbox --home-dir /data/home --shell /bin/bash --no-create-home vmbox \
+    && printf '%s\n' 'vmbox ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/vmbox \
+    && chmod 0440 /etc/sudoers.d/vmbox \
+    && mkdir -p /data/home /data/workspace /data/.vmbox \
+    && chown -R vmbox:vmbox /data
+
 ARG VMBOX_COMPONENTS=codex,claude,opencode,bun,foundry
 RUN set -eux; \
     packages=""; \

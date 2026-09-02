@@ -22,7 +22,7 @@ func TestExecEncodesExactArgvWithoutShell(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := runner.Calls[1].Argv
-	prefix := []string{"railway", "ssh", "--project", "project", "--environment", "environment", "--service", "vmbox-box", "vmbox-runtime", "exec-json"}
+	prefix := append([]string{"railway", "ssh", "--project", "project", "--environment", "environment", "--service", "vmbox-box"}, provider.AsWorkloadUser([]string{"vmbox-runtime", "exec-json"})...)
 	if len(got) != len(prefix)+1 || !reflect.DeepEqual(got[:len(prefix)], prefix) {
 		t.Fatalf("unexpected transport argv: %#v", got)
 	}
@@ -37,19 +37,29 @@ func TestExecEncodesExactArgvWithoutShell(t *testing.T) {
 
 func TestAttachSessionUsesRailwayNativeSessionWithoutRemoteCommand(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(services)}, {}}}
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(services)}, {ExitCode: 1}, {}, {}, {}}}
 	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
-	result, err := p.AttachSession(context.Background(), "box", "vmbox", provider.ExecOptions{})
+	result, err := p.AttachSession(context.Background(), "box", "vmbox", []string{"claude", "task with spaces"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("result=%+v error=%v", result, err)
 	}
-	got := runner.Calls[1].Argv
+	got := runner.Calls[4].Argv
 	want := []string{"railway", "ssh", "--project", "project", "--environment", "environment", "--service", "vmbox-box", "--session", "vmbox"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("session argv=%#v", got)
 	}
 	if strings.Contains(strings.Join(got, " "), "exec-json") {
 		t.Fatalf("native session unexpectedly supplied a remote command: %#v", got)
+	}
+	created := runner.Calls[2].Argv
+	if !strings.Contains(strings.Join(created, " "), "direct-json") || !strings.Contains(strings.Join(created, " "), "sudo -n -H -u vmbox") {
+		t.Fatalf("tmux pane was not created as vmbox: %#v", created)
+	}
+}
+
+func TestIdleSessionRecognizesOnlyShellPanes(t *testing.T) {
+	if !idleSession("bash\nsh\n") || idleSession("bash\nclaude\n") || idleSession("") {
+		t.Fatal("idle session classification is unsafe")
 	}
 }
 

@@ -631,26 +631,6 @@ func interactiveSession(argv []string) []string {
 	return append(result, argv...)
 }
 
-func ensureTmuxSession(ctx context.Context, p provider.Provider, name string, command []string) error {
-	check, err := p.Exec(ctx, name, []string{"tmux", "has-session", "-t", "vmbox"}, provider.ExecOptions{Stdout: io.Discard, Stderr: io.Discard})
-	if err != nil {
-		return fmt.Errorf("check tmux session: %w", err)
-	}
-	if check.ExitCode == 0 {
-		return nil
-	}
-	argv := []string{"tmux", "new-session", "-d", "-s", "vmbox", "-c", "/data/workspace", "--"}
-	argv = append(argv, command...)
-	created, err := p.Exec(ctx, name, argv, provider.ExecOptions{Stdout: io.Discard, Stderr: io.Discard})
-	if err != nil {
-		return fmt.Errorf("create tmux session: %w", err)
-	}
-	if created.ExitCode != 0 {
-		return fmt.Errorf("create tmux session exited with status %d", created.ExitCode)
-	}
-	return nil
-}
-
 type upload struct {
 	path string
 	mode string

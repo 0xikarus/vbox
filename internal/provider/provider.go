@@ -137,7 +137,20 @@ type Bootstrapper interface {
 // SessionAttacher lets providers use their native interactive transport after
 // vmbox has prepared a named tmux session inside the workload.
 type SessionAttacher interface {
-	AttachSession(context.Context, string, string, ExecOptions) (ExecResult, error)
+	AttachSession(context.Context, string, string, []string, ExecOptions) (ExecResult, error)
+}
+
+const (
+	WorkloadUser = "vmbox"
+	WorkloadHome = "/data/home"
+	WorkloadPath = "/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+)
+
+// AsWorkloadUser returns an exact argv vector that runs a command as the
+// unprivileged box user. The user retains explicit, passwordless sudo access.
+func AsWorkloadUser(argv []string) []string {
+	result := []string{"sudo", "-n", "-H", "-u", WorkloadUser, "--", "env", "HOME=" + WorkloadHome, "USER=" + WorkloadUser, "LOGNAME=" + WorkloadUser, "SHELL=/bin/bash", "PATH=" + WorkloadPath}
+	return append(result, argv...)
 }
 
 type Capabilities struct {

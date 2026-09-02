@@ -68,6 +68,9 @@ configure_agent_trust() {
     echo "vmbox: warning: $claude_settings is not valid JSON; agent defaults were not changed" >&2
   fi
   chmod 600 "$codex_config" "$claude_settings" 2>/dev/null || true
+  if id -u vmbox >/dev/null 2>&1; then
+    chown vmbox:vmbox "$codex_dir" "$claude_dir" "$codex_config" "$claude_settings" 2>/dev/null || true
+  fi
 }
 
 if [[ "${1:-}" == --configure-agent-trust ]]; then
@@ -102,9 +105,12 @@ sed -i \
 if ! grep -q '/data/home/.profile' "$bashrc"; then
   echo '[ -f /data/home/.profile ] && . /data/home/.profile' >> "$bashrc"
 fi
-
-if [[ $# -gt 0 ]]; then
-  exec "$@"
+if id -u vmbox >/dev/null 2>&1; then
+  chown vmbox:vmbox "$HOME" "$HOME/bin" /data/workspace "$profile" "$bashrc"
 fi
 
-exec sleep infinity
+if [[ $# -gt 0 ]]; then
+	exec sudo -n -H -u vmbox -- env HOME=/data/home USER=vmbox LOGNAME=vmbox SHELL=/bin/bash PATH="/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:$PATH" "$@"
+fi
+
+exec sudo -n -H -u vmbox -- sleep infinity

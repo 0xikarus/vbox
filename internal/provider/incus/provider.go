@@ -377,6 +377,7 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 		args = append(args, "--mode", "interactive")
 	}
 	args = append(args, "--")
+	args = append(args, provider.AsWorkloadUser(nil)...)
 	if opts.Detach {
 		args = append(args, "vmbox-runtime", "run", "--detach", "--")
 	}
