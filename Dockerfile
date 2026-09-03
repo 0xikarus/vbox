@@ -90,6 +90,20 @@ RUN set -eux; \
     ln -s vmbox-runtime /usr/local/bin/vmbox-finish; \
     ln -s vmbox-runtime /usr/local/bin/vmbox-ask
 
+# Keep the distributable worker image credential-free: installers and version
+# checks may leave caches in root's home; runtime credentials enter only /data.
+RUN set -eux; \
+    rm -rf \
+      /root/.cache \
+      /root/.claude \
+      /root/.codex \
+      /root/.config \
+      /root/.docker \
+      /root/.foundry \
+      /root/.npm \
+      /root/.ssh \
+      /tmp/* \
+      /var/tmp/*
 ENV HOME=/data/home
 WORKDIR /data/workspace
 
