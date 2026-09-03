@@ -452,22 +452,22 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 
 func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileNow(ctx); err != nil {
-		return err
+		s.Logger.Error("initial controller reconciliation failed", "error", err)
 	}
 	if err := s.ReconcileFleetNow(ctx); err != nil {
-		return fmt.Errorf("initial fleet reconciliation: %w", err)
+		s.Logger.Error("initial compute fleet reconciliation failed", "error", err)
 	}
 	if err := s.ReconcileLogicalBoxCreationsNow(ctx); err != nil {
-		return fmt.Errorf("initial logical-box creation reconciliation: %w", err)
+		s.Logger.Error("initial logical box creation reconciliation failed", "error", err)
 	}
 	if err := s.ReconcileAllocationsNow(ctx); err != nil {
-		return fmt.Errorf("initial allocation reconciliation: %w", err)
+		s.Logger.Error("initial logical box allocation reconciliation failed", "error", err)
 	}
 	if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
-		return fmt.Errorf("initial logical-box task reconciliation: %w", err)
+		s.Logger.Error("initial logical box task reconciliation failed", "error", err)
 	}
 	if err := s.ReconcileGroupDeliveriesNow(ctx); err != nil {
-		return fmt.Errorf("initial group delivery reconciliation: %w", err)
+		s.Logger.Error("initial group message reconciliation failed", "error", err)
 	}
 	interval := s.ReconcileEvery
 	if interval <= 0 {

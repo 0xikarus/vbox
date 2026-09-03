@@ -3,6 +3,10 @@
 set -euo pipefail
 
 export HOME="${HOME:-/data/home}"
+if id -u vmbox >/dev/null 2>&1; then
+  # Railway mounts a newly created volume with a root-owned mount point.
+  chown vmbox:vmbox /data
+fi
 unset GH_TOKEN GITHUB_TOKEN
 mkdir -p "$HOME" "$HOME/bin"
 
