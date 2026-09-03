@@ -4,3 +4,7 @@
 
 # Local vmbox state must never be committed.
 .vmbox/
+
+# Railway infrastructure-as-code dependencies.
+node_modules/
+Codex conversation.md
