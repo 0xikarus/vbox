@@ -247,6 +247,51 @@ func (s *Server) sendBoxMessageHandler(w http.ResponseWriter, r *http.Request, p
 	writeJSON(w, http.StatusAccepted, message)
 }
 
+func (s *Server) logicalBoxConnectionHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if box.State != v1.LogicalBoxRunning {
+		writeError(w, http.StatusConflict, fmt.Errorf("logical box is %s, not running", box.State))
+		return
+	}
+	assignment, err := s.Store.assignment(r.Context(), p.AccountID, box.ID)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	prov, err := s.provider(r.Context(), p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	connection, err := prov.Connection(r.Context(), assignment.Slot.ServiceID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	deploymentID := connection.Metadata["deploymentInstanceId"]
+	if deploymentID == "" || assignment.Slot.DeploymentInstanceID == "" || deploymentID != assignment.Slot.DeploymentInstanceID {
+		writeError(w, http.StatusConflict, fmt.Errorf("resolved SSH deployment does not match the fenced assignment; retry after reconciliation"))
+		return
+	}
+	if box.Provider == "railway" && (connection.Transport != "openssh" || connection.Endpoint != deploymentID+"@ssh.railway.com") {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("provider returned an invalid Railway SSH endpoint"))
+		return
+	}
+	session := r.URL.Query().Get("session")
+	if session == "" {
+		session = "vmbox"
+	}
+	if !validSessionName(session) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore"))
+		return
+	}
+	writeJSON(w, http.StatusOK, v1.LogicalBoxConnection{LogicalBoxID: box.ID, BoxName: box.Name, Session: session, Connection: connection})
+}
+
 func (s *Server) terminalSnapshotHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
 	if err != nil {

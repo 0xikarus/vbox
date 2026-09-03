@@ -88,6 +88,22 @@ func TestOwnerEndpointsRejectUserRole(t *testing.T) {
 	}
 }
 
+func TestLogicalBoxConnectionEndpointRequiresOwner(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery(`SELECT t.account_id::text`).WithArgs(sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "role", "subject"}).AddRow("account-a", "user-a", "user", "person"))
+	server := NewServer(store, provider.NewRegistry())
+	request := httptest.NewRequest(http.MethodGet, "/v1/logical-boxes/box-a/connection", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAPIGetRunCannotCrossTenant(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`SELECT t.account_id::text`).WithArgs(sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "role", "subject"}).AddRow("account-a", "user-a", "owner", "person"))
@@ -258,5 +274,45 @@ func TestTelegramIntegrationAuthenticatesMapsAndAuditsAnswer(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
+	server := NewServer(nil, provider.NewRegistry())
+	for _, test := range []struct {
+		path        string
+		contentType string
+		contains    []string
+	}{
+		{path: "/", contentType: "text/html", contains: []string{"viewport-fit=cover", "Message the agent", "app.js"}},
+		{path: "/app.css", contentType: "text/css", contains: []string{"@media(max-width:720px)", "env(safe-area-inset-bottom)", ".terminal-guide"}},
+		{path: "/app.js", contentType: "text/javascript", contains: []string{"sessionStorage", "pagehide", "pageshow", "controller.abort()", "/terminal/input"}},
+	} {
+		request := httptest.NewRequest(http.MethodGet, test.path, nil)
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", test.path, response.Code, response.Body.String())
+		}
+		if !strings.HasPrefix(response.Header().Get("Content-Type"), test.contentType) {
+			t.Fatalf("%s content-type=%q", test.path, response.Header().Get("Content-Type"))
+		}
+		if !strings.Contains(response.Header().Get("Content-Security-Policy"), "connect-src 'self'") {
+			t.Fatalf("%s missing same-origin CSP", test.path)
+		}
+		for _, expected := range test.contains {
+			if !strings.Contains(response.Body.String(), expected) {
+				t.Fatalf("%s missing %q", test.path, expected)
+			}
+		}
+		if test.path == "/" && strings.Contains(response.Body.String(), "(active)") {
+			t.Fatalf("%s contains unstable active profile suffix", test.path)
+		}
+	}
+	request := httptest.NewRequest(http.MethodGet, "/unknown-ui-route", nil)
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unknown route status=%d", response.Code)
 	}
 }

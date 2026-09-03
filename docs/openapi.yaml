@@ -138,12 +138,259 @@ paths:
         '204': {description: Telegram update accepted}
         '400': {description: Invalid or unauthorized interaction payload}
         '401': {description: Invalid Telegram webhook secret}
+  /v1/fleet/status:
+    get:
+      description: Fleet capacity and slot state for a provider and credential.
+      parameters:
+        - {$ref: '#/components/parameters/ProviderQuery'}
+        - {$ref: '#/components/parameters/ProviderCredentialQuery'}
+      responses: {'200': {description: Fleet status, content: {application/json: {schema: {$ref: '#/components/schemas/FleetStatus'}}}}}
+  /v1/fleet/slots:
+    get:
+      parameters:
+        - {$ref: '#/components/parameters/ProviderQuery'}
+        - {$ref: '#/components/parameters/ProviderCredentialQuery'}
+      responses: {'200': {description: Desired compute-slot configuration, content: {application/json: {schema: {$ref: '#/components/schemas/FleetConfig'}}}}}
+    put:
+      description: Owner-only update of desired reusable compute slots.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FleetConfig'}}}
+      responses: {'200': {description: Fleet configuration accepted}}
+  /v1/logical-boxes:
+    get:
+      responses: {'200': {description: Account-scoped logical boxes, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/LogicalBox'}}}}}}
+    post:
+      description: Create a persistent volume-backed logical box independently from compute.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateLogicalBox'}}}
+      responses: {'202': {description: Volume creation accepted, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBox'}}}}}
+  /v1/logical-boxes/{id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Logical box, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBox'}}}}}
+  /v1/logical-boxes/{id}/allocate:
+    post:
+      description: Reserve a free slot or enqueue the logical box when the fleet is full.
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        content: {application/json: {schema: {type: object, properties: {leaseOwner: {type: string}, leaseSeconds: {type: integer, minimum: 0}}}}}
+      responses: {'202': {description: Reserved, attaching, or queued allocation}, '200': {description: Existing ready allocation}}
+  /v1/logical-boxes/{id}/hibernate:
+    post:
+      description: Snapshot tmux, detach the retained volume, sanitize the service, and free its slot.
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Hibernated logical box, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBox'}}}}}
+  /v1/logical-boxes/{id}/volume:
+    delete:
+      description: Permanently delete only this logical box volume; fleet capacity is unchanged.
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [confirmation], properties: {confirmation: {type: string, description: Exact logical box name.}}}}}
+      responses: {'204': {description: Volume deleted}, '409': {description: Confirmation or lifecycle conflict}}
+  /v1/logical-boxes/{id}/connection:
+    get:
+      description: Owner-only fenced direct-SSH target for the current allocation.
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {name: session, in: query, schema: {type: string, default: vmbox}}
+      responses: {'200': {description: Validated connection, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBoxConnection'}}}}}
+  /v1/logical-boxes/{id}/terminal:
+    get:
+      description: Read-only tmux screen mirror.
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {name: session, in: query, schema: {type: string, default: vmbox}}
+        - {name: history, in: query, schema: {type: integer, default: 200}}
+      responses: {'200': {description: Terminal snapshot, content: {application/json: {schema: {$ref: '#/components/schemas/TerminalSnapshot'}}}}}
+  /v1/logical-boxes/{id}/terminal/input:
+    post:
+      description: Deliver exact text to tmux without ambiguous retry.
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SendBoxMessage'}}}
+      responses: {'204': {description: Input delivered}, '409': {description: Delivery is ambiguous or box is not running}}
+  /v1/logical-boxes/{id}/tasks:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Tasks for the logical box, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/BoxTask'}}}}}}
+    post:
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateBoxTask'}}}
+      responses: {'202': {description: Task accepted, content: {application/json: {schema: {$ref: '#/components/schemas/BoxTask'}}}}}
+  /v1/tasks/{id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Box task, content: {application/json: {schema: {$ref: '#/components/schemas/BoxTask'}}}}}
+  /v1/tasks/{id}/messages:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Task messages, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/BoxMessage'}}}}}}
+    post:
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SendBoxMessage'}}}
+      responses: {'202': {description: Message accepted or delivered}}
+  /v1/allocations/{id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Allocation status}}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
   parameters:
     ID: {name: id, in: path, required: true, schema: {type: string}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 255}}
+    ProviderQuery: {name: provider, in: query, required: true, schema: {type: string}}
+    ProviderCredentialQuery: {name: providerCredential, in: query, schema: {type: string}}
   schemas:
+    FleetConfig:
+      type: object
+      required: [provider, compute_box_slots]
+      properties:
+        provider: {type: string}
+        providerCredential: {type: string}
+        compute_box_slots: {type: integer, minimum: 0, maximum: 32, default: 4}
+        updatedAt: {type: string, format: date-time}
+    FleetStatus:
+      type: object
+      required: [provider, desiredSlots, actualSlots, freeSlots, occupiedSlots, slots, detachedLogicalBoxes]
+      properties:
+        provider: {type: string}
+        providerCredential: {type: string}
+        desiredSlots: {type: integer}
+        actualSlots: {type: integer}
+        freeSlots: {type: integer}
+        occupiedSlots: {type: integer}
+        startingSlots: {type: integer}
+        drainingSlots: {type: integer}
+        unhealthySlots: {type: integer}
+        stoppedSlots: {type: integer}
+        pendingAllocationRequests: {type: integer}
+        slots: {type: array, items: {$ref: '#/components/schemas/ComputeSlot'}}
+        detachedLogicalBoxes: {type: array, items: {$ref: '#/components/schemas/LogicalBox'}}
+    ComputeSlot:
+      type: object
+      properties:
+        id: {type: string}
+        provider: {type: string}
+        providerCredential: {type: string}
+        ordinal: {type: integer}
+        state: {enum: [starting, free, reserved, occupied, draining, unhealthy, stopped]}
+        serviceId: {type: string}
+        serviceName: {type: string}
+        deploymentInstanceId: {type: string}
+        logicalBoxId: {type: string}
+        logicalBoxName: {type: string}
+        assignmentGeneration: {type: integer, format: int64}
+        failureReason: {type: string}
+    CreateLogicalBox:
+      type: object
+      required: [name, provider]
+      properties:
+        name: {type: string}
+        provider: {type: string}
+        providerCredential: {type: string}
+        region: {type: string}
+        diskGiB: {type: integer, format: int64, default: 10}
+        volumeId: {type: string, description: Owner-only import; must be paired with volumeName.}
+        volumeName: {type: string, description: Owner-only import; must be paired with volumeId.}
+        allocateWhenReady: {type: boolean}
+        allocationIdempotencyKey: {type: string}
+    LogicalBox:
+      type: object
+      required: [id, name, provider, state, volumeId, volumeName, assignmentGeneration]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        provider: {type: string}
+        providerCredential: {type: string}
+        state: {enum: [detached, reserved, attaching, running, draining, hibernating, hibernated, deleting, failed]}
+        volumeId: {type: string}
+        volumeName: {type: string}
+        slotId: {type: string}
+        assignmentGeneration: {type: integer, format: int64}
+        restorationState: {type: string}
+        failureReason: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    CreateBoxTask:
+      type: object
+      required: [agent, prompt]
+      properties:
+        agent: {enum: [codex, claude, opencode, shell]}
+        prompt: {type: string, minLength: 1}
+        session: {type: string, default: vmbox}
+    BoxTask:
+      type: object
+      required: [id, logicalBoxId, boxName, userId, agent, session, prompt, state, createdAt, updatedAt]
+      properties:
+        id: {type: string}
+        logicalBoxId: {type: string}
+        boxName: {type: string}
+        userId: {type: string}
+        agent: {type: string}
+        session: {type: string}
+        prompt: {type: string}
+        state: {enum: [queued, waiting_capacity, starting, active, failed]}
+        failureReason: {type: string}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    SendBoxMessage:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 100000}
+        submit: {type: boolean, default: true}
+    BoxMessage:
+      type: object
+      properties:
+        id: {type: string}
+        taskId: {type: string}
+        userId: {type: string}
+        direction: {enum: [user_to_agent, agent_to_user]}
+        text: {type: string}
+        state: {enum: [queued, delivering, delivered, failed, ambiguous]}
+        createdAt: {type: string, format: date-time}
+        updatedAt: {type: string, format: date-time}
+    TerminalSnapshot:
+      type: object
+      properties:
+        boxName: {type: string}
+        session: {type: string}
+        pane: {type: string}
+        title: {type: string}
+        command: {type: string}
+        width: {type: integer}
+        height: {type: integer}
+        content: {type: string}
+        capturedAt: {type: string, format: date-time}
+    LogicalBoxConnection:
+      type: object
+      properties:
+        logicalBoxId: {type: string}
+        boxName: {type: string}
+        session: {type: string}
+        connection:
+          type: object
+          properties:
+            transport: {enum: [openssh]}
+            endpoint: {type: string}
+            metadata: {type: object, additionalProperties: {type: string}}
     Resources:
       type: object
       properties:

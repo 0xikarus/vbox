@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/0xikarus/vmbox-service/internal/procexec"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
 const railwaySSHHost = "ssh.railway.com"
@@ -49,9 +50,6 @@ func (p *Provider) invalidateServiceSSH(service service) {
 }
 
 func (p *Provider) controlPath(target string) (string, error) {
-	if p.cfg.SSHControlDir == "" {
-		return "", nil
-	}
 	instance, host, ok := strings.Cut(target, "@")
 	if !ok || instance == "" || host != railwaySSHHost {
 		return "", fmt.Errorf("invalid Railway SSH target %q", target)
@@ -64,6 +62,9 @@ func (p *Provider) controlPath(target string) (string, error) {
 		return "", fmt.Errorf("invalid Railway deployment instance %q", instance)
 	}
 	path := filepath.Join(p.cfg.SSHControlDir, instance+".sock")
+	if p.cfg.SSHControlDir == "" {
+		return "", nil
+	}
 	if len(path) > 100 {
 		digest := sha256.Sum256([]byte(target))
 		path = filepath.Join(p.cfg.SSHControlDir, fmt.Sprintf("%x.sock", digest[:16]))
@@ -176,10 +177,31 @@ func shellCommand(argv []string) (string, error) {
 	}
 	return strings.Join(quoted, " "), nil
 }
-
 func (p *Provider) directSSH(ctx context.Context, service service, remote []string, interactive bool, stdin io.Reader, stdout, stderr io.Writer) (procexec.Result, error) {
 	target, err := p.deploymentTarget(ctx, service)
 	if err != nil {
+		return procexec.Result{}, err
+	}
+	return p.directSSHTarget(ctx, target, remote, interactive, stdin, stdout, stderr)
+}
+
+func validatedConnectionTarget(connection provider.Connection) (string, error) {
+	if connection.Transport != "openssh" {
+		return "", fmt.Errorf("Railway connection transport must be openssh")
+	}
+	instance, host, ok := strings.Cut(connection.Endpoint, "@")
+	if !ok || instance == "" || host != railwaySSHHost {
+		return "", fmt.Errorf("invalid Railway SSH endpoint %q", connection.Endpoint)
+	}
+	metadataInstance := connection.Metadata["deploymentInstanceId"]
+	if metadataInstance == "" || metadataInstance != instance {
+		return "", fmt.Errorf("Railway SSH endpoint does not match its deployment instance")
+	}
+	return connection.Endpoint, nil
+}
+
+func (p *Provider) directSSHTarget(ctx context.Context, target string, remote []string, interactive bool, stdin io.Reader, stdout, stderr io.Writer) (procexec.Result, error) {
+	if _, err := p.controlPath(target); err != nil {
 		return procexec.Result{}, err
 	}
 	if err := p.ensureSSHMaster(ctx, target); err != nil {

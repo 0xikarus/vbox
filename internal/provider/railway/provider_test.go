@@ -76,6 +76,49 @@ func TestAttachSessionUsesDirectInteractiveSSH(t *testing.T) {
 	}
 }
 
+func TestAttachConnectionUsesValidatedTargetWithoutRailwayLookup(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("created\n")}, {}}}
+	p := New(Config{}, runner)
+	connection := provider.Connection{Transport: "openssh", Endpoint: "deployment-controller@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "deployment-controller"}}
+	result, err := p.AttachConnection(context.Background(), connection, "vmbox", []string{"vmbox-runtime", "welcome"}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 {
+		t.Fatalf("result=%+v error=%v", result, err)
+	}
+	if len(runner.Calls) != 2 {
+		t.Fatalf("calls=%#v", runner.Calls)
+	}
+	for _, call := range runner.Calls {
+		if call.Argv[0] != "ssh" || strings.Contains(strings.Join(call.Argv, " "), "railway ssh") {
+			t.Fatalf("controller attach used control-plane lookup: %#v", call.Argv)
+		}
+		if call.Argv[len(call.Argv)-2] != connection.Endpoint {
+			t.Fatalf("SSH target=%#v", call.Argv)
+		}
+	}
+	prepared := runner.Calls[0].Argv[len(runner.Calls[0].Argv)-1]
+	if !strings.HasPrefix(prepared, "'sudo' '-n' '-H' '-u' 'vmbox'") || !strings.Contains(prepared, "'sh' '-c'") {
+		t.Fatalf("tmux preparation did not run entirely as workload user: %s", prepared)
+	}
+}
+
+func TestAttachConnectionRejectsUntrustedEndpointBeforeExecution(t *testing.T) {
+	for _, connection := range []provider.Connection{
+		{Transport: "railway-cli", Endpoint: "deployment@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "deployment"}},
+		{Transport: "openssh", Endpoint: "deployment@evil.example", Metadata: map[string]string{"deploymentInstanceId": "deployment"}},
+		{Transport: "openssh", Endpoint: "other@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "deployment"}},
+		{Transport: "openssh", Endpoint: "bad/instance@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "bad/instance"}},
+	} {
+		runner := &procexec.FakeRunner{}
+		p := New(Config{}, runner)
+		if _, err := p.AttachConnection(context.Background(), connection, "vmbox", []string{"bash"}, provider.ExecOptions{}); err == nil {
+			t.Fatalf("accepted connection=%+v", connection)
+		}
+		if len(runner.Calls) != 0 {
+			t.Fatalf("executed untrusted connection: %#v", runner.Calls)
+		}
+	}
+}
+
 func TestIdleSessionRecognizesOnlyShellPanes(t *testing.T) {
 	if !idleSession("bash\nsh\n") || idleSession("bash\nclaude\n") || idleSession("") {
 		t.Fatal("idle session classification is unsafe")

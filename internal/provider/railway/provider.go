@@ -1046,6 +1046,28 @@ func (p *Provider) AttachSession(ctx context.Context, id, session string, comman
 	}
 	return provider.ExecResult{ExitCode: result.ExitCode, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 }
+func (p *Provider) AttachConnection(ctx context.Context, connection provider.Connection, session string, command []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if session == "" {
+		return provider.ExecResult{}, fmt.Errorf("tmux session name cannot be empty")
+	}
+	if len(command) == 0 {
+		return provider.ExecResult{}, fmt.Errorf("tmux session command cannot be empty")
+	}
+	target, err := validatedConnectionTarget(connection)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	if err := p.ensureSessionTarget(ctx, target, session, command, opts.Stderr); err != nil {
+		return provider.ExecResult{}, err
+	}
+	started := time.Now().UTC()
+	remote := provider.AsWorkloadUser([]string{"tmux", "attach-session", "-t", session})
+	result, err := p.directSSHTarget(ctx, target, remote, true, opts.Stdin, opts.Stdout, opts.Stderr)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	return provider.ExecResult{ExitCode: result.ExitCode, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+}
 
 const ensureSessionScript = `set -eu
 session="$1"
@@ -1087,11 +1109,20 @@ printf "created\n"
 `
 
 func (p *Provider) ensureSession(ctx context.Context, service service, session string, command []string, stderr io.Writer) error {
+	target, err := p.deploymentTarget(ctx, service)
+	if err != nil {
+		return err
+	}
+	return p.ensureSessionTarget(ctx, target, session, command, stderr)
+}
+
+func (p *Provider) ensureSessionTarget(ctx context.Context, target, session string, command []string, stderr io.Writer) error {
 	encoded, _ := json.Marshal(command)
-	pane := provider.AsWorkloadUser([]string{"vmbox-runtime", "direct-json", base64.RawURLEncoding.EncodeToString(encoded)})
-	remote := []string{"sh", "-c", ensureSessionScript, "vmbox-session", session, provider.WorkloadUser}
-	remote = append(remote, pane...)
-	prepared, err := p.directSSH(ctx, service, remote, false, nil, nil, nil)
+	pane := []string{"vmbox-runtime", "direct-json", base64.RawURLEncoding.EncodeToString(encoded)}
+	script := []string{"sh", "-c", ensureSessionScript, "vmbox-session", session, provider.WorkloadUser}
+	script = append(script, pane...)
+	remote := provider.AsWorkloadUser(script)
+	prepared, err := p.directSSHTarget(ctx, target, remote, false, nil, nil, nil)
 	if err != nil {
 		return fmt.Errorf("prepare tmux session: %w", err)
 	}

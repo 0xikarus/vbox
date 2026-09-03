@@ -1,6 +1,10 @@
 package v1
 
-import "time"
+import (
+	"time"
+
+	"github.com/0xikarus/vmbox-service/internal/provider"
+)
 
 type CreateBoxTaskRequest struct {
 	Agent   string `json:"agent"`
@@ -49,4 +53,11 @@ type TerminalSnapshot struct {
 	Height     int       `json:"height,omitempty"`
 	Content    string    `json:"content"`
 	CapturedAt time.Time `json:"capturedAt"`
+}
+
+type LogicalBoxConnection struct {
+	LogicalBoxID string              `json:"logicalBoxId"`
+	BoxName      string              `json:"boxName"`
+	Session      string              `json:"session"`
+	Connection   provider.Connection `json:"connection"`
 }

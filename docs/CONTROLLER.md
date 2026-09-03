@@ -65,4 +65,21 @@ For two-way `needs_input` replies, point Telegram's webhook or Discord's Interac
 
 The API requires bearer authentication and `Idempotency-Key` for run creation. Reusing a key with a different request is rejected. Controller-created OCI runs require an immutable `@sha256:` image. It applies an account rate limit and records state, ordered events, heartbeats, last visible output, questions, answers, and audit data. On every startup and then periodically, the controller reconciles durable runs with providers, resumes interrupted provisioning/cleanup, detects missing or failed boxes, and enforces every run's absolute `maxTtl`. The controller contains no GitHub, repository, agent, model, prompt, or source-indexing logic.
 
+## Fleet UI and persistent logical boxes
+
+Open the controller URL in a browser and enter the one-time owner or user token. The token is kept in browser session storage, never local storage. The responsive interface supports desktop and phone layouts for fleet capacity, logical boxes, tasks, agent messages, and a read-only terminal mirror. Closing or backgrounding the page aborts pending requests and stops polling; it does not hibernate a box or leave the UI stuck in a reconnect loop.
+
+Owners can set the number of reusable compute slots from the Fleet view. Persistent logical boxes own their Railway volume independently of a slot: allocation mounts that volume into a free service, while hibernation snapshots tmux state, unmounts the volume, sanitizes the service, and returns the slot to the pool. When every slot is busy, allocation remains queued. Deleting a logical box requires typing its exact name and deletes only its volume; the fleet service count is unchanged.
+
+```bash
+vmbox fleet status
+vmbox fleet slots 4
+vmbox boxes create dev
+vmbox boxes open dev
+vmbox boxes hibernate dev
+vmbox boxes delete-volume dev
+```
+
+`vmbox boxes open` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. Leaving the interactive client keeps both the logical box and tmux session running by default. The exit prompt separately offers hibernation or exact-name volume deletion. Tmux uses `Ctrl-a` as its prefix and the bottom guide lists writing, scrolling, detaching, and QWERTZ-safe keys.
+
 Use TLS at the controller ingress. A configured context never silently falls back to standalone mode. The compatibility contract for external schedulers is `v1alpha1`; see `openapi.yaml`.

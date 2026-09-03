@@ -81,8 +81,19 @@ func (r *Runtime) Run(ctx context.Context, argv []string, stdout, stderr io.Writ
 		return run, err
 	}
 	cmd.Stdin = os.Stdin
-	if err := cmd.Start(); err != nil {
-		return run, err
+	if startErr := cmd.Start(); startErr != nil {
+		now := time.Now().UTC()
+		exit := 127
+		run.State = v1.JobFailed
+		run.FinishedAt = &now
+		run.UpdatedAt = now
+		run.ExitCode = &exit
+		run.LastActivity = store.Sanitize(startErr.Error())
+		_, _ = r.append(store, v1.Event{RunID: runID, Type: "state", State: run.State, Message: "command failed to start", Timestamp: now})
+		if statusErr := store.WriteStatus(run); statusErr != nil {
+			return run, errors.Join(startErr, statusErr)
+		}
+		return run, fmt.Errorf("start command: %w", startErr)
 	}
 	var mu sync.Mutex
 	var wg sync.WaitGroup

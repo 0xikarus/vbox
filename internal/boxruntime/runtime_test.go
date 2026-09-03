@@ -47,6 +47,28 @@ func TestDetachedControllerRunIDIsStableAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestRunRecordsExecutableStartupFailure(t *testing.T) {
+	runtime := New(t.TempDir())
+	run, err := runtime.Run(context.Background(), []string{"this-vmbox-command-does-not-exist"}, nil, nil)
+	if err == nil {
+		t.Fatal("expected startup error")
+	}
+	if run.State != v1.JobFailed || run.ExitCode == nil || *run.ExitCode != 127 || run.FinishedAt == nil {
+		t.Fatalf("run=%+v", run)
+	}
+	stored, readErr := runtime.StoreFor(run.ID)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	status, readErr := stored.ReadStatus()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if status.State != v1.JobFailed || status.ExitCode == nil || *status.ExitCode != 127 {
+		t.Fatalf("stored status=%+v", status)
+	}
+}
+
 func TestRuntimeEnvironmentReplacesInheritedEmptyValues(t *testing.T) {
 	t.Setenv("VMBOX_RUN_ID", "")
 	t.Setenv("VMBOX_RUNTIME_DIR", "old")
