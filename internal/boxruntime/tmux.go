@@ -516,7 +516,8 @@ func tmuxServerAbsent(err error) bool {
 		return false
 	}
 	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "no server running") || strings.Contains(text, "failed to connect to server") || strings.Contains(text, "no sessions")
+	missingSocket := strings.Contains(text, "error connecting to") && strings.Contains(text, "no such file or directory")
+	return strings.Contains(text, "no server running") || strings.Contains(text, "failed to connect to server") || strings.Contains(text, "no sessions") || missingSocket
 }
 
 func runSync(ctx context.Context) error {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -102,5 +103,21 @@ func TestParseTmuxPanesHandlesInterleavedSessionsAndWindows(t *testing.T) {
 	}
 	if snapshot.Sessions[0].Windows[0].Panes[1].Title != "pane-1" {
 		t.Fatalf("pane was appended through a stale slice pointer: %+v", snapshot.Sessions[0].Windows[0])
+	}
+}
+
+func TestTmuxServerAbsentRecognizesMissingSocketOnly(t *testing.T) {
+	for _, message := range []string{
+		"no server running on /tmp/tmux-10001/default",
+		"failed to connect to server",
+		"no sessions",
+		"error connecting to /tmp/tmux-10001/default (No such file or directory)",
+	} {
+		if !tmuxServerAbsent(errors.New(message)) {
+			t.Errorf("did not recognize absent tmux server: %s", message)
+		}
+	}
+	if tmuxServerAbsent(errors.New("error connecting to /tmp/tmux-10001/default (Permission denied)")) {
+		t.Fatal("permission failure was mistaken for an absent tmux server")
 	}
 }
