@@ -40,6 +40,16 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 	if err != nil {
 		return err
 	}
+	for i := range status.Slots {
+		if !repairableSlotState(status.Slots[i].State) {
+			continue
+		}
+		repaired, repairErr := s.ensureFleetSlot(ctx, accountID, status.Slots[i], prov)
+		if repairErr != nil {
+			return fmt.Errorf("repair compute slot %d: %w", status.Slots[i].Ordinal, repairErr)
+		}
+		status.Slots[i] = repaired
+	}
 	if status.ActualSlots < config.ComputeBoxSlots {
 		maxOrdinal := 0
 		for _, slot := range status.Slots {
@@ -58,28 +68,8 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 			if err != nil {
 				return err
 			}
-			name := fleetSlotName(accountID, maxOrdinal)
-			box, createErr := prov.Create(ctx, provider.CreateRequest{
-				Name: name, Image: s.DefaultImage,
-				Resources: provider.Resources{CPU: 2, MemoryMiB: 4096},
-				Owner:     provider.Owner{AccountID: accountID, BoxID: "compute-slot:" + slot.ID},
-				Detached:  true,
-			})
-			if createErr != nil {
-				_ = s.Store.SetComputeSlotState(ctx, accountID, slot.ID, v1.FleetSlotUnhealthy, createErr.Error())
-				return createErr
-			}
-			slot.ServiceID = box.ID
-			slot.ServiceName = box.Name
-			slot.Region = box.Region
-			slot.Image = box.Image
-			slot.State = v1.FleetSlotFree
-			slot.Health = "healthy"
-			if connection, connectionErr := prov.Connection(ctx, box.ID); connectionErr == nil {
-				slot.DeploymentInstanceID = connection.Metadata["deploymentInstanceId"]
-			}
-			if _, err := s.Store.UpsertComputeSlot(ctx, accountID, slot); err != nil {
-				return err
+			if _, err := s.ensureFleetSlot(ctx, accountID, slot, prov); err != nil {
+				return fmt.Errorf("create compute slot %d: %w", slot.Ordinal, err)
 			}
 			status.ActualSlots++
 		}
@@ -144,6 +134,33 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 	return nil
 }
 
+func (s *Server) ensureFleetSlot(ctx context.Context, accountID string, slot v1.ComputeSlot, prov provider.Provider) (v1.ComputeSlot, error) {
+	if err := s.Store.SetComputeSlotState(ctx, accountID, slot.ID, v1.FleetSlotStarting, ""); err != nil {
+		return slot, err
+	}
+	box, err := prov.Create(ctx, provider.CreateRequest{
+		Name: fleetSlotName(accountID, slot.Ordinal), Image: s.DefaultImage,
+		Resources: provider.Resources{CPU: 2, MemoryMiB: 4096},
+		Owner:     provider.Owner{AccountID: accountID, BoxID: "compute-slot:" + slot.ID},
+		Detached:  true,
+	})
+	if err != nil {
+		_ = s.Store.SetComputeSlotState(ctx, accountID, slot.ID, v1.FleetSlotUnhealthy, err.Error())
+		return slot, err
+	}
+	slot.ServiceID = box.ID
+	slot.ServiceName = box.Name
+	slot.Region = box.Region
+	slot.Image = box.Image
+	slot.State = v1.FleetSlotFree
+	slot.Health = "healthy"
+	slot.FailureReason = ""
+	if connection, connectionErr := prov.Connection(ctx, box.ID); connectionErr == nil {
+		slot.DeploymentInstanceID = connection.Metadata["deploymentInstanceId"]
+	}
+	slot, err = s.Store.UpsertComputeSlot(ctx, accountID, slot)
+	return slot, err
+}
 func remainingScaleDown(actual, desired int, slots []v1.ComputeSlot) int {
 	excess := actual - desired
 	for _, slot := range slots {
@@ -161,6 +178,9 @@ func removableSlotState(state v1.FleetSlotState) bool {
 	return state == v1.FleetSlotFree || state == v1.FleetSlotStopped || state == v1.FleetSlotUnhealthy || state == v1.FleetSlotStarting
 }
 
+func repairableSlotState(state v1.FleetSlotState) bool {
+	return state == v1.FleetSlotStopped || state == v1.FleetSlotUnhealthy || state == v1.FleetSlotStarting
+}
 func fleetSlotName(accountID string, ordinal int) string {
 	prefix := strings.ReplaceAll(accountID, "-", "")
 	if len(prefix) > 10 {

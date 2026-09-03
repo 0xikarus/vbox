@@ -280,7 +280,7 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if image == "" {
 		image = p.cfg.DefaultImage
 	}
-	if err := p.connectImage(ctx, service.Name, image); err != nil {
+	if err := p.connectImage(ctx, service.ID, image); err != nil {
 		return provider.Box{}, err
 	}
 	if err := p.setResources(ctx, service.ID, req.Resources); err != nil {
@@ -803,7 +803,7 @@ func (p *Provider) Deploy(ctx context.Context, id, image string) (provider.Box, 
 		return provider.Box{}, err
 	}
 	if image != "" {
-		if err := p.connectImage(ctx, service.Name, image); err != nil {
+		if err := p.connectImage(ctx, service.ID, image); err != nil {
 			return provider.Box{}, err
 		}
 	}

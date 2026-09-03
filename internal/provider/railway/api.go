@@ -56,8 +56,15 @@ func (p *Provider) serviceInstanceID(ctx context.Context, serviceID string) (str
 	return response.Data.ServiceInstance.ID, nil
 }
 
-func (p *Provider) connectImage(ctx context.Context, service, image string) error {
-	result, err := p.run(ctx, "service", "source", "connect", "--service", service, "--image", image, "--json")
+func (p *Provider) connectImage(ctx context.Context, serviceID, image string) error {
+	variables := map[string]any{
+		"serviceId":     serviceID,
+		"environmentId": p.cfg.EnvironmentID,
+		"input": map[string]any{
+			"source": map[string]any{"image": image},
+		},
+	}
+	result, err := p.api(ctx, serviceUpdateMutation, variables)
 	if err != nil || result.ExitCode != 0 {
 		return railwayError("connect image source", result, err)
 	}

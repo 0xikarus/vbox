@@ -253,6 +253,34 @@ func TestSetRegionUsesMultiRegionConfigAndClearsDefaults(t *testing.T) {
 	}
 }
 
+func TestConnectImageUsesServiceInstanceUpdateForScopedTokens(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("{\"data\":{\"serviceInstanceUpdate\":true}}")}}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	image := "ghcr.io/acme/worker@sha256:abc"
+	if err := p.connectImage(context.Background(), "service-id", image); err != nil {
+		t.Fatal(err)
+	}
+	call := runner.Calls[0].Argv
+	if len(call) < 2 || call[0] != "railway" || call[1] != "api" || strings.Contains(strings.Join(call, " "), "service source connect") {
+		t.Fatalf("image source did not use the GraphQL API: %#v", call)
+	}
+	variables := ""
+	for i, value := range call {
+		if value == "--variables" && i+1 < len(call) {
+			variables = call[i+1]
+		}
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(variables), &decoded); err != nil {
+		t.Fatalf("decode variables %q: %v", variables, err)
+	}
+	input, _ := decoded["input"].(map[string]any)
+	source, _ := input["source"].(map[string]any)
+	if decoded["serviceId"] != "service-id" || decoded["environmentId"] != "environment" || source["image"] != image {
+		t.Fatalf("variables=%s", variables)
+	}
+}
+
 func TestResourcesMatchOnlyChecksRequestedLimits(t *testing.T) {
 	actual := provider.Resources{CPU: 2, MemoryMiB: 1024, DiskGiB: 20}
 	if !resourcesMatch(actual, provider.Resources{CPU: 2, MemoryMiB: 1024}) {

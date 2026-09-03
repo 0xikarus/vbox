@@ -77,3 +77,16 @@ func TestRemainingScaleDownCountsDrainingSlotOnlyOnce(t *testing.T) {
 		t.Fatalf("remainingScaleDown()=%d, want 0", got)
 	}
 }
+
+func TestRepairableSlotStateRetriesOnlyIncompleteCapacity(t *testing.T) {
+	for _, state := range []v1.FleetSlotState{v1.FleetSlotStarting, v1.FleetSlotStopped, v1.FleetSlotUnhealthy} {
+		if !repairableSlotState(state) {
+			t.Fatalf("state %q should be repaired", state)
+		}
+	}
+	for _, state := range []v1.FleetSlotState{v1.FleetSlotFree, v1.FleetSlotReserved, v1.FleetSlotOccupied, v1.FleetSlotDraining} {
+		if repairableSlotState(state) {
+			t.Fatalf("state %q must not be redeployed", state)
+		}
+	}
+}
