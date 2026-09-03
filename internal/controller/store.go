@@ -526,7 +526,7 @@ func (s *Store) SeedEnvironmentFleetConfig(ctx context.Context, providerName, cr
 	if inserted, err := result.RowsAffected(); err != nil {
 		return v1.FleetConfig{}, err
 	} else if inserted > 0 {
-		_, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'fleet.slots.seed','fleet',$3,jsonb_build_object('compute_box_slots',$4))`, owner.AccountID, owner.UserID, providerName+":"+credential, slots)
+		_, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'fleet.slots.seed','fleet',$3,jsonb_build_object('compute_box_slots',$4::integer))`, owner.AccountID, owner.UserID, providerName+":"+credential, slots)
 		if err != nil {
 			return v1.FleetConfig{}, err
 		}

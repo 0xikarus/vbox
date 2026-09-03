@@ -206,7 +206,7 @@ func TestEnvironmentFleetConfigSeedsOnceAndAudits(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO fleet_settings`).WithArgs("account-a", "railway", "primary", 2).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery(`SELECT provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "provider_credential", "compute_box_slots", "updated_at"}).AddRow("railway", "primary", 2, now))
-	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account-a", "owner-a", "railway:primary", 2).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`fleet\.slots\.seed.*\$4::integer`).WithArgs("account-a", "owner-a", "railway:primary", 2).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 	config, err := store.SeedEnvironmentFleetConfig(context.Background(), "railway", "primary", 2)
 	if err != nil {
@@ -247,7 +247,7 @@ func TestEnvironmentFleetConfigRollsBackWhenAuditFails(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectExec(`INSERT INTO fleet_settings`).WithArgs("account-a", "railway", "primary", 2).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery(`SELECT provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "provider_credential", "compute_box_slots", "updated_at"}).AddRow("railway", "primary", 2, now))
-	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account-a", "owner-a", "railway:primary", 2).WillReturnError(errors.New("audit unavailable"))
+	mock.ExpectExec(`fleet\.slots\.seed.*\$4::integer`).WithArgs("account-a", "owner-a", "railway:primary", 2).WillReturnError(errors.New("audit unavailable"))
 	mock.ExpectRollback()
 	if _, err := store.SeedEnvironmentFleetConfig(context.Background(), "railway", "primary", 2); err == nil {
 		t.Fatal("audit failure did not abort environment fleet bootstrap")
