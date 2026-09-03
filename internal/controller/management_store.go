@@ -377,7 +377,7 @@ func (s *Store) ClaimGroupDelivery(ctx context.Context, accountID, messageID, bo
 }
 
 func (s *Store) PendingGroupDeliveries(ctx context.Context) ([]pendingGroupDelivery, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT DISTINCT d.account_id::text,m.id::text,d.logical_box_id::text,m.user_id::text,u.role,u.subject FROM chat_group_deliveries d JOIN chat_group_messages m ON m.id=d.message_id AND m.account_id=d.account_id JOIN users u ON u.id=m.user_id AND u.account_id=m.account_id WHERE d.state='queued' OR (d.state='dispatching' AND d.updated_at < now() - interval '2 minutes') ORDER BY m.id,d.logical_box_id`)
+	rows, err := s.DB.QueryContext(ctx, `SELECT d.account_id::text,m.id::text,d.logical_box_id::text,m.user_id::text,u.role,u.subject FROM chat_group_deliveries d JOIN chat_group_messages m ON m.id=d.message_id AND m.account_id=d.account_id JOIN users u ON u.id=m.user_id AND u.account_id=m.account_id WHERE d.state='queued' OR (d.state='dispatching' AND d.updated_at < now() - interval '2 minutes') ORDER BY m.id,d.logical_box_id`)
 	if err != nil {
 		return nil, err
 	}
