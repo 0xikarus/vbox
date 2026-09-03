@@ -88,6 +88,10 @@ func run() error {
 	if err := seedInitialFleetFromEnvironment(ctx, store); err != nil {
 		return err
 	}
+	railwaySSHIdentity, err := materializeRailwaySSHIdentity(os.Getenv("VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64"), os.TempDir())
+	if err != nil {
+		return err
+	}
 	registry := provider.NewRegistry()
 	server := controller.NewServer(store, registry)
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
@@ -97,7 +101,7 @@ func run() error {
 		if err != nil {
 			return nil, err
 		}
-		return providerForCredential(providerName, credential)
+		return providerForCredential(providerName, credential, railwaySSHIdentity)
 	}
 	server.Bootstrap = bootstrapWorkload
 	if err := server.StartReconciler(ctx); err != nil {
@@ -209,7 +213,7 @@ func seedInitialFleetFromEnvironment(ctx context.Context, store *controller.Stor
 	return nil
 }
 
-func providerForCredential(name string, credential controller.DecryptedProviderCredential) (provider.Provider, error) {
+func providerForCredential(name string, credential controller.DecryptedProviderCredential, railwaySSHIdentity string) (provider.Provider, error) {
 	var secret, config map[string]any
 	if err := json.Unmarshal(credential.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("decode %s credential secret: %w", name, err)
@@ -244,7 +248,7 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 		if err != nil {
 			return nil, err
 		}
-		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image"), SSHKnownHostsFile: knownHosts, SSHBinary: runner.Env["VMBOX_REAL_SSH"], SSHControlDir: runner.Env["VMBOX_RAILWAY_CONTROL_DIR"]}, runner), nil
+		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image"), SSHKnownHostsFile: knownHosts, SSHIdentityFile: railwaySSHIdentity, SSHBinary: runner.Env["VMBOX_REAL_SSH"], SSHControlDir: runner.Env["VMBOX_RAILWAY_CONTROL_DIR"]}, runner), nil
 	case "docker":
 		return dockerprovider.New(dockerprovider.Config{Context: stringValue(config, "context"), Host: stringValue(config, "host"), TLSVerify: boolValue(config, "tlsVerify"), CertPath: stringValue(config, "certPath"), DefaultImage: stringValue(config, "image")}, procexec.OSRunner{}), nil
 	case "incus":
@@ -252,6 +256,35 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 	default:
 		return nil, fmt.Errorf("unknown provider %q", name)
 	}
+}
+
+func materializeRailwaySSHIdentity(encoded, parent string) (string, error) {
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return "", nil
+	}
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64 must be standard base64: %w", err)
+	}
+	if len(key) == 0 || len(key) > 64*1024 || !strings.Contains(string(key), "-----BEGIN OPENSSH PRIVATE KEY-----") {
+		return "", fmt.Errorf("VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64 does not contain a valid-sized OpenSSH private key")
+	}
+	directory := filepath.Join(parent, "vmbox-controller-ssh")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return "", fmt.Errorf("create controller SSH directory: %w", err)
+	}
+	if err := os.Chmod(directory, 0700); err != nil {
+		return "", fmt.Errorf("secure controller SSH directory: %w", err)
+	}
+	path := filepath.Join(directory, "id_ed25519")
+	if err := os.WriteFile(path, key, 0600); err != nil {
+		return "", fmt.Errorf("write controller SSH identity: %w", err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return "", fmt.Errorf("secure controller SSH identity: %w", err)
+	}
+	return path, nil
 }
 
 func controllerRailwayRunner(token, tokenEnvironment string) (procexec.OSRunner, string, error) {

@@ -205,6 +205,14 @@ func TestConfiguredTokenIsOnlyInProcessEnvironment(t *testing.T) {
 	}
 }
 
+func TestSSHOptionsUseOnlyConfiguredIdentity(t *testing.T) {
+	p := New(Config{SSHIdentityFile: "/run/secrets/controller-ssh"}, &procexec.FakeRunner{})
+	got := strings.Join(p.sshOptions(""), " ")
+	if !strings.Contains(got, "-o IdentitiesOnly=yes -i /run/secrets/controller-ssh") {
+		t.Fatalf("SSH options do not pin the configured identity: %s", got)
+	}
+}
+
 func TestDeploymentIDPrefersSubmittedDeploymentOverService(t *testing.T) {
 	data := []byte(`{"service":{"id":"service-id"},"deployment":{"id":"deployment-id"}}`)
 	if got := deploymentID(data); got != "deployment-id" {

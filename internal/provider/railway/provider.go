@@ -26,6 +26,7 @@ type Config struct {
 	TokenEnvironment  string
 	DefaultImage      string
 	SSHKnownHostsFile string
+	SSHIdentityFile   string
 	SSHBinary         string
 	SSHControlDir     string
 	PollInterval      time.Duration

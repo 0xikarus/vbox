@@ -83,6 +83,9 @@ func (p *Provider) sshOptions(controlPath string) []string {
 	if p.cfg.SSHKnownHostsFile != "" {
 		args = append(args, "-o", "UserKnownHostsFile="+p.cfg.SSHKnownHostsFile)
 	}
+	if p.cfg.SSHIdentityFile != "" {
+		args = append(args, "-o", "IdentitiesOnly=yes", "-i", p.cfg.SSHIdentityFile)
+	}
 	if controlPath != "" {
 		args = append(args, "-o", "ControlPath="+controlPath)
 	}

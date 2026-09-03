@@ -16,6 +16,8 @@ Provider credentials remain in environment variables in standalone mode. Control
 
 For a single-account Railway controller, a scoped `RAILWAY_TOKEN` environment variable is imported at startup as the encrypted `railway/primary` vault credential. Railway's injected `RAILWAY_PROJECT_ID` and `RAILWAY_ENVIRONMENT_ID` fence that credential to the current project and environment. The plaintext is never returned by the API or copied into a worker.
 
+Controller-initiated Railway OpenSSH requires a dedicated Railway-registered key. Store its standard-base64 private key as the sealed controller variable `VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64`; startup materializes it with mode `0600`, OpenSSH uses only that identity, and it is never copied into a slot or workload image.
+
 `VMBOX_INITIAL_COMPUTE_BOX_SLOTS` optionally seeds Railway fleet capacity for
 that single account during first startup. It is ignored after an owner has
 configured the fleet, so later changes in the web UI or CLI are never
