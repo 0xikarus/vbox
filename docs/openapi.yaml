@@ -157,6 +157,59 @@ paths:
         required: true
         content: {application/json: {schema: {$ref: '#/components/schemas/FleetConfig'}}}
       responses: {'200': {description: Fleet configuration accepted}}
+  /v1/inventory:
+    get:
+      description: Combined inventory for one provider credential. All fleet slot services are omitted; occupied capacity is represented once by its logical box, and only non-fleet services appear as external.
+      parameters:
+        - {$ref: '#/components/parameters/ProviderQuery'}
+        - {$ref: '#/components/parameters/ProviderCredentialQuery'}
+      responses:
+        '200': {description: Sanitized inventory, content: {application/json: {schema: {$ref: '#/components/schemas/BoxInventory'}}}}
+  /v1/logical-boxes/{id}/messages:
+    post:
+      description: Message a logical box directly. If it is offline, allocate compute and start the requested agent (Claude by default).
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/DirectBoxMessage'}}}
+      responses: {'202': {description: Existing agent messaged or a new agent start accepted}}
+  /v1/chat-groups:
+    get:
+      description: List durable chat groups visible to the caller.
+      responses: {'200': {description: Chat groups, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/ChatGroup'}}}}}}
+    post:
+      description: Create a durable group with two or more logical boxes.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PutChatGroup'}}}
+      responses: {'201': {description: Group created}}
+  /v1/chat-groups/{id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Chat group}}
+    put:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/PutChatGroup'}}}
+      responses: {'200': {description: Group updated}}
+    delete:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'204': {description: Group deleted}}
+  /v1/chat-groups/{id}/messages:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Durable group message history}}
+    post:
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {$ref: '#/components/parameters/IdempotencyKey'}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SendGroupMessage'}}}
+      responses: {'202': {description: Message accepted for selected recipients}}
   /v1/logical-boxes:
     get:
       responses: {'200': {description: Account-scoped logical boxes, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/LogicalBox'}}}}}}
@@ -391,6 +444,65 @@ components:
             transport: {enum: [openssh]}
             endpoint: {type: string}
             metadata: {type: object, additionalProperties: {type: string}}
+    ConnectedBox:
+      type: object
+      required: [id, name, provider, state, management, chatCapable]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        provider: {type: string}
+        providerCredential: {type: string}
+        state: {type: string}
+        providerState: {type: string}
+        region: {type: string}
+        image: {type: string}
+        resources: {$ref: '#/components/schemas/Resources'}
+        storage: {type: object}
+        management: {enum: [external]}
+        chatCapable: {type: boolean, enum: [false]}
+    BoxInventory:
+      type: object
+      required: [logicalBoxes, connectedBoxes]
+      properties:
+        logicalBoxes: {type: array, items: {$ref: '#/components/schemas/LogicalBox'}}
+        connectedBoxes: {type: array, items: {$ref: '#/components/schemas/ConnectedBox'}}
+    DirectBoxMessage:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 100000}
+        agent: {enum: [claude, codex, opencode, shell], default: claude}
+        session: {type: string, default: vmbox}
+    ChatGroupMember:
+      type: object
+      required: [logicalBoxId]
+      properties:
+        logicalBoxId: {type: string}
+        boxName: {type: string, readOnly: true}
+        agent: {enum: [claude, codex, opencode, shell], default: claude}
+        canReceive: {type: boolean, default: true}
+    PutChatGroup:
+      type: object
+      required: [name, members]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 100}
+        members: {type: array, minItems: 2, maxItems: 32, items: {$ref: '#/components/schemas/ChatGroupMember'}}
+    ChatGroup:
+      allOf:
+        - {$ref: '#/components/schemas/PutChatGroup'}
+        - type: object
+          required: [id, createdAt, updatedAt]
+          properties:
+            id: {type: string}
+            createdAt: {type: string, format: date-time}
+            updatedAt: {type: string, format: date-time}
+    SendGroupMessage:
+      type: object
+      required: [text]
+      properties:
+        text: {type: string, minLength: 1, maxLength: 100000}
+        recipientBoxIds: {type: array, items: {type: string}}
+        sourceBoxId: {type: string, description: Optional group member whose output is being forwarded.}
     Resources:
       type: object
       properties:

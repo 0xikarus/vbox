@@ -19,6 +19,7 @@ import (
 )
 
 type fakeProvider struct {
+	boxes   []provider.Box
 	created provider.CreateRequest
 	argv    []string
 	deleted provider.Owner
@@ -35,7 +36,9 @@ func (p *fakeProvider) Create(_ context.Context, req provider.CreateRequest) (pr
 func (*fakeProvider) Inspect(context.Context, string) (provider.Box, error) {
 	return provider.Box{ID: "box-provider-id", State: provider.StateRunning}, nil
 }
-func (*fakeProvider) List(context.Context) ([]provider.Box, error) { return nil, nil }
+func (p *fakeProvider) List(context.Context) ([]provider.Box, error) {
+	return append([]provider.Box(nil), p.boxes...), nil
+}
 func (*fakeProvider) Start(context.Context, string) (provider.Box, error) {
 	return provider.Box{}, nil
 }
@@ -277,6 +280,43 @@ func TestTelegramIntegrationAuthenticatesMapsAndAuditsAnswer(t *testing.T) {
 	}
 }
 
+func TestInventoryHidesEveryFleetSlotServiceAndSanitizesExternalBoxes(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	logicalColumns := []string{"id", "account_id", "owner_user_id", "name", "provider", "provider_credential", "state", "volume_id", "volume_name", "slot_id", "assignment_generation", "lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at"}
+	mock.ExpectQuery(`FROM logical_boxes WHERE account_id=\$1 AND provider=\$2 AND provider_credential=\$3`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows(logicalColumns).AddRow("logical-1", "account-a", "user-a", "occupied-workspace", "fake", "primary", "running", "volume-1", "workspace-data", "slot-2", int64(1), "", nil, "", "", now, now))
+	mock.ExpectQuery(`SELECT service_id FROM compute_slots`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows([]string{"service_id"}).AddRow("service-free").AddRow("service-occupied"))
+	providerFake := &fakeProvider{boxes: []provider.Box{
+		{ID: "service-free", Name: "fleet-slot-1", State: provider.StateRunning},
+		{ID: "service-occupied", Name: "fleet-slot-2", State: provider.StateRunning},
+		{ID: "manual-1", Name: "manual-box", State: provider.StateRunning, Owner: provider.Owner{Lease: "must-not-leak"}, Connection: provider.Connection{Endpoint: "must-not-leak"}},
+	}}
+	server := NewServer(store, provider.NewRegistry())
+	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return providerFake, nil }
+	request := httptest.NewRequest(http.MethodGet, "/v1/inventory?provider=fake&providerCredential=primary", nil)
+	response := httptest.NewRecorder()
+	server.boxInventoryHandler(response, request, Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var inventory v1.BoxInventory
+	if err := json.Unmarshal(response.Body.Bytes(), &inventory); err != nil {
+		t.Fatal(err)
+	}
+	if len(inventory.LogicalBoxes) != 1 || inventory.LogicalBoxes[0].Name != "occupied-workspace" {
+		t.Fatalf("logical boxes=%+v", inventory.LogicalBoxes)
+	}
+	if len(inventory.ConnectedBoxes) != 1 || inventory.ConnectedBoxes[0].Name != "manual-box" || inventory.ConnectedBoxes[0].Management != "external" {
+		t.Fatalf("external boxes=%+v", inventory.ConnectedBoxes)
+	}
+	if strings.Contains(response.Body.String(), "fleet-slot") || strings.Contains(response.Body.String(), "must-not-leak") {
+		t.Fatalf("inventory leaked a fleet slot or provider secret: %s", response.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 	server := NewServer(nil, provider.NewRegistry())
 	for _, test := range []struct {
@@ -284,8 +324,8 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 		contentType string
 		contains    []string
 	}{
-		{path: "/", contentType: "text/html", contains: []string{"viewport-fit=cover", "Message the agent", "app.js"}},
-		{path: "/app.css", contentType: "text/css", contains: []string{"@media(max-width:720px)", "env(safe-area-inset-bottom)", ".terminal-guide"}},
+		{path: "/", contentType: "text/html", contains: []string{"viewport-fit=cover", "offline boxes start Claude automatically", "app.js"}},
+		{path: "/app.css", contentType: "text/css", contains: []string{"@media (max-width: 720px)", "env(safe-area-inset-bottom)", ".terminal-guide"}},
 		{path: "/app.js", contentType: "text/javascript", contains: []string{"sessionStorage", "pagehide", "pageshow", "controller.abort()", "/terminal/input"}},
 	} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)

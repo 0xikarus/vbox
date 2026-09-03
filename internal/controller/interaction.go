@@ -103,7 +103,10 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 	if err := s.Store.SetBoxMessageState(ctx, accountID, message.ID, "delivered", ""); err != nil {
 		return err
 	}
-	return s.Store.SetBoxTaskState(ctx, accountID, task.ID, "active", "")
+	if err := s.Store.SetBoxTaskState(ctx, accountID, task.ID, "active", ""); err != nil {
+		return err
+	}
+	return s.Store.AppendSystemBoxMessage(ctx, accountID, task.ID, "online · "+task.Agent+" is ready", task.ID+":online")
 }
 
 func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.BoxTask, message v1.BoxMessage, submit bool) error {

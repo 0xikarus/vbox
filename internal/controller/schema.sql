@@ -237,3 +237,50 @@ CREATE INDEX IF NOT EXISTS box_messages_task_time_idx
   ON box_messages(account_id,task_id,created_at,id);
 CREATE INDEX IF NOT EXISTS box_messages_delivery_idx
   ON box_messages(account_id,state,created_at,id);
+
+CREATE TABLE IF NOT EXISTS chat_groups (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  created_by uuid NOT NULL REFERENCES users(id),
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,name)
+);
+CREATE TABLE IF NOT EXISTS chat_group_members (
+  group_id uuid NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  agent text NOT NULL DEFAULT 'claude' CHECK (agent IN ('codex','claude','opencode','shell')),
+  can_receive boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(group_id,logical_box_id)
+);
+CREATE INDEX IF NOT EXISTS chat_group_members_box_idx
+  ON chat_group_members(account_id,logical_box_id);
+CREATE TABLE IF NOT EXISTS chat_group_messages (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  group_id uuid NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  source_box_id uuid REFERENCES logical_boxes(id) ON DELETE SET NULL,
+  body text NOT NULL,
+  idempotency_key text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS chat_group_messages_time_idx
+  ON chat_group_messages(account_id,group_id,created_at,id);
+CREATE TABLE IF NOT EXISTS chat_group_deliveries (
+  message_id uuid NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  task_id uuid REFERENCES box_tasks(id) ON DELETE SET NULL,
+  box_message_id uuid REFERENCES box_messages(id) ON DELETE SET NULL,
+  state text NOT NULL CHECK (state IN ('queued','dispatching','delivered','ambiguous','failed')),
+  failure_reason text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(message_id,logical_box_id)
+);
+CREATE INDEX IF NOT EXISTS chat_group_deliveries_state_idx
+  ON chat_group_deliveries(account_id,state,updated_at);

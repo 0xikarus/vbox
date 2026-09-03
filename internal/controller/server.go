@@ -53,6 +53,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/fleet/status", s.auth(s.fleetStatus))
 	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
 	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
+	mux.HandleFunc("GET /v1/inventory", s.auth(s.boxInventoryHandler))
 	mux.HandleFunc("POST /v1/logical-boxes", s.auth(s.createLogicalBoxHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/allocate", s.auth(s.reserveLogicalBox))
 	mux.HandleFunc("GET /v1/logical-boxes", s.auth(s.listLogicalBoxes))
@@ -65,9 +66,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/connection", s.owner(s.logicalBoxConnectionHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal", s.auth(s.terminalSnapshotHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/terminal/input", s.auth(s.terminalInputHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages", s.auth(s.directBoxMessageHandler))
 	mux.HandleFunc("GET /v1/tasks/{id}", s.auth(s.getBoxTaskHandler))
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.auth(s.listBoxMessagesHandler))
 	mux.HandleFunc("POST /v1/tasks/{id}/messages", s.auth(s.sendBoxMessageHandler))
+	mux.HandleFunc("GET /v1/chat-groups", s.auth(s.chatGroupsHandler))
+	mux.HandleFunc("POST /v1/chat-groups", s.auth(s.chatGroupsHandler))
+	mux.HandleFunc("GET /v1/chat-groups/{id}", s.auth(s.chatGroupHandler))
+	mux.HandleFunc("PUT /v1/chat-groups/{id}", s.auth(s.chatGroupHandler))
+	mux.HandleFunc("DELETE /v1/chat-groups/{id}", s.auth(s.chatGroupHandler))
+	mux.HandleFunc("GET /v1/chat-groups/{id}/messages", s.auth(s.chatGroupMessagesHandler))
+	mux.HandleFunc("POST /v1/chat-groups/{id}/messages", s.auth(s.chatGroupMessagesHandler))
 	mux.HandleFunc("POST /v1/runs", s.auth(s.createRun))
 	mux.HandleFunc("GET /v1/runs", s.auth(s.listRuns))
 	mux.HandleFunc("GET /v1/runs/{id}", s.auth(s.getRun))
@@ -457,6 +466,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 		return fmt.Errorf("initial logical-box task reconciliation: %w", err)
 	}
+	if err := s.ReconcileGroupDeliveriesNow(ctx); err != nil {
+		return fmt.Errorf("initial group delivery reconciliation: %w", err)
+	}
 	interval := s.ReconcileEvery
 	if interval <= 0 {
 		interval = 30 * time.Second
@@ -483,6 +495,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 					s.Logger.Error("logical box task reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileGroupDeliveriesNow(ctx); err != nil {
+					s.Logger.Error("group message reconciliation failed", "error", err)
 				}
 			}
 		}

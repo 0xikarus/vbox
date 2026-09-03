@@ -4,21 +4,25 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   token: sessionStorage.getItem('vmbox.controller.token') || '',
-  boxes: [], credentials: [], fleet: null, box: null, tasks: [], task: null,
+  boxes: [], external: [], groups: [], credentials: [], notifications: [], fleet: null,
+  box: null, tasks: [], task: null, group: null, groupMessages: [], recipients: new Set(),
   provider: '', credential: '', chatTimer: null, controllers: new Set(), closed: false,
 };
+
 const stateLabel = value => String(value || 'unknown').replaceAll('_', ' ');
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
-const short = (value, length = 13) => value && value.length > length ? `${value.slice(0, length)}…` : (value || '—');
+const short = (value, length = 16) => value && value.length > length ? `${value.slice(0, length)}…` : (value || '—');
 const stamp = value => value ? new Intl.DateTimeFormat([], {hour:'2-digit', minute:'2-digit'}).format(new Date(value)) : '';
+const fullStamp = value => value ? new Intl.DateTimeFormat([], {dateStyle:'medium', timeStyle:'short'}).format(new Date(value)) : '—';
 const idempotency = prefix => `${prefix}-${crypto.randomUUID()}`;
+const csv = value => String(value || '').split(',').map(item => item.trim()).filter(Boolean);
 
 function toast(message, error = false) {
   const element = $('#toast');
   element.textContent = message;
   element.className = `toast show${error ? ' error' : ''}`;
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => element.className = 'toast', 3200);
+  toast.timer = setTimeout(() => element.className = 'toast', 3600);
 }
 
 function setConnection(online, label = online ? 'Live' : 'Offline') {
@@ -57,10 +61,24 @@ async function api(path, options = {}) {
   }
 }
 
+function stopPolling() {
+  if (state.chatTimer) clearInterval(state.chatTimer);
+  state.chatTimer = null;
+}
+
+function startPolling(callback) {
+  stopPolling();
+  state.chatTimer = setInterval(() => {
+    if (!document.hidden && !state.closed) callback(true);
+  }, 2500);
+}
+
 function logout(showMessage = true) {
   sessionStorage.removeItem('vmbox.controller.token');
   state.token = '';
-  stopChatPolling();
+  stopPolling();
+  state.controllers.forEach(controller => controller.abort());
+  state.controllers.clear();
   $('#app').hidden = true;
   $('#login').hidden = false;
   $('#token').value = '';
@@ -76,44 +94,86 @@ function showView(name) {
   $$('.view').forEach(view => view.hidden = view.id !== target);
   $$('.nav-button[data-view]').forEach(button => button.classList.toggle('selected', button.dataset.view === name));
   $('#app').classList.add('show-main');
-  if (name !== 'chat') stopChatPolling();
-  if (name === 'settings') renderCredentials();
+  if (!['chat', 'group'].includes(name)) stopPolling();
+  if (name === 'settings') renderSettings();
   if (name === 'fleet') renderFleet();
 }
 
-function renderBoxList() {
+function avatar(name, group = false) {
+  return group ? '#' : String(name || '?').slice(0, 1).toUpperCase();
+}
+
+function renderRoster() {
   const filter = $('#box-search').value.trim().toLowerCase();
-  const values = state.boxes.filter(box => box.name.toLowerCase().includes(filter));
-  $('#box-list').innerHTML = values.length ? values.map(box => `
-    <button class="box-row ${escapeHTML(box.state)} ${state.box?.id === box.id ? 'selected' : ''}" data-box="${escapeHTML(box.id)}">
-      <span class="avatar">${escapeHTML(box.name.slice(0, 1).toUpperCase())}</span>
-      <span class="box-copy"><strong>${escapeHTML(box.name)}</strong><small>${escapeHTML(stateLabel(box.state))}${box.slotId ? ` · slot assigned` : ' · volume detached'}</small></span>
-      <span class="state-pill ${escapeHTML(box.state)}">${escapeHTML(box.state)}</span>
-    </button>`).join('') : '<div class="empty">No logical boxes yet.<br>Create one without adding another compute service.</div>';
+  const boxes = state.boxes.filter(box => box.name.toLowerCase().includes(filter));
+  const groups = state.groups.filter(group => group.name.toLowerCase().includes(filter));
+  const external = state.external.filter(box => box.name.toLowerCase().includes(filter));
+
+  $('#group-list').innerHTML = groups.length ? groups.map(group => `
+    <button class="roster-row group-row ${state.group?.id === group.id ? 'selected' : ''}" data-group="${escapeHTML(group.id)}">
+      <span class="avatar group-avatar">#</span>
+      <span class="roster-copy"><strong>${escapeHTML(group.name)}</strong><small>${group.members.length} boxes · durable chat</small></span>
+      <span class="row-arrow">›</span>
+    </button>`).join('') : '<div class="compact-empty">No groups yet</div>';
+
+  $('#box-list').innerHTML = boxes.length ? boxes.map(box => `
+    <button class="roster-row box-row ${escapeHTML(box.state)} ${state.box?.id === box.id ? 'selected' : ''}" data-box="${escapeHTML(box.id)}">
+      <span class="avatar">${escapeHTML(avatar(box.name))}</span>
+      <span class="roster-copy"><strong>${escapeHTML(box.name)}</strong><small>${escapeHTML(stateLabel(box.state))}${box.slotId ? ' · compute assigned' : ' · storage retained'}</small></span>
+      <span class="presence ${box.state === 'running' ? 'online' : ''}" title="${escapeHTML(stateLabel(box.state))}"></span>
+    </button>`).join('') : '<div class="compact-empty">No logical boxes yet</div>';
+
+  $('#external-section').hidden = external.length === 0;
+  $('#external-list').innerHTML = external.map(box => `
+    <button class="roster-row external-row" data-external="${escapeHTML(box.id)}">
+      <span class="avatar external-avatar">↗</span>
+      <span class="roster-copy"><strong>${escapeHTML(box.name)}</strong><small>external · not controller-managed</small></span>
+      <span class="state-pill">${escapeHTML(stateLabel(box.state))}</span>
+    </button>`).join('');
+
   $$('[data-box]').forEach(button => button.addEventListener('click', () => selectBox(button.dataset.box)));
+  $$('[data-group]').forEach(button => button.addEventListener('click', () => selectGroup(button.dataset.group)));
+  $$('[data-external]').forEach(button => button.addEventListener('click', () => showExternal(button.dataset.external)));
 }
 
 function renderMiniFleet() {
   const fleet = state.fleet;
   if (!fleet) {
-    $('#fleet-mini').innerHTML = '<div class="fleet-mini-row"><span>Fleet</span><strong>Not configured</strong></div><div class="muted">Add a provider credential first.</div>';
+    $('#fleet-mini').innerHTML = '<div class="fleet-mini-row"><span>Compute fleet</span><strong>Not configured</strong></div>';
     return;
   }
   const percent = fleet.actualSlots ? Math.round((fleet.occupiedSlots / fleet.actualSlots) * 100) : 0;
-  $('#fleet-mini').innerHTML = `<div class="fleet-mini-row"><span>Warm fleet</span><strong>${fleet.freeSlots} free</strong></div><div class="fleet-mini-row"><small>${fleet.occupiedSlots} occupied · ${fleet.actualSlots}/${fleet.desiredSlots} slots</small><small>${fleet.pendingAllocationRequests || 0} queued</small></div><div class="capacity-track"><i style="width:${percent}%"></i></div>`;
+  $('#fleet-mini').innerHTML = `
+    <div class="fleet-mini-row"><span>Compute fleet</span><strong>${fleet.freeSlots} free</strong></div>
+    <div class="fleet-mini-row"><small>${fleet.occupiedSlots} occupied · ${fleet.actualSlots}/${fleet.desiredSlots} slots</small><small>${fleet.pendingAllocationRequests || 0} queued</small></div>
+    <div class="capacity-track"><i style="width:${percent}%"></i></div>`;
 }
 
 function renderDashboard() {
   const fleet = state.fleet || {};
   const running = state.boxes.filter(box => box.state === 'running').length;
-  const detached = state.boxes.filter(box => ['detached','hibernated'].includes(box.state)).length;
+  const sleeping = state.boxes.filter(box => ['detached', 'hibernated'].includes(box.state)).length;
   const cards = [
-    ['Logical boxes', state.boxes.length], ['Running now', running], ['Free slots', fleet.freeSlots ?? '—'], ['Detached', detached],
+    ['Persistent boxes', state.boxes.length],
+    ['Running now', running],
+    ['Free compute', fleet.freeSlots ?? '—'],
+    ['Hibernated', sleeping],
   ];
-  $('#stats').innerHTML = cards.map(([label,value]) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`).join('');
+  $('#stats').innerHTML = cards.map(([label, value]) => `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`).join('');
   const slots = fleet.slots || [];
-  $('#slot-preview').innerHTML = slots.length ? slots.slice(0, 8).map(slot => `<div class="slot-line"><i class="slot-orb ${escapeHTML(slot.state)}"></i><div><strong>Slot ${slot.ordinal}</strong><br><small>${escapeHTML(slot.logicalBoxName || slot.serviceName || 'Warm and ready')}</small></div><span class="state-pill ${escapeHTML(slot.state)}">${escapeHTML(slot.state)}</span></div>`).join('') : '<div class="empty">No compute slots are visible yet.</div>';
-  $('#activity').innerHTML = state.boxes.length ? state.boxes.slice(0, 7).map(box => `<div class="activity-line"><span class="avatar">${escapeHTML(box.name[0].toUpperCase())}</span><div><strong>${escapeHTML(box.name)}</strong><br><small>${escapeHTML(box.volumeName || 'workspace volume')}</small></div><span class="state-pill ${escapeHTML(box.state)}">${escapeHTML(box.state)}</span></div>`).join('') : '<div class="empty">Create your first logical box.</div>';
+  $('#slot-preview').innerHTML = slots.length ? slots.slice(0, 8).map(slot => `
+    <div class="slot-line">
+      <i class="slot-orb ${escapeHTML(slot.state)}"></i>
+      <div><strong>Slot ${slot.ordinal}</strong><br><small>${escapeHTML(slot.logicalBoxName || 'Available capacity')}</small></div>
+      <span class="state-pill ${escapeHTML(slot.state)}">${escapeHTML(stateLabel(slot.state))}</span>
+    </div>`).join('') : '<div class="empty">No compute slots configured.</div>';
+  $('#activity').innerHTML = state.boxes.length ? state.boxes.slice(0, 7).map(box => `
+    <button class="activity-line" data-activity-box="${escapeHTML(box.id)}">
+      <span class="avatar">${escapeHTML(avatar(box.name))}</span>
+      <span><strong>${escapeHTML(box.name)}</strong><small>${escapeHTML(box.volumeName || 'persistent workspace')}</small></span>
+      <span class="state-pill ${escapeHTML(box.state)}">${escapeHTML(stateLabel(box.state))}</span>
+    </button>`).join('') : '<div class="empty">Create your first persistent box.</div>';
+  $$('[data-activity-box]').forEach(button => button.addEventListener('click', () => selectBox(button.dataset.activityBox)));
 }
 
 function renderFleet() {
@@ -124,11 +184,52 @@ function renderFleet() {
     return;
   }
   const slots = fleet.slots || [];
-  $('#fleet-details').innerHTML = slots.length ? slots.map(slot => `<article class="slot-card"><header><strong>Slot ${slot.ordinal}</strong><span class="state-pill ${escapeHTML(slot.state)}">${escapeHTML(slot.state)}</span></header><div class="detail-list"><div><span>Service</span><strong title="${escapeHTML(slot.serviceId)}">${escapeHTML(slot.serviceName || short(slot.serviceId))}</strong></div><div><span>Box</span><strong>${escapeHTML(slot.logicalBoxName || '—')}</strong></div><div><span>Region</span><strong>${escapeHTML(slot.region || '—')}</strong></div><div><span>Health</span><strong>${escapeHTML(slot.health || 'unknown')}</strong></div><div><span>Deployment</span><strong title="${escapeHTML(slot.deploymentInstanceId)}">${escapeHTML(short(slot.deploymentInstanceId))}</strong></div><div><span>Lease</span><strong>${escapeHTML(slot.leaseOwner || '—')}</strong></div></div></article>`).join('') : '<section class="panel empty">Desired slots are configured, but no fleet services exist yet.</section>';
+  $('#fleet-details').innerHTML = slots.length ? slots.map(slot => `
+    <article class="slot-card">
+      <header><div><p class="eyebrow">COMPUTE SLOT ${slot.ordinal}</p><strong>${escapeHTML(slot.logicalBoxName || 'Available')}</strong></div><span class="state-pill ${escapeHTML(slot.state)}">${escapeHTML(stateLabel(slot.state))}</span></header>
+      <div class="detail-list">
+        <div><span>Roster visibility</span><strong>${slot.logicalBoxId ? 'via assigned box' : 'fleet only'}</strong></div>
+        <div><span>Service</span><strong title="${escapeHTML(slot.serviceId)}">${escapeHTML(slot.serviceName || short(slot.serviceId))}</strong></div>
+        <div><span>Region</span><strong>${escapeHTML(slot.region || '—')}</strong></div>
+        <div><span>Health</span><strong>${escapeHTML(slot.health || 'unknown')}</strong></div>
+        <div><span>Deployment</span><strong title="${escapeHTML(slot.deploymentInstanceId)}">${escapeHTML(short(slot.deploymentInstanceId))}</strong></div>
+      </div>
+    </article>`).join('') : '<section class="panel empty">No fleet services exist yet.</section>';
 }
 
-function renderCredentials() {
-  $('#credential-list').innerHTML = state.credentials.length ? state.credentials.map(value => `<article class="credential-card"><header><div><p class="eyebrow">${escapeHTML(value.provider)}</p><strong>${escapeHTML(value.name)}</strong></div><button class="text-button delete-credential" data-provider="${escapeHTML(value.provider)}" data-name="${escapeHTML(value.name)}">Remove</button></header><div class="detail-list"><div><span>Configuration</span><strong>${escapeHTML(Object.keys(value.config || {}).join(', ') || 'default')}</strong></div><div><span>Secret</span><strong>encrypted · hidden</strong></div><div><span>Updated</span><strong>${escapeHTML(stamp(value.updatedAt))}</strong></div></div></article>`).join('') : '<section class="panel empty">No provider credentials. Add Railway, Docker, or Incus access.</section>';
+function showDetail(title, value) {
+  $('#detail-title').textContent = title;
+  $('#detail-content').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  $('#detail-dialog').showModal();
+}
+
+function renderSettings() {
+  $('#credential-list').innerHTML = state.credentials.length ? state.credentials.map(value => `
+    <article class="credential-card">
+      <header><div><p class="eyebrow">${escapeHTML(value.provider)}</p><strong>${escapeHTML(value.name)}</strong></div><span class="vault-badge">encrypted</span></header>
+      <div class="detail-list">
+        <div><span>Configuration</span><strong>${escapeHTML(Object.keys(value.config || {}).join(', ') || 'default')}</strong></div>
+        <div><span>Secret</span><strong>stored in vault</strong></div>
+        <div><span>Updated</span><strong>${escapeHTML(fullStamp(value.updatedAt))}</strong></div>
+      </div>
+      <footer><button class="text-button credential-detail" data-provider="${escapeHTML(value.provider)}" data-name="${escapeHTML(value.name)}">View config</button><button class="text-button danger delete-credential" data-provider="${escapeHTML(value.provider)}" data-name="${escapeHTML(value.name)}">Remove</button></footer>
+    </article>`).join('') : '<section class="panel empty">No provider credentials configured.</section>';
+
+  $('#notification-list').innerHTML = state.notifications.length ? state.notifications.map(value => `
+    <article class="credential-card">
+      <header><div><p class="eyebrow">${escapeHTML(value.kind)}</p><strong>${escapeHTML(value.name)}</strong></div><span class="state-pill ${value.enabled ? 'running' : ''}">${value.enabled ? 'enabled' : 'paused'}</span></header>
+      <div class="detail-list">
+        <div><span>Allowed users</span><strong>${escapeHTML((value.allowedUsers || []).join(', ') || '—')}</strong></div>
+        <div><span>Allowed chats</span><strong>${escapeHTML((value.allowedChats || []).join(', ') || '—')}</strong></div>
+        <div><span>Updated</span><strong>${escapeHTML(fullStamp(value.updatedAt))}</strong></div>
+      </div>
+      <footer><button class="text-button test-notification" data-kind="${escapeHTML(value.kind)}" data-name="${escapeHTML(value.name)}">Send test</button><button class="text-button danger delete-notification" data-kind="${escapeHTML(value.kind)}" data-name="${escapeHTML(value.name)}">Remove</button></footer>
+    </article>`).join('') : '<section class="panel empty">No notification destinations configured.</section>';
+
+  $$('.credential-detail').forEach(button => button.addEventListener('click', () => {
+    const item = state.credentials.find(value => value.provider === button.dataset.provider && value.name === button.dataset.name);
+    if (item) showDetail(`${item.provider}/${item.name} configuration`, item.config || {});
+  }));
   $$('.delete-credential').forEach(button => button.addEventListener('click', async () => {
     if (!confirm(`Remove ${button.dataset.provider}/${button.dataset.name}? Existing volumes and services are not deleted.`)) return;
     try {
@@ -136,31 +237,61 @@ function renderCredentials() {
       toast('Credential removed'); await refreshAll();
     } catch (error) { toast(error.message, true); }
   }));
+  $$('.test-notification').forEach(button => button.addEventListener('click', async () => {
+    try {
+      await api(`/v1/notifications/${encodeURIComponent(button.dataset.kind)}/${encodeURIComponent(button.dataset.name)}/test`, {method:'POST'});
+      toast('Test notification delivered');
+    } catch (error) { toast(error.message, true); }
+  }));
+  $$('.delete-notification').forEach(button => button.addEventListener('click', async () => {
+    if (!confirm(`Remove notification destination ${button.dataset.kind}/${button.dataset.name}?`)) return;
+    try {
+      await api(`/v1/notifications/${encodeURIComponent(button.dataset.kind)}/${encodeURIComponent(button.dataset.name)}`, {method:'DELETE'});
+      toast('Notification destination removed'); await refreshAll();
+    } catch (error) { toast(error.message, true); }
+  }));
 }
 
 function populateForms() {
   const options = state.credentials.map(value => `<option value="${escapeHTML(value.name)}" data-provider="${escapeHTML(value.provider)}">${escapeHTML(value.provider)}/${escapeHTML(value.name)}</option>`).join('');
   $('#box-credential').innerHTML = options || '<option value="">default</option>';
-  $('#task-box').innerHTML = state.boxes.map(box => `<option value="${escapeHTML(box.id)}">${escapeHTML(box.name)} · ${escapeHTML(box.state)}</option>`).join('');
+  $('#task-box').innerHTML = state.boxes.map(box => `<option value="${escapeHTML(box.id)}">${escapeHTML(box.name)} · ${escapeHTML(stateLabel(box.state))}</option>`).join('');
+  $('#forward-group').innerHTML = state.groups.map(group => `<option value="${escapeHTML(group.id)}">${escapeHTML(group.name)}</option>`).join('');
 }
 
-async function refreshFleet() {
+async function refreshProviderViews(silent) {
   const preferred = state.credentials.find(value => value.provider === 'railway') || state.credentials[0];
-  if (!preferred) { state.fleet = null; state.provider = ''; state.credential = ''; return; }
-  state.provider = preferred.provider; state.credential = preferred.name;
-  const query = new URLSearchParams({provider: state.provider, providerCredential: state.credential});
-  state.fleet = await api(`/v1/fleet/status?${query}`);
+  if (!preferred) {
+    state.fleet = null; state.provider = ''; state.credential = ''; state.external = [];
+    return;
+  }
+  state.provider = preferred.provider;
+  state.credential = preferred.name;
+  const fleetQuery = new URLSearchParams({provider: preferred.provider, providerCredential: preferred.name});
+  const inventories = await Promise.all(state.credentials.map(async value => {
+    const query = new URLSearchParams({provider: value.provider, providerCredential: value.name});
+    try { return await api(`/v1/inventory?${query}`); }
+    catch (error) { if (!silent) toast(`${value.provider}/${value.name}: ${error.message}`, true); return {connectedBoxes:[]}; }
+  }));
+  state.external = inventories.flatMap(value => value?.connectedBoxes || []);
+  try { state.fleet = await api(`/v1/fleet/status?${fleetQuery}`); }
+  catch (error) { state.fleet = null; if (!silent) toast(error.message, true); }
 }
 
 async function refreshAll(silent = false) {
   try {
-    const [boxes, credentials] = await Promise.all([
+    const [boxes, groups, credentials, notifications] = await Promise.all([
       api('/v1/logical-boxes'),
+      api('/v1/chat-groups'),
       api('/v1/provider-credentials').catch(error => error.message.includes('owner role') ? [] : Promise.reject(error)),
+      api('/v1/notifications').catch(error => error.message.includes('owner role') ? [] : Promise.reject(error)),
     ]);
-    state.boxes = boxes || []; state.credentials = credentials || [];
-    await refreshFleet().catch(error => { state.fleet = null; if (!silent) toast(error.message, true); });
-    renderBoxList(); renderMiniFleet(); renderDashboard(); renderFleet(); renderCredentials(); populateForms();
+    state.boxes = boxes || [];
+    state.groups = groups || [];
+    state.credentials = credentials || [];
+    state.notifications = notifications || [];
+    await refreshProviderViews(silent);
+    renderRoster(); renderMiniFleet(); renderDashboard(); renderFleet(); renderSettings(); populateForms();
   } catch (error) {
     if (!silent) toast(error.message, true);
     throw error;
@@ -168,30 +299,32 @@ async function refreshAll(silent = false) {
 }
 
 async function selectBox(id) {
+  state.group = null;
   state.box = state.boxes.find(box => box.id === id);
   if (!state.box) return;
-  renderBoxList();
+  renderRoster();
   $('#chat-name').textContent = state.box.name;
-  $('#chat-state').textContent = `${stateLabel(state.box.state)} · ${state.box.slotId ? 'compute attached' : 'volume retained'}`;
-  $('#chat-avatar').textContent = state.box.name.slice(0,1).toUpperCase();
-  $('#allocate').hidden = !['detached','hibernated'].includes(state.box.state);
+  $('#chat-state').textContent = `${stateLabel(state.box.state)} · ${state.box.slotId ? 'compute assigned' : 'persistent storage retained'}`;
+  $('#chat-avatar').textContent = avatar(state.box.name);
+  $('#allocate').hidden = !['detached', 'hibernated'].includes(state.box.state);
   $('#hibernate').hidden = state.box.state !== 'running';
   showView('chat');
   try {
     state.tasks = await api(`/v1/logical-boxes/${encodeURIComponent(id)}/tasks`) || [];
+    const active = [...state.tasks].reverse().find(task => task.state === 'active') || state.tasks.at(-1) || null;
+    state.task = active;
     renderTaskTabs();
-    const active = [...state.tasks].reverse().find(task => task.state === 'active') || state.tasks.at(-1);
-    if (active) await selectTask(active.id);
+    if (active) await refreshConversation();
     else {
-      state.task = null; $('#messages').innerHTML = '<div class="empty">No tasks in this box yet.<br><button class="text-button inline-new-task">Start an agent</button></div>';
-      $('.inline-new-task')?.addEventListener('click', openTaskDialog);
-      $('#terminal').textContent = state.box.state === 'running' ? 'No tmux task session yet.' : 'Start the box to attach a terminal.';
+      $('#messages').innerHTML = '<div class="empty"><strong>This box is ready for a conversation.</strong><br>Send a message below. If it is offline, Claude and a compute slot start automatically.</div>';
+      $('#terminal').textContent = state.box.state === 'running' ? 'No tmux agent session yet.' : 'The terminal appears after this box gets compute.';
     }
+    startPolling(refreshConversation);
   } catch (error) { toast(error.message, true); }
 }
 
 function renderTaskTabs() {
-  $('#task-tabs').innerHTML = `<button class="task-chip new-task-chip">＋ New task</button>${state.tasks.map(task => `<button class="task-chip ${state.task?.id === task.id ? 'selected' : ''}" data-task="${escapeHTML(task.id)}">${escapeHTML(task.agent)} · ${escapeHTML(task.state)}</button>`).join('')}`;
+  $('#task-tabs').innerHTML = `<button class="task-chip new-task-chip">＋ New session</button>${state.tasks.map(task => `<button class="task-chip ${state.task?.id === task.id ? 'selected' : ''}" data-task="${escapeHTML(task.id)}">${escapeHTML(task.agent)} · ${escapeHTML(stateLabel(task.state))}</button>`).join('')}`;
   $('.new-task-chip')?.addEventListener('click', openTaskDialog);
   $$('[data-task]').forEach(button => button.addEventListener('click', () => selectTask(button.dataset.task)));
 }
@@ -199,21 +332,42 @@ function renderTaskTabs() {
 async function selectTask(id) {
   state.task = state.tasks.find(task => task.id === id) || await api(`/v1/tasks/${encodeURIComponent(id)}`);
   renderTaskTabs();
-  $('#chat-state').textContent = `${stateLabel(state.box.state)} · ${state.task.agent} task ${stateLabel(state.task.state)}`;
+  $('#chat-state').textContent = `${stateLabel(state.box.state)} · ${state.task.agent} ${stateLabel(state.task.state)}`;
   await refreshConversation();
-  stopChatPolling();
-  state.chatTimer = setInterval(() => refreshConversation(true), 2500);
+  startPolling(refreshConversation);
 }
 
 async function refreshConversation(silent = false) {
-  if (!state.task || document.hidden || state.closed) return;
+  if (!state.box || document.hidden || state.closed) return;
   try {
-    const messages = await api(`/v1/tasks/${encodeURIComponent(state.task.id)}/messages`, {timeout:10000});
-    const container = $('#messages');
-    const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 90;
-    container.innerHTML = messages?.length ? messages.map(message => `<article class="message ${escapeHTML(message.direction)}"><div>${escapeHTML(message.text)}</div><div class="message-meta"><span>${escapeHTML(message.state)}</span><time>${escapeHTML(stamp(message.createdAt))}</time></div></article>`).join('') : '<div class="empty">The conversation is waiting for its first message.</div>';
-    if (nearBottom) container.scrollTop = container.scrollHeight;
-    if (state.box?.state === 'running') await refreshTerminal(true);
+    const freshBox = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}`, {timeout:10000});
+    state.box = freshBox;
+    const index = state.boxes.findIndex(box => box.id === freshBox.id);
+    if (index >= 0) state.boxes[index] = freshBox;
+    $('#chat-state').textContent = `${stateLabel(freshBox.state)} · ${freshBox.slotId ? 'compute assigned' : 'persistent storage retained'}`;
+    $('#allocate').hidden = !['detached', 'hibernated'].includes(freshBox.state);
+    $('#hibernate').hidden = freshBox.state !== 'running';
+    if (!state.task) {
+      state.tasks = await api(`/v1/logical-boxes/${encodeURIComponent(freshBox.id)}/tasks`) || [];
+      state.task = [...state.tasks].reverse().find(task => task.state === 'active') || state.tasks.at(-1) || null;
+      renderTaskTabs();
+    }
+    if (state.task) {
+      state.task = await api(`/v1/tasks/${encodeURIComponent(state.task.id)}`, {timeout:10000});
+      const messages = await api(`/v1/tasks/${encodeURIComponent(state.task.id)}/messages`, {timeout:10000});
+      const container = $('#messages');
+      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+      container.innerHTML = messages?.length ? messages.map(message => `
+        <article class="message ${escapeHTML(message.direction)}">
+          <div>${escapeHTML(message.text)}</div>
+          <div class="message-meta"><span>${escapeHTML(stateLabel(message.state))}</span><time>${escapeHTML(stamp(message.createdAt))}</time></div>
+        </article>`).join('') : '<div class="empty">Waiting for the first message.</div>';
+      if (nearBottom) container.scrollTop = container.scrollHeight;
+      renderTaskTabs();
+    }
+    renderRoster();
+    if (freshBox.state === 'running') await refreshTerminal(true);
+    else $('#terminal').textContent = 'Compute is detached. Sending a message starts this box automatically.';
   } catch (error) { if (!silent) toast(error.message, true); }
 }
 
@@ -231,15 +385,105 @@ async function refreshTerminal(silent = false) {
   }
 }
 
-function stopChatPolling() {
-  if (state.chatTimer) clearInterval(state.chatTimer);
-  state.chatTimer = null;
+function renderGroupMessages() {
+  const container = $('#group-messages');
+  const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+  container.innerHTML = state.groupMessages.length ? state.groupMessages.map(message => {
+    const deliveries = message.deliveries || [];
+    return `
+      <article class="message user group-message">
+        ${message.sourceBoxName ? `<p class="forward-label">Forwarded from ${escapeHTML(message.sourceBoxName)}</p>` : ''}
+        <div>${escapeHTML(message.text)}</div>
+        <div class="delivery-row">${deliveries.map(item => `<span class="delivery-chip ${escapeHTML(item.state)}" title="${escapeHTML(item.failureReason || item.state)}">${escapeHTML(item.boxName)} · ${escapeHTML(stateLabel(item.state))}</span>`).join('')}</div>
+        <div class="message-meta"><time>${escapeHTML(stamp(message.createdAt))}</time></div>
+      </article>`;
+  }).join('') : '<div class="empty"><strong>No messages yet.</strong><br>Select recipients above and start the group.</div>';
+  if (nearBottom) container.scrollTop = container.scrollHeight;
+}
+
+function renderRecipientStrip() {
+  if (!state.group) return;
+  $('#group-members').innerHTML = state.group.members.map(member => `
+    <label class="recipient-chip ${state.recipients.has(member.logicalBoxId) ? 'selected' : ''}">
+      <input type="checkbox" value="${escapeHTML(member.logicalBoxId)}" ${state.recipients.has(member.logicalBoxId) ? 'checked' : ''} ${member.canReceive ? '' : 'disabled'}>
+      <span class="presence ${state.boxes.find(box => box.id === member.logicalBoxId)?.state === 'running' ? 'online' : ''}"></span>
+      <span><strong>${escapeHTML(member.boxName)}</strong><small>${escapeHTML(member.agent)}</small></span>
+    </label>`).join('');
+  $$('#group-members input').forEach(input => input.addEventListener('change', () => {
+    if (input.checked) state.recipients.add(input.value); else state.recipients.delete(input.value);
+    renderRecipientStrip();
+  }));
+}
+
+async function selectGroup(id) {
+  state.box = null;
+  state.task = null;
+  state.group = state.groups.find(group => group.id === id);
+  if (!state.group) return;
+  state.recipients = new Set(state.group.members.filter(member => member.canReceive).map(member => member.logicalBoxId));
+  $('#group-name').textContent = state.group.name;
+  $('#group-state').textContent = `${state.group.members.length} persistent boxes · recipients selectable per message`;
+  renderRecipientStrip();
+  renderRoster();
+  showView('group');
+  await refreshGroupConversation();
+  startPolling(refreshGroupConversation);
+}
+
+async function refreshGroupConversation(silent = false) {
+  if (!state.group || document.hidden || state.closed) return;
+  try {
+    state.groupMessages = await api(`/v1/chat-groups/${encodeURIComponent(state.group.id)}/messages`, {timeout:10000}) || [];
+    renderGroupMessages();
+  } catch (error) { if (!silent) toast(error.message, true); }
+}
+
+function showExternal(id) {
+  const box = state.external.find(value => value.id === id);
+  if (!box) return;
+  showDetail(`${box.name} · external service`, {
+    management: 'external — not managed by this controller',
+    provider: box.provider,
+    credential: box.providerCredential,
+    state: box.state,
+    providerState: box.providerState,
+    region: box.region,
+    image: box.image,
+    resources: box.resources,
+    storage: box.storage || null,
+    id: box.id,
+  });
 }
 
 function openTaskDialog() {
   if (!state.boxes.length) return toast('Create a logical box first', true);
   if (state.box) $('#task-box').value = state.box.id;
   $('#task-dialog').showModal();
+}
+
+function renderGroupMemberOptions(group = null) {
+  const existing = new Map((group?.members || []).map(member => [member.logicalBoxId, member]));
+  $('#group-member-options').innerHTML = state.boxes.map(box => {
+    const member = existing.get(box.id);
+    return `
+      <label class="member-option">
+        <input type="checkbox" name="member" value="${escapeHTML(box.id)}" ${member ? 'checked' : ''}>
+        <span><strong>${escapeHTML(box.name)}</strong><small>${escapeHTML(stateLabel(box.state))}</small></span>
+        <select name="agent-${escapeHTML(box.id)}" aria-label="Agent for ${escapeHTML(box.name)}">
+          ${['claude','codex','opencode','shell'].map(agent => `<option ${(member?.agent || 'claude') === agent ? 'selected' : ''}>${agent}</option>`).join('')}
+        </select>
+      </label>`;
+  }).join('') || '<div class="empty">Create at least two logical boxes first.</div>';
+}
+
+function openGroupDialog(group = null) {
+  const form = $('#group-form');
+  form.reset();
+  form.elements.id.value = group?.id || '';
+  form.elements.name.value = group?.name || '';
+  $('.dialog-heading h2', form).textContent = group ? 'Edit group' : 'Create a group';
+  renderGroupMemberOptions(group);
+  $('#group-dialog').showModal();
 }
 
 $('#login-form').addEventListener('submit', async event => {
@@ -249,46 +493,122 @@ $('#login-form').addEventListener('submit', async event => {
   try {
     await api('/v1/logical-boxes');
     sessionStorage.setItem('vmbox.controller.token', state.token);
-    $('#login').hidden = true; $('#app').hidden = false;
-    await refreshAll(); showView('home');
-  } catch (error) { $('#login-error').textContent = error.message; state.token = ''; }
+    $('#login').hidden = true;
+    $('#app').hidden = false;
+    await refreshAll();
+    showView('home');
+  } catch (error) {
+    $('#login-error').textContent = error.message;
+    state.token = '';
+  }
 });
 
 $('#logout').addEventListener('click', () => logout());
 $('#refresh').addEventListener('click', () => refreshAll());
 $('#fleet-refresh').addEventListener('click', () => refreshAll());
-$('#box-search').addEventListener('input', renderBoxList);
+$('#box-search').addEventListener('input', renderRoster);
 $$('[data-view]').forEach(button => button.addEventListener('click', () => showView(button.dataset.view)));
-$('#mobile-back').addEventListener('click', () => showView('boxes'));
+$$('.mobile-back').forEach(button => button.addEventListener('click', () => showView('boxes')));
 $('#new-box').addEventListener('click', () => $('#box-dialog').showModal());
+$('#new-group').addEventListener('click', () => openGroupDialog());
 $('#home-new-task').addEventListener('click', openTaskDialog);
 $('#new-credential').addEventListener('click', () => $('#credential-dialog').showModal());
+$('#new-notification').addEventListener('click', () => $('#notification-dialog').showModal());
+$('#edit-group').addEventListener('click', () => openGroupDialog(state.group));
 $$('.close-dialog').forEach(button => button.addEventListener('click', () => button.closest('dialog').close()));
 
 $('#box-form').addEventListener('submit', async event => {
-  event.preventDefault(); const form = new FormData(event.currentTarget);
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
   const selected = state.credentials.find(value => value.name === form.get('credential'));
-  const body = {name:form.get('name'), provider:selected?.provider || form.get('provider'), providerCredential:form.get('credential'), region:form.get('region'), diskGiB:Number(form.get('disk')), allocateWhenReady:form.get('allocate') === 'on', allocationIdempotencyKey:idempotency('create-allocate')};
+  const body = {
+    name: form.get('name'),
+    provider: selected?.provider || form.get('provider'),
+    providerCredential: form.get('credential'),
+    region: form.get('region'),
+    diskGiB: Number(form.get('disk')),
+    allocateWhenReady: form.get('allocate') === 'on',
+    allocationIdempotencyKey: idempotency('create-allocate'),
+  };
   try {
-    await api('/v1/logical-boxes', {method:'POST', body:JSON.stringify(body)});
-    $('#box-dialog').close(); event.currentTarget.reset(); toast('Workspace volume creation started'); await refreshAll();
+    await api('/v1/logical-boxes', {method:'POST', headers:{'Idempotency-Key':idempotency('box')}, body:JSON.stringify(body)});
+    $('#box-dialog').close();
+    event.currentTarget.reset();
+    toast('Persistent workspace provisioning started');
+    await refreshAll();
   } catch (error) { toast(error.message, true); }
 });
 
 $('#task-form').addEventListener('submit', async event => {
-  event.preventDefault(); const form = new FormData(event.currentTarget); const boxID = form.get('box');
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const boxID = form.get('box');
   try {
     const task = await api(`/v1/logical-boxes/${encodeURIComponent(boxID)}/tasks`, {method:'POST', headers:{'Idempotency-Key':idempotency('task')}, body:JSON.stringify({agent:form.get('agent'), session:form.get('session'), prompt:form.get('prompt')})});
-    $('#task-dialog').close(); event.currentTarget.reset(); toast('Task queued'); await refreshAll(); await selectBox(boxID); await selectTask(task.id);
+    $('#task-dialog').close();
+    event.currentTarget.reset();
+    toast('Agent queued');
+    await refreshAll();
+    await selectBox(boxID);
+    await selectTask(task.id);
+  } catch (error) { toast(error.message, true); }
+});
+
+$('#group-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const members = form.getAll('member').map(id => ({logicalBoxId:id, agent:form.get(`agent-${id}`) || 'claude', canReceive:true}));
+  const id = form.get('id');
+  try {
+    const group = await api(id ? `/v1/chat-groups/${encodeURIComponent(id)}` : '/v1/chat-groups', {method:id ? 'PUT' : 'POST', body:JSON.stringify({name:form.get('name'), members})});
+    $('#group-dialog').close();
+    toast(id ? 'Group updated' : 'Group created');
+    await refreshAll();
+    await selectGroup(group.id);
   } catch (error) { toast(error.message, true); }
 });
 
 $('#credential-form').addEventListener('submit', async event => {
-  event.preventDefault(); const form = new FormData(event.currentTarget);
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
   try {
-    const secret = JSON.parse(form.get('secret')); const config = form.get('config').trim() ? JSON.parse(form.get('config')) : {};
-    await api(`/v1/provider-credentials/${encodeURIComponent(form.get('provider'))}/${encodeURIComponent(form.get('name'))}`, {method:'PUT', body:JSON.stringify({secret,config})});
-    $('#credential-dialog').close(); event.currentTarget.reset(); toast('Credential encrypted and saved'); await refreshAll();
+    const secret = JSON.parse(form.get('secret'));
+    const config = form.get('config').trim() ? JSON.parse(form.get('config')) : {};
+    await api(`/v1/provider-credentials/${encodeURIComponent(form.get('provider'))}/${encodeURIComponent(form.get('name'))}`, {method:'PUT', body:JSON.stringify({secret, config})});
+    $('#credential-dialog').close();
+    event.currentTarget.reset();
+    toast('Credential encrypted and saved');
+    await refreshAll();
+  } catch (error) { toast(error.message, true); }
+});
+
+$('#notification-form [name="kind"]').addEventListener('change', event => {
+  const secret = $('#notification-form [name="secret"]');
+  const config = $('#notification-form [name="config"]');
+  if (event.target.value === 'telegram') {
+    secret.placeholder = '{"token":"…","webhookSecret":"…"}';
+    config.placeholder = '{"chatId":"-100123","userMap":{"456":"controller-user-id"}}';
+  } else if (event.target.value === 'discord') {
+    secret.placeholder = '{"webhookUrl":"https://…","publicKey":"…"}';
+    config.placeholder = '{"allowedGuilds":["…"],"allowedChannels":["…"]}';
+  } else {
+    secret.placeholder = '{"url":"https://…","signingSecret":"…"}';
+    config.placeholder = '{}';
+  }
+});
+
+$('#notification-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  try {
+    const secret = JSON.parse(form.get('secret'));
+    const config = form.get('config').trim() ? JSON.parse(form.get('config')) : {};
+    const body = {secret, config, allowedUsers:csv(form.get('users')), allowedChats:csv(form.get('chats')), enabled:form.get('enabled') === 'on'};
+    await api(`/v1/notifications/${encodeURIComponent(form.get('kind'))}/${encodeURIComponent(form.get('name'))}`, {method:'PUT', body:JSON.stringify(body)});
+    $('#notification-dialog').close();
+    event.currentTarget.reset();
+    toast('Notification destination saved');
+    await refreshAll();
   } catch (error) { toast(error.message, true); }
 });
 
@@ -297,60 +617,174 @@ $('#slot-form').addEventListener('submit', async event => {
   if (!state.provider) return toast('Add a provider credential first', true);
   try {
     await api('/v1/fleet/slots', {method:'PUT', body:JSON.stringify({provider:state.provider, providerCredential:state.credential, compute_box_slots:Number($('#slot-count').value)})});
-    toast('Fleet target saved; reconciliation is running'); setTimeout(() => refreshAll(true), 1800);
+    toast('Fleet target saved; reconciliation is running');
+    setTimeout(() => refreshAll(true), 1800);
   } catch (error) { toast(error.message, true); }
 });
 
 $('#allocate').addEventListener('click', async () => {
+  if (!state.box) return;
   try {
     const allocation = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/allocate`, {method:'POST', headers:{'Idempotency-Key':idempotency('allocate')}, body:'{}'});
     toast(allocation.state === 'queued' ? `Waiting for capacity · queue ${allocation.queuePosition || 1}` : `Allocation ${stateLabel(allocation.phase || allocation.state)}`);
-    setTimeout(async () => { await refreshAll(true); await selectBox(state.box.id); }, 1800);
+    setTimeout(() => refreshConversation(true), 1500);
   } catch (error) { toast(error.message, true); }
 });
 
 $('#hibernate').addEventListener('click', async () => {
-  if (!confirm(`Hibernate ${state.box.name}? The volume and saved tmux state remain; live processes stop and the compute slot becomes free.`)) return;
-  try { await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/hibernate`, {method:'POST', body:'{}', timeout:120000}); toast('Box hibernated; volume retained'); await refreshAll(); showView('boxes'); } catch (error) { toast(error.message, true); }
+  if (!state.box || !confirm(`Hibernate ${state.box.name}? Its volume and restorable tmux state remain. Live processes stop and its compute slot becomes free.`)) return;
+  try {
+    await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/hibernate`, {method:'POST', body:'{}', timeout:120000});
+    toast('Box hibernated; volume retained');
+    await refreshAll();
+    showView('boxes');
+  } catch (error) { toast(error.message, true); }
 });
 
 $('#box-menu').addEventListener('click', async () => {
   if (!state.box) return;
-  const typed = prompt(`Delete volume permanently?\n\nBox: ${state.box.name}\nVolume: ${state.box.volumeName} (${state.box.volumeId})\n\nType the exact box name to confirm. Cancel keeps everything.`);
+  const typed = prompt(`Delete workspace storage permanently?\n\nBox: ${state.box.name}\nVolume: ${state.box.volumeName || state.box.volumeId}\n\nType the exact box name. Cancel keeps everything.`);
   if (typed !== state.box.name) return typed !== null && toast('Name did not match; nothing was deleted', true);
-  if (!confirm(`Final confirmation: permanently delete only volume ${state.box.volumeName}? The compute fleet size will not change.`)) return;
-  try { await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/volume`, {method:'DELETE', body:JSON.stringify({confirmation:typed}), timeout:120000}); toast('Exact workspace volume deleted'); state.box = null; await refreshAll(); showView('boxes'); } catch (error) { toast(error.message, true); }
+  if (!confirm(`Final confirmation: delete only ${state.box.name}'s volume? Fleet slot count stays unchanged.`)) return;
+  try {
+    await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/volume`, {method:'DELETE', body:JSON.stringify({confirmation:typed}), timeout:120000});
+    toast('Workspace volume deleted; fleet unchanged');
+    state.box = null;
+    await refreshAll();
+    showView('boxes');
+  } catch (error) { toast(error.message, true); }
 });
 
 $('#message-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (!state.task) return openTaskDialog(); const input = $('#message'); const text = input.value;
+  event.preventDefault();
+  if (!state.box) return;
+  const input = $('#message');
+  const text = input.value;
   if (!text.trim()) return;
   input.value = '';
-  try { await api(`/v1/tasks/${encodeURIComponent(state.task.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('message')}, body:JSON.stringify({text,submit:true}), timeout:30000}); await refreshConversation(); } catch (error) { input.value = text; toast(error.message, true); }
+  try {
+    const result = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('direct')}, body:JSON.stringify({text, agent:'claude', session:'vmbox'}), timeout:30000});
+    state.task = result.task;
+    if (!state.tasks.some(task => task.id === result.task.id)) state.tasks.push(result.task);
+    renderTaskTabs();
+    toast(result.started ? 'Box is starting Claude; it will report online here' : 'Message queued');
+    await refreshConversation(true);
+  } catch (error) {
+    input.value = text;
+    toast(error.message, true);
+  }
+});
+
+$('#group-message-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!state.group) return;
+  const input = $('#group-message');
+  const text = input.value;
+  const recipients = [...state.recipients];
+  if (!text.trim()) return;
+  if (!recipients.length) return toast('Select at least one recipient', true);
+  input.value = '';
+  try {
+    await api(`/v1/chat-groups/${encodeURIComponent(state.group.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('group')}, body:JSON.stringify({text, recipientBoxIds:recipients}), timeout:30000});
+    toast('Group message queued');
+    await refreshGroupConversation(true);
+  } catch (error) {
+    input.value = text;
+    toast(error.message, true);
+  }
+});
+
+$('#share-terminal').addEventListener('click', () => {
+  if (!state.box) return;
+  if (!state.groups.length) return toast('Create a group first', true);
+  const form = $('#forward-form');
+  form.elements.group.value = state.groups[0].id;
+  form.elements.text.value = $('#terminal').textContent;
+  $('#forward-dialog').showModal();
+});
+
+$('#forward-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = new FormData(event.currentTarget);
+  const group = state.groups.find(value => value.id === form.get('group'));
+  if (!group || !state.box) return;
+  const recipients = group.members.filter(member => member.canReceive && member.logicalBoxId !== state.box.id).map(member => member.logicalBoxId);
+  try {
+    await api(`/v1/chat-groups/${encodeURIComponent(group.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('forward')}, body:JSON.stringify({text:form.get('text'), sourceBoxId:state.box.id, recipientBoxIds:recipients}), timeout:30000});
+    $('#forward-dialog').close();
+    toast(`Terminal output forwarded to ${group.name}`);
+  } catch (error) { toast(error.message, true); }
 });
 
 $('#terminal-form').addEventListener('submit', async event => {
-  event.preventDefault(); if (!state.box) return; const input = $('#terminal-input'); const text = input.value; if (!text) return;
-  const session = state.task?.session || 'vmbox'; input.value = '';
-  try { await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {method:'POST', headers:{'Idempotency-Key':idempotency('terminal')}, body:JSON.stringify({text,submit:true})}); setTimeout(() => refreshTerminal(true), 350); } catch (error) { input.value = text; toast(error.message, true); }
+  event.preventDefault();
+  if (!state.box) return;
+  const input = $('#terminal-input');
+  const text = input.value;
+  if (!text) return;
+  const session = state.task?.session || 'vmbox';
+  input.value = '';
+  try {
+    await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {method:'POST', headers:{'Idempotency-Key':idempotency('terminal')}, body:JSON.stringify({text, submit:true})});
+    setTimeout(() => refreshTerminal(true), 350);
+  } catch (error) {
+    input.value = text;
+    toast(error.message, true);
+  }
 });
 
-$('#message').addEventListener('input', event => { event.target.style.height = 'auto'; event.target.style.height = `${Math.min(event.target.scrollHeight, 140)}px`; });
-$('#message').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); $('#message-form').requestSubmit(); } });
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopChatPolling(); else if (state.task) { refreshConversation(true); state.chatTimer = setInterval(() => refreshConversation(true), 2500); } });
-window.addEventListener('pagehide', () => { state.closed = true; stopChatPolling(); state.controllers.forEach(controller => controller.abort()); state.controllers.clear(); });
+$('#copy-detail').addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText($('#detail-content').textContent); toast('Copied'); }
+  catch { toast('Copy was blocked by the browser', true); }
+});
+
+for (const id of ['message', 'group-message']) {
+  $(`#${id}`).addEventListener('input', event => {
+    event.target.style.height = 'auto';
+    event.target.style.height = `${Math.min(event.target.scrollHeight, 140)}px`;
+  });
+  $(`#${id}`).addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      event.target.closest('form').requestSubmit();
+    }
+  });
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    stopPolling();
+  } else if (state.group) {
+    refreshGroupConversation(true);
+    startPolling(refreshGroupConversation);
+  } else if (state.box) {
+    refreshConversation(true);
+    startPolling(refreshConversation);
+  }
+});
+
+window.addEventListener('pagehide', () => {
+  state.closed = true;
+  stopPolling();
+  state.controllers.forEach(controller => controller.abort());
+  state.controllers.clear();
+});
+
 window.addEventListener('pageshow', event => {
   state.closed = false;
   if (!event.persisted || !state.token || $('#app').hidden) return;
   refreshAll(true);
-  if (state.task && !document.hidden) {
-    stopChatPolling();
-    refreshConversation(true);
-    state.chatTimer = setInterval(() => refreshConversation(true), 2500);
-  }
+  if (state.group) startPolling(refreshGroupConversation);
+  else if (state.box) startPolling(refreshConversation);
 });
 
 if (state.token) {
   $('#token').value = state.token;
-  api('/v1/logical-boxes').then(async boxes => { state.boxes = boxes || []; $('#login').hidden = true; $('#app').hidden = false; await refreshAll(); showView('home'); }).catch(() => logout(false));
+  api('/v1/logical-boxes').then(async boxes => {
+    state.boxes = boxes || [];
+    $('#login').hidden = true;
+    $('#app').hidden = false;
+    await refreshAll();
+    showView('home');
+  }).catch(() => logout(false));
 }

@@ -749,15 +749,15 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		if err != nil {
 			return err
 		}
-		var runs []v1.Run
-		_, err = a.request(ctx, c, token, http.MethodGet, "/v1/runs", nil, &runs, nil)
+		var inventory v1.BoxInventory
+		_, err = a.request(ctx, c, token, http.MethodGet, "/v1/inventory"+fleetQuery(c), nil, &inventory, nil)
 		if err != nil {
 			return err
 		}
 		if jsonOutput {
-			return json.NewEncoder(a.Out).Encode(runs)
+			return json.NewEncoder(a.Out).Encode(inventory)
 		}
-		return writeRunList(a.Out, runs)
+		return writeInventoryList(a.Out, inventory)
 	case "stop", "start":
 		if len(args) != 2 {
 			return fmt.Errorf("%s requires a run ID", args[0])
