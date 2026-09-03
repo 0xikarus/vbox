@@ -17,6 +17,7 @@ const (
 	volumeDeleteMutation  = `mutation($volumeId: String!) { volumeDelete(volumeId: $volumeId) }`
 	limitsUpdateMutation  = `mutation($input: ServiceInstanceLimitsUpdateInput!) { serviceInstanceLimitsUpdate(input: $input) }`
 	limitsQuery           = `query($serviceId: String!, $environmentId: String!) { serviceInstanceLimits(serviceId: $serviceId, environmentId: $environmentId) }`
+	serviceInstanceQuery  = `query($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { id } }`
 )
 
 func (p *Provider) createService(ctx context.Context, name string) (procexec.Result, error) {
@@ -30,6 +31,29 @@ func (p *Provider) api(ctx context.Context, document string, variables any) (pro
 		return procexec.Result{}, err
 	}
 	return p.runner.Run(ctx, []string{"railway", "api", document, "--variables", string(encoded), "--compact"}, nil, nil, nil)
+}
+
+func (p *Provider) serviceInstanceID(ctx context.Context, serviceID string) (string, error) {
+	result, err := p.api(ctx, serviceInstanceQuery, map[string]any{
+		"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID,
+	})
+	if err != nil || result.ExitCode != 0 {
+		return "", railwayError("resolve deployment instance", result, err)
+	}
+	var response struct {
+		Data struct {
+			ServiceInstance struct {
+				ID string `json:"id"`
+			} `json:"serviceInstance"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(result.Stdout, &response); err != nil {
+		return "", fmt.Errorf("decode Railway deployment instance: %w", err)
+	}
+	if strings.TrimSpace(response.Data.ServiceInstance.ID) == "" {
+		return "", fmt.Errorf("Railway returned no active deployment instance for service %s", serviceID)
+	}
+	return response.Data.ServiceInstance.ID, nil
 }
 
 func (p *Provider) connectImage(ctx context.Context, service, image string) error {

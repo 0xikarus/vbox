@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
+	"time"
 )
 
 type Result struct {
@@ -79,6 +81,17 @@ func (r OSRunner) command(ctx context.Context, argv []string) (*exec.Cmd, error)
 		return nil, fmt.Errorf("empty argv")
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	// Give attached transports such as OpenSSH a chance to close their remote
+	// pseudo-terminal cleanly. That detaches tmux without killing the session.
+	// CommandContext's default is an immediate SIGKILL, which can leave terminal
+	// frontends showing a stale reconnecting state while the child is reaped.
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return os.ErrProcessDone
+		}
+		return cmd.Process.Signal(syscall.SIGHUP)
+	}
+	cmd.WaitDelay = 2 * time.Second
 	if len(r.Env) > 0 || len(r.Unset) > 0 {
 		cmd.Env = os.Environ()
 		removed := make(map[string]bool, len(r.Env)+len(r.Unset))

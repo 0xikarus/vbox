@@ -17,6 +17,7 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 	"github.com/0xikarus/vmbox-service/internal/components"
 	"github.com/0xikarus/vmbox-service/internal/config"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -26,7 +27,7 @@ var errSetupCancelled = errors.New("box setup cancelled")
 
 type runOptions struct {
 	name, region, workspace, notification, onSuccess, onFailure, maxTTL string
-	detach, reuse                                                       bool
+	detach, reuse, hibernateOnExit                                      bool
 	cpu                                                                 float64
 	memory, disk                                                        int64
 	argv                                                                []string
@@ -64,6 +65,8 @@ func parseRunOptions(args []string) (runOptions, error) {
 			result.detach = true
 		case arg == "--reuse":
 			result.reuse = true
+		case arg == "--hibernate-on-exit":
+			result.hibernateOnExit = true
 		case arg == "--component" || strings.HasPrefix(arg, "--component="):
 			text, err := value(&i, arg, "--component")
 			if err != nil {
@@ -183,6 +186,9 @@ func parseRunOptions(args []string) (runOptions, error) {
 			return result, fmt.Errorf("unknown box option %q", arg)
 		}
 	}
+	if result.detach && result.hibernateOnExit {
+		return result, fmt.Errorf("--detach and --hibernate-on-exit cannot be combined")
+	}
 	return result, provider.ValidateName(result.name)
 }
 
@@ -192,7 +198,7 @@ func defaultSetup(c config.Context) config.CreationSetup {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	return config.CreationSetup{Version: 1, Save: true, Region: c.Cluster, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, Components: ids, Workspace: "/data/workspace", OnSuccess: "delete", OnFailure: "retain", MaxTTL: "8h"}
+	return config.CreationSetup{Version: 1, Save: true, Region: c.Cluster, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}, Components: ids, Workspace: "/data/workspace", OnSuccess: "retain", OnFailure: "retain", MaxTTL: "8h"}
 }
 
 func applyRunOptions(setup *config.CreationSetup, opts runOptions) {
@@ -367,7 +373,7 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 		output = crlfWriter{a.Out}
 	}
 	home := a.Environ["HOME"]
-	profiles, _ := components.Discover(home)
+	profiles, _ := components.DiscoverConfigured(home, a.Environ)
 	github := a.discoverGitHub(ctx)
 	instructions := instructionCandidates(a.Environ)
 	instructionSeen := make(map[string]bool)
@@ -399,6 +405,13 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 	selectedProfiles := make(map[string]bool)
 	for _, profile := range setup.ApplicationProfiles {
 		selectedProfiles[profile.Application+"\x00"+profile.Path] = true
+	}
+	// Active profiles are visibly preselected on a new setup. Nothing leaves
+	// the laptop until the user reaches the confirmation row.
+	if len(setup.ApplicationProfiles) == 0 {
+		for _, profile := range profiles {
+			selectedProfiles[profile.Component+"\x00"+profile.Directory] = profile.Active
+		}
 	}
 	selectedGitHub := -1
 	if setup.GitHub != nil {
@@ -442,7 +455,8 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 		rows = append(rows, setupRow{kind: "resource", index: i, label: name})
 	}
 	for i, profile := range profiles {
-		rows = append(rows, setupRow{kind: "profile", index: i, label: profile.Component + "  " + profile.Directory})
+		label := profile.Component + "  " + profile.Directory
+		rows = append(rows, setupRow{kind: "profile", index: i, label: label})
 	}
 	for i, account := range github {
 		rows = append(rows, setupRow{kind: "github", index: i, label: account.User + "@" + account.Host + " (" + account.Protocol + ")"})
@@ -596,8 +610,17 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 			case "resource":
 				resourceSelected = row.index
 			case "profile":
-				key := profiles[row.index].Component + "\x00" + profiles[row.index].Directory
-				selectedProfiles[key] = !selectedProfiles[key]
+				profile := profiles[row.index]
+				key := profile.Component + "\x00" + profile.Directory
+				selecting := !selectedProfiles[key]
+				if selecting {
+					for _, candidate := range profiles {
+						if candidate.Component == profile.Component {
+							selectedProfiles[candidate.Component+"\x00"+candidate.Directory] = false
+						}
+					}
+				}
+				selectedProfiles[key] = selecting
 			case "github":
 				if selectedGitHub == row.index {
 					selectedGitHub = -1
@@ -638,9 +661,10 @@ type upload struct {
 }
 
 type preparedSetup struct {
-	setup       config.CreationSetup
-	uploads     []upload
-	githubToken string
+	setup        config.CreationSetup
+	uploads      []upload
+	githubToken  string
+	applications []string
 }
 
 func profileDestination(application, source string) (string, error) {
@@ -649,6 +673,9 @@ func profileDestination(application, source string) (string, error) {
 	case "codex":
 		return filepath.Join("/data/home/.codex", base), nil
 	case "claude":
+		if base == ".claude.json" {
+			return "/data/home/.claude.json", nil
+		}
 		return filepath.Join("/data/home/.claude", base), nil
 	case "opencode":
 		return filepath.Join("/data/home/.config/opencode", base), nil
@@ -670,6 +697,7 @@ func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (pre
 			fmt.Fprintf(a.Err, "vmbox: saved application profile missing; skipped: %s (%v)\n", selected.Path, err)
 			continue
 		}
+		prepared.applications = append(prepared.applications, selected.Application)
 		for _, path := range profile.Files {
 			data, err := os.ReadFile(path)
 			if err != nil {
@@ -718,36 +746,55 @@ func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (pre
 func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name string, prepared preparedSetup) error {
 	if len(prepared.uploads) > 0 {
 		fmt.Fprintf(a.Err, "vmbox: syncing %d selected agent/instruction file(s)\n", len(prepared.uploads))
-	}
-	for index, item := range prepared.uploads {
-		fmt.Fprintf(a.Err, "vmbox: syncing file %d/%d: %s\n", index+1, len(prepared.uploads), item.path)
-		result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "put-file", item.path, item.mode}, provider.ExecOptions{Stdin: bytes.NewReader(item.data), Stdout: io.Discard, Stderr: a.Err})
+		request := boxruntime.SyncRequest{Files: make([]boxruntime.SyncFile, 0, len(prepared.uploads))}
+		for index, item := range prepared.uploads {
+			fmt.Fprintf(a.Err, "vmbox: batching file %d/%d: %s\n", index+1, len(prepared.uploads), item.path)
+			request.Files = append(request.Files, boxruntime.SyncFile{Path: item.path, Mode: item.mode, Data: item.data})
+		}
+		payload, err := json.Marshal(request)
 		if err != nil {
-			return fmt.Errorf("upload %s: %w", item.path, err)
+			return fmt.Errorf("encode file sync: %w", err)
+		}
+		digest := sha256.Sum256(payload)
+		expected := fmt.Sprintf("%x", digest[:])
+		result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "sync-files"}, provider.ExecOptions{Stdin: bytes.NewReader(payload), Stdout: io.Discard, Stderr: a.Err})
+		if err != nil {
+			return fmt.Errorf("sync selected files: %w", err)
 		}
 		if result.ExitCode != 0 {
-			return fmt.Errorf("upload %s exited with status %d", item.path, result.ExitCode)
+			return fmt.Errorf("sync selected files exited with status %d", result.ExitCode)
+		}
+		if strings.TrimSpace(result.Stdout) != expected {
+			return fmt.Errorf("batched file checksum verification failed")
 		}
 	}
+	setupRequest := boxruntime.SetupRequest{Workspace: prepared.setup.Workspace, Applications: append([]string(nil), prepared.applications...)}
 	if prepared.githubToken != "" && prepared.setup.GitHub != nil {
 		credential := prepared.setup.GitHub
 		fmt.Fprintf(a.Err, "vmbox: syncing GitHub credential for %s@%s\n", credential.User, credential.Host)
-		result, err := p.Exec(ctx, name, []string{"gh", "auth", "login", "--hostname", credential.Host, "--git-protocol", credential.Protocol, "--with-token"}, provider.ExecOptions{Stdin: strings.NewReader(prepared.githubToken + "\n"), Stdout: io.Discard, Stderr: a.Err})
-		if err != nil || result.ExitCode != 0 {
-			return fmt.Errorf("upload GitHub credential for %s@%s failed", credential.User, credential.Host)
-		}
-		result, err = p.Exec(ctx, name, []string{"gh", "auth", "setup-git", "--hostname", credential.Host}, provider.ExecOptions{Stdout: io.Discard, Stderr: a.Err})
-		if err != nil || result.ExitCode != 0 {
-			return fmt.Errorf("configure GitHub credential for %s@%s failed", credential.User, credential.Host)
-		}
-		fmt.Fprintf(a.Err, "vmbox: GitHub credential is ready\n")
+		setupRequest.GitHub = &boxruntime.GitHubSetup{Host: credential.Host, User: credential.User, Protocol: credential.Protocol, Token: prepared.githubToken}
 	}
 	fmt.Fprintf(a.Err, "vmbox: configuring agent trust for %s\n", prepared.setup.Workspace)
-	result, err := p.Exec(ctx, name, []string{"vmbox-entrypoint", "--configure-agent-trust", prepared.setup.Workspace}, provider.ExecOptions{Stdout: io.Discard, Stderr: a.Err})
+	for _, application := range uniqueVerifiableApplications(prepared.applications) {
+		fmt.Fprintf(a.Err, "vmbox: verifying %s authentication inside %q\n", application, name)
+	}
+	payload, err := json.Marshal(setupRequest)
+	if err != nil {
+		return fmt.Errorf("encode remote setup: %w", err)
+	}
+	result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "setup"}, provider.ExecOptions{Stdin: bytes.NewReader(payload), Stderr: a.Err})
 	if err != nil || result.ExitCode != 0 {
-		return fmt.Errorf("initialize workspace trust for application profiles")
+		return fmt.Errorf("configure credentials and workspace trust inside box")
+	}
+	var setupResult boxruntime.SetupResult
+	if err := json.Unmarshal([]byte(result.Stdout), &setupResult); err != nil {
+		return fmt.Errorf("decode remote setup result: %w", err)
+	}
+	if setupRequest.GitHub != nil {
+		fmt.Fprintf(a.Err, "vmbox: GitHub credential is ready\n")
 	}
 	fmt.Fprintf(a.Err, "vmbox: agent trust is ready\n")
+	a.reportApplicationAuthentication(prepared.applications, setupResult.Authentication)
 	return nil
 }
 

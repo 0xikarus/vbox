@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/boxruntime"
@@ -33,49 +37,138 @@ func run() error {
 		args = append([]string{"ask"}, args...)
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox-runtime health | run [--detach] -- COMMAND [ARG...] | exec-json DATA | direct-json DATA | put-file PATH MODE | welcome | report | ask")
+		return fmt.Errorf("usage: vmbox-runtime health | idle | image-info | tmux-snapshot | tmux-context BOX SLOT STATE HEALTH | tmux-restore | prepare-hibernate | run [--detach] -- COMMAND [ARG...] | exec-json DATA | direct-json DATA | put-file PATH MODE | sync-files | setup | tmux-help | welcome | report | ask")
 	}
 	switch args[0] {
 	case "health":
 		fmt.Println("ok")
 		return nil
+	case "idle":
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		marker := "/tmp/vmbox-idle-ready"
+		if err := os.WriteFile(marker, []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0644); err != nil {
+			return err
+		}
+		defer os.Remove(marker)
+		<-ctx.Done()
+		return nil
+	case "image-info":
+		if len(args) != 1 {
+			return fmt.Errorf("image-info accepts no arguments")
+		}
+		return json.NewEncoder(os.Stdout).Encode(readImageInfo())
+	case "tmux-snapshot":
+		if len(args) != 1 {
+			return fmt.Errorf("tmux-snapshot accepts no arguments")
+		}
+		snapshot, err := boxruntime.SaveTmuxState(context.Background(), runtime.Root)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(snapshot)
+	case "tmux-restore":
+		if len(args) != 1 {
+			return fmt.Errorf("tmux-restore accepts no arguments")
+		}
+		result, err := boxruntime.RestoreTmuxState(context.Background(), runtime.Root)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	case "prepare-hibernate":
+		if len(args) != 1 {
+			return fmt.Errorf("prepare-hibernate accepts no arguments")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		result, err := boxruntime.PrepareHibernate(ctx, runtime.Root)
+		if err != nil {
+			if len(result.Blockers) > 0 {
+				_ = json.NewEncoder(os.Stderr).Encode(result)
+			}
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(result)
+	case "interrupted-pane":
+		if len(args) != 2 {
+			return fmt.Errorf("interrupted-pane requires encoded pane metadata")
+		}
+		return boxruntime.DecodeInterruptedPane(args[1], os.Stdout)
+	case "tmux-context":
+		if len(args) != 5 {
+			return fmt.Errorf("tmux-context requires BOX SLOT STATE HEALTH")
+		}
+		return boxruntime.SetTmuxContext(context.Background(), args[1], args[2], args[3], args[4])
 	case "put-file":
 		if len(args) != 3 {
 			return fmt.Errorf("put-file requires PATH MODE")
 		}
-		path := filepath.Clean(args[1])
-		if path != "/data" && !strings.HasPrefix(path, "/data/") {
-			return fmt.Errorf("put-file destination must be below /data")
-		}
-		mode, err := strconv.ParseUint(args[2], 8, 9)
-		if err != nil {
-			return fmt.Errorf("invalid put-file mode: %w", err)
-		}
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			return err
-		}
-		tmp, err := os.CreateTemp(filepath.Dir(path), ".vmbox-upload-*")
+		digest, err := writeSyncedFile("/data", args[1], args[2], io.LimitReader(os.Stdin, 16<<20))
 		if err != nil {
 			return err
 		}
-		tmpPath := tmp.Name()
-		defer os.Remove(tmpPath)
-		if err := tmp.Chmod(os.FileMode(mode)); err != nil {
-			tmp.Close()
+		fmt.Println(digest)
+		return nil
+	case "sync-files":
+		if len(args) != 1 {
+			return fmt.Errorf("sync-files accepts its request only on stdin")
+		}
+		digest, err := receiveFiles(os.Stdin, "/data")
+		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(tmp, io.LimitReader(os.Stdin, 16<<20)); err != nil {
-			tmp.Close()
+		fmt.Println(digest)
+		return nil
+	case "setup":
+		if len(args) != 1 {
+			return fmt.Errorf("setup accepts its request only on stdin")
+		}
+		data, err := readLimited(os.Stdin, 2<<20)
+		if err != nil {
 			return err
 		}
-		if err := tmp.Sync(); err != nil {
-			tmp.Close()
+		var request boxruntime.SetupRequest
+		if err := json.Unmarshal(data, &request); err != nil {
+			return fmt.Errorf("decode setup request: %w", err)
+		}
+		result, err := performSetup(context.Background(), request, executeSetupCommand)
+		if err != nil {
 			return err
 		}
-		if err := tmp.Close(); err != nil {
-			return err
-		}
-		return os.Rename(tmpPath, path)
+		return json.NewEncoder(os.Stdout).Encode(result)
+	case "tmux-help":
+		fmt.Print(`vmbox tmux help (German QWERTZ friendly)
+
+Write and scroll
+  Ctrl-a s       Enter scroll/copy mode
+  Mouse wheel    Scroll; tmux enters scroll mode automatically
+  Arrows/PgUp/PgDn
+                 Move through scrollback
+  Ctrl-f         Search forward in scrollback
+  Space, Enter   Start selection, then copy and return to writing
+  q or Escape    Leave scroll mode and return to writing mode
+
+Windows and panes
+  Ctrl-a c       Create a window
+  Ctrl-a n / p   Next / previous window
+  Ctrl-a arrows  Switch panes
+  Ctrl-a Alt-arrows
+                 Resize panes
+
+Safe disconnect and lifecycle
+  Ctrl-a d disconnects you, but the box and its tasks keep running.
+  Reconnect with: vmbox NAME
+  Detach only disconnects the terminal; every live process keeps running.
+  Hibernate saves restorable state, stops live processes, retains the volume,
+  and frees its compute slot. Arbitrary processes do not survive hibernation.
+  Delete volume permanently deletes the logical box and workspace data; it
+  requires a separate destructive confirmation and does not delete the slot.
+
+Keyboard input is passed through unchanged. vmbox never swaps Y and Z and
+never applies a remote QWERTY mapping.
+`)
+		return nil
 	case "welcome":
 		welcome := filepath.Join(os.Getenv("HOME"), ".vmbox-welcome")
 		if data, err := os.ReadFile(welcome); err == nil {
@@ -84,7 +177,7 @@ func run() error {
 				fmt.Println()
 			}
 		} else {
-			fmt.Printf("vmbox %s is ready\nProvider: %s  Region: %s\nSpecs: %s CPU / %s MiB RAM / %s GiB disk\nWorkspace: %s\nCost: %s\nDetach: press Ctrl-b, release both keys, then press d\n\n",
+			fmt.Printf("vmbox %s is ready\nProvider: %s  Region: %s\nSpecs: %s CPU / %s MiB RAM / %s GiB disk\nWorkspace: %s\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\n\n",
 				os.Getenv("VMBOX_NAME"), os.Getenv("VMBOX_PROVIDER"), os.Getenv("VMBOX_REGION"), os.Getenv("VMBOX_CPU"), os.Getenv("VMBOX_MEMORY_MIB"), os.Getenv("VMBOX_DISK_GIB"), os.Getenv("VMBOX_WORKSPACE"), os.Getenv("VMBOX_COST"))
 		}
 		shell := os.Getenv("SHELL")
@@ -219,6 +312,161 @@ func run() error {
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+type imageInfo struct {
+	Version     string `json:"version"`
+	Components  string `json:"components"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+func readImageInfo() imageInfo {
+	read := func(path string) string {
+		data, _ := os.ReadFile(path)
+		return strings.TrimSpace(string(data))
+	}
+	return imageInfo{
+		Version:     read("/usr/local/lib/vmbox-image-version"),
+		Components:  read("/usr/local/lib/vmbox-bootstrap-components"),
+		Fingerprint: read("/usr/local/lib/vmbox-component-fingerprint"),
+	}
+}
+
+const maxSyncedFileSize = 16 << 20
+
+func readLimited(reader io.Reader, limit int64) ([]byte, error) {
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > limit {
+		return nil, fmt.Errorf("request exceeds %d bytes", limit)
+	}
+	return data, nil
+}
+
+func writeSyncedFile(root, destination, modeText string, reader io.Reader) (string, error) {
+	root = filepath.Clean(root)
+	destination = filepath.Clean(destination)
+	relative, err := filepath.Rel(root, destination)
+	if err != nil || relative == "." || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+		return "", fmt.Errorf("file destination must be below %s", root)
+	}
+	mode, err := strconv.ParseUint(modeText, 8, 9)
+	if err != nil {
+		return "", fmt.Errorf("invalid file mode: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(destination), ".vmbox-upload-*")
+	if err != nil {
+		return "", err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err := tmp.Chmod(os.FileMode(mode)); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	digest := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(tmp, digest), reader); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return "", err
+	}
+	if err := tmp.Close(); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmpPath, destination); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", digest.Sum(nil)), nil
+}
+
+func receiveFiles(reader io.Reader, root string) (string, error) {
+	payload, err := readLimited(reader, 64<<20)
+	if err != nil {
+		return "", err
+	}
+	var request boxruntime.SyncRequest
+	if err := json.Unmarshal(payload, &request); err != nil {
+		return "", fmt.Errorf("decode sync request: %w", err)
+	}
+	if len(request.Files) == 0 || len(request.Files) > 128 {
+		return "", fmt.Errorf("sync request must contain 1 to 128 files")
+	}
+	seen := make(map[string]bool, len(request.Files))
+	for _, file := range request.Files {
+		path := filepath.Clean(file.Path)
+		if seen[path] {
+			return "", fmt.Errorf("duplicate sync destination %s", path)
+		}
+		seen[path] = true
+		if len(file.Data) > maxSyncedFileSize {
+			return "", fmt.Errorf("sync file %s exceeds %d bytes", path, maxSyncedFileSize)
+		}
+		if _, err := writeSyncedFile(root, path, file.Mode, bytes.NewReader(file.Data)); err != nil {
+			return "", fmt.Errorf("write %s: %w", path, err)
+		}
+	}
+	digest := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", digest[:]), nil
+}
+
+type setupCommand func(context.Context, io.Reader, io.Writer, io.Writer, string, ...string) error
+
+func executeSetupCommand(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+	command := exec.CommandContext(ctx, name, args...)
+	command.Stdin, command.Stdout, command.Stderr = stdin, stdout, stderr
+	return command.Run()
+}
+
+func performSetup(ctx context.Context, request boxruntime.SetupRequest, execute setupCommand) (boxruntime.SetupResult, error) {
+	if execute == nil {
+		return boxruntime.SetupResult{}, fmt.Errorf("setup command executor is unavailable")
+	}
+	if request.GitHub != nil {
+		github := request.GitHub
+		if github.Host == "" || github.User == "" || github.Token == "" || (github.Protocol != "ssh" && github.Protocol != "https") {
+			return boxruntime.SetupResult{}, fmt.Errorf("invalid GitHub setup request")
+		}
+		if err := execute(ctx, strings.NewReader(github.Token+"\n"), io.Discard, os.Stderr, "gh", "auth", "login", "--hostname", github.Host, "--git-protocol", github.Protocol, "--with-token"); err != nil {
+			return boxruntime.SetupResult{}, fmt.Errorf("configure GitHub authentication: %w", err)
+		}
+		if err := execute(ctx, nil, io.Discard, os.Stderr, "gh", "auth", "setup-git", "--hostname", github.Host); err != nil {
+			return boxruntime.SetupResult{}, fmt.Errorf("configure GitHub Git protocol: %w", err)
+		}
+	}
+	if request.Workspace == "" {
+		return boxruntime.SetupResult{}, fmt.Errorf("setup workspace is required")
+	}
+	if err := execute(ctx, nil, io.Discard, os.Stderr, "vmbox-entrypoint", "--configure-agent-trust", request.Workspace); err != nil {
+		return boxruntime.SetupResult{}, fmt.Errorf("configure agent trust: %w", err)
+	}
+	result := boxruntime.SetupResult{Authentication: make(map[string]bool)}
+	seen := make(map[string]bool)
+	for _, application := range request.Applications {
+		if seen[application] {
+			continue
+		}
+		seen[application] = true
+		switch application {
+		case "codex":
+			result.Authentication[application] = execute(ctx, nil, io.Discard, io.Discard, "codex", "login", "status") == nil
+		case "claude":
+			var output bytes.Buffer
+			err := execute(ctx, nil, &output, io.Discard, "claude", "auth", "status", "--json")
+			var status struct {
+				LoggedIn bool `json:"loggedIn"`
+			}
+			result.Authentication[application] = err == nil && json.Unmarshal(output.Bytes(), &status) == nil && status.LoggedIn
+		}
+	}
+	return result, nil
 }
 
 func parseReport(args []string) (kind, message string, err error) {

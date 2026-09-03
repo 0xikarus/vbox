@@ -116,13 +116,21 @@ func TestScheduleUsesAccountCredentialAndPreservesExactArgv(t *testing.T) {
 	server.Deliver = func(_ context.Context, _ v1.Run, event string, _ v1.JobState, _ string, _ string) {
 		delivered = append(delivered, event)
 	}
+	bootstrapped := false
+	server.Bootstrap = func(_ context.Context, selected provider.Provider, box provider.Box, components []string) error {
+		bootstrapped = true
+		if selected != providerFake || box.ID != "box-provider-id" || string(mustJSON(t, components)) != string(mustJSON(t, []string{"codex", "claude"})) {
+			t.Fatalf("bootstrap provider=%T box=%+v components=%v", selected, box, components)
+		}
+		return nil
+	}
 	var resolvedAccount, resolvedName string
 	server.Resolve = func(_ context.Context, account, name, credential string) (provider.Provider, error) {
 		resolvedAccount, resolvedName = account, credential
 		return providerFake, nil
 	}
 	argv := []string{"tool", "--flag", "two words", "$HOME;"}
-	run := v1.Run{ID: "run-1", AccountID: "account-a", Provider: "fake", Lease: "lease-1", Request: v1.CreateRunRequest{Provider: "fake", ProviderCredential: "primary", Box: "worker", Command: argv}}
+	run := v1.Run{ID: "run-1", AccountID: "account-a", Provider: "fake", Lease: "lease-1", Request: v1.CreateRunRequest{Provider: "fake", ProviderCredential: "primary", Box: "worker", Command: argv, Components: []string{"codex", "claude"}}}
 	server.schedule(context.Background(), Principal{AccountID: "account-a"}, run)
 	if resolvedAccount != "account-a" || resolvedName != "primary" {
 		t.Fatalf("resolved account=%q credential=%q", resolvedAccount, resolvedName)
@@ -132,6 +140,9 @@ func TestScheduleUsesAccountCredentialAndPreservesExactArgv(t *testing.T) {
 	}
 	if providerFake.created.Env["VMBOX_RUN_ID"] != "run-1" || providerFake.created.Env["VMBOX_EVENT_KEY"] != "lease-1" {
 		t.Fatalf("runtime identity env=%v", providerFake.created.Env)
+	}
+	if !bootstrapped {
+		t.Fatal("controller forwarded the command before bootstrapping the workload")
 	}
 	if string(mustJSON(t, delivered)) != string(mustJSON(t, []string{"provisioning", "ready"})) {
 		t.Fatalf("lifecycle notifications=%v", delivered)

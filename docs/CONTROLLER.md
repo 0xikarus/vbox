@@ -14,12 +14,22 @@ VMBOX_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 
 Provider credentials remain in environment variables in standalone mode. Controller mode requires an account-scoped credential in the encrypted vault; scheduling resolves the selected credential for that account and never sends it to a workload. Never put credentials into container images, CLI contexts, reusable profiles, logs, or workload environment. `vmbox-controller bootstrap` prints its owner token once.
 
-Provision or repair a Railway controller from a digest-pinned Railway context. The command prints the billable plan before requiring explicit confirmation, creates the controller and PostgreSQL services idempotently, configures a hash of the one-time bootstrap token, and saves the endpoint in the local context:
+Provision or repair a Railway controller from a Railway context. The command prints the billable plan before requiring explicit confirmation, reuses the exact `vmbox-controller` and `vmbox-postgres` service names, preserves existing secrets and accounts, and waits for `/healthz` before saving the endpoint. When `--endpoint` is omitted, it reuses or generates a Railway domain. Local source deployment stages only `Dockerfile`, `.dockerignore`, `entrypoint.sh`, `go.mod`, `go.sum`, `cmd/`, and `internal/`; other workspace files are never uploaded.
 
 ```bash
-vmbox controller init --endpoint https://controller.example --yes
-vmbox controller ensure --endpoint https://controller.example --yes
+vmbox controller init \
+  --source . \
+  --box-image ghcr.io/owner/vmbox-service@sha256:... \
+  --yes
+
+# A healthy controller is returned immediately; an unhealthy one is repaired
+# by redeploying the same service and database.
+vmbox controller ensure --yes
 ```
+
+Use `--controller-image IMAGE@sha256:DIGEST` instead of `--source` when a published controller image is available. The controller image and default box image are stored separately so later repair never deploys the box image as the controller. A newly generated owner token is printed once; save it in the context's configured token environment.
+
+Before accepting a box command, the controller bootstraps its bundled runtime and selected tools into generic Debian/Ubuntu-compatible provider images. Project-built images advertise their preinstalled components, allowing bootstrap to skip the slow apt/npm install and refresh only the small runtime payload.
 
 Owner/user and provider credential management:
 

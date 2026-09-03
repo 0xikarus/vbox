@@ -7,6 +7,13 @@ default. The CLI bootstraps the selected components plus tmux and
 `vmbox-runtime` after the provider reports the workload ready; it does not
 require a vmbox-owned registry image. Incus uses `images:ubuntu/24.04`.
 
+For lower cold-start latency, run `make box-image` to build the repository
+Dockerfile locally. Railway requires a registry-published image: set
+`VMBOX_IMAGE=REGISTRY/IMAGE:TAG` and run `make box-image-push`, then use the
+resulting immutable `REGISTRY/IMAGE@sha256:...` reference in the Railway
+context. Credentials and application profiles are synchronized at runtime and
+must never be baked into this image.
+
 ## Docker
 
 - Local engine, rootless engine, named contexts, SSH, and mTLS are supported; unauthenticated TCP is rejected.

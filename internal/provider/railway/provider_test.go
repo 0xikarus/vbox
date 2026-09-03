@@ -2,58 +2,77 @@ package railway
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
-	"github.com/0xikarus/vmbox-service/internal/boxruntime"
-	"github.com/0xikarus/vmbox-service/internal/procexec"
-	"github.com/0xikarus/vmbox-service/internal/provider"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/0xikarus/vmbox-service/internal/procexec"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-func TestExecEncodesExactArgvWithoutShell(t *testing.T) {
+func TestExecUsesDirectSSHAndEncodesExactArgv(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(services)}, {}}}
+	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(services)}, {Stdout: []byte(instance)}, {},
+	}}
 	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	argv := []string{"printf", "%s", `$HOME; $(touch nope)`, "two words"}
 	_, err := p.Exec(context.Background(), "box", argv, provider.ExecOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := runner.Calls[1].Argv
-	prefix := append([]string{"railway", "ssh", "--project", "project", "--environment", "environment", "--service", "vmbox-box"}, provider.AsWorkloadUser([]string{"vmbox-runtime", "exec-json"})...)
-	if len(got) != len(prefix)+1 || !reflect.DeepEqual(got[:len(prefix)], prefix) {
-		t.Fatalf("unexpected transport argv: %#v", got)
+	got := runner.Calls[2].Argv
+	if got[0] != "ssh" || got[len(got)-2] != "deployment-instance@ssh.railway.com" {
+		t.Fatalf("unexpected direct SSH argv: %#v", got)
 	}
-	decoded, err := boxruntime.DecodeArgv(got[len(prefix)])
-	if err != nil {
-		t.Fatal(err)
+	encoded, _ := json.Marshal(argv)
+	payload := base64.RawURLEncoding.EncodeToString(encoded)
+	command := got[len(got)-1]
+	if !strings.Contains(command, "'vmbox-runtime' 'exec-json' '"+payload+"'") {
+		t.Fatalf("exact argv payload missing from remote command: %s", command)
 	}
-	if !reflect.DeepEqual(decoded, argv) {
-		t.Fatalf("decoded=%#v want=%#v", decoded, argv)
+	if strings.Contains(command, "touch nope") {
+		t.Fatalf("untrusted argv appeared as shell source: %s", command)
+	}
+	for _, call := range runner.Calls {
+		if len(call.Argv) > 1 && call.Argv[0] == "railway" && call.Argv[1] == "ssh" {
+			t.Fatalf("runtime data path invoked railway ssh: %#v", call.Argv)
+		}
 	}
 }
 
-func TestAttachSessionUsesRailwayNativeSessionWithoutRemoteCommand(t *testing.T) {
+func TestAttachSessionUsesDirectInteractiveSSH(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(services)}, {ExitCode: 1}, {}, {}, {}}}
+	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(services)}, {Stdout: []byte(instance)}, {Stdout: []byte("created\n")}, {},
+	}}
 	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	result, err := p.AttachSession(context.Background(), "box", "vmbox", []string{"claude", "task with spaces"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("result=%+v error=%v", result, err)
 	}
-	got := runner.Calls[4].Argv
-	want := []string{"railway", "ssh", "--project", "project", "--environment", "environment", "--service", "vmbox-box", "--session", "vmbox"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("session argv=%#v", got)
+	got := runner.Calls[3].Argv
+	joined := strings.Join(got, " ")
+	if got[0] != "ssh" || !strings.Contains(joined, " -tt ") || got[len(got)-2] != "deployment-instance@ssh.railway.com" {
+		t.Fatalf("interactive direct SSH argv=%#v", got)
 	}
-	if strings.Contains(strings.Join(got, " "), "exec-json") {
-		t.Fatalf("native session unexpectedly supplied a remote command: %#v", got)
+	if !strings.Contains(got[len(got)-1], "'tmux' 'attach-session' '-t' 'vmbox'") || !strings.Contains(got[len(got)-1], "'sudo' '-n' '-H' '-u' 'vmbox'") {
+		t.Fatalf("session did not attach to the workload user's tmux server: %s", got[len(got)-1])
 	}
 	created := runner.Calls[2].Argv
-	if !strings.Contains(strings.Join(created, " "), "direct-json") || !strings.Contains(strings.Join(created, " "), "sudo -n -H -u vmbox") {
-		t.Fatalf("tmux pane was not created as vmbox: %#v", created)
+	createdCommand := created[len(created)-1]
+	if !strings.Contains(createdCommand, "direct-json") || !strings.Contains(createdCommand, "tmux has-session") {
+		t.Fatalf("tmux preparation was not one direct batched command: %#v", created)
+	}
+	if len(runner.Calls) != 4 {
+		t.Fatalf("unexpected attach call count: %#v", runner.Calls)
 	}
 }
 
@@ -63,22 +82,70 @@ func TestIdleSessionRecognizesOnlyShellPanes(t *testing.T) {
 	}
 }
 
-func TestExecRetriesRotatedHostKeyOnlyInIsolatedFile(t *testing.T) {
+func TestExecRepairsRotatedHostKeyBeforeStartingMaster(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
+	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	dir := t.TempDir()
+	knownHosts := filepath.Join(dir, "known_hosts")
+	controlDir := filepath.Join(dir, "control")
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)},
+		{Stdout: []byte(instance)},
 		{ExitCode: 255, Stderr: []byte("WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!")},
+		{},
+		{ExitCode: 255, Stderr: []byte("Control socket does not exist")},
 		{},
 		{Stdout: []byte("ok")},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHKnownHostsFile: "/isolated/railway-known-hosts"}, runner)
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHKnownHostsFile: knownHosts, SSHControlDir: controlDir}, runner)
 	result, err := p.Exec(context.Background(), "box", []string{"printf", "ok"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 || result.Stdout != "ok" {
-		t.Fatalf("result=%+v err=%v", result, err)
+		t.Fatalf("result=%+v err=%v calls=%#v", result, err, runner.Calls)
 	}
-	want := []string{"ssh-keygen", "-f", "/isolated/railway-known-hosts", "-R", "ssh.railway.com"}
-	if got := runner.Calls[2].Argv; !reflect.DeepEqual(got, want) {
+	want := []string{"ssh-keygen", "-f", knownHosts, "-R", "ssh.railway.com"}
+	if got := runner.Calls[3].Argv; !reflect.DeepEqual(got, want) {
 		t.Fatalf("host-key cleanup=%#v want=%#v", got, want)
+	}
+	master := strings.Join(runner.Calls[5].Argv, " ")
+	if !strings.Contains(master, " -M -N -f ") || !strings.Contains(master, "ControlMaster=yes") || !strings.Contains(master, "ControlPersist=120") {
+		t.Fatalf("explicit detached master was not started: %s", master)
+	}
+}
+
+func TestDirectSSHReusesDeploymentLookupAndControlMaster(t *testing.T) {
+	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
+	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	dir := t.TempDir()
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(services)},
+		{Stdout: []byte(instance)},
+		{ExitCode: 255},
+		{},
+		{Stdout: []byte("one")},
+		{Stdout: []byte("two")},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHControlDir: filepath.Join(dir, "control")}, runner)
+	if _, err := p.Exec(context.Background(), "box", []string{"printf", "one"}, provider.ExecOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Exec(context.Background(), "box", []string{"printf", "two"}, provider.ExecOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	apiCalls, masterStarts, dataCalls := 0, 0, 0
+	for _, call := range runner.Calls {
+		joined := strings.Join(call.Argv, " ")
+		if len(call.Argv) > 1 && call.Argv[0] == "railway" && call.Argv[1] == "api" && strings.Contains(joined, "serviceInstance") {
+			apiCalls++
+		}
+		if strings.Contains(joined, "ControlMaster=yes") {
+			masterStarts++
+		}
+		if len(call.Argv) > 0 && call.Argv[0] == "ssh" && strings.Contains(joined, "ControlMaster=no") {
+			dataCalls++
+		}
+	}
+	if apiCalls != 1 || masterStarts != 1 || dataCalls != 2 {
+		t.Fatalf("api=%d masters=%d data=%d calls=%#v", apiCalls, masterStarts, dataCalls, runner.Calls)
 	}
 }
 
@@ -168,7 +235,6 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		{},
 		{},
 		{},
-		{Stdout: []byte(services)},
 		{Stdout: []byte(`{"volumes":[]}`)},
 		{Stdout: []byte(`{"id":"volume-id"}`)},
 		{Stdout: []byte(`{"volumes":[{"id":"volume-id","serviceName":"vmbox-box","mountPath":"/data","status":"READY"}]}`)},
@@ -232,7 +298,6 @@ func TestStopPowersDownDeploymentAndStartRedeploysService(t *testing.T) {
 		{Stdout: []byte(stopped)},
 		{Stdout: []byte(variables)},
 		{},
-		{Stdout: []byte(stopped)},
 		{Stdout: []byte(`[]`)},
 		{Stdout: []byte(`{"id":"deployment-new"}`)},
 		{Stdout: []byte(`[{"id":"deployment-new","status":"SUCCESS"}]`)},

@@ -33,6 +33,7 @@ type Server struct {
 	PublicURL      string
 	DefaultImage   string
 	Resolve        ProviderResolver
+	Bootstrap      func(context.Context, provider.Provider, provider.Box, []string) error
 	HTTP           *http.Client
 	ReconcileEvery time.Duration
 	Deliver        NotificationSink
@@ -46,6 +47,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "compatibility": v1.CompatibilityVersion})
 	})
+	mux.HandleFunc("GET /v1/fleet/status", s.auth(s.fleetStatus))
+	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
+	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
+	mux.HandleFunc("POST /v1/logical-boxes", s.auth(s.registerLogicalBox))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/allocate", s.auth(s.reserveLogicalBox))
+	mux.HandleFunc("GET /v1/logical-boxes", s.auth(s.listLogicalBoxes))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}", s.auth(s.getLogicalBox))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/hibernate", s.auth(s.hibernateLogicalBoxHandler))
+	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/volume", s.auth(s.deleteLogicalBoxVolumeHandler))
+	mux.HandleFunc("GET /v1/allocations/{id}", s.auth(s.getAllocation))
 	mux.HandleFunc("POST /v1/runs", s.auth(s.createRun))
 	mux.HandleFunc("GET /v1/runs", s.auth(s.listRuns))
 	mux.HandleFunc("GET /v1/runs/{id}", s.auth(s.getRun))
@@ -208,6 +219,12 @@ func (s *Server) schedule(ctx context.Context, p Principal, run v1.Run) {
 		return
 	}
 	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, box.ID, v1.JobPreparing, "", nil)
+	if s.Bootstrap != nil {
+		if err := s.Bootstrap(ctx, prov, box, run.Request.Components); err != nil {
+			s.fail(ctx, p, run, fmt.Errorf("bootstrap box runtime: %w", err))
+			return
+		}
+	}
 	_, err = prov.Exec(ctx, box.ID, run.Request.Command, provider.ExecOptions{Detach: true})
 	if err != nil {
 		s.fail(ctx, p, run, err)
@@ -417,6 +434,12 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileNow(ctx); err != nil {
 		return err
 	}
+	if err := s.ReconcileFleetNow(ctx); err != nil {
+		return fmt.Errorf("initial fleet reconciliation: %w", err)
+	}
+	if err := s.ReconcileAllocationsNow(ctx); err != nil {
+		return fmt.Errorf("initial allocation reconciliation: %w", err)
+	}
 	interval := s.ReconcileEvery
 	if interval <= 0 {
 		interval = 30 * time.Second
@@ -431,6 +454,12 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 			case <-ticker.C:
 				if err := s.ReconcileNow(ctx); err != nil {
 					s.Logger.Error("controller reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileFleetNow(ctx); err != nil {
+					s.Logger.Error("compute fleet reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileAllocationsNow(ctx); err != nil {
+					s.Logger.Error("logical box allocation reconciliation failed", "error", err)
 				}
 			}
 		}

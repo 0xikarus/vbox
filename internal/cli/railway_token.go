@@ -50,25 +50,22 @@ func railwayRunner(token, environment string, environ map[string]string) (procex
 	if configHome == "" {
 		configHome = filepath.Join(home, ".config")
 	}
-	wrapperDir := filepath.Join(dataHome, "vmbox", "railway-ssh")
+	sshDir := filepath.Join(dataHome, "vmbox", "railway-ssh")
+	controlDir := filepath.Join(sshDir, "control")
 	knownHosts := filepath.Join(configHome, "vmbox", "railway-known-hosts")
-	if err := os.MkdirAll(wrapperDir, 0700); err != nil {
+	if err := os.MkdirAll(controlDir, 0700); err != nil {
 		return procexec.OSRunner{}, "", err
 	}
 	if err := os.MkdirAll(filepath.Dir(knownHosts), 0700); err != nil {
-		return procexec.OSRunner{}, "", err
-	}
-	wrapper := filepath.Join(wrapperDir, "ssh")
-	content := []byte("#!/bin/sh\nexec \"$VMBOX_REAL_SSH\" -o \"UserKnownHostsFile=$VMBOX_RAILWAY_KNOWN_HOSTS\" -o StrictHostKeyChecking=accept-new \"$@\"\n")
-	if err := os.WriteFile(wrapper, content, 0700); err != nil {
 		return procexec.OSRunner{}, "", err
 	}
 	path := environ["PATH"]
 	if path == "" {
 		path = os.Getenv("PATH")
 	}
-	env["PATH"] = wrapperDir + string(os.PathListSeparator) + path
+	env["PATH"] = path
 	env["VMBOX_REAL_SSH"] = realSSH
 	env["VMBOX_RAILWAY_KNOWN_HOSTS"] = knownHosts
+	env["VMBOX_RAILWAY_CONTROL_DIR"] = controlDir
 	return procexec.OSRunner{Env: env, Unset: unset}, knownHosts, nil
 }
