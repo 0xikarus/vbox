@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
@@ -49,5 +51,26 @@ func TestRailwayControllerCredentialSelectsProjectToken(t *testing.T) {
 		ProviderCredential: v1.ProviderCredential{Config: json.RawMessage(`{"tokenEnvironment":"BOTH"}`)},
 	}); err == nil {
 		t.Fatal("invalid Railway token environment was accepted")
+	}
+}
+
+func TestSeedRailwayCredentialRequiresRailwayScopeWithoutLeakingToken(t *testing.T) {
+	const token = "do-not-leak-project-token"
+	t.Setenv("RAILWAY_TOKEN", token)
+	t.Setenv("RAILWAY_PROJECT_ID", "")
+	t.Setenv("RAILWAY_ENVIRONMENT_ID", "")
+	err := seedRailwayCredentialFromEnvironment(context.Background(), &controller.Store{})
+	if err == nil || !strings.Contains(err.Error(), "RAILWAY_PROJECT_ID") {
+		t.Fatalf("error=%v", err)
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatal("environment token leaked through error")
+	}
+}
+
+func TestSeedRailwayCredentialIsDisabledWithoutToken(t *testing.T) {
+	t.Setenv("RAILWAY_TOKEN", "")
+	if err := seedRailwayCredentialFromEnvironment(context.Background(), &controller.Store{}); err != nil {
+		t.Fatal(err)
 	}
 }

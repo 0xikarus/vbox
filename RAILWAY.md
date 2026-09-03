@@ -62,11 +62,14 @@ Inside the tmux session:
 2. Release both keys.
 3. Press `d`.
 
-After detaching, vmbox shows that box's accrued current-period cost and asks
-whether to permanently delete its service and `/data`. Enter keeps it running;
-answering `y` stops the tmux tasks and irreversibly removes the box and volume.
-Reconnect with `vmbox resume <box-id>`. Do not type `exit` when you want Codex,
-Claude, Forge, or another process to keep running.
+After detaching, vmbox asks what should happen. Press Enter (the default) to
+keep the box, tmux session, and Codex process running. Choose **Shut down
+compute** to hibernate the logical box, retain its volume and saved tmux state,
+and free the compute slot. **Delete volume** is separate, permanent, and
+requires typing the exact logical-box name. A dropped SSH or app connection
+cannot ask, so it always takes the safe keep-running path. Reconnect with
+`vmbox <box-id>` or `vmbox boxes open <box-id>` in controller mode.
+Do not type `exit` when you want Codex, Claude, Forge, or another process to keep running.
 
 Forwarded commands automatically record their command, timestamps, state, and
 exit code in `/data/home/.vmbox-task-status.json`. Query with `vmbox status

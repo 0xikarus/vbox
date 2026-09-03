@@ -452,6 +452,44 @@ func (s *Store) RemoveUser(ctx context.Context, p Principal, id string) error {
 	return tx.Commit()
 }
 
+// PutEnvironmentProviderCredential imports a provider token supplied to the
+// controller process. It is intentionally limited to installations with one
+// account and records the owning user in the normal encrypted audit path.
+func (s *Store) PutEnvironmentProviderCredential(ctx context.Context, providerName, name string, req v1.PutProviderCredentialRequest) (v1.ProviderCredential, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT a.id::text,u.id::text,u.subject
+FROM accounts a
+JOIN LATERAL (
+  SELECT id,subject FROM users
+  WHERE account_id=a.id AND role='owner' AND disabled_at IS NULL
+  ORDER BY created_at,id LIMIT 1
+) u ON true
+ORDER BY a.created_at,a.id
+LIMIT 2`)
+	if err != nil {
+		return v1.ProviderCredential{}, err
+	}
+	defer rows.Close()
+	var owners []Principal
+	for rows.Next() {
+		var owner Principal
+		if err := rows.Scan(&owner.AccountID, &owner.UserID, &owner.Subject); err != nil {
+			return v1.ProviderCredential{}, err
+		}
+		owner.Role = "owner"
+		owners = append(owners, owner)
+	}
+	if err := rows.Err(); err != nil {
+		return v1.ProviderCredential{}, err
+	}
+	if len(owners) == 0 {
+		return v1.ProviderCredential{}, fmt.Errorf("environment provider credential requires one active account owner")
+	}
+	if len(owners) != 1 {
+		return v1.ProviderCredential{}, fmt.Errorf("environment provider credential is ambiguous with multiple controller accounts")
+	}
+	return s.PutProviderCredential(ctx, owners[0], providerName, name, req)
+}
+
 func (s *Store) ListProviderCredentials(ctx context.Context, accountID string) ([]v1.ProviderCredential, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT id::text,account_id::text,provider,name,config,created_at,updated_at FROM provider_credentials WHERE account_id=$1 ORDER BY provider,name`, accountID)
 	if err != nil {

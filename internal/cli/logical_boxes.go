@@ -263,7 +263,7 @@ func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Contex
 	}
 	fmt.Fprintln(a.Err, "\nWhat should happen to this box?")
 	fmt.Fprintln(a.Err, "  1. Keep running       (default)")
-	fmt.Fprintln(a.Err, "  2. Hibernate          Save state, retain the volume, and free the compute slot")
+	fmt.Fprintln(a.Err, "  2. Shut down compute  Hibernate: retain the volume and free the compute slot")
 	fmt.Fprintln(a.Err, "  3. Delete volume      Permanently delete this logical box and its workspace data")
 	fmt.Fprint(a.Err, "Choice [1]: ")
 	line, ok := readLineWithTimeout(ctx, reader, timeout)

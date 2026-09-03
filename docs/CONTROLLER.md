@@ -14,6 +14,8 @@ VMBOX_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 
 Provider credentials remain in environment variables in standalone mode. Controller mode requires an account-scoped credential in the encrypted vault; scheduling resolves the selected credential for that account and never sends it to a workload. Never put credentials into container images, CLI contexts, reusable profiles, logs, or workload environment. `vmbox-controller bootstrap` prints its owner token once.
 
+For a single-account Railway controller, a scoped `RAILWAY_TOKEN` environment variable is imported at startup as the encrypted `railway/primary` vault credential. Railway's injected `RAILWAY_PROJECT_ID` and `RAILWAY_ENVIRONMENT_ID` fence that credential to the current project and environment. The plaintext is never returned by the API or copied into a worker.
+
 Provision or repair a Railway controller from a Railway context. The command prints the billable plan before requiring explicit confirmation, reuses the exact `vmbox-controller` and `vmbox-postgres` service names, preserves existing secrets and accounts, and waits for `/healthz` before saving the endpoint. When `--endpoint` is omitted, it reuses or generates a Railway domain. Local source deployment stages only `Dockerfile`, `.dockerignore`, `entrypoint.sh`, `go.mod`, `go.sum`, `cmd/`, and `internal/`; other workspace files are never uploaded.
 
 ```bash

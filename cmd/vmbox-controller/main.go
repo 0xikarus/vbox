@@ -13,9 +13,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/controller"
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -77,6 +79,9 @@ func run() error {
 	}
 	store.Envelope, err = secrets.New(key)
 	if err != nil {
+		return err
+	}
+	if err := seedRailwayCredentialFromEnvironment(ctx, store); err != nil {
 		return err
 	}
 	registry := provider.NewRegistry()
@@ -157,6 +162,32 @@ func bootstrapWorkload(ctx context.Context, p provider.Provider, box provider.Bo
 		Entrypoint:      entrypoint,
 	}
 	return bootstrapper.Bootstrap(ctx, box.ID, request)
+}
+
+func seedRailwayCredentialFromEnvironment(ctx context.Context, store *controller.Store) error {
+	token := strings.TrimSpace(os.Getenv("RAILWAY_TOKEN"))
+	if token == "" {
+		return nil
+	}
+	projectID := strings.TrimSpace(os.Getenv("RAILWAY_PROJECT_ID"))
+	environmentID := strings.TrimSpace(os.Getenv("RAILWAY_ENVIRONMENT_ID"))
+	if projectID == "" || environmentID == "" {
+		return fmt.Errorf("RAILWAY_TOKEN requires RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID")
+	}
+	secret, err := json.Marshal(map[string]string{"token": token})
+	if err != nil {
+		return err
+	}
+	config, err := json.Marshal(map[string]string{
+		"projectId": projectID, "environmentId": environmentID, "tokenEnvironment": "RAILWAY_TOKEN",
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := store.PutEnvironmentProviderCredential(ctx, "railway", "primary", v1.PutProviderCredentialRequest{Secret: secret, Config: config}); err != nil {
+		return fmt.Errorf("import RAILWAY_TOKEN into encrypted provider credential: %w", err)
+	}
+	return nil
 }
 
 func providerForCredential(name string, credential controller.DecryptedProviderCredential) (provider.Provider, error) {
