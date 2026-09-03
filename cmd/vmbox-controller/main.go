@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -82,6 +83,9 @@ func run() error {
 		return err
 	}
 	if err := seedRailwayCredentialFromEnvironment(ctx, store); err != nil {
+		return err
+	}
+	if err := seedInitialFleetFromEnvironment(ctx, store); err != nil {
 		return err
 	}
 	registry := provider.NewRegistry()
@@ -186,6 +190,21 @@ func seedRailwayCredentialFromEnvironment(ctx context.Context, store *controller
 	}
 	if _, err := store.PutEnvironmentProviderCredential(ctx, "railway", "primary", v1.PutProviderCredentialRequest{Secret: secret, Config: config}); err != nil {
 		return fmt.Errorf("import RAILWAY_TOKEN into encrypted provider credential: %w", err)
+	}
+	return nil
+}
+
+func seedInitialFleetFromEnvironment(ctx context.Context, store *controller.Store) error {
+	value := strings.TrimSpace(os.Getenv("VMBOX_INITIAL_COMPUTE_BOX_SLOTS"))
+	if value == "" {
+		return nil
+	}
+	slots, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("VMBOX_INITIAL_COMPUTE_BOX_SLOTS must be an integer: %w", err)
+	}
+	if _, err := store.SeedEnvironmentFleetConfig(ctx, "railway", "primary", slots); err != nil {
+		return fmt.Errorf("seed initial Railway compute fleet: %w", err)
 	}
 	return nil
 }

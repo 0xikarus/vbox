@@ -74,3 +74,18 @@ func TestSeedRailwayCredentialIsDisabledWithoutToken(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestSeedInitialFleetIsDisabledWithoutSetting(t *testing.T) {
+	t.Setenv("VMBOX_INITIAL_COMPUTE_BOX_SLOTS", "")
+	if err := seedInitialFleetFromEnvironment(context.Background(), &controller.Store{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSeedInitialFleetRejectsInvalidSetting(t *testing.T) {
+	t.Setenv("VMBOX_INITIAL_COMPUTE_BOX_SLOTS", "two")
+	err := seedInitialFleetFromEnvironment(context.Background(), &controller.Store{})
+	if err == nil || !strings.Contains(err.Error(), "must be an integer") {
+		t.Fatalf("error=%v", err)
+	}
+}

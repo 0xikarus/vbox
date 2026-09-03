@@ -16,6 +16,11 @@ Provider credentials remain in environment variables in standalone mode. Control
 
 For a single-account Railway controller, a scoped `RAILWAY_TOKEN` environment variable is imported at startup as the encrypted `railway/primary` vault credential. Railway's injected `RAILWAY_PROJECT_ID` and `RAILWAY_ENVIRONMENT_ID` fence that credential to the current project and environment. The plaintext is never returned by the API or copied into a worker.
 
+`VMBOX_INITIAL_COMPUTE_BOX_SLOTS` optionally seeds Railway fleet capacity for
+that single account during first startup. It is ignored after an owner has
+configured the fleet, so later changes in the web UI or CLI are never
+overwritten by a redeploy.
+
 Provision or repair a Railway controller from a Railway context. The command prints the billable plan before requiring explicit confirmation, reuses the exact `vmbox-controller` and `vmbox-postgres` service names, preserves existing secrets and accounts, and waits for `/healthz` before saving the endpoint. When `--endpoint` is omitted, it reuses or generates a Railway domain. Local source deployment stages only `Dockerfile`, `.dockerignore`, `entrypoint.sh`, `go.mod`, `go.sum`, `cmd/`, and `internal/`; other workspace files are never uploaded.
 
 ```bash

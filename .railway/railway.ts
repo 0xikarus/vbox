@@ -18,6 +18,7 @@ export default defineRailway(() => {
       VMBOX_OWNER_SUBJECT: preserve(),
       RAILWAY_TOKEN: preserve(),
       VMBOX_IMAGE: preserve(),
+      VMBOX_INITIAL_COMPUTE_BOX_SLOTS: preserve(),
     },
     // dockerfilePath from CaC: "Dockerfile"
     // builder from CaC: "DOCKERFILE"
