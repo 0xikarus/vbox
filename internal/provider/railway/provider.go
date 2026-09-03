@@ -157,6 +157,12 @@ func (p *Provider) services(ctx context.Context) ([]service, error) {
 }
 
 func serviceName(name string) string { return "vmbox-" + name }
+func railwayStartCommand(detached bool) string {
+	if detached {
+		return "/usr/local/bin/vmbox-entrypoint vmbox-runtime idle"
+	}
+	return "sleep infinity"
+}
 
 func (p *Provider) resolve(ctx context.Context, id string) (service, error) {
 	p.cacheMu.RLock()
@@ -290,10 +296,7 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if err := p.setRegion(ctx, service.ID, req.Region); err != nil {
 		return provider.Box{}, err
 	}
-	startCommand := "sleep infinity"
-	if req.Detached {
-		startCommand = "vmbox-runtime idle"
-	}
+	startCommand := railwayStartCommand(req.Detached)
 	if err := p.setStartCommand(ctx, service.ID, startCommand); err != nil {
 		return provider.Box{}, err
 	}

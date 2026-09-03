@@ -228,6 +228,15 @@ func TestControlPathFallsBackToShortRuntimeDirectory(t *testing.T) {
 	}
 }
 
+func TestRailwayStartCommandRunsEntrypointForFleetSlots(t *testing.T) {
+	if got := railwayStartCommand(true); got != "/usr/local/bin/vmbox-entrypoint vmbox-runtime idle" {
+		t.Fatalf("detached start command = %q", got)
+	}
+	if got := railwayStartCommand(false); got != "sleep infinity" {
+		t.Fatalf("ordinary start command = %q", got)
+	}
+}
+
 func TestDeploymentIDPrefersSubmittedDeploymentOverService(t *testing.T) {
 	data := []byte(`{"service":{"id":"service-id"},"deployment":{"id":"deployment-id"}}`)
 	if got := deploymentID(data); got != "deployment-id" {
