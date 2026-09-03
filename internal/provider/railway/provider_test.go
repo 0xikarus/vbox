@@ -213,6 +213,21 @@ func TestSSHOptionsUseOnlyConfiguredIdentity(t *testing.T) {
 	}
 }
 
+func TestControlPathFallsBackToShortRuntimeDirectory(t *testing.T) {
+	longDirectory := filepath.Join(t.TempDir(), strings.Repeat("nested-directory-", 8))
+	p := New(Config{SSHControlDir: longDirectory}, &procexec.FakeRunner{})
+	path, err := p.controlPath("deployment-instance@ssh.railway.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(path) > 80 {
+		t.Fatalf("control path remains too long (%d): %s", len(path), path)
+	}
+	if filepath.Dir(path) == longDirectory {
+		t.Fatalf("long control directory was not replaced: %s", path)
+	}
+}
+
 func TestDeploymentIDPrefersSubmittedDeploymentOverService(t *testing.T) {
 	data := []byte(`{"service":{"id":"service-id"},"deployment":{"id":"deployment-id"}}`)
 	if got := deploymentID(data); got != "deployment-id" {

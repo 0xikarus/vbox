@@ -65,9 +65,10 @@ func (p *Provider) controlPath(target string) (string, error) {
 	if p.cfg.SSHControlDir == "" {
 		return "", nil
 	}
-	if len(path) > 100 {
+	if len(path) > 80 {
 		digest := sha256.Sum256([]byte(target))
-		path = filepath.Join(p.cfg.SSHControlDir, fmt.Sprintf("%x.sock", digest[:16]))
+		shortDirectory := filepath.Join(os.TempDir(), fmt.Sprintf("vmbox-ssh-%d", os.Getuid()))
+		path = filepath.Join(shortDirectory, fmt.Sprintf("%x.sock", digest[:12]))
 	}
 	return path, nil
 }
@@ -102,8 +103,12 @@ func (p *Provider) ensureSSHMaster(ctx context.Context, target string) error {
 	if p.masterByTarget[target] {
 		return nil
 	}
-	if err := os.MkdirAll(p.cfg.SSHControlDir, 0700); err != nil {
+	controlDirectory := filepath.Dir(controlPath)
+	if err := os.MkdirAll(controlDirectory, 0700); err != nil {
 		return fmt.Errorf("create Railway SSH control directory: %w", err)
+	}
+	if err := os.Chmod(controlDirectory, 0700); err != nil {
+		return fmt.Errorf("secure Railway SSH control directory: %w", err)
 	}
 	check := append(p.sshOptions(controlPath), "-O", "check", "--", target)
 	checked, checkErr := p.runSSHHandshake(ctx, check)
