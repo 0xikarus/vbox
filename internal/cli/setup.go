@@ -897,7 +897,7 @@ func welcome(box provider.Box, contextName, cost string) []byte {
 	if box.Storage != nil {
 		storage = fmt.Sprintf("%d GiB at %s", box.Storage.SizeGiB, box.Storage.MountPath)
 	}
-	return []byte(fmt.Sprintf("vmbox %s is ready\nProvider: %s (%s)  Region: %s\nSpecs: %.2g CPU / %d MiB RAM / %s\nConnection: %s  Workspace: /data/workspace  State: %s\nCost: %s\nDetach: press Ctrl-b, release both keys, then press d\nUseful: vmbox status %s | vmbox stop %s | vmbox cost %s\n\n", box.Name, box.Provider, contextName, box.Region, box.Resources.CPU, box.Resources.MemoryMiB, storage, connection, box.State, cost, box.Name, box.Name, box.Name))
+	return []byte(fmt.Sprintf("vmbox %s is ready\nProvider: %s (%s)  Region: %s\nSpecs: %.2g CPU / %d MiB RAM / %s\nConnection: %s  Workspace: /data/workspace  State: %s\nCost: %s\nDetach: press Ctrl-a, release both keys, then press d\nUseful: vmbox status %s | vmbox stop %s | vmbox cost %s\n\n", box.Name, box.Provider, contextName, box.Region, box.Resources.CPU, box.Resources.MemoryMiB, storage, connection, box.State, cost, box.Name, box.Name, box.Name))
 }
 
 func (a *App) uploadWelcome(ctx context.Context, p provider.Provider, box provider.Box, contextName string) error {

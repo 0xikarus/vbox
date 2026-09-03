@@ -285,13 +285,19 @@ func (s *Store) CompleteAssignment(ctx context.Context, accountID, logicalBoxID 
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale compute-slot fencing token")
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state='running',restoration_state='restored',updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4`, accountID, logicalBoxID, generation, fencingToken)
+	result, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state='running',restoration_state='restored',updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state IN ('reserved','attaching')`, accountID, logicalBoxID, generation, fencingToken)
 	if err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE allocation_requests SET state='ready',phase='ready',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND logical_box_id=$2 AND assignment_generation=$3 AND fencing_token=$4`, accountID, logicalBoxID, generation, fencingToken)
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("stale logical-box fencing token")
+	}
+	result, err = tx.ExecContext(ctx, `UPDATE allocation_requests SET state='ready',phase='ready',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND logical_box_id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state IN ('reserved','attaching')`, accountID, logicalBoxID, generation, fencingToken)
 	if err != nil {
 		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("stale allocation fencing token")
 	}
 	return tx.Commit()
 }

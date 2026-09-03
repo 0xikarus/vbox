@@ -197,3 +197,43 @@ CREATE INDEX IF NOT EXISTS allocation_requests_queue_idx
   ON allocation_requests(account_id, state, created_at, id);
 CREATE INDEX IF NOT EXISTS logical_boxes_detached_idx
   ON logical_boxes(account_id, provider, provider_credential, state);
+
+CREATE TABLE IF NOT EXISTS box_tasks (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  requested_role text NOT NULL CHECK (requested_role IN ('owner','user')),
+  agent text NOT NULL CHECK (agent IN ('codex','claude','opencode','shell')),
+  session_name text NOT NULL DEFAULT 'vmbox',
+  prompt text NOT NULL,
+  state text NOT NULL CHECK (state IN ('queued','waiting_capacity','starting','active','failed','cancelled')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,idempotency_key)
+);
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS requested_role text NOT NULL DEFAULT 'user' CHECK (requested_role IN ('owner','user'));
+ALTER TABLE box_tasks ALTER COLUMN requested_role DROP DEFAULT;
+CREATE INDEX IF NOT EXISTS box_tasks_reconcile_idx
+  ON box_tasks(account_id,state,created_at,id);
+CREATE TABLE IF NOT EXISTS box_messages (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  task_id uuid NOT NULL REFERENCES box_tasks(id) ON DELETE CASCADE,
+  user_id uuid REFERENCES users(id),
+  direction text NOT NULL CHECK (direction IN ('user','system','agent')),
+  body text NOT NULL,
+  submit boolean NOT NULL DEFAULT true,
+  state text NOT NULL CHECK (state IN ('queued','delivering','delivered','ambiguous','failed')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS box_messages_task_time_idx
+  ON box_messages(account_id,task_id,created_at,id);
+CREATE INDEX IF NOT EXISTS box_messages_delivery_idx
+  ON box_messages(account_id,state,created_at,id);

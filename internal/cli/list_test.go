@@ -25,7 +25,7 @@ func TestStandaloneListIsReadableWithExplicitJSONFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	readable := output.String()
-	for _, expected := range []string{"NAME", "STATE", "OPEN / RESUME", "strategy", "running", "ams", "2 GiB", "vmbox strategy", "Ctrl-b", "vmbox ls --json"} {
+	for _, expected := range []string{"NAME", "STATE", "OPEN / RESUME", "strategy", "running", "ams", "2 GiB", "vmbox strategy", "Ctrl-a", "vmbox ls --json"} {
 		if !strings.Contains(readable, expected) {
 			t.Fatalf("readable list missing %q: %s", expected, readable)
 		}

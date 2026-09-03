@@ -88,7 +88,10 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 	if status.ActualSlots <= config.ComputeBoxSlots {
 		return nil
 	}
-	excess := status.ActualSlots - config.ComputeBoxSlots
+	excess := remainingScaleDown(status.ActualSlots, config.ComputeBoxSlots, status.Slots)
+	if excess == 0 {
+		return nil
+	}
 	slots := append([]v1.ComputeSlot(nil), status.Slots...)
 	sort.SliceStable(slots, func(i, j int) bool {
 		leftFree := removableSlotState(slots[i].State)
@@ -102,11 +105,12 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 		if excess == 0 {
 			break
 		}
+		if slot.State == v1.FleetSlotDraining {
+			continue
+		}
 		if !removableSlotState(slot.State) {
-			if slot.State != v1.FleetSlotDraining {
-				if err := s.Store.SetComputeSlotState(ctx, accountID, slot.ID, v1.FleetSlotDraining, "waiting for logical box release after fleet scale-down"); err != nil {
-					return err
-				}
+			if err := s.Store.SetComputeSlotState(ctx, accountID, slot.ID, v1.FleetSlotDraining, "waiting for logical box release after fleet scale-down"); err != nil {
+				return err
 			}
 			excess--
 			continue
@@ -138,6 +142,19 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 		excess--
 	}
 	return nil
+}
+
+func remainingScaleDown(actual, desired int, slots []v1.ComputeSlot) int {
+	excess := actual - desired
+	for _, slot := range slots {
+		if slot.State == v1.FleetSlotDraining && excess > 0 {
+			excess--
+		}
+	}
+	if excess < 0 {
+		return 0
+	}
+	return excess
 }
 
 func removableSlotState(state v1.FleetSlotState) bool {

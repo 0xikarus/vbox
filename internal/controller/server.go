@@ -50,13 +50,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/fleet/status", s.auth(s.fleetStatus))
 	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
 	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
-	mux.HandleFunc("POST /v1/logical-boxes", s.auth(s.registerLogicalBox))
+	mux.HandleFunc("POST /v1/logical-boxes", s.auth(s.createLogicalBoxHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/allocate", s.auth(s.reserveLogicalBox))
 	mux.HandleFunc("GET /v1/logical-boxes", s.auth(s.listLogicalBoxes))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}", s.auth(s.getLogicalBox))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/hibernate", s.auth(s.hibernateLogicalBoxHandler))
 	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/volume", s.auth(s.deleteLogicalBoxVolumeHandler))
 	mux.HandleFunc("GET /v1/allocations/{id}", s.auth(s.getAllocation))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/tasks", s.auth(s.createBoxTaskHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/tasks", s.auth(s.listBoxTasksHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal", s.auth(s.terminalSnapshotHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/terminal/input", s.auth(s.terminalInputHandler))
+	mux.HandleFunc("GET /v1/tasks/{id}", s.auth(s.getBoxTaskHandler))
+	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.auth(s.listBoxMessagesHandler))
+	mux.HandleFunc("POST /v1/tasks/{id}/messages", s.auth(s.sendBoxMessageHandler))
 	mux.HandleFunc("POST /v1/runs", s.auth(s.createRun))
 	mux.HandleFunc("GET /v1/runs", s.auth(s.listRuns))
 	mux.HandleFunc("GET /v1/runs/{id}", s.auth(s.getRun))
@@ -437,8 +444,14 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileFleetNow(ctx); err != nil {
 		return fmt.Errorf("initial fleet reconciliation: %w", err)
 	}
+	if err := s.ReconcileLogicalBoxCreationsNow(ctx); err != nil {
+		return fmt.Errorf("initial logical-box creation reconciliation: %w", err)
+	}
 	if err := s.ReconcileAllocationsNow(ctx); err != nil {
 		return fmt.Errorf("initial allocation reconciliation: %w", err)
+	}
+	if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
+		return fmt.Errorf("initial logical-box task reconciliation: %w", err)
 	}
 	interval := s.ReconcileEvery
 	if interval <= 0 {
@@ -458,8 +471,14 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				if err := s.ReconcileFleetNow(ctx); err != nil {
 					s.Logger.Error("compute fleet reconciliation failed", "error", err)
 				}
+				if err := s.ReconcileLogicalBoxCreationsNow(ctx); err != nil {
+					s.Logger.Error("logical box creation reconciliation failed", "error", err)
+				}
 				if err := s.ReconcileAllocationsNow(ctx); err != nil {
 					s.Logger.Error("logical box allocation reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
+					s.Logger.Error("logical box task reconciliation failed", "error", err)
 				}
 			}
 		}

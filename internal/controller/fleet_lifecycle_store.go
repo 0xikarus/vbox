@@ -284,7 +284,7 @@ func (s *Store) RecordReleaseFailure(ctx context.Context, accountID string, assi
 		return err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET failure_reason=$5,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", accountID, assignment.Box.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken, reason); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET failure_reason=$5,updated_at=now() WHERE account_id=$1 AND id=$2 AND ($4='' OR (assignment_generation=$3 AND fencing_token=$4))", accountID, assignment.Box.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken, reason); err != nil {
 		return err
 	}
 	if assignment.Slot.ID != "" {

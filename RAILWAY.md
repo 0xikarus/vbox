@@ -58,7 +58,7 @@ after reconnecting.
 
 Inside the tmux session:
 
-1. Press `Ctrl-b`.
+1. Press `Ctrl-a`.
 2. Release both keys.
 3. Press `d`.
 

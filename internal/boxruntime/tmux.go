@@ -124,8 +124,9 @@ func SaveTmuxState(ctx context.Context, root string) (TmuxSnapshot, error) {
 
 func parseTmuxPanes(data []byte, savedAt time.Time) (TmuxSnapshot, error) {
 	snapshot := TmuxSnapshot{Version: TmuxSnapshotVersion, SavedAt: savedAt, Sessions: []TmuxSession{}}
-	sessions := make(map[string]*TmuxSession)
-	windows := make(map[string]*TmuxWindow)
+	sessions := make(map[string]int)
+	type windowPosition struct{ session, window int }
+	windows := make(map[string]windowPosition)
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	buffer := make([]byte, 0, 64*1024)
 	scanner.Buffer(buffer, 1024*1024)
@@ -143,21 +144,22 @@ func parseTmuxPanes(data []byte, savedAt time.Time) (TmuxSnapshot, error) {
 			return snapshot, fmt.Errorf("decode tmux pane index: %w", err)
 		}
 		panePID, _ := strconv.Atoi(fields[8])
-		session := sessions[fields[0]]
-		if session == nil {
+		sessionIndex, exists := sessions[fields[0]]
+		if !exists {
 			snapshot.Sessions = append(snapshot.Sessions, TmuxSession{Name: fields[0], Windows: []TmuxWindow{}})
-			session = &snapshot.Sessions[len(snapshot.Sessions)-1]
-			sessions[fields[0]] = session
+			sessionIndex = len(snapshot.Sessions) - 1
+			sessions[fields[0]] = sessionIndex
 		}
 		windowKey := fields[0] + "\x00" + fields[1]
-		window := windows[windowKey]
-		if window == nil {
-			session.Windows = append(session.Windows, TmuxWindow{Index: windowIndex, Name: fields[2], Layout: fields[3], Active: fields[9] == "1", Panes: []TmuxPane{}})
-			window = &session.Windows[len(session.Windows)-1]
-			windows[windowKey] = window
+		position, exists := windows[windowKey]
+		if !exists {
+			snapshot.Sessions[sessionIndex].Windows = append(snapshot.Sessions[sessionIndex].Windows, TmuxWindow{Index: windowIndex, Name: fields[2], Layout: fields[3], Active: fields[9] == "1", Panes: []TmuxPane{}})
+			position = windowPosition{session: sessionIndex, window: len(snapshot.Sessions[sessionIndex].Windows) - 1}
+			windows[windowKey] = position
 		}
 		argv := foregroundArgv(panePID)
 		resume, strategy := agentResume(fields[7], argv)
+		window := &snapshot.Sessions[position.session].Windows[position.window]
 		window.Panes = append(window.Panes, TmuxPane{
 			Index: paneIndex, Title: fields[5], WorkingDirectory: cleanWorkingDirectory(fields[6]),
 			CurrentCommand: fields[7], ProcessArgv: argv, ResumeArgv: resume,

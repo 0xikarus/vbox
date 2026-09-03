@@ -40,7 +40,7 @@ func writeBoxList(output io.Writer, boxes []provider.Box) error {
 	if err := table.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(output, "\nPower down: vmbox stop NAME    Delete: vmbox clean NAME --yes\nDetach tmux: Ctrl-b, release both keys, then d    JSON: vmbox ls --json\n")
+	_, err := fmt.Fprint(output, "\nPower down: vmbox stop NAME    Delete: vmbox clean NAME --yes\nDetach tmux: Ctrl-a, release both keys, then d    JSON: vmbox ls --json\n")
 	return err
 }
 

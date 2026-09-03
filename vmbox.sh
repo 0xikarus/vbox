@@ -109,7 +109,7 @@ Save a confirmed creation setup with the checkbox in the dialog. Reapply it with
 The preset stores selections and local identifiers/paths, never credential contents.
 
 Keep Codex and other work running when you leave:
-  1. Press Ctrl-b
+  1. Press Ctrl-a
   2. Release both keys
   3. Press d
 After detaching, vmbox shows this box's current-period cost and asks whether to
@@ -124,7 +124,7 @@ tmux_help() {
   cat >&2 <<'EOF'
 
 Leave this box without stopping Codex:
-  1. Press Ctrl-b
+  1. Press Ctrl-a
   2. Release both keys
   3. Press d
 
@@ -584,7 +584,7 @@ Box ready
   Agent callback:     vmbox-report "progress or result"
 
 Keep this session running:
-  Detach:            Ctrl-b, release both keys, then d
+  Detach:            Ctrl-a, release both keys, then d
   Reconnect:         vmbox resume $box_id
   Avoid:             exit (ends the shell/session)
 EOF_BANNER
@@ -760,7 +760,7 @@ session="$1"
 status="$2"
 for _ in {1..40}; do
   if tmux list-clients -t "$session" -F '#{client_name}' 2>/dev/null | grep -q .; then
-    tmux display-message -t "$session" -d 6000 "$status | Detach: Ctrl-b, then d"
+    tmux display-message -t "$session" -d 6000 "$status | Detach: Ctrl-a, then d"
     exit 0
   fi
   sleep 0.25

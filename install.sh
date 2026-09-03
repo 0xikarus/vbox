@@ -175,7 +175,7 @@ Quick start:
   vmbox new <name>
 
 To leave Codex running inside tmux:
-  1. Press Ctrl-b
+  1. Press Ctrl-a
   2. Release both keys
   3. Press d
 

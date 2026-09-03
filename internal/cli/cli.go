@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -546,6 +547,28 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			return err
 		}
 		return json.NewEncoder(a.Out).Encode(box)
+	case "hibernate":
+		if len(args) != 2 {
+			return fmt.Errorf("hibernate requires a box")
+		}
+		box, err := p.Inspect(ctx, args[1])
+		if err != nil {
+			return err
+		}
+		return a.hibernateBox(ctx, p, box)
+	case "delete-volume":
+		if len(args) != 2 {
+			return fmt.Errorf("delete-volume requires a box")
+		}
+		box, err := p.Inspect(ctx, args[1])
+		if err != nil {
+			return err
+		}
+		timeout := a.ExitPromptTimeout
+		if timeout <= 0 {
+			timeout = defaultExitPromptTimeout
+		}
+		return a.confirmAndDeleteVolume(ctx, bufio.NewReader(a.In), timeout, p, box)
 	case "resize":
 		name, flagArgs, err := a.selectStandaloneResize(ctx, p, args[1:])
 		if err != nil {
@@ -633,6 +656,14 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	switch args[0] {
 	case "fleet":
 		return a.controllerFleet(ctx, c, token, args[1:])
+	case "boxes", "box":
+		return a.controllerBoxes(ctx, c, token, args[1:])
+	case "allocate":
+		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
+	case "hibernate":
+		return a.controllerBoxes(ctx, c, token, append([]string{"hibernate"}, args[1:]...))
+	case "delete-volume":
+		return a.controllerBoxes(ctx, c, token, append([]string{"delete-volume"}, args[1:]...))
 	case "new", "create", "run":
 		opts, err := parseRunOptions(args[1:])
 		if err != nil {

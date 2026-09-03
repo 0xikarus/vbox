@@ -39,6 +39,9 @@ func run() error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: vmbox-runtime health | idle | image-info | tmux-snapshot | tmux-context BOX SLOT STATE HEALTH | tmux-restore | prepare-hibernate | run [--detach] -- COMMAND [ARG...] | exec-json DATA | direct-json DATA | put-file PATH MODE | sync-files | setup | tmux-help | welcome | report | ask")
 	}
+	if handled, err := runTmuxInteraction(args, runtime); handled {
+		return err
+	}
 	switch args[0] {
 	case "health":
 		fmt.Println("ok")

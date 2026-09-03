@@ -727,7 +727,7 @@ func TestCreationCancellationHappensBeforeProviderMutation(t *testing.T) {
 func TestWelcomeContainsSpecsConnectionCostAndDetachInstructions(t *testing.T) {
 	box := provider.Box{Name: "worker", Provider: "docker", Region: "local", State: provider.StateRunning, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096}, Connection: provider.Connection{Transport: "docker-exec", Endpoint: "default"}, Storage: &provider.Storage{MountPath: "/data", SizeGiB: 10}}
 	text := string(welcome(box, "local-docker", "unavailable"))
-	for _, required := range []string{"2 CPU", "4096 MiB", "10 GiB", "docker-exec default", "Cost: unavailable", "Ctrl-b", "release both keys", "press d"} {
+	for _, required := range []string{"2 CPU", "4096 MiB", "10 GiB", "docker-exec default", "Cost: unavailable", "Ctrl-a", "release both keys", "press d"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("welcome missing %q: %s", required, text)
 		}

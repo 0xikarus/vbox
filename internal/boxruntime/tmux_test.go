@@ -83,3 +83,24 @@ func TestDecodeInterruptedPaneExplainsHonestRestoration(t *testing.T) {
 		}
 	}
 }
+
+func TestParseTmuxPanesHandlesInterleavedSessionsAndWindows(t *testing.T) {
+	separator := "\x1f"
+	row := func(session, window, pane string) string {
+		return strings.Join([]string{session, window, "window-" + window, "layout", pane, "pane-" + pane, "/data/workspace", "bash", "0", "1", "1"}, separator)
+	}
+	rows := []string{row("one", "0", "0"), row("two", "0", "0"), row("one", "1", "0"), row("one", "0", "1"), row("two", "1", "0")}
+	snapshot, err := parseTmuxPanes([]byte(strings.Join(rows, "\n")+"\n"), time.Unix(4, 0).UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snapshot.Sessions) != 2 || len(snapshot.Sessions[0].Windows) != 2 || len(snapshot.Sessions[1].Windows) != 2 {
+		t.Fatalf("interleaved snapshot shape=%+v", snapshot)
+	}
+	if got := len(snapshot.Sessions[0].Windows[0].Panes); got != 2 {
+		t.Fatalf("first window panes=%d, want 2", got)
+	}
+	if snapshot.Sessions[0].Windows[0].Panes[1].Title != "pane-1" {
+		t.Fatalf("pane was appended through a stale slice pointer: %+v", snapshot.Sessions[0].Windows[0])
+	}
+}

@@ -1,0 +1,354 @@
+package controller
+
+import (
+	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
+)
+
+func taskPrincipal(accountID string, task v1.BoxTask) Principal {
+	return Principal{AccountID: accountID, UserID: task.UserID, Role: task.RequestedRole, Subject: "task:" + task.ID}
+}
+
+func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.BoxTask) error {
+	p := taskPrincipal(accountID, task)
+	box, err := s.Store.LogicalBox(ctx, p, task.LogicalBoxID)
+	if err != nil {
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", err.Error())
+		return err
+	}
+	switch box.State {
+	case v1.LogicalBoxDetached, v1.LogicalBoxHibernated:
+		allocation, err := s.Store.ReserveAllocation(ctx, p, box.ID, "task-allocation:"+task.ID, "task:"+task.ID, 2*time.Minute)
+		if err != nil {
+			_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "waiting_capacity", err.Error())
+			return err
+		}
+		if allocation.State == "queued" {
+			_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "waiting_capacity", "")
+			return nil
+		}
+		if allocation.State != "ready" {
+			if err := s.activateAllocation(ctx, accountID, allocation, allocation.State == "attaching"); err != nil {
+				_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "waiting_capacity", err.Error())
+				return err
+			}
+		}
+		box, err = s.Store.LogicalBox(ctx, p, task.LogicalBoxID)
+		if err != nil {
+			return err
+		}
+	case v1.LogicalBoxReserved, v1.LogicalBoxAttaching:
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "waiting_capacity", "")
+		return nil
+	}
+	if box.State != v1.LogicalBoxRunning {
+		err := fmt.Errorf("logical box %q is %s", box.Name, box.State)
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", err.Error())
+		return err
+	}
+	claimed, err := s.Store.ClaimBoxTask(ctx, accountID, task.ID)
+	if err != nil || !claimed {
+		return err
+	}
+	message, _, found, err := s.Store.FirstQueuedTaskMessage(ctx, accountID, task.ID)
+	if err != nil {
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", err.Error())
+		return err
+	}
+	if !found {
+		err := fmt.Errorf("task has no queued initial prompt")
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", err.Error())
+		return err
+	}
+	claimedMessage, err := s.Store.ClaimBoxMessage(ctx, accountID, message.ID)
+	if err != nil || !claimedMessage {
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", "initial prompt delivery was already claimed")
+		return err
+	}
+	assignment, err := s.Store.assignment(ctx, accountID, box.ID)
+	if err != nil {
+		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "failed", err.Error())
+		return err
+	}
+	prov, err := s.provider(ctx, accountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "failed", err.Error())
+		return err
+	}
+	prompt := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
+	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
+	if execErr != nil {
+		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "ambiguous", execErr.Error())
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", "initial prompt delivery is ambiguous; inspect the terminal before retrying")
+		return execErr
+	}
+	if result.ExitCode != 0 {
+		detail := strings.TrimSpace(result.Stderr)
+		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "failed", detail)
+		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", detail)
+		return fmt.Errorf("start tmux task exited with status %d: %s", result.ExitCode, detail)
+	}
+	if err := s.Store.SetBoxMessageState(ctx, accountID, message.ID, "delivered", ""); err != nil {
+		return err
+	}
+	return s.Store.SetBoxTaskState(ctx, accountID, task.ID, "active", "")
+}
+
+func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.BoxTask, message v1.BoxMessage, submit bool) error {
+	box, err := s.Store.LogicalBox(ctx, p, task.LogicalBoxID)
+	if err != nil {
+		return err
+	}
+	if box.State != v1.LogicalBoxRunning || task.State != "active" {
+		return fmt.Errorf("task is not active on a running logical box")
+	}
+	claimed, err := s.Store.ClaimBoxMessage(ctx, p.AccountID, message.ID)
+	if err != nil || !claimed {
+		return err
+	}
+	assignment, err := s.Store.assignment(ctx, p.AccountID, box.ID)
+	if err != nil {
+		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "failed", err.Error())
+		return err
+	}
+	prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "failed", err.Error())
+		return err
+	}
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
+	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit)}, provider.ExecOptions{})
+	if execErr != nil {
+		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "ambiguous", execErr.Error())
+		return fmt.Errorf("message delivery is ambiguous; inspect the terminal before retrying: %w", execErr)
+	}
+	if result.ExitCode != 0 {
+		detail := strings.TrimSpace(result.Stderr)
+		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "failed", detail)
+		return fmt.Errorf("message delivery exited with status %d: %s", result.ExitCode, detail)
+	}
+	return s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "delivered", "")
+}
+
+func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
+	tasks, err := s.Store.RunnableBoxTasks(ctx)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, value := range tasks {
+		if err := s.executeBoxTask(ctx, value.AccountID, value.Task); err != nil {
+			failures = append(failures, fmt.Errorf("task %s: %w", value.Task.ID, err))
+		}
+	}
+	messages, err := s.Store.QueuedActiveBoxMessages(ctx)
+	if err != nil {
+		failures = append(failures, fmt.Errorf("list queued messages: %w", err))
+	}
+	for _, value := range messages {
+		if err := s.deliverBoxMessage(ctx, taskPrincipal(value.AccountID, value.Task), value.Task, value.Message, value.Submit); err != nil {
+			failures = append(failures, fmt.Errorf("message %s: %w", value.Message.ID, err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func (s *Server) createBoxTaskHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	var request v1.CreateBoxTaskRequest
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	task, reused, err := s.Store.CreateBoxTask(r.Context(), p, r.PathValue("id"), r.Header.Get("Idempotency-Key"), request)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	status := http.StatusAccepted
+	if reused {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, task)
+	if !reused || task.State == "queued" || task.State == "waiting_capacity" {
+		go func() {
+			if err := s.executeBoxTask(context.Background(), p.AccountID, task); err != nil {
+				s.Logger.Error("box task start failed", "task", task.ID, "error", err)
+			}
+		}()
+	}
+}
+
+func (s *Server) listBoxTasksHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	values, err := s.Store.ListBoxTasks(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, values)
+}
+
+func (s *Server) getBoxTaskHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	task, err := s.Store.BoxTask(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, task)
+}
+
+func (s *Server) listBoxMessagesHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	values, err := s.Store.ListBoxMessages(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, values)
+}
+
+func (s *Server) sendBoxMessageHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	var request v1.SendBoxMessageRequest
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	task, err := s.Store.BoxTask(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	message, reused, err := s.Store.CreateBoxMessage(r.Context(), p, task.ID, r.Header.Get("Idempotency-Key"), request)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	submit := true
+	if request.Submit != nil {
+		submit = *request.Submit
+	}
+	if !reused && task.State == "active" {
+		if err := s.deliverBoxMessage(r.Context(), p, task, message, submit); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		message.State = "delivered"
+	}
+	writeJSON(w, http.StatusAccepted, message)
+}
+
+func (s *Server) terminalSnapshotHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if box.State != v1.LogicalBoxRunning {
+		writeError(w, http.StatusConflict, fmt.Errorf("logical box is %s, not running", box.State))
+		return
+	}
+	assignment, err := s.Store.assignment(r.Context(), p.AccountID, box.ID)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	prov, err := s.provider(r.Context(), p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	session := r.URL.Query().Get("session")
+	if session == "" {
+		session = "vmbox"
+	}
+	history := r.URL.Query().Get("history")
+	if history == "" {
+		history = "200"
+	}
+	result, err := prov.Exec(r.Context(), assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-screen", session, history}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 {
+		if err == nil {
+			err = fmt.Errorf("tmux screen exited with status %d: %s", result.ExitCode, strings.TrimSpace(result.Stderr))
+		}
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	var snapshot v1.TerminalSnapshot
+	if err := json.Unmarshal([]byte(result.Stdout), &snapshot); err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("decode terminal snapshot: %w", err))
+		return
+	}
+	snapshot.BoxName = box.Name
+	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *Server) terminalInputHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	var request v1.SendBoxMessageRequest
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if request.Text == "" || len(request.Text) > 100_000 {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("message must contain between 1 and 100000 bytes"))
+		return
+	}
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("Idempotency-Key is required"))
+		return
+	}
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if box.State != v1.LogicalBoxRunning {
+		writeError(w, http.StatusConflict, fmt.Errorf("logical box is %s, not running", box.State))
+		return
+	}
+	assignment, err := s.Store.assignment(r.Context(), p.AccountID, box.ID)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	prov, err := s.provider(r.Context(), p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	session := r.URL.Query().Get("session")
+	if session == "" {
+		session = "vmbox"
+	}
+	if !validSessionName(session) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore"))
+		return
+	}
+	hash := sha256.Sum256([]byte(p.AccountID + "\x00" + box.ID + "\x00" + key))
+	messageID := "input_" + hex.EncodeToString(hash[:16])
+	submit := true
+	if request.Submit != nil {
+		submit = *request.Submit
+	}
+	encoded := base64.RawURLEncoding.EncodeToString([]byte(request.Text))
+	result, execErr := prov.Exec(r.Context(), assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", session, messageID, encoded, strconv.FormatBool(submit)}, provider.ExecOptions{})
+	if execErr != nil {
+		writeError(w, http.StatusConflict, fmt.Errorf("terminal input delivery is ambiguous and was not retried: %w", execErr))
+		return
+	}
+	if result.ExitCode != 0 {
+		writeError(w, http.StatusConflict, fmt.Errorf("terminal input exited with status %d: %s", result.ExitCode, strings.TrimSpace(result.Stderr)))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}

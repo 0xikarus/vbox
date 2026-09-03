@@ -289,7 +289,11 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if err := p.setRegion(ctx, service.ID, req.Region); err != nil {
 		return provider.Box{}, err
 	}
-	if err := p.setStartCommand(ctx, service.ID, "sleep infinity"); err != nil {
+	startCommand := "sleep infinity"
+	if req.Detached {
+		startCommand = "vmbox-runtime idle"
+	}
+	if err := p.setStartCommand(ctx, service.ID, startCommand); err != nil {
 		return provider.Box{}, err
 	}
 	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
