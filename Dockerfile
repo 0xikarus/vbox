@@ -49,24 +49,29 @@ ARG VMBOX_COMPONENTS=codex,claude,opencode,bun,foundry
 LABEL org.opencontainers.image.version=$VMBOX_IMAGE_VERSION \
       io.vmbox.image.version=$VMBOX_IMAGE_VERSION \
       io.vmbox.components=$VMBOX_COMPONENTS
+# Keep every distributable layer credential-free. Installers and version checks
+# may create caches under root; runtime credentials are synchronized only to /data.
 RUN set -eux; \
     packages="@railway/cli"; \
     case ",$VMBOX_COMPONENTS," in *,codex,*) packages="$packages @openai/codex" ;; esac; \
     case ",$VMBOX_COMPONENTS," in *,claude,*) packages="$packages @anthropic-ai/claude-code" ;; esac; \
     case ",$VMBOX_COMPONENTS," in *,opencode,*) packages="$packages opencode-ai" ;; esac; \
-    if [ -n "$packages" ]; then npm install --global $packages; fi
+    if [ -n "$packages" ]; then npm install --global $packages; fi; \
+    rm -rf /root/.cache /root/.claude /root/.codex /root/.config /root/.docker /root/.npm /root/.ssh /tmp/* /var/tmp/*
 
 RUN set -eux; \
     mkdir -p /opt/bun; \
     case ",$VMBOX_COMPONENTS," in \
       *,bun,*) curl -fsSL https://bun.sh/install | bash ;; \
-    esac
+    esac; \
+    rm -rf /root/.cache /root/.config /root/.npm /root/.ssh /tmp/* /var/tmp/*
 
 RUN set -eux; \
     mkdir -p /opt/foundry/bin; \
     case ",$VMBOX_COMPONENTS," in \
       *,foundry,*) curl -fsSL https://foundry.paradigm.xyz | bash; /opt/foundry/bin/foundryup ;; \
-    esac
+    esac; \
+    rm -rf /root/.cache /root/.config /root/.foundry /root/.ssh /tmp/* /var/tmp/*
 
 COPY tmux.conf /etc/vmbox/tmux.conf
 COPY entrypoint.sh /usr/local/bin/vmbox-entrypoint
@@ -88,22 +93,8 @@ RUN set -eux; \
     chmod 0644 /usr/local/lib/vmbox-bootstrap-components /usr/local/lib/vmbox-image-version /usr/local/lib/vmbox-image-manifest /usr/local/lib/vmbox-component-fingerprint; \
     ln -s vmbox-runtime /usr/local/bin/vmbox-report; \
     ln -s vmbox-runtime /usr/local/bin/vmbox-finish; \
-    ln -s vmbox-runtime /usr/local/bin/vmbox-ask
-
-# Keep the distributable worker image credential-free: installers and version
-# checks may leave caches in root's home; runtime credentials enter only /data.
-RUN set -eux; \
-    rm -rf \
-      /root/.cache \
-      /root/.claude \
-      /root/.codex \
-      /root/.config \
-      /root/.docker \
-      /root/.foundry \
-      /root/.npm \
-      /root/.ssh \
-      /tmp/* \
-      /var/tmp/*
+    ln -s vmbox-runtime /usr/local/bin/vmbox-ask; \
+    rm -rf /root/.cache /root/.claude /root/.codex /root/.config /root/.docker /root/.npm /root/.ssh /tmp/* /var/tmp/*
 ENV HOME=/data/home
 WORKDIR /data/workspace
 

@@ -18,7 +18,7 @@ The full worker image contains Node.js, Bun, Codex CLI, Claude Code,
 OpenCode, Foundry/Forge, Railway CLI, GitHub CLI, Git, tmux, SSH client,
 `vmbox-runtime`, and the controller binary, plus their required Debian runtime
 utilities. Exact versions and fingerprints are recorded inside each image at
-`/usr/local/lib/vmbox-image-manifest`. The final build step removes installer
+`/usr/local/lib/vmbox-image-manifest`. Each build step removes installer
 caches and all known credential directories under `/root`; `/data/home` and
 `/data/workspace` are empty at publication time.
 
