@@ -75,6 +75,28 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 	return nil
 }
 
+func (a *App) controllerTaskStatus(ctx context.Context, c config.Context, token string, args []string) error {
+	if len(args) < 1 || len(args) > 2 {
+		return fmt.Errorf("task-status requires a logical box and optional task ID")
+	}
+	box := args[0]
+	if len(args) == 1 {
+		var tasks []v1.BoxTask
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(box)+"/tasks", nil, &tasks, nil); err != nil {
+			return err
+		}
+		return json.NewEncoder(a.Out).Encode(tasks)
+	}
+	var task v1.BoxTask
+	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/tasks/"+url.PathEscape(args[1]), nil, &task, nil); err != nil {
+		return err
+	}
+	if task.BoxName != box && task.LogicalBoxID != box {
+		return fmt.Errorf("task %q belongs to logical box %q, not %q", task.ID, task.BoxName, box)
+	}
+	return json.NewEncoder(a.Out).Encode(task)
+}
+
 func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 	var opts controllerTaskOptions
 	for index := 0; index < len(args); index++ {

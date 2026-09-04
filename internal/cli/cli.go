@@ -714,6 +714,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerLogicalBoxAuth(ctx, c, token, args[1:])
 	case "task":
 		return a.controllerTask(ctx, c, token, args[1:])
+	case "task-status":
+		return a.controllerTaskStatus(ctx, c, token, args[1:])
 	case "allocate":
 		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
 	case "hibernate":

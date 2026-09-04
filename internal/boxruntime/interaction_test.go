@@ -226,6 +226,9 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
+	if !strings.Contains(joined, "new-session -d -s claude-ready -c /data/workspace -- env DISABLE_AUTOUPDATER=1 claude") {
+		t.Fatalf("managed Claude task did not disable background self-update: %v", calls)
+	}
 	trust := strings.Index(joined, "send-keys -t claude-ready Down Enter")
 	delivery := strings.Index(joined, "load-buffer")
 	if trust < 0 || delivery < 0 || trust >= delivery {

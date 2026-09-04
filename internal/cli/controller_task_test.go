@@ -93,3 +93,42 @@ func TestControllerTaskNonInteractiveRequiresBoxAndPrompt(t *testing.T) {
 		t.Fatalf("missing prompt error=%v", err)
 	}
 }
+
+func TestControllerTaskStatusUsesTaskAPIAndChecksBox(t *testing.T) {
+	requested := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = r.Method + " " + r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", BoxName: "research", Agent: "codex", State: "active"})
+	}))
+	defer server.Close()
+	app := New()
+	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	if err := app.controllerTaskStatus(context.Background(), config.Context{Controller: server.URL}, "secret", []string{"research", "task-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if requested != "GET /v1/tasks/task-1" {
+		t.Fatalf("task status requested %q", requested)
+	}
+	if err := app.controllerTaskStatus(context.Background(), config.Context{Controller: server.URL}, "secret", []string{"other", "task-1"}); err == nil || !strings.Contains(err.Error(), "belongs to logical box") {
+		t.Fatalf("box mismatch error=%v", err)
+	}
+}
+
+func TestControllerTaskStatusListsBoxTasksWithoutID(t *testing.T) {
+	requested := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = r.Method + " " + r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode([]v1.BoxTask{{ID: "task-1", BoxName: "research", State: "active"}})
+	}))
+	defer server.Close()
+	app := New()
+	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	if err := app.controllerTaskStatus(context.Background(), config.Context{Controller: server.URL}, "secret", []string{"research"}); err != nil {
+		t.Fatal(err)
+	}
+	if requested != "GET /v1/logical-boxes/research/tasks" {
+		t.Fatalf("task list requested %q", requested)
+	}
+}

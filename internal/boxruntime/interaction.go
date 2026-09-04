@@ -246,8 +246,14 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 	}
 	var argv []string
 	switch agent {
-	case "codex", "claude", "opencode":
+	case "codex", "opencode":
 		argv = []string{agent}
+	case "claude":
+		// Claude can update and restart itself moments after presenting its first
+		// input prompt, which discards an initial task message that was already
+		// confirmed and recorded as delivered. The audited worker image owns
+		// upgrades; managed sessions therefore disable background self-updates.
+		argv = []string{"env", "DISABLE_AUTOUPDATER=1", "claude"}
 	case "shell":
 		argv = []string{"/bin/bash", "-l"}
 	default:
