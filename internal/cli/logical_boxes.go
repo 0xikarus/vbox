@@ -240,16 +240,6 @@ func (a *App) attachControllerLogicalBox(ctx context.Context, c config.Context, 
 	if err := a.refreshControllerWelcome(ctx, resolved, execute); err != nil {
 		return err
 	}
-	profiles, err := a.selectApplicationProfiles(nil, false)
-	if err != nil {
-		return err
-	}
-	if len(profiles) > 0 {
-		fmt.Fprintf(a.Err, "vmbox: refreshing %d active local agent profile(s) over direct SSH\n", len(profiles))
-		if err := a.uploadSelectedApplicationProfiles(ctx, box.Name, profiles, execute); err != nil {
-			return err
-		}
-	}
 	rawRestore, err := makeRaw(a.In)
 	if err != nil {
 		return fmt.Errorf("configure interactive terminal: %w", err)
