@@ -69,6 +69,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
 	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /favicon.svg", uiHandler("favicon.svg", "image/svg+xml", false))
+	mux.HandleFunc("GET /favicon.ico", uiHandler("favicon.svg", "image/svg+xml", false))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "compatibility": v1.CompatibilityVersion})
 	})

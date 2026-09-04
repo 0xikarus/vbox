@@ -376,9 +376,11 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 		contentType string
 		contains    []string
 	}{
-		{path: "/", contentType: "text/html", contains: []string{"viewport-fit=cover", "offline boxes start their configured agent", "terminal-prompt", "toggle-terminal", "box-default-agent", "app.js"}},
+		{path: "/", contentType: "text/html", contains: []string{"viewport-fit=cover", "offline boxes start their configured agent", "terminal-prompt", "toggle-terminal", "box-default-agent", "rel=\"icon\"", "/favicon.svg", "app.js"}},
 		{path: "/app.css", contentType: "text/css", contains: []string{"@media (max-width: 720px)", "env(safe-area-inset-bottom)", ".terminal-guide", ".terminal-prompt-choice", ".chat-body.terminal-open .terminal-column"}},
 		{path: "/app.js", contentType: "text/javascript", contains: []string{"sessionStorage", "pagehide", "pageshow", "controller.abort()", "/terminal/input", "terminal-prompt-${session}-${prompt.id}", "setTerminalPane"}},
+		{path: "/favicon.svg", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
+		{path: "/favicon.ico", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
 	} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)
 		response := httptest.NewRecorder()

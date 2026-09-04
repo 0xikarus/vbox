@@ -45,11 +45,12 @@ before(async () => {
     const body = ['POST','PUT','PATCH','DELETE'].includes(request.method) ? await requestBody(request) : null;
     requests.push({method:request.method, path:url.pathname, search:url.search, body});
 
-    if (request.method === 'GET' && ['/', '/index.html', '/app.js', '/app.css'].includes(url.pathname)) {
+    if (request.method === 'GET' && ['/', '/index.html', '/app.js', '/app.css', '/favicon.svg', '/favicon.ico'].includes(url.pathname)) {
       const file = url.pathname === '/' ? '/index.html' : url.pathname;
-      const type = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css'}[extname(file)];
+      const asset = file === '/favicon.ico' ? '/favicon.svg' : file;
+      const type = {'.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.svg':'image/svg+xml'}[extname(asset)];
       response.writeHead(200, {'content-type':type});
-      response.end(await readFile(resolve(webRoot, `.${file}`)));
+      response.end(await readFile(resolve(webRoot, `.${asset}`)));
       return;
     }
     if (request.method === 'GET' && url.pathname === '/v1/logical-boxes') return json(response, 200, boxes);
@@ -120,6 +121,7 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await page.type('#token', 'browser-test-password');
   await Promise.all([page.click('#login-form button[type="submit"]'), page.waitForSelector('#app:not([hidden])')]);
   await page.waitForSelector('[data-box="box-1"]');
+  assert.equal(await page.evaluate(() => fetch('/favicon.ico').then(response => response.status)), 200);
 
   await page.click('#new-box');
   await page.type('#box-form [name="name"]', 'browser-created');
@@ -202,6 +204,7 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await mobile.type('#token', 'browser-test-password');
   await Promise.all([mobile.click('#login-form button[type="submit"]'), mobile.waitForSelector('#app:not([hidden])')]);
   await mobile.waitForSelector('[data-box="box-1"]', {visible:true});
+  assert.equal(await mobile.evaluate(() => fetch('/favicon.svg').then(response => response.status)), 200);
   await mobile.click('[data-box="box-1"]');
   await mobile.waitForSelector('#chat-view:not([hidden])');
   await mobile.$eval('#toggle-terminal', element => element.click());
