@@ -432,14 +432,14 @@ function renderTerminalPrompt(prompt, session) {
       const endpoint = `/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`;
       await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {
         method:'POST',
-        headers:{'Idempotency-Key':`terminal-prompt-${prompt.id}-${button.dataset.promptValue}`},
+        headers:{'Idempotency-Key':`terminal-prompt-${session}-${prompt.id}-${button.dataset.promptValue}`},
         body:JSON.stringify({text:choice?.input || button.dataset.promptValue, submit:choice?.submit !== false}),
       });
       if (prompt.resumeInput) {
         await new Promise(resolve => setTimeout(resolve, 500));
         await api(endpoint, {
           method:'POST',
-          headers:{'Idempotency-Key':`terminal-prompt-${prompt.id}-resume`},
+          headers:{'Idempotency-Key':`terminal-prompt-${session}-${prompt.id}-resume`},
           body:JSON.stringify({text:'\r', submit:false}),
         });
       }

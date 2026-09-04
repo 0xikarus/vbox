@@ -116,6 +116,17 @@ func TestBoxTaskStagesMatchingRuntimeBeforeStartingAgent(t *testing.T) {
 	}
 }
 
+func TestTerminalInputIdempotencyIsScopedToTmuxSession(t *testing.T) {
+	first := terminalInputMessageID("account-a", "box-a", "codex-one", "same-key")
+	second := terminalInputMessageID("account-a", "box-a", "codex-two", "same-key")
+	if first == second {
+		t.Fatalf("terminal input IDs collided across sessions: %s", first)
+	}
+	if first != terminalInputMessageID("account-a", "box-a", "codex-one", "same-key") {
+		t.Fatal("terminal input ID is not stable within one session")
+	}
+}
+
 func TestOwnerEndpointsRejectUserRole(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`SELECT t.account_id::text`).WithArgs(sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "role", "subject"}).AddRow("account-a", "user-a", "user", "person"))
@@ -367,7 +378,7 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 	}{
 		{path: "/", contentType: "text/html", contains: []string{"viewport-fit=cover", "offline boxes start their configured agent", "terminal-prompt", "toggle-terminal", "box-default-agent", "app.js"}},
 		{path: "/app.css", contentType: "text/css", contains: []string{"@media (max-width: 720px)", "env(safe-area-inset-bottom)", ".terminal-guide", ".terminal-prompt-choice", ".chat-body.terminal-open .terminal-column"}},
-		{path: "/app.js", contentType: "text/javascript", contains: []string{"sessionStorage", "pagehide", "pageshow", "controller.abort()", "/terminal/input", "terminal-prompt-${prompt.id}", "setTerminalPane"}},
+		{path: "/app.js", contentType: "text/javascript", contains: []string{"sessionStorage", "pagehide", "pageshow", "controller.abort()", "/terminal/input", "terminal-prompt-${session}-${prompt.id}", "setTerminalPane"}},
 	} {
 		request := httptest.NewRequest(http.MethodGet, test.path, nil)
 		response := httptest.NewRecorder()

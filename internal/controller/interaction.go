@@ -427,8 +427,7 @@ func (s *Server) terminalInputHandler(w http.ResponseWriter, r *http.Request, p 
 		writeError(w, http.StatusBadRequest, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore"))
 		return
 	}
-	hash := sha256.Sum256([]byte(p.AccountID + "\x00" + box.ID + "\x00" + key))
-	messageID := "input_" + hex.EncodeToString(hash[:16])
+	messageID := terminalInputMessageID(p.AccountID, box.ID, session, key)
 	submit := true
 	if request.Submit != nil {
 		submit = *request.Submit
@@ -444,4 +443,9 @@ func (s *Server) terminalInputHandler(w http.ResponseWriter, r *http.Request, p 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func terminalInputMessageID(accountID, boxID, session, key string) string {
+	hash := sha256.Sum256([]byte(accountID + "\x00" + boxID + "\x00" + session + "\x00" + key))
+	return "input_" + hex.EncodeToString(hash[:16])
 }
