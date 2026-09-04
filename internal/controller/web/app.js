@@ -667,7 +667,8 @@ $$('.close-dialog').forEach(button => button.addEventListener('click', () => but
 
 $('#box-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   const selected = state.credentials.find(value => value.name === form.get('credential'));
   const body = {
     name: form.get('name'),
@@ -682,7 +683,7 @@ $('#box-form').addEventListener('submit', async event => {
   try {
     await api('/v1/logical-boxes', {method:'POST', headers:{'Idempotency-Key':idempotency('box')}, body:JSON.stringify(body)});
     $('#box-dialog').close();
-    event.currentTarget.reset();
+    formElement.reset();
     toast('Persistent workspace provisioning started');
     await refreshAll();
   } catch (error) { toast(error.message, true); }
@@ -690,12 +691,13 @@ $('#box-form').addEventListener('submit', async event => {
 
 $('#task-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   const boxID = form.get('box');
   try {
     const task = await api(`/v1/logical-boxes/${encodeURIComponent(boxID)}/tasks`, {method:'POST', headers:{'Idempotency-Key':idempotency('task')}, body:JSON.stringify({agent:form.get('agent'), session:form.get('session'), prompt:form.get('prompt')})});
     $('#task-dialog').close();
-    event.currentTarget.reset();
+    formElement.reset();
     toast('Agent queued');
     await refreshAll();
     await selectBox(boxID);
@@ -719,13 +721,14 @@ $('#group-form').addEventListener('submit', async event => {
 
 $('#credential-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   try {
     const secret = JSON.parse(form.get('secret'));
     const config = form.get('config').trim() ? JSON.parse(form.get('config')) : {};
     await api(`/v1/provider-credentials/${encodeURIComponent(form.get('provider'))}/${encodeURIComponent(form.get('name'))}`, {method:'PUT', body:JSON.stringify({secret, config})});
     $('#credential-dialog').close();
-    event.currentTarget.reset();
+    formElement.reset();
     toast('Credential encrypted and saved');
     await refreshAll();
   } catch (error) { toast(error.message, true); }
@@ -748,14 +751,15 @@ $('#notification-form [name="kind"]').addEventListener('change', event => {
 
 $('#notification-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
+  const formElement = event.currentTarget;
+  const form = new FormData(formElement);
   try {
     const secret = JSON.parse(form.get('secret'));
     const config = form.get('config').trim() ? JSON.parse(form.get('config')) : {};
     const body = {secret, config, allowedUsers:csv(form.get('users')), allowedChats:csv(form.get('chats')), enabled:form.get('enabled') === 'on'};
     await api(`/v1/notifications/${encodeURIComponent(form.get('kind'))}/${encodeURIComponent(form.get('name'))}`, {method:'PUT', body:JSON.stringify(body)});
     $('#notification-dialog').close();
-    event.currentTarget.reset();
+    formElement.reset();
     toast('Notification destination saved');
     await refreshAll();
   } catch (error) { toast(error.message, true); }

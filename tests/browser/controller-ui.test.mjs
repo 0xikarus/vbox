@@ -58,6 +58,12 @@ before(async () => {
     if (request.method === 'GET' && url.pathname === '/v1/notifications') return json(response, 200, []);
     if (request.method === 'GET' && url.pathname === '/v1/inventory') return json(response, 200, {logicalBoxes:boxes, connectedBoxes:[]});
     if (request.method === 'GET' && url.pathname === '/v1/fleet/status') return json(response, 200, {provider:'railway', providerCredential:'primary', desiredSlots:2, actualSlots:2, occupiedSlots:2, freeSlots:0, slots:[]});
+    if (request.method === 'POST' && url.pathname === '/v1/logical-boxes') {
+      const box = {id:'box-3', name:body.name, provider:body.provider, providerCredential:body.providerCredential, defaultAgent:body.defaultAgent, state:'hibernated', volumeId:'volume-3', volumeName:`${body.name}-data`};
+      boxes.push(box);
+      tasks[box.id] = [];
+      return json(response, 202, box);
+    }
     if (request.method === 'GET' && /^\/v1\/logical-boxes\/box-[12]$/.test(url.pathname)) return json(response, 200, boxes.find(box => url.pathname.endsWith(box.id)));
     if (request.method === 'PATCH' && /^\/v1\/logical-boxes\/box-[12]$/.test(url.pathname)) {
       const box = boxes.find(value => url.pathname.endsWith(value.id));
@@ -114,6 +120,16 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await page.type('#token', 'browser-test-password');
   await Promise.all([page.click('#login-form button[type="submit"]'), page.waitForSelector('#app:not([hidden])')]);
   await page.waitForSelector('[data-box="box-1"]');
+
+  await page.click('#new-box');
+  await page.type('#box-form [name="name"]', 'browser-created');
+  await page.click('#box-form .primary');
+  await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('provisioning started'));
+  await page.waitForSelector('[data-box="box-3"]');
+  assert(requests.some(value => value.method === 'POST' && value.path === '/v1/logical-boxes' && value.body.name === 'browser-created'));
+  await page.click('#new-box');
+  assert.equal(await page.$eval('#box-form [name="name"]', element => element.value), '');
+  await page.click('#box-dialog .close-dialog');
 
   await page.click('[data-box="box-1"]');
   await page.waitForSelector('[data-task="task-1"].selected');
