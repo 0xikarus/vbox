@@ -221,9 +221,7 @@ func (s *Server) hibernateLogicalBox(ctx context.Context, p Principal, id string
 	if err := s.Store.ReleaseAssignment(ctx, p.AccountID, assignment.Box.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken, v1.LogicalBoxHibernated); err != nil {
 		return fail(err)
 	}
-	assignment.Box.State = v1.LogicalBoxHibernated
-	assignment.Box.SlotID = ""
-	return assignment.Box, nil
+	return s.Store.LogicalBox(ctx, p, assignment.Box.ID)
 }
 
 func (s *Server) deleteLogicalBoxVolume(ctx context.Context, p Principal, id, confirmation string) error {

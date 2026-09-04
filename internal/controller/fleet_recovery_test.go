@@ -156,7 +156,7 @@ func TestReleaseAssignmentMarksHibernateSnapshotSaved(t *testing.T) {
 	mock.ExpectExec("UPDATE compute_slots SET state='free'").
 		WithArgs("account-a", "slot-1", int64(4), "fence-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5,restoration_state='saved'").
+	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5,restoration_state='saved'.*failure_reason=NULL").
 		WithArgs("account-a", "box-1", int64(4), "fence-1", v1.LogicalBoxHibernated).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
