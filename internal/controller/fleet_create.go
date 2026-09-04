@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +12,43 @@ import (
 )
 
 func pendingVolume(id string) bool { return strings.HasPrefix(id, "pending:") }
+
+const stagedRuntimePath = "/data/home/bin/.vmbox-runtime-staged"
+const workspaceRuntimePath = "/data/home/bin/vmbox-runtime"
+
+// stageWorkspaceRuntime keeps a retained volume on the same runtime revision
+// as its controller. The audited base image remains immutable; the current,
+// credential-free binary is streamed over SSH with mode 0600, verified, then
+// atomically installed by the unprivileged workload owner with mode 0700.
+func stageWorkspaceRuntime(ctx context.Context, prov provider.Provider, serviceID string, runtime []byte) error {
+	if len(runtime) == 0 {
+		return nil
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(runtime))
+	uploaded, err := prov.Exec(ctx, serviceID, []string{"/usr/local/bin/vmbox-runtime", "put-file", stagedRuntimePath, "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(runtime)})
+	if err != nil {
+		return fmt.Errorf("stream matching workspace runtime: %w", err)
+	}
+	if uploaded.ExitCode != 0 || strings.TrimSpace(uploaded.Stdout) != digest {
+		return fmt.Errorf("workspace runtime upload failed integrity check with status %d: %s", uploaded.ExitCode, strings.TrimSpace(uploaded.Stderr))
+	}
+	const install = `set -eu
+staged="$1"
+installed="$2"
+expected="$3"
+test "$(sha256sum "$staged" | cut -d " " -f 1)" = "$expected"
+chmod 0700 "$staged"
+mv -f -- "$staged" "$installed"
+exec "$installed" health`
+	installed, err := prov.Exec(ctx, serviceID, []string{"sh", "-c", install, "vmbox-install-runtime", stagedRuntimePath, workspaceRuntimePath, digest}, provider.ExecOptions{})
+	if err != nil {
+		return fmt.Errorf("install matching workspace runtime: %w", err)
+	}
+	if installed.ExitCode != 0 || strings.TrimSpace(installed.Stdout) != "ok" {
+		return fmt.Errorf("installed workspace runtime failed health check with status %d: %s", installed.ExitCode, strings.TrimSpace(installed.Stderr))
+	}
+	return nil
+}
 
 // ensureInitializationSlotRunning restarts a slot that the fleet stopped while
 // it was free. A stopped slot has no deployment to reach, so every runtime probe
@@ -31,8 +70,11 @@ func ensureInitializationSlotRunning(ctx context.Context, prov provider.Provider
 // probeInitializedWorkspace runs the readiness checks a newly attached workspace
 // must pass. The slot is brought up first: probing a stopped slot reports a
 // broken workspace that is in fact merely powered down.
-func probeInitializedWorkspace(ctx context.Context, prov provider.Provider, serviceID string) error {
+func probeInitializedWorkspace(ctx context.Context, prov provider.Provider, serviceID string, runtime []byte) error {
 	if err := ensureInitializationSlotRunning(ctx, prov, serviceID); err != nil {
+		return err
+	}
+	if err := stageWorkspaceRuntime(ctx, prov, serviceID, runtime); err != nil {
 		return err
 	}
 	health, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
@@ -111,7 +153,7 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 			return fail(err)
 		}
 		creation.Assignment.Box.RestorationState = "creation-initializing"
-		if err := probeInitializedWorkspace(ctx, prov, serviceID); err != nil {
+		if err := probeInitializedWorkspace(ctx, prov, serviceID, s.WorkerRuntime); err != nil {
 			return fail(err)
 		}
 		if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-detaching"); err != nil {

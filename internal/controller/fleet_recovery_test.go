@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"time"
@@ -41,9 +44,13 @@ func (p *recordingProvider) Start(context.Context, string) (provider.Box, error)
 	return provider.Box{ID: "service-1", State: provider.StateRunning}, nil
 }
 
-func (p *recordingProvider) Exec(_ context.Context, _ string, argv []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+func (p *recordingProvider) Exec(_ context.Context, _ string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 	p.operations = append(p.operations, "exec:"+strings.Join(argv, " "))
 	p.execArgv = append(p.execArgv, append([]string(nil), argv...))
+	if opts.Stdin != nil {
+		data, _ := io.ReadAll(opts.Stdin)
+		return provider.ExecResult{Stdout: fmt.Sprintf("%x\n", sha256.Sum256(data))}, nil
+	}
 	return provider.ExecResult{Stdout: "ok\n"}, nil
 }
 
@@ -52,7 +59,7 @@ func (p *recordingProvider) Exec(_ context.Context, _ string, argv []string, _ p
 // reach, so probing it first reports a broken workspace that is merely stopped.
 func TestStoppedInitializationSlotIsStartedBeforeAnyRuntimeProbe(t *testing.T) {
 	prov := &recordingProvider{state: provider.StateStopped}
-	if err := probeInitializedWorkspace(context.Background(), prov, "service-1"); err != nil {
+	if err := probeInitializedWorkspace(context.Background(), prov, "service-1", nil); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
@@ -68,7 +75,7 @@ func TestStoppedInitializationSlotIsStartedBeforeAnyRuntimeProbe(t *testing.T) {
 
 func TestRunningInitializationSlotIsNotRestarted(t *testing.T) {
 	prov := &recordingProvider{state: provider.StateRunning}
-	if err := probeInitializedWorkspace(context.Background(), prov, "service-1"); err != nil {
+	if err := probeInitializedWorkspace(context.Background(), prov, "service-1", nil); err != nil {
 		t.Fatal(err)
 	}
 	for _, operation := range prov.operations {
@@ -80,12 +87,35 @@ func TestRunningInitializationSlotIsNotRestarted(t *testing.T) {
 
 func TestInitializationSlotRecoveryFailsBeforeProbing(t *testing.T) {
 	prov := &recordingProvider{state: provider.StateStopped, startErr: errors.New("no capacity")}
-	err := probeInitializedWorkspace(context.Background(), prov, "service-1")
+	err := probeInitializedWorkspace(context.Background(), prov, "service-1", nil)
 	if err == nil || !strings.Contains(err.Error(), "start initialization slot") {
 		t.Fatalf("err=%v", err)
 	}
 	if len(prov.execArgv) != 0 {
 		t.Fatalf("a slot that could not start was probed anyway: %v", prov.execArgv)
+	}
+}
+
+func TestInitializationStagesMatchingRuntimeBeforeHealthAndHibernate(t *testing.T) {
+	prov := &recordingProvider{state: provider.StateRunning}
+	runtime := []byte("current-runtime")
+	if err := probeInitializedWorkspace(context.Background(), prov, "service-1", runtime); err != nil {
+		t.Fatal(err)
+	}
+	wantPrefixes := []string{
+		"inspect",
+		"exec:/usr/local/bin/vmbox-runtime put-file " + stagedRuntimePath + " 0600",
+		"exec:sh -c ",
+		"exec:vmbox-runtime health",
+		"exec:vmbox-runtime prepare-hibernate",
+	}
+	if len(prov.operations) != len(wantPrefixes) {
+		t.Fatalf("operations=%v", prov.operations)
+	}
+	for index, prefix := range wantPrefixes {
+		if !strings.HasPrefix(prov.operations[index], prefix) {
+			t.Fatalf("operation %d=%q want prefix %q", index, prov.operations[index], prefix)
+		}
 	}
 }
 

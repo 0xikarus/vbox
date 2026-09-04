@@ -58,6 +58,9 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 		}
 	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "waiting-for-runtime", "", false)
+	if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+		return fail("waiting-for-runtime", err)
+	}
 	health, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
 	if err != nil {
 		return fail("waiting-for-runtime", err)

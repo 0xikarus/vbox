@@ -32,6 +32,7 @@ type Server struct {
 	recent         map[string][]time.Time
 	PublicURL      string
 	DefaultImage   string
+	WorkerRuntime  []byte
 	Resolve        ProviderResolver
 	Bootstrap      func(context.Context, provider.Provider, provider.Box, []string) error
 	HTTP           *http.Client

@@ -96,6 +96,10 @@ func run() error {
 	server := controller.NewServer(store, registry)
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
 	server.DefaultImage = os.Getenv("VMBOX_IMAGE")
+	server.WorkerRuntime, err = os.ReadFile("/usr/local/bin/vmbox-runtime")
+	if err != nil {
+		return fmt.Errorf("load matching worker runtime: %w", err)
+	}
 	server.Resolve = func(resolveCtx context.Context, accountID, providerName, credentialName string) (provider.Provider, error) {
 		credential, err := store.ProviderCredential(resolveCtx, accountID, providerName, credentialName)
 		if err != nil {
