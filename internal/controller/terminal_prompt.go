@@ -12,11 +12,11 @@ import (
 
 var (
 	terminalANSI       = regexp.MustCompile(`\x1b\[[0-?]*[ -/]*[@-~]`)
-	terminalChoice     = regexp.MustCompile(`^\s*[›>]?\s*([1-9][0-9]*)[.)]\s+(.+?)\s*$`)
+	terminalChoice     = regexp.MustCompile(`^\s*([›>])?\s*([1-9][0-9]*)[.)]\s+(.+?)\s*$`)
 	terminalMenuChoice = regexp.MustCompile(`^(?:\s*(❯)\s+|\s{2,})(\S.*?)\s*$`)
 )
 
-// detectTerminalPrompt deliberately recognizes only a numbered choice block
+// detectTerminalPrompt deliberately recognizes only a numbered or cursor menu
 // followed by an explicit input cue at the bottom of the current pane. This
 // keeps numbered logs and old scrollback from becoming clickable controls.
 func detectTerminalPrompt(content string) *v1.TerminalPrompt {
@@ -50,7 +50,7 @@ func detectTerminalPrompt(content string) *v1.TerminalPrompt {
 }
 
 func numberedTerminalChoices(lines []string, last int) (int, []v1.TerminalPromptChoice) {
-	firstChoice := -1
+	firstChoice, selected := -1, -1
 	choices := make([]v1.TerminalPromptChoice, 0, 4)
 	for index := last - 1; index >= 0 && last-index <= 20; index-- {
 		line := strings.TrimSpace(lines[index])
@@ -65,10 +65,25 @@ func numberedTerminalChoices(lines []string, last int) (int, []v1.TerminalPrompt
 			continue
 		}
 		firstChoice = index
-		choices = append(choices, v1.TerminalPromptChoice{Value: match[1], Label: strings.TrimSpace(match[2]), Input: match[1], Submit: true})
+		if match[1] != "" {
+			selected = len(choices)
+		}
+		choices = append(choices, v1.TerminalPromptChoice{Value: match[2], Label: strings.TrimSpace(match[3]), Input: match[2], Submit: true})
 	}
 	for left, right := 0, len(choices)-1; left < right; left, right = left+1, right-1 {
 		choices[left], choices[right] = choices[right], choices[left]
+	}
+	if selected >= 0 {
+		selected = len(choices) - 1 - selected
+		for index := range choices {
+			delta := index - selected
+			if delta < 0 {
+				choices[index].Input = strings.Repeat("\x1b[A", -delta) + "\r"
+			} else {
+				choices[index].Input = strings.Repeat("\x1b[B", delta) + "\r"
+			}
+			choices[index].Submit = false
+		}
 	}
 	return firstChoice, choices
 }
