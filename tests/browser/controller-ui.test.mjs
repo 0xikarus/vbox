@@ -146,8 +146,11 @@ test('controller routes exact sessions and supports safe group collaboration', a
   assert(requests.some(value => value.method === 'POST' && value.path === '/v1/tasks/task-1/messages' && value.body.text === "What's today's date?"));
   assert(!requests.some(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/messages' && value.body?.session === 'vmbox'));
 
-  await page.waitForSelector('[data-prompt-value="2"]', {visible:true});
-  await page.click('[data-prompt-value="2"]');
+  await page.waitForFunction(() => {
+    const button = document.querySelector('[data-prompt-value="2"]');
+    return button && !button.disabled && button.getClientRects().length > 0;
+  });
+  await page.evaluate(() => document.querySelector('[data-prompt-value="2"]')?.click());
   for (let attempt = 0; attempt < 40 && requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length < 2; attempt++) {
     await new Promise(resolveWait => setTimeout(resolveWait, 50));
   }
