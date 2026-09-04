@@ -820,7 +820,11 @@ func matchingVolumeName(expected, actual string) bool {
 	if expected == "" || actual == "" || expected == actual {
 		return true
 	}
-	return strings.HasSuffix(expected, "-data") && strings.TrimSuffix(expected, "-data")+"-volume" == actual
+	if !strings.HasSuffix(expected, "-data") {
+		return false
+	}
+	railwayName := strings.TrimSuffix(expected, "-data") + "-volume"
+	return actual == railwayName || strings.HasPrefix(actual, railwayName+"-") && len(actual) > len(railwayName)+1
 }
 
 func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, requested provider.Owner) error {
