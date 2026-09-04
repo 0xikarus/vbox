@@ -87,6 +87,7 @@ function logout(showMessage = true) {
 
 function showView(name) {
   if (name === 'boxes') {
+    setTerminalPane(false);
     $('#app').classList.remove('show-main');
     return;
   }
@@ -97,6 +98,15 @@ function showView(name) {
   if (!['chat', 'group'].includes(name)) stopPolling();
   if (name === 'settings') renderSettings();
   if (name === 'fleet') renderFleet();
+}
+
+function setTerminalPane(open) {
+  const body = $('#chat-view .chat-body');
+  const button = $('#toggle-terminal');
+  body.classList.toggle('terminal-open', open);
+  button.setAttribute('aria-pressed', String(open));
+  button.textContent = open ? 'Chat' : 'Terminal';
+  if (open && state.box?.state === 'running') refreshTerminal(true);
 }
 
 function avatar(name, group = false) {
@@ -308,6 +318,7 @@ async function selectBox(id) {
   $('#chat-avatar').textContent = avatar(state.box.name);
   $('#allocate').hidden = !['detached', 'hibernated'].includes(state.box.state);
   $('#hibernate').hidden = state.box.state !== 'running';
+  setTerminalPane(false);
   renderTerminalPrompt(null, 'vmbox');
   showView('chat');
   try {
@@ -740,6 +751,10 @@ $('#share-terminal').addEventListener('click', () => {
   form.elements.group.value = state.groups[0].id;
   form.elements.text.value = $('#terminal').textContent;
   $('#forward-dialog').showModal();
+});
+
+$('#toggle-terminal').addEventListener('click', () => {
+  setTerminalPane(!$('#chat-view .chat-body').classList.contains('terminal-open'));
 });
 
 $('#forward-form').addEventListener('submit', async event => {
