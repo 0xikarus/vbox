@@ -108,11 +108,16 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 	}
 	if submit {
 		// Full-screen TUIs consume bracketed paste asynchronously. Sending Enter in
-		// the same burst can leave the text visible but unsubmitted.
+		// the same burst can leave the text visible but unsubmitted. Paste the
+		// carriage return through the same byte path as controller terminal choices;
+		// Claude can ignore tmux's symbolic Enter key during startup.
 		if err := tmuxSubmitPause(ctx); err != nil {
 			return ErrAmbiguousMessage
 		}
-		if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Enter"); err != nil {
+		if _, err := tmuxCommand(ctx, "\r", "load-buffer", "-b", buffer, "-"); err != nil {
+			return ErrAmbiguousMessage
+		}
+		if _, err := tmuxCommand(ctx, "", "paste-buffer", "-d", "-b", buffer, "-t", session); err != nil {
 			return ErrAmbiguousMessage
 		}
 	}
