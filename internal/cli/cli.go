@@ -121,11 +121,20 @@ parsed:
 		return a.context(file, args[1:])
 	}
 	active, err := file.Active(contextName)
+	if err != nil && !standalone && args[0] != "controller" {
+		file, active, err = a.promptControllerContext(file, contextName, config.Context{})
+	}
 	if err != nil {
 		return err
 	}
 	if args[0] == "controller" {
 		return a.provisionController(ctx, file, active, args[1:])
+	}
+	if active.Controller == "" && !standalone {
+		file, active, err = a.promptControllerContext(file, active.Name, active)
+		if err != nil {
+			return err
+		}
 	}
 	mode := "standalone"
 	if active.Controller != "" && !standalone {
@@ -302,6 +311,8 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 	switch command {
 	case "fleet":
 		return a.localFleet(file, c, args[1:])
+	case "task":
+		return fmt.Errorf("vmbox task requires a controller; remove --standalone and configure a controller context")
 	case "new", "create", "run":
 		opts, err := parseRunOptions(args[1:])
 		if err != nil {
@@ -676,6 +687,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerBoxes(ctx, c, token, args[1:])
 	case "auth":
 		return a.controllerLogicalBoxAuth(ctx, c, token, args[1:])
+	case "task":
+		return a.controllerTask(ctx, c, token, args[1:])
 	case "allocate":
 		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
 	case "hibernate":
@@ -1069,6 +1082,7 @@ Usage:
   vmbox ls [--json] | status <box> | task-status <box> [run-id] | logs <box> [--follow]
   vmbox stop <box> | start <box>
   vmbox auth <box> [--application-profile APP=PATH]
+  vmbox task [box] [--agent codex|claude|opencode|shell] [--prompt TEXT] [--session NAME]
   vmbox resume | resize [box] --cpu N --memory MiB | clean <box> --yes | cost <box>
   vmbox fleet status [--json] | fleet slots | fleet slots set COUNT
   vmbox context add|use|list | provider validate
@@ -1079,9 +1093,9 @@ Usage:
   vmbox notifications list|setup|test|remove
 
 Everything following -- is forwarded as an exact argv vector. Use bash -lc
-explicitly when shell parsing is desired. Contexts without a controller run
-standalone. A configured controller is used automatically; --standalone bypasses
-it explicitly, and controller failures never silently fall back.
+explicitly when shell parsing is desired. Controller management is the default;
+interactive first use asks for its URL. --standalone is the only explicit
+bypass, and controller failures never silently fall back.
 
 In controller mode, vmbox <box> restores the logical box when necessary and
 opens its tmux session. In standalone Railway mode, stop removes only the active

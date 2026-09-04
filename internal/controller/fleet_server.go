@@ -98,7 +98,10 @@ func (s *Server) reserveLogicalBox(w http.ResponseWriter, r *http.Request, p Pri
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	if allocation.State == "reserved" || allocation.State == "attaching" {
+	// A different idempotency key means ReserveAllocation returned the already
+	// active request for this box. Its original activation (or startup recovery)
+	// owns the provider mutation; this caller only follows its progress.
+	if (allocation.State == "reserved" || allocation.State == "attaching") && allocation.IdempotencyKey == r.Header.Get("Idempotency-Key") {
 		go func() {
 			if err := s.activateAllocation(context.Background(), p.AccountID, allocation, allocation.State == "attaching"); err != nil {
 				s.Logger.Error("logical box allocation failed", "allocation", allocation.RequestID, "error", err)
