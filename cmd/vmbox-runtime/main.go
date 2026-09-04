@@ -476,6 +476,9 @@ func performSetup(ctx context.Context, request boxruntime.SetupRequest, execute 
 		if err := asWorkload(ctx, nil, io.Discard, os.Stderr, "sh", "-c", boxruntime.SecureGitHubConfigScript); err != nil {
 			return boxruntime.SetupResult{}, fmt.Errorf("secure GitHub configuration: %w", err)
 		}
+		if err := asWorkload(ctx, nil, io.Discard, io.Discard, "gh", "auth", "status", "--hostname", github.Host); err != nil {
+			return boxruntime.SetupResult{}, fmt.Errorf("verify GitHub authentication as workload user: %w", err)
+		}
 	}
 	if request.Workspace == "" {
 		return boxruntime.SetupResult{}, fmt.Errorf("setup workspace is required")

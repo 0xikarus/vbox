@@ -95,18 +95,10 @@ func parseRunOptions(args []string) (runOptions, error) {
 			if err != nil {
 				return result, err
 			}
-			parts := strings.Split(text, ":")
-			if len(parts) < 2 || len(parts) > 3 || parts[0] == "" || parts[1] == "" {
-				return result, fmt.Errorf("--github-credential requires HOST:USER[:ssh|https]")
+			result.github, err = parseGitHubCredential(text)
+			if err != nil {
+				return result, err
 			}
-			protocol := "https"
-			if len(parts) == 3 {
-				protocol = parts[2]
-			}
-			if protocol != "ssh" && protocol != "https" {
-				return result, fmt.Errorf("GitHub protocol must be ssh or https")
-			}
-			result.github = &config.GitHubCredential{Host: parts[0], User: parts[1], Protocol: protocol}
 		case arg == "--instructions" || strings.HasPrefix(arg, "--instructions="):
 			text, err := value(&i, arg, "--instructions")
 			if err != nil {
@@ -246,7 +238,10 @@ func applyRunOptions(setup *config.CreationSetup, opts runOptions) {
 	}
 }
 
-type githubAccount struct{ Host, User, Protocol string }
+type githubAccount struct {
+	Host, User, Protocol string
+	Active               bool
+}
 
 func (a *App) discoverGitHub(ctx context.Context) []githubAccount {
 	if a.Runner == nil {
@@ -277,6 +272,9 @@ func (a *App) discoverGitHub(ctx context.Context) []githubAccount {
 		if user != "" {
 			accounts = append(accounts, githubAccount{Host: host, User: strings.Trim(user, "()"), Protocol: "https"})
 			continue
+		}
+		if len(accounts) > 0 && strings.Contains(strings.ToLower(trimmed), "active account:") {
+			accounts[len(accounts)-1].Active = strings.EqualFold(strings.TrimSpace(strings.SplitN(trimmed, ":", 2)[1]), "true")
 		}
 		if len(accounts) > 0 && strings.Contains(trimmed, "protocol:") {
 			protocol := strings.TrimSpace(strings.SplitN(trimmed, "protocol:", 2)[1])
@@ -831,6 +829,10 @@ func (a *App) uploadPreparedWith(ctx context.Context, name string, prepared prep
 		return fmt.Errorf("decode remote setup result: %w", err)
 	}
 	if setupRequest.GitHub != nil {
+		verification, err := execute(ctx, []string{"gh", "auth", "status", "--hostname", setupRequest.GitHub.Host}, provider.ExecOptions{Stdout: io.Discard, Stderr: io.Discard})
+		if err != nil || verification.ExitCode != 0 {
+			return fmt.Errorf("verify GitHub authentication as workload user inside %q", name)
+		}
 		fmt.Fprintf(a.Err, "vmbox: GitHub credential is ready\n")
 	}
 	fmt.Fprintf(a.Err, "vmbox: agent trust is ready\n")
