@@ -625,6 +625,10 @@ func TestAuthSyncCopiesActiveClaudeCredentialAndHomeState(t *testing.T) {
 	var stderr bytes.Buffer
 	app.Err = &stderr
 	app.Environ = map[string]string{"HOME": home}
+	// New() installs the real OSRunner, so leaving it in place makes GitHub
+	// discovery shell out to the developer's own `gh auth status`. This test is
+	// about the Claude profile; an empty fake keeps its subject the only input.
+	app.Runner = &procexec.FakeRunner{}
 	if err := app.syncApplicationProfiles(context.Background(), p, []string{"worker"}); err != nil {
 		t.Fatal(err)
 	}
@@ -650,6 +654,11 @@ func TestAuthSyncCopiesActiveClaudeCredentialAndHomeState(t *testing.T) {
 				t.Fatal(err)
 			}
 			foundStatus = reflect.DeepEqual(request.Applications, []string{"claude"})
+			// A GitHub credential here could only have come from the host, which
+			// would mean the runner substitution above stopped working.
+			if request.GitHub != nil {
+				t.Fatalf("sync reached a GitHub account outside the test: %s@%s", request.GitHub.User, request.GitHub.Host)
+			}
 		}
 	}
 	if !foundCredential || !foundHomeState || !foundStatus {

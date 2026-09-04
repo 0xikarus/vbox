@@ -137,3 +137,35 @@ func TestSelectActiveGitHubCredentialRejectsAmbiguity(t *testing.T) {
 		t.Fatalf("error=%v", err)
 	}
 }
+
+// TestAuthSyncWarnsWhenAnAgentRejectsTheUploadedLogin is the operator-visible
+// half of the stale-credential failure. The box completed the setup protocol
+// normally — exit status zero, a well-formed result — and reported the agent as
+// not logged in. That verdict has to reach the operator as a warning: a box
+// whose synced credential is stale looks identical to a working one until
+// someone opens it, which is exactly how the production box was handed over.
+func TestAuthSyncWarnsWhenAnAgentRejectsTheUploadedLogin(t *testing.T) {
+	app := New()
+	var stderr bytes.Buffer
+	app.Err = &stderr
+	app.Runner = &procexec.FakeRunner{}
+	prepared := preparedSetup{
+		setup:        config.CreationSetup{Workspace: "/data/workspace"},
+		applications: []string{"claude"},
+	}
+	execute := func(_ context.Context, argv []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+		if reflect.DeepEqual(argv, []string{"vmbox-runtime", "setup"}) {
+			return provider.ExecResult{Stdout: `{"authentication":{"claude":false}}`}, nil
+		}
+		return provider.ExecResult{}, nil
+	}
+	if err := app.uploadPreparedWith(context.Background(), "worker", prepared, execute); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stderr.String(), "claude authentication is ready") {
+		t.Fatalf("stale credential was reported as ready: %q", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "warning: claude did not recognize the uploaded login") {
+		t.Fatalf("stale credential produced no warning: %q", stderr.String())
+	}
+}
