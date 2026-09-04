@@ -284,6 +284,38 @@ func (s *Server) logicalBoxConnectionHandler(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadGateway, fmt.Errorf("provider returned an invalid Railway SSH endpoint"))
 		return
 	}
+	if connection.Metadata == nil {
+		connection.Metadata = make(map[string]string)
+	}
+	connection.Metadata["vmboxBoxName"] = box.Name
+	connection.Metadata["vmboxComputeSlot"] = assignment.Slot.ServiceName
+	connection.Metadata["vmboxAssignmentState"] = "running"
+	connection.Metadata["vmboxConnectionHealth"] = "connected"
+	connection.Metadata["vmboxProvider"] = box.Provider
+	connection.Metadata["vmboxRegion"] = assignment.Slot.Region
+	connection.Metadata["vmboxWorkspace"] = "/data/workspace"
+	connection.Metadata["vmboxCost"] = "managed fleet slot; see provider billing"
+	// Inspecting here is read-only and uses the already selected provider. It
+	// enriches the SSH handoff without exposing provider credentials or making
+	// the client query Railway's control plane.
+	if actual, inspectErr := prov.Inspect(r.Context(), assignment.Slot.ServiceID); inspectErr == nil {
+		if actual.Region != "" {
+			connection.Metadata["vmboxRegion"] = actual.Region
+		}
+		if actual.Resources.CPU > 0 {
+			connection.Metadata["vmboxCPU"] = strconv.FormatFloat(actual.Resources.CPU, 'f', -1, 64)
+		}
+		if actual.Resources.MemoryMiB > 0 {
+			connection.Metadata["vmboxMemoryMiB"] = strconv.FormatInt(actual.Resources.MemoryMiB, 10)
+		}
+		disk := actual.Resources.DiskGiB
+		if actual.Storage != nil && actual.Storage.SizeGiB > 0 {
+			disk = actual.Storage.SizeGiB
+		}
+		if disk > 0 {
+			connection.Metadata["vmboxDiskGiB"] = strconv.FormatInt(disk, 10)
+		}
+	}
 	session := r.URL.Query().Get("session")
 	if session == "" {
 		session = "vmbox"

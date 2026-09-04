@@ -104,3 +104,28 @@ func TestControllerBareNameOpensLogicalBox(t *testing.T) {
 		t.Fatalf("bare name requested %q", requested)
 	}
 }
+
+func TestControllerResumeSelectsLogicalBoxesInsteadOfRuns(t *testing.T) {
+	requested := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = r.Method + " " + r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]v1.LogicalBox{{ID: "box-1", Name: "research", State: v1.LogicalBoxHibernated}})
+	}))
+	defer server.Close()
+	app := New()
+	app.Environ = map[string]string{"TOKEN": "secret"}
+	app.In, app.Out, app.Err = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
+	app.IsTerminal = func() bool { return false }
+	c := config.Context{Name: "team", Provider: "railway", Controller: server.URL, TokenEnv: "TOKEN"}
+	err := app.controller(context.Background(), config.File{}, c, []string{"resume"})
+	if err == nil || !strings.Contains(err.Error(), "selection requires an interactive terminal") {
+		t.Fatalf("resume error=%v", err)
+	}
+	if requested != "GET /v1/logical-boxes" {
+		t.Fatalf("resume requested %q", requested)
+	}
+	if !strings.Contains(app.Out.(*bytes.Buffer).String(), "research\thibernated") {
+		t.Fatalf("resume list=%q", app.Out.(*bytes.Buffer).String())
+	}
+}

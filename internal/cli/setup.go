@@ -775,7 +775,15 @@ func (a *App) githubIdentity(ctx context.Context, credential config.GitHubCreden
 	return name, email
 }
 
+type setupExec func(context.Context, []string, provider.ExecOptions) (provider.ExecResult, error)
+
 func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name string, prepared preparedSetup) error {
+	return a.uploadPreparedWith(ctx, name, prepared, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+		return p.Exec(ctx, name, argv, opts)
+	})
+}
+
+func (a *App) uploadPreparedWith(ctx context.Context, name string, prepared preparedSetup, execute setupExec) error {
 	if len(prepared.uploads) > 0 {
 		fmt.Fprintf(a.Err, "vmbox: syncing %d selected agent/instruction file(s)\n", len(prepared.uploads))
 		request := boxruntime.SyncRequest{Files: make([]boxruntime.SyncFile, 0, len(prepared.uploads))}
@@ -789,7 +797,7 @@ func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name stri
 		}
 		digest := sha256.Sum256(payload)
 		expected := fmt.Sprintf("%x", digest[:])
-		result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "sync-files"}, provider.ExecOptions{Stdin: bytes.NewReader(payload), Stdout: io.Discard, Stderr: a.Err})
+		result, err := execute(ctx, []string{"vmbox-runtime", "sync-files"}, provider.ExecOptions{Stdin: bytes.NewReader(payload), Stdout: io.Discard, Stderr: a.Err})
 		if err != nil {
 			return fmt.Errorf("sync selected files: %w", err)
 		}
@@ -814,7 +822,7 @@ func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name stri
 	if err != nil {
 		return fmt.Errorf("encode remote setup: %w", err)
 	}
-	result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "setup"}, provider.ExecOptions{Stdin: bytes.NewReader(payload), Stderr: a.Err})
+	result, err := execute(ctx, []string{"vmbox-runtime", "setup"}, provider.ExecOptions{Stdin: bytes.NewReader(payload), Stderr: a.Err})
 	if err != nil || result.ExitCode != 0 {
 		return fmt.Errorf("configure credentials and workspace trust inside box")
 	}
@@ -1188,6 +1196,68 @@ func (a *App) selectControllerRun(ctx context.Context, c config.Context, token, 
 			if cursor == len(runs) && selected >= 0 {
 				fmt.Fprint(a.Out, "\033[2J\033[H")
 				return runs[selected].ID, nil
+			}
+		}
+	}
+}
+
+func (a *App) selectControllerLogicalBox(ctx context.Context, c config.Context, token, title string) (string, error) {
+	var boxes []v1.LogicalBox
+	if _, err := a.request(ctx, c, token, "GET", "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
+		return "", err
+	}
+	if len(boxes) == 0 {
+		return "", fmt.Errorf("no logical boxes are available")
+	}
+	sort.Slice(boxes, func(i, j int) bool { return boxes[i].UpdatedAt.After(boxes[j].UpdatedAt) })
+	if a.IsTerminal == nil || !a.IsTerminal() {
+		for _, box := range boxes {
+			fmt.Fprintf(a.Out, "%s\t%s\n", box.Name, box.State)
+		}
+		return "", fmt.Errorf("selection requires an interactive terminal")
+	}
+	reader := bufio.NewReader(a.In)
+	cursor, selected := 0, -1
+	for {
+		fmt.Fprint(a.Out, "\033[2J\033[H")
+		fmt.Fprintln(a.Out, title)
+		fmt.Fprintln(a.Out, "↑/↓ or j/k: move  Space: select  Enter: only on Confirm  q: cancel")
+		for index, box := range boxes {
+			prefix, marker := "  ", " "
+			if cursor == index {
+				prefix = "> "
+			}
+			if selected == index {
+				marker = "x"
+			}
+			fmt.Fprintf(a.Out, "%s[%s] %-24s %s\n", prefix, marker, box.Name, box.State)
+		}
+		prefix := "  "
+		if cursor == len(boxes) {
+			prefix = "> "
+		}
+		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
+		key, err := readMenuKey(reader)
+		if err != nil {
+			return "", errSetupCancelled
+		}
+		switch key {
+		case 'j':
+			cursor = (cursor + 1) % (len(boxes) + 1)
+		case 'k':
+			cursor = (cursor - 1 + len(boxes) + 1) % (len(boxes) + 1)
+		case ' ':
+			if cursor < len(boxes) {
+				if selected == cursor {
+					selected = -1
+				} else {
+					selected = cursor
+				}
+			}
+		case '\n', '\r':
+			if cursor == len(boxes) && selected >= 0 {
+				fmt.Fprint(a.Out, "\033[2J\033[H")
+				return boxes[selected].Name, nil
 			}
 		}
 	}

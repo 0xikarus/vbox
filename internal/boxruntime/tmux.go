@@ -197,13 +197,13 @@ func agentResume(command string, argv []string) ([]string, string) {
 		}
 		return []string{"opencode", "--continue"}, "opencode-latest-in-directory"
 	case "bash":
-		return []string{"/bin/bash", "-l"}, "shell"
+		return []string{"vmbox-runtime", "welcome"}, "shell"
 	case "sh":
-		return []string{"/bin/sh", "-l"}, "shell"
+		return []string{"vmbox-runtime", "welcome"}, "shell"
 	case "zsh":
-		return []string{"/bin/zsh", "-l"}, "shell"
+		return []string{"vmbox-runtime", "welcome"}, "shell"
 	case "fish":
-		return []string{"/usr/bin/fish", "-l"}, "shell"
+		return []string{"vmbox-runtime", "welcome"}, "shell"
 	default:
 		return nil, "manual-restart-required"
 	}

@@ -107,9 +107,11 @@ export VMBOX_CONTROLLER_TOKEN='...'
 vmbox context add team --provider docker --docker-context build-host --controller https://controller.example
 vmbox --context team boxes create worker --allocate
 vmbox --context team worker
+# Or choose the same logical box interactively:
+vmbox --context team resume
 ```
 
-A valid controller context is automatically used and displayed. If the controller is unavailable, vmbox fails closed; `--standalone` is the only way to bypass it. The versioned scheduler contract is [docs/openapi.yaml](docs/openapi.yaml).
+A valid controller context is automatically used and displayed. If the controller is unavailable, vmbox fails closed; `--standalone` is the only way to bypass it. Opening or resuming a controller-managed box refreshes active local agent profiles directly over the fenced SSH connection, and the persistent volume retains them across hibernation. The versioned scheduler contract is [docs/openapi.yaml](docs/openapi.yaml).
 
 `vmbox-hostd` manages unprivileged Incus containers (or opt-in QEMU VMs) on an Ubuntu host. It accepts only authenticated requests and can advertise capacity to the controller over an outbound connection.
 

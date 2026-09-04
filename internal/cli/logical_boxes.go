@@ -2,10 +2,12 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -220,13 +222,33 @@ func (a *App) attachControllerLogicalBox(ctx context.Context, c config.Context, 
 	if _, err := a.request(ctx, c, token, http.MethodGet, path, nil, &resolved, nil); err != nil {
 		return err
 	}
-	selected, err := a.provider(c)
+	selected, err := a.connectionProvider(c)
 	if err != nil {
 		return err
 	}
 	attacher, ok := selected.(provider.ConnectionSessionAttacher)
 	if !ok {
 		return fmt.Errorf("provider %s cannot attach using a controller-resolved connection", selected.Name())
+	}
+	executor, ok := selected.(provider.ConnectionExecutor)
+	if !ok {
+		return fmt.Errorf("provider %s cannot prepare a controller-resolved connection", selected.Name())
+	}
+	execute := func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+		return executor.ExecConnection(ctx, resolved.Connection, argv, opts)
+	}
+	if err := a.refreshControllerWelcome(ctx, resolved, execute); err != nil {
+		return err
+	}
+	profiles, err := a.selectApplicationProfiles(nil, false)
+	if err != nil {
+		return err
+	}
+	if len(profiles) > 0 {
+		fmt.Fprintf(a.Err, "vmbox: refreshing %d active local agent profile(s) over direct SSH\n", len(profiles))
+		if err := a.uploadSelectedApplicationProfiles(ctx, box.Name, profiles, execute); err != nil {
+			return err
+		}
 	}
 	rawRestore, err := makeRaw(a.In)
 	if err != nil {
@@ -253,6 +275,73 @@ func (a *App) attachControllerLogicalBox(ctx context.Context, c config.Context, 
 		return fmt.Errorf("SSH session exited with status %d; logical box remains running", result.ExitCode)
 	}
 	return a.postControllerInteractiveExit(ctx, c, token, box)
+}
+
+func (a *App) controllerLogicalBoxAuth(ctx context.Context, c config.Context, token string, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("auth requires a logical box")
+	}
+	box, err := a.controllerLogicalBox(ctx, c, token, args[0])
+	if err != nil {
+		return err
+	}
+	if box.State != v1.LogicalBoxRunning {
+		return fmt.Errorf("logical box %q is %s; open it before syncing credentials", box.Name, box.State)
+	}
+	var resolved v1.LogicalBoxConnection
+	path := "/v1/logical-boxes/" + url.PathEscape(box.ID) + "/connection?session=vmbox"
+	if _, err := a.request(ctx, c, token, http.MethodGet, path, nil, &resolved, nil); err != nil {
+		return err
+	}
+	selected, err := a.connectionProvider(c)
+	if err != nil {
+		return err
+	}
+	executor, ok := selected.(provider.ConnectionExecutor)
+	if !ok {
+		return fmt.Errorf("provider %s cannot sync over a controller-resolved connection", selected.Name())
+	}
+	profiles, err := a.selectApplicationProfiles(args[1:], true)
+	if err != nil {
+		return err
+	}
+	return a.uploadSelectedApplicationProfiles(ctx, box.Name, profiles, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+		return executor.ExecConnection(ctx, resolved.Connection, argv, opts)
+	})
+}
+
+func (a *App) refreshControllerWelcome(ctx context.Context, resolved v1.LogicalBoxConnection, execute setupExec) error {
+	metadata := resolved.Connection.Metadata
+	value := func(key, fallback string) string {
+		if metadata[key] != "" {
+			return metadata[key]
+		}
+		return fallback
+	}
+	cpu, memory, disk := "fleet default", "fleet default", "persistent volume"
+	if metadata["vmboxCPU"] != "" {
+		cpu = metadata["vmboxCPU"] + " CPU"
+	}
+	if metadata["vmboxMemoryMiB"] != "" {
+		memory = metadata["vmboxMemoryMiB"] + " MiB RAM"
+	}
+	if metadata["vmboxDiskGiB"] != "" {
+		disk = metadata["vmboxDiskGiB"] + " GiB disk"
+	}
+	welcome := fmt.Sprintf("vmbox %s is ready\nProvider: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: %s  Compute slot: %s\nState: %s  Network: %s\nConnection: direct OpenSSH, resolved for this deployment\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vmbox %s | vmbox hibernate %s\n\n",
+		value("vmboxBoxName", resolved.BoxName), value("vmboxProvider", "managed"), value("vmboxRegion", "provider default"),
+		cpu, memory, disk,
+		value("vmboxWorkspace", "/data/workspace"), value("vmboxComputeSlot", "managed"),
+		value("vmboxAssignmentState", "running"), value("vmboxConnectionHealth", "connected"), value("vmboxCost", "managed fleet slot; see provider billing"),
+		resolved.BoxName, resolved.BoxName)
+	result, err := execute(ctx, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0644"}, provider.ExecOptions{Stdin: bytes.NewBufferString(welcome), Stdout: io.Discard, Stderr: a.Err})
+	if err != nil {
+		return fmt.Errorf("refresh logical-box details: %w", err)
+	}
+	if result.ExitCode != 0 {
+		return fmt.Errorf("refresh logical-box details exited with status %d", result.ExitCode)
+	}
+	return nil
 }
 
 func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Context, token string, box v1.LogicalBox) error {

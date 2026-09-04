@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -68,6 +69,19 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	if health.ExitCode != 0 || strings.TrimSpace(health.Stdout) != "ok" {
 		return fail("waiting-for-runtime", fmt.Errorf("runtime health check failed with status %d: %s", health.ExitCode, strings.TrimSpace(health.Stderr)))
 	}
+	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "restoring-workspace-metadata", "", false)
+	actual, inspectErr := prov.Inspect(ctx, assignment.Slot.ServiceID)
+	if inspectErr != nil {
+		return fail("restoring-workspace-metadata", fmt.Errorf("inspect allocated compute: %w", inspectErr))
+	}
+	welcome := logicalBoxWelcome(assignment, actual)
+	written, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0644"}, provider.ExecOptions{Stdin: bytes.NewReader(welcome)})
+	if err != nil {
+		return fail("restoring-workspace-metadata", fmt.Errorf("write logical-box welcome: %w", err))
+	}
+	if written.ExitCode != 0 {
+		return fail("restoring-workspace-metadata", fmt.Errorf("write logical-box welcome exited with status %d: %s", written.ExitCode, strings.TrimSpace(written.Stderr)))
+	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "resolving-ssh", "", false)
 	connection, err := prov.Connection(ctx, assignment.Slot.ServiceID)
 	if err != nil {
@@ -95,6 +109,35 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "ready", "", false)
 	s.Logger.Info("logical box allocation ready", "allocation", allocation.RequestID, "box", assignment.Box.Name, "slot", assignment.Slot.Ordinal, "elapsed", time.Since(started))
 	return nil
+}
+
+func logicalBoxWelcome(assignment fleetAssignment, actual provider.Box) []byte {
+	region := actual.Region
+	if region == "" {
+		region = assignment.Slot.Region
+	}
+	if region == "" {
+		region = "provider default"
+	}
+	cpu := "fleet default"
+	if actual.Resources.CPU > 0 {
+		cpu = fmt.Sprintf("%.2g CPU", actual.Resources.CPU)
+	}
+	memory := "fleet default"
+	if actual.Resources.MemoryMiB > 0 {
+		memory = fmt.Sprintf("%d MiB RAM", actual.Resources.MemoryMiB)
+	}
+	disk := "persistent volume"
+	size := actual.Resources.DiskGiB
+	if actual.Storage != nil && actual.Storage.SizeGiB > 0 {
+		size = actual.Storage.SizeGiB
+	}
+	if size > 0 {
+		disk = fmt.Sprintf("%d GiB disk", size)
+	}
+	return []byte(fmt.Sprintf("vmbox %s is ready\nProvider: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: /data/workspace  Volume: %s\nCompute slot: %s  State: running\nConnection: direct OpenSSH, resolved for this deployment\nCost: managed fleet slot; see provider billing\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vmbox %s | vmbox hibernate %s\n\n",
+		assignment.Box.Name, assignment.Box.Provider, region, cpu, memory, disk,
+		assignment.Box.VolumeName, assignment.Slot.ServiceName, assignment.Box.Name, assignment.Box.Name))
 }
 
 func (s *Server) ReconcileAllocationsNow(ctx context.Context) error {

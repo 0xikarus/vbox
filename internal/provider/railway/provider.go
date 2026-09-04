@@ -1056,6 +1056,27 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 	return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 }
 
+func (p *Provider) ExecConnection(ctx context.Context, connection provider.Connection, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if len(argv) == 0 {
+		return provider.ExecResult{}, fmt.Errorf("command argv cannot be empty")
+	}
+	if opts.Interactive || opts.Detach {
+		return provider.ExecResult{}, fmt.Errorf("controller-resolved command execution must be non-interactive and attached")
+	}
+	target, err := validatedConnectionTarget(connection)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	encoded, _ := json.Marshal(argv)
+	remote := provider.AsWorkloadUser([]string{"vmbox-runtime", "exec-json", base64.RawURLEncoding.EncodeToString(encoded)})
+	started := time.Now().UTC()
+	result, err := p.directSSHTarget(ctx, target, remote, false, opts.Stdin, opts.Stdout, opts.Stderr)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+}
+
 func (p *Provider) AttachSession(ctx context.Context, id, session string, command []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 	if session == "" {
 		return provider.ExecResult{}, fmt.Errorf("tmux session name cannot be empty")
@@ -1089,7 +1110,11 @@ func (p *Provider) AttachConnection(ctx context.Context, connection provider.Con
 	if err != nil {
 		return provider.ExecResult{}, err
 	}
-	if err := p.ensureSessionTarget(ctx, target, session, command, opts.Stderr); err != nil {
+	guide := sessionGuide{
+		Box: connection.Metadata["vmboxBoxName"], Slot: connection.Metadata["vmboxComputeSlot"],
+		State: connection.Metadata["vmboxAssignmentState"], Health: connection.Metadata["vmboxConnectionHealth"],
+	}
+	if err := p.ensureSessionTarget(ctx, target, session, command, guide, opts.Stderr); err != nil {
 		return provider.ExecResult{}, err
 	}
 	started := time.Now().UTC()
@@ -1104,12 +1129,16 @@ func (p *Provider) AttachConnection(ctx context.Context, connection provider.Con
 const ensureSessionScript = `set -eu
 session="$1"
 workload_user="$2"
-shift 2
+box="${3:-unknown}"
+slot="${4:-standalone}"
+state="${5:-running}"
+health="${6:-connected}"
+shift 6
 set_guide_environment() {
-  tmux set-environment -t "$session" VMBOX_NAME "${VMBOX_NAME:-unknown}"
-  tmux set-environment -t "$session" VMBOX_COMPUTE_SLOT "${VMBOX_COMPUTE_SLOT:-standalone}"
-  tmux set-environment -t "$session" VMBOX_ASSIGNMENT_STATE "${VMBOX_ASSIGNMENT_STATE:-running}"
-  tmux set-environment -t "$session" VMBOX_CONNECTION_HEALTH "${VMBOX_CONNECTION_HEALTH:-connected}"
+  tmux set-environment -t "$session" VMBOX_NAME "$box"
+  tmux set-environment -t "$session" VMBOX_COMPUTE_SLOT "$slot"
+  tmux set-environment -t "$session" VMBOX_ASSIGNMENT_STATE "$state"
+  tmux set-environment -t "$session" VMBOX_CONNECTION_HEALTH "$health"
 }
 if tmux has-session -t "$session" 2>/dev/null; then
   if [ -f /etc/vmbox/tmux.conf ]; then tmux source-file /etc/vmbox/tmux.conf; fi
@@ -1140,18 +1169,33 @@ set_guide_environment
 printf "created\n"
 `
 
+type sessionGuide struct{ Box, Slot, State, Health string }
+
+func (g sessionGuide) values() []string {
+	values := []string{g.Box, g.Slot, g.State, g.Health}
+	defaults := []string{"unknown", "standalone", "running", "connected"}
+	for index := range values {
+		if values[index] == "" {
+			values[index] = defaults[index]
+		}
+	}
+	return values
+}
+
 func (p *Provider) ensureSession(ctx context.Context, service service, session string, command []string, stderr io.Writer) error {
 	target, err := p.deploymentTarget(ctx, service)
 	if err != nil {
 		return err
 	}
-	return p.ensureSessionTarget(ctx, target, session, command, stderr)
+	guide := sessionGuide{Box: strings.TrimPrefix(service.Name, "vmbox-"), Slot: "standalone", State: "running", Health: "connected"}
+	return p.ensureSessionTarget(ctx, target, session, command, guide, stderr)
 }
 
-func (p *Provider) ensureSessionTarget(ctx context.Context, target, session string, command []string, stderr io.Writer) error {
+func (p *Provider) ensureSessionTarget(ctx context.Context, target, session string, command []string, guide sessionGuide, stderr io.Writer) error {
 	encoded, _ := json.Marshal(command)
 	pane := []string{"vmbox-runtime", "direct-json", base64.RawURLEncoding.EncodeToString(encoded)}
 	script := []string{"sh", "-c", ensureSessionScript, "vmbox-session", session, provider.WorkloadUser}
+	script = append(script, guide.values()...)
 	script = append(script, pane...)
 	remote := provider.AsWorkloadUser(script)
 	prepared, err := p.directSSHTarget(ctx, target, remote, false, nil, nil, nil)

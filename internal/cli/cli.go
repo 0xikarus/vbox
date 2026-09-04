@@ -274,6 +274,25 @@ func (a *App) provider(ctx config.Context) (provider.Provider, error) {
 	}
 }
 
+// connectionProvider constructs only the provider's data-plane transport.
+// Controller-managed Railway sessions already receive a fenced deployment
+// endpoint from the controller and must not require a Railway API token or
+// perform another control-plane lookup on the client.
+func (a *App) connectionProvider(ctx config.Context) (provider.Provider, error) {
+	if ctx.Provider != "railway" {
+		return a.provider(ctx)
+	}
+	runner, knownHosts, err := railwayRunner("", "", a.Environ)
+	if err != nil {
+		return nil, err
+	}
+	return railwayprovider.New(railwayprovider.Config{
+		SSHKnownHostsFile: knownHosts,
+		SSHBinary:         runner.Env["VMBOX_REAL_SSH"],
+		SSHControlDir:     runner.Env["VMBOX_RAILWAY_CONTROL_DIR"],
+	}, runner), nil
+}
+
 func splitRun(args []string) (name string, detach, reuse bool, argv []string, err error) {
 	opts, parseErr := parseRunOptions(args)
 	return opts.name, opts.detach, opts.reuse, opts.argv, parseErr
@@ -655,6 +674,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerFleet(ctx, c, token, args[1:])
 	case "boxes", "box":
 		return a.controllerBoxes(ctx, c, token, args[1:])
+	case "auth":
+		return a.controllerLogicalBoxAuth(ctx, c, token, args[1:])
 	case "allocate":
 		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
 	case "hibernate":
@@ -800,18 +821,13 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return json.NewEncoder(a.Out).Encode(box)
 	case "resume":
 		if len(args) != 1 {
-			return fmt.Errorf("bare 'vmbox resume' opens selection; named resume is intentionally unsupported")
+			return fmt.Errorf("bare 'vmbox resume' opens logical-box selection; use 'vmbox NAME' for a named box")
 		}
-		runID, err := a.selectControllerRun(ctx, c, token, "Select a run to resume")
+		name, err := a.selectControllerLogicalBox(ctx, c, token, "Select a logical box to resume")
 		if err != nil {
 			return err
 		}
-		var box provider.Box
-		_, err = a.request(ctx, c, token, http.MethodPost, "/v1/runs/"+runID+"/start", map[string]any{}, &box, nil)
-		if err != nil {
-			return err
-		}
-		return json.NewEncoder(a.Out).Encode(box)
+		return a.controllerBoxes(ctx, c, token, []string{"open", name})
 	case "cost":
 		if len(args) != 2 {
 			return fmt.Errorf("cost requires a run ID")
