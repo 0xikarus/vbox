@@ -34,6 +34,18 @@ func validateTmuxToken(kind, value string) error {
 var tmuxCommand = runTmuxCommand
 var agentReadyPollInterval = 200 * time.Millisecond
 var agentReadyTimeout = 20 * time.Second
+var tmuxSubmitPause = waitBeforeTmuxSubmit
+
+func waitBeforeTmuxSubmit(ctx context.Context) error {
+	timer := time.NewTimer(150 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
 
 func runTmuxCommand(ctx context.Context, stdin string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, "tmux", args...)
@@ -95,6 +107,11 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 		return ErrAmbiguousMessage
 	}
 	if submit {
+		// Full-screen TUIs consume bracketed paste asynchronously. Sending Enter in
+		// the same burst can leave the text visible but unsubmitted.
+		if err := tmuxSubmitPause(ctx); err != nil {
+			return ErrAmbiguousMessage
+		}
 		if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Enter"); err != nil {
 			return ErrAmbiguousMessage
 		}

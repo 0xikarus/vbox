@@ -39,6 +39,28 @@ func TestDeliverTmuxInputRefusesAmbiguousReplay(t *testing.T) {
 	}
 }
 
+func TestDeliverTmuxInputWaitsAfterPasteBeforeSubmit(t *testing.T) {
+	originalCommand, originalPause := tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalPause })
+	paused := false
+	tmuxSubmitPause = func(context.Context) error {
+		paused = true
+		return nil
+	}
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "send-keys" && !paused {
+			t.Fatal("Enter was sent before the TUI paste pause")
+		}
+		return nil, nil
+	}
+	if err := DeliverTmuxInput(context.Background(), t.TempDir(), "claude", "message_submit", "hello", true); err != nil {
+		t.Fatal(err)
+	}
+	if !paused {
+		t.Fatal("submit pause was not used")
+	}
+}
+
 func TestTmuxInteractionRejectsUnsafeNames(t *testing.T) {
 	for _, value := range []string{"", "../other", "name:window", "bad name", "ä"} {
 		if err := validateTmuxToken("session", value); err == nil {
