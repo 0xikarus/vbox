@@ -114,7 +114,10 @@ func (s *Store) UpdateAllocationProgress(ctx context.Context, accountID, request
 	if retry {
 		increment = 1
 	}
-	_, err := s.DB.ExecContext(ctx, "UPDATE allocation_requests SET phase=$3,failure_reason=NULLIF($4,''),retry_count=retry_count+$5,updated_at=now() WHERE account_id=$1 AND id=$2", accountID, requestID, phase, failure, increment)
+	// A concurrent recovery attempt may finish after another worker has already
+	// made the allocation ready. Progress from that stale worker must not replace
+	// the terminal phase or reintroduce a failure reason.
+	_, err := s.DB.ExecContext(ctx, "UPDATE allocation_requests SET phase=$3,failure_reason=NULLIF($4,''),retry_count=retry_count+$5,updated_at=now() WHERE account_id=$1 AND id=$2 AND state IN ('queued','reserved','attaching')", accountID, requestID, phase, failure, increment)
 	return err
 }
 

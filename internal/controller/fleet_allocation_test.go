@@ -49,3 +49,17 @@ func TestReserveAllocationFollowsMatchingInProgressRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestAllocationProgressCannotOverwriteTerminalState(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectExec("UPDATE allocation_requests SET phase=.*state IN \\('queued','reserved','attaching'\\)").
+		WithArgs("account-a", "allocation-1", "marking-ready", "stale assignment fencing token", 1).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	if err := store.UpdateAllocationProgress(context.Background(), "account-a", "allocation-1", "marking-ready", "stale assignment fencing token", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
