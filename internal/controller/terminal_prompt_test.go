@@ -14,11 +14,25 @@ func TestDetectTerminalPromptRecognizesCodexUpdateChoice(t *testing.T) {
 	if prompt.Choices[1].Value != "2" || prompt.Choices[1].Label != "Skip" || prompt.ID == "" {
 		t.Fatalf("choices=%+v id=%q", prompt.Choices, prompt.ID)
 	}
-	if prompt.Choices[1].Input != "2" || !prompt.Choices[1].Submit {
+	if prompt.Choices[0].Input != "\r" || prompt.Choices[0].Submit {
+		t.Fatalf("selected numbered choice input=%+v", prompt.Choices[0])
+	}
+	if prompt.Choices[1].Input != "\x1b[B\r" || prompt.Choices[1].Submit {
 		t.Fatalf("numbered choice input=%+v", prompt.Choices[1])
 	}
 	if again := detectTerminalPrompt(content); again == nil || again.ID != prompt.ID {
 		t.Fatalf("prompt ID is not stable: first=%+v second=%+v", prompt, again)
+	}
+}
+
+func TestDetectTerminalPromptKeepsLiteralInputForUnselectedNumberedChoices(t *testing.T) {
+	content := "Choose mode\n  1) Safe\n  2) Fast\nChoice [1]:\n"
+	prompt := detectTerminalPrompt(content)
+	if prompt == nil || len(prompt.Choices) != 2 {
+		t.Fatalf("prompt=%+v", prompt)
+	}
+	if prompt.Choices[1].Input != "2" || !prompt.Choices[1].Submit {
+		t.Fatalf("literal numbered choice input=%+v", prompt.Choices[1])
 	}
 }
 
