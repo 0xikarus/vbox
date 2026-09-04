@@ -242,7 +242,7 @@ func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) 
 	mock.ExpectBegin()
 	mock.ExpectQuery("INSERT INTO box_tasks").WillReturnRows(boxTaskRow("task-1", "queued"))
 	mock.ExpectExec("INSERT INTO box_messages").WillReturnResult(sqlmock.NewResult(1, 1))
-	mock.ExpectExec("INSERT INTO audit_log").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`jsonb_build_object\('logical_box_id',\$4::text,'agent',\$5::text\)`).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
 		WithArgs("account-a", "task-1", "user-a", "user").

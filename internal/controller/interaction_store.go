@@ -90,7 +90,7 @@ func (s *Store) CreateBoxTask(ctx context.Context, p Principal, logicalBoxID, id
 	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,$4,'user',$5,true,'queued',$6)", messageID, p.AccountID, task.ID, p.UserID, request.Prompt, idempotency+":initial"); err != nil {
 		return v1.BoxTask{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.task.create','box_task',$3,jsonb_build_object('logical_box_id',$4,'agent',$5))", p.AccountID, p.UserID, task.ID, box.ID, task.Agent); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.task.create','box_task',$3,jsonb_build_object('logical_box_id',$4::text,'agent',$5::text))", p.AccountID, p.UserID, task.ID, box.ID, task.Agent); err != nil {
 		return v1.BoxTask{}, false, err
 	}
 	if err := tx.Commit(); err != nil {

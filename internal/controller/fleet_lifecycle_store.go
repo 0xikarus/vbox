@@ -317,7 +317,7 @@ func (s *Store) DeleteLogicalBoxRecord(ctx context.Context, p Principal, assignm
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale logical-box delete fence")
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.volume.delete','logical_box',$3,jsonb_build_object('volume_id',$4,'volume_name',$5))", p.AccountID, p.UserID, assignment.Box.ID, assignment.Box.VolumeID, assignment.Box.VolumeName); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.volume.delete','logical_box',$3,jsonb_build_object('volume_id',$4::text,'volume_name',$5::text))", p.AccountID, p.UserID, assignment.Box.ID, assignment.Box.VolumeID, assignment.Box.VolumeName); err != nil {
 		return err
 	}
 	return tx.Commit()

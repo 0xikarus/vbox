@@ -89,7 +89,7 @@ func (s *Store) CreateChatGroup(ctx context.Context, p Principal, request v1.Put
 			return group, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'chat_group.create','chat_group',$3,jsonb_build_object('name',$4,'members',$5::integer))`, p.AccountID, p.UserID, group.ID, group.Name, len(members)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'chat_group.create','chat_group',$3,jsonb_build_object('name',$4::text,'members',$5::integer))`, p.AccountID, p.UserID, group.ID, group.Name, len(members)); err != nil {
 		return group, err
 	}
 	return group, tx.Commit()
@@ -126,7 +126,7 @@ func (s *Store) UpdateChatGroup(ctx context.Context, p Principal, id string, req
 			return group, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'chat_group.update','chat_group',$3,jsonb_build_object('name',$4,'members',$5::integer))`, p.AccountID, p.UserID, id, name, len(members)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'chat_group.update','chat_group',$3,jsonb_build_object('name',$4::text,'members',$5::integer))`, p.AccountID, p.UserID, id, name, len(members)); err != nil {
 		return group, err
 	}
 	return group, tx.Commit()
@@ -274,7 +274,7 @@ func (s *Store) CreateGroupMessage(ctx context.Context, p Principal, groupID, id
 			return message, false, err
 		}
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'chat_group.message','chat_group_message',$3,jsonb_build_object('group_id',$4,'recipients',$5::integer,'source_box_id',NULLIF($6,'')))`, p.AccountID, p.UserID, message.ID, groupID, len(normalized), request.SourceBoxID); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'chat_group.message','chat_group_message',$3,jsonb_build_object('group_id',$4::text,'recipients',$5::integer,'source_box_id',NULLIF($6::text,'')))`, p.AccountID, p.UserID, message.ID, groupID, len(normalized), request.SourceBoxID); err != nil {
 		return message, false, err
 	}
 	if err := tx.Commit(); err != nil {

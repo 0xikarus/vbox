@@ -409,7 +409,7 @@ func (s *Store) CreateUser(ctx context.Context, p Principal, req v1.CreateUserRe
 	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens(id,account_id,user_id,token_hash) VALUES($1,$2,$3,$4)`, uuid(), p.AccountID, created.ID, secrets.TokenHash(token)); err != nil {
 		return created, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'user.create','user',$3,jsonb_build_object('role',$4))`, p.AccountID, p.UserID, created.ID, req.Role); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'user.create','user',$3,jsonb_build_object('role',$4::text))`, p.AccountID, p.UserID, created.ID, req.Role); err != nil {
 		return created, err
 	}
 	return created, tx.Commit()
@@ -579,7 +579,7 @@ func (s *Store) PutProviderCredential(ctx context.Context, p Principal, provider
 	if err != nil {
 		return value, err
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.put','provider_credential',$3,jsonb_build_object('provider',$4,'name',$5))`, p.AccountID, p.UserID, value.ID, providerName, name)
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.put','provider_credential',$3,jsonb_build_object('provider',$4::text,'name',$5::text))`, p.AccountID, p.UserID, value.ID, providerName, name)
 	return value, nil
 }
 
@@ -629,7 +629,7 @@ func (s *Store) DeleteProviderCredential(ctx context.Context, p Principal, provi
 	if count != 1 {
 		return fmt.Errorf("provider credential not found")
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.delete','provider_credential',$3,jsonb_build_object('provider',$4,'name',$5))`, p.AccountID, p.UserID, providerName+":"+name, providerName, name)
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.delete','provider_credential',$3,jsonb_build_object('provider',$4::text,'name',$5::text))`, p.AccountID, p.UserID, providerName+":"+name, providerName, name)
 	return nil
 }
 
@@ -692,7 +692,7 @@ func (s *Store) PutNotification(ctx context.Context, p Principal, kind, name str
 	if err != nil {
 		return value, err
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'notification.put','notification',$3,jsonb_build_object('kind',$4,'name',$5))`, p.AccountID, p.UserID, value.ID, kind, name)
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'notification.put','notification',$3,jsonb_build_object('kind',$4::text,'name',$5::text))`, p.AccountID, p.UserID, value.ID, kind, name)
 	return value, nil
 }
 

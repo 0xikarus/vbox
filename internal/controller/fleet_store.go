@@ -33,7 +33,7 @@ func (s *Store) SetFleetConfig(ctx context.Context, p Principal, requested v1.Fl
 	if err != nil {
 		return config, err
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'fleet.slots.set','fleet',$3,jsonb_build_object('compute_box_slots',$4))`, p.AccountID, p.UserID, requested.Provider+":"+requested.ProviderCredential, requested.ComputeBoxSlots)
+	_, err = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'fleet.slots.set','fleet',$3,jsonb_build_object('compute_box_slots',$4::integer))`, p.AccountID, p.UserID, requested.Provider+":"+requested.ProviderCredential, requested.ComputeBoxSlots)
 	return config, err
 }
 
