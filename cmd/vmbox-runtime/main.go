@@ -497,6 +497,11 @@ func performSetup(ctx context.Context, request boxruntime.SetupRequest, execute 
 		case "codex":
 			result.Authentication[application] = asWorkload(ctx, nil, io.Discard, io.Discard, "codex", "login", "status") == nil
 		case "claude":
+			// A fresh task box carried a correctly owned 0600 credential whose
+			// token had gone stale. `claude auth status --json` exited zero and
+			// reported the failure only in its payload, as {"loggedIn":false}.
+			// The exit status is therefore not evidence on its own: the parsed
+			// field is the verdict, and output that will not parse is no answer.
 			var output bytes.Buffer
 			err := asWorkload(ctx, nil, &output, io.Discard, "claude", "auth", "status", "--json")
 			var status struct {

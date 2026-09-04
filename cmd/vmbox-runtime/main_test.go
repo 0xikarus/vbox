@@ -192,6 +192,62 @@ func TestRootOwnedCredentialsCannotVerifyAuthentication(t *testing.T) {
 	}
 }
 
+// TestStaleAgentCredentialIsNeverVerifiedByExitStatusAlone reproduces the second
+// production failure, the one that outlives the ownership fix. A freshly created
+// task box held a Claude credential that was already correct in every way the
+// ownership work checks: owned by vmbox:vmbox, mode 0600, readable by the agent.
+// The token behind it was simply stale. `claude auth status --json` still exited
+// with status zero, and said so only in its structured payload:
+//
+//	{"loggedIn":false}
+//
+// Treating that exit status as the verdict hands the operator a box reported as
+// ready whose agent cannot log in. The parsed loggedIn field is the only
+// acceptable evidence, and a payload that does not parse is not evidence at all.
+func TestStaleAgentCredentialIsNeverVerifiedByExitStatusAlone(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		stdout   string
+		verified bool
+	}{
+		{name: "the live failure: exit zero, loggedIn false", stdout: `{"loggedIn":false}`},
+		{name: "human-readable output that does not parse", stdout: "not logged in\n"},
+		{name: "no payload at all", stdout: ""},
+		{name: "a payload that never mentions loggedIn", stdout: `{"account":"someone@example.invalid"}`},
+		{name: "a genuine login", stdout: `{"loggedIn":true}`, verified: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			var argv []string
+			// Every command succeeds. Exit status zero is exactly what the
+			// production box reported, so it must never decide this on its own.
+			execute := func(_ context.Context, _ io.Reader, stdout, _ io.Writer, name string, args ...string) error {
+				full := append([]string{name}, args...)
+				if setupCommandName(full) == "claude" {
+					argv = full
+					_, _ = io.WriteString(stdout, testCase.stdout)
+				}
+				return nil
+			}
+			// euid 1000 is the unprivileged runtime the ownership fix leaves
+			// behind, so this covers a box whose credentials are already correct.
+			request := boxruntime.SetupRequest{Workspace: "/data/workspace", Applications: []string{"claude"}}
+			result, err := performSetup(context.Background(), request, execute, 1000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Authentication["claude"] != testCase.verified {
+				t.Fatalf("exit-zero output %q verified as %v, want %v", testCase.stdout, result.Authentication["claude"], testCase.verified)
+			}
+			if !boxruntime.RunsAsWorkloadUser(argv) {
+				t.Fatalf("authentication was not checked as the workload user: %#v", argv)
+			}
+			if !strings.Contains(strings.Join(argv, " "), "--json") {
+				t.Fatalf("authentication check did not ask for the structured payload: %#v", argv)
+			}
+		})
+	}
+}
+
 // TestRootOnlyGitHubCredentialCannotVerifyAuthentication ensures a successful
 // root login can never be mistaken for a GitHub login available to agents.
 func TestRootOnlyGitHubCredentialCannotVerifyAuthentication(t *testing.T) {
