@@ -40,6 +40,9 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 	if err != nil {
 		return err
 	}
+	if err := s.refreshFleetSlotImages(ctx, accountID, &status, prov); err != nil {
+		return fmt.Errorf("refresh observed slot images: %w", err)
+	}
 	for i := range status.Slots {
 		if !repairableSlotState(status.Slots[i].State) {
 			continue
@@ -130,6 +133,32 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 			return err
 		}
 		excess--
+	}
+	return nil
+}
+
+func (s *Server) refreshFleetSlotImages(ctx context.Context, accountID string, status *v1.FleetStatus, prov provider.Provider) error {
+	observed, err := prov.List(ctx)
+	if err != nil {
+		return err
+	}
+	byID := make(map[string]provider.Box, len(observed))
+	for _, box := range observed {
+		if box.ID != "" {
+			byID[box.ID] = box
+		}
+	}
+	for index := range status.Slots {
+		slot := &status.Slots[index]
+		actual, ok := byID[slot.ServiceID]
+		if !ok || strings.TrimSpace(actual.Image) == "" || actual.Image == slot.Image && actual.ImageDigest == slot.ImageVersion {
+			continue
+		}
+		if err := s.Store.SetComputeSlotObservedImage(ctx, accountID, slot.ID, actual.Image, actual.ImageDigest); err != nil {
+			return fmt.Errorf("slot %d: %w", slot.Ordinal, err)
+		}
+		slot.Image = actual.Image
+		slot.ImageVersion = actual.ImageDigest
 	}
 	return nil
 }

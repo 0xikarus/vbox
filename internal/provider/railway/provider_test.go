@@ -489,6 +489,22 @@ func TestResourcesMatchOnlyChecksRequestedLimits(t *testing.T) {
 	}
 }
 
+func TestInspectPrefersProviderObservedImageSource(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`[{"id":"service-id","name":"vmbox-slot-a-01","status":"SUCCESS","source":{"image":"ghcr.io/acme/worker@sha256:observed"}}]`)},
+		{Stdout: []byte(`{"VMBOX_ACCOUNT_ID":"account","VMBOX_BOX_ID":"compute-slot:slot-1","VMBOX_IMAGE":"ghcr.io/acme/worker@sha256:stale"}`)},
+		{Stdout: []byte(`{"data":{"serviceInstanceLimits":{}}}`)},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	box, err := p.Inspect(context.Background(), "service-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if box.Image != "ghcr.io/acme/worker@sha256:observed" {
+		t.Fatalf("image=%q", box.Image)
+	}
+}
+
 func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
 	runner := &procexec.FakeRunner{Results: []procexec.Result{

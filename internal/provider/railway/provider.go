@@ -142,6 +142,9 @@ type service struct {
 	Regions []struct {
 		Name string `json:"name"`
 	} `json:"regions"`
+	Source struct {
+		Image string `json:"image"`
+	} `json:"source"`
 }
 
 func (p *Provider) services(ctx context.Context) ([]service, error) {
@@ -387,7 +390,11 @@ func (p *Provider) inspectService(ctx context.Context, service service, includeR
 	cpu, _ := strconv.ParseFloat(values["VMBOX_CPU"], 64)
 	memory, _ := strconv.ParseInt(values["VMBOX_MEMORY_MIB"], 10, 64)
 	disk, _ := strconv.ParseInt(values["VMBOX_DISK_GIB"], 10, 64)
-	box := provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: serviceState(service), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}
+	image := strings.TrimSpace(service.Source.Image)
+	if image == "" {
+		image = values["VMBOX_IMAGE"]
+	}
+	box := provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: serviceState(service), ProviderState: service.Status, Region: region, Image: image, Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}
 	if includeResources {
 		if actual, resourceErr := p.resources(ctx, service.ID); resourceErr == nil {
 			if actual.CPU > 0 {

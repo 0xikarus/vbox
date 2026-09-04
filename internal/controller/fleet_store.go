@@ -56,6 +56,20 @@ func (s *Store) UpsertComputeSlot(ctx context.Context, accountID string, slot v1
 	return slot, err
 }
 
+func (s *Store) SetComputeSlotObservedImage(ctx context.Context, accountID, slotID, image, digest string) error {
+	if accountID == "" || slotID == "" || strings.TrimSpace(image) == "" {
+		return fmt.Errorf("account, slot, and observed image are required")
+	}
+	result, err := s.DB.ExecContext(ctx, `UPDATE compute_slots SET image=$3,image_version=NULLIF($4,''),updated_at=now() WHERE account_id=$1 AND id=$2`, accountID, slotID, image, digest)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("compute slot not found")
+	}
+	return nil
+}
+
 func (s *Store) UpsertLogicalBox(ctx context.Context, p Principal, box v1.LogicalBox) (v1.LogicalBox, error) {
 	if box.Name == "" || box.Provider == "" || box.VolumeID == "" || box.VolumeName == "" {
 		return box, fmt.Errorf("logical box name, provider, volume ID, and volume name are required")
