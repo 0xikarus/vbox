@@ -312,7 +312,15 @@ func agentInputReady(agent, content string) bool {
 	case "codex":
 		return strings.Contains(content, "OpenAI Codex") && strings.Contains(content, "›")
 	case "claude":
-		return strings.Contains(content, "Claude Code v") && strings.Contains(content, "❯")
+		if !strings.Contains(content, "Claude Code v") {
+			return false
+		}
+		for _, line := range strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "❯ Try \"") {
+				return true
+			}
+		}
+		return false
 	case "opencode":
 		return strings.Contains(strings.ToLower(content), "opencode")
 	default:

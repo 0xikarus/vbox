@@ -218,7 +218,7 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 			if captures == 1 {
 				return []byte("Quick safety check:\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm"), nil
 			}
-			return []byte("Claude Code v2\n❯"), nil
+			return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
 		}
 		return nil, nil
 	}
@@ -230,5 +230,14 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 	delivery := strings.Index(joined, "load-buffer")
 	if trust < 0 || delivery < 0 || trust >= delivery {
 		t.Fatalf("trust was not accepted before prompt delivery: %v", calls)
+	}
+}
+
+func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {
+	if agentInputReady("claude", "Claude Code v2.1.259\n❯") {
+		t.Fatal("bare Claude startup prompt was accepted before the real input placeholder")
+	}
+	if !agentInputReady("claude", "Claude Code v2.1.259\n❯\u00a0Try \"fix lint errors\"") {
+		t.Fatal("Claude real input placeholder was not recognized")
 	}
 }
