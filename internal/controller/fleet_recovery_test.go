@@ -274,6 +274,10 @@ func logicalBoxRow(state v1.LogicalBoxState) *sqlmock.Rows {
 }
 
 func logicalBoxRowWithAgent(state v1.LogicalBoxState, agent string) *sqlmock.Rows {
+	return logicalBoxRowWithSlot(state, agent, "slot-1")
+}
+
+func logicalBoxRowWithSlot(state v1.LogicalBoxState, agent, slotID string) *sqlmock.Rows {
 	now := time.Now().UTC()
 	return sqlmock.NewRows([]string{
 		"id", "account_id", "owner_user_id", "name", "provider", "provider_credential",
@@ -281,7 +285,28 @@ func logicalBoxRowWithAgent(state v1.LogicalBoxState, agent string) *sqlmock.Row
 		"lease_owner", "lease_expires_at", "restoration_state", "failure_reason",
 		"created_at", "updated_at",
 	}).AddRow("box-1", "account-a", "user-a", "research", "railway", "primary", agent,
-		string(state), "volume-1", "volume-name", "slot-1", int64(3), "", nil, "", "", now, now)
+		string(state), "volume-1", "volume-name", slotID, int64(3), "", nil, "", "", now, now)
+}
+
+func TestDetachedDeletingBoxResumesFromSavedVolumeIdentity(t *testing.T) {
+	store, mock := testStore(t)
+	principal := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
+
+	mock.ExpectBegin()
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
+		WillReturnRows(logicalBoxRowWithSlot(v1.LogicalBoxDeleting, "claude", ""))
+	mock.ExpectCommit()
+
+	assignment, err := store.BeginLogicalBoxRelease(context.Background(), principal, "box-1", v1.LogicalBoxDeleting)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if assignment.Released || assignment.Slot.ID != "" || assignment.Box.VolumeID != "volume-1" {
+		t.Fatalf("assignment=%+v", assignment)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func boxTaskRow(id, state string) *sqlmock.Rows {
