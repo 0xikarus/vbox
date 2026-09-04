@@ -734,6 +734,19 @@ func TestWelcomeContainsSpecsConnectionCostAndDetachInstructions(t *testing.T) {
 	}
 }
 
+func TestWelcomeUploadUsesPrivateHomeFileMode(t *testing.T) {
+	p := newCLIProvider()
+	box := provider.Box{Name: "worker", Provider: "test", State: provider.StateRunning}
+	app := New()
+	app.Err = io.Discard
+	if err := app.uploadWelcome(context.Background(), p, box, "test"); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.exec) != 1 || !reflect.DeepEqual(p.exec[0].argv, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0600"}) {
+		t.Fatalf("welcome upload=%#v", p.exec)
+	}
+}
+
 func TestResizeWithoutNameUsesSelector(t *testing.T) {
 	p := newCLIProvider()
 	p.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning}

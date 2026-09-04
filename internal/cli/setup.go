@@ -949,7 +949,7 @@ func (a *App) uploadWelcome(ctx context.Context, p provider.Provider, box provid
 			cost = usage.Cost.Detail
 		}
 	}
-	result, err := p.Exec(ctx, box.Name, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0644"}, provider.ExecOptions{Stdin: bytes.NewReader(welcome(box, contextName, cost)), Stdout: io.Discard, Stderr: a.Err})
+	result, err := p.Exec(ctx, box.Name, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(welcome(box, contextName, cost)), Stdout: io.Discard, Stderr: a.Err})
 	if err != nil {
 		return err
 	}

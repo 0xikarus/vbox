@@ -75,7 +75,7 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 		return fail("restoring-workspace-metadata", fmt.Errorf("inspect allocated compute: %w", inspectErr))
 	}
 	welcome := logicalBoxWelcome(assignment, actual)
-	written, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0644"}, provider.ExecOptions{Stdin: bytes.NewReader(welcome)})
+	written, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(welcome)})
 	if err != nil {
 		return fail("restoring-workspace-metadata", fmt.Errorf("write logical-box welcome: %w", err))
 	}
