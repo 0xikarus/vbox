@@ -57,9 +57,10 @@ type TerminalSnapshot struct {
 }
 
 type TerminalPrompt struct {
-	ID      string                 `json:"id"`
-	Text    string                 `json:"text"`
-	Choices []TerminalPromptChoice `json:"choices"`
+	ID          string                 `json:"id"`
+	Text        string                 `json:"text"`
+	Choices     []TerminalPromptChoice `json:"choices"`
+	ResumeInput bool                   `json:"resumeInput,omitempty"`
 }
 
 type TerminalPromptChoice struct {

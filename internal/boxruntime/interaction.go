@@ -35,9 +35,21 @@ var tmuxCommand = runTmuxCommand
 var agentReadyPollInterval = 200 * time.Millisecond
 var agentReadyTimeout = 20 * time.Second
 var tmuxSubmitPause = waitBeforeTmuxSubmit
+var agentReadySettlePause = waitForAgentSettle
 
 func waitBeforeTmuxSubmit(ctx context.Context) error {
 	timer := time.NewTimer(150 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func waitForAgentSettle(ctx context.Context) error {
+	timer := time.NewTimer(2 * time.Second)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -114,6 +126,16 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 		if err := tmuxSubmitPause(ctx); err != nil {
 			return ErrAmbiguousMessage
 		}
+		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-t", session)
+		if err != nil {
+			return ErrAmbiguousMessage
+		}
+		if terminalBlocksSubmit(string(content)) {
+			if err := os.Rename(pending, delivered); err != nil {
+				return ErrAmbiguousMessage
+			}
+			return nil
+		}
 		if _, err := tmuxCommand(ctx, "\r", "load-buffer", "-b", buffer, "-"); err != nil {
 			return ErrAmbiguousMessage
 		}
@@ -125,6 +147,12 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 		return ErrAmbiguousMessage
 	}
 	return nil
+}
+
+func terminalBlocksSubmit(content string) bool {
+	return strings.Contains(content, "Update available!") &&
+		strings.Contains(content, "Skip until next version") &&
+		strings.Contains(content, "Press enter to continue")
 }
 
 func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt string) error {
@@ -161,6 +189,9 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 	}
 	if agent != "shell" {
 		if err := waitForAgentReady(ctx, session, agent); err != nil {
+			return err
+		}
+		if err := agentReadySettlePause(ctx); err != nil {
 			return err
 		}
 	}

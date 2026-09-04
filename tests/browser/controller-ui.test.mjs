@@ -72,7 +72,13 @@ before(async () => {
     if (request.method === 'GET' && taskMessages) return json(response, 200, [{id:`message-${taskMessages[1]}`, taskId:taskMessages[1], direction:'user', text:'Initial research prompt', state:'delivered', createdAt:now, updatedAt:now}]);
     if (request.method === 'POST' && taskMessages) return json(response, 202, {id:'delivered-message', taskId:taskMessages[1], direction:'user', text:body.text, state:'delivered', createdAt:now, updatedAt:now});
     const terminal = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/terminal$/);
-    if (request.method === 'GET' && terminal) return json(response, 200, {session:url.searchParams.get('session'), command:terminal[1] === 'box-1' ? 'codex' : 'claude', content:`${terminal[1]} live agent output\nworking safely`, width:120, height:35, capturedAt:now});
+    if (request.method === 'GET' && terminal) return json(response, 200, {session:url.searchParams.get('session'), command:terminal[1] === 'box-1' ? 'codex' : 'claude', content:`${terminal[1]} live agent output\nworking safely`, width:120, height:35, capturedAt:now, prompt:terminal[1] === 'box-1' ? {id:'codex-update', text:'Update available!', resumeInput:true, choices:[{value:'1',label:'Update',input:'\r',submit:false},{value:'2',label:'Skip',input:'\u001b[B\r',submit:false}]} : null});
+    const terminalInput = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/terminal\/input$/);
+    if (request.method === 'POST' && terminalInput) {
+      response.writeHead(204);
+      response.end();
+      return;
+    }
     if (request.method === 'GET' && url.pathname === '/v1/chat-groups/group-1/messages') return json(response, 200, [{id:'group-message-1', groupId:'group-1', text:'Review the chain notes', deliveries:[], createdAt:now}]);
     if (request.method === 'POST' && url.pathname === '/v1/chat-groups/group-1/messages') return json(response, 202, {id:'new-group-message', groupId:'group-1', text:body.text, deliveries:body.recipientBoxIds.map(logicalBoxId => ({logicalBoxId, state:'queued'})), createdAt:now});
     const direct = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/messages$/);
@@ -109,6 +115,19 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('delivered to codex'));
   assert(requests.some(value => value.method === 'POST' && value.path === '/v1/tasks/task-1/messages' && value.body.text === "What's today's date?"));
   assert(!requests.some(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/messages' && value.body?.session === 'vmbox'));
+
+  await page.waitForSelector('[data-prompt-value="2"]', {visible:true});
+  await page.click('[data-prompt-value="2"]');
+  for (let attempt = 0; attempt < 40 && requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length < 2; attempt++) {
+    await new Promise(resolveWait => setTimeout(resolveWait, 50));
+  }
+  const terminalPosts = requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input');
+  const promptToast = await page.$eval('#toast', element => element.textContent);
+  assert.equal(terminalPosts.length, 2, `${JSON.stringify(terminalPosts)} toast=${promptToast}`);
+  assert.equal(terminalPosts.at(-2).body.text, '\u001b[B\r');
+  assert.equal(terminalPosts.at(-2).body.submit, false);
+  assert.equal(terminalPosts.at(-1).body.text, '\r');
+  assert.equal(terminalPosts.at(-1).body.submit, false);
 
   await page.select('#box-default-agent', 'claude');
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('starts claude'));

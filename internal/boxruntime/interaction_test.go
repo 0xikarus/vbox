@@ -68,6 +68,28 @@ func TestDeliverTmuxInputWaitsAfterPasteBeforeSubmit(t *testing.T) {
 	}
 }
 
+func TestDeliverTmuxInputLeavesStagedTextBehindCodexUpdatePrompt(t *testing.T) {
+	originalCommand, originalPause := tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalPause })
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("Update available! 0.153.0 -> 0.153.2\n1. Update now\n2. Skip\n3. Skip until next version\nPress enter to continue"), nil
+		}
+		if stdin == "\r" || len(args) > 0 && args[0] == "send-keys" {
+			t.Fatal("update prompt was submitted instead of surfaced to the controller")
+		}
+		return nil, nil
+	}
+	root := t.TempDir()
+	if err := DeliverTmuxInput(context.Background(), root, "codex", "message_update", "hello", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "messages", "message_update.delivered")); err != nil {
+		t.Fatalf("staged task was not recorded: %v", err)
+	}
+}
+
 func TestTmuxInteractionRejectsUnsafeNames(t *testing.T) {
 	for _, value := range []string{"", "../other", "name:window", "bad name", "ä"} {
 		if err := validateTmuxToken("session", value); err == nil {
@@ -99,12 +121,13 @@ func TestStartTmuxTaskRejectsAnExistingSessionForAnotherAgent(t *testing.T) {
 }
 
 func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
-	originalCommand, originalInterval, originalTimeout := tmuxCommand, agentReadyPollInterval, agentReadyTimeout
+	originalCommand, originalInterval, originalTimeout, originalSettle := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause
 	t.Cleanup(func() {
-		tmuxCommand, agentReadyPollInterval, agentReadyTimeout = originalCommand, originalInterval, originalTimeout
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause = originalCommand, originalInterval, originalTimeout, originalSettle
 	})
 	agentReadyPollInterval = 0
 	agentReadyTimeout = time.Second
+	agentReadySettlePause = func(context.Context) error { return nil }
 	var calls []string
 	captures := 0
 	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
@@ -131,12 +154,13 @@ func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
 }
 
 func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
-	originalCommand, originalInterval, originalTimeout := tmuxCommand, agentReadyPollInterval, agentReadyTimeout
+	originalCommand, originalInterval, originalTimeout, originalSettle := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause
 	t.Cleanup(func() {
-		tmuxCommand, agentReadyPollInterval, agentReadyTimeout = originalCommand, originalInterval, originalTimeout
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause = originalCommand, originalInterval, originalTimeout, originalSettle
 	})
 	agentReadyPollInterval = 0
 	agentReadyTimeout = time.Second
+	agentReadySettlePause = func(context.Context) error { return nil }
 	var calls []string
 	captures := 0
 	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {

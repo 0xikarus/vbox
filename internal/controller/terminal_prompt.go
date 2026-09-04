@@ -46,7 +46,12 @@ func detectTerminalPrompt(content string) *v1.TerminalPrompt {
 		fingerprint += "\n" + choice.Value + "\x00" + choice.Label
 	}
 	digest := sha256.Sum256([]byte(fingerprint))
-	return &v1.TerminalPrompt{ID: hex.EncodeToString(digest[:12]), Text: title, Choices: choices}
+	return &v1.TerminalPrompt{
+		ID:          hex.EncodeToString(digest[:12]),
+		Text:        title,
+		Choices:     choices,
+		ResumeInput: strings.HasPrefix(title, "Update available!") && strings.Contains(clean, "Skip until next version"),
+	}
 }
 
 func numberedTerminalChoices(lines []string, last int) (int, []v1.TerminalPromptChoice) {

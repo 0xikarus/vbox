@@ -428,11 +428,21 @@ function renderTerminalPrompt(prompt, session) {
     const buttons = $$('[data-prompt-value]', panel);
     buttons.forEach(item => { item.disabled = true; });
     try {
+      const choice = prompt.choices.find(choice => choice.value === button.dataset.promptValue);
+      const endpoint = `/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`;
       await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {
         method:'POST',
         headers:{'Idempotency-Key':`terminal-prompt-${prompt.id}-${button.dataset.promptValue}`},
-        body:JSON.stringify({text:prompt.choices.find(choice => choice.value === button.dataset.promptValue)?.input || button.dataset.promptValue, submit:prompt.choices.find(choice => choice.value === button.dataset.promptValue)?.submit !== false}),
+        body:JSON.stringify({text:choice?.input || button.dataset.promptValue, submit:choice?.submit !== false}),
       });
+      if (prompt.resumeInput) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await api(endpoint, {
+          method:'POST',
+          headers:{'Idempotency-Key':`terminal-prompt-${prompt.id}-resume`},
+          body:JSON.stringify({text:'\r', submit:false}),
+        });
+      }
       panel.hidden = true;
       toast(`Sent terminal choice ${button.dataset.promptValue}`);
       setTimeout(() => refreshTerminal(true), 350);

@@ -438,6 +438,7 @@ components:
           properties:
             id: {type: string, description: Stable prompt fingerprint for idempotent input.}
             text: {type: string}
+            resumeInput: {type: boolean, description: The selected choice must be followed by a carriage return to submit text staged behind the prompt.}
             choices:
               type: array
               items:

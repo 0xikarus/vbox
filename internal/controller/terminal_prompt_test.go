@@ -17,6 +17,9 @@ func TestDetectTerminalPromptRecognizesCodexUpdateChoice(t *testing.T) {
 	if prompt.Choices[0].Input != "\r" || prompt.Choices[0].Submit {
 		t.Fatalf("selected numbered choice input=%+v", prompt.Choices[0])
 	}
+	if !prompt.ResumeInput {
+		t.Fatal("Codex update prompt did not request staged-input resume")
+	}
 	if prompt.Choices[1].Input != "\x1b[B\r" || prompt.Choices[1].Submit {
 		t.Fatalf("numbered choice input=%+v", prompt.Choices[1])
 	}
