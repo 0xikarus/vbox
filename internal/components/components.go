@@ -19,7 +19,7 @@ type Component struct {
 
 var Registry = map[string]Component{
 	"codex":    {ID: "codex", Executables: []string{"codex"}, AuthFiles: []string{"auth.json"}, ConfigFiles: []string{"config.toml"}, Defaults: map[string]any{"approval_policy": "never", "sandbox_mode": "danger-full-access"}, Warning: "disposable-box full access"},
-	"claude":   {ID: "claude", Executables: []string{"claude"}, AuthFiles: []string{".credentials.json"}, ConfigFiles: []string{"settings.json", ".claude.json"}, Defaults: map[string]any{"defaultMode": "bypassPermissions"}, Warning: "disposable-box permission bypass"},
+	"claude":   {ID: "claude", Executables: []string{"claude"}, AuthFiles: []string{".credentials.json"}, ConfigFiles: []string{"settings.json"}, Defaults: map[string]any{"defaultMode": "bypassPermissions"}, Warning: "disposable-box permission bypass"},
 	"opencode": {ID: "opencode", Executables: []string{"opencode"}, AuthFiles: []string{"auth.json"}, ConfigFiles: []string{"opencode.json"}, Warning: "review full-access configuration before upload"},
 	"bun":      {ID: "bun", Executables: []string{"bun"}},
 	"foundry":  {ID: "foundry", Executables: []string{"forge", "cast", "anvil", "chisel"}},

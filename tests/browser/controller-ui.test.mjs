@@ -146,6 +146,7 @@ test('controller routes exact sessions and supports safe group collaboration', a
   assert.deepEqual(groupPost.body.recipientBoxIds, ['box-1']);
 
   await page.setViewport({width:390, height:844, isMobile:true});
+  await page.waitForSelector('[data-box="box-1"]');
   await page.click('[data-box="box-1"]');
   await page.waitForSelector('#chat-view:not([hidden])');
   await page.$eval('#toggle-terminal', element => element.click());

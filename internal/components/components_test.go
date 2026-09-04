@@ -60,6 +60,7 @@ func TestDiscoverConfiguredMarksActiveClaudeProfileAndCopiesHomeState(t *testing
 	namedProfile := filepath.Join(home, ".claude-20")
 	for path, content := range map[string]string{
 		filepath.Join(defaultProfile, ".credentials.json"): "default",
+		filepath.Join(defaultProfile, ".claude.json"):      "unsupported-duplicate",
 		filepath.Join(home, ".claude.json"):                "home-state",
 		filepath.Join(namedProfile, ".credentials.json"):   "named",
 	} {
@@ -91,6 +92,11 @@ func TestDiscoverConfiguredMarksActiveClaudeProfileAndCopiesHomeState(t *testing
 	}
 	if len(defaults.Files) != 2 || defaults.Files[1] != filepath.Join(home, ".claude.json") {
 		t.Fatalf("default Claude files=%#v", defaults.Files)
+	}
+	for _, path := range defaults.Files {
+		if path == filepath.Join(defaultProfile, ".claude.json") {
+			t.Fatalf("nested Claude state would duplicate the home destination: %#v", defaults.Files)
+		}
 	}
 	selected, err := ProfileAt("claude", defaultProfile)
 	if err != nil {
