@@ -12,9 +12,11 @@ migration.
 
 Either way, `install.sh` also writes the standalone deployment bundle that
 `vmbox` hands to `railway up`. Railway uploads that directory verbatim as the
-build context, so it has to be complete on its own. By default the bundle is a
-Dockerfile built `FROM` the audited public worker image, pinned by digest, that
-overlays only the entrypoint and tmux configuration the installed CLI owns.
+build context, so it has to be complete on its own. By default the bundle builds
+the current `vmbox-runtime` from the installed source and overlays it, the
+entrypoint, and tmux configuration on the audited public worker image pinned by
+digest. This keeps the runtime protocol in lockstep with the CLI while reusing
+the audited agent toolchain.
 `./install.sh --bundle-from-source` installs the full Go build payload
 (`Dockerfile`, `.dockerignore`, `go.mod`, `go.sum`, `cmd/`, `internal/`)
 instead. Neither layout contains a credential.

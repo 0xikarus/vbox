@@ -37,7 +37,8 @@ run_vmbox() {
 }
 
 bash -n "$repo/vmbox.sh" "$repo/install.sh" "$repo/entrypoint.sh" \
-  "$repo/scripts/rollout-monitor.sh" "$repo/tests/controller-e2e.sh" \
+  "$repo/scripts/rollout-monitor.sh" "$repo/scripts/test-installed-bundle.sh" \
+  "$repo/tests/controller-e2e.sh" \
   "$fixtures/railway" "$fixtures/gh" "$fixtures/curl" "$fixtures/go" \
   "$fixtures/ssh" "$fixtures/ssh-keygen" "$fixtures/docker" "$repo/tests/run.sh"
 pass 'all Bash files parse'
@@ -167,6 +168,11 @@ bundle_dir="$VMBOX_TEST_STATE/data/vmbox/service"
 [[ -f "$bundle_dir/Dockerfile" ]] || fail 'installed bundle has no Dockerfile'
 grep -Fq 'ghcr.io/0xikarus/vmbox-service@sha256:747d32f73c7847511b1bb5234fd40c6838c7bc43d1508247f2c9ea1d1ee194c5' \
   "$bundle_dir/Dockerfile" || fail 'installed bundle does not pin the audited worker image by digest'
+for payload in go.mod go.sum cmd internal; do
+  [[ -e "$bundle_dir/$payload" ]] || fail "installed bundle is missing current runtime payload: $payload"
+done
+grep -Fq 'COPY --from=runtime-build /out/vmbox-runtime /usr/local/bin/vmbox-runtime' \
+  "$bundle_dir/Dockerfile" || fail 'installed bundle leaves the audited image old runtime in place'
 "$fixtures/docker" build "$bundle_dir" >"$VMBOX_TEST_STATE/build" 2>&1 ||
   { cat "$VMBOX_TEST_STATE/build" >&2; fail 'installed bundle cannot build'; }
 assert_bundle_is_credential_free "$bundle_dir"
