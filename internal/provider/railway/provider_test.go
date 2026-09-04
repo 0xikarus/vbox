@@ -691,3 +691,33 @@ func TestSanitizeSlotRefusesWhileAWorkspaceIsStillAttached(t *testing.T) {
 		}
 	}
 }
+
+func TestDeleteStorageAcceptsExactLegacyDataVolumeName(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`{"volumes":[{"id":"volume-1","name":"slot-a-01-volume","serviceName":"","mountPath":"/data"}]}`)},
+		{},
+		{Stdout: []byte(`{"volumes":[]}`)},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	err := p.DeleteStorage(context.Background(), provider.Storage{ID: "volume-1", Name: "slot-a-01-data"}, provider.Owner{AccountID: "account", BoxID: "box"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Calls) != 3 || !strings.Contains(strings.Join(runner.Calls[1].Argv, " "), "volumeDelete") {
+		t.Fatalf("delete calls=%#v", runner.Calls)
+	}
+}
+
+func TestDeleteStorageRejectsUnrelatedNameForExactID(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`{"volumes":[{"id":"volume-1","name":"another-box-volume","serviceName":"","mountPath":"/data"}]}`)},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	err := p.DeleteStorage(context.Background(), provider.Storage{ID: "volume-1", Name: "slot-a-01-data"}, provider.Owner{AccountID: "account", BoxID: "box"})
+	if err == nil || !strings.Contains(err.Error(), "name mismatch") {
+		t.Fatalf("err=%v", err)
+	}
+	if len(runner.Calls) != 1 {
+		t.Fatalf("mismatched volume reached deletion: %#v", runner.Calls)
+	}
+}

@@ -778,6 +778,19 @@ func (p *Provider) SanitizeSlot(ctx context.Context, id string) error {
 	_, err = p.Stop(ctx, service.ID)
 	return err
 }
+
+// matchingVolumeName accepts the one legacy naming transition used by the
+// controller. Older logical-box records called a slot volume "-data", while
+// Railway materialized that same requested volume as "-volume". The immutable
+// provider volume ID must still match before this check is reached; unrelated
+// names remain a hard stop.
+func matchingVolumeName(expected, actual string) bool {
+	if expected == "" || actual == "" || expected == actual {
+		return true
+	}
+	return strings.HasSuffix(expected, "-data") && strings.TrimSuffix(expected, "-data")+"-volume" == actual
+}
+
 func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, requested provider.Owner) error {
 	if storage.ID == "" || requested.AccountID == "" || requested.BoxID == "" {
 		return fmt.Errorf("exact volume ID and logical-box ownership are required")
@@ -795,7 +808,7 @@ func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, 
 		if volume.ServiceName != "" {
 			return fmt.Errorf("refusing to delete attached Railway volume %s from %s", storage.ID, volume.ServiceName)
 		}
-		if storage.Name != "" && volume.Name != "" && storage.Name != volume.Name {
+		if !matchingVolumeName(storage.Name, volume.Name) {
 			return fmt.Errorf("Railway volume name mismatch: expected %s, found %s", storage.Name, volume.Name)
 		}
 	}
