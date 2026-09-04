@@ -61,6 +61,9 @@ func TestDeliverTmuxInputWaitsAfterPasteBeforeSubmit(t *testing.T) {
 			}
 			submitted = true
 		}
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("────────────────\n❯\u00a0\n────────────────"), nil
+		}
 		return nil, nil
 	}
 	if err := DeliverTmuxInput(context.Background(), t.TempDir(), "claude", "message_submit", "hello", true); err != nil {
@@ -89,7 +92,10 @@ func TestDeliverTmuxInputRetriesOnlySubmitWhileClaudeInputIsStaged(t *testing.T)
 		}
 		if len(args) > 0 && args[0] == "capture-pane" {
 			captures++
-			if captures < 3 {
+			if captures == 2 {
+				return []byte("Claude is repainting"), nil
+			}
+			if captures < 4 {
 				return []byte("Claude Code v2\n────────────────\n❯\u00a0hello\n────────────────"), nil
 			}
 			return []byte("❯ hello\n● Working\n────────────────\n❯\u00a0\n────────────────"), nil
@@ -157,13 +163,14 @@ func TestStartTmuxTaskRejectsAnExistingSessionForAnotherAgent(t *testing.T) {
 }
 
 func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
-	originalCommand, originalInterval, originalTimeout, originalSettle := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause
+	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
 	t.Cleanup(func() {
-		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause = originalCommand, originalInterval, originalTimeout, originalSettle
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause = originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm
 	})
 	agentReadyPollInterval = 0
 	agentReadyTimeout = time.Second
 	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
 	var calls []string
 	captures := 0
 	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
@@ -190,13 +197,14 @@ func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
 }
 
 func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
-	originalCommand, originalInterval, originalTimeout, originalSettle := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause
+	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
 	t.Cleanup(func() {
-		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause = originalCommand, originalInterval, originalTimeout, originalSettle
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause = originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm
 	})
 	agentReadyPollInterval = 0
 	agentReadyTimeout = time.Second
 	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
 	var calls []string
 	captures := 0
 	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {

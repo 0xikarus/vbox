@@ -170,7 +170,8 @@ func pasteTmuxCarriageReturn(ctx context.Context, buffer, session string) error 
 }
 
 func confirmTmuxSubmit(ctx context.Context, buffer, session, text string) error {
-	for attempt := 0; attempt < 20; attempt++ {
+	clearSamples := 0
+	for attempt := 0; attempt < 32; attempt++ {
 		if err := tmuxSubmitConfirmPause(ctx); err != nil {
 			return err
 		}
@@ -178,20 +179,39 @@ func confirmTmuxSubmit(ctx context.Context, buffer, session, text string) error 
 		if err != nil {
 			return err
 		}
-		if terminalBlocksSubmit(string(content)) || !tmuxInputStillStaged(string(content), text) {
+		if terminalBlocksSubmit(string(content)) {
 			return nil
 		}
-		if err := pasteTmuxCarriageReturn(ctx, buffer, session); err != nil {
-			return err
+		switch tmuxInputSubmissionState(string(content), text) {
+		case tmuxInputStaged:
+			clearSamples = 0
+			if err := pasteTmuxCarriageReturn(ctx, buffer, session); err != nil {
+				return err
+			}
+		case tmuxInputCleared:
+			clearSamples++
+			if clearSamples >= 4 {
+				return nil
+			}
+		default:
+			clearSamples = 0
 		}
 	}
 	return fmt.Errorf("task input remained staged after bounded submit retries")
 }
 
-func tmuxInputStillStaged(content, text string) bool {
+type tmuxInputState uint8
+
+const (
+	tmuxInputUnknown tmuxInputState = iota
+	tmuxInputStaged
+	tmuxInputCleared
+)
+
+func tmuxInputSubmissionState(content, text string) tmuxInputState {
 	needle := strings.TrimSpace(strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")[0])
 	if needle == "" {
-		return false
+		return tmuxInputCleared
 	}
 	lines := strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n")
 	for index := len(lines) - 1; index >= 0; index-- {
@@ -202,12 +222,15 @@ func tmuxInputStillStaged(content, text string) bool {
 			}
 			input := strings.TrimSpace(strings.TrimPrefix(line, marker))
 			if input == "" {
-				return false
+				return tmuxInputCleared
 			}
-			return input == needle || len(input) >= 8 && strings.HasPrefix(needle, input)
+			if input == needle || len(input) >= 8 && strings.HasPrefix(needle, input) {
+				return tmuxInputStaged
+			}
+			return tmuxInputCleared
 		}
 	}
-	return false
+	return tmuxInputUnknown
 }
 
 func terminalBlocksSubmit(content string) bool {
