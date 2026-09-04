@@ -432,6 +432,19 @@ components:
         height: {type: integer}
         content: {type: string}
         capturedAt: {type: string, format: date-time}
+        prompt:
+          type: object
+          description: A guarded numbered-choice prompt detected at the bottom of the live terminal.
+          properties:
+            id: {type: string, description: Stable prompt fingerprint for idempotent input.}
+            text: {type: string}
+            choices:
+              type: array
+              items:
+                type: object
+                properties:
+                  value: {type: string}
+                  label: {type: string}
     LogicalBoxConnection:
       type: object
       properties:
