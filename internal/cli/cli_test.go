@@ -348,7 +348,7 @@ func TestControllerFailureDoesNotFallback(t *testing.T) {
 	app.Out = &out
 	app.Err = &stderr
 	app.Environ = map[string]string{"TEST_CONTROLLER_TOKEN": "not-a-real-token"}
-	err := app.Run(context.Background(), []string{"new", "box", "--detach", "--", "printf", "ok"})
+	err := app.Run(context.Background(), []string{"new", "box", "--detach"})
 	if err == nil || !strings.Contains(err.Error(), "no standalone fallback") {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -847,16 +847,22 @@ func TestResizeWithoutNameUsesSelector(t *testing.T) {
 	}
 }
 
-func TestControllerCreateResumesExistingBoxWithoutSubmittingRun(t *testing.T) {
-	createdRuns, starts := 0, 0
+func TestControllerCreateUsesLogicalBoxesWithoutSubmittingRun(t *testing.T) {
+	logicalCreates, createdRuns := 0, 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/runs":
-			json.NewEncoder(w).Encode([]v1.Run{{ID: "run-1", State: v1.JobRunning, Request: v1.CreateRunRequest{Box: "worker"}}})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/runs/run-1/start":
-			starts++
-			json.NewEncoder(w).Encode(provider.Box{Name: "worker", State: provider.StateRunning})
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/logical-boxes":
+			logicalCreates++
+			var request v1.CreateLogicalBoxRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Fatal(err)
+			}
+			if request.Name != "worker" || !request.AllocateWhenReady {
+				t.Fatalf("logical box request=%+v", request)
+			}
+			w.WriteHeader(http.StatusAccepted)
+			json.NewEncoder(w).Encode(v1.LogicalBox{ID: "box-1", Name: "worker", State: v1.LogicalBoxHibernated})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/runs":
 			createdRuns++
 			w.WriteHeader(http.StatusCreated)
@@ -870,11 +876,11 @@ func TestControllerCreateResumesExistingBoxWithoutSubmittingRun(t *testing.T) {
 	app.Environ = map[string]string{"TOKEN": "secret"}
 	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	c := config.Context{Name: "team", Provider: "docker", Controller: server.URL, TokenEnv: "TOKEN"}
-	if err := app.controller(context.Background(), config.File{}, c, []string{"new", "worker"}); err != nil {
+	if err := app.controller(context.Background(), config.File{}, c, []string{"new", "worker", "--detach"}); err != nil {
 		t.Fatal(err)
 	}
-	if starts != 1 || createdRuns != 0 {
-		t.Fatalf("starts=%d created=%d", starts, createdRuns)
+	if logicalCreates != 1 || createdRuns != 0 {
+		t.Fatalf("logical creates=%d run creates=%d", logicalCreates, createdRuns)
 	}
 }
 

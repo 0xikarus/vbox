@@ -55,20 +55,21 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return json.NewEncoder(a.Out).Encode(box)
 	case "create", "new":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--allocate]")
+			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--allocate|--detach]")
 		}
 		fs := flag.NewFlagSet("new", flag.ContinueOnError)
 		fs.SetOutput(a.Err)
 		disk := fs.Int64("disk", 10, "persistent workspace size in GiB")
 		region := fs.String("region", "", "preferred region")
 		allocate := fs.Bool("allocate", false, "allocate a warm slot after volume creation")
+		detach := fs.Bool("detach", false, "allocate a warm slot and leave it running without opening tmux")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
 		if fs.NArg() != 0 {
 			return fmt.Errorf("unexpected creation argument %q", fs.Arg(0))
 		}
-		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Region: *region, DiskGiB: *disk, AllocateWhenReady: *allocate, AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
+		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Region: *region, DiskGiB: *disk, AllocateWhenReady: *allocate || *detach, AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
 		var box v1.LogicalBox
 		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes", request, &box, map[string]string{"Idempotency-Key": request.AllocationRequestKey})
 		if err != nil {

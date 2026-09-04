@@ -720,27 +720,12 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerBoxes(ctx, c, token, append([]string{"hibernate"}, args[1:]...))
 	case "delete-volume":
 		return a.controllerBoxes(ctx, c, token, append([]string{"delete-volume"}, args[1:]...))
-	case "new", "create", "run":
+	case "new", "create":
+		return a.controllerBoxes(ctx, c, token, append([]string{"new"}, args[1:]...))
+	case "run":
 		opts, err := parseRunOptions(args[1:])
 		if err != nil {
 			return err
-		}
-		if args[0] != "run" {
-			var existing []v1.Run
-			if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/runs", nil, &existing, nil); err != nil {
-				return err
-			}
-			for _, candidate := range existing {
-				if candidate.Request.Box != opts.name || candidate.State == v1.JobDeleted {
-					continue
-				}
-				var box provider.Box
-				_, err := a.request(ctx, c, token, http.MethodPost, "/v1/runs/"+candidate.ID+"/start", map[string]any{}, &box, nil)
-				if err != nil {
-					return err
-				}
-				return json.NewEncoder(a.Out).Encode(box)
-			}
 		}
 		workingDirectory, err := a.workingDirectory()
 		if err != nil {
@@ -792,14 +777,9 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return nil
 	case "status":
 		if len(args) != 2 {
-			return fmt.Errorf("status requires a run ID")
+			return fmt.Errorf("status requires a logical box name or ID")
 		}
-		var run v1.Run
-		_, err := a.request(ctx, c, token, http.MethodGet, "/v1/runs/"+args[1], nil, &run, nil)
-		if err != nil {
-			return err
-		}
-		return json.NewEncoder(a.Out).Encode(run)
+		return a.controllerBoxes(ctx, c, token, []string{"status", args[1]})
 	case "ls", "list":
 		jsonOutput, err := parseListOutput(args)
 		if err != nil {
@@ -1102,9 +1082,9 @@ func (a *App) usage() {
 
 Usage:
   vmbox [--context NAME] [--standalone] <box>
-  vmbox new|create <box> [--reuse] [--detach] [creation options] [-- COMMAND [ARG...]]
-  vmbox run <box> [--detach] -- COMMAND [ARG...]
-  vmbox ls [--json] | status <box> | task-status <box> [run-id] | logs <box> [--follow]
+  vmbox new|create <box> [--disk GiB] [--region ID] [--allocate|--detach]
+  vmbox run <box> [run options] -- COMMAND [ARG...]
+  vmbox ls [--json] | status <box> | task-status <box> [run-id]
   vmbox stop <box> | start <box>
   vmbox auth <box> [--application-profile APP=PATH]
                    [--github-credential HOST:USER[:ssh|https] | --no-github]
@@ -1123,8 +1103,9 @@ explicitly when shell parsing is desired. Controller management is the default;
 interactive first use asks for its URL. --standalone is the only explicit
 bypass, and controller failures never silently fall back.
 
-In controller mode, vmbox <box> restores the logical box when necessary and
-opens its tmux session. In standalone Railway mode, stop removes only the active
+In controller mode, new/create always provisions a logical box in the managed
+fleet; run is the explicit ephemeral-job command. vmbox <box> restores the
+logical box when necessary and opens its tmux session. In standalone Railway mode, stop removes only the active
 deployment; vmbox <box> redeploys it while preserving the service and /data.
 Only an explicit delete/clean operation removes persistent storage.
 

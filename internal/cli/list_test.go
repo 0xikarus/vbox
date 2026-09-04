@@ -68,6 +68,26 @@ func TestControllerListIsReadable(t *testing.T) {
 	}
 }
 
+func TestControllerStatusUsesLogicalBoxName(t *testing.T) {
+	requested := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = r.Method + " " + r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(v1.LogicalBox{ID: "box-1", Name: "worker", State: v1.LogicalBoxHibernated})
+	}))
+	defer server.Close()
+	app := New()
+	app.Environ = map[string]string{"TOKEN": "secret"}
+	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	c := config.Context{Name: "team", Provider: "railway", Controller: server.URL, TokenEnv: "TOKEN"}
+	if err := app.controller(context.Background(), config.File{}, c, []string{"status", "worker"}); err != nil {
+		t.Fatal(err)
+	}
+	if requested != "GET /v1/logical-boxes/worker" {
+		t.Fatalf("status requested %q", requested)
+	}
+}
+
 func TestControllerBareNameOpensLogicalBox(t *testing.T) {
 	requested := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
