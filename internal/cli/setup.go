@@ -911,11 +911,11 @@ func (a *App) bootstrapRequest(selected []string) (provider.BootstrapRequest, er
 	entrypointPath := filepath.Join(assetDir, "vmbox-entrypoint")
 	entrypoint, err := os.ReadFile(entrypointPath)
 	if err != nil {
-		return provider.BootstrapRequest{}, fmt.Errorf("read runtime asset %s: %w (reinstall with ./install.sh --go-cli)", entrypointPath, err)
+		return provider.BootstrapRequest{}, fmt.Errorf("read runtime asset %s: %w (reinstall with ./install.sh)", entrypointPath, err)
 	}
 	request.Entrypoint = entrypoint
 	if len(request.RuntimeBinaries) == 0 {
-		return provider.BootstrapRequest{}, fmt.Errorf("no workload runtime assets found in %s; reinstall with ./install.sh --go-cli", assetDir)
+		return provider.BootstrapRequest{}, fmt.Errorf("no workload runtime assets found in %s; reinstall with ./install.sh", assetDir)
 	}
 	return request, nil
 }

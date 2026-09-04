@@ -303,6 +303,6 @@ func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Contex
 }
 
 func (a *App) keepControllerRunning(name string) error {
-	fmt.Fprintf(a.Err, "vmbox: keeping %q running; reconnect with: vmbox boxes open %s\n", name, name)
+	fmt.Fprintf(a.Err, "vmbox: keeping %q running; reconnect with: vmbox %s\n", name, name)
 	return nil
 }

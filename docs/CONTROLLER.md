@@ -84,11 +84,11 @@ Owners can set the number of reusable compute slots from the Fleet view. Slot se
 vmbox fleet status
 vmbox fleet slots 4
 vmbox boxes create dev
-vmbox boxes open dev
+vmbox dev
 vmbox boxes hibernate dev
 vmbox boxes delete-volume dev
 ```
 
-`vmbox boxes open` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. Leaving the interactive client keeps both the logical box and tmux session running by default. The exit prompt separately offers hibernation or exact-name volume deletion. Tmux uses `Ctrl-a` as its prefix and the bottom guide lists writing, scrolling, detaching, and QWERTZ-safe keys.
+`vmbox NAME` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. `vmbox boxes open NAME` remains an explicit equivalent for scripts. Leaving the interactive client keeps both the logical box and tmux session running by default. The exit prompt separately offers hibernation or exact-name volume deletion. Tmux uses `Ctrl-a` as its prefix and the bottom guide lists writing, scrolling, detaching, and QWERTZ-safe keys.
 
 Use TLS at the controller ingress. A configured context never silently falls back to standalone mode. The compatibility contract for external schedulers is `v1alpha1`; see `openapi.yaml`.

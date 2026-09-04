@@ -61,9 +61,46 @@ func TestControllerListIsReadable(t *testing.T) {
 	if err := app.controller(context.Background(), config.File{}, c, []string{"ls"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"NAME", "MANAGEMENT", "worker", "worker-data", "controller", "vmbox boxes open worker", "manual-service", "external", "--standalone"} {
+	for _, expected := range []string{"NAME", "MANAGEMENT", "worker", "worker-data", "controller", "vmbox worker", "manual-service", "external", "--standalone"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("controller list missing %q: %s", expected, output.String())
 		}
+	}
+}
+
+func TestControllerBareNameOpensLogicalBox(t *testing.T) {
+	requested := ""
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer secret" {
+			http.Error(w, "missing authorization", http.StatusUnauthorized)
+			return
+		}
+		requested = r.Method + " " + r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(v1.LogicalBox{ID: "box-1", Name: "worker", Provider: "railway", State: v1.LogicalBoxRunning})
+	}))
+	defer server.Close()
+
+	configPath := t.TempDir() + "/config.json"
+	if err := config.Save(configPath, config.File{
+		Current: "team",
+		Contexts: map[string]config.Context{
+			"team": {Name: "team", Provider: "railway", Controller: server.URL, TokenEnv: "TOKEN"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	app := New()
+	app.ConfigPath = configPath
+	app.Environ = map[string]string{"TOKEN": "secret"}
+	app.In, app.Out, app.Err = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
+	app.IsTerminal = func() bool { return false }
+
+	err := app.Run(context.Background(), []string{"worker"})
+	if err == nil || !strings.Contains(err.Error(), "opening a logical box requires an interactive terminal") {
+		t.Fatalf("bare-name open error = %v", err)
+	}
+	if requested != "GET /v1/logical-boxes/worker" {
+		t.Fatalf("bare name requested %q", requested)
 	}
 }
