@@ -328,14 +328,15 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if opts.componentsSet {
 			bootstrapComponents = append([]string(nil), opts.components...)
 		}
-		repairing := inspectErr == nil && box.Owner.BoxID == ""
-		if repairing && box.Owner.AccountID != "standalone" {
+		exists := inspectErr == nil
+		repairingOwner := exists && box.Owner.BoxID == ""
+		if repairingOwner && box.Owner.AccountID != "standalone" {
 			return fmt.Errorf("Railway service for %q exists without complete vmbox ownership; refusing to adopt it", opts.name)
 		}
-		if inspectErr == nil && !repairing {
-			if opts.reuse {
-				fmt.Fprintf(a.Err, "vmbox: --reuse ignored because %q already exists\n", opts.name)
-			}
+		if inspectErr != nil && !errors.Is(inspectErr, provider.ErrNotFound) {
+			return inspectErr
+		}
+		if exists && !repairingOwner {
 			if box.State == provider.StateStopped || box.State == provider.StateFailed {
 				started := a.progress(ctx, fmt.Sprintf("starting box %q", opts.name))
 				box, err = p.Start(ctx, box.ID)
@@ -344,26 +345,40 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 					return err
 				}
 			}
-		} else if inspectErr != nil && !errors.Is(inspectErr, provider.ErrNotFound) {
-			return inspectErr
-		} else if command == "run" {
+		}
+		pendingSetup := false
+		if exists && !repairingOwner {
+			pendingSetup, err = a.standaloneSetupPending(ctx, p, box.ID)
+			if err != nil {
+				return err
+			}
+		}
+		repairing := repairingOwner || pendingSetup
+		if exists && !repairing && opts.reuse {
+			fmt.Fprintf(a.Err, "vmbox: --reuse ignored because %q already exists\n", opts.name)
+		}
+		if command == "run" && (!exists || repairing) {
 			if repairing {
 				return fmt.Errorf("box %q has an incomplete prior creation; rerun vmbox new %s to repair it", opts.name, opts.name)
 			}
 			return fmt.Errorf("box %q does not exist", opts.name)
-		} else {
+		}
+		if !exists || repairing {
 			if repairing {
-				fmt.Fprintf(a.Err, "vmbox: repairing incomplete Railway service for %q\n", opts.name)
+				fmt.Fprintf(a.Err, "vmbox: resuming saved setup for incomplete service %q\n", opts.name)
 			}
 			workingDirectory, err := a.workingDirectory()
 			if err != nil {
 				return err
 			}
 			setup := defaultSetup(c)
-			if opts.reuse {
-				setup, err = loadSetup(file, c.Name, workingDirectory)
-				if err != nil {
-					return err
+			if opts.reuse || repairing {
+				saved, loadErr := loadSetup(file, c.Name, workingDirectory)
+				if loadErr == nil {
+					setup = saved
+				} else if opts.reuse || pendingSetup {
+					err = loadErr
+					return fmt.Errorf("resume saved setup for %q: %w", opts.name, err)
 				}
 			}
 			applyRunOptions(&setup, opts)
@@ -386,17 +401,27 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			if err != nil {
 				return err
 			}
+			if prepared.setup.Save {
+				if err := saveSetup(a.ConfigPath, file, c.Name, workingDirectory, prepared.setup); err != nil {
+					return fmt.Errorf("save reusable setup before provisioning: %w", err)
+				}
+				file, err = config.Load(a.ConfigPath)
+				if err != nil {
+					return fmt.Errorf("reload saved setup: %w", err)
+				}
+			}
 			setupEnv := map[string]string{
 				"VMBOX_NAME": opts.name, "VMBOX_PROVIDER": p.Name(), "VMBOX_REGION": prepared.setup.Region,
 				"VMBOX_CPU":        strconv.FormatFloat(prepared.setup.Resources.CPU, 'f', -1, 64),
 				"VMBOX_MEMORY_MIB": strconv.FormatInt(prepared.setup.Resources.MemoryMiB, 10),
 				"VMBOX_DISK_GIB":   strconv.FormatInt(prepared.setup.Resources.DiskGiB, 10), "VMBOX_WORKSPACE": prepared.setup.Workspace,
-				"VMBOX_COST":  "use vmbox cost " + opts.name,
-				"HOME":        "/data/home",
-				"SHELL":       "/bin/bash",
-				"BUN_INSTALL": "/opt/bun",
-				"FOUNDRY_DIR": "/opt/foundry",
-				"PATH":        "/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+				"VMBOX_COST":            "use vmbox cost " + opts.name,
+				"HOME":                  "/data/home",
+				"SHELL":                 "/bin/bash",
+				"BUN_INSTALL":           "/opt/bun",
+				"FOUNDRY_DIR":           "/opt/foundry",
+				standaloneSetupStateEnv: "pending",
+				"PATH":                  "/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 			}
 			provisioned := a.progress(ctx, fmt.Sprintf("provisioning box %q", opts.name))
 			box, err = p.Create(ctx, provider.CreateRequest{Name: opts.name, Image: c.Image, Region: prepared.setup.Region, Owner: provider.Owner{AccountID: "standalone", BoxID: opts.name}, Resources: prepared.setup.Resources, Components: prepared.setup.Components, Env: setupEnv})
@@ -411,10 +436,10 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			if err := a.uploadPrepared(ctx, p, opts.name, prepared); err != nil {
 				return err
 			}
+			if err := a.markStandaloneSetupComplete(ctx, p, opts.name); err != nil {
+				return err
+			}
 			if prepared.setup.Save {
-				if err := saveSetup(a.ConfigPath, file, c.Name, workingDirectory, prepared.setup); err != nil {
-					return fmt.Errorf("save complete reusable setup: %w", err)
-				}
 				fmt.Fprintf(a.Err, "vmbox: saved reusable setup for context %s in %s\n", c.Name, workingDirectory)
 			}
 		}

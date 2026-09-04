@@ -775,6 +775,37 @@ func (a *App) githubIdentity(ctx context.Context, credential config.GitHubCreden
 
 type setupExec func(context.Context, []string, provider.ExecOptions) (provider.ExecResult, error)
 
+const (
+	standaloneSetupStateEnv = "VMBOX_SETUP_STATE"
+	standaloneSetupMarker   = "/data/home/.vmbox-setup-complete"
+	standaloneSetupProbe    = `if [ "${VMBOX_SETUP_STATE:-}" != pending ] || [ -f /data/home/.vmbox-setup-complete ]; then printf 'complete\n'; else printf 'pending\n'; fi`
+)
+
+func (a *App) standaloneSetupPending(ctx context.Context, p provider.Provider, name string) (bool, error) {
+	result, err := p.Exec(ctx, name, []string{"sh", "-c", standaloneSetupProbe}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 {
+		return false, fmt.Errorf("inspect saved setup state inside %q", name)
+	}
+	switch strings.TrimSpace(result.Stdout) {
+	case "pending":
+		return true, nil
+	case "complete":
+		return false, nil
+	default:
+		return false, fmt.Errorf("inspect saved setup state inside %q: unexpected response", name)
+	}
+}
+
+func (a *App) markStandaloneSetupComplete(ctx context.Context, p provider.Provider, name string) error {
+	data := []byte("complete\n")
+	digest := sha256.Sum256(data)
+	result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "put-file", standaloneSetupMarker, "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(data), Stderr: a.Err})
+	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != fmt.Sprintf("%x", digest[:]) {
+		return fmt.Errorf("record completed setup inside %q", name)
+	}
+	return nil
+}
+
 func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name string, prepared preparedSetup) error {
 	return a.uploadPreparedWith(ctx, name, prepared, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 		return p.Exec(ctx, name, argv, opts)

@@ -31,11 +31,13 @@ type providerExecCall struct {
 }
 
 type cliProvider struct {
-	boxes   map[string]provider.Box
-	created []provider.CreateRequest
-	exec    []providerExecCall
-	resized []string
-	start   []string
+	boxes         map[string]provider.Box
+	created       []provider.CreateRequest
+	exec          []providerExecCall
+	resized       []string
+	start         []string
+	setupPending  map[string]bool
+	setupFailures int
 }
 
 type progressBootstrapProvider struct {
@@ -71,13 +73,21 @@ func (p *progressBootstrapProvider) Bootstrap(ctx context.Context, _ string, _ p
 	}
 }
 
-func newCLIProvider() *cliProvider  { return &cliProvider{boxes: make(map[string]provider.Box)} }
+func newCLIProvider() *cliProvider {
+	return &cliProvider{boxes: make(map[string]provider.Box), setupPending: make(map[string]bool)}
+}
 func (p *cliProvider) Name() string { return "test" }
 func (p *cliProvider) Validate(context.Context) (provider.Capabilities, error) {
 	return provider.Capabilities{}, nil
 }
 func (p *cliProvider) Create(_ context.Context, req provider.CreateRequest) (provider.Box, error) {
 	p.created = append(p.created, req)
+	if req.Env[standaloneSetupStateEnv] == "pending" {
+		if p.setupPending == nil {
+			p.setupPending = make(map[string]bool)
+		}
+		p.setupPending[req.Name] = true
+	}
 	box := provider.Box{ID: req.Name, Name: req.Name, Provider: p.Name(), State: provider.StateRunning, Region: req.Region, Resources: req.Resources, Owner: req.Owner, Connection: provider.Connection{Transport: "test-exec", Endpoint: req.Name}, Storage: &provider.Storage{MountPath: "/data", SizeGiB: req.Resources.DiskGiB}}
 	p.boxes[req.Name] = box
 	return box, nil
@@ -139,15 +149,33 @@ func (p *cliProvider) Exec(_ context.Context, id string, argv []string, opts pro
 	}
 	p.exec = append(p.exec, providerExecCall{name: id, argv: append([]string(nil), argv...), data: data})
 	result := provider.ExecResult{}
+	if reflect.DeepEqual(argv, []string{"sh", "-c", standaloneSetupProbe}) {
+		if p.setupPending[id] {
+			result.Stdout = "pending\n"
+		} else {
+			result.Stdout = "complete\n"
+		}
+	}
 	if len(argv) >= 2 && argv[0] == "vmbox-runtime" && argv[1] == "put-file" {
 		digest := sha256.Sum256(data)
 		result.Stdout = fmt.Sprintf("%x\n", digest[:])
+		if len(argv) >= 3 && argv[2] == standaloneSetupMarker {
+			if p.setupPending == nil {
+				p.setupPending = make(map[string]bool)
+			}
+			p.setupPending[id] = false
+		}
 	}
 	if reflect.DeepEqual(argv, []string{"vmbox-runtime", "sync-files"}) {
 		digest := sha256.Sum256(data)
 		result.Stdout = fmt.Sprintf("%x\n", digest[:])
 	}
 	if reflect.DeepEqual(argv, []string{"vmbox-runtime", "setup"}) {
+		if p.setupFailures > 0 {
+			p.setupFailures--
+			result.ExitCode = 1
+			return result, nil
+		}
 		var request boxruntime.SetupRequest
 		_ = json.Unmarshal(data, &request)
 		authentication := make(map[string]bool)
@@ -457,8 +485,56 @@ func TestNewRepairsIncompleteOwnedServiceInsteadOfStartingIt(t *testing.T) {
 	if len(p.created) != 1 || len(p.start) != 0 {
 		t.Fatalf("create calls=%d start calls=%d", len(p.created), len(p.start))
 	}
-	if p.created[0].Owner.BoxID != "worker" || !strings.Contains(app.Err.(*bytes.Buffer).String(), "repairing incomplete Railway service") {
+	if p.created[0].Owner.BoxID != "worker" || !strings.Contains(app.Err.(*bytes.Buffer).String(), "resuming saved setup") {
 		t.Fatalf("request=%+v stderr=%q", p.created[0], app.Err.(*bytes.Buffer).String())
+	}
+}
+
+func TestNewResumesSavedSetupAndCredentialSyncAfterInterruption(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	file := config.File{Current: "test", Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
+	p := newCLIProvider()
+	p.setupFailures = 1
+	app := New()
+	app.ConfigPath, app.WorkingDir = path, dir
+	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	app.IsTerminal = func() bool { return false }
+
+	err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "worker", "--detach", "--component", "bun"})
+	if err == nil || !strings.Contains(err.Error(), "configure credentials") {
+		t.Fatalf("first creation error=%v", err)
+	}
+	if !p.setupPending["worker"] {
+		t.Fatal("failed setup was incorrectly marked complete")
+	}
+	saved, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := app.standalone(context.Background(), saved, p, saved.Contexts["test"], []string{"new", "worker", "--detach"}); err != nil {
+		t.Fatal(err)
+	}
+	if p.setupPending["worker"] {
+		t.Fatal("resumed setup did not write its completion marker")
+	}
+	if len(p.created) != 2 || !reflect.DeepEqual(p.created[1].Components, []string{"bun"}) {
+		t.Fatalf("saved setup was not reused: %#v", p.created)
+	}
+	if p.created[0].Env[standaloneSetupStateEnv] != "pending" || p.created[1].Env[standaloneSetupStateEnv] != "pending" {
+		t.Fatalf("provider requests did not retain the pending marker: %#v", p.created)
+	}
+	markerWrites := 0
+	for _, call := range p.exec {
+		if reflect.DeepEqual(call.argv, []string{"vmbox-runtime", "put-file", standaloneSetupMarker, "0600"}) {
+			markerWrites++
+		}
+	}
+	if markerWrites != 1 {
+		t.Fatalf("completion marker writes=%d calls=%#v", markerWrites, p.exec)
+	}
+	if !strings.Contains(app.Err.(*bytes.Buffer).String(), "resuming saved setup for incomplete service") {
+		t.Fatalf("resume was not reported: %q", app.Err.(*bytes.Buffer).String())
 	}
 }
 
