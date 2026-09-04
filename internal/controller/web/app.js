@@ -11,6 +11,12 @@ const state = {
 };
 
 const stateLabel = value => String(value || 'unknown').replaceAll('_', ' ');
+const boxLifecycleLabel = box => {
+  const current = stateLabel(box?.state);
+  if (box?.state !== 'hibernating' || !box.restorationState) return current;
+  const phase = stateLabel(box.restorationState).replace('hibernate-', '').replaceAll('-', ' ');
+  return `${current} · ${phase}${box.failureReason ? ' · retry pending' : ''}`;
+};
 const escapeHTML = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]));
 const short = (value, length = 16) => value && value.length > length ? `${value.slice(0, length)}…` : (value || '—');
 const stamp = value => value ? new Intl.DateTimeFormat([], {hour:'2-digit', minute:'2-digit'}).format(new Date(value)) : '';
@@ -130,7 +136,7 @@ function renderRoster() {
   $('#box-list').innerHTML = boxes.length ? boxes.map(box => `
     <button class="roster-row box-row ${escapeHTML(box.state)} ${state.box?.id === box.id ? 'selected' : ''}" data-box="${escapeHTML(box.id)}">
       <span class="avatar">${escapeHTML(avatar(box.name))}</span>
-      <span class="roster-copy"><strong>${escapeHTML(box.name)}</strong><small>${escapeHTML(stateLabel(box.state))}${box.slotId ? ' · compute assigned' : ' · storage retained'}</small></span>
+      <span class="roster-copy"><strong>${escapeHTML(box.name)}</strong><small>${escapeHTML(boxLifecycleLabel(box))}${box.slotId ? ' · compute assigned' : ' · storage retained'}</small></span>
       <span class="presence ${box.state === 'running' ? 'online' : ''}" title="${escapeHTML(stateLabel(box.state))}"></span>
     </button>`).join('') : '<div class="compact-empty">No logical boxes yet</div>';
 
@@ -315,7 +321,7 @@ async function selectBox(id) {
   if (!state.box) return;
   renderRoster();
   $('#chat-name').textContent = state.box.name;
-  $('#chat-state').textContent = `${stateLabel(state.box.state)} · ${state.box.slotId ? 'compute assigned' : 'persistent storage retained'}`;
+  $('#chat-state').textContent = `${boxLifecycleLabel(state.box)} · ${state.box.slotId ? 'compute assigned' : 'persistent storage retained'}`;
   $('#chat-avatar').textContent = avatar(state.box.name);
   $('#box-default-agent').value = state.box.defaultAgent || 'claude';
   $('#allocate').hidden = !['detached', 'hibernated'].includes(state.box.state);
@@ -359,7 +365,7 @@ async function refreshConversation(silent = false) {
     $('#box-default-agent').value = freshBox.defaultAgent || 'claude';
     const index = state.boxes.findIndex(box => box.id === freshBox.id);
     if (index >= 0) state.boxes[index] = freshBox;
-    $('#chat-state').textContent = `${stateLabel(freshBox.state)} · ${freshBox.slotId ? 'compute assigned' : 'persistent storage retained'}`;
+    $('#chat-state').textContent = `${boxLifecycleLabel(freshBox)} · ${freshBox.slotId ? 'compute assigned' : 'persistent storage retained'}`;
     $('#allocate').hidden = !['detached', 'hibernated'].includes(freshBox.state);
     $('#hibernate').hidden = freshBox.state !== 'running';
     if (!state.task) {
@@ -777,10 +783,18 @@ $('#allocate').addEventListener('click', async () => {
 $('#hibernate').addEventListener('click', async () => {
   if (!state.box || !confirm(`Hibernate ${state.box.name}? Its volume and restorable tmux state remain. Live processes stop and its compute slot becomes free.`)) return;
   try {
-    await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/hibernate`, {method:'POST', body:'{}', timeout:120000});
-    toast('Box hibernated; volume retained');
-    await refreshAll();
-    showView('boxes');
+    const box = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/hibernate`, {method:'POST', body:'{}', timeout:15000});
+    toast(box.state === 'hibernated' ? 'Box hibernated; volume retained' : 'Hibernation started; progress continues if this page closes');
+    if (box.state === 'hibernated') {
+      await refreshAll();
+      showView('boxes');
+    } else {
+      state.box = box;
+      const index = state.boxes.findIndex(value => value.id === box.id);
+      if (index >= 0) state.boxes[index] = box;
+      renderRoster();
+      await refreshConversation(true);
+    }
   } catch (error) { toast(error.message, true); }
 });
 

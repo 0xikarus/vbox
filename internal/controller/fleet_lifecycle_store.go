@@ -296,8 +296,11 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 		return assignment, fmt.Errorf("logical box assignment is missing a valid fence")
 	}
 	assignment.Slot = slot
+	if target == v1.LogicalBoxHibernating && box.State == v1.LogicalBoxHibernating {
+		return assignment, tx.Commit()
+	}
 	expires := time.Now().UTC().Add(5 * time.Minute)
-	result, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET state=$5,lease_expires_at=$6,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", p.AccountID, box.ID, box.AssignmentGeneration, assignment.FencingToken, target, expires)
+	result, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET state=$5,lease_owner=CASE WHEN $5='hibernating' THEN NULL ELSE lease_owner END,lease_expires_at=CASE WHEN $5='hibernating' THEN NULL ELSE $6 END,restoration_state=CASE WHEN $5='hibernating' THEN 'hibernate-queued' ELSE restoration_state END,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", p.AccountID, box.ID, box.AssignmentGeneration, assignment.FencingToken, target, expires)
 	if err != nil {
 		return assignment, err
 	}
@@ -312,7 +315,71 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 		return assignment, fmt.Errorf("stale compute-slot release fence")
 	}
 	assignment.Box.State = target
+	if target == v1.LogicalBoxHibernating {
+		assignment.Box.LeaseOwner = ""
+		assignment.Box.LeaseExpiresAt = nil
+		assignment.Box.RestorationState = "hibernate-queued"
+	}
 	return assignment, tx.Commit()
+}
+
+type pendingLogicalBoxHibernate struct {
+	AccountID   string
+	BoxID       string
+	OwnerUserID string
+}
+
+func (s *Store) PendingLogicalBoxHibernates(ctx context.Context) ([]pendingLogicalBoxHibernate, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT account_id::text,id::text,owner_user_id::text FROM logical_boxes WHERE state='hibernating' ORDER BY updated_at,id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var values []pendingLogicalBoxHibernate
+	for rows.Next() {
+		var value pendingLogicalBoxHibernate
+		if err := rows.Scan(&value.AccountID, &value.BoxID, &value.OwnerUserID); err != nil {
+			return nil, err
+		}
+		values = append(values, value)
+	}
+	return values, rows.Err()
+}
+
+func (s *Store) ClaimLogicalBoxHibernate(ctx context.Context, accountID, boxID string) (string, bool, error) {
+	token := "hibernate_" + strings.ReplaceAll(uuid(), "-", "")
+	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET lease_owner=$3,lease_expires_at=now()+interval '45 seconds',restoration_state='saving-workspace',failure_reason=NULL,updated_at=now()
+		WHERE account_id=$1 AND id=$2 AND state='hibernating' AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())`, accountID, boxID, token)
+	if err != nil {
+		return "", false, err
+	}
+	changed, _ := result.RowsAffected()
+	return token, changed == 1, nil
+}
+
+func (s *Store) RenewLogicalBoxHibernate(ctx context.Context, accountID, boxID, token string) (bool, error) {
+	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET lease_expires_at=now()+interval '45 seconds' WHERE account_id=$1 AND id=$2 AND state='hibernating' AND lease_owner=$3`, accountID, boxID, token)
+	if err != nil {
+		return false, err
+	}
+	changed, _ := result.RowsAffected()
+	return changed == 1, nil
+}
+
+func (s *Store) SetLogicalBoxHibernatePhase(ctx context.Context, accountID, boxID, token, phase string) error {
+	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET restoration_state=$4,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='hibernating' AND lease_owner=$3`, accountID, boxID, token, phase)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("logical-box hibernate claim was lost")
+	}
+	return nil
+}
+
+func (s *Store) ReleaseLogicalBoxHibernateClaim(ctx context.Context, accountID, boxID, token string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET lease_owner=NULL,lease_expires_at=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='hibernating' AND lease_owner=$3`, accountID, boxID, token)
+	return err
 }
 
 func (s *Store) RecordReleaseFailure(ctx context.Context, accountID string, assignment fleetAssignment, reason string) error {

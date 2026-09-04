@@ -64,6 +64,13 @@ before(async () => {
       box.defaultAgent = body.defaultAgent;
       return json(response, 200, box);
     }
+    const hibernate = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/hibernate$/);
+    if (request.method === 'POST' && hibernate) {
+      const box = boxes.find(value => value.id === hibernate[1]);
+      box.state = 'hibernating';
+      box.restorationState = 'saving-workspace';
+      return json(response, 202, box);
+    }
     const taskList = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/tasks$/);
     if (request.method === 'GET' && taskList) return json(response, 200, tasks[taskList[1]]);
     const taskDetail = url.pathname.match(/^\/v1\/tasks\/(task-[12])$/);
@@ -163,6 +170,13 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('Group message queued'));
   const groupPost = requests.filter(value => value.method === 'POST' && value.path === '/v1/chat-groups/group-1/messages').at(-1);
   assert.deepEqual(groupPost.body.recipientBoxIds, ['box-1']);
+
+  await page.click('[data-box="box-1"]');
+  page.once('dialog', dialog => dialog.accept());
+  await page.click('#hibernate');
+  await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('progress continues if this page closes'));
+  await page.waitForFunction(() => document.querySelector('#chat-state').textContent.includes('saving workspace'));
+  assert(requests.some(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/hibernate'));
 
   await page.close();
 

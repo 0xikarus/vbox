@@ -154,12 +154,17 @@ func (s *Server) getAllocation(w http.ResponseWriter, r *http.Request, p Princip
 }
 
 func (s *Server) hibernateLogicalBoxHandler(w http.ResponseWriter, r *http.Request, p Principal) {
-	box, err := s.hibernateLogicalBox(r.Context(), p, r.PathValue("id"))
+	assignment, err := s.Store.BeginLogicalBoxRelease(r.Context(), p, r.PathValue("id"), v1.LogicalBoxHibernating)
 	if err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, box)
+	if assignment.Released {
+		writeJSON(w, http.StatusOK, assignment.Box)
+		return
+	}
+	s.startLogicalBoxHibernate(p, assignment.Box.ID)
+	writeJSON(w, http.StatusAccepted, assignment.Box)
 }
 
 func (s *Server) deleteLogicalBoxVolumeHandler(w http.ResponseWriter, r *http.Request, p Principal) {

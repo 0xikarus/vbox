@@ -43,6 +43,9 @@ type Server struct {
 	// that tests can observe the hand-off instead of racing a detached
 	// goroutine against their fixtures.
 	StartTask func(context.Context, string, v1.BoxTask)
+	// StartHibernate lets tests observe the durable hand-off without running a
+	// provider operation. Production leaves it nil and uses the reconciler.
+	StartHibernate func(context.Context, Principal, string) error
 }
 
 // startBoxTask runs a new task without making the caller wait for the agent.
@@ -483,6 +486,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileAllocationsNow(ctx); err != nil {
 		s.Logger.Error("initial logical box allocation reconciliation failed", "error", err)
 	}
+	if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
+		s.Logger.Error("initial logical box hibernate reconciliation failed", "error", err)
+	}
 	if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 		s.Logger.Error("initial logical box task reconciliation failed", "error", err)
 	}
@@ -512,6 +518,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileAllocationsNow(ctx); err != nil {
 					s.Logger.Error("logical box allocation reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
+					s.Logger.Error("logical box hibernate reconciliation failed", "error", err)
 				}
 				if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 					s.Logger.Error("logical box task reconciliation failed", "error", err)

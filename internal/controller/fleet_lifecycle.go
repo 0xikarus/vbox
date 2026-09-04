@@ -175,18 +175,85 @@ func (s *Server) ReconcileAllocationsNow(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-func (s *Server) hibernateLogicalBox(ctx context.Context, p Principal, id string) (v1.LogicalBox, error) {
+func (s *Server) startLogicalBoxHibernate(p Principal, id string) {
+	run := s.resumeLogicalBoxHibernate
+	if s.StartHibernate != nil {
+		run = s.StartHibernate
+	}
+	go func() {
+		if err := run(context.Background(), p, id); err != nil {
+			s.Logger.Warn("logical box hibernate attempt stopped", "box", id, "error", err)
+		}
+	}()
+}
+
+func (s *Server) ReconcileLogicalBoxHibernatesNow(ctx context.Context) error {
+	values, err := s.Store.PendingLogicalBoxHibernates(ctx)
+	if err != nil {
+		return err
+	}
+	for _, value := range values {
+		p := Principal{AccountID: value.AccountID, UserID: value.OwnerUserID, Role: "user", Subject: "controller:hibernate-reconciler"}
+		s.startLogicalBoxHibernate(p, value.BoxID)
+	}
+	return nil
+}
+
+func (s *Server) resumeLogicalBoxHibernate(ctx context.Context, p Principal, id string) error {
 	assignment, err := s.Store.BeginLogicalBoxRelease(ctx, p, id, v1.LogicalBoxHibernating)
 	if err != nil {
-		return assignment.Box, err
+		return err
 	}
 	if assignment.Released {
-		return assignment.Box, nil
+		return nil
 	}
-	fail := func(err error) (v1.LogicalBox, error) {
-		_ = s.Store.RecordReleaseFailure(ctx, p.AccountID, assignment, err.Error())
-		return assignment.Box, err
+	claim, claimed, err := s.Store.ClaimLogicalBoxHibernate(ctx, p.AccountID, assignment.Box.ID)
+	if err != nil || !claimed {
+		return err
 	}
+	operationCtx, cancel := context.WithCancel(ctx)
+	heartbeatDone := make(chan error, 1)
+	go s.heartbeatLogicalBoxHibernate(operationCtx, cancel, p.AccountID, assignment.Box.ID, claim, heartbeatDone)
+	_, operationErr := s.completeLogicalBoxHibernate(operationCtx, p, assignment, claim)
+	cancel()
+	heartbeatErr := <-heartbeatDone
+	if operationErr == nil {
+		return nil
+	}
+	if heartbeatErr != nil && !errors.Is(heartbeatErr, context.Canceled) {
+		operationErr = errors.Join(operationErr, heartbeatErr)
+	}
+	settleCtx, settleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer settleCancel()
+	_ = s.Store.RecordReleaseFailure(settleCtx, p.AccountID, assignment, operationErr.Error())
+	_ = s.Store.ReleaseLogicalBoxHibernateClaim(settleCtx, p.AccountID, assignment.Box.ID, claim)
+	return operationErr
+}
+
+func (s *Server) heartbeatLogicalBoxHibernate(ctx context.Context, cancel context.CancelFunc, accountID, boxID, claim string, done chan<- error) {
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			done <- nil
+			return
+		case <-ticker.C:
+			renewed, err := s.Store.RenewLogicalBoxHibernate(ctx, accountID, boxID, claim)
+			if err != nil || !renewed {
+				if err == nil {
+					err = fmt.Errorf("logical-box hibernate claim was lost")
+				}
+				cancel()
+				done <- err
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) completeLogicalBoxHibernate(ctx context.Context, p Principal, assignment fleetAssignment, claim string) (v1.LogicalBox, error) {
+	fail := func(err error) (v1.LogicalBox, error) { return assignment.Box, err }
 	prov, err := s.provider(ctx, p.AccountID, assignment.Box.Provider, assignment.Box.ProviderCredential)
 	if err != nil {
 		return fail(err)
@@ -195,6 +262,9 @@ func (s *Server) hibernateLogicalBox(ctx context.Context, p Principal, id string
 	if !ok {
 		return fail(fmt.Errorf("provider %s does not support detachable workspace volumes", prov.Name()))
 	}
+	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "saving-workspace"); err != nil {
+		return fail(err)
+	}
 	prepared, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
 	if err != nil {
 		return fail(fmt.Errorf("save workload state: %w", err))
@@ -202,11 +272,17 @@ func (s *Server) hibernateLogicalBox(ctx context.Context, p Principal, id string
 	if prepared.ExitCode != 0 {
 		return fail(fmt.Errorf("workspace remained busy; volume is still attached: %s", strings.TrimSpace(prepared.Stderr)))
 	}
+	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "detaching-volume"); err != nil {
+		return fail(err)
+	}
 	storage := provider.Storage{ID: assignment.Box.VolumeID, Name: assignment.Box.VolumeName, MountPath: "/data"}
 	if err := detachable.DetachStorage(ctx, assignment.Slot.ServiceID, storage); err != nil {
 		return fail(fmt.Errorf("detach retained volume: %w", err))
 	}
 	if inspector, ok := prov.(provider.AttachedStorageProvider); ok {
+		if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "verifying-detach"); err != nil {
+			return fail(err)
+		}
 		attached, err := inspector.AttachedStorage(ctx, assignment.Slot.ServiceID)
 		if err != nil {
 			return fail(fmt.Errorf("verify detached volume: %w", err))
@@ -214,6 +290,9 @@ func (s *Server) hibernateLogicalBox(ctx context.Context, p Principal, id string
 		if attached != nil {
 			return fail(fmt.Errorf("Railway still reports volume %s attached; slot remains draining", attached.ID))
 		}
+	}
+	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "sanitizing-compute"); err != nil {
+		return fail(err)
 	}
 	if err := detachable.SanitizeSlot(ctx, assignment.Slot.ServiceID); err != nil {
 		return fail(fmt.Errorf("start clean idle deployment: %w", err))
