@@ -703,8 +703,14 @@ func TestDeleteStorageAcceptsExactLegacyDataVolumeName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.Calls) != 3 || !strings.Contains(strings.Join(runner.Calls[1].Argv, " "), "volumeDelete") {
+	if len(runner.Calls) != 3 {
 		t.Fatalf("delete calls=%#v", runner.Calls)
+	}
+	deleteArgv := strings.Join(runner.Calls[1].Argv, " ")
+	for _, required := range []string{"railway volume", "--project project", "--environment environment", "delete --volume volume-1 --yes --json"} {
+		if !strings.Contains(deleteArgv, required) {
+			t.Fatalf("exact volume deletion omitted %q: %s", required, deleteArgv)
+		}
 	}
 }
 
