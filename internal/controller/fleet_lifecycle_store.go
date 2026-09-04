@@ -276,6 +276,12 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 		assignment.Box.State = v1.LogicalBoxDeleting
 		return assignment, tx.Commit()
 	}
+	// A detached delete may have failed after its durable state transition but
+	// before the provider accepted the exact volume deletion. There is no slot
+	// or fence to reacquire in that case; resume from the saved volume identity.
+	if target == v1.LogicalBoxDeleting && box.State == v1.LogicalBoxDeleting && box.SlotID == "" {
+		return assignment, tx.Commit()
+	}
 	if box.SlotID == "" || (box.State != v1.LogicalBoxRunning && box.State != v1.LogicalBoxDraining && box.State != v1.LogicalBoxHibernating && box.State != v1.LogicalBoxDeleting) {
 		return assignment, fmt.Errorf("logical box %q cannot transition from %s", box.Name, box.State)
 	}
