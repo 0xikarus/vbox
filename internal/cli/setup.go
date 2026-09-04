@@ -829,6 +829,10 @@ func (a *App) uploadPreparedWith(ctx context.Context, name string, prepared prep
 		return fmt.Errorf("decode remote setup result: %w", err)
 	}
 	if setupRequest.GitHub != nil {
+		secured, err := execute(ctx, []string{"sh", "-c", boxruntime.SecureGitHubConfigScript}, provider.ExecOptions{Stdout: io.Discard, Stderr: a.Err})
+		if err != nil || secured.ExitCode != 0 {
+			return fmt.Errorf("secure GitHub configuration as workload user inside %q", name)
+		}
 		verification, err := execute(ctx, []string{"gh", "auth", "status", "--hostname", setupRequest.GitHub.Host}, provider.ExecOptions{Stdout: io.Discard, Stderr: io.Discard})
 		if err != nil || verification.ExitCode != 0 {
 			return fmt.Errorf("verify GitHub authentication as workload user inside %q", name)

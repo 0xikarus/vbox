@@ -43,6 +43,7 @@ RUN groupadd --gid 10001 vmbox \
     && printf '%s\n' 'vmbox ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/vmbox \
     && chmod 0440 /etc/sudoers.d/vmbox \
     && mkdir -p /data/home /data/workspace /data/.vmbox \
+    && chmod 0700 /data/home \
     && chown -R vmbox:vmbox /data
 
 ARG VMBOX_COMPONENTS=codex,claude,opencode,bun,foundry
