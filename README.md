@@ -111,7 +111,7 @@ vmbox --context team worker
 vmbox --context team resume
 ```
 
-A valid controller context is automatically used and displayed. If the controller is unavailable, vmbox fails closed; `--standalone` is the only way to bypass it. Opening or resuming a controller-managed box refreshes active local agent profiles directly over the fenced SSH connection, and the persistent volume retains them across hibernation. The versioned scheduler contract is [docs/openapi.yaml](docs/openapi.yaml).
+A valid controller context is automatically used and displayed. If the controller is unavailable, vmbox fails closed; `--standalone` is the only way to bypass it. `vmbox auth NAME` explicitly syncs active local agent profiles directly over the fenced SSH connection, and the persistent volume retains them across hibernation; opening a box never uploads credentials implicitly. The versioned scheduler contract is [docs/openapi.yaml](docs/openapi.yaml).
 
 `vmbox-hostd` manages unprivileged Incus containers (or opt-in QEMU VMs) on an Ubuntu host. It accepts only authenticated requests and can advertise capacity to the controller over an outbound connection.
 
