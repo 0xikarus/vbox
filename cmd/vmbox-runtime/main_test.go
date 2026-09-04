@@ -82,6 +82,10 @@ func recordingSetupExecutor(calls *[]setupCall, rootOnly bool) setupCommand {
 			case "claude":
 				_, _ = io.WriteString(stdout, `{"loggedIn":false}`)
 				return nil
+			case "gh":
+				if strings.Contains(strings.Join(argv, " "), "auth status") {
+					return fmt.Errorf("not logged in")
+				}
 			}
 		}
 		if command == "claude" {
@@ -133,6 +137,7 @@ func TestPerformSetupConsolidatesCredentialAndAuthWork(t *testing.T) {
 		"gh auth setup-git --hostname github.com",
 		"git config --global user.name Octo Cat",
 		"git config --global user.email octocat@users.noreply.github.com",
+		"gh auth status --hostname github.com",
 		"vmbox-entrypoint --configure-agent-trust /data/workspace",
 	} {
 		if !strings.Contains(joined, want) {
@@ -184,6 +189,25 @@ func TestRootOwnedCredentialsCannotVerifyAuthentication(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result.Authentication, map[string]bool{"codex": false, "claude": false}) {
 		t.Fatalf("root-only credentials produced a false positive: %+v", result.Authentication)
+	}
+}
+
+// TestRootOnlyGitHubCredentialCannotVerifyAuthentication ensures a successful
+// root login can never be mistaken for a GitHub login available to agents.
+func TestRootOnlyGitHubCredentialCannotVerifyAuthentication(t *testing.T) {
+	var calls []setupCall
+	request := boxruntime.SetupRequest{
+		Workspace: "/data/workspace",
+		GitHub:    &boxruntime.GitHubSetup{Host: "github.com", User: "octocat", Protocol: "https", Token: "github-secret"},
+	}
+	_, err := performSetup(context.Background(), request, recordingSetupExecutor(&calls, true), 0)
+	if err == nil || !strings.Contains(err.Error(), "verify GitHub authentication as workload user") {
+		t.Fatalf("root-only GitHub credential verified: err=%v calls=%#v", err, calls)
+	}
+	for _, call := range calls {
+		if !boxruntime.RunsAsWorkloadUser(call.argv) {
+			t.Fatalf("GitHub setup step ran as root: %#v", call.argv)
+		}
 	}
 }
 

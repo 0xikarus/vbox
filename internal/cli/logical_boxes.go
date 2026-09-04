@@ -291,11 +291,11 @@ func (a *App) controllerLogicalBoxAuth(ctx context.Context, c config.Context, to
 	if !ok {
 		return fmt.Errorf("provider %s cannot sync over a controller-resolved connection", selected.Name())
 	}
-	profiles, err := a.selectApplicationProfiles(args[1:], true)
+	setup, err := a.selectAuthentication(ctx, args[1:])
 	if err != nil {
 		return err
 	}
-	return a.uploadSelectedApplicationProfiles(ctx, box.Name, profiles, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	return a.uploadSelectedAuthentication(ctx, box.Name, setup, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 		return executor.ExecConnection(ctx, resolved.Connection, argv, opts)
 	})
 }

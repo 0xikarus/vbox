@@ -1082,6 +1082,7 @@ Usage:
   vmbox ls [--json] | status <box> | task-status <box> [run-id] | logs <box> [--follow]
   vmbox stop <box> | start <box>
   vmbox auth <box> [--application-profile APP=PATH]
+                   [--github-credential HOST:USER[:ssh|https] | --no-github]
   vmbox task [box] [--agent codex|claude|opencode|shell] [--prompt TEXT] [--session NAME]
   vmbox resume | resize [box] --cpu N --memory MiB | clean <box> --yes | cost <box>
   vmbox fleet status [--json] | fleet slots | fleet slots set COUNT
