@@ -164,12 +164,13 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await page.click('#terminal');
   await page.keyboard.type('pwd');
   await page.keyboard.press('Enter');
-  for (let attempt = 0; attempt < 40 && requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length === interactiveStart; attempt++) {
+  for (let attempt = 0; attempt < 40 && requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length < interactiveStart + 2; attempt++) {
     await new Promise(resolveWait => setTimeout(resolveWait, 50));
   }
   const interactivePosts = requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').slice(interactiveStart);
-  assert.equal(interactivePosts.map(value => value.body.text).join(''), 'pwd\r');
-  assert(interactivePosts.every(value => value.body.submit === false));
+  assert.equal(interactivePosts[0].body.text, 'pwd');
+  assert.equal(interactivePosts[0].body.submit, false);
+  assert.deepEqual(interactivePosts[1].body.keys, ['Enter']);
 
   await page.select('#box-default-agent', 'claude');
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('starts claude'));

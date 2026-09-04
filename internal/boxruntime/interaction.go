@@ -162,6 +162,77 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 	return nil
 }
 
+func DeliverTmuxKeys(ctx context.Context, root, session, messageID string, keys []string) error {
+	if err := validateTmuxToken("session", session); err != nil {
+		return err
+	}
+	if err := validateTmuxToken("message ID", messageID); err != nil {
+		return err
+	}
+	if len(keys) == 0 || len(keys) > 64 {
+		return fmt.Errorf("terminal key event must contain between 1 and 64 keys")
+	}
+	for _, key := range keys {
+		if !validTmuxKey(key) {
+			return fmt.Errorf("unsupported terminal key %q", key)
+		}
+	}
+	directory := filepath.Join(root, "messages")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return err
+	}
+	pending := filepath.Join(directory, messageID+".pending")
+	delivered := filepath.Join(directory, messageID+".delivered")
+	if _, err := os.Stat(delivered); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	file, err := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if errors.Is(err, os.ErrExist) {
+		return ErrAmbiguousMessage
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(file, "%s\n", time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	args := []string{"send-keys", "-t", session}
+	args = append(args, keys...)
+	if _, err := tmuxCommand(ctx, "", args...); err != nil {
+		return ErrAmbiguousMessage
+	}
+	if err := os.Rename(pending, delivered); err != nil {
+		return ErrAmbiguousMessage
+	}
+	return nil
+}
+
+func validTmuxKey(key string) bool {
+	switch key {
+	case "Enter", "BSpace", "Tab", "Escape", "Up", "Down", "Right", "Left", "Home", "End", "DC", "PPage", "NPage":
+		return true
+	}
+	if len(key) == 3 && strings.HasPrefix(key, "C-") {
+		character := key[2]
+		return (character >= 'A' && character <= 'Z') || strings.ContainsRune("@[\\]^_?", rune(character))
+	}
+	if strings.HasPrefix(key, "F") {
+		number, err := strconv.Atoi(strings.TrimPrefix(key, "F"))
+		return err == nil && number >= 1 && number <= 12
+	}
+	return false
+}
+
 func pasteTmuxCarriageReturn(ctx context.Context, buffer, session string) error {
 	if _, err := tmuxCommand(ctx, "\r", "load-buffer", "-b", buffer, "-"); err != nil {
 		return err

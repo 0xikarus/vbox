@@ -39,6 +39,42 @@ func TestDeliverTmuxInputRefusesAmbiguousReplay(t *testing.T) {
 	}
 }
 
+func TestDeliverTmuxKeysUsesAllowlistedTmuxKeyEvents(t *testing.T) {
+	originalCommand := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = originalCommand })
+	var call []string
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if stdin != "" {
+			t.Fatalf("key delivery wrote stdin %q", stdin)
+		}
+		call = append([]string(nil), args...)
+		return nil, nil
+	}
+	root := t.TempDir()
+	if err := DeliverTmuxKeys(context.Background(), root, "codex", "keys_1", []string{"Up", "Enter", "C-C"}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"send-keys", "-t", "codex", "Up", "Enter", "C-C"}
+	if strings.Join(call, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("tmux call=%q want=%q", call, want)
+	}
+	if _, err := os.Stat(filepath.Join(root, "messages", "keys_1.delivered")); err != nil {
+		t.Fatalf("delivery marker: %v", err)
+	}
+}
+
+func TestDeliverTmuxKeysRejectsArbitraryTmuxArguments(t *testing.T) {
+	originalCommand := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = originalCommand })
+	tmuxCommand = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		t.Fatal("unsupported key reached tmux")
+		return nil, nil
+	}
+	if err := DeliverTmuxKeys(context.Background(), t.TempDir(), "codex", "keys_2", []string{"run-shell"}); err == nil {
+		t.Fatal("arbitrary tmux argument was accepted")
+	}
+}
+
 func TestDeliverTmuxInputWaitsAfterPasteBeforeSubmit(t *testing.T) {
 	originalCommand, originalPause, originalConfirm := tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause
 	t.Cleanup(func() {

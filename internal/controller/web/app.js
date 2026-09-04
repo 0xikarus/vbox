@@ -48,11 +48,21 @@ function flushTerminalInput() {
   terminalInputBuffer = '';
   terminalInputTarget = null;
   if (!text || !target) return;
+	queueTerminalOperation(target, {text, submit:false});
+}
+
+function queueTerminalKeys(keys) {
+	if (!keys?.length || !state.box || state.box.state !== 'running') return;
+	flushTerminalInput();
+	queueTerminalOperation({boxID:state.box.id, session:state.task?.session || 'vmbox'}, {keys});
+}
+
+function queueTerminalOperation(target, body) {
   const {boxID, session} = target;
   terminalInputChain = terminalInputChain.then(async () => {
     await api(`/v1/logical-boxes/${encodeURIComponent(boxID)}/terminal/input?session=${encodeURIComponent(session)}`, {
       method:'POST', headers:{'Idempotency-Key':idempotency('terminal-keys')},
-      body:JSON.stringify({text, submit:false}), timeout:30000,
+      body:JSON.stringify(body), timeout:30000,
     });
     setTimeout(() => {
       if (state.box?.id === boxID && (state.task?.session || 'vmbox') === session) refreshTerminal(true);
@@ -62,22 +72,24 @@ function flushTerminalInput() {
 
 function terminalKey(event) {
   const named = {
-    Enter:'\r', Backspace:'\x7f', Tab:'\t', Escape:'\x1b',
-    ArrowUp:'\x1b[A', ArrowDown:'\x1b[B', ArrowRight:'\x1b[C', ArrowLeft:'\x1b[D',
-    Home:'\x1b[H', End:'\x1b[F', Delete:'\x1b[3~', PageUp:'\x1b[5~', PageDown:'\x1b[6~',
+		Enter:'Enter', Backspace:'BSpace', Tab:'Tab', Escape:'Escape',
+		ArrowUp:'Up', ArrowDown:'Down', ArrowRight:'Right', ArrowLeft:'Left',
+		Home:'Home', End:'End', Delete:'DC', PageUp:'PPage', PageDown:'NPage',
   };
   if (event.ctrlKey && !event.altKey && !event.metaKey) {
     if (event.key.length === 1) {
       const upper = event.key.toUpperCase();
-      if (upper >= 'A' && upper <= 'Z') return String.fromCharCode(upper.charCodeAt(0) & 31);
-      const controls = {'@':'\x00','[':'\x1b','\\':'\x1c',']':'\x1d','^':'\x1e','_':'\x1f'};
-      return controls[event.key] || '';
+			if (upper >= 'A' && upper <= 'Z') return {keys:[`C-${upper}`]};
+			const control = event.key === ' ' ? '@' : event.key;
+			if ('@[\\]^_?'.includes(control)) return {keys:[`C-${control}`]};
     }
-    return '';
+		return null;
   }
-  if (event.metaKey) return '';
-  const value = named[event.key] || (event.key.length === 1 ? event.key : '');
-  return event.altKey && value ? `\x1b${value}` : value;
+	if (event.metaKey) return null;
+	if (/^F(?:[1-9]|1[0-2])$/.test(event.key)) return {keys:[event.key]};
+	if (named[event.key]) return {keys:[named[event.key]]};
+	if (event.key.length !== 1) return null;
+	return event.altKey ? {keys:['Escape'], text:event.key} : {text:event.key};
 }
 
 function toast(message, error = false) {
@@ -944,10 +956,11 @@ $('#toggle-terminal').addEventListener('click', () => {
 });
 
 $('#terminal').addEventListener('keydown', event => {
-  const text = terminalKey(event);
-  if (!text) return;
+	const input = terminalKey(event);
+	if (!input) return;
   event.preventDefault();
-  queueTerminalInput(text);
+	if (input.keys) queueTerminalKeys(input.keys);
+	if (input.text) queueTerminalInput(input.text);
 });
 
 $('#terminal').addEventListener('paste', event => {

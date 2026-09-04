@@ -407,13 +407,14 @@ func (s *Server) terminalSnapshotHandler(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) terminalInputHandler(w http.ResponseWriter, r *http.Request, p Principal) {
-	var request v1.SendBoxMessageRequest
+	var request v1.TerminalInputRequest
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if request.Text == "" || len(request.Text) > 100_000 {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("message must contain between 1 and 100000 bytes"))
+	hasText, hasKeys := request.Text != "", len(request.Keys) > 0
+	if hasText == hasKeys || len(request.Text) > 100_000 || len(request.Keys) > 64 {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("terminal input requires either 1-100000 bytes of text or 1-64 allowlisted keys"))
 		return
 	}
 	key := r.Header.Get("Idempotency-Key")
@@ -449,12 +450,24 @@ func (s *Server) terminalInputHandler(w http.ResponseWriter, r *http.Request, p 
 		return
 	}
 	messageID := terminalInputMessageID(p.AccountID, box.ID, session, key)
-	submit := true
-	if request.Submit != nil {
-		submit = *request.Submit
+	var argv []string
+	if hasKeys {
+		data, err := json.Marshal(request.Keys)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("encode terminal keys: %w", err))
+			return
+		}
+		encoded := base64.RawURLEncoding.EncodeToString(data)
+		argv = []string{"vmbox-runtime", "tmux-keys", session, messageID, encoded}
+	} else {
+		submit := true
+		if request.Submit != nil {
+			submit = *request.Submit
+		}
+		encoded := base64.RawURLEncoding.EncodeToString([]byte(request.Text))
+		argv = []string{"vmbox-runtime", "tmux-message", session, messageID, encoded, strconv.FormatBool(submit)}
 	}
-	encoded := base64.RawURLEncoding.EncodeToString([]byte(request.Text))
-	result, execErr := prov.Exec(r.Context(), assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", session, messageID, encoded, strconv.FormatBool(submit)}, provider.ExecOptions{})
+	result, execErr := prov.Exec(r.Context(), assignment.Slot.ServiceID, argv, provider.ExecOptions{})
 	if execErr != nil {
 		writeError(w, http.StatusConflict, fmt.Errorf("terminal input delivery is ambiguous and was not retried: %w", execErr))
 		return

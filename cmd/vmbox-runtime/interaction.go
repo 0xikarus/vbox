@@ -38,6 +38,19 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 			return true, fmt.Errorf("decode tmux message submit flag: %w", err)
 		}
 		return true, boxruntime.DeliverTmuxInput(context.Background(), runtime.Root, args[1], args[2], string(text), submit)
+	case "tmux-keys":
+		if len(args) != 4 {
+			return true, fmt.Errorf("tmux-keys requires SESSION MESSAGE_ID BASE64_KEYS")
+		}
+		data, err := base64.RawURLEncoding.DecodeString(args[3])
+		if err != nil {
+			return true, fmt.Errorf("decode tmux keys: %w", err)
+		}
+		var keys []string
+		if err := json.Unmarshal(data, &keys); err != nil {
+			return true, fmt.Errorf("decode tmux keys: %w", err)
+		}
+		return true, boxruntime.DeliverTmuxKeys(context.Background(), runtime.Root, args[1], args[2], keys)
 	case "tmux-screen":
 		if len(args) < 2 || len(args) > 3 {
 			return true, fmt.Errorf("tmux-screen requires SESSION [HISTORY_LINES]")

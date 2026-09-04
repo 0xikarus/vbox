@@ -32,6 +32,12 @@ type SendBoxMessageRequest struct {
 	Submit *bool  `json:"submit,omitempty"`
 }
 
+type TerminalInputRequest struct {
+	Text   string   `json:"text,omitempty"`
+	Keys   []string `json:"keys,omitempty"`
+	Submit *bool    `json:"submit,omitempty"`
+}
+
 type BoxMessage struct {
 	ID        string    `json:"id"`
 	TaskID    string    `json:"taskId"`
