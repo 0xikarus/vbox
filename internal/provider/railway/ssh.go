@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -133,11 +134,25 @@ func (p *Provider) ensureSSHMaster(ctx context.Context, target string) error {
 		"--", target, railwaySSHMasterKeepalive,
 	)
 	started, startErr := p.runSSHHandshake(ctx, start)
-	if startErr != nil {
+	if startErr != nil && !errors.Is(startErr, exec.ErrWaitDelay) {
 		return fmt.Errorf("start Railway SSH control connection: %w", startErr)
 	}
 	if started.ExitCode != 0 {
 		return fmt.Errorf("start Railway SSH control connection exited with status %d: %s", started.ExitCode, strings.TrimSpace(string(started.Stderr)))
+	}
+	// ssh -f deliberately leaves the background master holding its inherited
+	// stdout/stderr descriptors. os/exec closes those capture pipes after
+	// WaitDelay and returns ErrWaitDelay even though the foreground ssh process
+	// successfully authenticated and forked. Trust that special result only
+	// after the newly created socket answers an explicit control check.
+	if errors.Is(startErr, exec.ErrWaitDelay) {
+		verified, verifyErr := p.runSSHHandshake(ctx, check)
+		if verifyErr != nil {
+			return fmt.Errorf("verify Railway SSH control connection: %w", verifyErr)
+		}
+		if verified.ExitCode != 0 {
+			return fmt.Errorf("verify Railway SSH control connection exited with status %d: %s", verified.ExitCode, strings.TrimSpace(string(verified.Stderr)))
+		}
 	}
 	p.masterByTarget[target] = true
 	return nil

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -159,6 +160,51 @@ func TestExecRepairsRotatedHostKeyBeforeStartingMaster(t *testing.T) {
 	master := strings.Join(runner.Calls[5].Argv, " ")
 	if !strings.Contains(master, " -M -f ") || strings.Contains(master, " -N ") || !strings.Contains(master, "ControlMaster=yes") || !strings.Contains(master, "ControlPersist=120") || !strings.HasSuffix(master, " "+railwaySSHMasterKeepalive) {
 		t.Fatalf("explicit detached master was not started: %s", master)
+	}
+}
+
+func TestSSHMasterAcceptsWaitDelayOnlyAfterControlCheck(t *testing.T) {
+	runner := &procexec.FakeRunner{
+		Results: []procexec.Result{
+			{ExitCode: 255, Stderr: []byte("Control socket does not exist")},
+			{},
+			{},
+		},
+		Errors: []error{nil, exec.ErrWaitDelay, nil},
+	}
+	p := New(Config{SSHControlDir: t.TempDir()}, runner)
+	target := "deployment-instance@ssh.railway.com"
+	if err := p.ensureSSHMaster(context.Background(), target); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Calls) != 3 {
+		t.Fatalf("calls=%#v", runner.Calls)
+	}
+	if !strings.Contains(strings.Join(runner.Calls[1].Argv, " "), "ControlMaster=yes") {
+		t.Fatalf("master start=%#v", runner.Calls[1].Argv)
+	}
+	if !strings.Contains(strings.Join(runner.Calls[2].Argv, " "), " -O check ") {
+		t.Fatalf("master verification=%#v", runner.Calls[2].Argv)
+	}
+}
+
+func TestSSHMasterRejectsWaitDelayWhenControlCheckFails(t *testing.T) {
+	runner := &procexec.FakeRunner{
+		Results: []procexec.Result{
+			{ExitCode: 255, Stderr: []byte("Control socket does not exist")},
+			{},
+			{ExitCode: 255, Stderr: []byte("Control socket does not exist")},
+		},
+		Errors: []error{nil, exec.ErrWaitDelay, nil},
+	}
+	p := New(Config{SSHControlDir: t.TempDir()}, runner)
+	target := "deployment-instance@ssh.railway.com"
+	err := p.ensureSSHMaster(context.Background(), target)
+	if err == nil || !strings.Contains(err.Error(), "verify Railway SSH control connection exited with status 255") {
+		t.Fatalf("error=%v", err)
+	}
+	if p.masterByTarget[target] {
+		t.Fatal("failed control check marked the SSH master reusable")
 	}
 }
 
