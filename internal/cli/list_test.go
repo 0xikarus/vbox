@@ -129,3 +129,21 @@ func TestControllerResumeSelectsLogicalBoxesInsteadOfRuns(t *testing.T) {
 		t.Fatalf("resume list=%q", app.Out.(*bytes.Buffer).String())
 	}
 }
+
+func TestControllerWelcomeUploadUsesPrivateHomeFileMode(t *testing.T) {
+	app := New()
+	app.Err = &bytes.Buffer{}
+	var argv []string
+	execute := func(_ context.Context, got []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+		argv = append([]string(nil), got...)
+		return provider.ExecResult{}, nil
+	}
+	resolved := v1.LogicalBoxConnection{BoxName: "research", Connection: provider.Connection{Metadata: map[string]string{"vmboxBoxName": "research"}}}
+	if err := app.refreshControllerWelcome(context.Background(), resolved, execute); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0600"}
+	if strings.Join(argv, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("welcome argv=%q", argv)
+	}
+}

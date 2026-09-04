@@ -324,7 +324,7 @@ func (a *App) refreshControllerWelcome(ctx context.Context, resolved v1.LogicalB
 		value("vmboxWorkspace", "/data/workspace"), value("vmboxComputeSlot", "managed"),
 		value("vmboxAssignmentState", "running"), value("vmboxConnectionHealth", "connected"), value("vmboxCost", "managed fleet slot; see provider billing"),
 		resolved.BoxName, resolved.BoxName)
-	result, err := execute(ctx, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0644"}, provider.ExecOptions{Stdin: bytes.NewBufferString(welcome), Stdout: io.Discard, Stderr: a.Err})
+	result, err := execute(ctx, []string{"vmbox-runtime", "put-file", "/data/home/.vmbox-welcome", "0600"}, provider.ExecOptions{Stdin: bytes.NewBufferString(welcome), Stdout: io.Discard, Stderr: a.Err})
 	if err != nil {
 		return fmt.Errorf("refresh logical-box details: %w", err)
 	}
