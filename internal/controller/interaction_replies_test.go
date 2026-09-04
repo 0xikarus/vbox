@@ -70,6 +70,18 @@ func TestExtractAgentReplyUsesNewestMatchingPrompt(t *testing.T) {
 	}
 }
 
+func TestExtractAgentReplyCompletesWhenNextInputIsAlreadyStaged(t *testing.T) {
+	content := `❯ Inspect authentication
+
+● Authentication is ready.
+
+❯ list my repos`
+	reply, complete := extractAgentReply("claude", "Inspect authentication", content)
+	if !complete || reply != "Authentication is ready." {
+		t.Fatalf("complete=%v reply=%q", complete, reply)
+	}
+}
+
 func TestUpsertAgentBoxMessageStreamsAndFinalizesCorrelatedReply(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectExec("INSERT INTO box_messages").

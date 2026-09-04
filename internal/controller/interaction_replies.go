@@ -119,11 +119,11 @@ func extractAgentReply(agent, prompt, content string) (string, bool) {
 		line := strings.TrimSpace(lines[index])
 		switch agent {
 		case "codex":
-			if line == "›" || strings.HasPrefix(line, "› Ask Codex") {
+			if strings.HasPrefix(line, "›") {
 				end = index
 			}
 		case "claude":
-			if line == "❯" || strings.HasPrefix(line, "❯ Try \"") {
+			if strings.HasPrefix(line, "❯") {
 				end = index
 			}
 		case "opencode":
