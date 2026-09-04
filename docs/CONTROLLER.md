@@ -85,10 +85,14 @@ vmbox fleet status
 vmbox fleet slots 4
 vmbox boxes create dev
 vmbox dev
+vmbox resume
+vmbox auth dev
 vmbox boxes hibernate dev
 vmbox boxes delete-volume dev
 ```
 
-`vmbox NAME` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. `vmbox boxes open NAME` remains an explicit equivalent for scripts. Leaving the interactive client keeps both the logical box and tmux session running by default. The exit prompt separately offers hibernation or exact-name volume deletion. Tmux uses `Ctrl-a` as its prefix and the bottom guide lists writing, scrolling, detaching, and QWERTZ-safe keys.
+`vmbox NAME` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. `vmbox resume` selects from the same logical boxes, and `vmbox boxes open NAME` remains an explicit equivalent for scripts. Before an interactive attach, the CLI refreshes any active local Codex, Claude, and OpenCode profiles directly over that SSH connection; the controller never receives those files. `vmbox auth NAME` performs the same refresh explicitly. The profiles remain on the logical box's persistent volume through hibernation, are owned by `vmbox:vmbox`, and authentication is verified as that unprivileged user.
+
+Leaving the interactive client keeps both the logical box and tmux session running by default. The exit prompt separately offers hibernation or exact-name volume deletion. Logical-box identity and compute-slot metadata are persisted with the tmux snapshot, so restored sessions show the current provider, resources, workspace, box, and slot instead of fallback values. Tmux uses `Ctrl-a` as its prefix and the bottom guide lists writing, scrolling, detaching, and QWERTZ-safe keys.
 
 Use TLS at the controller ingress. A configured context never silently falls back to standalone mode. The compatibility contract for external schedulers is `v1alpha1`; see `openapi.yaml`.

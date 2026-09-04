@@ -2,9 +2,12 @@ package boxruntime
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -47,6 +50,15 @@ func TestAgentResumeUsesExplicitSessionIdentifiers(t *testing.T) {
 		got, _ := agentResume(test.command, test.argv)
 		if !reflect.DeepEqual(got, test.want) {
 			t.Errorf("%s resume=%q want=%q", test.command, got, test.want)
+		}
+	}
+}
+
+func TestShellResumePrintsCurrentPersistentWelcome(t *testing.T) {
+	for _, command := range []string{"bash", "sh", "zsh", "fish"} {
+		got, strategy := agentResume(command, []string{command})
+		if !reflect.DeepEqual(got, []string{"vmbox-runtime", "welcome"}) || strategy != "shell" {
+			t.Fatalf("%s resume=%q strategy=%q", command, got, strategy)
 		}
 	}
 }
@@ -119,6 +131,37 @@ func TestTmuxServerAbsentRecognizesMissingSocketOnly(t *testing.T) {
 	}
 	if tmuxServerAbsent(errors.New("error connecting to /tmp/tmux-10001/default (Permission denied)")) {
 		t.Fatal("permission failure was mistaken for an absent tmux server")
+	}
+}
+
+func TestTmuxContextPersistsBeforeAnySessionExists(t *testing.T) {
+	bin := t.TempDir()
+	tmux := filepath.Join(bin, "tmux")
+	if err := os.WriteFile(tmux, []byte("#!/bin/sh\necho 'no server running' >&2\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	root := t.TempDir()
+	if err := SetTmuxContext(context.Background(), root, "research", "fleet-slot-2", "running", "connected"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(tmuxContextPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var value TmuxContext
+	if err := json.Unmarshal(data, &value); err != nil {
+		t.Fatal(err)
+	}
+	if value != (TmuxContext{Box: "research", Slot: "fleet-slot-2", State: "running", Health: "connected"}) {
+		t.Fatalf("context=%+v", value)
+	}
+	info, err := os.Stat(tmuxContextPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("context mode=%v", info.Mode().Perm())
 	}
 }
 

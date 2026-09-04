@@ -55,3 +55,15 @@ func TestRailwayLocalCLIAuthRequiresExplicitContextOptIn(t *testing.T) {
 		t.Fatalf("local Railway CLI auth opt-in rejected: %v", err)
 	}
 }
+
+func TestControllerConnectionProviderNeedsNoRailwayControlPlaneToken(t *testing.T) {
+	app := New()
+	app.Environ = map[string]string{"HOME": t.TempDir(), "PATH": os.Getenv("PATH")}
+	selected, err := app.connectionProvider(config.Context{Provider: "railway", Controller: "https://controller.example"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.Name() != "railway" {
+		t.Fatalf("provider=%s", selected.Name())
+	}
+}

@@ -147,6 +147,14 @@ type ConnectionSessionAttacher interface {
 	AttachConnection(context.Context, Connection, string, []string, ExecOptions) (ExecResult, error)
 }
 
+// ConnectionExecutor runs a non-interactive command over connection details
+// already resolved and fenced by the controller. Credential and setup data can
+// therefore travel directly from the CLI to the workload without traversing
+// the controller or requiring a provider control-plane token on the client.
+type ConnectionExecutor interface {
+	ExecConnection(context.Context, Connection, []string, ExecOptions) (ExecResult, error)
+}
+
 const (
 	WorkloadUser = "vmbox"
 	WorkloadHome = "/data/home"

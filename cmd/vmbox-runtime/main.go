@@ -102,7 +102,7 @@ func run() error {
 		if len(args) != 5 {
 			return fmt.Errorf("tmux-context requires BOX SLOT STATE HEALTH")
 		}
-		return boxruntime.SetTmuxContext(context.Background(), args[1], args[2], args[3], args[4])
+		return boxruntime.SetTmuxContext(context.Background(), runtime.Root, args[1], args[2], args[3], args[4])
 	case "put-file":
 		if len(args) != 3 {
 			return fmt.Errorf("put-file requires PATH MODE")

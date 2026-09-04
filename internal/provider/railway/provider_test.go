@@ -87,7 +87,10 @@ func TestAttachSessionUsesDirectInteractiveSSH(t *testing.T) {
 func TestAttachConnectionUsesValidatedTargetWithoutRailwayLookup(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("created\n")}, {}}}
 	p := New(Config{}, runner)
-	connection := provider.Connection{Transport: "openssh", Endpoint: "deployment-controller@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "deployment-controller"}}
+	connection := provider.Connection{Transport: "openssh", Endpoint: "deployment-controller@ssh.railway.com", Metadata: map[string]string{
+		"deploymentInstanceId": "deployment-controller", "vmboxBoxName": "research", "vmboxComputeSlot": "fleet-slot-2",
+		"vmboxAssignmentState": "running", "vmboxConnectionHealth": "connected",
+	}}
 	result, err := p.AttachConnection(context.Background(), connection, "vmbox", []string{"vmbox-runtime", "welcome"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("result=%+v error=%v", result, err)
@@ -106,6 +109,29 @@ func TestAttachConnectionUsesValidatedTargetWithoutRailwayLookup(t *testing.T) {
 	prepared := runner.Calls[0].Argv[len(runner.Calls[0].Argv)-1]
 	if !strings.HasPrefix(prepared, "'sudo' '-n' '-H' '-u' 'vmbox'") || !strings.Contains(prepared, "'sh' '-c'") {
 		t.Fatalf("tmux preparation did not run entirely as workload user: %s", prepared)
+	}
+	for _, value := range []string{"'research'", "'fleet-slot-2'", "'running'", "'connected'"} {
+		if !strings.Contains(prepared, value) {
+			t.Fatalf("tmux preparation omitted controller metadata %s: %s", value, prepared)
+		}
+	}
+}
+
+func TestExecConnectionUsesOnlyFencedDirectSSH(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("ok\n")}}}
+	p := New(Config{}, runner)
+	connection := provider.Connection{Transport: "openssh", Endpoint: "deployment-controller@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "deployment-controller"}}
+	result, err := p.ExecConnection(context.Background(), connection, []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 || result.Stdout != "ok\n" {
+		t.Fatalf("result=%+v error=%v", result, err)
+	}
+	if len(runner.Calls) != 1 {
+		t.Fatalf("calls=%#v", runner.Calls)
+	}
+	call := runner.Calls[0].Argv
+	command := call[len(call)-1]
+	if call[0] != "ssh" || call[len(call)-2] != connection.Endpoint || !strings.Contains(command, "'sudo' '-n' '-H' '-u' 'vmbox'") || !strings.Contains(command, "'exec-json'") {
+		t.Fatalf("connection execution did not use the fenced workload-user SSH path: %#v", call)
 	}
 }
 

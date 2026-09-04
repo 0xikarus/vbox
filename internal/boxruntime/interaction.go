@@ -118,6 +118,9 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 		if _, err := tmuxCommand(ctx, "", args...); err != nil {
 			return fmt.Errorf("start %s task session: %w", agent, err)
 		}
+		if err := ApplyTmuxContext(ctx, root, session); err != nil {
+			return fmt.Errorf("apply %s task session context: %w", agent, err)
+		}
 		_, _ = tmuxCommand(ctx, "", "source-file", "/etc/vmbox/tmux.conf")
 	}
 	return DeliverTmuxInput(ctx, root, session, messageID, prompt, true)
