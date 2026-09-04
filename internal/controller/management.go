@@ -116,11 +116,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		}
 		response.Task, response.Message, response.Started = task, messages[0], !reused
 		if !reused || task.State == "queued" || task.State == "waiting_capacity" {
-			go func() {
-				if err := s.executeBoxTask(context.Background(), p.AccountID, task); err != nil {
-					s.Logger.Error("direct box message could not start agent", "task", task.ID, "error", err)
-				}
-			}()
+			s.startBoxTask(p.AccountID, task)
 		}
 		return response, nil
 	}

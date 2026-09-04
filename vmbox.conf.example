@@ -12,3 +12,10 @@ VMBOX_DEFAULT_REGION="us-east"
 
 # Optional default shown first in the new-box Markdown picker.
 # VMBOX_INSTRUCTIONS_FILE="/absolute/path/to/project-instructions.md"
+
+# Direct Railway SSH is the default data path: the deployment instance is
+# resolved once per operation and reused over one OpenSSH ControlMaster.
+# Set to 1 to force every remote command through `railway ssh` instead.
+# VMBOX_DISABLE_DIRECT_SSH=1
+# The vmbox-only known-hosts file. ~/.ssh/known_hosts is never used or changed.
+# VMBOX_SSH_KNOWN_HOSTS="/absolute/path/to/railway-known-hosts"

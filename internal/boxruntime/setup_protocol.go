@@ -17,6 +17,10 @@ type GitHubSetup struct {
 	User     string `json:"user"`
 	Protocol string `json:"protocol"`
 	Token    string `json:"token"`
+	// Name and Email configure the Git commit identity as the workload user.
+	// They are resolved locally from the same account as the token.
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
 }
 
 type SetupRequest struct {

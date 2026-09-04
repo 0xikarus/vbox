@@ -37,7 +37,13 @@ caches and all known credential directories under `/root`; `/data/home` and
 - Standalone contexts may explicitly select `--railway-cli-auth` to reuse an existing `railway login` session; controller credentials still require a token.
 - Ownership is held in provider variables and never includes credentials.
 - SSH invokes `vmbox-runtime` with encoded JSON argv, avoiding shell parsing.
+- Railway is the control plane, not the data path. The active deployment instance is resolved once per operation and cached; every remote command then streams over one direct OpenSSH `ControlMaster` whose `ControlPath` is a hashed, fixed-width name inside a private per-user directory, so it always fits a Unix socket address.
+- The cached endpoint and its master are invalidated when the deployment identity changes and whenever SSH reports its own transport failure (exit 255), after which the operation retries once.
 - Railway SSH uses a vmbox-only known-hosts file. Endpoint rotation is retried by removing only the stale Railway entry from that isolated file; normal `~/.ssh/known_hosts` is never changed.
+- Remote work runs as the unprivileged `vmbox` user with `HOME=/data/home`. Railway's SSH data path lands as root, so agent profiles, GitHub configuration, instruction files, workspace files, and the tmux session that hosts an agent would otherwise all belong to root and be invisible to the agents. Credential verification is dropped to the same user, so a root-readable login can never report a false positive.
+- Files installed from outside the box are handed to `vmbox:vmbox`: directories the runtime creates use `0700`, credentials use `0600`, and directories the box already had keep their mode and owner.
+- A `/data` probe distinguishes a definitive answer from a failed transport. An unreachable box is reported as unreachable; only a conclusive negative can trigger a repair redeploy.
+- First-time provisioning is recorded before the Railway service is created and cleared only after the credential sync has been applied, so an interrupted setup resumes instead of presenting a silently unconfigured box.
 - Stop preserves service and storage; cleanup deletes the verified service before its exact attached volume.
 
 ## Ubuntu/Incus

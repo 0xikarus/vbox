@@ -462,3 +462,69 @@ func TestInterruptedSubmissionReconcilesExactNewDeployment(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// TestSanitizeSlotUndeploysComputeAndRetainsTheService pins 108e6a4: sanitizing
+// a freed slot must remove only its running deployment. Resubmitting a
+// deployment instead put the slot straight back into service, and deleting it
+// would have destroyed fleet capacity the controller still tracks.
+func TestSanitizeSlotUndeploysComputeAndRetainsTheService(t *testing.T) {
+	running := `[{"id":"service-id","name":"slot-a-01","status":"SUCCESS"}]`
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(running)},
+		{Stdout: []byte(`{"volumes":[{"id":"volume-1","serviceName":"other-slot","mountPath":"/data"}]}`)},
+		{},
+		{Stdout: []byte(`[{"id":"service-id","name":"slot-a-01","status":"NO_DEPLOYMENT"}]`)},
+		{Stdout: []byte(`{"VMBOX_ACCOUNT_ID":"standalone","VMBOX_BOX_ID":"slot-a-01"}`)},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	if err := p.SanitizeSlot(context.Background(), "slot-a-01"); err != nil {
+		t.Fatal(err)
+	}
+	var commands []string
+	for _, call := range runner.Calls {
+		command := strings.Join(call.Argv, " ")
+		commands = append(commands, command)
+		for _, destructive := range []string{" service delete ", " volume delete ", " redeploy "} {
+			if strings.Contains(command, destructive) {
+				t.Fatalf("sanitation ran a destructive or redeploying command: %s", command)
+			}
+		}
+	}
+	joined := strings.Join(commands, "\n")
+	if !strings.Contains(joined, "railway down --service slot-a-01 --yes") {
+		t.Fatalf("sanitation did not undeploy the slot:\n%s", joined)
+	}
+}
+
+func TestSanitizeSlotLeavesAnAlreadyStoppedSlotAlone(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`[{"id":"service-id","name":"slot-a-01","status":"NO_DEPLOYMENT"}]`)},
+		{Stdout: []byte(`{"volumes":[]}`)},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	if err := p.SanitizeSlot(context.Background(), "slot-a-01"); err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range runner.Calls {
+		if strings.Contains(strings.Join(call.Argv, " "), " down ") {
+			t.Fatalf("a stopped slot was powered down again: %v", call.Argv)
+		}
+	}
+}
+
+func TestSanitizeSlotRefusesWhileAWorkspaceIsStillAttached(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`[{"id":"service-id","name":"slot-a-01","status":"SUCCESS"}]`)},
+		{Stdout: []byte(`{"volumes":[{"id":"volume-1","serviceName":"slot-a-01","mountPath":"/data"}]}`)},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	err := p.SanitizeSlot(context.Background(), "slot-a-01")
+	if err == nil || !strings.Contains(err.Error(), "remains attached") {
+		t.Fatalf("err=%v", err)
+	}
+	for _, call := range runner.Calls {
+		if strings.Contains(strings.Join(call.Argv, " "), " down ") {
+			t.Fatal("sanitation powered down a slot that still carried a workspace")
+		}
+	}
+}

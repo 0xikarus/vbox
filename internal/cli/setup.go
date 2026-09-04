@@ -664,6 +664,8 @@ type preparedSetup struct {
 	setup        config.CreationSetup
 	uploads      []upload
 	githubToken  string
+	githubName   string
+	githubEmail  string
 	applications []string
 }
 
@@ -738,9 +740,39 @@ func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (pre
 			fmt.Fprintf(a.Err, "vmbox: selected GitHub credential is unavailable; skipped: %s@%s\n", credential.User, credential.Host)
 		} else {
 			prepared.githubToken = strings.TrimSpace(string(result.Stdout))
+			prepared.githubName, prepared.githubEmail = a.githubIdentity(ctx, *credential)
 		}
 	}
 	return prepared, nil
+}
+
+// githubIdentity resolves the Git commit identity for a selected GitHub account.
+// The lookup is local and the box only ever receives the resolved name and
+// address. The answer is used only when the API confirms it describes the
+// selected account: `gh api` answers for whichever account is active on that
+// host, and attributing someone else's name to these commits would be worse
+// than falling back to the account's own noreply address.
+func (a *App) githubIdentity(ctx context.Context, credential config.GitHubCredential) (string, string) {
+	fallbackEmail := credential.User + "@users.noreply.github.com"
+	field := func(query string) string {
+		result, err := a.Runner.Run(ctx, []string{"gh", "api", "user", "--hostname", credential.Host, "--jq", query}, nil, nil, nil)
+		if err != nil || result.ExitCode != 0 {
+			return ""
+		}
+		return strings.TrimSpace(string(result.Stdout))
+	}
+	if field(".login") != credential.User {
+		return credential.User, fallbackEmail
+	}
+	name := field(".name // .login")
+	if name == "" {
+		name = credential.User
+	}
+	email := field(".email // empty")
+	if email == "" {
+		email = fallbackEmail
+	}
+	return name, email
 }
 
 func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name string, prepared preparedSetup) error {
@@ -772,7 +804,7 @@ func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name stri
 	if prepared.githubToken != "" && prepared.setup.GitHub != nil {
 		credential := prepared.setup.GitHub
 		fmt.Fprintf(a.Err, "vmbox: syncing GitHub credential for %s@%s\n", credential.User, credential.Host)
-		setupRequest.GitHub = &boxruntime.GitHubSetup{Host: credential.Host, User: credential.User, Protocol: credential.Protocol, Token: prepared.githubToken}
+		setupRequest.GitHub = &boxruntime.GitHubSetup{Host: credential.Host, User: credential.User, Protocol: credential.Protocol, Token: prepared.githubToken, Name: prepared.githubName, Email: prepared.githubEmail}
 	}
 	fmt.Fprintf(a.Err, "vmbox: configuring agent trust for %s\n", prepared.setup.Workspace)
 	for _, application := range uniqueVerifiableApplications(prepared.applications) {
