@@ -126,8 +126,8 @@ test('controller routes exact sessions and supports safe group collaboration', a
   assert.equal(terminalPosts.length, 2, `${JSON.stringify(terminalPosts)} toast=${promptToast}`);
   assert.equal(terminalPosts.at(-2).body.text, '\u001b[B\r');
   assert.equal(terminalPosts.at(-2).body.submit, false);
-  assert.equal(terminalPosts.at(-1).body.text, '\r');
-  assert.equal(terminalPosts.at(-1).body.submit, false);
+  assert.equal(terminalPosts.at(-1).body.text, 'work');
+  assert.equal(terminalPosts.at(-1).body.submit, true);
 
   await page.select('#box-default-agent', 'claude');
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('starts claude'));
@@ -164,13 +164,18 @@ test('controller routes exact sessions and supports safe group collaboration', a
   const groupPost = requests.filter(value => value.method === 'POST' && value.path === '/v1/chat-groups/group-1/messages').at(-1);
   assert.deepEqual(groupPost.body.recipientBoxIds, ['box-1']);
 
-  await page.setViewport({width:390, height:844, isMobile:true});
-  await page.waitForSelector('#app:not([hidden])');
-  await page.waitForSelector('[data-box="box-1"]', {visible:true});
-  await page.click('[data-box="box-1"]');
-  await page.waitForSelector('#chat-view:not([hidden])');
-  await page.$eval('#toggle-terminal', element => element.click());
-  assert.equal(await page.$eval('#toggle-terminal', element => element.textContent), 'Chat');
-  assert(await page.$eval('#chat-view .chat-body', element => element.classList.contains('terminal-open')));
   await page.close();
+
+  const mobile = await browser.newPage();
+  await mobile.setViewport({width:390, height:844, isMobile:true});
+  await mobile.goto(baseURL, {waitUntil:'networkidle0'});
+  await mobile.type('#token', 'browser-test-password');
+  await Promise.all([mobile.click('#login-form button[type="submit"]'), mobile.waitForSelector('#app:not([hidden])')]);
+  await mobile.waitForSelector('[data-box="box-1"]', {visible:true});
+  await mobile.click('[data-box="box-1"]');
+  await mobile.waitForSelector('#chat-view:not([hidden])');
+  await mobile.$eval('#toggle-terminal', element => element.click());
+  assert.equal(await mobile.$eval('#toggle-terminal', element => element.textContent), 'Chat');
+  assert(await mobile.$eval('#chat-view .chat-body', element => element.classList.contains('terminal-open')));
+  await mobile.close();
 });

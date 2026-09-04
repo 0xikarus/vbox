@@ -434,13 +434,15 @@ function renderTerminalPrompt(prompt, session) {
         method:'POST',
         headers:{'Idempotency-Key':`terminal-prompt-${session}-${prompt.id}-${button.dataset.promptValue}`},
         body:JSON.stringify({text:choice?.input || button.dataset.promptValue, submit:choice?.submit !== false}),
+        timeout:30000,
       });
       if (prompt.resumeInput) {
         await new Promise(resolve => setTimeout(resolve, 500));
         await api(endpoint, {
           method:'POST',
           headers:{'Idempotency-Key':`terminal-prompt-${session}-${prompt.id}-resume`},
-          body:JSON.stringify({text:'\r', submit:false}),
+          body:JSON.stringify({text:state.task?.prompt || '\r', submit:Boolean(state.task?.prompt)}),
+          timeout:30000,
         });
       }
       panel.hidden = true;
