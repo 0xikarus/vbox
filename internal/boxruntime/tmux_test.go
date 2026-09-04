@@ -127,3 +127,16 @@ func TestAncestorPIDsAlwaysProtectContainerInit(t *testing.T) {
 		t.Fatal("container PID 1 was not protected from workspace process cleanup")
 	}
 }
+
+func TestInfrastructureWorkspaceProcessOnlyProtectsIdleRuntime(t *testing.T) {
+	for _, argv := range [][]string{{"vmbox-runtime", "idle"}, {"/usr/local/bin/vmbox-runtime", "idle"}} {
+		if !infrastructureWorkspaceProcess(argv) {
+			t.Fatalf("idle runtime was not protected: %q", argv)
+		}
+	}
+	for _, argv := range [][]string{{"vmbox-runtime", "health"}, {"bash", "idle"}, {"vmbox-runtime", "idle", "extra"}, nil} {
+		if infrastructureWorkspaceProcess(argv) {
+			t.Fatalf("workload was incorrectly protected: %q", argv)
+		}
+	}
+}

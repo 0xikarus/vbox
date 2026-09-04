@@ -433,6 +433,9 @@ func workspaceProcesses(root string, excluded map[int]bool) []WorkspaceProcess {
 			continue
 		}
 		argv := foregroundArgv(pid)
+		if infrastructureWorkspaceProcess(argv) {
+			continue
+		}
 		command := strings.Join(argv, " ")
 		if command == "" {
 			command = entry.Name()
@@ -441,6 +444,10 @@ func workspaceProcesses(root string, excluded map[int]bool) []WorkspaceProcess {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].PID < result[j].PID })
 	return result
+}
+
+func infrastructureWorkspaceProcess(argv []string) bool {
+	return len(argv) == 2 && filepath.Base(argv[0]) == "vmbox-runtime" && argv[1] == "idle"
 }
 
 func processUsesPath(pid int, root string) bool {
@@ -469,9 +476,10 @@ func processUsesPath(pid int, root string) bool {
 func ancestorPIDs() map[int]bool {
 	// Railway can inject an SSH command into the container through a process
 	// tree that does not descend from the container's PID 1. In a fleet slot,
-	// PID 1 is vmbox-runtime idle and normally has /data/workspace as its cwd.
-	// It is infrastructure, not a workload blocker: terminating it aborts the
-	// hibernation command by stopping the whole container.
+	// PID 1 is always infrastructure. The entrypoint may leave sudo as PID 1
+	// and run vmbox-runtime idle as its child; workspaceProcesses separately
+	// protects that exact command. Terminating either aborts hibernation by
+	// stopping the whole container.
 	result := map[int]bool{1: true, os.Getpid(): true}
 	pid := os.Getppid()
 	for pid > 0 && !result[pid] {
