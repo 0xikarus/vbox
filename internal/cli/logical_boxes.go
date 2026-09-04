@@ -117,8 +117,14 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			return fmt.Errorf("usage: vmbox hibernate NAME")
 		}
 		var box v1.LogicalBox
-		if _, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(args[1])+"/hibernate", map[string]any{}, &box, nil); err != nil {
+		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(args[1])+"/hibernate", map[string]any{}, &box, nil)
+		if err != nil {
 			return err
+		}
+		if status == http.StatusAccepted {
+			fmt.Fprintf(a.Err, "vmbox: hibernate accepted for %q; volume %s (%s) is retained\n", box.Name, box.VolumeName, box.VolumeID)
+			fmt.Fprintf(a.Err, "vmbox: progress continues after this CLI exits; check with: vmbox status %s\n", box.Name)
+			return nil
 		}
 		fmt.Fprintf(a.Err, "vmbox: hibernated %q; volume %s (%s) was retained and its compute slot was freed\n", box.Name, box.VolumeName, box.VolumeID)
 		return nil
