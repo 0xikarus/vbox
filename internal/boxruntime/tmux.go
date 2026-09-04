@@ -327,6 +327,14 @@ func restoredPaneCommand(snapshot TmuxSnapshot, pane TmuxPane) string {
 	if pane.ScrollbackFile != "" {
 		parts = append(parts, "if [ -r "+shellQuote(pane.ScrollbackFile)+" ]; then cat -- "+shellQuote(pane.ScrollbackFile)+"; fi")
 	}
+	// Older snapshots recorded the concrete login shell. Route every shell
+	// strategy through the current runtime so the persistent welcome metadata
+	// is printed before the login shell starts, including on the first restore
+	// after upgrading an existing logical box.
+	if pane.ResumeStrategy == "shell" {
+		parts = append(parts, "exec "+shellJoin([]string{"vmbox-runtime", "welcome"}))
+		return strings.Join(parts, "; ")
+	}
 	if len(pane.ResumeArgv) > 0 {
 		parts = append(parts, "exec "+shellJoin(pane.ResumeArgv))
 		return strings.Join(parts, "; ")
