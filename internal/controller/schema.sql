@@ -118,3 +118,169 @@ CREATE TABLE IF NOT EXISTS hosts (
 ALTER TABLE users ADD COLUMN IF NOT EXISTS disabled_at timestamptz;
 ALTER TABLE events ALTER COLUMN id TYPE text USING id::text;
 ALTER TABLE questions ALTER COLUMN id TYPE text USING id::text;
+
+CREATE TABLE IF NOT EXISTS fleet_settings (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  provider text NOT NULL,
+  provider_credential text NOT NULL DEFAULT '',
+  compute_box_slots integer NOT NULL DEFAULT 4 CHECK (compute_box_slots BETWEEN 0 AND 32),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id, provider, provider_credential)
+);
+CREATE TABLE IF NOT EXISTS compute_slots (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  provider text NOT NULL,
+  provider_credential text NOT NULL DEFAULT '',
+  ordinal integer NOT NULL CHECK (ordinal > 0),
+  state text NOT NULL CHECK (state IN ('starting','free','reserved','occupied','draining','unhealthy','stopped')),
+  service_id text,
+  service_name text,
+  deployment_instance_id text,
+  region text,
+  image text,
+  image_version text,
+  health text NOT NULL DEFAULT 'unknown',
+  assignment_generation bigint NOT NULL DEFAULT 0,
+  lease_owner text,
+  lease_expires_at timestamptz,
+  fencing_token text,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id, provider, provider_credential, ordinal)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS compute_slots_service_idx
+  ON compute_slots(account_id, provider, service_id) WHERE service_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS logical_boxes (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  owner_user_id uuid NOT NULL REFERENCES users(id),
+  name text NOT NULL,
+  provider text NOT NULL,
+  provider_credential text NOT NULL DEFAULT '',
+  state text NOT NULL CHECK (state IN ('detached','reserved','attaching','running','draining','hibernating','hibernated','deleting','failed')),
+  volume_id text NOT NULL,
+  volume_name text NOT NULL,
+  slot_id uuid REFERENCES compute_slots(id),
+  assignment_generation bigint NOT NULL DEFAULT 0,
+  lease_owner text,
+  lease_expires_at timestamptz,
+  fencing_token text,
+  restoration_state text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id, name),
+  UNIQUE(slot_id),
+  UNIQUE(account_id, provider, volume_id)
+);
+CREATE TABLE IF NOT EXISTS allocation_requests (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  state text NOT NULL CHECK (state IN ('queued','reserved','attaching','ready','failed','cancelled')),
+  idempotency_key text NOT NULL,
+  requested_by uuid NOT NULL REFERENCES users(id),
+  slot_id uuid REFERENCES compute_slots(id),
+  assignment_generation bigint,
+  fencing_token text,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id, idempotency_key)
+);
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS phase text;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS allocation_requests_queue_idx
+  ON allocation_requests(account_id, state, created_at, id);
+CREATE INDEX IF NOT EXISTS logical_boxes_detached_idx
+  ON logical_boxes(account_id, provider, provider_credential, state);
+
+CREATE TABLE IF NOT EXISTS box_tasks (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  requested_role text NOT NULL CHECK (requested_role IN ('owner','user')),
+  agent text NOT NULL CHECK (agent IN ('codex','claude','opencode','shell')),
+  session_name text NOT NULL DEFAULT 'vmbox',
+  prompt text NOT NULL,
+  state text NOT NULL CHECK (state IN ('queued','waiting_capacity','starting','active','failed','cancelled')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,idempotency_key)
+);
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS requested_role text NOT NULL DEFAULT 'user' CHECK (requested_role IN ('owner','user'));
+ALTER TABLE box_tasks ALTER COLUMN requested_role DROP DEFAULT;
+CREATE INDEX IF NOT EXISTS box_tasks_reconcile_idx
+  ON box_tasks(account_id,state,created_at,id);
+CREATE TABLE IF NOT EXISTS box_messages (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  task_id uuid NOT NULL REFERENCES box_tasks(id) ON DELETE CASCADE,
+  user_id uuid REFERENCES users(id),
+  direction text NOT NULL CHECK (direction IN ('user','system','agent')),
+  body text NOT NULL,
+  submit boolean NOT NULL DEFAULT true,
+  state text NOT NULL CHECK (state IN ('queued','delivering','delivered','ambiguous','failed')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS box_messages_task_time_idx
+  ON box_messages(account_id,task_id,created_at,id);
+CREATE INDEX IF NOT EXISTS box_messages_delivery_idx
+  ON box_messages(account_id,state,created_at,id);
+
+CREATE TABLE IF NOT EXISTS chat_groups (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  created_by uuid NOT NULL REFERENCES users(id),
+  name text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,name)
+);
+CREATE TABLE IF NOT EXISTS chat_group_members (
+  group_id uuid NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  agent text NOT NULL DEFAULT 'claude' CHECK (agent IN ('codex','claude','opencode','shell')),
+  can_receive boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(group_id,logical_box_id)
+);
+CREATE INDEX IF NOT EXISTS chat_group_members_box_idx
+  ON chat_group_members(account_id,logical_box_id);
+CREATE TABLE IF NOT EXISTS chat_group_messages (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  group_id uuid NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  source_box_id uuid REFERENCES logical_boxes(id) ON DELETE SET NULL,
+  body text NOT NULL,
+  idempotency_key text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS chat_group_messages_time_idx
+  ON chat_group_messages(account_id,group_id,created_at,id);
+CREATE TABLE IF NOT EXISTS chat_group_deliveries (
+  message_id uuid NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  task_id uuid REFERENCES box_tasks(id) ON DELETE SET NULL,
+  box_message_id uuid REFERENCES box_messages(id) ON DELETE SET NULL,
+  state text NOT NULL CHECK (state IN ('queued','dispatching','delivered','ambiguous','failed')),
+  failure_reason text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(message_id,logical_box_id)
+);
+CREATE INDEX IF NOT EXISTS chat_group_deliveries_state_idx
+  ON chat_group_deliveries(account_id,state,updated_at);

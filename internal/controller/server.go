@@ -32,10 +32,29 @@ type Server struct {
 	recent         map[string][]time.Time
 	PublicURL      string
 	DefaultImage   string
+	WorkerRuntime  []byte
 	Resolve        ProviderResolver
+	Bootstrap      func(context.Context, provider.Provider, provider.Box, []string) error
 	HTTP           *http.Client
 	ReconcileEvery time.Duration
 	Deliver        NotificationSink
+	// StartTask hands a freshly created task to its agent. It is a field so
+	// that tests can observe the hand-off instead of racing a detached
+	// goroutine against their fixtures.
+	StartTask func(context.Context, string, v1.BoxTask)
+}
+
+// startBoxTask runs a new task without making the caller wait for the agent.
+func (s *Server) startBoxTask(accountID string, task v1.BoxTask) {
+	if s.StartTask != nil {
+		s.StartTask(context.Background(), accountID, task)
+		return
+	}
+	go func() {
+		if err := s.executeBoxTask(context.Background(), accountID, task); err != nil {
+			s.Logger.Error("direct box message could not start agent", "task", task.ID, "error", err)
+		}
+	}()
 }
 
 func NewServer(store *Store, providers *provider.Registry) *Server {
@@ -43,9 +62,39 @@ func NewServer(store *Store, providers *provider.Registry) *Server {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
+	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
+	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, 200, map[string]string{"status": "ok", "compatibility": v1.CompatibilityVersion})
 	})
+	mux.HandleFunc("GET /v1/fleet/status", s.auth(s.fleetStatus))
+	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
+	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
+	mux.HandleFunc("GET /v1/inventory", s.auth(s.boxInventoryHandler))
+	mux.HandleFunc("POST /v1/logical-boxes", s.auth(s.createLogicalBoxHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/allocate", s.auth(s.reserveLogicalBox))
+	mux.HandleFunc("GET /v1/logical-boxes", s.auth(s.listLogicalBoxes))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}", s.auth(s.getLogicalBox))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/hibernate", s.auth(s.hibernateLogicalBoxHandler))
+	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/volume", s.auth(s.deleteLogicalBoxVolumeHandler))
+	mux.HandleFunc("GET /v1/allocations/{id}", s.auth(s.getAllocation))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/tasks", s.auth(s.createBoxTaskHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/tasks", s.auth(s.listBoxTasksHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/connection", s.owner(s.logicalBoxConnectionHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal", s.auth(s.terminalSnapshotHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/terminal/input", s.auth(s.terminalInputHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages", s.auth(s.directBoxMessageHandler))
+	mux.HandleFunc("GET /v1/tasks/{id}", s.auth(s.getBoxTaskHandler))
+	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.auth(s.listBoxMessagesHandler))
+	mux.HandleFunc("POST /v1/tasks/{id}/messages", s.auth(s.sendBoxMessageHandler))
+	mux.HandleFunc("GET /v1/chat-groups", s.auth(s.chatGroupsHandler))
+	mux.HandleFunc("POST /v1/chat-groups", s.auth(s.chatGroupsHandler))
+	mux.HandleFunc("GET /v1/chat-groups/{id}", s.auth(s.chatGroupHandler))
+	mux.HandleFunc("PUT /v1/chat-groups/{id}", s.auth(s.chatGroupHandler))
+	mux.HandleFunc("DELETE /v1/chat-groups/{id}", s.auth(s.chatGroupHandler))
+	mux.HandleFunc("GET /v1/chat-groups/{id}/messages", s.auth(s.chatGroupMessagesHandler))
+	mux.HandleFunc("POST /v1/chat-groups/{id}/messages", s.auth(s.chatGroupMessagesHandler))
 	mux.HandleFunc("POST /v1/runs", s.auth(s.createRun))
 	mux.HandleFunc("GET /v1/runs", s.auth(s.listRuns))
 	mux.HandleFunc("GET /v1/runs/{id}", s.auth(s.getRun))
@@ -208,6 +257,12 @@ func (s *Server) schedule(ctx context.Context, p Principal, run v1.Run) {
 		return
 	}
 	_ = s.Store.SetRunState(ctx, p.AccountID, run.ID, box.ID, v1.JobPreparing, "", nil)
+	if s.Bootstrap != nil {
+		if err := s.Bootstrap(ctx, prov, box, run.Request.Components); err != nil {
+			s.fail(ctx, p, run, fmt.Errorf("bootstrap box runtime: %w", err))
+			return
+		}
+	}
 	_, err = prov.Exec(ctx, box.ID, run.Request.Command, provider.ExecOptions{Detach: true})
 	if err != nil {
 		s.fail(ctx, p, run, err)
@@ -415,7 +470,22 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 
 func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileNow(ctx); err != nil {
-		return err
+		s.Logger.Error("initial controller reconciliation failed", "error", err)
+	}
+	if err := s.ReconcileFleetNow(ctx); err != nil {
+		s.Logger.Error("initial compute fleet reconciliation failed", "error", err)
+	}
+	if err := s.ReconcileLogicalBoxCreationsNow(ctx); err != nil {
+		s.Logger.Error("initial logical box creation reconciliation failed", "error", err)
+	}
+	if err := s.ReconcileAllocationsNow(ctx); err != nil {
+		s.Logger.Error("initial logical box allocation reconciliation failed", "error", err)
+	}
+	if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
+		s.Logger.Error("initial logical box task reconciliation failed", "error", err)
+	}
+	if err := s.ReconcileGroupDeliveriesNow(ctx); err != nil {
+		s.Logger.Error("initial group message reconciliation failed", "error", err)
 	}
 	interval := s.ReconcileEvery
 	if interval <= 0 {
@@ -431,6 +501,21 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 			case <-ticker.C:
 				if err := s.ReconcileNow(ctx); err != nil {
 					s.Logger.Error("controller reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileFleetNow(ctx); err != nil {
+					s.Logger.Error("compute fleet reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileLogicalBoxCreationsNow(ctx); err != nil {
+					s.Logger.Error("logical box creation reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileAllocationsNow(ctx); err != nil {
+					s.Logger.Error("logical box allocation reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
+					s.Logger.Error("logical box task reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileGroupDeliveriesNow(ctx); err != nil {
+					s.Logger.Error("group message reconciliation failed", "error", err)
 				}
 			}
 		}
@@ -833,6 +918,9 @@ func writeError(w http.ResponseWriter, status int, err error) {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Cache-Control", "no-store")
 		next.ServeHTTP(w, r)
 	})

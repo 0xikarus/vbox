@@ -3,8 +3,11 @@ package procexec
 import (
 	"bytes"
 	"context"
+	"errors"
+	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestOSRunnerUnsetsInheritedEnvironment(t *testing.T) {
@@ -27,5 +30,40 @@ func TestRunAttachedWritesDirectlyWithoutCapture(t *testing.T) {
 	}
 	if stdout.String() != "attached" || len(result.Stdout) != 0 {
 		t.Fatalf("stdout=%q captured=%q", stdout.String(), result.Stdout)
+	}
+}
+
+func TestOSRunnerCancellationSendsGracefulHangup(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd, err := (OSRunner{}).command(ctx, []string{"sh", "-c", `trap 'printf H; exit 0' HUP; printf R; while :; do :; done`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	ready := make([]byte, 1)
+	if _, err := io.ReadFull(stdout, ready); err != nil || string(ready) != "R" {
+		t.Fatalf("ready=%q err=%v", ready, err)
+	}
+	started := time.Now()
+	cancel()
+	rest, readErr := io.ReadAll(stdout)
+	waitErr := cmd.Wait()
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(rest) != "H" {
+		t.Fatalf("child did not handle hangup: %q", rest)
+	}
+	if waitErr != nil && !errors.Is(waitErr, context.Canceled) {
+		t.Fatalf("wait error=%v", waitErr)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("cancellation took %s", elapsed)
 	}
 }

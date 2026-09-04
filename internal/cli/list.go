@@ -28,11 +28,11 @@ func writeBoxList(output io.Writer, boxes []provider.Box) error {
 	}
 	sort.Slice(boxes, func(i, j int) bool { return boxes[i].Name < boxes[j].Name })
 	table := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(table, "NAME\tSTATE\tREGION\tCPU\tRAM\tDISK\tOPEN / RESUME"); err != nil {
+	if _, err := fmt.Fprintln(table, "NAME\tSTATE\tREGION\tCPU\tRAM\tDISK\tMANAGEMENT\tOPEN / RESUME"); err != nil {
 		return err
 	}
 	for _, box := range boxes {
-		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\tvmbox %s\n",
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\tstandalone\tvmbox %s\n",
 			box.Name, box.State, valueOrDash(box.Region), cpuLabel(box.Resources.CPU), memoryLabel(box.Resources.MemoryMiB), diskLabel(box.Resources.DiskGiB), box.Name); err != nil {
 			return err
 		}
@@ -40,7 +40,7 @@ func writeBoxList(output io.Writer, boxes []provider.Box) error {
 	if err := table.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(output, "\nPower down: vmbox stop NAME    Delete: vmbox clean NAME --yes\nDetach tmux: Ctrl-b, release both keys, then d    JSON: vmbox ls --json\n")
+	_, err := fmt.Fprint(output, "\nPower down: vmbox stop NAME    Delete: vmbox clean NAME --yes\nDetach tmux: Ctrl-a, release both keys, then d    JSON: vmbox ls --json\n")
 	return err
 }
 
@@ -73,6 +73,42 @@ func writeRunList(output io.Writer, runs []v1.Run) error {
 		return err
 	}
 	_, err := fmt.Fprint(output, "\nResume selector: vmbox resume    JSON: vmbox ls --json\n")
+	return err
+}
+
+func writeInventoryList(output io.Writer, inventory v1.BoxInventory) error {
+	if len(inventory.LogicalBoxes) == 0 && len(inventory.ConnectedBoxes) == 0 {
+		_, err := fmt.Fprintln(output, "No controller-visible boxes found.")
+		return err
+	}
+	sort.Slice(inventory.LogicalBoxes, func(i, j int) bool { return inventory.LogicalBoxes[i].Name < inventory.LogicalBoxes[j].Name })
+	sort.Slice(inventory.ConnectedBoxes, func(i, j int) bool { return inventory.ConnectedBoxes[i].Name < inventory.ConnectedBoxes[j].Name })
+	table := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
+	if _, err := fmt.Fprintln(table, "NAME\tSTATE\tPROVIDER\tSTORAGE\tCOMPUTE\tMANAGEMENT\tOPEN / RESUME"); err != nil {
+		return err
+	}
+	for _, box := range inventory.LogicalBoxes {
+		compute := "detached"
+		if box.SlotID != "" {
+			compute = "assigned"
+		}
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\tcontroller\tvmbox boxes open %s\n", box.Name, box.State, valueOrDash(box.Provider), valueOrDash(box.VolumeName), compute, box.Name); err != nil {
+			return err
+		}
+	}
+	for _, box := range inventory.ConnectedBoxes {
+		storage := "-"
+		if box.Storage != nil {
+			storage = valueOrDash(box.Storage.Name)
+		}
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\tprovider service\texternal\t--standalone\n", box.Name, box.State, valueOrDash(box.Provider), storage); err != nil {
+			return err
+		}
+	}
+	if err := table.Flush(); err != nil {
+		return err
+	}
+	_, err := fmt.Fprint(output, "\nController boxes persist independently from fleet slots. External services are listed for visibility only.\nFree fleet slots: vmbox fleet status    JSON: vmbox ls --json\n")
 	return err
 }
 

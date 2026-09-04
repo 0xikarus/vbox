@@ -3,6 +3,16 @@
 set -euo pipefail
 
 export HOME="${HOME:-/data/home}"
+# This script runs both as the container entrypoint (root) and, through
+# `--configure-agent-trust`, as the unprivileged vmbox user. Ownership fixes are
+# therefore best-effort: as root they repair a fresh volume, and as vmbox they
+# are already satisfied.
+own_as_workload() {
+  id -u vmbox >/dev/null 2>&1 || return 0
+  chown vmbox:vmbox "$@" 2>/dev/null || true
+}
+# Railway mounts a newly created volume with a root-owned mount point.
+own_as_workload /data
 unset GH_TOKEN GITHUB_TOKEN
 mkdir -p "$HOME" "$HOME/bin"
 
@@ -68,9 +78,7 @@ configure_agent_trust() {
     echo "vmbox: warning: $claude_settings is not valid JSON; agent defaults were not changed" >&2
   fi
   chmod 600 "$codex_config" "$claude_settings" 2>/dev/null || true
-  if id -u vmbox >/dev/null 2>&1; then
-    chown vmbox:vmbox "$codex_dir" "$claude_dir" "$codex_config" "$claude_settings" 2>/dev/null || true
-  fi
+  own_as_workload "$codex_dir" "$claude_dir" "$codex_config" "$claude_settings"
 }
 
 if [[ "${1:-}" == --configure-agent-trust ]]; then
@@ -85,6 +93,12 @@ profile="$HOME/.profile"
 bashrc="$HOME/.bashrc"
 
 touch "$profile" "$bashrc"
+if [[ -f /etc/vmbox/tmux.conf ]]; then
+  if [[ ! -e "$HOME/.tmux.conf" ]] || grep -q '^# vmbox managed tmux configuration' "$HOME/.tmux.conf" 2>/dev/null; then
+    cp /etc/vmbox/tmux.conf "$HOME/.tmux.conf"
+    chmod 600 "$HOME/.tmux.conf"
+  fi
+fi
 
 sed -i \
   -e '/^# vmbox-service environment$/d' \
@@ -105,12 +119,11 @@ sed -i \
 if ! grep -q '/data/home/.profile' "$bashrc"; then
   echo '[ -f /data/home/.profile ] && . /data/home/.profile' >> "$bashrc"
 fi
-if id -u vmbox >/dev/null 2>&1; then
-  chown vmbox:vmbox "$HOME" "$HOME/bin" /data/workspace "$profile" "$bashrc"
-fi
+own_as_workload "$HOME" "$HOME/bin" /data/workspace "$profile" "$bashrc" "$HOME/.tmux.conf"
 
 if [[ $# -gt 0 ]]; then
 	exec sudo -n -H -u vmbox -- env HOME=/data/home USER=vmbox LOGNAME=vmbox SHELL=/bin/bash PATH="/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:$PATH" "$@"
 fi
 
-exec sudo -n -H -u vmbox -- sleep infinity
+cd /
+exec sudo -n -H -u vmbox -- env HOME=/data/home USER=vmbox LOGNAME=vmbox SHELL=/bin/bash PATH="/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:$PATH" vmbox-runtime idle

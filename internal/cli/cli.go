@@ -1,11 +1,10 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -30,15 +29,16 @@ import (
 )
 
 type App struct {
-	In               io.Reader
-	Out, Err         io.Writer
-	Environ          map[string]string
-	HTTP             *http.Client
-	ConfigPath       string
-	WorkingDir       string
-	ProgressInterval time.Duration
-	Runner           procexec.Runner
-	IsTerminal       func() bool
+	In                io.Reader
+	Out, Err          io.Writer
+	Environ           map[string]string
+	HTTP              *http.Client
+	ConfigPath        string
+	WorkingDir        string
+	ProgressInterval  time.Duration
+	ExitPromptTimeout time.Duration
+	Runner            procexec.Runner
+	IsTerminal        func() bool
 }
 
 type stringList []string
@@ -241,168 +241,6 @@ func (a *App) context(file config.File, args []string) error {
 	}
 }
 
-func (a *App) provisionController(ctx context.Context, file config.File, c config.Context, args []string) error {
-	if len(args) == 0 || (args[0] != "init" && args[0] != "ensure") {
-		return fmt.Errorf("usage: vmbox controller init|ensure --endpoint HTTPS_URL [--yes]")
-	}
-	operation := args[0]
-	fs := flag.NewFlagSet("controller "+operation, flag.ContinueOnError)
-	fs.SetOutput(a.Err)
-	endpoint := fs.String("endpoint", a.Environ["VMBOX_CONTROLLER_URL"], "public controller HTTPS endpoint")
-	account := fs.String("account", "default", "initial account name")
-	owner := fs.String("owner", "owner", "initial owner subject")
-	yes := fs.Bool("yes", false, "confirm billable provisioning")
-	if err := fs.Parse(args[1:]); err != nil {
-		return err
-	}
-	if operation == "ensure" && c.Controller != "" {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.Controller, "/")+"/healthz", nil)
-		if err == nil {
-			if resp, requestErr := a.HTTP.Do(req); requestErr == nil {
-				_ = resp.Body.Close()
-				if resp.StatusCode == http.StatusOK {
-					fmt.Fprintln(a.Out, "controller is healthy; no provisioning changes required")
-					return nil
-				}
-			}
-		}
-	}
-	if operation == "init" && c.Controller != "" {
-		return fmt.Errorf("context %q already has controller %s; use controller ensure", c.Name, c.Controller)
-	}
-	if c.Provider != "railway" {
-		return fmt.Errorf("controller provisioning currently requires a Railway context")
-	}
-	if c.Project == "" || c.Environment == "" || c.Image == "" || !strings.Contains(c.Image, "@sha256:") {
-		return fmt.Errorf("Railway project, environment, and a digest-pinned context image are required")
-	}
-	if *endpoint == "" || !strings.HasPrefix(*endpoint, "https://") {
-		return fmt.Errorf("--endpoint must be the controller's public HTTPS URL")
-	}
-	fmt.Fprintf(a.Out, "Controller plan\n  provider: Railway\n  project: %s\n  environment: %s\n  service: vmbox-controller\n  database: vmbox-postgres\n  endpoint: %s\n", c.Project, c.Environment, *endpoint)
-	if !*yes {
-		return fmt.Errorf("provisioning may create billable infrastructure; review the plan and rerun with --yes")
-	}
-	runner := a.Runner
-	if _, ok := runner.(procexec.OSRunner); ok {
-		token, tokenEnvironment, err := railwayToken(a.Environ)
-		if err != nil {
-			if !c.RailwayCLIAuth || a.Environ["RAILWAY_TOKEN"] != "" || a.Environ["RAILWAY_API_TOKEN"] != "" {
-				return err
-			}
-			localRunner, _, runnerErr := railwayRunner("", "", a.Environ)
-			if runnerErr != nil {
-				return runnerErr
-			}
-			runner = localRunner
-		} else {
-			tokenRunner, _, runnerErr := railwayRunner(token, tokenEnvironment, a.Environ)
-			if runnerErr != nil {
-				return runnerErr
-			}
-			runner = tokenRunner
-		}
-	}
-	target := []string{"--project", c.Project, "--environment", c.Environment}
-	runInput := func(stdin io.Reader, argv ...string) (procexec.Result, error) {
-		full := append([]string{"railway"}, argv...)
-		full = append(full, target...)
-		result, err := runner.Run(ctx, full, stdin, nil, nil)
-		if err != nil {
-			return result, err
-		}
-		if result.ExitCode != 0 {
-			action := "Railway command"
-			if len(argv) > 0 {
-				action = "Railway " + argv[0]
-			}
-			return result, fmt.Errorf("%s failed with exit %d", action, result.ExitCode)
-		}
-		return result, nil
-	}
-	run := func(argv ...string) (procexec.Result, error) { return runInput(nil, argv...) }
-	listed, err := run("service", "list", "--json")
-	if err != nil {
-		return err
-	}
-	var services []struct {
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(listed.Stdout, &services); err != nil {
-		return fmt.Errorf("decode Railway services: %w", err)
-	}
-	hasController, hasDatabase := false, false
-	for _, service := range services {
-		hasController = hasController || service.Name == "vmbox-controller"
-		hasDatabase = hasDatabase || service.Name == "vmbox-postgres"
-	}
-	if !hasDatabase {
-		if _, err := run("add", "--database", "postgres", "--service", "vmbox-postgres"); err != nil {
-			return err
-		}
-	}
-	created := false
-	if !hasController {
-		if _, err := run("add", "--service", "vmbox-controller", "--json"); err != nil {
-			return err
-		}
-		created = true
-	}
-	variables := map[string]string{
-		"DATABASE_URL":         "${{vmbox-postgres.DATABASE_URL}}",
-		"VMBOX_CONTROLLER_URL": strings.TrimRight(*endpoint, "/"),
-		"VMBOX_IMAGE":          c.Image,
-	}
-	tokenText := ""
-	if created {
-		encryption, err := randomBytes(32)
-		if err != nil {
-			return err
-		}
-		ownerToken, err := randomBytes(32)
-		if err != nil {
-			return err
-		}
-		tokenText = base64.RawURLEncoding.EncodeToString(ownerToken)
-		tokenHash := sha256.Sum256([]byte(tokenText))
-		variables["VMBOX_ENCRYPTION_KEY"] = base64.RawURLEncoding.EncodeToString(encryption)
-		variables["VMBOX_BOOTSTRAP_TOKEN_HASH"] = base64.RawURLEncoding.EncodeToString(tokenHash[:])
-		variables["VMBOX_ACCOUNT_NAME"] = *account
-		variables["VMBOX_OWNER_SUBJECT"] = *owner
-	}
-	keys := make([]string, 0, len(variables))
-	for key := range variables {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		if _, err := runInput(strings.NewReader(variables[key]), "variable", "set", key, "--stdin", "--service", "vmbox-controller", "--skip-deploys"); err != nil {
-			return err
-		}
-	}
-	if _, err := run("service", "source", "connect", "--service", "vmbox-controller", "--image", c.Image, "--json"); err != nil {
-		return err
-	}
-	if _, err := run("redeploy", "--service", "vmbox-controller", "--yes", "--json"); err != nil {
-		return err
-	}
-	c.Controller = strings.TrimRight(*endpoint, "/")
-	c.Account = *account
-	if c.TokenEnv == "" {
-		c.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
-	}
-	file.Contexts[c.Name] = c
-	if err := config.Save(a.ConfigPath, file); err != nil {
-		return err
-	}
-	if created {
-		fmt.Fprintf(a.Out, "controller provisioned; save this owner token now (shown once):\n%s=%s\n", c.TokenEnv, tokenText)
-	} else {
-		fmt.Fprintln(a.Out, "controller configuration ensured; existing accounts and tokens were preserved")
-	}
-	return nil
-}
-
 func randomBytes(size int) ([]byte, error) {
 	value := make([]byte, size)
 	if _, err := rand.Read(value); err != nil {
@@ -425,13 +263,13 @@ func (a *App) provider(ctx config.Context) (provider.Provider, error) {
 			if runnerErr != nil {
 				return nil, runnerErr
 			}
-			return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, DefaultImage: ctx.Image, SSHKnownHostsFile: knownHosts}, runner), nil
+			return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, DefaultImage: ctx.Image, SSHKnownHostsFile: knownHosts, SSHBinary: runner.Env["VMBOX_REAL_SSH"], SSHControlDir: runner.Env["VMBOX_RAILWAY_CONTROL_DIR"]}, runner), nil
 		}
 		runner, knownHosts, runnerErr := railwayRunner(token, tokenEnvironment, a.Environ)
 		if runnerErr != nil {
 			return nil, runnerErr
 		}
-		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: ctx.Image, SSHKnownHostsFile: knownHosts}, runner), nil
+		return railwayprovider.New(railwayprovider.Config{ProjectID: ctx.Project, EnvironmentID: ctx.Environment, Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: ctx.Image, SSHKnownHostsFile: knownHosts, SSHBinary: runner.Env["VMBOX_REAL_SSH"], SSHControlDir: runner.Env["VMBOX_RAILWAY_CONTROL_DIR"]}, runner), nil
 	case "incus":
 		return incusprovider.New(incusprovider.Config{Remote: ctx.IncusRemote, Project: ctx.IncusProject, DefaultImage: ctx.Image, VM: ctx.IncusVM}, procexec.OSRunner{}), nil
 	default:
@@ -446,12 +284,16 @@ func splitRun(args []string) (name string, detach, reuse bool, argv []string, er
 func (a *App) standalone(ctx context.Context, file config.File, p provider.Provider, c config.Context, args []string) error {
 	command := args[0]
 	switch command {
+	case "fleet":
+		return a.localFleet(file, c, args[1:])
 	case "new", "create", "run":
 		opts, err := parseRunOptions(args[1:])
 		if err != nil {
 			return err
 		}
+		checked := a.progress(ctx, fmt.Sprintf("checking box %q", opts.name))
 		box, inspectErr := p.Inspect(ctx, opts.name)
+		checked()
 		created := false
 		// An empty selection means "keep the components recorded inside an
 		// existing box". New boxes replace it with their configured selection.
@@ -468,7 +310,9 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				fmt.Fprintf(a.Err, "vmbox: --reuse ignored because %q already exists\n", opts.name)
 			}
 			if box.State == provider.StateStopped || box.State == provider.StateFailed {
+				started := a.progress(ctx, fmt.Sprintf("starting box %q", opts.name))
 				box, err = p.Start(ctx, box.ID)
+				started()
 				if err != nil {
 					return err
 				}
@@ -527,7 +371,9 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				"FOUNDRY_DIR": "/opt/foundry",
 				"PATH":        "/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
 			}
+			provisioned := a.progress(ctx, fmt.Sprintf("provisioning box %q", opts.name))
 			box, err = p.Create(ctx, provider.CreateRequest{Name: opts.name, Image: c.Image, Region: prepared.setup.Region, Owner: provider.Owner{AccountID: "standalone", BoxID: opts.name}, Resources: prepared.setup.Resources, Components: prepared.setup.Components, Env: setupEnv})
+			provisioned()
 			if err != nil {
 				return err
 			}
@@ -559,24 +405,39 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			fmt.Fprintf(a.Err, "vmbox: box %q is ready\n", opts.name)
 		}
 		sessionAttacher, nativeSession := p.(provider.SessionAttacher)
+		interactive := !opts.detach && a.IsTerminal != nil && a.IsTerminal()
 		if !nativeSession || opts.detach {
 			if len(opts.argv) == 0 {
+				if !opts.detach && !interactive {
+					return fmt.Errorf("an interactive box session requires a terminal; use vmbox run BOX -- COMMAND for noninteractive execution")
+				}
 				opts.argv = defaultSession(opts.detach)
-			} else if !opts.detach {
+			} else if interactive {
 				opts.argv = interactiveSession(opts.argv)
 			}
 		}
-		restore := func() {}
-		if !opts.detach {
-			restore, err = makeRaw(a.In)
-			if err != nil {
-				return fmt.Errorf("configure interactive terminal: %w", err)
-			}
+		if len(opts.argv) == 0 && !interactive {
+			return fmt.Errorf("an interactive box session requires a terminal; use vmbox run BOX -- COMMAND for noninteractive execution")
 		}
-		execOptions := provider.ExecOptions{Interactive: !opts.detach, Detach: opts.detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err}
+		restore := func() {}
+		if interactive {
+			rawRestore, rawErr := makeRaw(a.In)
+			if rawErr != nil {
+				return fmt.Errorf("configure interactive terminal: %w", rawErr)
+			}
+			restored := false
+			restore = func() {
+				if !restored {
+					rawRestore()
+					restored = true
+				}
+			}
+			defer restore()
+		}
+		execOptions := provider.ExecOptions{Interactive: interactive, Detach: opts.detach, Stdin: a.In, Stdout: a.Out, Stderr: a.Err}
 		var result provider.ExecResult
 		var execErr error
-		if !opts.detach && nativeSession {
+		if interactive && nativeSession {
 			sessionCommand := append([]string(nil), opts.argv...)
 			if len(sessionCommand) == 0 {
 				sessionCommand = []string{"vmbox-runtime", "welcome"}
@@ -586,6 +447,10 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 			result, execErr = p.Exec(ctx, opts.name, opts.argv, execOptions)
 		}
 		restore()
+		if interactive && ctx.Err() != nil {
+			fmt.Fprintln(a.Err, "\nvmbox: connection closed; box and tmux session are still running")
+			return nil
+		}
 		err = execErr
 		if err != nil {
 			return err
@@ -593,13 +458,24 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if result.ExitCode != 0 {
 			return fmt.Errorf("command exited with status %d", result.ExitCode)
 		}
+		if opts.hibernateOnExit {
+			return a.hibernateBox(ctx, p, box)
+		}
+		if interactive {
+			return a.postInteractiveExit(ctx, p, box)
+		}
+		a.nonInteractiveFollowUp(box.Name)
 		return nil
+	case "auth":
+		return a.syncApplicationProfiles(ctx, p, args[1:])
 	case "ls", "list":
 		jsonOutput, err := parseListOutput(args)
 		if err != nil {
 			return err
 		}
+		listed := a.progress(ctx, "loading boxes")
 		boxes, err := p.List(ctx)
+		listed()
 		if err != nil {
 			return err
 		}
@@ -611,7 +487,9 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if len(args) != 2 {
 			return fmt.Errorf("status requires a box")
 		}
+		loadedStatus := a.progress(ctx, fmt.Sprintf("loading status for %q", args[1]))
 		box, err := p.Inspect(ctx, args[1])
+		loadedStatus()
 		if err != nil {
 			return err
 		}
@@ -651,7 +529,9 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if len(args) != 2 {
 			return fmt.Errorf("stop requires a box")
 		}
+		stopped := a.progress(ctx, fmt.Sprintf("stopping box %q", args[1]))
 		box, err := p.Stop(ctx, args[1])
+		stopped()
 		if err != nil {
 			return err
 		}
@@ -660,11 +540,35 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if len(args) != 2 {
 			return fmt.Errorf("start requires a box")
 		}
+		started := a.progress(ctx, fmt.Sprintf("starting box %q", args[1]))
 		box, err := p.Start(ctx, args[1])
+		started()
 		if err != nil {
 			return err
 		}
 		return json.NewEncoder(a.Out).Encode(box)
+	case "hibernate":
+		if len(args) != 2 {
+			return fmt.Errorf("hibernate requires a box")
+		}
+		box, err := p.Inspect(ctx, args[1])
+		if err != nil {
+			return err
+		}
+		return a.hibernateBox(ctx, p, box)
+	case "delete-volume":
+		if len(args) != 2 {
+			return fmt.Errorf("delete-volume requires a box")
+		}
+		box, err := p.Inspect(ctx, args[1])
+		if err != nil {
+			return err
+		}
+		timeout := a.ExitPromptTimeout
+		if timeout <= 0 {
+			timeout = defaultExitPromptTimeout
+		}
+		return a.confirmAndDeleteVolume(ctx, bufio.NewReader(a.In), timeout, p, box)
 	case "resize":
 		name, flagArgs, err := a.selectStandaloneResize(ctx, p, args[1:])
 		if err != nil {
@@ -684,7 +588,9 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 				return err
 			}
 		}
+		resized := a.progress(ctx, fmt.Sprintf("resizing box %q", name))
 		box, err := p.Resize(ctx, name, resources)
+		resized()
 		if err != nil {
 			return err
 		}
@@ -704,16 +610,22 @@ func (a *App) standalone(ctx context.Context, file config.File, p provider.Provi
 		if !yes {
 			return fmt.Errorf("cleanup is destructive; review the exact box and rerun with --yes")
 		}
+		cleaned := a.progress(ctx, fmt.Sprintf("deleting box %q and its storage", args[1]))
 		box, err := p.Inspect(ctx, args[1])
 		if err != nil {
+			cleaned()
 			return err
 		}
-		return p.Delete(ctx, args[1], box.Owner)
+		err = p.Delete(ctx, args[1], box.Owner)
+		cleaned()
+		return err
 	case "cost":
 		if len(args) != 2 {
 			return fmt.Errorf("cost requires a box")
 		}
+		loadedCost := a.progress(ctx, fmt.Sprintf("loading cost for %q", args[1]))
 		usage, err := p.Usage(ctx, args[1])
+		loadedCost()
 		if err != nil {
 			return err
 		}
@@ -742,6 +654,16 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return fmt.Errorf("controller token environment %s is empty; refusing standalone fallback", c.TokenEnv)
 	}
 	switch args[0] {
+	case "fleet":
+		return a.controllerFleet(ctx, c, token, args[1:])
+	case "boxes", "box":
+		return a.controllerBoxes(ctx, c, token, args[1:])
+	case "allocate":
+		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
+	case "hibernate":
+		return a.controllerBoxes(ctx, c, token, append([]string{"hibernate"}, args[1:]...))
+	case "delete-volume":
+		return a.controllerBoxes(ctx, c, token, append([]string{"delete-volume"}, args[1:]...))
 	case "new", "create", "run":
 		opts, err := parseRunOptions(args[1:])
 		if err != nil {
@@ -827,15 +749,15 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		if err != nil {
 			return err
 		}
-		var runs []v1.Run
-		_, err = a.request(ctx, c, token, http.MethodGet, "/v1/runs", nil, &runs, nil)
+		var inventory v1.BoxInventory
+		_, err = a.request(ctx, c, token, http.MethodGet, "/v1/inventory"+fleetQuery(c), nil, &inventory, nil)
 		if err != nil {
 			return err
 		}
 		if jsonOutput {
-			return json.NewEncoder(a.Out).Encode(runs)
+			return json.NewEncoder(a.Out).Encode(inventory)
 		}
-		return writeRunList(a.Out, runs)
+		return writeInventoryList(a.Out, inventory)
 	case "stop", "start":
 		if len(args) != 2 {
 			return fmt.Errorf("%s requires a run ID", args[0])
@@ -1130,10 +1052,13 @@ Usage:
   vmbox run <box> [--detach] -- COMMAND [ARG...]
   vmbox ls [--json] | status <box> | task-status <box> [run-id] | logs <box> [--follow]
   vmbox stop <box> | start <box>
+  vmbox auth <box> [--application-profile APP=PATH]
   vmbox resume | resize [box] --cpu N --memory MiB | clean <box> --yes | cost <box>
+  vmbox fleet status [--json] | fleet slots | fleet slots set COUNT
   vmbox context add|use|list | provider validate
   vmbox questions | answer <question-id> <text>
-  vmbox controller init|ensure --endpoint HTTPS_URL [--yes]
+  vmbox controller init|ensure [--endpoint HTTPS_URL]
+      [--source PATH|--controller-image IMAGE@sha256:DIGEST] --box-image IMAGE@sha256:DIGEST [--yes]
   vmbox users list|add|remove | credentials list|set|remove
   vmbox notifications list|setup|test|remove
 

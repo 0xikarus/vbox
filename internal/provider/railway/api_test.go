@@ -36,6 +36,31 @@ func TestResourceLimitsUseCurrentRailwayAPI(t *testing.T) {
 	}
 }
 
+func TestServiceInstanceIDSelectsRunningDeploymentReplica(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`{"data":{"serviceInstance":{"latestDeployment":{"deploymentStopped":false,"instances":[{"id":"initializing","status":"INITIALIZING"},{"id":"running-replica","status":"RUNNING"}]}}}}`)}}}
+	p := New(Config{EnvironmentID: "environment"}, runner)
+	instance, err := p.serviceInstanceID(context.Background(), "service")
+	if err != nil || instance != "running-replica" {
+		t.Fatalf("instance=%q err=%v", instance, err)
+	}
+	if call := strings.Join(runner.Calls[0].Argv, " "); !strings.Contains(call, "latestDeployment") || !strings.Contains(call, "instances") {
+		t.Fatalf("deployment lookup did not request running replicas: %s", call)
+	}
+}
+
+func TestServiceInstanceIDRejectsStoppedOrNonRunningDeployment(t *testing.T) {
+	for _, response := range []string{
+		`{"data":{"serviceInstance":{"latestDeployment":{"deploymentStopped":true,"instances":[{"id":"old","status":"RUNNING"}]}}}}`,
+		`{"data":{"serviceInstance":{"latestDeployment":{"deploymentStopped":false,"instances":[{"id":"pending","status":"INITIALIZING"}]}}}}`,
+	} {
+		runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(response)}}}
+		p := New(Config{EnvironmentID: "environment"}, runner)
+		if instance, err := p.serviceInstanceID(context.Background(), "service"); err == nil || instance != "" {
+			t.Fatalf("accepted inactive deployment instance=%q err=%v", instance, err)
+		}
+	}
+}
+
 func TestDecodeRailwayCostAggregatesMatchingEntries(t *testing.T) {
 	data := []byte(`{"services":[{"name":"vmbox-worker","totalDollars":0.25},{"name":"vmbox-worker","totalDollars":0.5},{"name":"other","totalDollars":10}]}`)
 	cost := decodeRailwayCost(data, "vmbox-worker")

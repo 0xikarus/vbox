@@ -162,3 +162,97 @@ func TestProviderCredentialCRUDNeverReturnsOrStoresPlaintext(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestEnvironmentProviderCredentialUsesSingleAccountOwnerAndEncryptsToken(t *testing.T) {
+	store, mock := testStore(t)
+	envelope, err := secrets.New(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Envelope = envelope
+	now := time.Now().UTC()
+	config := json.RawMessage(`{"projectId":"project","environmentId":"production","tokenEnvironment":"RAILWAY_TOKEN"}`)
+	mock.ExpectQuery(`SELECT a.id::text,u.id::text,u.subject`).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "subject"}).AddRow("account-a", "owner-a", "operator"))
+	mock.ExpectQuery(`INSERT INTO provider_credentials`).WithArgs(sqlmock.AnyArg(), "account-a", "railway", "primary", excludesPlaintext("project-token"), config).WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("credential-a", now, now))
+	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account-a", "owner-a", "credential-a", "railway", "primary").WillReturnResult(sqlmock.NewResult(1, 1))
+	value, err := store.PutEnvironmentProviderCredential(context.Background(), "railway", "primary", v1.PutProviderCredentialRequest{Secret: json.RawMessage(`{"token":"project-token"}`), Config: config})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Name != "primary" || value.Provider != "railway" {
+		t.Fatalf("credential=%+v", value)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnvironmentProviderCredentialRejectsMultipleAccounts(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery(`SELECT a.id::text,u.id::text,u.subject`).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "subject"}).AddRow("account-a", "owner-a", "one").AddRow("account-b", "owner-b", "two"))
+	_, err := store.PutEnvironmentProviderCredential(context.Background(), "railway", "primary", v1.PutProviderCredentialRequest{Secret: json.RawMessage(`{"token":"project-token"}`)})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("error=%v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnvironmentFleetConfigSeedsOnceAndAudits(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	mock.ExpectQuery(`SELECT a.id::text,u.id::text,u.subject`).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "subject"}).AddRow("account-a", "owner-a", "operator"))
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO fleet_settings`).WithArgs("account-a", "railway", "primary", 2).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "provider_credential", "compute_box_slots", "updated_at"}).AddRow("railway", "primary", 2, now))
+	mock.ExpectExec(`fleet\.slots\.seed.*\$4::integer`).WithArgs("account-a", "owner-a", "railway:primary", 2).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	config, err := store.SeedEnvironmentFleetConfig(context.Background(), "railway", "primary", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ComputeBoxSlots != 2 {
+		t.Fatalf("config=%+v", config)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnvironmentFleetConfigNeverOverridesOwnerSetting(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	mock.ExpectQuery(`SELECT a.id::text,u.id::text,u.subject`).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "subject"}).AddRow("account-a", "owner-a", "operator"))
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO fleet_settings`).WithArgs("account-a", "railway", "primary", 2).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(`SELECT provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "provider_credential", "compute_box_slots", "updated_at"}).AddRow("railway", "primary", 5, now))
+	mock.ExpectCommit()
+	config, err := store.SeedEnvironmentFleetConfig(context.Background(), "railway", "primary", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if config.ComputeBoxSlots != 5 {
+		t.Fatalf("owner setting was overwritten: %+v", config)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEnvironmentFleetConfigRollsBackWhenAuditFails(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	mock.ExpectQuery(`SELECT a.id::text,u.id::text,u.subject`).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "subject"}).AddRow("account-a", "owner-a", "operator"))
+	mock.ExpectBegin()
+	mock.ExpectExec(`INSERT INTO fleet_settings`).WithArgs("account-a", "railway", "primary", 2).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery(`SELECT provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"provider", "provider_credential", "compute_box_slots", "updated_at"}).AddRow("railway", "primary", 2, now))
+	mock.ExpectExec(`fleet\.slots\.seed.*\$4::integer`).WithArgs("account-a", "owner-a", "railway:primary", 2).WillReturnError(errors.New("audit unavailable"))
+	mock.ExpectRollback()
+	if _, err := store.SeedEnvironmentFleetConfig(context.Background(), "railway", "primary", 2); err == nil {
+		t.Fatal("audit failure did not abort environment fleet bootstrap")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

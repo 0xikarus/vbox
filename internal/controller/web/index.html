@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f4f1ea">
+  <title>vmbox controller</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <div id="login" class="login-screen">
+    <form id="login-form" class="login-card">
+      <div class="brand-mark" aria-hidden="true">v</div>
+      <p class="eyebrow">VMBOX CONTROLLER</p>
+      <h1>A quieter place<br>for busy agents.</h1>
+      <p class="muted">Your bearer token stays in this browser tab. Closing this page never stops a box or its tmux session.</p>
+      <label>Password<input id="token" type="password" autocomplete="current-password" required placeholder="Enter controller password"></label>
+      <button class="primary" type="submit">Open controller</button>
+      <p id="login-error" class="form-error" role="alert"></p>
+    </form>
+  </div>
+
+  <div id="app" class="app-shell" hidden>
+    <nav class="rail" aria-label="Main navigation">
+      <button class="logo-button" data-view="home" aria-label="Dashboard">v</button>
+      <div class="rail-actions">
+        <button data-view="home" class="nav-button selected" title="Dashboard" aria-label="Dashboard">⌂</button>
+        <button data-view="boxes" class="nav-button" title="Chats" aria-label="Chats">◌</button>
+        <button data-view="fleet" class="nav-button" title="Fleet capacity" aria-label="Fleet capacity">≋</button>
+        <button data-view="settings" class="nav-button" title="Settings" aria-label="Settings">⚙</button>
+      </div>
+      <button id="logout" class="nav-button logout" title="Log out" aria-label="Log out">↪</button>
+    </nav>
+
+    <aside class="roster-pane">
+      <header class="pane-header">
+        <div><p class="eyebrow">WORKSPACES</p><h2>Conversations</h2></div>
+        <div class="header-actions">
+          <button id="new-group" class="icon-button" title="New group" aria-label="New group">♯</button>
+          <button id="new-box" class="icon-button accent" title="New box" aria-label="New box">＋</button>
+        </div>
+      </header>
+      <div class="search-wrap"><span>⌕</span><input id="box-search" type="search" placeholder="Search boxes and groups"></div>
+      <div id="fleet-mini" class="fleet-mini"></div>
+      <div class="roster-scroll">
+        <section id="groups-section" class="roster-section">
+          <h3>Groups</h3>
+          <div id="group-list" class="roster-list"></div>
+        </section>
+        <section class="roster-section">
+          <h3>Boxes</h3>
+          <div id="box-list" class="roster-list" aria-live="polite"></div>
+        </section>
+        <section id="external-section" class="roster-section">
+          <h3>Connected elsewhere</h3>
+          <div id="external-list" class="roster-list"></div>
+        </section>
+      </div>
+      <footer class="pane-footer"><span id="connection-dot" class="status-dot"></span><span id="connection-label">Live</span><span class="spacer"></span><button id="refresh" class="text-button">Refresh</button></footer>
+    </aside>
+
+    <main class="main-pane">
+      <section id="home-view" class="view page-view">
+        <header class="topbar">
+          <div><p class="eyebrow">CONTROL CENTER</p><h1>Your agent fleet.</h1><p class="lede">Persistent workspaces, reusable compute, no surprise shutdowns.</p></div>
+          <button class="secondary" id="home-new-task">Start an agent</button>
+        </header>
+        <div id="stats" class="stats-grid"></div>
+        <div class="dashboard-grid">
+          <section class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">COMPUTE CAPACITY</p><h3>Fleet slots</h3></div><button class="text-button" data-view="fleet">Manage</button></div>
+            <p class="panel-note">Free slots stay here. They only become a box in the roster while assigned to a logical workspace.</p>
+            <div id="slot-preview" class="slot-preview"></div>
+          </section>
+          <section class="panel">
+            <div class="panel-heading"><div><p class="eyebrow">WORKSPACES</p><h3>Logical boxes</h3></div></div>
+            <div id="activity" class="activity"></div>
+          </section>
+        </div>
+      </section>
+
+      <section id="chat-view" class="view chat-view" hidden>
+        <header class="chat-header">
+          <button class="icon-button mobile-only mobile-back" aria-label="Back to conversations">‹</button>
+          <div id="chat-avatar" class="avatar">V</div>
+          <div class="chat-title"><h2 id="chat-name">Box</h2><p id="chat-state">Persistent workspace</p></div>
+          <div class="chat-actions">
+            <button id="share-terminal" class="text-button" title="Forward current screen to a group">Share screen</button>
+            <button id="allocate" class="text-button">Start</button>
+            <button id="hibernate" class="text-button">Hibernate</button>
+            <button id="box-menu" class="icon-button" aria-label="Delete workspace volume">⋮</button>
+          </div>
+        </header>
+        <div class="chat-body">
+          <div class="chat-column">
+            <div id="task-tabs" class="task-tabs"></div>
+            <div id="messages" class="messages"></div>
+            <form id="message-form" class="composer">
+              <textarea id="message" rows="1" placeholder="Message this box — offline boxes start Claude automatically" aria-label="Message this box"></textarea>
+              <button type="submit" class="send-button" aria-label="Send">↑</button>
+            </form>
+          </div>
+          <aside class="terminal-column">
+            <div class="terminal-bar"><span class="terminal-lights"><i></i><i></i><i></i></span><span id="terminal-title">tmux · vmbox</span><span class="spacer"></span><span id="terminal-size"></span></div>
+            <pre id="terminal" tabindex="0">Choose a running box to mirror its tmux screen.</pre>
+            <div class="terminal-guide" aria-label="tmux keyboard guide">
+              <span><b>WRITE</b> q / Esc</span><span><b>SCROLL</b> Ctrl-a s · wheel</span><span><b>DETACH</b> Ctrl-a d</span><span><b>HELP</b> Ctrl-a h</span>
+              <small>QWERTZ-safe · release Ctrl-a before the second key · detaching keeps the box and agents running</small>
+            </div>
+            <form id="terminal-form" class="terminal-input"><input id="terminal-input" placeholder="Send exact terminal input"><button>Send</button></form>
+          </aside>
+        </div>
+      </section>
+
+      <section id="group-view" class="view chat-view group-view" hidden>
+        <header class="chat-header">
+          <button class="icon-button mobile-only mobile-back" aria-label="Back to conversations">‹</button>
+          <div id="group-avatar" class="avatar group-avatar">#</div>
+          <div class="chat-title"><h2 id="group-name">Group</h2><p id="group-state">Choose which boxes may talk</p></div>
+          <div class="chat-actions"><button id="edit-group" class="text-button">Edit group</button></div>
+        </header>
+        <div class="group-layout">
+          <div id="group-members" class="recipient-strip"></div>
+          <div id="group-messages" class="messages group-messages"></div>
+          <form id="group-message-form" class="composer group-composer">
+            <textarea id="group-message" rows="1" placeholder="Send to selected boxes" aria-label="Group message"></textarea>
+            <button type="submit" class="send-button" aria-label="Send">↑</button>
+          </form>
+        </div>
+      </section>
+
+      <section id="fleet-view" class="view page-view" hidden>
+        <header class="topbar"><div><p class="eyebrow">CAPACITY</p><h1>Compute fleet</h1><p class="lede">Reusable services wait here until a persistent box needs compute.</p></div><button id="fleet-refresh" class="secondary">Reconcile view</button></header>
+        <section class="panel fleet-config">
+          <div><h3>Compute-box slots</h3><p class="muted">Changing this controls reusable services, not volumes. Idle slots are never shown as active boxes.</p></div>
+          <form id="slot-form"><label><span>Slots</span><input id="slot-count" type="number" min="0" max="32" required></label><button class="primary">Set slots</button></form>
+        </section>
+        <div id="fleet-details" class="slot-grid"></div>
+      </section>
+
+      <section id="settings-view" class="view page-view" hidden>
+        <header class="topbar"><div><p class="eyebrow">ADMIN</p><h1>Connections</h1><p class="lede">Provider vault and job notifications.</p></div></header>
+        <section class="settings-section">
+          <div class="section-heading"><div><h2>Providers</h2><p class="muted">Controller-managed credentials and provider configuration.</p></div><button id="new-credential" class="secondary">Add credential</button></div>
+          <div id="credential-list" class="credential-grid"></div>
+        </section>
+        <section class="settings-section">
+          <div class="section-heading"><div><h2>Notifications</h2><p class="muted">Send job lifecycle updates to a webhook, Telegram, or Discord.</p></div><button id="new-notification" class="secondary">Add destination</button></div>
+          <div id="notification-list" class="credential-grid"></div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <dialog id="box-dialog">
+    <form id="box-form" class="dialog-form">
+      <div class="dialog-heading"><div><p class="eyebrow">NEW WORKSPACE</p><h2>Provision a box</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <p class="muted">Creates persistent storage first. Compute is borrowed from the fleet only when needed.</p>
+      <label>Name<input name="name" required pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="research-01"></label>
+      <div class="two-col"><label>Provider<select name="provider"><option>railway</option><option>docker</option><option>incus</option></select></label><label>Credential<select name="credential" id="box-credential"></select></label></div>
+      <div class="two-col"><label>Region<input name="region" placeholder="ams"></label><label>Disk GiB<input name="disk" type="number" min="1" max="1000" value="10"></label></div>
+      <label class="check"><input name="allocate" type="checkbox"> Start compute as soon as storage is ready</label>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Create box</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="task-dialog">
+    <form id="task-form" class="dialog-form">
+      <div class="dialog-heading"><div><p class="eyebrow">NEW SESSION</p><h2>Start an agent</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <label>Logical box<select name="box" id="task-box" required></select></label>
+      <div class="two-col"><label>Agent<select name="agent"><option>claude</option><option>codex</option><option>opencode</option><option>shell</option></select></label><label>tmux session<input name="session" value="vmbox" required></label></div>
+      <label>First message<textarea name="prompt" rows="6" required placeholder="Describe the task…"></textarea></label>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Start task</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="group-dialog">
+    <form id="group-form" class="dialog-form">
+      <input name="id" type="hidden">
+      <div class="dialog-heading"><div><p class="eyebrow">GROUP CHAT</p><h2>Create a group</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <label>Name<input name="name" required maxlength="100" placeholder="Market research"></label>
+      <fieldset><legend>Members and default agents</legend><div id="group-member-options" class="member-options"></div></fieldset>
+      <p class="muted">At least two boxes are required. Toggle delivery per message from the group chat.</p>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Save group</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="credential-dialog">
+    <form id="credential-form" class="dialog-form">
+      <div class="dialog-heading"><div><p class="eyebrow">PROVIDER VAULT</p><h2>Add credential</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="two-col"><label>Provider<select name="provider"><option>railway</option><option>docker</option><option>incus</option></select></label><label>Name<input name="name" value="primary" required></label></div>
+      <label>Secret JSON<textarea name="secret" rows="4" required placeholder='{"token":"…"}'></textarea></label>
+      <label>Config JSON<textarea name="config" rows="6" placeholder='{"projectId":"…","environmentId":"…","image":"ghcr.io/…@sha256:…"}'></textarea></label>
+      <p class="muted">Secrets are encrypted at rest and never sent to worker boxes.</p>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Save credential</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="notification-dialog">
+    <form id="notification-form" class="dialog-form">
+      <div class="dialog-heading"><div><p class="eyebrow">NOTIFICATIONS</p><h2>Add destination</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="two-col"><label>Kind<select name="kind"><option>webhook</option><option>telegram</option><option>discord</option></select></label><label>Name<input name="name" value="primary" required></label></div>
+      <label>Secret JSON<textarea name="secret" rows="4" required placeholder='{"url":"https://…","signingSecret":"…"}'></textarea></label>
+      <label>Config JSON<textarea name="config" rows="4" placeholder='{}'></textarea></label>
+      <div class="two-col"><label>Allowed users<input name="users" placeholder="123, 456"></label><label>Allowed chats/channels<input name="chats" placeholder="-100123"></label></div>
+      <label class="check"><input name="enabled" type="checkbox" checked> Enable lifecycle notifications</label>
+      <p class="muted notification-help">Webhook secret: url + optional signingSecret. Telegram: token secret, chatId config, and non-empty user/chat allowlists.</p>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Save destination</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="forward-dialog">
+    <form id="forward-form" class="dialog-form">
+      <div class="dialog-heading"><div><p class="eyebrow">FORWARD</p><h2>Share terminal output</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <label>Group<select name="group" id="forward-group" required></select></label>
+      <label>Output<textarea name="text" rows="10" required></textarea></label>
+      <p class="muted">The selected group decides which boxes receive this output.</p>
+      <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Forward</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="detail-dialog">
+    <div class="dialog-form">
+      <div class="dialog-heading"><div><p class="eyebrow">DETAILS</p><h2 id="detail-title">Provider configuration</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <pre id="detail-content" class="detail-code"></pre>
+      <div class="dialog-actions"><button id="copy-detail" type="button" class="secondary">Copy</button><button type="button" class="primary close-dialog">Done</button></div>
+    </div>
+  </dialog>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>

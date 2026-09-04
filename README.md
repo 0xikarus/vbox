@@ -10,6 +10,17 @@ Install the Go CLI directly with `./install.sh --go-cli`. Running `install.sh`
 without that flag keeps the legacy shell installation path available during
 migration.
 
+Either way, `install.sh` also writes the standalone deployment bundle that
+`vmbox` hands to `railway up`. Railway uploads that directory verbatim as the
+build context, so it has to be complete on its own. By default the bundle builds
+the current `vmbox-runtime` from the installed source and overlays it, the
+entrypoint, and tmux configuration on the audited public worker image pinned by
+digest. This keeps the runtime protocol in lockstep with the CLI while reusing
+the audited agent toolchain.
+`./install.sh --bundle-from-source` installs the full Go build payload
+(`Dockerfile`, `.dockerignore`, `go.mod`, `go.sum`, `cmd/`, `internal/`)
+instead. Neither layout contains a credential.
+
 ```bash
 go build ./cmd/vmbox
 go build ./cmd/vmbox-controller
@@ -24,6 +35,26 @@ small runtime helpers. Reopening the box is idempotent and preserves `/data`.
 On Railway, `vmbox stop BOX` removes the active deployment but preserves the
 service and volume. `vmbox BOX` or `vmbox resume` redeploys it; only
 `vmbox clean BOX --yes` permanently deletes the service and `/data`.
+
+### Preloaded workload image
+
+The repository Dockerfile can build the complete workload image locally. It
+includes the runtime, tmux, GitHub CLI, Codex, Claude Code, OpenCode, Bun, and
+Foundry, so box bootstrap only refreshes the small vmbox runtime payload.
+
+```bash
+# Local Docker image
+make box-image
+
+# Publish for Railway; authenticate to the registry first
+VMBOX_IMAGE=ghcr.io/OWNER/vmbox-box:latest make box-image-push
+docker buildx imagetools inspect ghcr.io/OWNER/vmbox-box:latest
+```
+
+Railway cannot pull from the laptop's local Docker image store. Publish the
+image, then configure the context with the immutable
+`ghcr.io/OWNER/vmbox-box@sha256:...` reference reported by the registry. Set
+`VMBOX_COMPONENTS` to a comma-separated subset when a smaller image is useful.
 
 ## Standalone
 

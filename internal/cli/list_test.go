@@ -25,7 +25,7 @@ func TestStandaloneListIsReadableWithExplicitJSONFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	readable := output.String()
-	for _, expected := range []string{"NAME", "STATE", "OPEN / RESUME", "strategy", "running", "ams", "2 GiB", "vmbox strategy", "Ctrl-b", "vmbox ls --json"} {
+	for _, expected := range []string{"NAME", "STATE", "MANAGEMENT", "OPEN / RESUME", "standalone", "strategy", "running", "ams", "2 GiB", "vmbox strategy", "Ctrl-a", "vmbox ls --json"} {
 		if !strings.Contains(readable, expected) {
 			t.Fatalf("readable list missing %q: %s", expected, readable)
 		}
@@ -47,7 +47,10 @@ func TestStandaloneListIsReadableWithExplicitJSONFallback(t *testing.T) {
 func TestControllerListIsReadable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]v1.Run{{ID: "run-1", State: v1.JobRunning, Request: v1.CreateRunRequest{Box: "worker", Provider: "railway", Region: "ams", Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 20}}}})
+		json.NewEncoder(w).Encode(v1.BoxInventory{
+			LogicalBoxes:   []v1.LogicalBox{{ID: "box-1", Name: "worker", Provider: "railway", State: v1.LogicalBoxRunning, VolumeName: "worker-data", SlotID: "slot-1"}},
+			ConnectedBoxes: []v1.ConnectedBox{{ID: "outside-1", Name: "manual-service", Provider: "railway", State: provider.StateRunning, Management: "external"}},
+		})
 	}))
 	defer server.Close()
 	app := New()
@@ -58,7 +61,7 @@ func TestControllerListIsReadable(t *testing.T) {
 	if err := app.controller(context.Background(), config.File{}, c, []string{"ls"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"BOX", "RUN ID", "worker", "run-1", "4 GiB", "vmbox worker"} {
+	for _, expected := range []string{"NAME", "MANAGEMENT", "worker", "worker-data", "controller", "vmbox boxes open worker", "manual-service", "external", "--standalone"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("controller list missing %q: %s", expected, output.String())
 		}

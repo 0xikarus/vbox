@@ -1,9 +1,9 @@
 package bootstrap
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"sort"
@@ -72,6 +72,51 @@ case ",$components," in
 esac
 `
 
+const dependencyCheckScript = `set -eu
+components="$1"
+if [ "$components" = "__restore__" ]; then
+  if [ -f /data/.vmbox/components ]; then
+    components="$(cat /data/.vmbox/components)"
+  elif [ -f /usr/local/lib/vmbox-bootstrap-components ]; then
+    components="$(cat /usr/local/lib/vmbox-bootstrap-components)"
+  else
+    components="bun,claude,codex,foundry,opencode"
+  fi
+fi
+for command in bash bwrap curl gh git jq ssh sudo tmux; do
+  command -v "$command" >/dev/null 2>&1
+done
+id -u vmbox >/dev/null 2>&1
+test -r /etc/sudoers.d/vmbox
+case ",$components," in *,codex,*) command -v codex >/dev/null 2>&1 ;; esac
+case ",$components," in *,claude,*) command -v claude >/dev/null 2>&1 ;; esac
+case ",$components," in *,opencode,*) command -v opencode >/dev/null 2>&1 ;; esac
+case ",$components," in *,bun,*) test -x /opt/bun/bin/bun ;; esac
+case ",$components," in *,foundry,*) test -x /opt/foundry/bin/forge ;; esac
+`
+
+const fingerprintCheckScript = `set -eu
+components="$1"
+if [ "$components" = "__restore__" ]; then
+  if [ -f /data/.vmbox/components ]; then
+    components="$(cat /data/.vmbox/components)"
+  else
+    printf "vmbox-bootstrap-architecture:%s\n" "$(uname -m)"
+    exit 1
+  fi
+fi
+if test -x /usr/local/bin/vmbox-runtime \
+  && /usr/local/bin/vmbox-runtime health >/dev/null 2>&1 \
+  && test -x /usr/local/bin/vmbox-entrypoint \
+  && test "$(cat /usr/local/lib/vmbox-bootstrap-fingerprint 2>/dev/null)" = "$2" \
+  && test "$(cat /usr/local/lib/vmbox-bootstrap-components 2>/dev/null)" = "$components"; then
+  printf "vmbox-bootstrap-ready:%s\n" "$2"
+  exit 0
+fi
+printf "vmbox-bootstrap-architecture:%s\n" "$(uname -m)"
+exit 1
+`
+
 const finalizeScript = `set -eu
 components="$1"
 fingerprint="$2"
@@ -107,14 +152,18 @@ func Install(ctx context.Context, request provider.BootstrapRequest, exec Exec) 
 		componentArgument = "__restore__"
 	}
 	fingerprint := assetFingerprint(request)
-	check, err := exec(ctx, []string{"sh", "-c", `test -x /usr/local/bin/vmbox-runtime && /usr/local/bin/vmbox-runtime health >/dev/null 2>&1 && test -x /usr/local/bin/vmbox-entrypoint && [ "$(cat /usr/local/lib/vmbox-bootstrap-fingerprint 2>/dev/null)" = "$2" ] && { [ "$1" = "__restore__" ] || [ "$(cat /usr/local/lib/vmbox-bootstrap-components 2>/dev/null)" = "$1" ]; }`, "vmbox-bootstrap", componentArgument, fingerprint}, nil)
-	if err == nil && check.ExitCode == 0 {
+	check, err := exec(ctx, []string{"sh", "-c", fingerprintCheckScript, "vmbox-bootstrap", componentArgument, fingerprint}, nil)
+	readyMarker := "vmbox-bootstrap-ready:" + fingerprint
+	if err == nil && check.ExitCode == 0 && strings.Contains(check.Stdout, readyMarker) {
 		return nil
 	}
-	var archResult provider.ExecResult
-	for attempt := 0; attempt < 60; attempt++ {
-		archResult, err = exec(ctx, []string{"uname", "-m"}, nil)
-		if err == nil && archResult.ExitCode == 0 && strings.TrimSpace(archResult.Stdout) != "" {
+	architecture := bootstrapArchitecture(check.Stdout)
+	for attempt := 0; architecture == "" && attempt < 60; attempt++ {
+		probe, probeErr := exec(ctx, []string{"sh", "-c", `printf "vmbox-bootstrap-architecture:%s\n" "$(uname -m)"`}, nil)
+		if probeErr == nil && probe.ExitCode == 0 {
+			architecture = bootstrapArchitecture(probe.Stdout)
+		}
+		if architecture != "" {
 			break
 		}
 		select {
@@ -123,13 +172,10 @@ func Install(ctx context.Context, request provider.BootstrapRequest, exec Exec) 
 		case <-time.After(2 * time.Second):
 		}
 	}
-	if err != nil {
-		return fmt.Errorf("detect workload architecture: %w", err)
+	if architecture == "" {
+		return fmt.Errorf("workload did not become ready for bootstrap")
 	}
-	if archResult.ExitCode != 0 || strings.TrimSpace(archResult.Stdout) == "" {
-		return fmt.Errorf("workload did not become ready for bootstrap: exit %d: %s", archResult.ExitCode, strings.TrimSpace(archResult.Stderr))
-	}
-	arch := normalizeArchitecture(archResult.Stdout)
+	arch := normalizeArchitecture(architecture)
 	runtime, ok := request.RuntimeBinaries[arch]
 	if !ok || len(runtime) == 0 {
 		return fmt.Errorf("no vmbox runtime binary is installed for linux/%s; reinstall the Go CLI", arch)
@@ -137,27 +183,67 @@ func Install(ctx context.Context, request provider.BootstrapRequest, exec Exec) 
 	if len(request.Entrypoint) == 0 {
 		return fmt.Errorf("vmbox entrypoint asset is unavailable; reinstall the Go CLI")
 	}
-	installed, err := exec(ctx, []string{"sh", "-c", installScript, "vmbox-bootstrap", componentArgument}, strings.NewReader(""))
+	payload := bootstrapPayload(runtime, request.Entrypoint)
+	finalized, err := exec(ctx, []string{"sh", "-s", "--", componentArgument, fingerprint}, strings.NewReader(payload))
 	if err != nil {
-		return fmt.Errorf("install workload dependencies: %w", err)
-	}
-	if installed.ExitCode != 0 {
-		return fmt.Errorf("install workload dependencies exited with status %d: %s", installed.ExitCode, strings.TrimSpace(installed.Stderr))
-	}
-	if err := put(ctx, exec, "/usr/local/bin/vmbox-runtime", runtime); err != nil {
-		return err
-	}
-	if err := put(ctx, exec, "/usr/local/bin/vmbox-entrypoint", request.Entrypoint); err != nil {
-		return err
-	}
-	finalized, err := exec(ctx, []string{"sh", "-c", finalizeScript, "vmbox-bootstrap", componentArgument, fingerprint}, strings.NewReader(""))
-	if err != nil {
-		return fmt.Errorf("finalize workload bootstrap: %w", err)
+		return fmt.Errorf("stream workload bootstrap: %w", err)
 	}
 	if finalized.ExitCode != 0 {
-		return fmt.Errorf("finalize workload bootstrap exited with status %d: %s", finalized.ExitCode, strings.TrimSpace(finalized.Stderr))
+		return fmt.Errorf("workload bootstrap exited with status %d: %s", finalized.ExitCode, strings.TrimSpace(finalized.Stderr))
+	}
+	if !strings.Contains(finalized.Stdout, readyMarker) {
+		return fmt.Errorf("workload bootstrap did not return its completion marker")
 	}
 	return nil
+}
+
+func bootstrapArchitecture(output string) string {
+	const prefix = "vmbox-bootstrap-architecture:"
+	for _, line := range strings.Split(output, "\n") {
+		if value, ok := strings.CutPrefix(strings.TrimSpace(line), prefix); ok {
+			return value
+		}
+	}
+	return ""
+}
+
+func bootstrapPayload(runtime, entrypoint []byte) string {
+	var script strings.Builder
+	script.WriteString("set -eu\n")
+	script.WriteString("work=\"$(mktemp -d)\"\n")
+	script.WriteString("runtime_tmp=/usr/local/bin/.vmbox-runtime-tmp.$$\n")
+	script.WriteString("entrypoint_tmp=/usr/local/bin/.vmbox-entrypoint-tmp.$$\n")
+	script.WriteString("trap 'rm -rf \"$work\"; rm -f \"$runtime_tmp\" \"$entrypoint_tmp\"' EXIT HUP INT TERM\n")
+	writeScriptFile := func(name, body string) {
+		fmt.Fprintf(&script, "cat >\"$work/%s\" <<'VMBOX_SCRIPT'\n%s\nVMBOX_SCRIPT\n", name, body)
+	}
+	writeScriptFile("dependency-check", dependencyCheckScript)
+	writeScriptFile("install", installScript)
+	writeScriptFile("finalize", finalizeScript)
+	script.WriteString("if ! sh \"$work/dependency-check\" \"$1\"; then sh \"$work/install\" \"$1\"; fi\n")
+	script.WriteString("base64 -d >\"$runtime_tmp\" <<'VMBOX_RUNTIME'\n")
+	writeBase64(&script, runtime)
+	script.WriteString("VMBOX_RUNTIME\n")
+	script.WriteString("base64 -d >\"$entrypoint_tmp\" <<'VMBOX_ENTRYPOINT'\n")
+	writeBase64(&script, entrypoint)
+	script.WriteString("VMBOX_ENTRYPOINT\n")
+	script.WriteString("chmod 0755 \"$runtime_tmp\" \"$entrypoint_tmp\"\n")
+	script.WriteString("mv -f \"$runtime_tmp\" /usr/local/bin/vmbox-runtime\n")
+	script.WriteString("mv -f \"$entrypoint_tmp\" /usr/local/bin/vmbox-entrypoint\n")
+	script.WriteString("sh \"$work/finalize\" \"$1\" \"$2\"\n")
+	script.WriteString("printf \"vmbox-bootstrap-ready:%s\\n\" \"$2\"\n")
+	return script.String()
+}
+
+func writeBase64(destination *strings.Builder, data []byte) {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	for len(encoded) > 76 {
+		destination.WriteString(encoded[:76])
+		destination.WriteByte('\n')
+		encoded = encoded[76:]
+	}
+	destination.WriteString(encoded)
+	destination.WriteByte('\n')
 }
 
 func assetFingerprint(request provider.BootstrapRequest) string {
@@ -175,17 +261,6 @@ func assetFingerprint(request provider.BootstrapRequest) string {
 		_, _ = hash.Write(request.RuntimeBinaries[architecture])
 	}
 	return fmt.Sprintf("%x", hash.Sum(nil))
-}
-
-func put(ctx context.Context, exec Exec, path string, data []byte) error {
-	result, err := exec(ctx, []string{"sh", "-c", `set -eu; destination="$1"; temporary="${destination}.tmp"; cat >"$temporary"; chmod 0755 "$temporary"; mv -f "$temporary" "$destination"`, "vmbox-put", path}, bytes.NewReader(data))
-	if err != nil {
-		return fmt.Errorf("upload %s: %w", path, err)
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("upload %s exited with status %d: %s", path, result.ExitCode, strings.TrimSpace(result.Stderr))
-	}
-	return nil
 }
 
 func normalizeArchitecture(value string) string {

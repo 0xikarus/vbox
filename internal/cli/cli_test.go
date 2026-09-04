@@ -3,8 +3,10 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +18,7 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 	"github.com/0xikarus/vmbox-service/internal/config"
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -43,6 +46,15 @@ type progressBootstrapProvider struct {
 type sessionCLIProvider struct {
 	*cliProvider
 	attached []string
+}
+
+type cancelledSessionCLIProvider struct {
+	*cliProvider
+}
+
+func (p *cancelledSessionCLIProvider) AttachSession(ctx context.Context, _ string, _ string, _ []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+	<-ctx.Done()
+	return provider.ExecResult{ExitCode: -1}, ctx.Err()
 }
 
 func (p *sessionCLIProvider) AttachSession(_ context.Context, name, session string, command []string, _ provider.ExecOptions) (provider.ExecResult, error) {
@@ -126,7 +138,26 @@ func (p *cliProvider) Exec(_ context.Context, id string, argv []string, opts pro
 		data, _ = io.ReadAll(opts.Stdin)
 	}
 	p.exec = append(p.exec, providerExecCall{name: id, argv: append([]string(nil), argv...), data: data})
-	return provider.ExecResult{}, nil
+	result := provider.ExecResult{}
+	if len(argv) >= 2 && argv[0] == "vmbox-runtime" && argv[1] == "put-file" {
+		digest := sha256.Sum256(data)
+		result.Stdout = fmt.Sprintf("%x\n", digest[:])
+	}
+	if reflect.DeepEqual(argv, []string{"vmbox-runtime", "sync-files"}) {
+		digest := sha256.Sum256(data)
+		result.Stdout = fmt.Sprintf("%x\n", digest[:])
+	}
+	if reflect.DeepEqual(argv, []string{"vmbox-runtime", "setup"}) {
+		var request boxruntime.SetupRequest
+		_ = json.Unmarshal(data, &request)
+		authentication := make(map[string]bool)
+		for _, application := range request.Applications {
+			authentication[application] = true
+		}
+		encoded, _ := json.Marshal(boxruntime.SetupResult{Authentication: authentication})
+		result.Stdout = string(encoded)
+	}
+	return result, nil
 }
 func (p *cliProvider) Reconcile(_ context.Context, box provider.Box) (provider.Box, error) {
 	return box, nil
@@ -142,9 +173,24 @@ func TestSplitRunPreservesArgv(t *testing.T) {
 	}
 }
 
+func TestNonTerminalRunExecutesDirectlyWithoutTmux(t *testing.T) {
+	p := newCLIProvider()
+	p.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning, Owner: provider.Owner{AccountID: "standalone", BoxID: "worker"}}
+	app := New()
+	app.In, app.Out, app.Err = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
+	app.IsTerminal = func() bool { return false }
+	file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
+	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"run", "worker", "--", "printf", "ok"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.exec) == 0 || !reflect.DeepEqual(p.exec[len(p.exec)-1].argv, []string{"printf", "ok"}) {
+		t.Fatalf("nonterminal command was wrapped in an interactive session: %#v", p.exec)
+	}
+}
+
 func TestControllerInitRequiresExplicitConfirmation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	file := config.File{Current: "prod", Contexts: map[string]config.Context{"prod": {Provider: "railway", Project: "p", Environment: "e", Image: "registry/controller@sha256:abc"}}}
+	file := config.File{Current: "prod", Contexts: map[string]config.Context{"prod": {Provider: "railway", Project: "p", Environment: "e", Image: "registry/box@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}
 	if err := config.Save(path, file); err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +198,7 @@ func TestControllerInitRequiresExplicitConfirmation(t *testing.T) {
 	var out bytes.Buffer
 	app := New()
 	app.ConfigPath, app.Runner, app.Out, app.Err = path, runner, &out, &bytes.Buffer{}
-	err := app.Run(context.Background(), []string{"controller", "init", "--endpoint", "https://controller.example"})
+	err := app.Run(context.Background(), []string{"controller", "init", "--source", "../..", "--endpoint", "https://controller.example"})
 	if err == nil || !strings.Contains(err.Error(), "billable") {
 		t.Fatalf("error=%v", err)
 	}
@@ -163,18 +209,28 @@ func TestControllerInitRequiresExplicitConfirmation(t *testing.T) {
 
 func TestControllerInitEnsuresInfrastructureAndSavesContext(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	file := config.File{Current: "prod", Contexts: map[string]config.Context{"prod": {Provider: "railway", Project: "p", Environment: "e", Image: "registry/controller@sha256:abc", TokenEnv: "TEST_CONTROLLER_TOKEN"}}}
+	file := config.File{Current: "prod", Contexts: map[string]config.Context{"prod": {Provider: "railway", Project: "p", Environment: "e", Image: "registry/box@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", TokenEnv: "TEST_CONTROLLER_TOKEN"}}}
 	if err := config.Save(path, file); err != nil {
 		t.Fatal(err)
 	}
-	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`[]`)}}}
+	health := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
+	}))
+	defer health.Close()
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`[]`)},
+		{},
+		{},
+		{Stdout: []byte(`[{"id":"controller-id","name":"vmbox-controller"},{"id":"database-id","name":"vmbox-postgres"}]`)},
+		{Stdout: []byte(`{}`)},
+	}}
 	var out bytes.Buffer
 	app := New()
 	app.ConfigPath, app.Runner, app.Out, app.Err = path, runner, &out, &bytes.Buffer{}
-	if err := app.Run(context.Background(), []string{"controller", "init", "--endpoint", "https://controller.example", "--yes"}); err != nil {
+	if err := app.Run(context.Background(), []string{"controller", "init", "--source", "../..", "--endpoint", health.URL, "--yes"}); err != nil {
 		t.Fatal(err)
 	}
-	if len(runner.Calls) != 12 {
+	if len(runner.Calls) < 14 {
 		t.Fatalf("calls=%d: %#v", len(runner.Calls), runner.Calls)
 	}
 	wantPrefix := []string{"railway", "service", "list", "--json", "--project", "p", "--environment", "e"}
@@ -198,7 +254,7 @@ func TestControllerInitEnsuresInfrastructureAndSavesContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Contexts["prod"].Controller != "https://controller.example" {
+	if updated.Contexts["prod"].Controller != health.URL {
 		t.Fatalf("context=%+v", updated.Contexts["prod"])
 	}
 	if !strings.Contains(out.String(), "shown once") || strings.Contains(string(mustRead(t, path)), "VMBOX_ENCRYPTION_KEY") {
@@ -213,6 +269,44 @@ func mustRead(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestControllerSourceStagingUsesExactAllowlist(t *testing.T) {
+	source := t.TempDir()
+	for _, directory := range []string{"cmd", "internal"} {
+		if err := os.Mkdir(filepath.Join(source, directory), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(source, directory, "source.go"), []byte("package source"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range []string{"Dockerfile", ".dockerignore", "entrypoint.sh", "go.mod", "go.sum"} {
+		if err := os.WriteFile(filepath.Join(source, name), []byte(name), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(source, "Codex conversation.md"), []byte("must not upload"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	staged, cleanup, err := stageControllerSource(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 7 {
+		t.Fatalf("staged entries=%v", entries)
+	}
+	if _, err := os.Stat(filepath.Join(staged, "Codex conversation.md")); !os.IsNotExist(err) {
+		t.Fatalf("dev log reached staged source: %v", err)
+	}
+	cleanup()
+	if _, err := os.Stat(staged); !os.IsNotExist(err) {
+		t.Fatalf("staged source was not removed: %v", err)
+	}
 }
 func TestControllerFailureDoesNotFallback(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
@@ -310,12 +404,35 @@ func TestCreateAliasesResumeExistingAndPersistReusableSetup(t *testing.T) {
 	}
 }
 
+func TestClosingInteractiveClientReturnsCleanlyAndKeepsRemoteRunning(t *testing.T) {
+	base := newCLIProvider()
+	base.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning, Owner: provider.Owner{AccountID: "standalone", BoxID: "worker"}}
+	p := &cancelledSessionCLIProvider{cliProvider: base}
+	app := New()
+	var stderr bytes.Buffer
+	app.In, app.Out, app.Err = strings.NewReader(""), &bytes.Buffer{}, &stderr
+	app.IsTerminal = func() bool { return true }
+	file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := app.standalone(ctx, file, p, file.Contexts["test"], []string{"new", "worker"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stderr.String(), "box and tmux session are still running") {
+		t.Fatalf("stderr=%q", stderr.String())
+	}
+	if len(base.start) != 0 {
+		t.Fatalf("client close mutated remote lifecycle: start calls=%v", base.start)
+	}
+}
+
 func TestInteractiveResumeUsesProviderNativeTmuxSession(t *testing.T) {
 	base := newCLIProvider()
 	base.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning, Owner: provider.Owner{AccountID: "standalone", BoxID: "worker"}}
 	p := &sessionCLIProvider{cliProvider: base}
 	app := New()
 	app.In, app.Out, app.Err = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
+	app.IsTerminal = func() bool { return true }
 	file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
 	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"new", "worker"}); err != nil {
 		t.Fatal(err)
@@ -432,21 +549,33 @@ func TestProfilesGitHubAndMarkdownUploadIndependently(t *testing.T) {
 	foundAuth, foundMarkdown, foundGitHub := false, false, false
 	for _, call := range p.exec {
 		joined := strings.Join(call.argv, " ")
-		if strings.Contains(joined, "/data/home/.codex/auth.json") {
-			foundAuth = strings.Contains(string(call.data), "application-secret") && !strings.Contains(string(call.data), "markdown-only")
+		if reflect.DeepEqual(call.argv, []string{"vmbox-runtime", "sync-files"}) {
+			var request boxruntime.SyncRequest
+			if err := json.Unmarshal(call.data, &request); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range request.Files {
+				switch file.Path {
+				case "/data/home/.codex/auth.json":
+					foundAuth = string(file.Data) == `{"token":"application-secret"}`
+				case "/data/workspace/AGENTS.md":
+					foundMarkdown = strings.Contains(string(file.Data), "markdown-only") && !strings.Contains(string(file.Data), "application-secret")
+				}
+			}
 		}
-		if strings.Contains(joined, "/data/workspace/AGENTS.md") {
-			foundMarkdown = strings.Contains(string(call.data), "markdown-only") && !strings.Contains(string(call.data), "application-secret")
-		}
-		if strings.Contains(joined, "gh auth login") {
-			foundGitHub = string(call.data) == "github-secret\n" && !strings.Contains(joined, "github-secret")
+		if reflect.DeepEqual(call.argv, []string{"vmbox-runtime", "setup"}) {
+			var request boxruntime.SetupRequest
+			if err := json.Unmarshal(call.data, &request); err != nil {
+				t.Fatal(err)
+			}
+			foundGitHub = request.GitHub != nil && request.GitHub.Token == "github-secret" && request.GitHub.User == "octocat" && !strings.Contains(joined, "github-secret")
 		}
 	}
 	if !foundAuth || !foundMarkdown || !foundGitHub {
 		t.Fatalf("auth=%v markdown=%v github=%v calls=%#v", foundAuth, foundMarkdown, foundGitHub, p.exec)
 	}
 	progress := app.Err.(*bytes.Buffer).String()
-	for _, expected := range []string{"syncing 3 selected agent/instruction file(s)", "syncing GitHub credential for octocat@github.com", "GitHub credential is ready", "configuring agent trust", "tmux session metadata is ready"} {
+	for _, expected := range []string{"syncing 3 selected agent/instruction file(s)", "batching file 1/3", "syncing GitHub credential for octocat@github.com", "GitHub credential is ready", "configuring agent trust", "tmux session metadata is ready"} {
 		if !strings.Contains(progress, expected) {
 			t.Fatalf("progress missing %q: %s", expected, progress)
 		}
@@ -475,6 +604,59 @@ func TestBootstrapReportsSelectionHeartbeatAndCompletion(t *testing.T) {
 		if !strings.Contains(progress, expected) {
 			t.Fatalf("progress missing %q: %s", expected, progress)
 		}
+	}
+}
+
+func TestAuthSyncCopiesActiveClaudeCredentialAndHomeState(t *testing.T) {
+	home := t.TempDir()
+	profile := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(profile, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(profile, ".credentials.json"), []byte("claude-credential"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte("claude-home-state"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p := newCLIProvider()
+	p.boxes["worker"] = provider.Box{ID: "worker", Name: "worker", State: provider.StateRunning}
+	app := New()
+	var stderr bytes.Buffer
+	app.Err = &stderr
+	app.Environ = map[string]string{"HOME": home}
+	if err := app.syncApplicationProfiles(context.Background(), p, []string{"worker"}); err != nil {
+		t.Fatal(err)
+	}
+	foundCredential, foundHomeState, foundStatus := false, false, false
+	for _, call := range p.exec {
+		if reflect.DeepEqual(call.argv, []string{"vmbox-runtime", "sync-files"}) {
+			var request boxruntime.SyncRequest
+			if err := json.Unmarshal(call.data, &request); err != nil {
+				t.Fatal(err)
+			}
+			for _, file := range request.Files {
+				if file.Path == "/data/home/.claude/.credentials.json" {
+					foundCredential = string(file.Data) == "claude-credential"
+				}
+				if file.Path == "/data/home/.claude.json" {
+					foundHomeState = string(file.Data) == "claude-home-state"
+				}
+			}
+		}
+		if reflect.DeepEqual(call.argv, []string{"vmbox-runtime", "setup"}) {
+			var request boxruntime.SetupRequest
+			if err := json.Unmarshal(call.data, &request); err != nil {
+				t.Fatal(err)
+			}
+			foundStatus = reflect.DeepEqual(request.Applications, []string{"claude"})
+		}
+	}
+	if !foundCredential || !foundHomeState || !foundStatus {
+		t.Fatalf("credential=%v home-state=%v status=%v calls=%#v", foundCredential, foundHomeState, foundStatus, p.exec)
+	}
+	if !strings.Contains(stderr.String(), "claude authentication is ready") {
+		t.Fatalf("stderr=%q", stderr.String())
 	}
 }
 
@@ -545,7 +727,7 @@ func TestCreationCancellationHappensBeforeProviderMutation(t *testing.T) {
 func TestWelcomeContainsSpecsConnectionCostAndDetachInstructions(t *testing.T) {
 	box := provider.Box{Name: "worker", Provider: "docker", Region: "local", State: provider.StateRunning, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096}, Connection: provider.Connection{Transport: "docker-exec", Endpoint: "default"}, Storage: &provider.Storage{MountPath: "/data", SizeGiB: 10}}
 	text := string(welcome(box, "local-docker", "unavailable"))
-	for _, required := range []string{"2 CPU", "4096 MiB", "10 GiB", "docker-exec default", "Cost: unavailable", "Ctrl-b", "release both keys", "press d"} {
+	for _, required := range []string{"2 CPU", "4096 MiB", "10 GiB", "docker-exec default", "Cost: unavailable", "Ctrl-a", "release both keys", "press d"} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("welcome missing %q: %s", required, text)
 		}

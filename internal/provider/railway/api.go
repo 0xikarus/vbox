@@ -17,6 +17,7 @@ const (
 	volumeDeleteMutation  = `mutation($volumeId: String!) { volumeDelete(volumeId: $volumeId) }`
 	limitsUpdateMutation  = `mutation($input: ServiceInstanceLimitsUpdateInput!) { serviceInstanceLimitsUpdate(input: $input) }`
 	limitsQuery           = `query($serviceId: String!, $environmentId: String!) { serviceInstanceLimits(serviceId: $serviceId, environmentId: $environmentId) }`
+	serviceInstanceQuery  = `query($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { latestDeployment { deploymentStopped instances { id status } } } }`
 )
 
 func (p *Provider) createService(ctx context.Context, name string) (procexec.Result, error) {
@@ -32,8 +33,49 @@ func (p *Provider) api(ctx context.Context, document string, variables any) (pro
 	return p.runner.Run(ctx, []string{"railway", "api", document, "--variables", string(encoded), "--compact"}, nil, nil, nil)
 }
 
-func (p *Provider) connectImage(ctx context.Context, service, image string) error {
-	result, err := p.run(ctx, "service", "source", "connect", "--service", service, "--image", image, "--json")
+func (p *Provider) serviceInstanceID(ctx context.Context, serviceID string) (string, error) {
+	result, err := p.api(ctx, serviceInstanceQuery, map[string]any{
+		"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID,
+	})
+	if err != nil || result.ExitCode != 0 {
+		return "", railwayError("resolve deployment instance", result, err)
+	}
+	var response struct {
+		Data struct {
+			ServiceInstance struct {
+				LatestDeployment struct {
+					DeploymentStopped bool `json:"deploymentStopped"`
+					Instances         []struct {
+						ID     string `json:"id"`
+						Status string `json:"status"`
+					} `json:"instances"`
+				} `json:"latestDeployment"`
+			} `json:"serviceInstance"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(result.Stdout, &response); err != nil {
+		return "", fmt.Errorf("decode Railway deployment instance: %w", err)
+	}
+	deployment := response.Data.ServiceInstance.LatestDeployment
+	if !deployment.DeploymentStopped {
+		for _, instance := range deployment.Instances {
+			if strings.EqualFold(instance.Status, "RUNNING") && strings.TrimSpace(instance.ID) != "" {
+				return instance.ID, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("Railway returned no running deployment instance for service %s", serviceID)
+}
+
+func (p *Provider) connectImage(ctx context.Context, serviceID, image string) error {
+	variables := map[string]any{
+		"serviceId":     serviceID,
+		"environmentId": p.cfg.EnvironmentID,
+		"input": map[string]any{
+			"source": map[string]any{"image": image},
+		},
+	}
+	result, err := p.api(ctx, serviceUpdateMutation, variables)
 	if err != nil || result.ExitCode != 0 {
 		return railwayError("connect image source", result, err)
 	}

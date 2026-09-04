@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/procexec"
@@ -25,13 +26,21 @@ type Config struct {
 	TokenEnvironment  string
 	DefaultImage      string
 	SSHKnownHostsFile string
+	SSHIdentityFile   string
+	SSHBinary         string
+	SSHControlDir     string
 	PollInterval      time.Duration
 	ReadyTimeout      time.Duration
 }
 
 type Provider struct {
-	cfg    Config
-	runner procexec.Runner
+	cfg                 Config
+	runner              procexec.Runner
+	cacheMu             sync.RWMutex
+	servicesByKey       map[string]service
+	deploymentByService map[string]string
+	masterByTarget      map[string]bool
+	sshMu               sync.Mutex
 }
 
 func New(cfg Config, runner procexec.Runner) *Provider {
@@ -40,6 +49,9 @@ func New(cfg Config, runner procexec.Runner) *Provider {
 	}
 	if cfg.TokenEnvironment == "" {
 		cfg.TokenEnvironment = "RAILWAY_API_TOKEN"
+	}
+	if cfg.SSHBinary == "" {
+		cfg.SSHBinary = "ssh"
 	}
 	if cfg.DefaultImage == "" {
 		cfg.DefaultImage = "node:22-bookworm-slim"
@@ -76,7 +88,12 @@ func New(cfg Config, runner procexec.Runner) *Provider {
 			runner = &procexec.OSRunner{Env: env, Unset: unset}
 		}
 	}
-	return &Provider{cfg: cfg, runner: runner}
+	return &Provider{
+		cfg: cfg, runner: runner,
+		servicesByKey:       make(map[string]service),
+		deploymentByService: make(map[string]string),
+		masterByTarget:      make(map[string]bool),
+	}
 }
 
 func (p *Provider) Name() string { return "railway" }
@@ -115,7 +132,14 @@ type service struct {
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
-	Regions   []struct {
+	Replicas  *struct {
+		Configured int `json:"configured"`
+		Running    int `json:"running"`
+		Crashed    int `json:"crashed"`
+		Exited     int `json:"exited"`
+		Total      int `json:"total"`
+	} `json:"replicas,omitempty"`
+	Regions []struct {
 		Name string `json:"name"`
 	} `json:"regions"`
 }
@@ -129,12 +153,40 @@ func (p *Provider) services(ctx context.Context) ([]service, error) {
 	if err := json.Unmarshal(result.Stdout, &services); err != nil {
 		return nil, fmt.Errorf("decode Railway services: %w", err)
 	}
+	p.cacheMu.Lock()
+	for _, item := range services {
+		p.servicesByKey[item.ID] = item
+		p.servicesByKey[item.Name] = item
+		p.servicesByKey[strings.TrimPrefix(item.Name, "vmbox-")] = item
+	}
+	p.cacheMu.Unlock()
 	return services, nil
 }
 
 func serviceName(name string) string { return "vmbox-" + name }
+func railwayStartCommand(detached bool) string {
+	if detached {
+		return "/usr/local/bin/vmbox-entrypoint vmbox-runtime idle"
+	}
+	return "sleep infinity"
+}
 
 func (p *Provider) resolve(ctx context.Context, id string) (service, error) {
+	p.cacheMu.RLock()
+	cached, ok := p.servicesByKey[id]
+	if !ok {
+		cached, ok = p.servicesByKey[serviceName(id)]
+	}
+	p.cacheMu.RUnlock()
+	if ok {
+		return cached, nil
+	}
+	return p.resolveFresh(ctx, id)
+}
+
+// resolveFresh is used when deployment state matters. Cached resolution is
+// reserved for repeated commands that only need the stable service identity.
+func (p *Provider) resolveFresh(ctx context.Context, id string) (service, error) {
 	services, err := p.services(ctx)
 	if err != nil {
 		return service{}, err
@@ -157,9 +209,9 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	var service service
 	var result procexec.Result
 	var err error
-	existing, resolveErr := p.resolve(ctx, req.Name)
+	existing, resolveErr := p.resolveFresh(ctx, req.Name)
 	if resolveErr == nil {
-		box, inspectErr := p.inspectService(ctx, existing)
+		box, inspectErr := p.inspectService(ctx, existing, true)
 		if inspectErr != nil {
 			return provider.Box{}, inspectErr
 		}
@@ -212,6 +264,9 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	for key, value := range req.Env {
 		metadata[key] = value
 	}
+	if req.Detached {
+		metadata["VMBOX_COMPUTE_SLOT"] = "true"
+	}
 	keys := make([]string, 0, len(metadata))
 	for key, value := range metadata {
 		if value != "" {
@@ -230,14 +285,16 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 			return provider.Box{}, railwayError("set variable "+key, result, err)
 		}
 	}
-	if _, err := p.CreateStorage(ctx, service.ID, req.Resources); err != nil {
-		return provider.Box{}, err
+	if !req.Detached {
+		if _, err := p.CreateStorage(ctx, service.ID, req.Resources); err != nil {
+			return provider.Box{}, err
+		}
 	}
 	image := req.Image
 	if image == "" {
 		image = p.cfg.DefaultImage
 	}
-	if err := p.connectImage(ctx, service.Name, image); err != nil {
+	if err := p.connectImage(ctx, service.ID, image); err != nil {
 		return provider.Box{}, err
 	}
 	if err := p.setResources(ctx, service.ID, req.Resources); err != nil {
@@ -246,7 +303,8 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if err := p.setRegion(ctx, service.ID, req.Region); err != nil {
 		return provider.Box{}, err
 	}
-	if err := p.setStartCommand(ctx, service.ID, "sleep infinity"); err != nil {
+	startCommand := railwayStartCommand(req.Detached)
+	if err := p.setStartCommand(ctx, service.ID, startCommand); err != nil {
 		return provider.Box{}, err
 	}
 	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
@@ -261,29 +319,14 @@ func (p *Provider) Bootstrap(ctx context.Context, id string, request provider.Bo
 		return err
 	}
 	exec := func(ctx context.Context, argv []string, stdin io.Reader) (provider.ExecResult, error) {
-		sshArgs := append([]string{"railway", "ssh"}, p.target()...)
-		sshArgs = append(sshArgs, "--service", service.Name)
-		sshArgs = append(sshArgs, argv...)
 		started := time.Now().UTC()
-		result, err := p.runSSH(ctx, sshArgs, stdin, nil, nil)
+		result, err := p.directSSH(ctx, service, argv, false, stdin, nil, nil)
 		if err != nil {
 			return provider.ExecResult{}, err
 		}
 		return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 	}
 	return providerbootstrap.Install(ctx, request, exec)
-}
-
-func (p *Provider) runSSH(ctx context.Context, argv []string, stdin io.Reader, stdout, stderr io.Writer) (procexec.Result, error) {
-	result, err := p.runner.Run(ctx, argv, stdin, stdout, stderr)
-	if p.cfg.SSHKnownHostsFile == "" || !strings.Contains(string(result.Stderr), "REMOTE HOST IDENTIFICATION HAS CHANGED") {
-		return result, err
-	}
-	removed, removeErr := p.runner.Run(ctx, []string{"ssh-keygen", "-f", p.cfg.SSHKnownHostsFile, "-R", "ssh.railway.com"}, nil, nil, nil)
-	if removeErr != nil || removed.ExitCode != 0 {
-		return result, err
-	}
-	return p.runner.Run(ctx, argv, stdin, stdout, stderr)
 }
 
 func state(status string) provider.State {
@@ -299,6 +342,24 @@ func state(status string) provider.State {
 	}
 }
 
+// Railway keeps the last successful deployment status after its only replica
+// has exited. Service.Status alone therefore says SUCCESS for a container that
+// direct SSH cannot reach. Prefer live replica counts when the CLI supplies
+// them, while retaining the status-only fallback for older CLI responses.
+func serviceState(value service) provider.State {
+	result := state(value.Status)
+	if result != provider.StateRunning || value.Replicas == nil {
+		return result
+	}
+	if value.Replicas.Running > 0 {
+		return provider.StateRunning
+	}
+	if value.Replicas.Crashed > 0 {
+		return provider.StateFailed
+	}
+	return provider.StateStopped
+}
+
 func (p *Provider) variables(ctx context.Context, service string) (map[string]string, error) {
 	result, err := p.run(ctx, "variables", "--service", service, "--json")
 	if err != nil || result.ExitCode != 0 {
@@ -311,7 +372,7 @@ func (p *Provider) variables(ctx context.Context, service string) (map[string]st
 	return values, nil
 }
 
-func (p *Provider) inspectService(ctx context.Context, service service) (provider.Box, error) {
+func (p *Provider) inspectService(ctx context.Context, service service, includeResources bool) (provider.Box, error) {
 	values, err := p.variables(ctx, service.Name)
 	if err != nil {
 		return provider.Box{}, err
@@ -326,38 +387,55 @@ func (p *Provider) inspectService(ctx context.Context, service service) (provide
 	cpu, _ := strconv.ParseFloat(values["VMBOX_CPU"], 64)
 	memory, _ := strconv.ParseInt(values["VMBOX_MEMORY_MIB"], 10, 64)
 	disk, _ := strconv.ParseInt(values["VMBOX_DISK_GIB"], 10, 64)
-	box := provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: state(service.Status), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}
-	if actual, resourceErr := p.resources(ctx, service.ID); resourceErr == nil {
-		if actual.CPU > 0 {
-			box.Resources.CPU = actual.CPU
-		}
-		if actual.MemoryMiB > 0 {
-			box.Resources.MemoryMiB = actual.MemoryMiB
+	box := provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: serviceState(service), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}
+	if includeResources {
+		if actual, resourceErr := p.resources(ctx, service.ID); resourceErr == nil {
+			if actual.CPU > 0 {
+				box.Resources.CPU = actual.CPU
+			}
+			if actual.MemoryMiB > 0 {
+				box.Resources.MemoryMiB = actual.MemoryMiB
+			}
 		}
 	}
 	return box, nil
 }
 
 func (p *Provider) Inspect(ctx context.Context, id string) (provider.Box, error) {
-	service, err := p.resolve(ctx, id)
+	service, err := p.resolveFresh(ctx, id)
 	if err != nil {
 		return provider.Box{}, err
 	}
-	return p.inspectService(ctx, service)
+	return p.inspectService(ctx, service, true)
 }
 func (p *Provider) List(ctx context.Context) ([]provider.Box, error) {
 	services, err := p.services(ctx)
 	if err != nil {
 		return nil, err
 	}
-	boxes := make([]provider.Box, 0)
+	type inspected struct {
+		box provider.Box
+		err error
+	}
+	var candidates []service
 	for _, item := range services {
 		if !strings.HasPrefix(item.Name, "vmbox-") {
 			continue
 		}
-		box, err := p.inspectService(ctx, item)
-		if err == nil && box.Owner.BoxID != "" {
-			boxes = append(boxes, box)
+		candidates = append(candidates, item)
+	}
+	results := make(chan inspected, len(candidates))
+	for _, item := range candidates {
+		go func(item service) {
+			box, inspectErr := p.inspectService(ctx, item, false)
+			results <- inspected{box: box, err: inspectErr}
+		}(item)
+	}
+	boxes := make([]provider.Box, 0, len(candidates))
+	for range candidates {
+		result := <-results
+		if result.err == nil && result.box.Owner.BoxID != "" {
+			boxes = append(boxes, result.box)
 		}
 	}
 	return boxes, nil
@@ -371,6 +449,7 @@ func (p *Provider) Stop(ctx context.Context, id string) (provider.Box, error) {
 	if err != nil {
 		return provider.Box{}, err
 	}
+	p.invalidateServiceSSH(service)
 	result, err := p.run(ctx, "down", "--service", service.Name, "--yes")
 	if err != nil || result.ExitCode != 0 {
 		return provider.Box{}, railwayError("stop", result, err)
@@ -440,6 +519,7 @@ func (p *Provider) Delete(ctx context.Context, id string, requested provider.Own
 }
 
 type railwayVolume struct {
+	Name        string `json:"name"`
 	ID          string `json:"id"`
 	ServiceName string `json:"serviceName"`
 	MountPath   string `json:"mountPath"`
@@ -465,6 +545,32 @@ func (p *Provider) volumes(ctx context.Context) ([]railwayVolume, error) {
 		payload.Volumes = direct
 	}
 	return payload.Volumes, nil
+}
+
+func (p *Provider) AttachedStorage(ctx context.Context, id string) (*provider.Storage, error) {
+	service, err := p.resolveFresh(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	volumes, err := p.volumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var attached *provider.Storage
+	for _, volume := range volumes {
+		if volume.ServiceName != service.Name || volume.MountPath != "/data" {
+			continue
+		}
+		if attached != nil {
+			return nil, fmt.Errorf("compute service %s has multiple workspace volumes attached", service.Name)
+		}
+		name := volume.Name
+		if name == "" {
+			name = service.Name + "-data"
+		}
+		attached = &provider.Storage{ID: volume.ID, Name: name, MountPath: "/data"}
+	}
+	return attached, nil
 }
 
 func (p *Provider) volumeIDs(ctx context.Context, service string) ([]string, error) {
@@ -534,9 +640,193 @@ func (p *Provider) CreateStorage(ctx context.Context, id string, resources provi
 		}
 	}
 }
-func (p *Provider) AttachStorage(context.Context, string, provider.Storage) error { return nil }
-func (p *Provider) DeleteStorage(context.Context, provider.Storage, provider.Owner) error {
-	return fmt.Errorf("Railway service deletion owns volume cleanup: %w", provider.ErrUnsupported)
+func (p *Provider) AttachStorage(ctx context.Context, id string, storage provider.Storage) error {
+	if storage.ID == "" {
+		return fmt.Errorf("Railway volume ID is required")
+	}
+	service, err := p.resolveFresh(ctx, id)
+	if err != nil {
+		return err
+	}
+	attached := func() (bool, error) {
+		volumes, listErr := p.volumes(ctx)
+		if listErr != nil {
+			return false, listErr
+		}
+		for _, volume := range volumes {
+			if volume.ID == storage.ID {
+				if volume.ServiceName == service.Name && volume.MountPath == "/data" {
+					return true, nil
+				}
+				if volume.ServiceName != "" {
+					return false, fmt.Errorf("Railway volume %s is already attached to %s", storage.ID, volume.ServiceName)
+				}
+				continue
+			}
+			if volume.ServiceName == service.Name && volume.MountPath == "/data" {
+				return false, fmt.Errorf("compute slot %s already has Railway volume %s attached", service.Name, volume.ID)
+			}
+		}
+		return false, nil
+	}
+	if ready, err := attached(); err != nil || ready {
+		return err
+	}
+	result, attachErr := p.runVolume(ctx, service.ID, nil, "attach", "--volume", storage.ID, "--yes", "--json")
+	if attachErr != nil || result.ExitCode != 0 {
+		if ready, reconcileErr := attached(); reconcileErr != nil || !ready {
+			return railwayError("attach volume", result, attachErr)
+		}
+	}
+	deadline := time.NewTimer(p.cfg.ReadyTimeout)
+	defer deadline.Stop()
+	for {
+		ready, checkErr := attached()
+		if checkErr != nil {
+			return checkErr
+		}
+		if ready {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("Railway volume %s did not attach to %s", storage.ID, service.Name)
+		case <-time.After(p.cfg.PollInterval):
+		}
+	}
+	p.invalidateServiceSSH(service)
+	return p.submitAndWaitDeployment(ctx, service.Name)
+}
+
+func (p *Provider) DetachStorage(ctx context.Context, id string, storage provider.Storage) error {
+	if storage.ID == "" {
+		return fmt.Errorf("Railway volume ID is required")
+	}
+	service, err := p.resolveFresh(ctx, id)
+	if err != nil {
+		return err
+	}
+	detached := func() (bool, error) {
+		volumes, listErr := p.volumes(ctx)
+		if listErr != nil {
+			return false, listErr
+		}
+		for _, volume := range volumes {
+			if volume.ID != storage.ID {
+				continue
+			}
+			if volume.ServiceName == "" {
+				return true, nil
+			}
+			if volume.ServiceName != service.Name {
+				return false, fmt.Errorf("Railway volume %s is attached to unexpected service %s", storage.ID, volume.ServiceName)
+			}
+			return false, nil
+		}
+		return false, fmt.Errorf("Railway volume %s does not exist", storage.ID)
+	}
+	if ready, err := detached(); err != nil || ready {
+		return err
+	}
+	result, detachErr := p.runVolume(ctx, service.ID, nil, "detach", "--volume", storage.ID, "--yes", "--json")
+	if detachErr != nil || result.ExitCode != 0 {
+		if ready, reconcileErr := detached(); reconcileErr != nil || !ready {
+			return railwayError("detach volume", result, detachErr)
+		}
+	}
+	deadline := time.NewTimer(p.cfg.ReadyTimeout)
+	defer deadline.Stop()
+	for {
+		ready, checkErr := detached()
+		if checkErr != nil {
+			return checkErr
+		}
+		if ready {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("Railway volume %s did not detach from %s", storage.ID, service.Name)
+		case <-time.After(p.cfg.PollInterval):
+		}
+	}
+	p.invalidateServiceSSH(service)
+	return p.submitAndWaitDeployment(ctx, service.Name)
+}
+
+func (p *Provider) SanitizeSlot(ctx context.Context, id string) error {
+	service, err := p.resolveFresh(ctx, id)
+	if err != nil {
+		return err
+	}
+	volumes, err := p.volumes(ctx)
+	if err != nil {
+		return err
+	}
+	for _, volume := range volumes {
+		if volume.ServiceName == service.Name {
+			return fmt.Errorf("refusing to sanitize compute slot %s while volume %s remains attached", service.Name, volume.ID)
+		}
+	}
+	if serviceState(service) == provider.StateStopped {
+		return nil
+	}
+	_, err = p.Stop(ctx, service.ID)
+	return err
+}
+func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, requested provider.Owner) error {
+	if storage.ID == "" || requested.AccountID == "" || requested.BoxID == "" {
+		return fmt.Errorf("exact volume ID and logical-box ownership are required")
+	}
+	volumes, err := p.volumes(ctx)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, volume := range volumes {
+		if volume.ID != storage.ID {
+			continue
+		}
+		found = true
+		if volume.ServiceName != "" {
+			return fmt.Errorf("refusing to delete attached Railway volume %s from %s", storage.ID, volume.ServiceName)
+		}
+		if storage.Name != "" && volume.Name != "" && storage.Name != volume.Name {
+			return fmt.Errorf("Railway volume name mismatch: expected %s, found %s", storage.Name, volume.Name)
+		}
+	}
+	if !found {
+		return nil
+	}
+	if err := p.deleteVolume(ctx, storage.ID); err != nil {
+		return err
+	}
+	deadline := time.NewTimer(p.cfg.ReadyTimeout)
+	defer deadline.Stop()
+	for {
+		volumes, err = p.volumes(ctx)
+		if err != nil {
+			return err
+		}
+		present := false
+		for _, volume := range volumes {
+			present = present || volume.ID == storage.ID
+		}
+		if !present {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("Railway volume %s remained visible after deletion", storage.ID)
+		case <-time.After(p.cfg.PollInterval):
+		}
+	}
 }
 
 func (p *Provider) Deploy(ctx context.Context, id, image string) (provider.Box, error) {
@@ -545,7 +835,7 @@ func (p *Provider) Deploy(ctx context.Context, id, image string) (provider.Box, 
 		return provider.Box{}, err
 	}
 	if image != "" {
-		if err := p.connectImage(ctx, service.Name, image); err != nil {
+		if err := p.connectImage(ctx, service.ID, image); err != nil {
 			return provider.Box{}, err
 		}
 	}
@@ -622,6 +912,7 @@ func deploymentID(data []byte) string {
 }
 
 func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) error {
+	p.invalidateSSHForServiceKey(service)
 	before, err := p.deployments(ctx, service)
 	if err != nil {
 		return err
@@ -701,7 +992,12 @@ func (p *Provider) Connection(ctx context.Context, id string) (provider.Connecti
 	if err != nil {
 		return provider.Connection{}, err
 	}
-	return provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, nil
+	target, err := p.deploymentTarget(ctx, service)
+	if err != nil {
+		return provider.Connection{}, err
+	}
+	instance, _, _ := strings.Cut(target, "@")
+	return provider.Connection{Transport: "openssh", Endpoint: target, Metadata: map[string]string{"deploymentInstanceId": instance}}, nil
 }
 func (p *Provider) Logs(ctx context.Context, id string, opts provider.LogOptions, dst io.Writer) error {
 	service, err := p.resolve(ctx, id)
@@ -753,10 +1049,7 @@ func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts prov
 		remote = provider.AsWorkloadUser(append([]string{"vmbox-runtime", "run", "--detach", "--"}, argv...))
 	}
 	started := time.Now().UTC()
-	sshArgs := append([]string{"railway", "ssh"}, p.target()...)
-	sshArgs = append(sshArgs, "--service", service.Name)
-	sshArgs = append(sshArgs, remote...)
-	result, err := p.runSSH(ctx, sshArgs, opts.Stdin, opts.Stdout, opts.Stderr)
+	result, err := p.directSSH(ctx, service, remote, false, opts.Stdin, opts.Stdout, opts.Stderr)
 	if err != nil {
 		return provider.ExecResult{}, err
 	}
@@ -774,64 +1067,102 @@ func (p *Provider) AttachSession(ctx context.Context, id, session string, comman
 	if err != nil {
 		return provider.ExecResult{}, err
 	}
-	if err := p.ensureSession(ctx, service.Name, session, command, opts.Stderr); err != nil {
+	if err := p.ensureSession(ctx, service, session, command, opts.Stderr); err != nil {
 		return provider.ExecResult{}, err
 	}
 	started := time.Now().UTC()
-	sshArgs := append([]string{"railway", "ssh"}, p.target()...)
-	sshArgs = append(sshArgs, "--service", service.Name, "--session", session)
-	var result procexec.Result
-	if attached, ok := p.runner.(procexec.AttachedRunner); ok {
-		result, err = attached.RunAttached(ctx, sshArgs, opts.Stdin, opts.Stdout, opts.Stderr)
-	} else {
-		result, err = p.runner.Run(ctx, sshArgs, opts.Stdin, opts.Stdout, opts.Stderr)
+	remote := provider.AsWorkloadUser([]string{"tmux", "attach-session", "-t", session})
+	result, err := p.directSSH(ctx, service, remote, true, opts.Stdin, opts.Stdout, opts.Stderr)
+	if err != nil {
+		return provider.ExecResult{}, err
 	}
+	return provider.ExecResult{ExitCode: result.ExitCode, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
+}
+func (p *Provider) AttachConnection(ctx context.Context, connection provider.Connection, session string, command []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if session == "" {
+		return provider.ExecResult{}, fmt.Errorf("tmux session name cannot be empty")
+	}
+	if len(command) == 0 {
+		return provider.ExecResult{}, fmt.Errorf("tmux session command cannot be empty")
+	}
+	target, err := validatedConnectionTarget(connection)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	if err := p.ensureSessionTarget(ctx, target, session, command, opts.Stderr); err != nil {
+		return provider.ExecResult{}, err
+	}
+	started := time.Now().UTC()
+	remote := provider.AsWorkloadUser([]string{"tmux", "attach-session", "-t", session})
+	result, err := p.directSSHTarget(ctx, target, remote, true, opts.Stdin, opts.Stdout, opts.Stderr)
 	if err != nil {
 		return provider.ExecResult{}, err
 	}
 	return provider.ExecResult{ExitCode: result.ExitCode, StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 }
 
-func (p *Provider) ensureSession(ctx context.Context, service, session string, command []string, stderr io.Writer) error {
-	run := func(argv ...string) (procexec.Result, error) {
-		sshArgs := append([]string{"railway", "ssh"}, p.target()...)
-		sshArgs = append(sshArgs, "--service", service)
-		sshArgs = append(sshArgs, argv...)
-		return p.runSSH(ctx, sshArgs, nil, nil, nil)
-	}
-	check, err := run("tmux", "has-session", "-t", session)
+const ensureSessionScript = `set -eu
+session="$1"
+workload_user="$2"
+shift 2
+set_guide_environment() {
+  tmux set-environment -t "$session" VMBOX_NAME "${VMBOX_NAME:-unknown}"
+  tmux set-environment -t "$session" VMBOX_COMPUTE_SLOT "${VMBOX_COMPUTE_SLOT:-standalone}"
+  tmux set-environment -t "$session" VMBOX_ASSIGNMENT_STATE "${VMBOX_ASSIGNMENT_STATE:-running}"
+  tmux set-environment -t "$session" VMBOX_CONNECTION_HEALTH "${VMBOX_CONNECTION_HEALTH:-connected}"
+}
+if tmux has-session -t "$session" 2>/dev/null; then
+  if [ -f /etc/vmbox/tmux.conf ]; then tmux source-file /etc/vmbox/tmux.conf; fi
+  set_guide_environment
+  marker="$(tmux show-environment -t "$session" VMBOX_SESSION_USER 2>/dev/null || true)"
+  if [ "$marker" = "VMBOX_SESSION_USER=$workload_user" ]; then
+    printf "ready\n"
+    exit 0
+  fi
+  panes="$(tmux list-panes -t "$session" -F "#{pane_current_command}" 2>/dev/null || true)"
+  idle=1
+  seen=0
+  for pane in $panes; do
+    seen=1
+    case "$pane" in bash|sh|zsh|fish|dash) ;; *) idle=0 ;; esac
+  done
+  if [ "$seen" -eq 1 ] && [ "$idle" -eq 1 ]; then
+    tmux kill-session -t "$session"
+  else
+    printf "preserved\n"
+    exit 0
+  fi
+fi
+tmux new-session -d -s "$session" -c /data/workspace -- "$@"
+tmux set-environment -t "$session" VMBOX_SESSION_USER "$workload_user"
+if [ -f /etc/vmbox/tmux.conf ]; then tmux source-file /etc/vmbox/tmux.conf; fi
+set_guide_environment
+printf "created\n"
+`
+
+func (p *Provider) ensureSession(ctx context.Context, service service, session string, command []string, stderr io.Writer) error {
+	target, err := p.deploymentTarget(ctx, service)
 	if err != nil {
-		return fmt.Errorf("check tmux session: %w", err)
+		return err
 	}
-	if check.ExitCode == 0 {
-		marker, markerErr := run("tmux", "show-environment", "-t", session, "VMBOX_SESSION_USER")
-		if markerErr == nil && marker.ExitCode == 0 && strings.TrimSpace(string(marker.Stdout)) == "VMBOX_SESSION_USER="+provider.WorkloadUser {
-			return nil
-		}
-		panes, panesErr := run("tmux", "list-panes", "-t", session, "-F", "#{pane_current_command}")
-		if panesErr == nil && panes.ExitCode == 0 && idleSession(string(panes.Stdout)) {
-			killed, killErr := run("tmux", "kill-session", "-t", session)
-			if killErr != nil || killed.ExitCode != 0 {
-				return fmt.Errorf("replace legacy root tmux session")
-			}
-		} else {
-			if stderr != nil {
-				fmt.Fprintln(stderr, "vmbox: existing active tmux session predates the non-root migration; it will be preserved until the box is stopped")
-			}
-			return nil
-		}
-	}
+	return p.ensureSessionTarget(ctx, target, session, command, stderr)
+}
+
+func (p *Provider) ensureSessionTarget(ctx context.Context, target, session string, command []string, stderr io.Writer) error {
 	encoded, _ := json.Marshal(command)
-	pane := provider.AsWorkloadUser([]string{"vmbox-runtime", "direct-json", base64.RawURLEncoding.EncodeToString(encoded)})
-	create := []string{"tmux", "new-session", "-d", "-s", session, "-c", "/data/workspace", "--"}
-	create = append(create, pane...)
-	created, err := run(create...)
-	if err != nil || created.ExitCode != 0 {
-		return fmt.Errorf("create tmux session exited with status %d", created.ExitCode)
+	pane := []string{"vmbox-runtime", "direct-json", base64.RawURLEncoding.EncodeToString(encoded)}
+	script := []string{"sh", "-c", ensureSessionScript, "vmbox-session", session, provider.WorkloadUser}
+	script = append(script, pane...)
+	remote := provider.AsWorkloadUser(script)
+	prepared, err := p.directSSHTarget(ctx, target, remote, false, nil, nil, nil)
+	if err != nil {
+		return fmt.Errorf("prepare tmux session: %w", err)
 	}
-	marked, err := run("tmux", "set-environment", "-t", session, "VMBOX_SESSION_USER", provider.WorkloadUser)
-	if err != nil || marked.ExitCode != 0 {
-		return fmt.Errorf("mark tmux session user")
+	if prepared.ExitCode != 0 {
+		return fmt.Errorf("prepare tmux session exited with status %d", prepared.ExitCode)
+	}
+	if strings.TrimSpace(string(prepared.Stdout)) == "preserved" && stderr != nil {
+		fmt.Fprintln(stderr, "vmbox: existing active tmux session predates the non-root migration; it will be preserved until the box is stopped")
 	}
 	return nil
 }

@@ -409,7 +409,7 @@ func (s *Store) CreateUser(ctx context.Context, p Principal, req v1.CreateUserRe
 	if _, err := tx.ExecContext(ctx, `INSERT INTO access_tokens(id,account_id,user_id,token_hash) VALUES($1,$2,$3,$4)`, uuid(), p.AccountID, created.ID, secrets.TokenHash(token)); err != nil {
 		return created, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'user.create','user',$3,jsonb_build_object('role',$4))`, p.AccountID, p.UserID, created.ID, req.Role); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'user.create','user',$3,jsonb_build_object('role',$4::text))`, p.AccountID, p.UserID, created.ID, req.Role); err != nil {
 		return created, err
 	}
 	return created, tx.Commit()
@@ -450,6 +450,91 @@ func (s *Store) RemoveUser(ctx context.Context, p Principal, id string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func (s *Store) environmentOwner(ctx context.Context) (Principal, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT a.id::text,u.id::text,u.subject
+FROM accounts a
+JOIN LATERAL (
+  SELECT id,subject FROM users
+  WHERE account_id=a.id AND role='owner' AND disabled_at IS NULL
+  ORDER BY created_at,id LIMIT 1
+) u ON true
+ORDER BY a.created_at,a.id
+LIMIT 2`)
+	if err != nil {
+		return Principal{}, err
+	}
+	defer rows.Close()
+	var owners []Principal
+	for rows.Next() {
+		var owner Principal
+		if err := rows.Scan(&owner.AccountID, &owner.UserID, &owner.Subject); err != nil {
+			return Principal{}, err
+		}
+		owner.Role = "owner"
+		owners = append(owners, owner)
+	}
+	if err := rows.Err(); err != nil {
+		return Principal{}, err
+	}
+	if len(owners) == 0 {
+		return Principal{}, fmt.Errorf("environment bootstrap requires one active account owner")
+	}
+	if len(owners) != 1 {
+		return Principal{}, fmt.Errorf("environment bootstrap is ambiguous with multiple controller accounts")
+	}
+	return owners[0], nil
+}
+
+// PutEnvironmentProviderCredential imports a provider token supplied to the
+// controller process. It is intentionally limited to installations with one
+// account and records the owning user in the normal encrypted audit path.
+func (s *Store) PutEnvironmentProviderCredential(ctx context.Context, providerName, name string, req v1.PutProviderCredentialRequest) (v1.ProviderCredential, error) {
+	owner, err := s.environmentOwner(ctx)
+	if err != nil {
+		return v1.ProviderCredential{}, err
+	}
+	return s.PutProviderCredential(ctx, owner, providerName, name, req)
+}
+
+// SeedEnvironmentFleetConfig initializes fleet capacity only when it has not
+// already been configured. Later owner changes through the API always win.
+func (s *Store) SeedEnvironmentFleetConfig(ctx context.Context, providerName, credential string, slots int) (v1.FleetConfig, error) {
+	requested := v1.FleetConfig{Provider: providerName, ProviderCredential: credential, ComputeBoxSlots: slots}
+	if err := requested.Validate(); err != nil {
+		return v1.FleetConfig{}, err
+	}
+	owner, err := s.environmentOwner(ctx)
+	if err != nil {
+		return v1.FleetConfig{}, err
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return v1.FleetConfig{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `INSERT INTO fleet_settings(account_id,provider,provider_credential,compute_box_slots) VALUES($1,$2,$3,$4) ON CONFLICT(account_id,provider,provider_credential) DO NOTHING`, owner.AccountID, providerName, credential, slots)
+	if err != nil {
+		return v1.FleetConfig{}, err
+	}
+	var config v1.FleetConfig
+	err = tx.QueryRowContext(ctx, `SELECT provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings WHERE account_id=$1 AND provider=$2 AND provider_credential=$3`, owner.AccountID, providerName, credential).Scan(&config.Provider, &config.ProviderCredential, &config.ComputeBoxSlots, &config.UpdatedAt)
+	if err != nil {
+		return v1.FleetConfig{}, err
+	}
+	if inserted, err := result.RowsAffected(); err != nil {
+		return v1.FleetConfig{}, err
+	} else if inserted > 0 {
+		_, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'fleet.slots.seed','fleet',$3,jsonb_build_object('compute_box_slots',$4::integer))`, owner.AccountID, owner.UserID, providerName+":"+credential, slots)
+		if err != nil {
+			return v1.FleetConfig{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return v1.FleetConfig{}, err
+	}
+	return config, nil
 }
 
 func (s *Store) ListProviderCredentials(ctx context.Context, accountID string) ([]v1.ProviderCredential, error) {
@@ -494,7 +579,7 @@ func (s *Store) PutProviderCredential(ctx context.Context, p Principal, provider
 	if err != nil {
 		return value, err
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.put','provider_credential',$3,jsonb_build_object('provider',$4,'name',$5))`, p.AccountID, p.UserID, value.ID, providerName, name)
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.put','provider_credential',$3,jsonb_build_object('provider',$4::text,'name',$5::text))`, p.AccountID, p.UserID, value.ID, providerName, name)
 	return value, nil
 }
 
@@ -544,7 +629,7 @@ func (s *Store) DeleteProviderCredential(ctx context.Context, p Principal, provi
 	if count != 1 {
 		return fmt.Errorf("provider credential not found")
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.delete','provider_credential',$3,jsonb_build_object('provider',$4,'name',$5))`, p.AccountID, p.UserID, providerName+":"+name, providerName, name)
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.delete','provider_credential',$3,jsonb_build_object('provider',$4::text,'name',$5::text))`, p.AccountID, p.UserID, providerName+":"+name, providerName, name)
 	return nil
 }
 
@@ -607,7 +692,7 @@ func (s *Store) PutNotification(ctx context.Context, p Principal, kind, name str
 	if err != nil {
 		return value, err
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'notification.put','notification',$3,jsonb_build_object('kind',$4,'name',$5))`, p.AccountID, p.UserID, value.ID, kind, name)
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'notification.put','notification',$3,jsonb_build_object('kind',$4::text,'name',$5::text))`, p.AccountID, p.UserID, value.ID, kind, name)
 	return value, nil
 }
 

@@ -49,6 +49,8 @@ type Context struct {
 	Name               string `json:"name"`
 	Provider           string `json:"provider"`
 	Controller         string `json:"controller,omitempty"`
+	ControllerImage    string `json:"controllerImage,omitempty"`
+	ControllerSource   string `json:"controllerSource,omitempty"`
 	Account            string `json:"account,omitempty"`
 	TokenEnv           string `json:"tokenEnv,omitempty"`
 	Project            string `json:"project,omitempty"`
@@ -64,6 +66,7 @@ type Context struct {
 	IncusProject       string `json:"incusProject,omitempty"`
 	IncusVM            bool   `json:"incusVm,omitempty"`
 	ProviderCredential string `json:"providerCredential,omitempty"`
+	ComputeBoxSlots    *int   `json:"compute_box_slots,omitempty"`
 }
 type File struct {
 	Current      string                   `json:"current"`

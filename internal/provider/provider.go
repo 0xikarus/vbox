@@ -140,6 +140,13 @@ type SessionAttacher interface {
 	AttachSession(context.Context, string, string, []string, ExecOptions) (ExecResult, error)
 }
 
+// ConnectionSessionAttacher attaches using connection details already resolved
+// by the controller. This keeps the interactive data path on direct OpenSSH
+// without asking the client to query Railway or invoke its CLI again.
+type ConnectionSessionAttacher interface {
+	AttachConnection(context.Context, Connection, string, []string, ExecOptions) (ExecResult, error)
+}
+
 const (
 	WorkloadUser = "vmbox"
 	WorkloadHome = "/data/home"
@@ -171,6 +178,20 @@ type Capabilities struct {
 // Provider is the single lifecycle contract used in standalone and controller
 // mode. Implementations must be idempotent and scope destructive operations to
 // resources carrying the requested Owner metadata.
+// DetachableStorageProvider is implemented by providers that can move a
+// persistent workspace independently of compute. Detach must retain storage;
+// deleting storage remains the separate, explicitly destructive operation.
+// AttachedStorageProvider returns the exact persistent volume currently mounted
+// on a compute service. A nil result means the service has no workspace volume.
+type AttachedStorageProvider interface {
+	AttachedStorage(context.Context, string) (*Storage, error)
+}
+
+type DetachableStorageProvider interface {
+	DetachStorage(context.Context, string, Storage) error
+	SanitizeSlot(context.Context, string) error
+}
+
 type Provider interface {
 	Name() string
 	Validate(context.Context) (Capabilities, error)

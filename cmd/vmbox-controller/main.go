@@ -9,10 +9,16 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"path/filepath"
+	"runtime"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/controller"
 	"github.com/0xikarus/vmbox-service/internal/procexec"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -31,7 +37,7 @@ func main() {
 func run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
-	store, err := controller.Open(ctx, os.Getenv("DATABASE_URL"))
+	store, err := openStore(ctx, os.Getenv("DATABASE_URL"))
 	if err != nil {
 		return err
 	}
@@ -76,21 +82,43 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	if err := seedRailwayCredentialFromEnvironment(ctx, store); err != nil {
+		return err
+	}
+	if err := seedInitialFleetFromEnvironment(ctx, store); err != nil {
+		return err
+	}
+	railwaySSHIdentity, err := materializeRailwaySSHIdentity(os.Getenv("VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64"), os.TempDir())
+	if err != nil {
+		return err
+	}
 	registry := provider.NewRegistry()
 	server := controller.NewServer(store, registry)
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
 	server.DefaultImage = os.Getenv("VMBOX_IMAGE")
+	server.WorkerRuntime, err = os.ReadFile("/usr/local/bin/vmbox-runtime")
+	if err != nil {
+		return fmt.Errorf("load matching worker runtime: %w", err)
+	}
 	server.Resolve = func(resolveCtx context.Context, accountID, providerName, credentialName string) (provider.Provider, error) {
 		credential, err := store.ProviderCredential(resolveCtx, accountID, providerName, credentialName)
 		if err != nil {
 			return nil, err
 		}
-		return providerForCredential(providerName, credential)
+		return providerForCredential(providerName, credential, railwaySSHIdentity)
 	}
+	server.Bootstrap = bootstrapWorkload
 	if err := server.StartReconciler(ctx); err != nil {
 		return fmt.Errorf("startup reconciliation: %w", err)
 	}
-	httpServer := &http.Server{Addr: env("VMBOX_CONTROLLER_LISTEN", ":8080"), Handler: server.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
+	listen := os.Getenv("VMBOX_CONTROLLER_LISTEN")
+	if listen == "" {
+		listen = ":8080"
+		if port := os.Getenv("PORT"); port != "" {
+			listen = ":" + port
+		}
+	}
+	httpServer := &http.Server{Addr: listen, Handler: server.Handler(), ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 2 * time.Minute, IdleTimeout: 2 * time.Minute}
 	go func() {
 		<-ctx.Done()
 		shutdown, done := context.WithTimeout(context.Background(), 15*time.Second)
@@ -104,7 +132,92 @@ func run() error {
 	}
 	return err
 }
-func providerForCredential(name string, credential controller.DecryptedProviderCredential) (provider.Provider, error) {
+func openStore(ctx context.Context, dsn string) (*controller.Store, error) {
+	if dsn == "" {
+		return nil, fmt.Errorf("DATABASE_URL is required")
+	}
+	deadline := time.NewTimer(2 * time.Minute)
+	defer deadline.Stop()
+	for attempt := 1; ; attempt++ {
+		store, err := controller.Open(ctx, dsn)
+		if err == nil {
+			return store, nil
+		}
+		if attempt == 1 || attempt%5 == 0 {
+			slog.Warn("waiting for controller database", "attempt", attempt, "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-deadline.C:
+			return nil, fmt.Errorf("controller database did not become ready: %w", err)
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+func bootstrapWorkload(ctx context.Context, p provider.Provider, box provider.Box, components []string) error {
+	bootstrapper, ok := p.(provider.Bootstrapper)
+	if !ok {
+		return nil
+	}
+	runtimeBinary, err := os.ReadFile("/usr/local/bin/vmbox-runtime")
+	if err != nil {
+		return fmt.Errorf("read controller runtime asset: %w", err)
+	}
+	entrypoint, err := os.ReadFile("/usr/local/bin/vmbox-entrypoint")
+	if err != nil {
+		return fmt.Errorf("read controller entrypoint asset: %w", err)
+	}
+	request := provider.BootstrapRequest{
+		Components:      append([]string(nil), components...),
+		RuntimeBinaries: map[string][]byte{runtime.GOARCH: runtimeBinary},
+		Entrypoint:      entrypoint,
+	}
+	return bootstrapper.Bootstrap(ctx, box.ID, request)
+}
+
+func seedRailwayCredentialFromEnvironment(ctx context.Context, store *controller.Store) error {
+	token := strings.TrimSpace(os.Getenv("RAILWAY_TOKEN"))
+	if token == "" {
+		return nil
+	}
+	projectID := strings.TrimSpace(os.Getenv("RAILWAY_PROJECT_ID"))
+	environmentID := strings.TrimSpace(os.Getenv("RAILWAY_ENVIRONMENT_ID"))
+	if projectID == "" || environmentID == "" {
+		return fmt.Errorf("RAILWAY_TOKEN requires RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID")
+	}
+	secret, err := json.Marshal(map[string]string{"token": token})
+	if err != nil {
+		return err
+	}
+	config, err := json.Marshal(map[string]string{
+		"projectId": projectID, "environmentId": environmentID, "tokenEnvironment": "RAILWAY_TOKEN",
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := store.PutEnvironmentProviderCredential(ctx, "railway", "primary", v1.PutProviderCredentialRequest{Secret: secret, Config: config}); err != nil {
+		return fmt.Errorf("import RAILWAY_TOKEN into encrypted provider credential: %w", err)
+	}
+	return nil
+}
+
+func seedInitialFleetFromEnvironment(ctx context.Context, store *controller.Store) error {
+	value := strings.TrimSpace(os.Getenv("VMBOX_INITIAL_COMPUTE_BOX_SLOTS"))
+	if value == "" {
+		return nil
+	}
+	slots, err := strconv.Atoi(value)
+	if err != nil {
+		return fmt.Errorf("VMBOX_INITIAL_COMPUTE_BOX_SLOTS must be an integer: %w", err)
+	}
+	if _, err := store.SeedEnvironmentFleetConfig(ctx, "railway", "primary", slots); err != nil {
+		return fmt.Errorf("seed initial Railway compute fleet: %w", err)
+	}
+	return nil
+}
+
+func providerForCredential(name string, credential controller.DecryptedProviderCredential, railwaySSHIdentity string) (provider.Provider, error) {
 	var secret, config map[string]any
 	if err := json.Unmarshal(credential.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("decode %s credential secret: %w", name, err)
@@ -135,12 +248,11 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 		if tokenEnvironment != "RAILWAY_API_TOKEN" && tokenEnvironment != "RAILWAY_TOKEN" {
 			return nil, fmt.Errorf("Railway tokenEnvironment must be RAILWAY_API_TOKEN or RAILWAY_TOKEN")
 		}
-		other := "RAILWAY_API_TOKEN"
-		if tokenEnvironment == other {
-			other = "RAILWAY_TOKEN"
+		runner, knownHosts, err := controllerRailwayRunner(token, tokenEnvironment)
+		if err != nil {
+			return nil, err
 		}
-		runner := procexec.OSRunner{Env: map[string]string{tokenEnvironment: token}, Unset: []string{other}}
-		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image")}, runner), nil
+		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image"), SSHKnownHostsFile: knownHosts, SSHIdentityFile: railwaySSHIdentity, SSHBinary: runner.Env["VMBOX_REAL_SSH"], SSHControlDir: runner.Env["VMBOX_RAILWAY_CONTROL_DIR"]}, runner), nil
 	case "docker":
 		return dockerprovider.New(dockerprovider.Config{Context: stringValue(config, "context"), Host: stringValue(config, "host"), TLSVerify: boolValue(config, "tlsVerify"), CertPath: stringValue(config, "certPath"), DefaultImage: stringValue(config, "image")}, procexec.OSRunner{}), nil
 	case "incus":
@@ -148,6 +260,62 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 	default:
 		return nil, fmt.Errorf("unknown provider %q", name)
 	}
+}
+
+func materializeRailwaySSHIdentity(encoded, parent string) (string, error) {
+	encoded = strings.TrimSpace(encoded)
+	if encoded == "" {
+		return "", nil
+	}
+	key, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return "", fmt.Errorf("VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64 must be standard base64: %w", err)
+	}
+	if len(key) == 0 || len(key) > 64*1024 || !strings.Contains(string(key), "-----BEGIN OPENSSH PRIVATE KEY-----") {
+		return "", fmt.Errorf("VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64 does not contain a valid-sized OpenSSH private key")
+	}
+	directory := filepath.Join(parent, "vmbox-controller-ssh")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return "", fmt.Errorf("create controller SSH directory: %w", err)
+	}
+	if err := os.Chmod(directory, 0700); err != nil {
+		return "", fmt.Errorf("secure controller SSH directory: %w", err)
+	}
+	path := filepath.Join(directory, "id_ed25519")
+	if err := os.WriteFile(path, key, 0600); err != nil {
+		return "", fmt.Errorf("write controller SSH identity: %w", err)
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return "", fmt.Errorf("secure controller SSH identity: %w", err)
+	}
+	return path, nil
+}
+
+func controllerRailwayRunner(token, tokenEnvironment string) (procexec.OSRunner, string, error) {
+	realSSH, err := exec.LookPath("ssh")
+	if err != nil {
+		return procexec.OSRunner{}, "", fmt.Errorf("locate OpenSSH client: %w", err)
+	}
+	home := os.Getenv("HOME")
+	if home == "" {
+		home = "/data/home"
+	}
+	sshDir := filepath.Join(home, ".local", "share", "vmbox", "railway-ssh")
+	controlDir := filepath.Join(sshDir, "control")
+	knownHosts := filepath.Join(home, ".config", "vmbox", "railway-known-hosts")
+	if err := os.MkdirAll(controlDir, 0700); err != nil {
+		return procexec.OSRunner{}, "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(knownHosts), 0700); err != nil {
+		return procexec.OSRunner{}, "", err
+	}
+	other := "RAILWAY_API_TOKEN"
+	if tokenEnvironment == other {
+		other = "RAILWAY_TOKEN"
+	}
+	path := os.Getenv("PATH")
+	env := map[string]string{tokenEnvironment: token, "PATH": path, "VMBOX_REAL_SSH": realSSH, "VMBOX_RAILWAY_KNOWN_HOSTS": knownHosts, "VMBOX_RAILWAY_CONTROL_DIR": controlDir}
+	return procexec.OSRunner{Env: env, Unset: []string{other}}, knownHosts, nil
 }
 
 func encryptionKey(value string) ([]byte, error) {

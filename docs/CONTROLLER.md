@@ -14,12 +14,31 @@ VMBOX_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
 
 Provider credentials remain in environment variables in standalone mode. Controller mode requires an account-scoped credential in the encrypted vault; scheduling resolves the selected credential for that account and never sends it to a workload. Never put credentials into container images, CLI contexts, reusable profiles, logs, or workload environment. `vmbox-controller bootstrap` prints its owner token once.
 
-Provision or repair a Railway controller from a digest-pinned Railway context. The command prints the billable plan before requiring explicit confirmation, creates the controller and PostgreSQL services idempotently, configures a hash of the one-time bootstrap token, and saves the endpoint in the local context:
+For a single-account Railway controller, a scoped `RAILWAY_TOKEN` environment variable is imported at startup as the encrypted `railway/primary` vault credential. Railway's injected `RAILWAY_PROJECT_ID` and `RAILWAY_ENVIRONMENT_ID` fence that credential to the current project and environment. The plaintext is never returned by the API or copied into a worker.
+
+Controller-initiated Railway OpenSSH requires a dedicated Railway-registered key. Store its standard-base64 private key as the sealed controller variable `VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64`; startup materializes it with mode `0600`, OpenSSH uses only that identity, and it is never copied into a slot or workload image.
+
+`VMBOX_INITIAL_COMPUTE_BOX_SLOTS` optionally seeds Railway fleet capacity for
+that single account during first startup. It is ignored after an owner has
+configured the fleet, so later changes in the web UI or CLI are never
+overwritten by a redeploy.
+
+Provision or repair a Railway controller from a Railway context. The command prints the billable plan before requiring explicit confirmation, reuses the exact `vmbox-controller` and `vmbox-postgres` service names, preserves existing secrets and accounts, and waits for `/healthz` before saving the endpoint. When `--endpoint` is omitted, it reuses or generates a Railway domain. Local source deployment stages only `Dockerfile`, `.dockerignore`, `entrypoint.sh`, `go.mod`, `go.sum`, `cmd/`, and `internal/`; other workspace files are never uploaded.
 
 ```bash
-vmbox controller init --endpoint https://controller.example --yes
-vmbox controller ensure --endpoint https://controller.example --yes
+vmbox controller init \
+  --source . \
+  --box-image ghcr.io/owner/vmbox-service@sha256:... \
+  --yes
+
+# A healthy controller is returned immediately; an unhealthy one is repaired
+# by redeploying the same service and database.
+vmbox controller ensure --yes
 ```
+
+Use `--controller-image IMAGE@sha256:DIGEST` instead of `--source` when a published controller image is available. The controller image and default box image are stored separately so later repair never deploys the box image as the controller. A newly generated owner token is printed once; save it in the context's configured token environment.
+
+Before accepting a box command, the controller bootstraps its bundled runtime and selected tools into generic Debian/Ubuntu-compatible provider images. Project-built images advertise their preinstalled components, allowing bootstrap to skip the slow apt/npm install and refresh only the small runtime payload.
 
 Owner/user and provider credential management:
 
@@ -54,5 +73,22 @@ vmbox notifications setup telegram team --secret-env TELEGRAM_JSON \
 For two-way `needs_input` replies, point Telegram's webhook or Discord's Interaction Endpoint URL at `https://CONTROLLER/v1/integrations/KIND/ACCOUNT_ID/NAME`. Telegram verifies `X-Telegram-Bot-Api-Secret-Token`; Discord verifies every Ed25519 signature. Each external user ID must be both allowlisted and mapped in `config.userMap` to an active controller user UUID, so accepted answers retain tenant boundaries and audit identity. Telegram users reply with `/answer QUESTION_ID TEXT`; Discord notifications include an Answer button and modal. Discord secrets require `webhookUrl` and `publicKey`; optional `config.allowedGuilds` narrows accepted guilds.
 
 The API requires bearer authentication and `Idempotency-Key` for run creation. Reusing a key with a different request is rejected. Controller-created OCI runs require an immutable `@sha256:` image. It applies an account rate limit and records state, ordered events, heartbeats, last visible output, questions, answers, and audit data. On every startup and then periodically, the controller reconciles durable runs with providers, resumes interrupted provisioning/cleanup, detects missing or failed boxes, and enforces every run's absolute `maxTtl`. The controller contains no GitHub, repository, agent, model, prompt, or source-indexing logic.
+
+## Fleet UI and persistent logical boxes
+
+Open the controller URL in a browser and enter an owner or user token (the production operator may provision a temporary password-shaped token). The credential is kept in browser session storage, never local storage. The responsive Scandinavian-style interface supports desktop and phone layouts, persistent per-box chats, durable groups with per-message recipients, provider-visible external boxes, fleet capacity, notification destinations, and a read-only terminal mirror. Sending to an offline logical box allocates a slot and starts Claude by default; the conversation records an online system message when the agent is ready. Closing or backgrounding the page aborts pending requests and stops polling; it does not hibernate a box or leave the UI stuck in a reconnect loop.
+
+Owners can set the number of reusable compute slots from the Fleet view. Slot services are capacity, not boxes: idle slots appear only in Fleet, and an occupied slot appears in the conversation roster exactly once through its assigned logical box. Provider services outside the fleet are shown separately as external and not controller-managed. Persistent logical boxes own their Railway volume independently of a slot: allocation mounts that volume into a free service, while hibernation snapshots tmux state, unmounts the volume, sanitizes the service, and returns the slot to the pool. When every slot is busy, allocation remains queued. Deleting a logical box requires typing its exact name and deletes only its volume; the fleet service count is unchanged.
+
+```bash
+vmbox fleet status
+vmbox fleet slots 4
+vmbox boxes create dev
+vmbox boxes open dev
+vmbox boxes hibernate dev
+vmbox boxes delete-volume dev
+```
+
+`vmbox boxes open` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. Leaving the interactive client keeps both the logical box and tmux session running by default. The exit prompt separately offers hibernation or exact-name volume deletion. Tmux uses `Ctrl-a` as its prefix and the bottom guide lists writing, scrolling, detaching, and QWERTZ-safe keys.
 
 Use TLS at the controller ingress. A configured context never silently falls back to standalone mode. The compatibility contract for external schedulers is `v1alpha1`; see `openapi.yaml`.

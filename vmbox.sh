@@ -109,7 +109,7 @@ Save a confirmed creation setup with the checkbox in the dialog. Reapply it with
 The preset stores selections and local identifiers/paths, never credential contents.
 
 Keep Codex and other work running when you leave:
-  1. Press Ctrl-b
+  1. Press Ctrl-a
   2. Release both keys
   3. Press d
 After detaching, vmbox shows this box's current-period cost and asks whether to
@@ -124,7 +124,7 @@ tmux_help() {
   cat >&2 <<'EOF'
 
 Leave this box without stopping Codex:
-  1. Press Ctrl-b
+  1. Press Ctrl-a
   2. Release both keys
   3. Press d
 
@@ -220,6 +220,308 @@ railway_retry() {
 }
 
 services() { railway_retry railway service list "${target[@]}" --json; }
+
+# --- Direct SSH data path -----------------------------------------------------
+#
+# Railway is the control plane, not the data path. It is asked exactly once per
+# operation which deployment instance currently backs a service; every remote
+# command after that streams over one OpenSSH ControlMaster owned by this CLI.
+# Repeated `railway ssh` invocations paid for a fresh Railway lookup, a fresh
+# TCP handshake, and a fresh host-key decision each time, which is what turned a
+# single rotated ssh.railway.com host key into a total outage.
+railway_ssh_host=ssh.railway.com
+ssh_known_hosts="${VMBOX_SSH_KNOWN_HOSTS:-$(dirname -- "$config_file")/railway-known-hosts}"
+ssh_endpoint=""
+ssh_endpoint_service=""
+ssh_control_path=""
+ssh_master_ready=0
+ssh_direct_disabled="${VMBOX_DISABLE_DIRECT_SSH:-0}"
+ssh_host_key_repaired=0
+workload_remote_path='/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
+
+service_instance_query='query($serviceId: String!, $environmentId: String!) {
+  serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { id }
+}'
+
+# ssh_runtime_directory holds the control socket and the endpoint cache. It is
+# private to this user and short enough for a ControlPath to fit in a Unix
+# socket address.
+ssh_runtime_directory() {
+  local directory="${TMPDIR:-/tmp}/vmbox-ssh-$(id -u)"
+  mkdir -p -- "$directory" || return 1
+  chmod 700 -- "$directory" || return 1
+  printf '%s' "$directory"
+}
+
+# Most remote commands are read inside a command substitution, so the resolved
+# endpoint has to outlive a subshell. $$ is stable across subshells of one CLI
+# invocation, which makes this file exactly one operation's cache. The path is
+# computed without creating anything, so commands that never open a connection
+# leave no trace.
+ssh_state_file() {
+  printf '%s/vmbox-ssh-%s/session-%s.state' "${TMPDIR:-/tmp}" "$(id -u)" "$$"
+}
+
+load_ssh_endpoint_cache() {
+  local file service="" endpoint="" control="" disabled=""
+  file="$(ssh_state_file)"
+  [[ -r "$file" ]] || return 0
+  { IFS= read -r service; IFS= read -r endpoint; IFS= read -r control; IFS= read -r disabled; } \
+    <"$file" 2>/dev/null || true
+  [[ "$disabled" == 1 ]] && ssh_direct_disabled=1
+  [[ "$service" == "$service_name" ]] || return 0
+  [[ "$endpoint" == *"@$railway_ssh_host" ]] || return 0
+  [[ -n "$control" ]] || return 0
+  ssh_endpoint_service="$service"
+  ssh_endpoint="$endpoint"
+  ssh_control_path="$control"
+  return 0
+}
+
+save_ssh_endpoint_cache() {
+  local file tmp
+  ssh_runtime_directory >/dev/null || return 0
+  file="$(ssh_state_file)"
+  tmp="$(mktemp "$file.XXXXXX" 2>/dev/null)" || return 0
+  printf '%s\n%s\n%s\n%s\n' \
+    "$ssh_endpoint_service" "$ssh_endpoint" "$ssh_control_path" "$ssh_direct_disabled" >"$tmp"
+  chmod 600 -- "$tmp"
+  mv -f -- "$tmp" "$file"
+}
+
+release_ssh_session() {
+  rm -f -- "$(ssh_state_file)"
+}
+[[ "${VMBOX_TEST_SOURCE_ONLY:-0}" == 1 ]] || trap release_ssh_session EXIT
+
+# service_instance_id is the one control-plane question this CLI asks per
+# operation. It is deliberately short-tempered: when Railway cannot answer,
+# falling back to `railway ssh` reaches the box sooner than a long retry loop.
+service_instance_id() {
+  local service_id="$1" result variables attempt
+  variables="$(jq -nc --arg serviceId "$service_id" --arg environmentId "$VMBOX_ENVIRONMENT_ID" \
+    '{serviceId: $serviceId, environmentId: $environmentId}')"
+  for attempt in 1 2; do
+    if result="$(railway_api "$service_instance_query" "$variables" 2>/dev/null)"; then
+      jq -r '.serviceInstance.id // empty' <<<"$result"
+      return 0
+    fi
+    ((attempt == 2)) || sleep 1
+  done
+  return 1
+}
+
+# invalidate_ssh_endpoint drops the cached deployment identity together with the
+# master bound to it. It runs after any deployment change and whenever SSH
+# reports a transport failure, so a stale identity is never reused.
+invalidate_ssh_endpoint() {
+  if [[ -n "$ssh_endpoint" && -n "$ssh_control_path" ]]; then
+    # Ask the master to close rather than deleting its socket: OpenSSH removes
+    # the socket itself, and a live ControlPersist connection outlives an
+    # unlinked path.
+    ssh -o ControlPath="$ssh_control_path" -O exit -- "$ssh_endpoint" </dev/null >/dev/null 2>&1 || true
+  fi
+  ssh_endpoint=""
+  ssh_endpoint_service=""
+  ssh_control_path=""
+  ssh_master_ready=0
+  save_ssh_endpoint_cache
+}
+
+# resolve_ssh_endpoint resolves and caches instance@ssh.railway.com for the
+# current service in $ssh_endpoint. It deliberately assigns rather than prints:
+# a command substitution would resolve the endpoint inside a subshell and throw
+# the cache away, turning one control-plane lookup per operation back into one
+# per remote command. The identity is re-read only after an invalidation.
+resolve_ssh_endpoint() {
+  local service service_id instance
+  load_ssh_endpoint_cache
+  if [[ -n "$ssh_endpoint" && "$ssh_endpoint_service" == "$service_name" ]]; then
+    return 0
+  fi
+  service="$(find_service 2>/dev/null || true)"
+  [[ -n "$service" ]] || return 1
+  service_id="$(jq -r '.id // empty' <<<"$service")"
+  [[ -n "$service_id" ]] || return 1
+  instance="$(service_instance_id "$service_id" 2>/dev/null || true)"
+  [[ "$instance" =~ ^[A-Za-z0-9_-]+$ ]] || return 1
+  if [[ -n "$ssh_endpoint" && "$ssh_endpoint" != "$instance@$railway_ssh_host" ]]; then
+    invalidate_ssh_endpoint
+  fi
+  ssh_endpoint="$instance@$railway_ssh_host"
+  ssh_endpoint_service="$service_name"
+  ssh_control_path="$(ssh_control_path_for "$ssh_endpoint")" || return 1
+  ssh_master_ready=0
+  save_ssh_endpoint_cache
+  return 0
+}
+
+# ssh_control_path_for keeps the socket path short. A ControlPath longer than a
+# sockaddr_un makes every multiplexed connection fail with a bind error, so the
+# endpoint is hashed into a fixed-width name inside a private per-user directory.
+ssh_control_path_for() {
+  local endpoint="$1" digest directory
+  directory="$(ssh_runtime_directory)" || return 1
+  digest="$(printf '%s' "$endpoint" | sha256sum | cut -c1-16)"
+  printf '%s/%s.sock' "$directory" "$digest"
+}
+
+ssh_option_list() {
+  ssh_opts=(
+    -o BatchMode=yes
+    -o StrictHostKeyChecking=accept-new
+    -o "UserKnownHostsFile=$ssh_known_hosts"
+    -o ConnectTimeout=15
+    -o ServerAliveInterval=30
+    -o ServerAliveCountMax=2
+    -o "ControlPath=$ssh_control_path"
+  )
+}
+
+# repair_rotated_host_key removes exactly one entry, for exactly one host, from
+# the vmbox-only known-hosts file. The user's ~/.ssh/known_hosts is never read
+# or written, and the repair is attempted at most once per process.
+repair_rotated_host_key() {
+  local output="$1"
+  ((ssh_host_key_repaired == 0)) || return 1
+  grep -Fq 'REMOTE HOST IDENTIFICATION HAS CHANGED' <<<"$output" || return 1
+  [[ -s "$ssh_known_hosts" ]] || return 1
+  command -v ssh-keygen >/dev/null 2>&1 || return 1
+  echo "vmbox: $railway_ssh_host rotated its host key; removing only that entry from $(display_path "$ssh_known_hosts")" >&2
+  ssh-keygen -f "$ssh_known_hosts" -R "$railway_ssh_host" >/dev/null 2>&1 || return 1
+  ssh_host_key_repaired=1
+  return 0
+}
+
+# shell_quote renders an argv as one POSIX shell word list. printf %q is not
+# usable here: it emits bash-only $'...' forms for scripts that contain
+# newlines, and the remote login shell is not guaranteed to be bash.
+shell_quote() {
+  local argument result=""
+  for argument in "$@"; do
+    result+="'${argument//\'/\'\\\'\'}' "
+  done
+  printf '%s' "$result"
+}
+
+remove_stale_control_socket() {
+  local path="$1"
+  [[ -e "$path" || -L "$path" ]] || return 0
+  [[ -S "$path" ]] || die "refusing to remove non-socket SSH control path $path"
+  rm -f -- "$path"
+}
+
+# ensure_ssh_master establishes at most one background master per endpoint and
+# reuses it for every later command in this operation.
+ensure_ssh_master() {
+  local endpoint="$1" attempt errors status output
+  ((ssh_master_ready == 0)) || return 0
+  mkdir -p -- "$(dirname -- "$ssh_known_hosts")" || return 1
+  ssh_option_list
+  if ssh "${ssh_opts[@]}" -O check -- "$endpoint" </dev/null >/dev/null 2>&1; then
+    ssh_master_ready=1
+    return 0
+  fi
+  remove_stale_control_socket "$ssh_control_path"
+  for attempt in 1 2; do
+    errors="$(mktemp)"
+    status=0
+    ssh "${ssh_opts[@]}" -M -N -f -o ControlMaster=yes -o ControlPersist=120 \
+      -- "$endpoint" </dev/null 2>"$errors" || status=$?
+    output="$(<"$errors")"
+    rm -f -- "$errors"
+    if ((status == 0)); then
+      ssh_master_ready=1
+      return 0
+    fi
+    if ((attempt == 1)) && repair_rotated_host_key "$output"; then
+      continue
+    fi
+    [[ -z "$output" ]] || printf '%s\n' "$output" >&2
+    return "$status"
+  done
+  return 1
+}
+
+# box_ssh_run streams one remote command over the shared master. Railway's own
+# `railway ssh` remains available as a fallback so that a box is still reachable
+# when the direct path cannot be established.
+# box_ssh_deadline bounds one non-interactive remote command. A probe must not
+# hang the whole CLI on a half-open connection; an interactive session is never
+# bounded, because a user session is meant to last.
+box_ssh_deadline=""
+
+box_ssh_run() {
+  local interactive="$1" endpoint status attempt command
+  local -a limit=()
+  shift
+  (($#)) || die "remote command cannot be empty"
+  if ((interactive == 0)) && [[ -n "$box_ssh_deadline" ]] &&
+    command -v timeout >/dev/null 2>&1; then
+    limit=(timeout "$box_ssh_deadline")
+  fi
+  load_ssh_endpoint_cache
+  if ((ssh_direct_disabled == 0)); then
+    command="$(shell_quote "$@")"
+    for attempt in 1 2; do
+      if ! resolve_ssh_endpoint; then
+        break
+      fi
+      endpoint="$ssh_endpoint"
+      if ! ensure_ssh_master "$endpoint"; then
+        break
+      fi
+      ssh_option_list
+      if ((interactive)); then
+        if ssh "${ssh_opts[@]}" -o ControlMaster=no -tt -- "$endpoint" "$command"; then
+          status=0
+        else
+          status=$?
+        fi
+      else
+        if "${limit[@]}" ssh "${ssh_opts[@]}" -o ControlMaster=no -T -- "$endpoint" "$command"; then
+          status=0
+        else
+          status=$?
+        fi
+      fi
+      # 255 is OpenSSH's own transport failure. The deployment identity behind
+      # it may be gone, so both the endpoint and its master are dropped.
+      if ((status == 255)); then
+        invalidate_ssh_endpoint
+        ((attempt == 1)) && continue
+      fi
+      return "$status"
+    done
+    echo "vmbox: direct Railway SSH is unavailable; using 'railway ssh' for the rest of this run" >&2
+    ssh_direct_disabled=1
+    save_ssh_endpoint_cache
+  fi
+  "${limit[@]}" railway ssh "${target[@]}" --service "$service_name" "$@"
+}
+
+box_ssh() { box_ssh_run 0 "$@"; }
+box_ssh_interactive() { box_ssh_run 1 "$@"; }
+
+# box_ssh_as_workload runs a remote command as the unprivileged vmbox user with
+# HOME=/data/home. Railway's SSH data path lands as root, and a root process
+# leaves root-owned credentials, root-owned workspace files, and a root-owned
+# tmux server whose agents run as root.
+workload_prefix() {
+  workload_argv=(sudo -n -H -u vmbox -- env HOME=/data/home USER=vmbox LOGNAME=vmbox
+    SHELL=/bin/bash "PATH=$workload_remote_path")
+}
+
+box_ssh_as_workload() {
+  workload_prefix
+  box_ssh "${workload_argv[@]}" "$@"
+}
+
+box_ssh_as_workload_interactive() {
+  workload_prefix
+  box_ssh_interactive "${workload_argv[@]}" \
+    "TERM=${TERM:-xterm-256color}" "COLORTERM=${COLORTERM:-truecolor}" "$@"
+}
 managed_services() {
   services | jq -c --arg prefix "$VMBOX_SERVICE_PREFIX" \
     '[.[] | select(.name | startswith($prefix))]'
@@ -474,22 +776,42 @@ ensure_ready() {
   esac
 
   echo "vmbox: deploying '$service_name'" >&2
+  invalidate_ssh_endpoint
   if ! deployment_id="$(deploy_bundle)"; then
     die "could not submit deployment for '$service_name'"
   fi
   wait_for_service "$deployment_id"
+  invalidate_ssh_endpoint
 }
 
+# data_probe_conclusive records whether the probe actually ran. A failed SSH
+# transport is not evidence that /data is missing, and treating it as such is
+# what escalated a rotated host key into a repair redeploy of a healthy box.
+data_probe_conclusive=0
+
+data_mount_probe="$(cat <<'EOF_DATA_PROBE'
+fstype="$(findmnt -rn -o FSTYPE -M /data 2>/dev/null | head -1)"
+if [ -z "$fstype" ]; then
+  fstype="$(awk '$2 == "/data" { print $3 }' /proc/mounts 2>/dev/null | tail -1)"
+fi
+printf '__VMBOX_DATA__ %s\n' "${fstype:-none}"
+EOF_DATA_PROBE
+)"
+
 persistent_data_mounted() {
-  local attempt
-  local -a ssh_command=(railway ssh "${target[@]}" --service "$service_name")
+  local attempt output fstype box_ssh_deadline=30
+  data_probe_conclusive=0
   for attempt in 1 2 3; do
-    if command -v timeout >/dev/null 2>&1; then
-      timeout 30 "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1 && return 0
-    else
-      "${ssh_command[@]}" 'findmnt -rn -M /data >/dev/null' >/dev/null 2>&1 && return 0
+    if output="$(box_ssh bash -lc "$data_mount_probe" 2>/dev/null)"; then
+      fstype="$(awk '$1 == "__VMBOX_DATA__" { print $2; exit }' <<<"$output")"
+      if [[ -n "$fstype" ]]; then
+        data_probe_conclusive=1
+        [[ "$fstype" == none ]] && return 1
+        echo "vmbox: /data is mounted ($fstype)" >&2
+        return 0
+      fi
     fi
-    ((attempt == 3)) || { echo "vmbox: /data mount check failed; retrying ($attempt/3)" >&2; sleep 2; }
+    ((attempt == 3)) || { echo "vmbox: /data mount check did not complete; retrying ($attempt/3)" >&2; sleep 2; }
   done
   return 1
 }
@@ -502,6 +824,9 @@ ensure_persistent_data() {
     return 0
   fi
 
+  if ((data_probe_conclusive == 0)); then
+    die "could not reach '$service_name' over SSH to verify /data; nothing was redeployed. Check your Railway login and the $railway_ssh_host host key, then retry"
+  fi
   echo "vmbox: /data is attached but missing from the running container; redeploying once" >&2
   previous_data="$(railway_retry railway deployment list "${target[@]}" \
     --service "$service_name" --limit 1 --json 2>/dev/null || printf '[]')"
@@ -525,6 +850,7 @@ ensure_persistent_data() {
   fi
   [[ -n "$deployment_id" ]] || die "Railway did not create a repair deployment"
   wait_for_service "$deployment_id"
+  invalidate_ssh_endpoint
 
   for attempt in {1..6}; do
     if persistent_data_mounted; then
@@ -540,9 +866,16 @@ ensure_persistent_data() {
 box_welcome=""
 box_status=""
 
+remote_address_probe="$(cat <<'EOF_ADDRESS_PROBE'
+private_ip="$(hostname -I 2>/dev/null | cut -d' ' -f1)"
+public_ip="$(curl -fsS --max-time 3 https://api.ipify.org 2>/dev/null || true)"
+printf '%s\t%s\n' "$private_ip" "$public_ip"
+EOF_ADDRESS_PROBE
+)"
+
 show_box_welcome() {
   local service service_id status regions replicas volume_size limits specs limit_source
-  local remote_info private_ip public_ip
+  local remote_info private_ip public_ip box_ssh_deadline=20
   box_status=""
   box_welcome=""
   service="$(find_service)"
@@ -561,9 +894,7 @@ show_box_welcome() {
     limit_source="resource API unavailable"
   fi
 
-  remote_info="$(railway ssh "${target[@]}" --service "$service_name" \
-    'private_ip=$(hostname -I 2>/dev/null | cut -d" " -f1); public_ip=$(curl -fsS --max-time 3 https://api.ipify.org 2>/dev/null || true); printf "%s\t%s\n" "$private_ip" "$public_ip"' \
-    2>/dev/null || true)"
+  remote_info="$(box_ssh bash -lc "$remote_address_probe" 2>/dev/null || true)"
   IFS=$'\t' read -r private_ip public_ip <<<"$(tail -1 <<<"$remote_info")"
   box_status=" vmbox $box_id | $specs | $regions "
   [[ -n "$private_ip" ]] || private_ip="unavailable"
@@ -584,19 +915,40 @@ Box ready
   Agent callback:     vmbox-report "progress or result"
 
 Keep this session running:
-  Detach:            Ctrl-b, release both keys, then d
+  Detach:            Ctrl-a, release both keys, then d
   Reconnect:         vmbox resume $box_id
   Avoid:             exit (ends the shell/session)
 EOF_BANNER
 )"
 }
 
+# A box that was provisioned before the ownership fix still holds root-owned
+# credentials, instructions, and task state, which the agents cannot read. The
+# repair below runs as root, touches only entries that are not already the
+# workload user's, and is bounded: all of /data/home, which is small and
+# entirely vmbox's, plus the top level of /data/workspace, which is where the
+# CLI installs files. Deeper workspace content belongs to whoever created it.
+ownership_repair_script="$(cat <<'EOF_OWNERSHIP_REPAIR'
+set -u
+[ "$(id -u)" = 0 ] || exit 0
+id -u vmbox >/dev/null 2>&1 || exit 0
+find /data/home -xdev ! -user vmbox -exec chown vmbox:vmbox {} + 2>/dev/null || true
+find /data/workspace -xdev -maxdepth 1 ! -user vmbox -exec chown vmbox:vmbox {} + 2>/dev/null || true
+exit 0
+EOF_OWNERSHIP_REPAIR
+)"
+
+repair_workload_ownership() {
+  local box_ssh_deadline=60
+  box_ssh bash -lc "$ownership_repair_script" >/dev/null 2>&1 ||
+    echo "vmbox: warning: could not repair /data ownership; agent credentials may stay unreadable" >&2
+}
+
 configure_workspace_trust() {
   local verify_script
   [[ -r "$bundle/entrypoint.sh" ]] || die "deployment bundle missing; rerun install.sh"
   echo "vmbox: enabling full-autonomy defaults for Codex and Claude" >&2
-  railway ssh "${target[@]}" --service "$service_name" \
-    env HOME=/data/home bash -s -- --configure-agent-trust \
+  box_ssh_as_workload bash -s -- --configure-agent-trust \
     < "$bundle/entrypoint.sh" >/dev/null
   verify_script="$(cat <<'EOF_VERIFY_TRUST'
 codex_config=/data/home/.codex/config.toml
@@ -614,13 +966,13 @@ jq -e '((.trustedDirectories // []) | index("/data/workspace") != null)
   "$claude_settings" >/dev/null
 EOF_VERIFY_TRUST
 )"
-  railway ssh "${target[@]}" --service "$service_name" \
-    bash -lc "$verify_script" >/dev/null ||
+  box_ssh_as_workload bash -lc "$verify_script" >/dev/null ||
     die "could not verify Codex/Claude full-autonomy defaults"
 }
 attach() {
   local detached="$1" welcome_b64 command_b64="" prepare_script decorate_script decorator_pid attach_status=0
   shift
+  repair_workload_ownership
   configure_workspace_trust
   show_box_welcome
   welcome_b64="$(printf '%s\n' "$box_welcome" | base64 | tr -d '\n')"
@@ -746,8 +1098,7 @@ EOF_PREPARE
   if (($#)); then
     echo "vmbox: starting forwarded command in tmux: $1" >&2
   fi
-  railway ssh "${target[@]}" --service "$service_name" \
-    bash -lc "$prepare_script" bash "$box_id" "$welcome_b64" "$box_status" "$command_b64" \
+  box_ssh_as_workload bash -lc "$prepare_script" bash "$box_id" "$welcome_b64" "$box_status" "$command_b64" \
     </dev/null >/dev/null
   if ((detached)); then
     echo "vmbox: command is running detached in tmux on '$box_id'" >&2
@@ -760,18 +1111,17 @@ session="$1"
 status="$2"
 for _ in {1..40}; do
   if tmux list-clients -t "$session" -F '#{client_name}' 2>/dev/null | grep -q .; then
-    tmux display-message -t "$session" -d 6000 "$status | Detach: Ctrl-b, then d"
+    tmux display-message -t "$session" -d 6000 "$status | Detach: Ctrl-a, then d"
     exit 0
   fi
   sleep 0.25
 done
 EOF_DECORATE
 )"
-  railway ssh "${target[@]}" --service "$service_name" \
-    bash -lc "$decorate_script" bash "$box_id" "$box_status" \
+  box_ssh_as_workload bash -lc "$decorate_script" bash "$box_id" "$box_status" \
     </dev/null >/dev/null 2>&1 &
   decorator_pid=$!
-  if railway ssh "${target[@]}" --service "$service_name" -- tmux attach-session -t "$box_id"; then
+  if box_ssh_as_workload_interactive tmux attach-session -t "$box_id"; then
     attach_status=0
   else
     attach_status=$?
@@ -847,9 +1197,7 @@ if jq -e 'type == "object"' "$status_file" >/dev/null 2>&1; then
 fi
 EOF_FETCH_TASK
 )"
-  output="$(railway ssh "${target[@]}" --service "$service_name" \
-    bash -lc "$fetch_script" \
-    2>/dev/null || true)"
+  output="$(box_ssh_as_workload bash -lc "$fetch_script" 2>/dev/null || true)"
   task_json="$(extract_task_json <<<"$output")"
   jq -e 'type == "object"' <<<"$task_json" >/dev/null 2>&1 || return 1
   printf '%s\n' "$task_json"
@@ -914,7 +1262,7 @@ while true; do
 done
 EOF_WAIT_TASK
 )"
-  output="$(railway ssh "${target[@]}" --service "$service_name" bash -lc "$wait_script")"
+  output="$(box_ssh_as_workload bash -lc "$wait_script")"
   task_json="$(extract_task_json <<<"$output")"
   jq -e 'type == "object"' <<<"$task_json" >/dev/null 2>&1 ||
     die "task-status connection ended before completion"
@@ -1511,7 +1859,7 @@ copy_profile_file() {
   [[ -f "$source" && -r "$source" ]] || return 0
   echo "vmbox: copying $(basename -- "$source") to $remote_file" >&2
   local_sha="$(sha256sum "$source" | awk '{print $1}')"
-  remote_output="$(railway ssh "${target[@]}" --service "$service_name" \
+  remote_output="$(box_ssh_as_workload bash -lc \
     "umask 077; mkdir -p '$remote_dir'; chmod 700 '$remote_dir'; cat > '$remote_file'; chmod '$mode' '$remote_file'; sha256sum '$remote_file'" \
     < "$source")"
   remote_sha="$(grep -Eo '[0-9a-f]{64}' <<<"$remote_output" | tail -1 || true)"
@@ -1524,16 +1872,16 @@ verify_profile_login() {
   local provider="$1"
   case "$provider" in
     codex)
-      if railway ssh "${target[@]}" --service "$service_name" \
-        "HOME=/data/home CODEX_HOME=/data/home/.codex codex login status >/dev/null 2>&1" >/dev/null; then
+      if box_ssh_as_workload bash -lc \
+        'CODEX_HOME=/data/home/.codex codex login status >/dev/null 2>&1' >/dev/null; then
         echo "vmbox: Codex login recognized inside the box" >&2
       else
         echo "vmbox: warning: Codex did not recognize the uploaded login; run 'codex login' inside the box" >&2
       fi
       ;;
     claude)
-      if railway ssh "${target[@]}" --service "$service_name" \
-        "HOME=/data/home CLAUDE_CONFIG_DIR=/data/home/.claude claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null" >/dev/null; then
+      if box_ssh_as_workload bash -lc \
+        "CLAUDE_CONFIG_DIR=/data/home/.claude claude auth status --json 2>/dev/null | jq -e '.loggedIn == true' >/dev/null" >/dev/null; then
         echo "vmbox: Claude login recognized inside the box" >&2
       else
         echo "vmbox: warning: Claude did not recognize the uploaded login; run 'claude auth login' inside the box" >&2
@@ -1846,6 +2194,19 @@ upload_selected_github_account() {
   echo "vmbox: GitHub account sync skipped (nothing selected)" >&2
 }
 
+github_login_script="$(cat <<'EOF_GITHUB_LOGIN'
+set -euo pipefail
+host="$1"
+protocol="$2"
+umask 077
+unset GH_TOKEN GITHUB_TOKEN
+gh auth login --hostname "$host" --git-protocol "$protocol" --with-token >/dev/null
+gh auth setup-git --hostname "$host" >/dev/null
+chmod 700 "$HOME/.config" "$HOME/.config/gh" 2>/dev/null || true
+chmod 600 "$HOME/.config/gh/hosts.yml" 2>/dev/null || true
+EOF_GITHUB_LOGIN
+)"
+
 upload_github_account() {
   local index="$1" host user protocol token remote_output remote_user
   local git_name git_email git_name_b64 git_email_b64 identity_synced=0
@@ -1853,8 +2214,7 @@ upload_github_account() {
   user="${github_users[$index]}"
   protocol="${github_protocols[$index]}"
 
-  if ! railway ssh "${target[@]}" --service "$service_name" \
-    "command -v gh >/dev/null 2>&1" >/dev/null; then
+  if ! box_ssh_as_workload bash -lc 'command -v gh >/dev/null 2>&1' >/dev/null; then
     echo "vmbox: warning: GitHub CLI is missing in this deployment; redeploy the box with the current image" >&2
     return 0
   fi
@@ -1868,8 +2228,8 @@ upload_github_account() {
   [[ -n "$git_email" ]] || git_email="$user@users.noreply.github.com"
 
   echo "vmbox: securely syncing GitHub account $user@$host ($protocol)" >&2
-  if ! printf '%s\n' "$token" | railway ssh "${target[@]}" --service "$service_name" \
-    "umask 077; export HOME=/data/home; unset GH_TOKEN GITHUB_TOKEN; gh auth login --hostname '$host' --git-protocol '$protocol' --with-token >/dev/null && gh auth setup-git --hostname '$host' >/dev/null; chmod 700 /data/home/.config/gh; chmod 600 /data/home/.config/gh/hosts.yml" >/dev/null; then
+  if ! printf '%s\n' "$token" | box_ssh_as_workload \
+    bash -lc "$github_login_script" bash "$host" "$protocol" >/dev/null; then
     unset token
     echo "vmbox: warning: GitHub account sync failed for $user@$host" >&2
     return 0
@@ -1877,15 +2237,15 @@ upload_github_account() {
 
   git_name_b64="$(printf '%s' "$git_name" | base64 | tr -d '\n')"
   git_email_b64="$(printf '%s' "$git_email" | base64 | tr -d '\n')"
-  if railway ssh "${target[@]}" --service "$service_name" \
-    bash -lc 'export HOME=/data/home; name="$(printf %s "$1" | base64 -d)"; email="$(printf %s "$2" | base64 -d)"; git config --global user.name "$name"; git config --global user.email "$email"' \
+  if box_ssh_as_workload bash -lc \
+    'name="$(printf %s "$1" | base64 -d)"; email="$(printf %s "$2" | base64 -d)"; git config --global user.name "$name"; git config --global user.email "$email"' \
     bash "$git_name_b64" "$git_email_b64" >/dev/null; then
     identity_synced=1
   fi
   unset token
 
-  if ! remote_output="$(railway ssh "${target[@]}" --service "$service_name" \
-    "export HOME=/data/home GH_HOST='$host'; unset GH_TOKEN GITHUB_TOKEN; gh api user --jq .login" 2>/dev/null)"; then
+  if ! remote_output="$(box_ssh_as_workload bash -lc \
+    "export GH_HOST='$host'; unset GH_TOKEN GITHUB_TOKEN; gh api user --jq .login" 2>/dev/null)"; then
     echo "vmbox: warning: GitHub credentials were stored, but the API login check failed" >&2
     return 0
   fi
@@ -1958,7 +2318,12 @@ select_credentials() {
 
 save_reusable_setup=0
 
-write_reusable_setup() (
+write_reusable_setup() { write_setup_record "$reuse_file" announce; }
+
+# write_setup_record serializes the confirmed selections. It records local
+# identifiers and paths only; credential contents never leave the machine.
+write_setup_record() (
+  local record="$1" announce="${2:-}"
   local i tmp saved_at components_json profiles_json github_json instructions_json
   local -a selected_component_ids=() profile_pairs=()
   for i in "${!component_ids[@]}"; do
@@ -1992,8 +2357,9 @@ write_reusable_setup() (
     break
   done
 
-  mkdir -p "$(dirname -- "$reuse_file")"
-  tmp="$(mktemp "${reuse_file}.tmp.XXXXXX")"
+  mkdir -p "$(dirname -- "$record")"
+  chmod 700 "$(dirname -- "$record")" 2>/dev/null || true
+  tmp="$(mktemp "${record}.tmp.XXXXXX")"
   saved_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if ! jq -n --arg savedAt "$saved_at" --arg region "$selected_region" \
     --argjson components "$components_json" --argjson profiles "$profiles_json" \
@@ -2004,20 +2370,38 @@ write_reusable_setup() (
     return 1
   fi
   chmod 600 "$tmp"
-  mv -f "$tmp" "$reuse_file"
-  echo "vmbox: saved reusable setup to $reuse_file" >&2
+  mv -f "$tmp" "$record"
+  [[ "$announce" != announce ]] || echo "vmbox: saved reusable setup to $record" >&2
 )
 
 load_reusable_setup() {
+  load_setup_record "$reuse_file" strict \
+    "no reusable setup saved; check 'Save as reusable setup' when creating a box"
+}
+
+# setup_record_gap reports one selection the record refers to but the machine no
+# longer offers. A strict load refuses; a provisioning resume warns and carries
+# on, so an interrupted box still finishes with whatever is still available.
+setup_record_gap() {
+  if [[ "$setup_record_strict" == strict ]]; then
+    die "$1"
+  fi
+  echo "vmbox: warning: $1" >&2
+}
+
+setup_record_strict=strict
+
+load_setup_record() {
+  local record="$1" missing_message="${3:-setup record is missing: $1}"
   local data saved_component saved_region provider source host user protocol
   local saved_instruction i found profile_summary="" github_summary="none" instruction_summary="none"
-  [[ -r "$reuse_file" ]] ||
-    die "no reusable setup saved; check 'Save as reusable setup' when creating a box"
+  setup_record_strict="${2:-strict}"
+  [[ -r "$record" ]] || die "$missing_message"
   if ! data="$(jq -ce '
     select(.version == 1 and (.components | type == "array") and
       (.region | type == "string") and (.profiles | type == "array"))
-  ' "$reuse_file")"; then
-    die "reusable setup is invalid: $reuse_file"
+  ' "$record")"; then
+    die "setup record is invalid: $record"
   fi
 
   component_selected=(0 0 0 0)
@@ -2030,18 +2414,18 @@ load_reusable_setup() {
         break
       fi
     done
-    ((found)) || die "reusable setup contains unsupported component '$saved_component'"
+    ((found)) || die "setup record contains unsupported component '$saved_component'"
   done < <(jq -r '.components[]' <<<"$data")
 
   saved_region="$(jq -r '.region' <<<"$data")"
   platform_region_id "$saved_region" >/dev/null ||
-    die "reusable setup contains unsupported region '$saved_region'"
+    die "setup record contains unsupported region '$saved_region'"
   selected_region="$saved_region"
 
   discover_profiles
   while IFS=$'\t' read -r provider source; do
     [[ "$provider" == codex || "$provider" == claude ]] ||
-      die "reusable setup contains unsupported profile provider '$provider'"
+      die "setup record contains unsupported profile provider '$provider'"
     add_profile_candidate "$provider" "$source"
     found=0
     for i in "${!profile_sources[@]}"; do
@@ -2052,14 +2436,14 @@ load_reusable_setup() {
         break
       fi
     done
-    ((found)) || die "saved $provider profile is no longer available: $source"
+    ((found)) || setup_record_gap "saved $provider profile is no longer available: $source"
   done < <(jq -r '.profiles[] | [.provider, .source] | @tsv' <<<"$data")
 
   discover_github_accounts
   if [[ "$(jq -r '.github // empty' <<<"$data")" != "" ]]; then
     IFS=$'\t' read -r host user protocol < <(jq -r '.github | [.host, .user, .protocol] | @tsv' <<<"$data")
     [[ "$protocol" == ssh || "$protocol" == https ]] ||
-      die "reusable setup contains unsupported GitHub protocol '$protocol'"
+      die "setup record contains unsupported GitHub protocol '$protocol'"
     found=0
     for i in "${!github_users[@]}"; do
       if [[ "${github_hosts[$i]}" == "$host" && "${github_users[$i]}" == "$user" ]]; then
@@ -2070,7 +2454,7 @@ load_reusable_setup() {
         break
       fi
     done
-    ((found)) || die "saved GitHub account is not currently authenticated: $user@$host"
+    ((found)) || setup_record_gap "saved GitHub account is not currently authenticated: $user@$host"
   fi
 
   discover_instruction_files
@@ -2086,10 +2470,11 @@ load_reusable_setup() {
         break
       fi
     done
-    ((found)) || die "saved Markdown instructions are no longer available: $saved_instruction"
+    ((found)) || setup_record_gap "saved Markdown instructions are no longer available: $saved_instruction"
   fi
 
   echo "vmbox: reusing setup saved $(jq -r '.savedAt // "at an unknown time"' <<<"$data")" >&2
+  setup_record_strict=strict
   echo "  components: $(selected_components_value)" >&2
   echo "  region: $selected_region" >&2
   echo "  profiles: ${profile_summary:-none}" >&2
@@ -2255,6 +2640,35 @@ apply_new_box_setup() {
   copy_selected_instruction_file
 }
 
+# Provisioning is not complete when the Railway service exists: the service is
+# only the first of several steps, and the credential sync that follows it is
+# what makes a box usable. The record below is written before the service is
+# created and removed only after the whole setup has been applied, so an
+# interruption anywhere in between is resumed instead of being mistaken for a
+# fully configured box.
+provisioning_directory() { printf '%s/provisioning' "$(dirname -- "$config_file")"; }
+
+provisioning_record_path() {
+  printf '%s/%s.json' "$(provisioning_directory)" "$service_name"
+}
+
+provisioning_incomplete() { [[ -r "$(provisioning_record_path)" ]]; }
+
+begin_provisioning() {
+  write_setup_record "$(provisioning_record_path)" ||
+    die "could not record the provisioning state for '$service_name'"
+}
+
+resume_provisioning_record() {
+  echo "vmbox: '$service_name' exists but its first-time setup never finished; resuming it" >&2
+  load_setup_record "$(provisioning_record_path)" resume \
+    "provisioning record for '$service_name' disappeared"
+}
+
+complete_provisioning() {
+  rm -f -- "$(provisioning_record_path)"
+}
+
 select_setup_for_new_box() {
   local tty_fd status
   if [[ ! -t 0 ]] && { exec {tty_fd}<>/dev/tty; } 2>/dev/null; then
@@ -2333,6 +2747,7 @@ stop_box() {
   fi
 
   echo "vmbox: powering down '$service_name'; preserving its service and /data volume" >&2
+  invalidate_ssh_endpoint
   if output="$(railway down "${target[@]}" --service "$service_name" --yes 2>&1)"; then
     down_status=0
   else
@@ -2358,7 +2773,7 @@ stop_box() {
 }
 
 open_box() {
-  local requested_action="$1" service created=0 detached=0 reuse_setup=0
+  local requested_action="$1" service created=0 detached=0 reuse_setup=0 resume_setup=0
   local -a remote_command
   box_id="$2"
   shift 2
@@ -2384,6 +2799,9 @@ open_box() {
   if [[ -z "$service" ]]; then
     [[ "$requested_action" == start ]] || die "box '$box_id' does not exist; use: vmbox start $box_id"
     created=1
+  elif provisioning_incomplete; then
+    created=1
+    resume_setup=1
   elif [[ "$(jq -r '.status // empty' <<<"$service")" == "" ]] &&
     ! service_has_deployment_history; then
     echo "vmbox: resuming incomplete first-time setup for '$service_name'" >&2
@@ -2391,7 +2809,9 @@ open_box() {
   fi
 
   if ((created)); then
-    if ((reuse_setup)); then
+    if ((resume_setup)); then
+      resume_provisioning_record
+    elif ((reuse_setup)); then
       load_reusable_setup
     else
       if ! select_setup_for_new_box; then
@@ -2401,6 +2821,7 @@ open_box() {
       ((save_reusable_setup == 0)) || write_reusable_setup ||
         die "could not save reusable setup to $reuse_file"
     fi
+    begin_provisioning
   elif ((reuse_setup)); then
     echo "vmbox: --reuse ignored because '$box_id' already exists" >&2
   fi
@@ -2421,7 +2842,10 @@ open_box() {
   fi
   ensure_ready "$service"
   ensure_persistent_data
-  ((created == 0)) || apply_new_box_setup
+  if ((created)); then
+    apply_new_box_setup
+    complete_provisioning
+  fi
   attach "$detached" "${remote_command[@]}"
 }
 
@@ -2649,6 +3073,11 @@ clean_boxes() {
     delete_volume_if_active "$volume_id" || failures=$((failures + 1))
   done
   ((failures == 0)) || die "$failures persistent volume deletion(s) failed"
+  # A deleted box must not leave a record behind: reusing its name would
+  # otherwise resume a setup that belongs to a service that no longer exists.
+  for i in "${!clean_service_names[@]}"; do
+    rm -f -- "$(provisioning_directory)/${clean_service_names[$i]}.json"
+  done
   echo "Deleted $service_count service(s) and $volume_count active persistent volume(s)."
 }
 
