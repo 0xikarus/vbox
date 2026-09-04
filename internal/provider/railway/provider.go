@@ -519,11 +519,12 @@ func (p *Provider) Delete(ctx context.Context, id string, requested provider.Own
 }
 
 type railwayVolume struct {
-	Name        string `json:"name"`
-	ID          string `json:"id"`
-	ServiceName string `json:"serviceName"`
-	MountPath   string `json:"mountPath"`
-	Status      string `json:"status"`
+	Name              string `json:"name"`
+	ID                string `json:"id"`
+	ServiceName       string `json:"serviceName"`
+	MountPath         string `json:"mountPath"`
+	Status            string `json:"status"`
+	IsPendingDeletion bool   `json:"isPendingDeletion"`
 }
 
 func (p *Provider) volumes(ctx context.Context) ([]railwayVolume, error) {
@@ -811,6 +812,9 @@ func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, 
 		if !matchingVolumeName(storage.Name, volume.Name) {
 			return fmt.Errorf("Railway volume name mismatch: expected %s, found %s", storage.Name, volume.Name)
 		}
+		if volume.IsPendingDeletion {
+			return nil
+		}
 	}
 	if !found {
 		return nil
@@ -827,7 +831,7 @@ func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, 
 		}
 		present := false
 		for _, volume := range volumes {
-			present = present || volume.ID == storage.ID
+			present = present || (volume.ID == storage.ID && !volume.IsPendingDeletion)
 		}
 		if !present {
 			return nil
