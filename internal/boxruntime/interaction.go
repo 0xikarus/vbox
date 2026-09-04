@@ -32,6 +32,7 @@ func validateTmuxToken(kind, value string) error {
 }
 
 var tmuxCommand = runTmuxCommand
+var captureTmuxCommand = tmuxOutput
 var agentReadyPollInterval = 200 * time.Millisecond
 var agentReadyTimeout = 20 * time.Second
 var tmuxSubmitPause = waitBeforeTmuxSubmit
@@ -339,21 +340,24 @@ func CaptureTmuxScreen(ctx context.Context, session string, history int) (v1.Ter
 	if history > 2000 {
 		history = 2000
 	}
-	format := strings.Join([]string{"#{pane_id}", "#{pane_title}", "#{pane_current_command}", "#{pane_width}", "#{pane_height}"}, "\x1f")
-	metadata, err := tmuxOutput(ctx, "display-message", "-p", "-t", session, format)
+	format := strings.Join([]string{"#{session_name}", "#{pane_id}", "#{pane_title}", "#{pane_current_command}", "#{pane_width}", "#{pane_height}"}, "\x1f")
+	metadata, err := captureTmuxCommand(ctx, "display-message", "-p", "-t", session, format)
 	if err != nil {
 		return snapshot, err
 	}
 	fields := strings.Split(strings.TrimSuffix(string(metadata), "\n"), "\x1f")
-	if len(fields) != 5 {
+	if len(fields) != 6 {
 		return snapshot, fmt.Errorf("unexpected tmux pane metadata")
 	}
-	content, err := tmuxOutput(ctx, "capture-pane", "-p", "-J", "-S", "-"+strconv.Itoa(history), "-t", fields[0])
+	if fields[0] != session || fields[1] == "" {
+		return snapshot, fmt.Errorf("tmux returned session %q pane %q for requested session %q", fields[0], fields[1], session)
+	}
+	content, err := captureTmuxCommand(ctx, "capture-pane", "-p", "-J", "-S", "-"+strconv.Itoa(history), "-t", fields[1])
 	if err != nil {
 		return snapshot, err
 	}
-	snapshot = v1.TerminalSnapshot{Session: session, Pane: fields[0], Title: fields[1], Command: fields[2], Content: string(content), CapturedAt: time.Now().UTC()}
-	snapshot.Width, _ = strconv.Atoi(fields[3])
-	snapshot.Height, _ = strconv.Atoi(fields[4])
+	snapshot = v1.TerminalSnapshot{Session: session, Pane: fields[1], Title: fields[2], Command: fields[3], Content: string(content), CapturedAt: time.Now().UTC()}
+	snapshot.Width, _ = strconv.Atoi(fields[4])
+	snapshot.Height, _ = strconv.Atoi(fields[5])
 	return snapshot, nil
 }

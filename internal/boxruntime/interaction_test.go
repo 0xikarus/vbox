@@ -241,3 +241,24 @@ func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {
 		t.Fatal("Claude real input placeholder was not recognized")
 	}
 }
+
+func TestCaptureTmuxScreenRejectsMissingOrWrongSessionMetadata(t *testing.T) {
+	original := captureTmuxCommand
+	t.Cleanup(func() { captureTmuxCommand = original })
+	for _, metadata := range []string{
+		"\x1f\x1f\x1f\x1f\x1f\n",
+		"other-session\x1f%1\x1ftitle\x1fclaude\x1f80\x1f24\n",
+	} {
+		captureCalls := 0
+		captureTmuxCommand = func(_ context.Context, args ...string) ([]byte, error) {
+			captureCalls++
+			return []byte(metadata), nil
+		}
+		if _, err := CaptureTmuxScreen(context.Background(), "expected-session", 100); err == nil || !strings.Contains(err.Error(), "requested session") {
+			t.Fatalf("metadata=%q error=%v", metadata, err)
+		}
+		if captureCalls != 1 {
+			t.Fatalf("wrong pane was captured after mismatched metadata: calls=%d", captureCalls)
+		}
+	}
+}
