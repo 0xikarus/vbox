@@ -348,6 +348,9 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 		if test.path == "/" && strings.Contains(response.Body.String(), "(active)") {
 			t.Fatalf("%s contains unstable active profile suffix", test.path)
 		}
+		if test.path == "/app.js" && (strings.Contains(response.Body.String(), "style=") || strings.Contains(response.Body.String(), ".style.")) {
+			t.Fatalf("%s contains inline styling blocked by the controller CSP", test.path)
+		}
 	}
 	request := httptest.NewRequest(http.MethodGet, "/unknown-ui-route", nil)
 	response := httptest.NewRecorder()

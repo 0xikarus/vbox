@@ -146,7 +146,7 @@ function renderMiniFleet() {
   $('#fleet-mini').innerHTML = `
     <div class="fleet-mini-row"><span>Compute fleet</span><strong>${fleet.freeSlots} free</strong></div>
     <div class="fleet-mini-row"><small>${fleet.occupiedSlots} occupied · ${fleet.actualSlots}/${fleet.desiredSlots} slots</small><small>${fleet.pendingAllocationRequests || 0} queued</small></div>
-    <div class="capacity-track"><i style="width:${percent}%"></i></div>`;
+    <progress class="capacity-track" max="100" value="${percent}" aria-label="${percent}% of fleet slots occupied"></progress>`;
 }
 
 function renderDashboard() {
@@ -739,10 +739,6 @@ $('#copy-detail').addEventListener('click', async () => {
 });
 
 for (const id of ['message', 'group-message']) {
-  $(`#${id}`).addEventListener('input', event => {
-    event.target.style.height = 'auto';
-    event.target.style.height = `${Math.min(event.target.scrollHeight, 140)}px`;
-  });
   $(`#${id}`).addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
