@@ -43,7 +43,7 @@ update_railway() {
   if command -v bun >/dev/null 2>&1; then
     bun add -g @railway/cli@latest
   elif command -v npm >/dev/null 2>&1; then
-    npm install --global @railway/cli@latest
+    npm install --global --foreground-scripts @railway/cli@latest
   else
     echo "Railway CLI is too old and neither Bun nor npm is available to update it." >&2
     exit 1

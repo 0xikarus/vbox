@@ -119,6 +119,34 @@ func TestInitializationStagesMatchingRuntimeBeforeHealthAndHibernate(t *testing.
 	}
 }
 
+func TestCompleteLogicalBoxCreationCastsAuditProvider(t *testing.T) {
+	store, mock := testStore(t)
+	creation := logicalBoxCreation{
+		AccountID: "account-a",
+		UserID:    "user-a",
+		Request:   v1.CreateLogicalBoxRequest{Provider: "railway"},
+		Assignment: fleetAssignment{
+			Box:          v1.LogicalBox{ID: "box-1", AssignmentGeneration: 3},
+			Slot:         v1.ComputeSlot{ID: "slot-1"},
+			FencingToken: "fence-1",
+		},
+	}
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE compute_slots SET state='free'").
+		WithArgs("account-a", "slot-1", int64(3), "fence-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE logical_boxes SET state='hibernated'").
+		WithArgs("account-a", "box-1", int64(3), "fence-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`jsonb_build_object\('provider',\$4::text\)`).
+		WithArgs("account-a", "user-a", "box-1", "railway").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	if err := store.CompleteLogicalBoxCreation(context.Background(), creation); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReusableBoxTaskSelectsOnlyLiveWork(t *testing.T) {
 	tasks := func(states ...string) []v1.BoxTask {
 		var values []v1.BoxTask

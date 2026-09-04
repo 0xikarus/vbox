@@ -56,7 +56,7 @@ RUN set -eux; \
     case ",$VMBOX_COMPONENTS," in *,codex,*) packages="$packages @openai/codex" ;; esac; \
     case ",$VMBOX_COMPONENTS," in *,claude,*) packages="$packages @anthropic-ai/claude-code" ;; esac; \
     case ",$VMBOX_COMPONENTS," in *,opencode,*) packages="$packages opencode-ai" ;; esac; \
-    if [ -n "$packages" ]; then npm install --global $packages; fi; \
+    if [ -n "$packages" ]; then npm install --global --foreground-scripts $packages; fi; \
     rm -rf /root/.cache /root/.claude /root/.codex /root/.config /root/.docker /root/.npm /root/.ssh /tmp/* /var/tmp/*
 
 RUN set -eux; \
@@ -83,7 +83,7 @@ RUN set -eux; \
     printf '%s\n' "$VMBOX_IMAGE_VERSION" >/usr/local/lib/vmbox-image-version; \
     { \
       printf 'image-version=%s\ncomponents=%s\n' "$VMBOX_IMAGE_VERSION" "$normalized_components"; \
-      git --version; gh --version | sed -n '1p'; tmux -V; node --version; \
+      git --version; gh --version | sed -n '1p'; railway --version; tmux -V; node --version; \
       bun --version; codex --version; claude --version; opencode --version; forge --version | sed -n '1p'; \
       sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-entrypoint /etc/vmbox/tmux.conf; \
     } >/usr/local/lib/vmbox-image-manifest; \

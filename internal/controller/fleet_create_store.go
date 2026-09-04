@@ -126,7 +126,7 @@ func (s *Store) CompleteLogicalBoxCreation(ctx context.Context, creation logical
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale logical-box creation fence")
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.create','logical_box',$3,jsonb_build_object('provider',$4))", creation.AccountID, creation.UserID, creation.Assignment.Box.ID, creation.Request.Provider); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.create','logical_box',$3,jsonb_build_object('provider',$4::text))", creation.AccountID, creation.UserID, creation.Assignment.Box.ID, creation.Request.Provider); err != nil {
 		return err
 	}
 	return tx.Commit()
