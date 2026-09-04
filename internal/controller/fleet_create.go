@@ -11,6 +11,20 @@ import (
 
 func pendingVolume(id string) bool { return strings.HasPrefix(id, "pending:") }
 
+func ensureInitializationSlotRunning(ctx context.Context, prov provider.Provider, serviceID string) error {
+	actual, err := prov.Inspect(ctx, serviceID)
+	if err != nil {
+		return fmt.Errorf("inspect initialization slot: %w", err)
+	}
+	if actual.State != provider.StateStopped {
+		return nil
+	}
+	if _, err := prov.Start(ctx, serviceID); err != nil {
+		return fmt.Errorf("start initialization slot: %w", err)
+	}
+	return nil
+}
+
 func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalBoxCreation) error {
 	started := time.Now()
 	fail := func(err error) error {
@@ -70,6 +84,9 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 			return fail(err)
 		}
 		creation.Assignment.Box.RestorationState = "creation-initializing"
+		if err := ensureInitializationSlotRunning(ctx, prov, serviceID); err != nil {
+			return fail(err)
+		}
 		health, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
 		if err != nil {
 			return fail(fmt.Errorf("wait for workspace runtime: %w", err))

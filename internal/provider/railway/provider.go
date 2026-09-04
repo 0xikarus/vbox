@@ -747,8 +747,11 @@ func (p *Provider) SanitizeSlot(ctx context.Context, id string) error {
 			return fmt.Errorf("refusing to sanitize compute slot %s while volume %s remains attached", service.Name, volume.ID)
 		}
 	}
-	p.invalidateServiceSSH(service)
-	return p.submitAndWaitDeployment(ctx, service.Name)
+	if state(service.Status) == provider.StateStopped {
+		return nil
+	}
+	_, err = p.Stop(ctx, service.ID)
+	return err
 }
 func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, requested provider.Owner) error {
 	if storage.ID == "" || requested.AccountID == "" || requested.BoxID == "" {

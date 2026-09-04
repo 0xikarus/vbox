@@ -53,6 +53,23 @@ func (s *Server) boxInventoryHandler(w http.ResponseWriter, r *http.Request, p P
 	writeJSON(w, http.StatusOK, inventory)
 }
 
+func reusableBoxTask(tasks []v1.BoxTask, boxState v1.LogicalBoxState) *v1.BoxTask {
+	for index := len(tasks) - 1; index >= 0; index-- {
+		switch tasks[index].State {
+		case "active":
+			if boxState != v1.LogicalBoxRunning {
+				continue
+			}
+		case "starting", "queued", "waiting_capacity":
+		default:
+			continue
+		}
+		task := tasks[index]
+		return &task
+	}
+	return nil
+}
+
 func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempotency string, request v1.DirectBoxMessageRequest) (v1.DirectBoxMessageResponse, error) {
 	var response v1.DirectBoxMessageResponse
 	box, err := s.Store.LogicalBox(ctx, p, boxID)
@@ -84,23 +101,8 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	if err != nil {
 		return response, err
 	}
-	var selected *v1.BoxTask
-	for index := len(tasks) - 1; index >= 0; index-- {
-		switch tasks[index].State {
-		case "active", "starting", "queued", "waiting_capacity":
-			task := tasks[index]
-			selected = &task
-		}
-		switch tasks[index].State {
-		case "active":
-			if box.State == v1.LogicalBoxRunning {
-				task := tasks[index]
-				selected = &task
-			}
-		case "starting", "queued", "waiting_capacity":
-			task := tasks[index]
-			selected = &task
-		}
+	selected := reusableBoxTask(tasks, box.State)
+	if selected == nil {
 		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text})
 		if err != nil {
 			return response, err
