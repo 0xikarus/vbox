@@ -121,3 +121,9 @@ func TestTmuxServerAbsentRecognizesMissingSocketOnly(t *testing.T) {
 		t.Fatal("permission failure was mistaken for an absent tmux server")
 	}
 }
+
+func TestAncestorPIDsAlwaysProtectContainerInit(t *testing.T) {
+	if !ancestorPIDs()[1] {
+		t.Fatal("container PID 1 was not protected from workspace process cleanup")
+	}
+}

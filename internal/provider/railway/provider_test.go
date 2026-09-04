@@ -150,7 +150,7 @@ func TestExecRepairsRotatedHostKeyBeforeStartingMaster(t *testing.T) {
 		t.Fatalf("host-key cleanup=%#v want=%#v", got, want)
 	}
 	master := strings.Join(runner.Calls[5].Argv, " ")
-	if !strings.Contains(master, " -M -N -f ") || !strings.Contains(master, "ControlMaster=yes") || !strings.Contains(master, "ControlPersist=120") {
+	if !strings.Contains(master, " -M -f ") || strings.Contains(master, " -N ") || !strings.Contains(master, "ControlMaster=yes") || !strings.Contains(master, "ControlPersist=120") || !strings.HasSuffix(master, " "+railwaySSHMasterKeepalive) {
 		t.Fatalf("explicit detached master was not started: %s", master)
 	}
 }
@@ -189,6 +189,33 @@ func TestDirectSSHReusesDeploymentLookupAndControlMaster(t *testing.T) {
 	}
 	if apiCalls != 1 || masterStarts != 1 || dataCalls != 2 {
 		t.Fatalf("api=%d masters=%d data=%d calls=%#v", apiCalls, masterStarts, dataCalls, runner.Calls)
+	}
+}
+
+func TestDirectSSHInvalidatesDeploymentAndRetriesTransportFailure(t *testing.T) {
+	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
+	oldInstance := `{"data":{"serviceInstance":{"id":"deployment-old"}}}`
+	newInstance := `{"data":{"serviceInstance":{"id":"deployment-new"}}}`
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(services)},
+		{Stdout: []byte(oldInstance)},
+		{ExitCode: 255},
+		{Stdout: []byte(newInstance)},
+		{Stdout: []byte("ok\n")},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	result, err := p.Exec(context.Background(), "box", []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 || result.Stdout != "ok\n" {
+		t.Fatalf("result=%+v err=%v calls=%#v", result, err, runner.Calls)
+	}
+	if len(runner.Calls) != 5 {
+		t.Fatalf("calls=%#v", runner.Calls)
+	}
+	if got := runner.Calls[2].Argv[len(runner.Calls[2].Argv)-2]; got != "deployment-old@ssh.railway.com" {
+		t.Fatalf("first target=%q", got)
+	}
+	if got := runner.Calls[4].Argv[len(runner.Calls[4].Argv)-2]; got != "deployment-new@ssh.railway.com" {
+		t.Fatalf("retry target=%q", got)
 	}
 }
 

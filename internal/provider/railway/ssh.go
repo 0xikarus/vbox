@@ -16,6 +16,13 @@ import (
 
 const railwaySSHHost = "ssh.railway.com"
 
+// Railway's SSH gateway accepts the control connection created by `ssh -N`,
+// but rejects every later multiplexed session on it with exit status 255. Keep
+// one harmless initial channel open instead. Its working directory is moved
+// away from /data so the master cannot keep a workspace volume busy while the
+// controller detaches it.
+const railwaySSHMasterKeepalive = "cd / && exec sleep 120"
+
 func (p *Provider) deploymentTarget(ctx context.Context, service service) (string, error) {
 	p.sshMu.Lock()
 	defer p.sshMu.Unlock()
@@ -120,10 +127,10 @@ func (p *Provider) ensureSSHMaster(ctx context.Context, target string) error {
 		return err
 	}
 	start := append(p.sshOptions(controlPath),
-		"-M", "-N", "-f",
+		"-M", "-f",
 		"-o", "ControlMaster=yes",
 		"-o", "ControlPersist=120",
-		"--", target,
+		"--", target, railwaySSHMasterKeepalive,
 	)
 	started, startErr := p.runSSHHandshake(ctx, start)
 	if startErr != nil {
@@ -186,11 +193,27 @@ func shellCommand(argv []string) (string, error) {
 	return strings.Join(quoted, " "), nil
 }
 func (p *Provider) directSSH(ctx context.Context, service service, remote []string, interactive bool, stdin io.Reader, stdout, stderr io.Writer) (procexec.Result, error) {
-	target, err := p.deploymentTarget(ctx, service)
-	if err != nil {
-		return procexec.Result{}, err
+	var last procexec.Result
+	for attempt := 0; attempt < 2; attempt++ {
+		target, err := p.deploymentTarget(ctx, service)
+		if err != nil {
+			return procexec.Result{}, err
+		}
+		result, err := p.directSSHTarget(ctx, target, remote, interactive, stdin, stdout, stderr)
+		last = result
+		if err != nil || result.ExitCode != 255 {
+			return result, err
+		}
+		// 255 is OpenSSH's transport status, not a workload exit code. The
+		// deployment behind the service may have rotated, so discard both the
+		// deployment identity and its master before one safe retry. A streamed
+		// stdin cannot be replayed without risking partial duplicate input.
+		p.invalidateServiceSSH(service)
+		if stdin != nil {
+			return result, nil
+		}
 	}
-	return p.directSSHTarget(ctx, target, remote, interactive, stdin, stdout, stderr)
+	return last, nil
 }
 
 func validatedConnectionTarget(connection provider.Connection) (string, error) {

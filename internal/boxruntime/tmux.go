@@ -467,7 +467,12 @@ func processUsesPath(pid int, root string) bool {
 }
 
 func ancestorPIDs() map[int]bool {
-	result := map[int]bool{os.Getpid(): true}
+	// Railway can inject an SSH command into the container through a process
+	// tree that does not descend from the container's PID 1. In a fleet slot,
+	// PID 1 is vmbox-runtime idle and normally has /data/workspace as its cwd.
+	// It is infrastructure, not a workload blocker: terminating it aborts the
+	// hibernation command by stopping the whole container.
+	result := map[int]bool{1: true, os.Getpid(): true}
 	pid := os.Getppid()
 	for pid > 0 && !result[pid] {
 		result[pid] = true
