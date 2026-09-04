@@ -169,7 +169,7 @@ func TestReusableBoxTaskSelectsOnlyLiveWork(t *testing.T) {
 	tasks := func(states ...string) []v1.BoxTask {
 		var values []v1.BoxTask
 		for index, state := range states {
-			values = append(values, v1.BoxTask{ID: string(rune('a' + index)), State: state})
+			values = append(values, v1.BoxTask{ID: string(rune('a' + index)), Agent: "claude", Session: "claude-one", State: state})
 		}
 		return values
 	}
@@ -188,7 +188,7 @@ func TestReusableBoxTaskSelectsOnlyLiveWork(t *testing.T) {
 		{name: "waiting capacity is reusable", tasks: tasks("failed", "waiting_capacity"), state: v1.LogicalBoxDetached, want: "b"},
 	}
 	for _, test := range tests {
-		selected := reusableBoxTask(test.tasks, test.state)
+		selected := reusableBoxTask(test.tasks, test.state, "claude", "")
 		switch {
 		case test.want == "" && selected != nil:
 			t.Errorf("%s: selected %+v, wanted a new task", test.name, *selected)
@@ -201,8 +201,8 @@ func TestReusableBoxTaskSelectsOnlyLiveWork(t *testing.T) {
 }
 
 func TestReusableBoxTaskReturnsACopy(t *testing.T) {
-	tasks := []v1.BoxTask{{ID: "task-1", State: "queued"}}
-	selected := reusableBoxTask(tasks, v1.LogicalBoxRunning)
+	tasks := []v1.BoxTask{{ID: "task-1", Agent: "claude", Session: "claude-one", State: "queued"}}
+	selected := reusableBoxTask(tasks, v1.LogicalBoxRunning, "claude", "claude-one")
 	if selected == nil {
 		t.Fatal("a queued task was not reusable")
 	}
@@ -212,14 +212,75 @@ func TestReusableBoxTaskReturnsACopy(t *testing.T) {
 	}
 }
 
+func TestReusableBoxTaskMatchesRequestedAgentAndSession(t *testing.T) {
+	tasks := []v1.BoxTask{
+		{ID: "claude-old", Agent: "claude", Session: "claude-one", State: "active"},
+		{ID: "codex-new", Agent: "codex", Session: "codex-one", State: "active"},
+	}
+	if selected := reusableBoxTask(tasks, v1.LogicalBoxRunning, "claude", ""); selected == nil || selected.ID != "claude-old" {
+		t.Fatalf("agent routing selected %+v", selected)
+	}
+	if selected := reusableBoxTask(tasks, v1.LogicalBoxRunning, "claude", "other-session"); selected != nil {
+		t.Fatalf("session routing selected %+v", selected)
+	}
+}
+
+func TestGeneratedTaskSessionsAreSafeAndDistinct(t *testing.T) {
+	first, second := generatedTaskSession("codex"), generatedTaskSession("codex")
+	if first == second || !strings.HasPrefix(first, "codex-") || !validSessionName(first) || !validSessionName(second) {
+		t.Fatalf("generated sessions %q %q", first, second)
+	}
+}
+
+func TestRecoverStaleBoxMessagesMakesInterruptedDeliveryAmbiguous(t *testing.T) {
+	store, mock := testStore(t)
+	before := time.Now().UTC().Add(-2 * time.Minute)
+	mock.ExpectExec("UPDATE box_messages SET state='ambiguous'").WithArgs(before).WillReturnResult(sqlmock.NewResult(0, 1))
+	if err := store.RecoverStaleBoxMessages(context.Background(), before); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateLogicalBoxPersistsDefaultAgentWithAudit(t *testing.T) {
+	store, mock := testStore(t)
+	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
+	mock.ExpectBegin()
+	mock.ExpectExec("UPDATE logical_boxes SET default_agent").
+		WithArgs("account-a", "box-1", "user-a", "user", "codex").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
+		WillReturnRows(logicalBoxRowWithAgent(v1.LogicalBoxRunning, "codex"))
+	mock.ExpectExec("logical_box.settings.update").
+		WithArgs("account-a", "user-a", "box-1", "codex").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	box, err := store.UpdateLogicalBox(context.Background(), p, "box-1", v1.UpdateLogicalBoxRequest{DefaultAgent: " CODEX "})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if box.DefaultAgent != "codex" {
+		t.Fatalf("default agent=%q", box.DefaultAgent)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func logicalBoxRow(state v1.LogicalBoxState) *sqlmock.Rows {
+	return logicalBoxRowWithAgent(state, "claude")
+}
+
+func logicalBoxRowWithAgent(state v1.LogicalBoxState, agent string) *sqlmock.Rows {
 	now := time.Now().UTC()
 	return sqlmock.NewRows([]string{
 		"id", "account_id", "owner_user_id", "name", "provider", "provider_credential",
-		"state", "volume_id", "volume_name", "slot_id", "assignment_generation",
+		"default_agent", "state", "volume_id", "volume_name", "slot_id", "assignment_generation",
 		"lease_owner", "lease_expires_at", "restoration_state", "failure_reason",
 		"created_at", "updated_at",
-	}).AddRow("box-1", "account-a", "user-a", "research", "railway", "primary",
+	}).AddRow("box-1", "account-a", "user-a", "research", "railway", "primary", agent,
 		string(state), "volume-1", "volume-name", "slot-1", int64(3), "", nil, "", "", now, now)
 }
 

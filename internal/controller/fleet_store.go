@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
@@ -68,7 +69,14 @@ func (s *Store) UpsertLogicalBox(ctx context.Context, p Principal, box v1.Logica
 	if box.State == "" {
 		box.State = v1.LogicalBoxDetached
 	}
-	err := s.DB.QueryRowContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,state,volume_id,volume_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(account_id,name) DO UPDATE SET updated_at=now() WHERE logical_boxes.volume_id=excluded.volume_id AND logical_boxes.provider=excluded.provider AND logical_boxes.owner_user_id=excluded.owner_user_id RETURNING id::text,owner_user_id::text,state,created_at,updated_at`, box.ID, p.AccountID, box.OwnerUserID, box.Name, box.Provider, box.ProviderCredential, box.State, box.VolumeID, box.VolumeName).Scan(&box.ID, &box.OwnerUserID, &box.State, &box.CreatedAt, &box.UpdatedAt)
+	box.DefaultAgent = strings.ToLower(strings.TrimSpace(box.DefaultAgent))
+	if box.DefaultAgent == "" {
+		box.DefaultAgent = "claude"
+	}
+	if !validAgent(box.DefaultAgent) {
+		return box, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
+	}
+	err := s.DB.QueryRowContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,state,volume_id,volume_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(account_id,name) DO UPDATE SET updated_at=now() WHERE logical_boxes.volume_id=excluded.volume_id AND logical_boxes.provider=excluded.provider AND logical_boxes.owner_user_id=excluded.owner_user_id RETURNING id::text,owner_user_id::text,state,created_at,updated_at`, box.ID, p.AccountID, box.OwnerUserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.State, box.VolumeID, box.VolumeName).Scan(&box.ID, &box.OwnerUserID, &box.State, &box.CreatedAt, &box.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return box, fmt.Errorf("logical box ownership or volume identity does not match the existing record")
 	}
@@ -99,7 +107,7 @@ func scanLogicalBox(scanner interface{ Scan(...any) error }) (v1.LogicalBox, err
 	var lease sql.NullTime
 	err := scanner.Scan(
 		&box.ID, &box.AccountID, &box.OwnerUserID, &box.Name, &box.Provider,
-		&box.ProviderCredential, &box.State, &box.VolumeID, &box.VolumeName,
+		&box.ProviderCredential, &box.DefaultAgent, &box.State, &box.VolumeID, &box.VolumeName,
 		&box.SlotID, &box.AssignmentGeneration, &box.LeaseOwner, &lease,
 		&box.RestorationState, &box.FailureReason, &box.CreatedAt, &box.UpdatedAt,
 	)
@@ -109,7 +117,7 @@ func scanLogicalBox(scanner interface{ Scan(...any) error }) (v1.LogicalBox, err
 	return box, err
 }
 
-const logicalBoxSelect = `SELECT id::text,account_id::text,owner_user_id::text,name,provider,provider_credential,state,volume_id,volume_name,COALESCE(slot_id::text,''),assignment_generation,COALESCE(lease_owner,''),lease_expires_at,COALESCE(restoration_state,''),COALESCE(failure_reason,''),created_at,updated_at FROM logical_boxes`
+const logicalBoxSelect = `SELECT id::text,account_id::text,owner_user_id::text,name,provider,provider_credential,default_agent,state,volume_id,volume_name,COALESCE(slot_id::text,''),assignment_generation,COALESCE(lease_owner,''),lease_expires_at,COALESCE(restoration_state,''),COALESCE(failure_reason,''),created_at,updated_at FROM logical_boxes`
 
 func (s *Store) FleetStatus(ctx context.Context, accountID, providerName, credential string) (v1.FleetStatus, error) {
 	config, err := s.FleetConfig(ctx, accountID, providerName, credential)

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
@@ -29,6 +30,33 @@ func (s *Store) LogicalBox(ctx context.Context, p Principal, id string) (v1.Logi
 		return box, fmt.Errorf("logical box belongs to another user")
 	}
 	return box, nil
+}
+
+func (s *Store) UpdateLogicalBox(ctx context.Context, p Principal, id string, request v1.UpdateLogicalBoxRequest) (v1.LogicalBox, error) {
+	request.DefaultAgent = strings.ToLower(strings.TrimSpace(request.DefaultAgent))
+	if !validAgent(request.DefaultAgent) {
+		return v1.LogicalBox{}, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return v1.LogicalBox{}, err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET default_agent=$5,updated_at=now() WHERE account_id=$1 AND (id::text=$2 OR name=$2) AND (owner_user_id=$3 OR $4='owner')`, p.AccountID, id, p.UserID, p.Role, request.DefaultAgent)
+	if err != nil {
+		return v1.LogicalBox{}, err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return v1.LogicalBox{}, fmt.Errorf("logical box not found")
+	}
+	box, err := scanLogicalBox(tx.QueryRowContext(ctx, logicalBoxSelect+` WHERE account_id=$1 AND (id::text=$2 OR name=$2)`, p.AccountID, id))
+	if err != nil {
+		return v1.LogicalBox{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.settings.update','logical_box',$3,jsonb_build_object('default_agent',$4::text))`, p.AccountID, p.UserID, box.ID, request.DefaultAgent); err != nil {
+		return v1.LogicalBox{}, err
+	}
+	return box, tx.Commit()
 }
 
 func (s *Store) ListLogicalBoxes(ctx context.Context, p Principal, providerName, credential string) ([]v1.LogicalBox, error) {

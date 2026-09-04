@@ -53,8 +53,11 @@ func (s *Server) boxInventoryHandler(w http.ResponseWriter, r *http.Request, p P
 	writeJSON(w, http.StatusOK, inventory)
 }
 
-func reusableBoxTask(tasks []v1.BoxTask, boxState v1.LogicalBoxState) *v1.BoxTask {
+func reusableBoxTask(tasks []v1.BoxTask, boxState v1.LogicalBoxState, agent, session string) *v1.BoxTask {
 	for index := len(tasks) - 1; index >= 0; index-- {
+		if tasks[index].Agent != agent || (session != "" && tasks[index].Session != session) {
+			continue
+		}
 		switch tasks[index].State {
 		case "active":
 			if boxState != v1.LogicalBoxRunning {
@@ -92,16 +95,20 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, nil
 	}
 	if request.Agent == "" {
-		request.Agent = "claude"
+		request.Agent = box.DefaultAgent
 	}
-	if request.Session == "" {
-		request.Session = "vmbox"
+	request.Agent = strings.ToLower(strings.TrimSpace(request.Agent))
+	if !validAgent(request.Agent) {
+		return response, fmt.Errorf("agent must be codex, claude, opencode, or shell")
+	}
+	if request.Session != "" && !validSessionName(request.Session) {
+		return response, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore")
 	}
 	tasks, err := s.Store.ListBoxTasks(ctx, p, box.ID)
 	if err != nil {
 		return response, err
 	}
-	selected := reusableBoxTask(tasks, box.State)
+	selected := reusableBoxTask(tasks, box.State, request.Agent, request.Session)
 	if selected == nil {
 		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text})
 		if err != nil {
@@ -146,6 +153,20 @@ func (s *Server) directBoxMessageHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (s *Server) updateLogicalBoxHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	var request v1.UpdateLogicalBoxRequest
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	box, err := s.Store.UpdateLogicalBox(r.Context(), p, r.PathValue("id"), request)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, box)
 }
 
 func (s *Server) chatGroupsHandler(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -247,7 +268,7 @@ func (s *Server) dispatchGroupMessage(ctx context.Context, p Principal, message 
 			continue
 		}
 		key := "group:" + message.ID + ":" + delivery.LogicalBoxID
-		result, routeErr := s.routeBoxMessage(ctx, p, delivery.LogicalBoxID, key, v1.DirectBoxMessageRequest{Text: body, Agent: agents[delivery.LogicalBoxID], Session: "vmbox"})
+		result, routeErr := s.routeBoxMessage(ctx, p, delivery.LogicalBoxID, key, v1.DirectBoxMessageRequest{Text: body, Agent: agents[delivery.LogicalBoxID]})
 		state, failure := "delivered", ""
 		if routeErr != nil {
 			state, failure = "failed", routeErr.Error()

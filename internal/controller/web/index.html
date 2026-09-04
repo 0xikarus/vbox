@@ -85,8 +85,9 @@
           <div id="chat-avatar" class="avatar">V</div>
           <div class="chat-title"><h2 id="chat-name">Box</h2><p id="chat-state">Persistent workspace</p></div>
           <div class="chat-actions">
+            <label class="agent-picker" title="Default agent for new conversations"><span>Default</span><select id="box-default-agent" aria-label="Default agent for this box"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
             <button id="toggle-terminal" class="text-button terminal-toggle" type="button" aria-pressed="false">Terminal</button>
-            <button id="share-terminal" class="text-button" title="Forward current screen to a group">Share screen</button>
+            <button id="share-terminal" class="text-button" title="Forward current screen to another box">Share screen</button>
             <button id="allocate" class="text-button">Start</button>
             <button id="hibernate" class="text-button">Hibernate</button>
             <button id="box-menu" class="icon-button" aria-label="Delete workspace volume">⋮</button>
@@ -98,7 +99,7 @@
             <section id="terminal-prompt" class="terminal-prompt" aria-live="polite" hidden></section>
             <div id="messages" class="messages"></div>
             <form id="message-form" class="composer">
-              <textarea id="message" rows="1" placeholder="Message this box — offline boxes start Claude automatically" aria-label="Message this box"></textarea>
+              <textarea id="message" rows="1" placeholder="Message this box — offline boxes start their configured agent" aria-label="Message this box"></textarea>
               <button type="submit" class="send-button" aria-label="Send">↑</button>
             </form>
           </div>
@@ -162,6 +163,7 @@
       <p class="muted">Creates persistent storage first. Compute is borrowed from the fleet only when needed.</p>
       <label>Name<input name="name" required pattern="[A-Za-z0-9][A-Za-z0-9_-]*" placeholder="research-01"></label>
       <div class="two-col"><label>Provider<select name="provider"><option>railway</option><option>docker</option><option>incus</option></select></label><label>Credential<select name="credential" id="box-credential"></select></label></div>
+      <label>Default agent<select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
       <div class="two-col"><label>Region<input name="region" placeholder="ams"></label><label>Disk GiB<input name="disk" type="number" min="1" max="1000" value="10"></label></div>
       <label class="check"><input name="allocate" type="checkbox"> Start compute as soon as storage is ready</label>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Create box</button></div>
@@ -172,7 +174,7 @@
     <form id="task-form" class="dialog-form">
       <div class="dialog-heading"><div><p class="eyebrow">NEW SESSION</p><h2>Start an agent</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
       <label>Logical box<select name="box" id="task-box" required></select></label>
-      <div class="two-col"><label>Agent<select name="agent"><option>claude</option><option>codex</option><option>opencode</option><option>shell</option></select></label><label>tmux session<input name="session" value="vmbox" required></label></div>
+      <div class="two-col"><label>Agent<select name="agent"><option>claude</option><option>codex</option><option>opencode</option><option>shell</option></select></label><label>tmux session<input name="session" placeholder="Generated safely when blank"></label></div>
       <label>First message<textarea name="prompt" rows="6" required placeholder="Describe the task…"></textarea></label>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Start task</button></div>
     </form>
@@ -215,12 +217,18 @@
 
   <dialog id="forward-dialog">
     <form id="forward-form" class="dialog-form">
-      <div class="dialog-heading"><div><p class="eyebrow">FORWARD</p><h2>Share terminal output</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
-      <label>Group<select name="group" id="forward-group" required></select></label>
-      <label>Output<textarea name="text" rows="10" required></textarea></label>
-      <p class="muted">The selected group decides which boxes receive this output.</p>
+      <div class="dialog-heading"><div><p class="eyebrow">FORWARD</p><h2>Forward to a box</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
+      <div class="two-col"><label>Destination box<select name="box" id="forward-box" required></select></label><label>Agent<select name="agent"><option value="">Box default</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label></div>
+      <label>Original message<textarea name="source" rows="7" readonly required></textarea></label>
+      <label>Append instructions (optional)<textarea name="append" rows="4" placeholder="Add context or tell the destination agent what to do…"></textarea></label>
+      <p class="muted">Only the selected box receives this. Leaving Agent unchanged uses that box’s saved default.</p>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Forward</button></div>
     </form>
+  </dialog>
+
+  <dialog id="terminal-preview-dialog" class="terminal-preview-dialog">
+    <div class="terminal-preview-heading"><div><p class="eyebrow">LIVE WORKER SCREEN</p><h2 id="terminal-preview-title">Terminal</h2></div><button type="button" class="icon-button" id="close-terminal-preview" aria-label="Close fullscreen terminal">×</button></div>
+    <pre id="terminal-preview-fullscreen">Waiting for terminal output…</pre>
   </dialog>
 
   <dialog id="detail-dialog">

@@ -121,31 +121,36 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	if err != nil || !claimed {
 		return err
 	}
+	settleCtx, cancelSettlement := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer cancelSettlement()
 	assignment, err := s.Store.assignment(ctx, p.AccountID, box.ID)
 	if err != nil {
-		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "failed", err.Error())
+		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
 		return err
 	}
 	prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
 	if err != nil {
-		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "failed", err.Error())
+		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
 		return err
 	}
 	encoded := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
 	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit)}, provider.ExecOptions{})
 	if execErr != nil {
-		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "ambiguous", execErr.Error())
+		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "ambiguous", execErr.Error())
 		return fmt.Errorf("message delivery is ambiguous; inspect the terminal before retrying: %w", execErr)
 	}
 	if result.ExitCode != 0 {
 		detail := strings.TrimSpace(result.Stderr)
-		_ = s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "failed", detail)
+		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
 		return fmt.Errorf("message delivery exited with status %d: %s", result.ExitCode, detail)
 	}
-	return s.Store.SetBoxMessageState(ctx, p.AccountID, message.ID, "delivered", "")
+	return s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "delivered", "")
 }
 
 func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
+	if err := s.Store.RecoverStaleBoxMessages(ctx, time.Now().UTC().Add(-2*time.Minute)); err != nil {
+		return fmt.Errorf("recover stale messages: %w", err)
+	}
 	tasks, err := s.Store.RunnableBoxTasks(ctx)
 	if err != nil {
 		return err

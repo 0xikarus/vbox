@@ -1,6 +1,9 @@
 {
-  "dependencies": {},
+  "scripts": {
+    "test:browser": "node --test tests/browser/controller-ui.test.mjs"
+  },
   "devDependencies": {
+    "puppeteer-core": "25.10.0",
     "railway": "^3.11.0"
   }
 }

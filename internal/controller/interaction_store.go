@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
@@ -40,6 +41,11 @@ func validSessionName(value string) bool {
 	return true
 }
 
+func generatedTaskSession(agent string) string {
+	id := strings.ReplaceAll(uuid(), "-", "")
+	return agent + "-" + id[:12]
+}
+
 func (s *Store) CreateBoxTask(ctx context.Context, p Principal, logicalBoxID, idempotency string, request v1.CreateBoxTaskRequest) (v1.BoxTask, bool, error) {
 	if idempotency == "" {
 		return v1.BoxTask{}, false, fmt.Errorf("Idempotency-Key is required")
@@ -52,7 +58,7 @@ func (s *Store) CreateBoxTask(ctx context.Context, p Principal, logicalBoxID, id
 		return v1.BoxTask{}, false, fmt.Errorf("agent must be codex, claude, opencode, or shell")
 	}
 	if request.Session == "" {
-		request.Session = "vmbox"
+		request.Session = generatedTaskSession(request.Agent)
 	}
 	if !validSessionName(request.Session) {
 		return v1.BoxTask{}, false, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore")
@@ -235,6 +241,11 @@ func (s *Store) ClaimBoxMessage(ctx context.Context, accountID, id string) (bool
 
 func (s *Store) SetBoxMessageState(ctx context.Context, accountID, id, state, failure string) error {
 	_, err := s.DB.ExecContext(ctx, "UPDATE box_messages SET state=$3,failure_reason=NULLIF($4,''),updated_at=now() WHERE account_id=$1 AND id=$2", accountID, id, state, failure)
+	return err
+}
+
+func (s *Store) RecoverStaleBoxMessages(ctx context.Context, before time.Time) error {
+	_, err := s.DB.ExecContext(ctx, "UPDATE box_messages SET state='ambiguous',failure_reason='delivery was interrupted; inspect the terminal before retrying',updated_at=now() WHERE state='delivering' AND updated_at < $1", before)
 	return err
 }
 

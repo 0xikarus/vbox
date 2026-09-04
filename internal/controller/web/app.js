@@ -5,7 +5,8 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   token: sessionStorage.getItem('vmbox.controller.token') || '',
   boxes: [], external: [], groups: [], credentials: [], notifications: [], fleet: null,
-  box: null, tasks: [], task: null, group: null, groupMessages: [], recipients: new Set(),
+  box: null, tasks: [], task: null, taskMessages: [], group: null, groupMessages: [], recipients: new Set(),
+  groupScreens: new Map(), groupScreenRefreshAt: 0, previewBoxID: '',
   provider: '', credential: '', chatTimer: null, controllers: new Set(), closed: false,
 };
 
@@ -266,7 +267,7 @@ function populateForms() {
   const options = state.credentials.map(value => `<option value="${escapeHTML(value.name)}" data-provider="${escapeHTML(value.provider)}">${escapeHTML(value.provider)}/${escapeHTML(value.name)}</option>`).join('');
   $('#box-credential').innerHTML = options || '<option value="">default</option>';
   $('#task-box').innerHTML = state.boxes.map(box => `<option value="${escapeHTML(box.id)}">${escapeHTML(box.name)} · ${escapeHTML(stateLabel(box.state))}</option>`).join('');
-  $('#forward-group').innerHTML = state.groups.map(group => `<option value="${escapeHTML(group.id)}">${escapeHTML(group.name)}</option>`).join('');
+  $('#forward-box').innerHTML = state.boxes.map(box => `<option value="${escapeHTML(box.id)}">${escapeHTML(box.name)} · ${escapeHTML(box.defaultAgent || 'claude')}</option>`).join('');
 }
 
 async function refreshProviderViews(silent) {
@@ -316,6 +317,7 @@ async function selectBox(id) {
   $('#chat-name').textContent = state.box.name;
   $('#chat-state').textContent = `${stateLabel(state.box.state)} · ${state.box.slotId ? 'compute assigned' : 'persistent storage retained'}`;
   $('#chat-avatar').textContent = avatar(state.box.name);
+  $('#box-default-agent').value = state.box.defaultAgent || 'claude';
   $('#allocate').hidden = !['detached', 'hibernated'].includes(state.box.state);
   $('#hibernate').hidden = state.box.state !== 'running';
   setTerminalPane(false);
@@ -328,7 +330,7 @@ async function selectBox(id) {
     renderTaskTabs();
     if (active) await refreshConversation();
     else {
-      $('#messages').innerHTML = '<div class="empty"><strong>This box is ready for a conversation.</strong><br>Send a message below. If it is offline, Claude and a compute slot start automatically.</div>';
+      $('#messages').innerHTML = `<div class="empty"><strong>This box is ready for a conversation.</strong><br>Send a message below. If it is offline, ${escapeHTML(state.box.defaultAgent || 'claude')} and a compute slot start automatically.</div>`;
       $('#terminal').textContent = state.box.state === 'running' ? 'No tmux agent session yet.' : 'The terminal appears after this box gets compute.';
     }
     startPolling(refreshConversation);
@@ -354,6 +356,7 @@ async function refreshConversation(silent = false) {
   try {
     const freshBox = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}`, {timeout:10000});
     state.box = freshBox;
+    $('#box-default-agent').value = freshBox.defaultAgent || 'claude';
     const index = state.boxes.findIndex(box => box.id === freshBox.id);
     if (index >= 0) state.boxes[index] = freshBox;
     $('#chat-state').textContent = `${stateLabel(freshBox.state)} · ${freshBox.slotId ? 'compute assigned' : 'persistent storage retained'}`;
@@ -367,13 +370,18 @@ async function refreshConversation(silent = false) {
     if (state.task) {
       state.task = await api(`/v1/tasks/${encodeURIComponent(state.task.id)}`, {timeout:10000});
       const messages = await api(`/v1/tasks/${encodeURIComponent(state.task.id)}/messages`, {timeout:10000});
+      state.taskMessages = messages || [];
       const container = $('#messages');
       const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
       container.innerHTML = messages?.length ? messages.map(message => `
         <article class="message ${escapeHTML(message.direction)}">
           <div>${escapeHTML(message.text)}</div>
-          <div class="message-meta"><span>${escapeHTML(stateLabel(message.state))}</span><time>${escapeHTML(stamp(message.createdAt))}</time></div>
+          <div class="message-meta"><button type="button" class="message-forward" data-forward-task-message="${escapeHTML(message.id)}">Forward</button><span>${escapeHTML(stateLabel(message.state))}</span><time>${escapeHTML(stamp(message.createdAt))}</time></div>
         </article>`).join('') : '<div class="empty">Waiting for the first message.</div>';
+      $$('[data-forward-task-message]').forEach(button => button.addEventListener('click', () => {
+        const message = state.taskMessages.find(value => value.id === button.dataset.forwardTaskMessage);
+        if (message) openForwardDialog(message.text);
+      }));
       if (nearBottom) container.scrollTop = container.scrollHeight;
       renderTaskTabs();
     }
@@ -445,24 +453,84 @@ function renderGroupMessages() {
         ${message.sourceBoxName ? `<p class="forward-label">Forwarded from ${escapeHTML(message.sourceBoxName)}</p>` : ''}
         <div>${escapeHTML(message.text)}</div>
         <div class="delivery-row">${deliveries.map(item => `<span class="delivery-chip ${escapeHTML(item.state)}" title="${escapeHTML(item.failureReason || item.state)}">${escapeHTML(item.boxName)} · ${escapeHTML(stateLabel(item.state))}</span>`).join('')}</div>
-        <div class="message-meta"><time>${escapeHTML(stamp(message.createdAt))}</time></div>
+        <div class="message-meta"><button type="button" class="message-forward" data-forward-group-message="${escapeHTML(message.id)}">Forward</button><time>${escapeHTML(stamp(message.createdAt))}</time></div>
       </article>`;
   }).join('') : '<div class="empty"><strong>No messages yet.</strong><br>Select recipients above and start the group.</div>';
+  $$('[data-forward-group-message]').forEach(button => button.addEventListener('click', () => {
+    const message = state.groupMessages.find(value => value.id === button.dataset.forwardGroupMessage);
+    if (message) openForwardDialog(message.text);
+  }));
   if (nearBottom) container.scrollTop = container.scrollHeight;
+}
+
+function openForwardDialog(source) {
+  if (!state.boxes.length) return toast('Create a destination box first', true);
+  const form = $('#forward-form');
+  form.reset();
+  form.elements.source.value = source;
+  const alternative = state.boxes.find(box => box.id !== state.box?.id) || state.boxes[0];
+  form.elements.box.value = alternative.id;
+  $('#forward-dialog').showModal();
 }
 
 function renderRecipientStrip() {
   if (!state.group) return;
-  $('#group-members').innerHTML = state.group.members.map(member => `
-    <label class="recipient-chip ${state.recipients.has(member.logicalBoxId) ? 'selected' : ''}">
-      <input type="checkbox" value="${escapeHTML(member.logicalBoxId)}" ${state.recipients.has(member.logicalBoxId) ? 'checked' : ''} ${member.canReceive ? '' : 'disabled'}>
-      <span class="presence ${state.boxes.find(box => box.id === member.logicalBoxId)?.state === 'running' ? 'online' : ''}"></span>
-      <span><strong>${escapeHTML(member.boxName)}</strong><small>${escapeHTML(member.agent)}</small></span>
-    </label>`).join('');
+  $('#group-members').innerHTML = state.group.members.map(member => {
+    const screen = state.groupScreens.get(member.logicalBoxId);
+    const preview = screen?.content ? screen.content.split('\n').slice(-8).join('\n') : (screen?.status || 'Waiting for live terminal…');
+    return `
+    <div class="recipient-chip ${state.recipients.has(member.logicalBoxId) ? 'selected' : ''}">
+      <label class="recipient-select">
+        <input type="checkbox" value="${escapeHTML(member.logicalBoxId)}" ${state.recipients.has(member.logicalBoxId) ? 'checked' : ''} ${member.canReceive ? '' : 'disabled'}>
+        <span class="presence ${state.boxes.find(box => box.id === member.logicalBoxId)?.state === 'running' ? 'online' : ''}"></span>
+        <span><strong>${escapeHTML(member.boxName)}</strong><small>${escapeHTML(member.agent)} · ${escapeHTML(screen?.session || 'no live session')}</small></span>
+      </label>
+      <button type="button" class="recipient-screen" data-screen-box="${escapeHTML(member.logicalBoxId)}" aria-label="Open ${escapeHTML(member.boxName)} terminal fullscreen"><pre>${escapeHTML(preview)}</pre><small>Open live screen ↗</small></button>
+    </div>`;
+  }).join('');
   $$('#group-members input').forEach(input => input.addEventListener('change', () => {
     if (input.checked) state.recipients.add(input.value); else state.recipients.delete(input.value);
     renderRecipientStrip();
   }));
+  $$('[data-screen-box]').forEach(button => button.addEventListener('click', () => showGroupTerminal(button.dataset.screenBox)));
+}
+
+function showGroupTerminal(boxID) {
+  const member = state.group?.members.find(value => value.logicalBoxId === boxID);
+  const screen = state.groupScreens.get(boxID);
+  state.previewBoxID = boxID;
+  $('#terminal-preview-title').textContent = `${member?.boxName || 'Worker'} · ${screen?.agent || member?.agent || 'terminal'}`;
+  $('#terminal-preview-fullscreen').textContent = screen?.content || screen?.status || 'Waiting for live terminal output…';
+  if (!$('#terminal-preview-dialog').open) $('#terminal-preview-dialog').showModal();
+}
+
+async function refreshGroupScreens(force = false) {
+  if (!state.group) return;
+  if (!force && Date.now() - state.groupScreenRefreshAt < 4000) return;
+  state.groupScreenRefreshAt = Date.now();
+  const groupID = state.group.id;
+  await Promise.all(state.group.members.map(async member => {
+    const box = state.boxes.find(value => value.id === member.logicalBoxId);
+    if (box?.state !== 'running') {
+      state.groupScreens.set(member.logicalBoxId, {agent:member.agent, status:'Compute is hibernated'});
+      return;
+    }
+    try {
+      const tasks = await api(`/v1/logical-boxes/${encodeURIComponent(member.logicalBoxId)}/tasks`, {timeout:10000}) || [];
+      const task = [...tasks].reverse().find(value => value.agent === member.agent && value.state === 'active') || [...tasks].reverse().find(value => value.state === 'active');
+      if (!task) {
+        state.groupScreens.set(member.logicalBoxId, {agent:member.agent, status:'No active agent session'});
+        return;
+      }
+      const snapshot = await api(`/v1/logical-boxes/${encodeURIComponent(member.logicalBoxId)}/terminal?session=${encodeURIComponent(task.session)}&history=160`, {timeout:10000});
+      state.groupScreens.set(member.logicalBoxId, {...snapshot, agent:task.agent});
+    } catch (error) {
+      state.groupScreens.set(member.logicalBoxId, {agent:member.agent, status:`Screen unavailable: ${error.message}`});
+    }
+  }));
+  if (state.group?.id !== groupID) return;
+  renderRecipientStrip();
+  if (state.previewBoxID && $('#terminal-preview-dialog').open) showGroupTerminal(state.previewBoxID);
 }
 
 async function selectGroup(id) {
@@ -470,13 +538,15 @@ async function selectGroup(id) {
   state.task = null;
   state.group = state.groups.find(group => group.id === id);
   if (!state.group) return;
-  state.recipients = new Set(state.group.members.filter(member => member.canReceive).map(member => member.logicalBoxId));
+  state.recipients = new Set();
+  state.groupScreens.clear();
+  state.groupScreenRefreshAt = 0;
   $('#group-name').textContent = state.group.name;
   $('#group-state').textContent = `${state.group.members.length} persistent boxes · recipients selectable per message`;
   renderRecipientStrip();
   renderRoster();
   showView('group');
-  await refreshGroupConversation();
+  await refreshGroupConversation(true);
   startPolling(refreshGroupConversation);
 }
 
@@ -485,6 +555,7 @@ async function refreshGroupConversation(silent = false) {
   try {
     state.groupMessages = await api(`/v1/chat-groups/${encodeURIComponent(state.group.id)}/messages`, {timeout:10000}) || [];
     renderGroupMessages();
+    await refreshGroupScreens(false);
   } catch (error) { if (!silent) toast(error.message, true); }
 }
 
@@ -507,7 +578,12 @@ function showExternal(id) {
 
 function openTaskDialog() {
   if (!state.boxes.length) return toast('Create a logical box first', true);
-  if (state.box) $('#task-box').value = state.box.id;
+  const form = $('#task-form');
+  if (state.box) {
+    $('#task-box').value = state.box.id;
+    form.elements.agent.value = state.box.defaultAgent || 'claude';
+  }
+  form.elements.session.value = '';
   $('#task-dialog').showModal();
 }
 
@@ -520,7 +596,7 @@ function renderGroupMemberOptions(group = null) {
         <input type="checkbox" name="member" value="${escapeHTML(box.id)}" ${member ? 'checked' : ''}>
         <span><strong>${escapeHTML(box.name)}</strong><small>${escapeHTML(stateLabel(box.state))}</small></span>
         <select name="agent-${escapeHTML(box.id)}" aria-label="Agent for ${escapeHTML(box.name)}">
-          ${['claude','codex','opencode','shell'].map(agent => `<option ${(member?.agent || 'claude') === agent ? 'selected' : ''}>${agent}</option>`).join('')}
+          ${['claude','codex','opencode','shell'].map(agent => `<option ${(member?.agent || box.defaultAgent || 'claude') === agent ? 'selected' : ''}>${agent}</option>`).join('')}
         </select>
       </label>`;
   }).join('') || '<div class="empty">Create at least two logical boxes first.</div>';
@@ -562,6 +638,10 @@ $$('.mobile-back').forEach(button => button.addEventListener('click', () => show
 $('#new-box').addEventListener('click', () => $('#box-dialog').showModal());
 $('#new-group').addEventListener('click', () => openGroupDialog());
 $('#home-new-task').addEventListener('click', openTaskDialog);
+$('#task-box').addEventListener('change', event => {
+  const box = state.boxes.find(value => value.id === event.target.value);
+  if (box) $('#task-form').elements.agent.value = box.defaultAgent || 'claude';
+});
 $('#new-credential').addEventListener('click', () => $('#credential-dialog').showModal());
 $('#new-notification').addEventListener('click', () => $('#notification-dialog').showModal());
 $('#edit-group').addEventListener('click', () => openGroupDialog(state.group));
@@ -575,6 +655,7 @@ $('#box-form').addEventListener('submit', async event => {
     name: form.get('name'),
     provider: selected?.provider || form.get('provider'),
     providerCredential: form.get('credential'),
+    defaultAgent: form.get('defaultAgent'),
     region: form.get('region'),
     diskGiB: Number(form.get('disk')),
     allocateWhenReady: form.get('allocate') === 'on',
@@ -713,14 +794,37 @@ $('#message-form').addEventListener('submit', async event => {
   if (!text.trim()) return;
   input.value = '';
   try {
-    const result = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('direct')}, body:JSON.stringify({text, agent:'claude', session:'vmbox'}), timeout:30000});
-    state.task = result.task;
-    if (!state.tasks.some(task => task.id === result.task.id)) state.tasks.push(result.task);
-    renderTaskTabs();
-    toast(result.started ? 'Box is starting Claude; it will report online here' : 'Message queued');
+    if (state.task?.state === 'active' && state.box.state === 'running') {
+      await api(`/v1/tasks/${encodeURIComponent(state.task.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('message')}, body:JSON.stringify({text}), timeout:30000});
+      toast(`Message delivered to ${state.task.agent}`);
+    } else {
+      const pending = state.task && ['queued','waiting_capacity','starting'].includes(state.task.state) ? state.task : null;
+      const body = {text, agent:pending?.agent || state.box.defaultAgent || 'claude'};
+      if (pending?.session) body.session = pending.session;
+      const result = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('direct')}, body:JSON.stringify(body), timeout:30000});
+      state.task = result.task;
+      if (!state.tasks.some(task => task.id === result.task.id)) state.tasks.push(result.task);
+      renderTaskTabs();
+      toast(result.started ? `Box is starting ${result.task.agent}` : 'Message queued');
+    }
     await refreshConversation(true);
   } catch (error) {
     input.value = text;
+    toast(error.message, true);
+  }
+});
+
+$('#box-default-agent').addEventListener('change', async event => {
+  if (!state.box) return;
+  const previous = state.box.defaultAgent || 'claude';
+  try {
+    const box = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}`, {method:'PATCH', body:JSON.stringify({defaultAgent:event.target.value})});
+    state.box = box;
+    const index = state.boxes.findIndex(value => value.id === box.id);
+    if (index >= 0) state.boxes[index] = box;
+    toast(`${box.name} now starts ${box.defaultAgent} by default`);
+  } catch (error) {
+    event.target.value = previous;
     toast(error.message, true);
   }
 });
@@ -746,11 +850,7 @@ $('#group-message-form').addEventListener('submit', async event => {
 
 $('#share-terminal').addEventListener('click', () => {
   if (!state.box) return;
-  if (!state.groups.length) return toast('Create a group first', true);
-  const form = $('#forward-form');
-  form.elements.group.value = state.groups[0].id;
-  form.elements.text.value = $('#terminal').textContent;
-  $('#forward-dialog').showModal();
+  openForwardDialog($('#terminal').textContent);
 });
 
 $('#toggle-terminal').addEventListener('click', () => {
@@ -760,14 +860,21 @@ $('#toggle-terminal').addEventListener('click', () => {
 $('#forward-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
-  const group = state.groups.find(value => value.id === form.get('group'));
-  if (!group || !state.box) return;
-  const recipients = group.members.filter(member => member.canReceive && member.logicalBoxId !== state.box.id).map(member => member.logicalBoxId);
+  const destination = state.boxes.find(value => value.id === form.get('box'));
+  if (!destination) return toast('Choose a destination box', true);
+  const append = form.get('append').trim();
+  const text = append ? `${form.get('source')}\n\nForwarding note:\n${append}` : form.get('source');
+  const agent = form.get('agent') || destination.defaultAgent || 'claude';
   try {
-    await api(`/v1/chat-groups/${encodeURIComponent(group.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('forward')}, body:JSON.stringify({text:form.get('text'), sourceBoxId:state.box.id, recipientBoxIds:recipients}), timeout:30000});
+    await api(`/v1/logical-boxes/${encodeURIComponent(destination.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('forward')}, body:JSON.stringify({text, agent}), timeout:30000});
     $('#forward-dialog').close();
-    toast(`Terminal output forwarded to ${group.name}`);
+    toast(`Forwarded to ${destination.name} · ${agent}`);
   } catch (error) { toast(error.message, true); }
+});
+
+$('#close-terminal-preview').addEventListener('click', () => {
+  state.previewBoxID = '';
+  $('#terminal-preview-dialog').close();
 });
 
 $('#terminal-form').addEventListener('submit', async event => {

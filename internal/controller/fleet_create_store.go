@@ -33,6 +33,9 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	if request.DiskGiB < 1 || request.DiskGiB > 1000 {
 		return creation, fmt.Errorf("diskGiB must be between 1 and 1000")
 	}
+	if !validAgent(request.DefaultAgent) {
+		return creation, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
+	}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return creation, err
@@ -67,8 +70,8 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		return creation, fmt.Errorf("compute slot reservation lost a concurrent race")
 	}
 	placeholder := "pending:" + id
-	box := v1.LogicalBox{ID: id, AccountID: p.AccountID, OwnerUserID: p.UserID, Name: request.Name, Provider: request.Provider, ProviderCredential: request.ProviderCredential, State: v1.LogicalBoxAttaching, VolumeID: placeholder, VolumeName: "pending:" + request.Name, SlotID: slot.ID, AssignmentGeneration: generation, LeaseOwner: leaseOwner, LeaseExpiresAt: &expires, RestorationState: "creation-reserved"}
-	_, err = tx.ExecContext(ctx, "INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,state,volume_id,volume_name,slot_id,assignment_generation,lease_owner,lease_expires_at,fencing_token,restoration_state,metadata) VALUES($1,$2,$3,$4,$5,$6,'attaching',$7,$8,$9,$10,$11,$12,$13,$14,$15)", box.ID, p.AccountID, p.UserID, box.Name, box.Provider, box.ProviderCredential, box.VolumeID, box.VolumeName, slot.ID, generation, leaseOwner, expires, fence, box.RestorationState, metadata)
+	box := v1.LogicalBox{ID: id, AccountID: p.AccountID, OwnerUserID: p.UserID, Name: request.Name, Provider: request.Provider, ProviderCredential: request.ProviderCredential, DefaultAgent: request.DefaultAgent, State: v1.LogicalBoxAttaching, VolumeID: placeholder, VolumeName: "pending:" + request.Name, SlotID: slot.ID, AssignmentGeneration: generation, LeaseOwner: leaseOwner, LeaseExpiresAt: &expires, RestorationState: "creation-reserved"}
+	_, err = tx.ExecContext(ctx, "INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,state,volume_id,volume_name,slot_id,assignment_generation,lease_owner,lease_expires_at,fencing_token,restoration_state,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,'attaching',$8,$9,$10,$11,$12,$13,$14,$15,$16)", box.ID, p.AccountID, p.UserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.VolumeID, box.VolumeName, slot.ID, generation, leaseOwner, expires, fence, box.RestorationState, metadata)
 	if err != nil {
 		return creation, err
 	}
@@ -175,7 +178,7 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 		if err != nil {
 			return nil, err
 		}
-		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: value.allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
+		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: value.allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
 	}
 	return result, nil
 }

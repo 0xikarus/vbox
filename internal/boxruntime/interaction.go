@@ -16,6 +16,8 @@ import (
 
 var ErrAmbiguousMessage = errors.New("message delivery is ambiguous and will not be replayed automatically")
 
+const taskAgentEnvironment = "VMBOX_TASK_AGENT"
+
 func validateTmuxToken(kind, value string) error {
 	if value == "" || len(value) > 128 {
 		return fmt.Errorf("%s is empty or too long", kind)
@@ -29,7 +31,9 @@ func validateTmuxToken(kind, value string) error {
 	return nil
 }
 
-func tmuxCommand(ctx context.Context, stdin string, args ...string) ([]byte, error) {
+var tmuxCommand = runTmuxCommand
+
+func runTmuxCommand(ctx context.Context, stdin string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, "tmux", args...)
 	if stdin != "" {
 		command.Stdin = strings.NewReader(stdin)
@@ -118,10 +122,18 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 		if _, err := tmuxCommand(ctx, "", args...); err != nil {
 			return fmt.Errorf("start %s task session: %w", agent, err)
 		}
+		if _, err := tmuxCommand(ctx, "", "set-environment", "-t", session, taskAgentEnvironment, agent); err != nil {
+			return fmt.Errorf("mark %s task session: %w", agent, err)
+		}
 		if err := ApplyTmuxContext(ctx, root, session); err != nil {
 			return fmt.Errorf("apply %s task session context: %w", agent, err)
 		}
 		_, _ = tmuxCommand(ctx, "", "source-file", "/etc/vmbox/tmux.conf")
+	} else {
+		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", session, taskAgentEnvironment)
+		if err != nil || strings.TrimSpace(string(marker)) != taskAgentEnvironment+"="+agent {
+			return fmt.Errorf("tmux session %q already exists and is not a %s task session; choose a different session name", session, agent)
+		}
 	}
 	return DeliverTmuxInput(ctx, root, session, messageID, prompt, true)
 }
