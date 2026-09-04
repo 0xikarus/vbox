@@ -63,8 +63,10 @@ type TerminalPrompt struct {
 }
 
 type TerminalPromptChoice struct {
-	Value string `json:"value"`
-	Label string `json:"label"`
+	Value  string `json:"value"`
+	Label  string `json:"label"`
+	Input  string `json:"input"`
+	Submit bool   `json:"submit"`
 }
 
 type LogicalBoxConnection struct {

@@ -412,7 +412,7 @@ function renderTerminalPrompt(prompt, session) {
       await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {
         method:'POST',
         headers:{'Idempotency-Key':`terminal-prompt-${prompt.id}-${button.dataset.promptValue}`},
-        body:JSON.stringify({text:button.dataset.promptValue, submit:true}),
+        body:JSON.stringify({text:prompt.choices.find(choice => choice.value === button.dataset.promptValue)?.input || button.dataset.promptValue, submit:prompt.choices.find(choice => choice.value === button.dataset.promptValue)?.submit !== false}),
       });
       panel.hidden = true;
       toast(`Sent terminal choice ${button.dataset.promptValue}`);
