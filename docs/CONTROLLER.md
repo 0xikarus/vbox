@@ -87,12 +87,13 @@ vmbox boxes create dev
 vmbox dev
 vmbox resume
 vmbox auth dev
+vmbox task dev --agent codex --prompt 'Review the repository and report findings'
 vmbox boxes hibernate dev
 vmbox boxes delete-volume dev
 ```
 
-`vmbox NAME` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. `vmbox resume` selects from the same logical boxes, and `vmbox boxes open NAME` remains an explicit equivalent for scripts. `vmbox auth NAME` explicitly uploads the selected or active local Codex, Claude, and OpenCode profiles directly over that SSH connection; opening a box never uploads local credentials implicitly, and the controller never receives those files. The profiles remain on the logical box's persistent volume through hibernation, are owned by `vmbox:vmbox`, and authentication is verified as that unprivileged user.
+`vmbox NAME` resolves the currently fenced deployment through the controller and then uses direct OpenSSH with a reusable control connection. `vmbox resume` selects from the same logical boxes, and `vmbox boxes open NAME` remains an explicit equivalent for scripts. `vmbox task` interactively chooses a logical box and agent, or accepts scriptable box, agent, session, and prompt arguments; task creation automatically allocates compute when the logical box is hibernated and leaves the tmux session running. `vmbox auth NAME` explicitly uploads the selected or active local Codex, Claude, and OpenCode profiles directly over that SSH connection; opening a box never uploads local credentials implicitly, and the controller never receives those files. The profiles remain on the logical box's persistent volume through hibernation, are owned by `vmbox:vmbox`, and authentication is verified as that unprivileged user.
 
 Leaving the interactive client keeps both the logical box and tmux session running by default. The exit prompt separately offers hibernation or exact-name volume deletion. Logical-box identity and compute-slot metadata are persisted with the tmux snapshot, so restored sessions show the current provider, resources, workspace, box, and slot instead of fallback values. Tmux uses `Ctrl-a` as its prefix and the bottom guide lists writing, scrolling, detaching, and QWERTZ-safe keys.
 
-Use TLS at the controller ingress. A configured context never silently falls back to standalone mode. The compatibility contract for external schedulers is `v1alpha1`; see `openapi.yaml`.
+Use TLS at the controller ingress. Interactive first use prompts for the controller connection without storing its token. A missing controller fails closed in noninteractive use, and standalone provider management requires an explicit `--standalone`. The compatibility contract for external schedulers is `v1alpha1`; see `openapi.yaml`.

@@ -65,18 +65,18 @@ vmbox context add railway --provider railway --project PROJECT_ID --environment 
 vmbox context add railway-local --provider railway --project PROJECT_ID --environment ENVIRONMENT_ID --railway-cli-auth
 vmbox context add ubuntu --provider incus --incus-remote build-host
 
-vmbox --context local-docker new worker --detach -- bun test
-vmbox --context local-docker new review \
+vmbox --standalone --context local-docker new worker --detach -- bun test
+vmbox --standalone --context local-docker new review \
   --application-profile codex="$HOME/.codex-work" \
   --github-credential github.com:octocat:ssh \
   --instructions "$PWD/AGENTS.md"
-vmbox --context local-docker new next-worker --reuse
-vmbox --context local-docker run worker -- printf '%s\n' 'exact argv'
-vmbox --context local-docker task-status worker RUN_ID
-vmbox --context local-docker resume
-vmbox --context local-docker resize
-vmbox --context local-docker stop worker
-vmbox --context local-docker clean worker --yes
+vmbox --standalone --context local-docker new next-worker --reuse
+vmbox --standalone --context local-docker run worker -- printf '%s\n' 'exact argv'
+vmbox --standalone --context local-docker task-status worker RUN_ID
+vmbox --standalone --context local-docker resume
+vmbox --standalone --context local-docker resize
+vmbox --standalone --context local-docker stop worker
+vmbox --standalone --context local-docker clean worker --yes
 ```
 
 Everything after `--` is forwarded as an argument vector. vmbox never inserts a shell. Use `bash -lc '...'` explicitly when shell expansion is intended.
@@ -109,9 +109,13 @@ vmbox --context team boxes create worker --allocate
 vmbox --context team worker
 # Or choose the same logical box interactively:
 vmbox --context team resume
+# Schedule a detached agent session; the controller allocates a slot as needed:
+vmbox --context team task worker --agent codex --prompt 'Review the open pull request'
+# With no arguments, an interactive dialog asks for the box, agent, and prompt:
+vmbox --context team task
 ```
 
-A valid controller context is automatically used and displayed. If the controller is unavailable, vmbox fails closed; `--standalone` is the only way to bypass it. `vmbox auth NAME` explicitly syncs active local agent profiles directly over the fenced SSH connection, and the persistent volume retains them across hibernation; opening a box never uploads credentials implicitly. The versioned scheduler contract is [docs/openapi.yaml](docs/openapi.yaml).
+On interactive first use, vmbox asks for the controller URL, context, provider, and provider-credential name. The access token remains outside the configuration in `VMBOX_CONTROLLER_TOKEN`. If no controller is configured in noninteractive use, vmbox fails with setup guidance. `--standalone` is the only way to opt into direct provider management, and a controller failure never triggers a fallback. `vmbox auth NAME` explicitly syncs active local agent profiles directly over the fenced SSH connection, and the persistent volume retains them across hibernation; opening a box never uploads credentials implicitly. The versioned scheduler contract is [docs/openapi.yaml](docs/openapi.yaml).
 
 `vmbox-hostd` manages unprivileged Incus containers (or opt-in QEMU VMs) on an Ubuntu host. It accepts only authenticated requests and can advertise capacity to the controller over an outbound connection.
 

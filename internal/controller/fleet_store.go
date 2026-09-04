@@ -210,6 +210,23 @@ func (s *Store) ReserveAllocation(ctx context.Context, p Principal, logicalBox, 
 	if box.OwnerUserID != p.UserID && p.Role != "owner" {
 		return v1.Allocation{}, fmt.Errorf("logical box belongs to another user")
 	}
+	// Opening the same logical box from another terminal while its allocation is
+	// already progressing must follow that fenced request. Creating a second
+	// request would either race the first activation or reject a perfectly valid
+	// reconnect with the misleading "not detached" error.
+	if box.State == v1.LogicalBoxReserved || box.State == v1.LogicalBoxAttaching {
+		allocation, activeErr := scanAllocation(tx.QueryRowContext(ctx, allocationSelect+` WHERE r.account_id=$1 AND r.logical_box_id=$2 AND r.assignment_generation=$3 AND r.state IN ('reserved','attaching') ORDER BY r.created_at DESC LIMIT 1`, p.AccountID, box.ID, box.AssignmentGeneration))
+		if errors.Is(activeErr, sql.ErrNoRows) {
+			return allocation, fmt.Errorf("logical box %q is %s but has no matching active allocation", box.Name, box.State)
+		}
+		if activeErr != nil {
+			return allocation, activeErr
+		}
+		if err := tx.Commit(); err != nil {
+			return allocation, err
+		}
+		return allocation, nil
+	}
 	if box.State != v1.LogicalBoxDetached && box.State != v1.LogicalBoxHibernated {
 		return v1.Allocation{}, fmt.Errorf("logical box %q is %s, not detached", box.Name, box.State)
 	}
