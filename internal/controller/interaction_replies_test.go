@@ -47,8 +47,8 @@ func TestExtractClaudeReplyOmitsTerminalChrome(t *testing.T) {
 
 func TestExtractAgentReplyWaitsForInputPrompt(t *testing.T) {
 	content := "❯ Explain the result\n\n● Still working through the details"
-	if reply, complete := extractAgentReply("claude", "Explain the result", content); complete || reply != "" {
-		t.Fatalf("captured an in-progress reply: complete=%v reply=%q", complete, reply)
+	if reply, complete := extractAgentReply("claude", "Explain the result", content); complete || reply != "Still working through the details" {
+		t.Fatalf("in-progress reply was not exposed: complete=%v reply=%q", complete, reply)
 	}
 }
 
@@ -70,14 +70,21 @@ func TestExtractAgentReplyUsesNewestMatchingPrompt(t *testing.T) {
 	}
 }
 
-func TestAppendAgentBoxMessageIsCorrelatedAndIdempotent(t *testing.T) {
+func TestUpsertAgentBoxMessageStreamsAndFinalizesCorrelatedReply(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectExec("INSERT INTO box_messages").
-		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "agent-reply:message-1").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "working", "streaming", "agent-reply:message-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
-	inserted, err := store.AppendAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "answer")
-	if err != nil || !inserted {
-		t.Fatalf("inserted=%v err=%v", inserted, err)
+	changed, err := store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "working", "streaming")
+	if err != nil || !changed {
+		t.Fatalf("streamed=%v err=%v", changed, err)
+	}
+	mock.ExpectExec("INSERT INTO box_messages").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	changed, err = store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "answer", "delivered")
+	if err != nil || !changed {
+		t.Fatalf("finalized=%v err=%v", changed, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
@@ -90,7 +97,7 @@ func TestUnansweredBoxMessagesExcludesCapturedReplies(t *testing.T) {
 	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
 		WithArgs("account-a", "task-1", "user-a", "user").
 		WillReturnRows(boxTaskRow("task-1", "active"))
-	mock.ExpectQuery("NOT EXISTS").WithArgs("account-a", "task-1").
+	mock.ExpectQuery("reply.state='delivered'").WithArgs("account-a", "task-1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
 			AddRow("message-1", "task-1", "user-a", "user", "hello", "delivered", now, now))
 	messages, err := store.UnansweredBoxMessages(context.Background(), Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}, "task-1")

@@ -83,7 +83,10 @@ before(async () => {
     const taskDetail = url.pathname.match(/^\/v1\/tasks\/(task-[12])$/);
     if (request.method === 'GET' && taskDetail) return json(response, 200, Object.values(tasks).flat().find(task => task.id === taskDetail[1]));
     const taskMessages = url.pathname.match(/^\/v1\/tasks\/(task-[12])\/messages$/);
-    if (request.method === 'GET' && taskMessages) return json(response, 200, [{id:`message-${taskMessages[1]}`, taskId:taskMessages[1], direction:'user', text:'Initial research prompt', state:'delivered', createdAt:now, updatedAt:now}]);
+    if (request.method === 'GET' && taskMessages) return json(response, 200, [
+      {id:`message-${taskMessages[1]}`, taskId:taskMessages[1], direction:'user', text:'Initial research prompt', state:'delivered', createdAt:now, updatedAt:now},
+      {id:`stream-${taskMessages[1]}`, taskId:taskMessages[1], direction:'agent', text:'Checking the repository now', state:'streaming', createdAt:now, updatedAt:now},
+    ]);
     if (request.method === 'POST' && taskMessages) return json(response, 202, {id:'delivered-message', taskId:taskMessages[1], direction:'user', text:body.text, state:'delivered', createdAt:now, updatedAt:now});
     const terminal = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/terminal$/);
     if (request.method === 'GET' && terminal) return json(response, 200, {session:url.searchParams.get('session'), command:terminal[1] === 'box-1' ? 'codex' : 'claude', content:`${terminal[1]} live agent output\nworking safely`, width:120, height:35, capturedAt:now, prompt:terminal[1] === 'box-1' ? {id:'codex-update', text:'Update available!', resumeInput:true, choices:[{value:'1',label:'Update',input:'\r',submit:false},{value:'2',label:'Skip',input:'\u001b[B\r',submit:false}]} : null});
@@ -135,6 +138,8 @@ test('controller routes exact sessions and supports safe group collaboration', a
 
   await page.click('[data-box="box-1"]');
   await page.waitForSelector('[data-task="task-1"].selected');
+  await page.waitForSelector('#messages .message.agent.streaming');
+  assert.match(await page.$eval('#messages .message.agent.streaming', element => element.textContent), /streaming…/);
   await page.type('#message', "What's today's date?");
   await page.keyboard.press('Enter');
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('delivered to codex'));
@@ -153,6 +158,18 @@ test('controller routes exact sessions and supports safe group collaboration', a
   assert.equal(terminalPosts.at(-2).body.submit, false);
   assert.equal(terminalPosts.at(-1).body.text, 'work');
   assert.equal(terminalPosts.at(-1).body.submit, true);
+
+  assert.equal(await page.$eval('#fullscreen-terminal', element => element.textContent), 'Fullscreen');
+  const interactiveStart = requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length;
+  await page.click('#terminal');
+  await page.keyboard.type('pwd');
+  await page.keyboard.press('Enter');
+  for (let attempt = 0; attempt < 40 && requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length === interactiveStart; attempt++) {
+    await new Promise(resolveWait => setTimeout(resolveWait, 50));
+  }
+  const interactivePosts = requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').slice(interactiveStart);
+  assert.equal(interactivePosts.map(value => value.body.text).join(''), 'pwd\r');
+  assert(interactivePosts.every(value => value.body.submit === false));
 
   await page.select('#box-default-agent', 'claude');
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('starts claude'));

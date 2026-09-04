@@ -105,11 +105,11 @@
             </form>
           </div>
           <aside class="terminal-column">
-            <div class="terminal-bar"><span class="terminal-lights"><i></i><i></i><i></i></span><span id="terminal-title">tmux · vmbox</span><span class="spacer"></span><span id="terminal-size"></span></div>
-            <pre id="terminal" tabindex="0">Choose a running box to mirror its tmux screen.</pre>
+            <div class="terminal-bar"><span class="terminal-lights"><i></i><i></i><i></i></span><span id="terminal-title">tmux · vmbox</span><span class="spacer"></span><span id="terminal-size"></span><button id="fullscreen-terminal" type="button" title="Toggle fullscreen terminal">Fullscreen</button></div>
+            <pre id="terminal" tabindex="0" role="application" aria-label="Interactive tmux terminal; click and type">Choose a running box to mirror its tmux screen.</pre>
             <div class="terminal-guide" aria-label="tmux keyboard guide">
               <span><b>WRITE</b> q / Esc</span><span><b>SCROLL</b> Ctrl-a s · wheel</span><span><b>DETACH</b> Ctrl-a d</span><span><b>HELP</b> Ctrl-a h</span>
-              <small>QWERTZ-safe · release Ctrl-a before the second key · detaching keeps the box and agents running</small>
+              <small>Click the screen and type · QWERTZ-safe · browser input is forwarded to tmux · closing this page keeps agents running</small>
             </div>
             <form id="terminal-form" class="terminal-input"><input id="terminal-input" placeholder="Send exact terminal input"><button>Send</button></form>
           </aside>

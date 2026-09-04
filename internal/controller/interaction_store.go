@@ -240,6 +240,7 @@ func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID s
 		AND NOT EXISTS (
 			SELECT 1 FROM box_messages reply
 			WHERE reply.account_id=m.account_id AND reply.idempotency_key='agent-reply:' || m.id::text
+			  AND reply.state='delivered'
 		)
 		ORDER BY m.created_at,m.id`, p.AccountID, taskID)
 	if err != nil {
@@ -257,13 +258,20 @@ func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID s
 	return values, rows.Err()
 }
 
-func (s *Store) AppendAgentBoxMessage(ctx context.Context, accountID, taskID, replyTo, text string) (bool, error) {
+func (s *Store) UpsertAgentBoxMessage(ctx context.Context, accountID, taskID, replyTo, text, state string) (bool, error) {
 	if strings.TrimSpace(text) == "" || len(text) > 100_000 {
 		return false, fmt.Errorf("agent reply must contain between 1 and 100000 bytes")
 	}
+	if state != "streaming" && state != "delivered" {
+		return false, fmt.Errorf("agent reply state must be streaming or delivered")
+	}
 	result, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key)
-		VALUES($1,$2,$3,'agent',$4,false,'delivered',$5)
-		ON CONFLICT(account_id,idempotency_key) DO NOTHING`, uuid(), accountID, taskID, text, "agent-reply:"+replyTo)
+		VALUES($1,$2,$3,'agent',$4,false,$5,$6)
+		ON CONFLICT(account_id,idempotency_key) DO UPDATE
+		SET body=EXCLUDED.body,state=EXCLUDED.state,failure_reason=NULL,updated_at=now()
+		WHERE box_messages.direction='agent'
+		  AND (box_messages.body IS DISTINCT FROM EXCLUDED.body OR box_messages.state IS DISTINCT FROM EXCLUDED.state)`,
+		uuid(), accountID, taskID, text, state, "agent-reply:"+replyTo)
 	if err != nil {
 		return false, err
 	}

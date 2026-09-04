@@ -58,14 +58,34 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 	}
 	ticker := time.NewTicker(agentReplyPollInterval)
 	defer ticker.Stop()
+	lastReply := ""
+	stableCompletePolls := 0
 	for {
 		result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-screen", task.Session, "2000"}, provider.ExecOptions{})
 		if execErr == nil && result.ExitCode == 0 {
 			var snapshot v1.TerminalSnapshot
 			if json.Unmarshal([]byte(result.Stdout), &snapshot) == nil {
-				if reply, complete := extractAgentReply(task.Agent, message.Text, snapshot.Content); complete {
-					_, err := s.Store.AppendAgentBoxMessage(ctx, accountID, task.ID, message.ID, reply)
-					return err
+				reply, complete := extractAgentReply(task.Agent, message.Text, snapshot.Content)
+				if reply != "" {
+					if reply != lastReply {
+						lastReply = reply
+						stableCompletePolls = 0
+					}
+					if complete {
+						stableCompletePolls++
+					} else {
+						stableCompletePolls = 0
+					}
+					state := "streaming"
+					if stableCompletePolls >= 2 {
+						state = "delivered"
+					}
+					if _, err := s.Store.UpsertAgentBoxMessage(ctx, accountID, task.ID, message.ID, reply, state); err != nil {
+						return err
+					}
+					if state == "delivered" {
+						return nil
+					}
 				}
 			}
 		}
@@ -115,8 +135,9 @@ func extractAgentReply(agent, prompt, content string) (string, bool) {
 			break
 		}
 	}
-	if end < 0 {
-		return "", false
+	complete := end >= 0
+	if !complete {
+		end = len(lines)
 	}
 
 	answer := make([]string, 0, end-start)
@@ -142,7 +163,7 @@ func extractAgentReply(agent, prompt, content string) (string, bool) {
 		answer = answer[:len(answer)-1]
 	}
 	reply := strings.TrimSpace(strings.Join(answer, "\n"))
-	return reply, reply != ""
+	return reply, complete && reply != ""
 }
 
 func decorativeAgentLine(line string) bool {

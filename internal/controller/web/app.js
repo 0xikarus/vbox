@@ -23,6 +23,62 @@ const stamp = value => value ? new Intl.DateTimeFormat([], {hour:'2-digit', minu
 const fullStamp = value => value ? new Intl.DateTimeFormat([], {dateStyle:'medium', timeStyle:'short'}).format(new Date(value)) : '—';
 const idempotency = prefix => `${prefix}-${crypto.randomUUID()}`;
 const csv = value => String(value || '').split(',').map(item => item.trim()).filter(Boolean);
+let terminalInputBuffer = '';
+let terminalInputTimer = null;
+let terminalInputChain = Promise.resolve();
+let terminalInputTarget = null;
+
+function queueTerminalInput(text) {
+  if (!text || !state.box || state.box.state !== 'running') return;
+  const target = {boxID:state.box.id, session:state.task?.session || 'vmbox'};
+  if (terminalInputTarget && (terminalInputTarget.boxID !== target.boxID || terminalInputTarget.session !== target.session)) {
+    flushTerminalInput();
+  }
+  terminalInputTarget = target;
+  terminalInputBuffer += text;
+  clearTimeout(terminalInputTimer);
+  terminalInputTimer = setTimeout(flushTerminalInput, 45);
+}
+
+function flushTerminalInput() {
+  clearTimeout(terminalInputTimer);
+  terminalInputTimer = null;
+  const text = terminalInputBuffer;
+  const target = terminalInputTarget;
+  terminalInputBuffer = '';
+  terminalInputTarget = null;
+  if (!text || !target) return;
+  const {boxID, session} = target;
+  terminalInputChain = terminalInputChain.then(async () => {
+    await api(`/v1/logical-boxes/${encodeURIComponent(boxID)}/terminal/input?session=${encodeURIComponent(session)}`, {
+      method:'POST', headers:{'Idempotency-Key':idempotency('terminal-keys')},
+      body:JSON.stringify({text, submit:false}), timeout:30000,
+    });
+    setTimeout(() => {
+      if (state.box?.id === boxID && (state.task?.session || 'vmbox') === session) refreshTerminal(true);
+    }, 120);
+  }).catch(error => toast(error.message, true));
+}
+
+function terminalKey(event) {
+  const named = {
+    Enter:'\r', Backspace:'\x7f', Tab:'\t', Escape:'\x1b',
+    ArrowUp:'\x1b[A', ArrowDown:'\x1b[B', ArrowRight:'\x1b[C', ArrowLeft:'\x1b[D',
+    Home:'\x1b[H', End:'\x1b[F', Delete:'\x1b[3~', PageUp:'\x1b[5~', PageDown:'\x1b[6~',
+  };
+  if (event.ctrlKey && !event.altKey && !event.metaKey) {
+    if (event.key.length === 1) {
+      const upper = event.key.toUpperCase();
+      if (upper >= 'A' && upper <= 'Z') return String.fromCharCode(upper.charCodeAt(0) & 31);
+      const controls = {'@':'\x00','[':'\x1b','\\':'\x1c',']':'\x1d','^':'\x1e','_':'\x1f'};
+      return controls[event.key] || '';
+    }
+    return '';
+  }
+  if (event.metaKey) return '';
+  const value = named[event.key] || (event.key.length === 1 ? event.key : '');
+  return event.altKey && value ? `\x1b${value}` : value;
+}
 
 function toast(message, error = false) {
   const element = $('#toast');
@@ -380,9 +436,9 @@ async function refreshConversation(silent = false) {
       const container = $('#messages');
       const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
       container.innerHTML = messages?.length ? messages.map(message => `
-        <article class="message ${escapeHTML(message.direction)}">
+        <article class="message ${escapeHTML(message.direction)} ${escapeHTML(message.state)}">
           <div>${escapeHTML(message.text)}</div>
-          <div class="message-meta"><button type="button" class="message-forward" data-forward-task-message="${escapeHTML(message.id)}">Forward</button><span>${escapeHTML(stateLabel(message.state))}</span><time>${escapeHTML(stamp(message.createdAt))}</time></div>
+          <div class="message-meta"><button type="button" class="message-forward" data-forward-task-message="${escapeHTML(message.id)}">Forward</button><span>${message.state === 'streaming' ? 'streaming…' : escapeHTML(stateLabel(message.state))}</span><time>${escapeHTML(stamp(message.updatedAt || message.createdAt))}</time></div>
         </article>`).join('') : '<div class="empty">Waiting for the first message.</div>';
       $$('[data-forward-task-message]').forEach(button => button.addEventListener('click', () => {
         const message = state.taskMessages.find(value => value.id === button.dataset.forwardTaskMessage);
@@ -885,6 +941,34 @@ $('#share-terminal').addEventListener('click', () => {
 
 $('#toggle-terminal').addEventListener('click', () => {
   setTerminalPane(!$('#chat-view .chat-body').classList.contains('terminal-open'));
+});
+
+$('#terminal').addEventListener('keydown', event => {
+  const text = terminalKey(event);
+  if (!text) return;
+  event.preventDefault();
+  queueTerminalInput(text);
+});
+
+$('#terminal').addEventListener('paste', event => {
+  const text = event.clipboardData?.getData('text/plain') || '';
+  if (!text) return;
+  event.preventDefault();
+  queueTerminalInput(text);
+});
+
+$('#fullscreen-terminal').addEventListener('click', async () => {
+  const terminal = $('#chat-view .terminal-column');
+  try {
+    if (document.fullscreenElement === terminal) await document.exitFullscreen();
+    else await terminal.requestFullscreen();
+  } catch (error) { toast(`Fullscreen unavailable: ${error.message}`, true); }
+});
+
+document.addEventListener('fullscreenchange', () => {
+  const active = document.fullscreenElement === $('#chat-view .terminal-column');
+  $('#fullscreen-terminal').textContent = active ? 'Exit fullscreen' : 'Fullscreen';
+  if (active) $('#terminal').focus();
 });
 
 $('#forward-form').addEventListener('submit', async event => {

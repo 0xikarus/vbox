@@ -196,6 +196,8 @@ textarea { resize: vertical; }
 }
 .message.user { margin-left: auto; border-color: #bed7cb; border-radius: 15px 5px 15px 15px; background: #e3f0e9; }
 .message.system { margin-left: auto; margin-right: auto; border: 0; border-radius: 20px; background: #e8e6df; color: var(--muted); font-size: 12px; }
+.message.agent.streaming { border-color: #9cc5b3; box-shadow: inset 3px 0 #3b8869; }
+.message.agent.streaming .message-meta span::before { content: '● '; color: #3b8869; }
 .message-meta { display: flex; justify-content: flex-end; gap: 7px; margin-top: 5px; color: #7e8881; font-size: 9px; }
 .message-forward { border: 0; padding: 0; background: transparent; color: var(--pine); font-size: 9px; font-weight: 700; cursor: pointer; }
 .composer { display: flex; gap: 9px; align-items: flex-end; padding: 10px 12px max(10px,env(safe-area-inset-bottom)); background: var(--paper); border-top: 1px solid var(--line); }
@@ -213,6 +215,7 @@ textarea { resize: vertical; }
 
 .terminal-column { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--terminal); }
 .terminal-bar { height: 42px; display: flex; align-items: center; padding: 0 14px; border-bottom: 1px solid rgba(255,255,255,.1); background: var(--terminal-bar); color: #d0b7c7; font: 12px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.terminal-bar button { margin-left: 10px; border: 1px solid rgba(255,255,255,.18); border-radius: 7px; padding: 4px 7px; background: transparent; color: #d9c7d3; font: inherit; cursor: pointer; }
 .terminal-lights { display: flex; gap: 6px; margin-right: 12px; }
 .terminal-lights i { width: 9px; height: 9px; border-radius: 50%; background: #d96762; }
 .terminal-lights i:nth-child(2) { background: #dcae57; }
@@ -222,6 +225,9 @@ textarea { resize: vertical; }
   font: 13px/1.42 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;
   font-variant-ligatures: none; white-space: pre; tab-size: 4;
 }
+.terminal-column pre:focus { outline: 2px solid #65b18f; outline-offset: -2px; }
+.terminal-column:fullscreen { width: 100vw; height: 100vh; }
+.terminal-column:fullscreen pre { font-size: 14px; }
 .terminal-guide {
   display: flex; flex-wrap: wrap; gap: 5px 16px; align-items: center; padding: 8px 12px;
   border-top: 1px solid rgba(255,255,255,.12); background: #1e694f; color: #edf8f3; font-size: 10px;
