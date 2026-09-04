@@ -300,7 +300,7 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 		return assignment, tx.Commit()
 	}
 	expires := time.Now().UTC().Add(5 * time.Minute)
-	result, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET state=$5,lease_owner=CASE WHEN $5='hibernating' THEN NULL ELSE lease_owner END,lease_expires_at=CASE WHEN $5='hibernating' THEN NULL ELSE $6 END,restoration_state=CASE WHEN $5='hibernating' THEN 'hibernate-queued' ELSE restoration_state END,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", p.AccountID, box.ID, box.AssignmentGeneration, assignment.FencingToken, target, expires)
+	result, err := tx.ExecContext(ctx, "UPDATE logical_boxes SET state=$5,lease_owner=CASE WHEN $5='hibernating' THEN NULL ELSE lease_owner END,lease_expires_at=CASE WHEN $5='hibernating' THEN NULL ELSE $6::timestamptz END,restoration_state=CASE WHEN $5='hibernating' THEN 'hibernate-queued' ELSE restoration_state END,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4", p.AccountID, box.ID, box.AssignmentGeneration, assignment.FencingToken, target, expires)
 	if err != nil {
 		return assignment, err
 	}

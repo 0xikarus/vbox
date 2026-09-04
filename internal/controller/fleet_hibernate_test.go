@@ -61,7 +61,7 @@ func expectBeginHibernate(mock sqlmock.Sqlmock, now time.Time) {
 	mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s").
 		WithArgs("account-a", "slot-1").
 		WillReturnRows(occupiedSlotRow(now))
-	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5.*restoration_state=CASE").
+	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5.*lease_expires_at=CASE WHEN \\$5='hibernating' THEN NULL ELSE \\$6::timestamptz END.*restoration_state=CASE").
 		WithArgs("account-a", "box-1", int64(3), "fence-1", v1.LogicalBoxHibernating, sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("UPDATE compute_slots SET state='draining'").
