@@ -626,6 +626,32 @@ func TestInterruptedSubmissionReconcilesExactNewDeployment(t *testing.T) {
 	}
 }
 
+func TestRailwayFleetNameProvesOwnerWhenVariablesAreSealed(t *testing.T) {
+	requested := provider.Owner{AccountID: "55f60a13-c22f-4769-8153-2e3400000000", BoxID: "compute-slot:slot-id"}
+	box := provider.Box{Name: "slot-55f60a13c2-01"}
+	if err := verifyRailwayOwner(box, requested); err != nil {
+		t.Fatal(err)
+	}
+
+	invalid := []struct {
+		name  string
+		box   provider.Box
+		owner provider.Owner
+	}{
+		{name: "wrong account", box: provider.Box{Name: "slot-deadbeef00-01"}, owner: requested},
+		{name: "non-fleet owner", box: box, owner: provider.Owner{AccountID: requested.AccountID, BoxID: "logical-box"}},
+		{name: "partial sealed metadata", box: provider.Box{Name: box.Name, Owner: provider.Owner{AccountID: requested.AccountID}}, owner: requested},
+		{name: "invalid ordinal", box: provider.Box{Name: "slot-55f60a13c2-99"}, owner: requested},
+	}
+	for _, test := range invalid {
+		t.Run(test.name, func(t *testing.T) {
+			if err := verifyRailwayOwner(test.box, test.owner); err == nil {
+				t.Fatal("unsafe owner proof was accepted")
+			}
+		})
+	}
+}
+
 // TestSanitizeSlotUndeploysComputeAndRetainsTheService pins 108e6a4: sanitizing
 // a freed slot must remove only its running deployment. Resubmitting a
 // deployment instead put the slot straight back into service, and deleting it

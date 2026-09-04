@@ -220,7 +220,7 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 			// marker but before the remaining metadata and source. Reconcile that
 			// exact vmbox-prefixed service instead of trying to start it incomplete.
 		} else {
-			if err := provider.VerifyOwner(box.Owner, req.Owner); err != nil {
+			if err := verifyRailwayOwner(box, req.Owner); err != nil {
 				return provider.Box{}, err
 			}
 		}
@@ -491,6 +491,37 @@ func resourcesMatch(actual, requested provider.Resources) bool {
 		(requested.MemoryMiB <= 0 || actual.MemoryMiB == requested.MemoryMiB)
 }
 
+// Railway may seal service variables so even an account owner receives null
+// values when reading them back. Fleet services retain an independent ownership
+// proof in their controller-derived name: the normalized account prefix plus a
+// bounded ordinal. The controller also supplies the immutable service ID from
+// its slot record. This fallback is deliberately limited to compute slots with
+// completely unreadable ownership metadata; partial or conflicting markers
+// remain a hard failure.
+func verifyRailwayOwner(box provider.Box, requested provider.Owner) error {
+	if err := provider.VerifyOwner(box.Owner, requested); err == nil {
+		return nil
+	}
+	if box.Owner.AccountID != "" || box.Owner.BoxID != "" || box.Owner.RunID != "" || box.Owner.Lease != "" ||
+		requested.AccountID == "" || !strings.HasPrefix(requested.BoxID, "compute-slot:") || requested.RunID != "" || requested.Lease != "" {
+		return fmt.Errorf("ownership mismatch: refusing destructive operation")
+	}
+	prefix := strings.ReplaceAll(requested.AccountID, "-", "")
+	if len(prefix) > 10 {
+		prefix = prefix[:10]
+	}
+	if prefix == "" {
+		prefix = "default"
+	}
+	namePrefix := "slot-" + prefix + "-"
+	ordinal := strings.TrimPrefix(box.Name, namePrefix)
+	value, err := strconv.Atoi(ordinal)
+	if !strings.HasPrefix(box.Name, namePrefix) || len(ordinal) != 2 || err != nil || value < 1 || value > 32 {
+		return fmt.Errorf("ownership mismatch: refusing destructive operation")
+	}
+	return nil
+}
+
 func (p *Provider) Delete(ctx context.Context, id string, requested provider.Owner) error {
 	box, err := p.Inspect(ctx, id)
 	if errors.Is(err, provider.ErrNotFound) {
@@ -499,7 +530,7 @@ func (p *Provider) Delete(ctx context.Context, id string, requested provider.Own
 	if err != nil {
 		return err
 	}
-	if err := provider.VerifyOwner(box.Owner, requested); err != nil {
+	if err := verifyRailwayOwner(box, requested); err != nil {
 		return err
 	}
 	volumeIDs, err := p.volumeIDs(ctx, serviceName(box.Name))
