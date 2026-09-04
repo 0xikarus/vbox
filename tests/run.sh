@@ -18,6 +18,15 @@ bash -n "$repo/install.sh" "$repo/entrypoint.sh" \
   "$repo/tests/controller-e2e.sh" "$fixtures/go" "$repo/tests/run.sh"
 pass 'all maintained Bash files parse'
 
+trust_home="$test_root/trust-home"
+trust_workspace="$test_root/workspace"
+mkdir -p "$trust_home" "$trust_workspace"
+HOME="$trust_home" "$repo/entrypoint.sh" --configure-agent-trust "$trust_workspace"
+jq -e --arg workspace "$trust_workspace" \
+  '.projects[$workspace].hasTrustDialogAccepted == true' "$trust_home/.claude.json" >/dev/null
+test "$(stat -c '%a' "$trust_home/.claude.json")" = 600
+pass 'entrypoint records current Claude workspace trust with owner-only mode'
+
 mkdir -p "$test_root/home"
 HOME="$test_root/home" PATH="$fixtures:$PATH" \
   VMBOX_INSTALL_DIR="$test_root/bin" VMBOX_SHELL_RC="$test_root/bashrc" \

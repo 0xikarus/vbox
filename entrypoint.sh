@@ -20,6 +20,7 @@ configure_agent_trust() {
   local workspace="${1:-/data/workspace}"
   local codex_dir="$HOME/.codex" claude_dir="$HOME/.claude"
   local codex_config="$codex_dir/config.toml" claude_settings="$claude_dir/settings.json"
+  local claude_state="$HOME/.claude.json"
   local tmp
 
   mkdir -p "$codex_dir" "$claude_dir"
@@ -77,8 +78,23 @@ configure_agent_trust() {
   else
     echo "vmbox: warning: $claude_settings is not valid JSON; agent defaults were not changed" >&2
   fi
-  chmod 600 "$codex_config" "$claude_settings" 2>/dev/null || true
-  own_as_workload "$codex_dir" "$claude_dir" "$codex_config" "$claude_settings"
+
+  if [[ ! -e "$claude_state" ]]; then
+    printf '{}\n' > "$claude_state"
+  fi
+  if jq -e 'type == "object"' "$claude_state" >/dev/null 2>&1; then
+    tmp="$(mktemp "$HOME/.claude.json.XXXXXX")"
+    jq --arg dir "$workspace" \
+      '.projects = (.projects // {})
+       | .projects[$dir] = ((.projects[$dir] // {}) | .hasTrustDialogAccepted = true)' \
+      "$claude_state" > "$tmp"
+    chmod 600 "$tmp"
+    mv -f "$tmp" "$claude_state"
+  else
+    echo "vmbox: warning: $claude_state is not valid JSON; Claude workspace trust was not changed" >&2
+  fi
+  chmod 600 "$codex_config" "$claude_settings" "$claude_state" 2>/dev/null || true
+  own_as_workload "$codex_dir" "$claude_dir" "$codex_config" "$claude_settings" "$claude_state"
 }
 
 if [[ "${1:-}" == --configure-agent-trust ]]; then

@@ -125,7 +125,7 @@ test('controller routes exact sessions and supports safe group collaboration', a
   assert.equal(forwarded.body.agent, 'claude');
 
   await page.click('[data-group="group-1"]');
-  await page.waitForSelector('.recipient-screen');
+  await page.waitForSelector('.recipient-screen', {visible:true});
   assert.equal(await page.$$eval('#group-members input:checked', elements => elements.length), 0);
   assert.equal(await page.$$eval('.recipient-screen', elements => elements.length), 2);
   await page.click('.recipient-screen');
@@ -146,7 +146,8 @@ test('controller routes exact sessions and supports safe group collaboration', a
   assert.deepEqual(groupPost.body.recipientBoxIds, ['box-1']);
 
   await page.setViewport({width:390, height:844, isMobile:true});
-  await page.waitForSelector('[data-box="box-1"]');
+  await page.waitForSelector('#app:not([hidden])');
+  await page.waitForSelector('[data-box="box-1"]', {visible:true});
   await page.click('[data-box="box-1"]');
   await page.waitForSelector('#chat-view:not([hidden])');
   await page.$eval('#toggle-terminal', element => element.click());

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDeliverTmuxInputReturnsSuccessForPersistedDelivery(t *testing.T) {
@@ -65,5 +66,72 @@ func TestStartTmuxTaskRejectsAnExistingSessionForAnotherAgent(t *testing.T) {
 		if strings.HasPrefix(call, "load-buffer") || strings.HasPrefix(call, "paste-buffer") {
 			t.Fatalf("prompt was pasted into the wrong session: %v", calls)
 		}
+	}
+}
+
+func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
+	originalCommand, originalInterval, originalTimeout := tmuxCommand, agentReadyPollInterval, agentReadyTimeout
+	t.Cleanup(func() {
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout = originalCommand, originalInterval, originalTimeout
+	})
+	agentReadyPollInterval = 0
+	agentReadyTimeout = time.Second
+	var calls []string
+	captures := 0
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		call := strings.Join(args, " ")
+		calls = append(calls, call)
+		if strings.HasPrefix(call, "has-session") {
+			return nil, errors.New("missing")
+		}
+		if strings.HasPrefix(call, "capture-pane") {
+			captures++
+			if captures == 1 {
+				return []byte("starting"), nil
+			}
+			return []byte("OpenAI Codex\n› Ask Codex to do anything"), nil
+		}
+		return nil, nil
+	}
+	if err := StartTmuxTask(context.Background(), t.TempDir(), "codex-ready", "codex", "message_4", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	if captures < 2 {
+		t.Fatalf("prompt was delivered before readiness: %v", calls)
+	}
+}
+
+func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
+	originalCommand, originalInterval, originalTimeout := tmuxCommand, agentReadyPollInterval, agentReadyTimeout
+	t.Cleanup(func() {
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout = originalCommand, originalInterval, originalTimeout
+	})
+	agentReadyPollInterval = 0
+	agentReadyTimeout = time.Second
+	var calls []string
+	captures := 0
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		call := strings.Join(args, " ")
+		calls = append(calls, call)
+		if strings.HasPrefix(call, "has-session") {
+			return nil, errors.New("missing")
+		}
+		if strings.HasPrefix(call, "capture-pane") {
+			captures++
+			if captures == 1 {
+				return []byte("Quick safety check:\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm"), nil
+			}
+			return []byte("Claude Code v2\n❯"), nil
+		}
+		return nil, nil
+	}
+	if err := StartTmuxTask(context.Background(), t.TempDir(), "claude-ready", "claude", "message_5", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(calls, "\n")
+	trust := strings.Index(joined, "send-keys -t claude-ready Down Enter")
+	delivery := strings.Index(joined, "load-buffer")
+	if trust < 0 || delivery < 0 || trust >= delivery {
+		t.Fatalf("trust was not accepted before prompt delivery: %v", calls)
 	}
 }

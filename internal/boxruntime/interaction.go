@@ -32,6 +32,8 @@ func validateTmuxToken(kind, value string) error {
 }
 
 var tmuxCommand = runTmuxCommand
+var agentReadyPollInterval = 200 * time.Millisecond
+var agentReadyTimeout = 20 * time.Second
 
 func runTmuxCommand(ctx context.Context, stdin string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, "tmux", args...)
@@ -135,7 +137,50 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 			return fmt.Errorf("tmux session %q already exists and is not a %s task session; choose a different session name", session, agent)
 		}
 	}
+	if agent != "shell" {
+		if err := waitForAgentReady(ctx, session, agent); err != nil {
+			return err
+		}
+	}
 	return DeliverTmuxInput(ctx, root, session, messageID, prompt, true)
+}
+
+func waitForAgentReady(ctx context.Context, session, agent string) error {
+	deadline := time.NewTimer(agentReadyTimeout)
+	defer deadline.Stop()
+	for {
+		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
+		if err == nil {
+			text := string(content)
+			if agent == "claude" && strings.Contains(text, "Quick safety check:") && strings.Contains(text, "Yes, I trust this folder") && strings.Contains(text, "Enter to confirm") {
+				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Down", "Enter"); err != nil {
+					return fmt.Errorf("accept trusted workspace in %s session: %w", agent, err)
+				}
+			} else if agentInputReady(agent, text) {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("%s task session did not reach an input-ready prompt", agent)
+		case <-time.After(agentReadyPollInterval):
+		}
+	}
+}
+
+func agentInputReady(agent, content string) bool {
+	switch agent {
+	case "codex":
+		return strings.Contains(content, "OpenAI Codex") && strings.Contains(content, "›")
+	case "claude":
+		return strings.Contains(content, "Claude Code v") && strings.Contains(content, "❯")
+	case "opencode":
+		return strings.Contains(strings.ToLower(content), "opencode")
+	default:
+		return false
+	}
 }
 
 func CaptureTmuxScreen(ctx context.Context, session string, history int) (v1.TerminalSnapshot, error) {
