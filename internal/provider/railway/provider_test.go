@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"net"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -216,6 +218,38 @@ func TestDirectSSHInvalidatesDeploymentAndRetriesTransportFailure(t *testing.T) 
 	}
 	if got := runner.Calls[4].Argv[len(runner.Calls[4].Argv)-2]; got != "deployment-new@ssh.railway.com" {
 		t.Fatalf("retry target=%q", got)
+	}
+}
+
+func TestDirectSSHRemovesPoisonedControlSocketOnTransportFailure(t *testing.T) {
+	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
+	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	controlDir := t.TempDir()
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(services)},
+		{Stdout: []byte(instance)},
+		{},
+		{ExitCode: 255, Stderr: []byte("exec request failed")},
+	}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHControlDir: controlDir}, runner)
+	controlPath, err := p.controlPath("deployment-instance@ssh.railway.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(controlPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("unix", controlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	result, err := p.Exec(context.Background(), "box", []string{"vmbox-runtime", "put-file", "/data/file", "0600"}, provider.ExecOptions{Stdin: strings.NewReader("payload")})
+	if err != nil || result.ExitCode != 255 {
+		t.Fatalf("result=%+v err=%v calls=%#v", result, err, runner.Calls)
+	}
+	if _, err := os.Lstat(controlPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("poisoned socket still exists: %v", err)
 	}
 }
 

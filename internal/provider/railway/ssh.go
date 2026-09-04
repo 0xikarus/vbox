@@ -267,6 +267,15 @@ func (p *Provider) directSSHTarget(ctx context.Context, target string, remote []
 		p.sshMu.Lock()
 		delete(p.masterByTarget, target)
 		p.sshMu.Unlock()
+		// Railway can leave a master responsive to `ssh -O check` while
+		// rejecting every new data channel. Removing only this validated Unix
+		// socket prevents the next attempt from trusting that poisoned master;
+		// its bounded remote keepalive exits independently.
+		if controlPath != "" {
+			if cleanupErr := removeStaleControlSocket(controlPath); cleanupErr != nil {
+				return result, fmt.Errorf("invalidate failed Railway SSH master: %w", cleanupErr)
+			}
+		}
 	}
 	return result, err
 }
