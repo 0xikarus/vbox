@@ -105,7 +105,11 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 	if err := s.Store.SetBoxTaskState(ctx, accountID, task.ID, "active", ""); err != nil {
 		return err
 	}
-	return s.Store.AppendSystemBoxMessage(ctx, accountID, task.ID, "online · "+task.Agent+" is ready", task.ID+":online")
+	if err := s.Store.AppendSystemBoxMessage(ctx, accountID, task.ID, "online · "+task.Agent+" is ready", task.ID+":online"); err != nil {
+		return err
+	}
+	s.watchAgentReply(accountID, task, message)
+	return nil
 }
 
 func (s *Server) startBoxTaskRuntime(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask, message v1.BoxMessage) (provider.ExecResult, error) {
@@ -151,7 +155,11 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
 		return fmt.Errorf("message delivery exited with status %d: %s", result.ExitCode, detail)
 	}
-	return s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "delivered", "")
+	if err := s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "delivered", ""); err != nil {
+		return err
+	}
+	s.watchAgentReply(p.AccountID, task, message)
+	return nil
 }
 
 func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
@@ -224,12 +232,25 @@ func (s *Server) getBoxTaskHandler(w http.ResponseWriter, r *http.Request, p Pri
 }
 
 func (s *Server) listBoxMessagesHandler(w http.ResponseWriter, r *http.Request, p Principal) {
-	values, err := s.Store.ListBoxMessages(r.Context(), p, r.PathValue("id"))
+	taskID := r.PathValue("id")
+	values, err := s.Store.ListBoxMessages(r.Context(), p, taskID)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, values)
+	task, err := s.Store.BoxTask(context.WithoutCancel(r.Context()), p, taskID)
+	if err != nil || task.State != "active" || task.Agent == "shell" {
+		return
+	}
+	unanswered, err := s.Store.UnansweredBoxMessages(context.WithoutCancel(r.Context()), p, taskID)
+	if err != nil {
+		s.Logger.Warn("could not list unanswered box messages", "task", taskID, "error", err)
+		return
+	}
+	for _, message := range unanswered {
+		s.watchAgentReply(p.AccountID, task, message)
+	}
 }
 
 func (s *Server) sendBoxMessageHandler(w http.ResponseWriter, r *http.Request, p Principal) {

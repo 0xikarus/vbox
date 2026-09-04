@@ -230,6 +230,47 @@ func (s *Store) ListBoxMessages(ctx context.Context, p Principal, taskID string)
 	return values, rows.Err()
 }
 
+func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID string) ([]v1.BoxMessage, error) {
+	if _, err := s.BoxTask(ctx, p, taskID); err != nil {
+		return nil, err
+	}
+	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at
+		FROM box_messages m
+		WHERE m.account_id=$1 AND m.task_id=$2 AND m.direction='user' AND m.state='delivered' AND m.submit
+		AND NOT EXISTS (
+			SELECT 1 FROM box_messages reply
+			WHERE reply.account_id=m.account_id AND reply.idempotency_key='agent-reply:' || m.id::text
+		)
+		ORDER BY m.created_at,m.id`, p.AccountID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var values []v1.BoxMessage
+	for rows.Next() {
+		message, err := scanBoxMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, message)
+	}
+	return values, rows.Err()
+}
+
+func (s *Store) AppendAgentBoxMessage(ctx context.Context, accountID, taskID, replyTo, text string) (bool, error) {
+	if strings.TrimSpace(text) == "" || len(text) > 100_000 {
+		return false, fmt.Errorf("agent reply must contain between 1 and 100000 bytes")
+	}
+	result, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key)
+		VALUES($1,$2,$3,'agent',$4,false,'delivered',$5)
+		ON CONFLICT(account_id,idempotency_key) DO NOTHING`, uuid(), accountID, taskID, text, "agent-reply:"+replyTo)
+	if err != nil {
+		return false, err
+	}
+	changed, _ := result.RowsAffected()
+	return changed == 1, nil
+}
+
 func (s *Store) ClaimBoxMessage(ctx context.Context, accountID, id string) (bool, error) {
 	result, err := s.DB.ExecContext(ctx, "UPDATE box_messages SET state='delivering',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='queued'", accountID, id)
 	if err != nil {

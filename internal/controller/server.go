@@ -30,6 +30,7 @@ type Server struct {
 	MaxConcurrent  int
 	mu             sync.Mutex
 	recent         map[string][]time.Time
+	replyWatches   map[string]struct{}
 	PublicURL      string
 	DefaultImage   string
 	WorkerRuntime  []byte
@@ -58,7 +59,7 @@ func (s *Server) startBoxTask(accountID string, task v1.BoxTask) {
 }
 
 func NewServer(store *Store, providers *provider.Registry) *Server {
-	return &Server{Store: store, Providers: providers, Logger: slog.Default(), MaxConcurrent: 10, recent: make(map[string][]time.Time)}
+	return &Server{Store: store, Providers: providers, Logger: slog.Default(), MaxConcurrent: 10, recent: make(map[string][]time.Time), replyWatches: make(map[string]struct{})}
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
