@@ -14,6 +14,9 @@ func TestDetectTerminalPromptRecognizesCodexUpdateChoice(t *testing.T) {
 	if prompt.Choices[1].Value != "2" || prompt.Choices[1].Label != "Skip" || prompt.ID == "" {
 		t.Fatalf("choices=%+v id=%q", prompt.Choices, prompt.ID)
 	}
+	if prompt.Choices[1].Input != "2" || !prompt.Choices[1].Submit {
+		t.Fatalf("numbered choice input=%+v", prompt.Choices[1])
+	}
 	if again := detectTerminalPrompt(content); again == nil || again.ID != prompt.ID {
 		t.Fatalf("prompt ID is not stable: first=%+v second=%+v", prompt, again)
 	}
@@ -36,5 +39,19 @@ func TestDetectTerminalPromptStripsANSI(t *testing.T) {
 	prompt := detectTerminalPrompt(content)
 	if prompt == nil || prompt.Text != "Choose mode" || len(prompt.Choices) != 2 {
 		t.Fatalf("prompt=%+v", prompt)
+	}
+}
+
+func TestDetectTerminalPromptRecognizesClaudeArrowMenu(t *testing.T) {
+	content := "Quick safety check: Is this a project you created or one you trust?\n Security guide\n ❯ No, exit\n   Yes, I trust this folder\n Enter to confirm · Esc to cancel\n"
+	prompt := detectTerminalPrompt(content)
+	if prompt == nil || len(prompt.Choices) != 2 {
+		t.Fatalf("prompt=%+v", prompt)
+	}
+	if prompt.Choices[0].Label != "No, exit" || prompt.Choices[0].Input != "\r" || prompt.Choices[0].Submit {
+		t.Fatalf("current choice=%+v", prompt.Choices[0])
+	}
+	if prompt.Choices[1].Label != "Yes, I trust this folder" || prompt.Choices[1].Input != "\x1b[B\r" || prompt.Choices[1].Submit {
+		t.Fatalf("next choice=%+v", prompt.Choices[1])
 	}
 }
