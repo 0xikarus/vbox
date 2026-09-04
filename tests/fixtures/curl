@@ -5,9 +5,22 @@ set -euo pipefail
 : "${VMBOX_TEST_STATE:?}"
 printf '%q ' "$@" >"$VMBOX_TEST_STATE/curl.args"
 for argument in "$@"; do
-  if [[ "$argument" == @/dev/fd/* ]]; then
-    grep -Fqx "Authorization: Bearer ${VMBOX_TEST_EXPECT_TOKEN:?}" "${argument#@}" || exit 65
+  if [[ "$argument" == @/dev/fd/* && -n "${VMBOX_TEST_EXPECT_TOKEN:-}" ]]; then
+    grep -Fqx "Authorization: Bearer $VMBOX_TEST_EXPECT_TOKEN" "${argument#@}" || exit 65
   fi
 done
-cat >/dev/null
+payload="$(cat)"
+printf '%s\n' "$payload" >>"$VMBOX_TEST_STATE/graphql.log"
+if [[ "$payload" == *serviceInstance* ]]; then
+  if [[ "${VMBOX_TEST_INSTANCE_LOOKUP_FAILS:-0}" == 1 ]]; then
+    printf '{"errors":[{"message":"service instance unavailable"}]}\n'
+    exit 0
+  fi
+  count=0
+  [[ -r "$VMBOX_TEST_STATE/instance-lookups" ]] && count="$(<"$VMBOX_TEST_STATE/instance-lookups")"
+  printf '%s' "$((count + 1))" >"$VMBOX_TEST_STATE/instance-lookups"
+  printf '{"data":{"serviceInstance":{"id":"%s"}}}\n' \
+    "${VMBOX_TEST_INSTANCE_ID:-deployment-instance}"
+  exit 0
+fi
 printf '{"data":{"ok":true}}\n'

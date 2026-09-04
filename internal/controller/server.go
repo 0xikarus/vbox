@@ -37,6 +37,23 @@ type Server struct {
 	HTTP           *http.Client
 	ReconcileEvery time.Duration
 	Deliver        NotificationSink
+	// StartTask hands a freshly created task to its agent. It is a field so
+	// that tests can observe the hand-off instead of racing a detached
+	// goroutine against their fixtures.
+	StartTask func(context.Context, string, v1.BoxTask)
+}
+
+// startBoxTask runs a new task without making the caller wait for the agent.
+func (s *Server) startBoxTask(accountID string, task v1.BoxTask) {
+	if s.StartTask != nil {
+		s.StartTask(context.Background(), accountID, task)
+		return
+	}
+	go func() {
+		if err := s.executeBoxTask(context.Background(), accountID, task); err != nil {
+			s.Logger.Error("direct box message could not start agent", "task", task.ID, "error", err)
+		}
+	}()
 }
 
 func NewServer(store *Store, providers *provider.Registry) *Server {

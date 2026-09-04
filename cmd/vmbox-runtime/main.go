@@ -107,7 +107,11 @@ func run() error {
 		if len(args) != 3 {
 			return fmt.Errorf("put-file requires PATH MODE")
 		}
-		digest, err := writeSyncedFile("/data", args[1], args[2], io.LimitReader(os.Stdin, 16<<20))
+		owner, err := boxruntime.LookupWorkloadOwnership(os.Geteuid(), nil)
+		if err != nil {
+			return err
+		}
+		digest, err := writeSyncedFile("/data", args[1], args[2], io.LimitReader(os.Stdin, 16<<20), owner, nil)
 		if err != nil {
 			return err
 		}
@@ -117,7 +121,11 @@ func run() error {
 		if len(args) != 1 {
 			return fmt.Errorf("sync-files accepts its request only on stdin")
 		}
-		digest, err := receiveFiles(os.Stdin, "/data")
+		owner, err := boxruntime.LookupWorkloadOwnership(os.Geteuid(), nil)
+		if err != nil {
+			return err
+		}
+		digest, err := receiveFiles(os.Stdin, "/data", owner, nil)
 		if err != nil {
 			return err
 		}
@@ -135,7 +143,7 @@ func run() error {
 		if err := json.Unmarshal(data, &request); err != nil {
 			return fmt.Errorf("decode setup request: %w", err)
 		}
-		result, err := performSetup(context.Background(), request, executeSetupCommand)
+		result, err := performSetup(context.Background(), request, executeSetupCommand, os.Geteuid())
 		if err != nil {
 			return err
 		}
@@ -348,7 +356,10 @@ func readLimited(reader io.Reader, limit int64) ([]byte, error) {
 	return data, nil
 }
 
-func writeSyncedFile(root, destination, modeText string, reader io.Reader) (string, error) {
+// writeSyncedFile installs one file received over the control plane. The SSH
+// data path connects as root, so every directory it creates and every file it
+// writes is handed to the unprivileged workload user before it becomes visible.
+func writeSyncedFile(root, destination, modeText string, reader io.Reader, owner *boxruntime.Ownership, chown boxruntime.Chowner) (string, error) {
 	root = filepath.Clean(root)
 	destination = filepath.Clean(destination)
 	relative, err := filepath.Rel(root, destination)
@@ -359,7 +370,10 @@ func writeSyncedFile(root, destination, modeText string, reader io.Reader) (stri
 	if err != nil {
 		return "", fmt.Errorf("invalid file mode: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(destination), 0700); err != nil {
+	if err := boxruntime.CheckSyncedFileMode(destination, os.FileMode(mode)); err != nil {
+		return "", err
+	}
+	if err := boxruntime.EnsurePrivateDirectory(root, filepath.Dir(destination), owner, chown); err != nil {
 		return "", err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(destination), ".vmbox-upload-*")
@@ -384,13 +398,16 @@ func writeSyncedFile(root, destination, modeText string, reader io.Reader) (stri
 	if err := tmp.Close(); err != nil {
 		return "", err
 	}
+	if err := owner.Apply(tmpPath, chown); err != nil {
+		return "", err
+	}
 	if err := os.Rename(tmpPath, destination); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%x", digest.Sum(nil)), nil
 }
 
-func receiveFiles(reader io.Reader, root string) (string, error) {
+func receiveFiles(reader io.Reader, root string, owner *boxruntime.Ownership, chown boxruntime.Chowner) (string, error) {
 	payload, err := readLimited(reader, 64<<20)
 	if err != nil {
 		return "", err
@@ -412,7 +429,7 @@ func receiveFiles(reader io.Reader, root string) (string, error) {
 		if len(file.Data) > maxSyncedFileSize {
 			return "", fmt.Errorf("sync file %s exceeds %d bytes", path, maxSyncedFileSize)
 		}
-		if _, err := writeSyncedFile(root, path, file.Mode, bytes.NewReader(file.Data)); err != nil {
+		if _, err := writeSyncedFile(root, path, file.Mode, bytes.NewReader(file.Data), owner, chown); err != nil {
 			return "", fmt.Errorf("write %s: %w", path, err)
 		}
 	}
@@ -428,26 +445,42 @@ func executeSetupCommand(ctx context.Context, stdin io.Reader, stdout, stderr io
 	return command.Run()
 }
 
-func performSetup(ctx context.Context, request boxruntime.SetupRequest, execute setupCommand) (boxruntime.SetupResult, error) {
+// performSetup runs every credential and trust step inside the box. euid is the
+// effective UID of the runtime: Railway's SSH data path lands as root, and root
+// must never write or read agent credentials on its own behalf, so each step is
+// rewritten to run as vmbox with HOME=/data/home before it is executed.
+func performSetup(ctx context.Context, request boxruntime.SetupRequest, execute setupCommand, euid int) (boxruntime.SetupResult, error) {
 	if execute == nil {
 		return boxruntime.SetupResult{}, fmt.Errorf("setup command executor is unavailable")
+	}
+	asWorkload := func(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer, name string, args ...string) error {
+		name, args = boxruntime.WorkloadArgv(euid, name, args)
+		return execute(ctx, stdin, stdout, stderr, name, args...)
 	}
 	if request.GitHub != nil {
 		github := request.GitHub
 		if github.Host == "" || github.User == "" || github.Token == "" || (github.Protocol != "ssh" && github.Protocol != "https") {
 			return boxruntime.SetupResult{}, fmt.Errorf("invalid GitHub setup request")
 		}
-		if err := execute(ctx, strings.NewReader(github.Token+"\n"), io.Discard, os.Stderr, "gh", "auth", "login", "--hostname", github.Host, "--git-protocol", github.Protocol, "--with-token"); err != nil {
+		if err := asWorkload(ctx, strings.NewReader(github.Token+"\n"), io.Discard, os.Stderr, "gh", "auth", "login", "--hostname", github.Host, "--git-protocol", github.Protocol, "--with-token"); err != nil {
 			return boxruntime.SetupResult{}, fmt.Errorf("configure GitHub authentication: %w", err)
 		}
-		if err := execute(ctx, nil, io.Discard, os.Stderr, "gh", "auth", "setup-git", "--hostname", github.Host); err != nil {
+		if err := asWorkload(ctx, nil, io.Discard, os.Stderr, "gh", "auth", "setup-git", "--hostname", github.Host); err != nil {
 			return boxruntime.SetupResult{}, fmt.Errorf("configure GitHub Git protocol: %w", err)
+		}
+		for _, identity := range boxruntime.GitIdentityArguments(github) {
+			if err := asWorkload(ctx, nil, io.Discard, os.Stderr, "git", identity...); err != nil {
+				return boxruntime.SetupResult{}, fmt.Errorf("configure Git commit identity: %w", err)
+			}
+		}
+		if err := asWorkload(ctx, nil, io.Discard, os.Stderr, "sh", "-c", boxruntime.SecureGitHubConfigScript); err != nil {
+			return boxruntime.SetupResult{}, fmt.Errorf("secure GitHub configuration: %w", err)
 		}
 	}
 	if request.Workspace == "" {
 		return boxruntime.SetupResult{}, fmt.Errorf("setup workspace is required")
 	}
-	if err := execute(ctx, nil, io.Discard, os.Stderr, "vmbox-entrypoint", "--configure-agent-trust", request.Workspace); err != nil {
+	if err := asWorkload(ctx, nil, io.Discard, os.Stderr, "vmbox-entrypoint", "--configure-agent-trust", request.Workspace); err != nil {
 		return boxruntime.SetupResult{}, fmt.Errorf("configure agent trust: %w", err)
 	}
 	result := boxruntime.SetupResult{Authentication: make(map[string]bool)}
@@ -459,10 +492,10 @@ func performSetup(ctx context.Context, request boxruntime.SetupRequest, execute 
 		seen[application] = true
 		switch application {
 		case "codex":
-			result.Authentication[application] = execute(ctx, nil, io.Discard, io.Discard, "codex", "login", "status") == nil
+			result.Authentication[application] = asWorkload(ctx, nil, io.Discard, io.Discard, "codex", "login", "status") == nil
 		case "claude":
 			var output bytes.Buffer
-			err := execute(ctx, nil, &output, io.Discard, "claude", "auth", "status", "--json")
+			err := asWorkload(ctx, nil, &output, io.Discard, "claude", "auth", "status", "--json")
 			var status struct {
 				LoggedIn bool `json:"loggedIn"`
 			}

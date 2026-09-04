@@ -11,6 +11,9 @@ import (
 
 func pendingVolume(id string) bool { return strings.HasPrefix(id, "pending:") }
 
+// ensureInitializationSlotRunning restarts a slot that the fleet stopped while
+// it was free. A stopped slot has no deployment to reach, so every runtime probe
+// against it fails with a transport error rather than a real answer.
 func ensureInitializationSlotRunning(ctx context.Context, prov provider.Provider, serviceID string) error {
 	actual, err := prov.Inspect(ctx, serviceID)
 	if err != nil {
@@ -21,6 +24,30 @@ func ensureInitializationSlotRunning(ctx context.Context, prov provider.Provider
 	}
 	if _, err := prov.Start(ctx, serviceID); err != nil {
 		return fmt.Errorf("start initialization slot: %w", err)
+	}
+	return nil
+}
+
+// probeInitializedWorkspace runs the readiness checks a newly attached workspace
+// must pass. The slot is brought up first: probing a stopped slot reports a
+// broken workspace that is in fact merely powered down.
+func probeInitializedWorkspace(ctx context.Context, prov provider.Provider, serviceID string) error {
+	if err := ensureInitializationSlotRunning(ctx, prov, serviceID); err != nil {
+		return err
+	}
+	health, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
+	if err != nil {
+		return fmt.Errorf("wait for workspace runtime: %w", err)
+	}
+	if health.ExitCode != 0 || strings.TrimSpace(health.Stdout) != "ok" {
+		return fmt.Errorf("workspace runtime health failed with status %d: %s", health.ExitCode, strings.TrimSpace(health.Stderr))
+	}
+	prepared, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
+	if err != nil {
+		return fmt.Errorf("flush new workspace volume: %w", err)
+	}
+	if prepared.ExitCode != 0 {
+		return fmt.Errorf("new workspace volume remained busy: %s", strings.TrimSpace(prepared.Stderr))
 	}
 	return nil
 }
@@ -84,22 +111,8 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 			return fail(err)
 		}
 		creation.Assignment.Box.RestorationState = "creation-initializing"
-		if err := ensureInitializationSlotRunning(ctx, prov, serviceID); err != nil {
+		if err := probeInitializedWorkspace(ctx, prov, serviceID); err != nil {
 			return fail(err)
-		}
-		health, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
-		if err != nil {
-			return fail(fmt.Errorf("wait for workspace runtime: %w", err))
-		}
-		if health.ExitCode != 0 || strings.TrimSpace(health.Stdout) != "ok" {
-			return fail(fmt.Errorf("workspace runtime health failed with status %d: %s", health.ExitCode, strings.TrimSpace(health.Stderr)))
-		}
-		prepared, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
-		if err != nil {
-			return fail(fmt.Errorf("flush new workspace volume: %w", err))
-		}
-		if prepared.ExitCode != 0 {
-			return fail(fmt.Errorf("new workspace volume remained busy: %s", strings.TrimSpace(prepared.Stderr)))
 		}
 		if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-detaching"); err != nil {
 			return fail(err)

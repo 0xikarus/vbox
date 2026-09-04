@@ -10,6 +10,17 @@ Install the Go CLI directly with `./install.sh --go-cli`. Running `install.sh`
 without that flag keeps the legacy shell installation path available during
 migration.
 
+Either way, `install.sh` also writes the standalone deployment bundle that
+`vmbox` hands to `railway up`. Railway uploads that directory verbatim as the
+build context, so it has to be complete on its own. By default the bundle builds
+the current `vmbox-runtime` from the installed source and overlays it, the
+entrypoint, and tmux configuration on the audited public worker image pinned by
+digest. This keeps the runtime protocol in lockstep with the CLI while reusing
+the audited agent toolchain.
+`./install.sh --bundle-from-source` installs the full Go build payload
+(`Dockerfile`, `.dockerignore`, `go.mod`, `go.sum`, `cmd/`, `internal/`)
+instead. Neither layout contains a credential.
+
 ```bash
 go build ./cmd/vmbox
 go build ./cmd/vmbox-controller

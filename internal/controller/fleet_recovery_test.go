@@ -1,0 +1,219 @@
+package controller
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"strings"
+	"testing"
+	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
+	"github.com/DATA-DOG/go-sqlmock"
+)
+
+// recordingProvider notes the exact order of the lifecycle calls a fleet slot
+// receives, which is what the recovery of a stopped slot depends on.
+type recordingProvider struct {
+	fakeProvider
+	state      provider.State
+	operations []string
+	execArgv   [][]string
+	inspectErr error
+	startErr   error
+}
+
+func (p *recordingProvider) Inspect(context.Context, string) (provider.Box, error) {
+	p.operations = append(p.operations, "inspect")
+	if p.inspectErr != nil {
+		return provider.Box{}, p.inspectErr
+	}
+	return provider.Box{ID: "service-1", State: p.state}, nil
+}
+
+func (p *recordingProvider) Start(context.Context, string) (provider.Box, error) {
+	p.operations = append(p.operations, "start")
+	if p.startErr != nil {
+		return provider.Box{}, p.startErr
+	}
+	p.state = provider.StateRunning
+	return provider.Box{ID: "service-1", State: provider.StateRunning}, nil
+}
+
+func (p *recordingProvider) Exec(_ context.Context, _ string, argv []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+	p.operations = append(p.operations, "exec:"+strings.Join(argv, " "))
+	p.execArgv = append(p.execArgv, append([]string(nil), argv...))
+	return provider.ExecResult{Stdout: "ok\n"}, nil
+}
+
+// TestStoppedInitializationSlotIsStartedBeforeAnyRuntimeProbe pins the fix in
+// 108e6a4: a slot the fleet powered down while it was free has no deployment to
+// reach, so probing it first reports a broken workspace that is merely stopped.
+func TestStoppedInitializationSlotIsStartedBeforeAnyRuntimeProbe(t *testing.T) {
+	prov := &recordingProvider{state: provider.StateStopped}
+	if err := probeInitializedWorkspace(context.Background(), prov, "service-1"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"inspect",
+		"start",
+		"exec:vmbox-runtime health",
+		"exec:vmbox-runtime prepare-hibernate",
+	}
+	if strings.Join(prov.operations, ",") != strings.Join(want, ",") {
+		t.Fatalf("operations=%v want=%v", prov.operations, want)
+	}
+}
+
+func TestRunningInitializationSlotIsNotRestarted(t *testing.T) {
+	prov := &recordingProvider{state: provider.StateRunning}
+	if err := probeInitializedWorkspace(context.Background(), prov, "service-1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range prov.operations {
+		if operation == "start" {
+			t.Fatalf("a running slot was redeployed: %v", prov.operations)
+		}
+	}
+}
+
+func TestInitializationSlotRecoveryFailsBeforeProbing(t *testing.T) {
+	prov := &recordingProvider{state: provider.StateStopped, startErr: errors.New("no capacity")}
+	err := probeInitializedWorkspace(context.Background(), prov, "service-1")
+	if err == nil || !strings.Contains(err.Error(), "start initialization slot") {
+		t.Fatalf("err=%v", err)
+	}
+	if len(prov.execArgv) != 0 {
+		t.Fatalf("a slot that could not start was probed anyway: %v", prov.execArgv)
+	}
+}
+
+func TestReusableBoxTaskSelectsOnlyLiveWork(t *testing.T) {
+	tasks := func(states ...string) []v1.BoxTask {
+		var values []v1.BoxTask
+		for index, state := range states {
+			values = append(values, v1.BoxTask{ID: string(rune('a' + index)), State: state})
+		}
+		return values
+	}
+	tests := []struct {
+		name  string
+		tasks []v1.BoxTask
+		state v1.LogicalBoxState
+		want  string
+	}{
+		{name: "no tasks at all", tasks: nil, state: v1.LogicalBoxRunning},
+		{name: "every task finished", tasks: tasks("completed", "failed", "cancelled"), state: v1.LogicalBoxRunning},
+		{name: "active task on a running box", tasks: tasks("completed", "active"), state: v1.LogicalBoxRunning, want: "b"},
+		{name: "active task on a stopped box", tasks: tasks("active"), state: v1.LogicalBoxHibernated},
+		{name: "queued task on a stopped box", tasks: tasks("queued"), state: v1.LogicalBoxHibernated, want: "a"},
+		{name: "newest live task wins", tasks: tasks("queued", "starting"), state: v1.LogicalBoxDetached, want: "b"},
+		{name: "waiting capacity is reusable", tasks: tasks("failed", "waiting_capacity"), state: v1.LogicalBoxDetached, want: "b"},
+	}
+	for _, test := range tests {
+		selected := reusableBoxTask(test.tasks, test.state)
+		switch {
+		case test.want == "" && selected != nil:
+			t.Errorf("%s: selected %+v, wanted a new task", test.name, *selected)
+		case test.want != "" && selected == nil:
+			t.Errorf("%s: selected nothing, wanted task %s", test.name, test.want)
+		case test.want != "" && selected.ID != test.want:
+			t.Errorf("%s: selected %s, wanted %s", test.name, selected.ID, test.want)
+		}
+	}
+}
+
+func TestReusableBoxTaskReturnsACopy(t *testing.T) {
+	tasks := []v1.BoxTask{{ID: "task-1", State: "queued"}}
+	selected := reusableBoxTask(tasks, v1.LogicalBoxRunning)
+	if selected == nil {
+		t.Fatal("a queued task was not reusable")
+	}
+	selected.State = "mutated"
+	if tasks[0].State != "queued" {
+		t.Fatalf("the selection aliased the caller slice: %+v", tasks[0])
+	}
+}
+
+func logicalBoxRow(state v1.LogicalBoxState) *sqlmock.Rows {
+	now := time.Now().UTC()
+	return sqlmock.NewRows([]string{
+		"id", "account_id", "owner_user_id", "name", "provider", "provider_credential",
+		"state", "volume_id", "volume_name", "slot_id", "assignment_generation",
+		"lease_owner", "lease_expires_at", "restoration_state", "failure_reason",
+		"created_at", "updated_at",
+	}).AddRow("box-1", "account-a", "user-a", "research", "railway", "primary",
+		string(state), "volume-1", "volume-name", "slot-1", int64(3), "", nil, "", "", now, now)
+}
+
+func boxTaskRow(id, state string) *sqlmock.Rows {
+	now := time.Now().UTC()
+	return sqlmock.NewRows([]string{
+		"id", "logical_box_id", "name", "user_id", "requested_role", "agent",
+		"session_name", "prompt", "state", "failure_reason", "created_at", "updated_at",
+	}).AddRow(id, "box-1", "research", "user-a", "user", "claude", "vmbox", "hello", state, "", now, now)
+}
+
+// TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking pins the second
+// half of 108e6a4: a box with no reusable task used to leave the selection nil
+// and then dereference it, so the very first message to a fresh box crashed the
+// controller instead of starting an agent.
+func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	principal := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
+
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
+		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
+	mock.ExpectQuery("FROM box_messages m JOIN box_tasks").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}))
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
+		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
+	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
+		WithArgs("account-a", "box-1").
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "logical_box_id", "name", "user_id", "requested_role", "agent",
+			"session_name", "prompt", "state", "failure_reason", "created_at", "updated_at",
+		}))
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
+		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
+	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
+		WithArgs("account-a", "key:task").
+		WillReturnError(errNoRowsForTest)
+	mock.ExpectBegin()
+	mock.ExpectQuery("INSERT INTO box_tasks").WillReturnRows(boxTaskRow("task-1", "queued"))
+	mock.ExpectExec("INSERT INTO box_messages").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO audit_log").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
+		WithArgs("account-a", "task-1", "user-a", "user").
+		WillReturnRows(boxTaskRow("task-1", "queued"))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
+			AddRow("message-1", "task-1", "user-a", "user", "hello", "queued", now, now))
+
+	var started []string
+	server := NewServer(store, nil)
+	server.StartTask = func(_ context.Context, accountID string, task v1.BoxTask) {
+		started = append(started, accountID+"/"+task.ID)
+	}
+
+	response, err := server.routeBoxMessage(context.Background(), principal, "box-1", "key",
+		v1.DirectBoxMessageRequest{Text: "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Task.ID != "task-1" || response.Message.ID != "message-1" || !response.Started {
+		t.Fatalf("response=%+v", response)
+	}
+	if len(started) != 1 || started[0] != "account-a/task-1" {
+		t.Fatalf("the new task was not handed to an agent: %v", started)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// errNoRowsForTest mirrors the "no existing task for this key" answer.
+var errNoRowsForTest = sql.ErrNoRows

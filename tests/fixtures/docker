@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# A Dockerfile build-context resolver used in place of a real Docker daemon.
+#
+# It reproduces the one property the installed deployment bundle previously got
+# wrong: `docker build <context>` can only COPY files that the context actually
+# contains after .dockerignore is applied. A bundle whose Dockerfile referenced
+# go.mod, cmd/ and internal/ while shipping none of them failed here exactly as
+# it failed on Railway.
+
+set -euo pipefail
+
+[[ "${1:-}" == build ]] || { printf 'unsupported docker command: %s\n' "${1:-}" >&2; exit 64; }
+shift
+
+context=""
+while (($#)); do
+  case "$1" in
+    -t|--tag|--platform|--build-arg|-f|--file) shift 2 ;;
+    --*) shift ;;
+    *) context="$1"; shift ;;
+  esac
+done
+[[ -n "$context" ]] || { echo 'docker build requires a context' >&2; exit 64; }
+[[ -d "$context" ]] || { printf 'context %s is not a directory\n' "$context" >&2; exit 1; }
+
+dockerfile="$context/Dockerfile"
+[[ -f "$dockerfile" ]] || { printf 'no Dockerfile in build context %s\n' "$context" >&2; exit 1; }
+
+# ignored reproduces .dockerignore: patterns are evaluated in order and the last
+# match wins, so a leading `*` followed by `!name` lines is an allow list.
+ignored() {
+  local candidate="$1" pattern excluded=0 negated
+  [[ -f "$context/.dockerignore" ]] || return 1
+  while IFS= read -r pattern; do
+    pattern="${pattern%$'\r'}"
+    [[ -n "$pattern" && "$pattern" != \#* ]] || continue
+    negated=0
+    if [[ "$pattern" == '!'* ]]; then
+      negated=1
+      pattern="${pattern#!}"
+    fi
+    pattern="${pattern%/}"
+    # shellcheck disable=SC2053
+    if [[ "$candidate" == $pattern || "$candidate" == $pattern/* ]]; then
+      excluded=$((negated ? 0 : 1))
+    fi
+  done <"$context/.dockerignore"
+  ((excluded))
+}
+
+# in_context reports whether one COPY source resolves to at least one file that
+# the daemon would actually receive.
+in_context() {
+  local source="$1" candidate found=0
+  [[ "$source" != /* && "$source" != *..* ]] || return 1
+  shopt -s nullglob dotglob
+  for candidate in "$context/$source" "$context/$source"*; do
+    [[ -e "$candidate" ]] || continue
+    local relative="${candidate#"$context"/}"
+    ignored "$relative" && continue
+    if [[ -d "$candidate" ]]; then
+      local child
+      for child in "$candidate"/*; do
+        [[ -e "$child" ]] || continue
+        found=1
+        break
+      done
+      ((found)) || continue
+    fi
+    found=1
+    break
+  done
+  shopt -u nullglob dotglob
+  ((found))
+}
+
+# Join continuation lines so that a multi-line COPY is one instruction.
+instructions="$(sed -e 's/[[:space:]]*$//' "$dockerfile" | awk '
+  { line = line $0 }
+  /\\$/ { sub(/\\$/, " ", line); next }
+  { print line; line = "" }
+  END { if (line != "") print line }
+')"
+
+stages=""
+from_seen=0
+while IFS= read -r line; do
+  [[ -n "${line// }" && "$line" != \#* ]] || continue
+  read -r keyword rest <<<"$line"
+  case "${keyword^^}" in
+    FROM)
+      from_seen=1
+      [[ -n "${rest// }" ]] || { echo 'FROM requires an image' >&2; exit 1; }
+      stages="$stages ${rest##* }"
+      ;;
+    COPY|ADD)
+      # shellcheck disable=SC2086
+      set -- $rest
+      local_from=""
+      while [[ "${1:-}" == --* ]]; do
+        [[ "$1" == --from=* ]] && local_from="${1#--from=}"
+        shift
+      done
+      (($# >= 2)) || { printf '%s requires sources and a destination\n' "$keyword" >&2; exit 1; }
+      if [[ -n "$local_from" ]]; then
+        [[ " $stages " == *" $local_from "* ]] ||
+          { printf 'COPY --from=%s refers to an unknown stage\n' "$local_from" >&2; exit 1; }
+        continue
+      fi
+      for source in "${@:1:$#-1}"; do
+        in_context "$source" ||
+          { printf 'COPY failed: %s is not in the build context %s\n' "$source" "$context" >&2; exit 1; }
+      done
+      ;;
+  esac
+done <<<"$instructions"
+
+((from_seen)) || { echo 'Dockerfile has no FROM instruction' >&2; exit 1; }
+printf 'docker: build context %s resolved successfully\n' "$context"

@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+# A stand-in for the OpenSSH client. It records every invocation so that tests
+# can assert the CLI resolves one endpoint, opens one ControlMaster, and reuses
+# it, and it reproduces a rotated ssh.railway.com host key and a transport
+# failure without touching a network.
+
+set -euo pipefail
+
+state_dir="${VMBOX_TEST_STATE:?}"
+printf '%q ' "$@" >>"$state_dir/ssh.log"
+printf '\n' >>"$state_dir/ssh.log"
+
+master_marker="$state_dir/ssh-master"
+mode=command
+target=""
+previous=""
+for argument in "$@"; do
+  case "$previous" in
+    -O) mode="$argument" ;;
+  esac
+  case "$argument" in
+    -M) mode=master ;;
+    *@ssh.railway.com) [[ -z "$target" ]] && target="$argument" ;;
+  esac
+  previous="$argument"
+done
+remote="${!#}"
+[[ "$remote" == "$target" ]] && remote=""
+# The remote command is one already-quoted shell word list. Recording it
+# verbatim keeps assertions about it readable.
+[[ -z "$remote" ]] || printf '%s\n' "$remote" >>"$state_dir/ssh-remote.log"
+
+case "$mode" in
+  check)
+    [[ -e "$master_marker" ]] || exit 255
+    printf 'Master running\n'
+    exit 0
+    ;;
+  exit)
+    rm -f -- "$master_marker"
+    exit 0
+    ;;
+  master)
+    if [[ "${VMBOX_TEST_SSH_ROTATED_KEY:-0}" == 1 && ! -e "$state_dir/host-key-repaired" ]]; then
+      printf '@@@@ WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED! @@@@\n' >&2
+      exit 255
+    fi
+    printf '%s\n' "$target" >"$master_marker"
+    exit 0
+    ;;
+esac
+
+[[ -e "$master_marker" ]] || { printf 'no ControlMaster for %s\n' "$target" >&2; exit 255; }
+
+if [[ "${VMBOX_TEST_SSH_FAIL_ONCE:-0}" == 1 && ! -e "$state_dir/ssh-failed-once" ]]; then
+  : >"$state_dir/ssh-failed-once"
+  rm -f -- "$master_marker"
+  printf 'Connection closed by remote host\n' >&2
+  exit 255
+fi
+
+count=0
+[[ -r "$state_dir/ssh-command-count" ]] && count="$(<"$state_dir/ssh-command-count")"
+printf '%s' "$((count + 1))" >"$state_dir/ssh-command-count"
+
+case "$remote" in
+  *__VMBOX_DATA__*) printf '__VMBOX_DATA__ %s\n' "${VMBOX_TEST_SSH_FSTYPE:-ext4}" ;;
+  *) printf '%s' "${VMBOX_TEST_SSH_STDOUT:-}" ;;
+esac
+exit "${VMBOX_TEST_SSH_STATUS:-0}"
