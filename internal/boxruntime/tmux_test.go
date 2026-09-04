@@ -63,6 +63,17 @@ func TestShellResumePrintsCurrentPersistentWelcome(t *testing.T) {
 	}
 }
 
+func TestOldShellSnapshotMigratesToCurrentWelcome(t *testing.T) {
+	pane := TmuxPane{ResumeStrategy: "shell", ResumeArgv: []string{"/bin/bash", "-l"}, ScrollbackFile: "/data/.vmbox/tmux/shell.log"}
+	command := restoredPaneCommand(TmuxSnapshot{}, pane)
+	if !strings.Contains(command, "cat -- '/data/.vmbox/tmux/shell.log'") || !strings.Contains(command, "exec 'vmbox-runtime' 'welcome'") {
+		t.Fatalf("old shell snapshot command=%q", command)
+	}
+	if strings.Contains(command, "/bin/bash") {
+		t.Fatalf("old login shell bypassed current welcome: %q", command)
+	}
+}
+
 func TestRestoredPaneNeverReplaysArbitraryCommand(t *testing.T) {
 	saved := time.Unix(2, 0).UTC()
 	pane := TmuxPane{
