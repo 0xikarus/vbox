@@ -17,7 +17,7 @@ const (
 	volumeDeleteMutation  = `mutation($volumeId: String!) { volumeDelete(volumeId: $volumeId) }`
 	limitsUpdateMutation  = `mutation($input: ServiceInstanceLimitsUpdateInput!) { serviceInstanceLimitsUpdate(input: $input) }`
 	limitsQuery           = `query($serviceId: String!, $environmentId: String!) { serviceInstanceLimits(serviceId: $serviceId, environmentId: $environmentId) }`
-	serviceInstanceQuery  = `query($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { id } }`
+	serviceInstanceQuery  = `query($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { latestDeployment { deploymentStopped instances { id status } } } }`
 )
 
 func (p *Provider) createService(ctx context.Context, name string) (procexec.Result, error) {
@@ -43,17 +43,28 @@ func (p *Provider) serviceInstanceID(ctx context.Context, serviceID string) (str
 	var response struct {
 		Data struct {
 			ServiceInstance struct {
-				ID string `json:"id"`
+				LatestDeployment struct {
+					DeploymentStopped bool `json:"deploymentStopped"`
+					Instances         []struct {
+						ID     string `json:"id"`
+						Status string `json:"status"`
+					} `json:"instances"`
+				} `json:"latestDeployment"`
 			} `json:"serviceInstance"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(result.Stdout, &response); err != nil {
 		return "", fmt.Errorf("decode Railway deployment instance: %w", err)
 	}
-	if strings.TrimSpace(response.Data.ServiceInstance.ID) == "" {
-		return "", fmt.Errorf("Railway returned no active deployment instance for service %s", serviceID)
+	deployment := response.Data.ServiceInstance.LatestDeployment
+	if !deployment.DeploymentStopped {
+		for _, instance := range deployment.Instances {
+			if strings.EqualFold(instance.Status, "RUNNING") && strings.TrimSpace(instance.ID) != "" {
+				return instance.ID, nil
+			}
+		}
 	}
-	return response.Data.ServiceInstance.ID, nil
+	return "", fmt.Errorf("Railway returned no running deployment instance for service %s", serviceID)
 }
 
 func (p *Provider) connectImage(ctx context.Context, serviceID, image string) error {

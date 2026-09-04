@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -17,9 +18,13 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
+func runningDeploymentInstance(id string) string {
+	return fmt.Sprintf(`{"data":{"serviceInstance":{"latestDeployment":{"deploymentStopped":false,"instances":[{"id":%q,"status":"RUNNING"}]}}}}`, id)
+}
+
 func TestExecUsesDirectSSHAndEncodesExactArgv(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	instance := runningDeploymentInstance("deployment-instance")
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)}, {Stdout: []byte(instance)}, {},
 	}}
@@ -51,7 +56,7 @@ func TestExecUsesDirectSSHAndEncodesExactArgv(t *testing.T) {
 
 func TestAttachSessionUsesDirectInteractiveSSH(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	instance := runningDeploymentInstance("deployment-instance")
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)}, {Stdout: []byte(instance)}, {Stdout: []byte("created\n")}, {},
 	}}
@@ -129,7 +134,7 @@ func TestIdleSessionRecognizesOnlyShellPanes(t *testing.T) {
 
 func TestExecRepairsRotatedHostKeyBeforeStartingMaster(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	instance := runningDeploymentInstance("deployment-instance")
 	dir := t.TempDir()
 	knownHosts := filepath.Join(dir, "known_hosts")
 	controlDir := filepath.Join(dir, "control")
@@ -159,7 +164,7 @@ func TestExecRepairsRotatedHostKeyBeforeStartingMaster(t *testing.T) {
 
 func TestDirectSSHReusesDeploymentLookupAndControlMaster(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	instance := runningDeploymentInstance("deployment-instance")
 	dir := t.TempDir()
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)},
@@ -196,8 +201,8 @@ func TestDirectSSHReusesDeploymentLookupAndControlMaster(t *testing.T) {
 
 func TestDirectSSHInvalidatesDeploymentAndRetriesTransportFailure(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	oldInstance := `{"data":{"serviceInstance":{"id":"deployment-old"}}}`
-	newInstance := `{"data":{"serviceInstance":{"id":"deployment-new"}}}`
+	oldInstance := runningDeploymentInstance("deployment-old")
+	newInstance := runningDeploymentInstance("deployment-new")
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)},
 		{Stdout: []byte(oldInstance)},
@@ -223,7 +228,7 @@ func TestDirectSSHInvalidatesDeploymentAndRetriesTransportFailure(t *testing.T) 
 
 func TestDirectSSHRemovesPoisonedControlSocketOnTransportFailure(t *testing.T) {
 	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	instance := `{"data":{"serviceInstance":{"id":"deployment-instance"}}}`
+	instance := runningDeploymentInstance("deployment-instance")
 	controlDir := t.TempDir()
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)},
