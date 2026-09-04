@@ -14,7 +14,6 @@ import (
 const (
 	serviceCreateMutation = `mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { id name } }`
 	serviceUpdateMutation = `mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }`
-	volumeDeleteMutation  = `mutation($volumeId: String!) { volumeDelete(volumeId: $volumeId) }`
 	limitsUpdateMutation  = `mutation($input: ServiceInstanceLimitsUpdateInput!) { serviceInstanceLimitsUpdate(input: $input) }`
 	limitsQuery           = `query($serviceId: String!, $environmentId: String!) { serviceInstanceLimits(serviceId: $serviceId, environmentId: $environmentId) }`
 	serviceInstanceQuery  = `query($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { latestDeployment { deploymentStopped instances { id status } } } }`
@@ -106,7 +105,7 @@ func (p *Provider) setStartCommand(ctx context.Context, serviceID, command strin
 }
 
 func (p *Provider) deleteVolume(ctx context.Context, volumeID string) error {
-	result, err := p.api(ctx, volumeDeleteMutation, map[string]any{"volumeId": volumeID})
+	result, err := p.runVolume(ctx, "", nil, "delete", "--volume", volumeID, "--yes", "--json")
 	if err != nil || result.ExitCode != 0 {
 		return railwayError("delete owned volume", result, err)
 	}
