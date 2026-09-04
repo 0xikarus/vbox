@@ -44,15 +44,27 @@ type BoxMessage struct {
 }
 
 type TerminalSnapshot struct {
-	BoxName    string    `json:"boxName"`
-	Session    string    `json:"session"`
-	Pane       string    `json:"pane"`
-	Title      string    `json:"title,omitempty"`
-	Command    string    `json:"command,omitempty"`
-	Width      int       `json:"width,omitempty"`
-	Height     int       `json:"height,omitempty"`
-	Content    string    `json:"content"`
-	CapturedAt time.Time `json:"capturedAt"`
+	BoxName    string          `json:"boxName"`
+	Session    string          `json:"session"`
+	Pane       string          `json:"pane"`
+	Title      string          `json:"title,omitempty"`
+	Command    string          `json:"command,omitempty"`
+	Width      int             `json:"width,omitempty"`
+	Height     int             `json:"height,omitempty"`
+	Content    string          `json:"content"`
+	CapturedAt time.Time       `json:"capturedAt"`
+	Prompt     *TerminalPrompt `json:"prompt,omitempty"`
+}
+
+type TerminalPrompt struct {
+	ID      string                 `json:"id"`
+	Text    string                 `json:"text"`
+	Choices []TerminalPromptChoice `json:"choices"`
+}
+
+type TerminalPromptChoice struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
 }
 
 type LogicalBoxConnection struct {

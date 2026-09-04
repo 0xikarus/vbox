@@ -308,6 +308,7 @@ async function selectBox(id) {
   $('#chat-avatar').textContent = avatar(state.box.name);
   $('#allocate').hidden = !['detached', 'hibernated'].includes(state.box.state);
   $('#hibernate').hidden = state.box.state !== 'running';
+  renderTerminalPrompt(null, 'vmbox');
   showView('chat');
   try {
     state.tasks = await api(`/v1/logical-boxes/${encodeURIComponent(id)}/tasks`) || [];
@@ -367,7 +368,10 @@ async function refreshConversation(silent = false) {
     }
     renderRoster();
     if (freshBox.state === 'running') await refreshTerminal(true);
-    else $('#terminal').textContent = 'Compute is detached. Sending a message starts this box automatically.';
+    else {
+      $('#terminal').textContent = 'Compute is detached. Sending a message starts this box automatically.';
+      renderTerminalPrompt(null, state.task?.session || 'vmbox');
+    }
   } catch (error) { if (!silent) toast(error.message, true); }
 }
 
@@ -379,10 +383,45 @@ async function refreshTerminal(silent = false) {
     $('#terminal').textContent = snapshot.content || 'Terminal is empty.';
     $('#terminal-title').textContent = `tmux · ${snapshot.session}${snapshot.command ? ` · ${snapshot.command}` : ''}`;
     $('#terminal-size').textContent = snapshot.width && snapshot.height ? `${snapshot.width}×${snapshot.height}` : '';
+    renderTerminalPrompt(snapshot.prompt, session);
   } catch (error) {
     $('#terminal').textContent = `Screen mirror unavailable\n\n${error.message}`;
+    renderTerminalPrompt(null, session);
     if (!silent) toast(error.message, true);
   }
+}
+
+function renderTerminalPrompt(prompt, session) {
+  const panel = $('#terminal-prompt');
+  if (!prompt?.id || !prompt.choices?.length) {
+    panel.hidden = true;
+    panel.replaceChildren();
+    return;
+  }
+  panel.hidden = false;
+  panel.innerHTML = `
+    <strong>${escapeHTML(prompt.text || 'Terminal input required')}</strong>
+    <div class="terminal-prompt-choices">
+      ${prompt.choices.map(choice => `<button type="button" class="terminal-prompt-choice" data-prompt-value="${escapeHTML(choice.value)}">${escapeHTML(choice.value)}. ${escapeHTML(choice.label)}</button>`).join('')}
+    </div>
+    <p>Detected from the live tmux session. Choosing once sends that exact response and presses Enter.</p>`;
+  $$('[data-prompt-value]', panel).forEach(button => button.addEventListener('click', async () => {
+    const buttons = $$('[data-prompt-value]', panel);
+    buttons.forEach(item => { item.disabled = true; });
+    try {
+      await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {
+        method:'POST',
+        headers:{'Idempotency-Key':`terminal-prompt-${prompt.id}-${button.dataset.promptValue}`},
+        body:JSON.stringify({text:button.dataset.promptValue, submit:true}),
+      });
+      panel.hidden = true;
+      toast(`Sent terminal choice ${button.dataset.promptValue}`);
+      setTimeout(() => refreshTerminal(true), 350);
+    } catch (error) {
+      buttons.forEach(item => { item.disabled = false; });
+      toast(error.message, true);
+    }
+  }));
 }
 
 function renderGroupMessages() {

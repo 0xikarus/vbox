@@ -369,6 +369,7 @@ func (s *Server) terminalSnapshotHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	snapshot.BoxName = box.Name
+	snapshot.Prompt = detectTerminalPrompt(snapshot.Content)
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
