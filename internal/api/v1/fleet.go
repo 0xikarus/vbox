@@ -89,6 +89,7 @@ type LogicalBox struct {
 	Name                 string          `json:"name"`
 	Provider             string          `json:"provider"`
 	ProviderCredential   string          `json:"providerCredential,omitempty"`
+	DefaultAgent         string          `json:"defaultAgent"`
 	OwnerUserID          string          `json:"ownerUserId,omitempty"`
 	State                LogicalBoxState `json:"state"`
 	VolumeID             string          `json:"volumeId"`

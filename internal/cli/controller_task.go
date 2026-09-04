@@ -49,16 +49,6 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 	if !validTaskAgent(opts.agent) {
 		return fmt.Errorf("agent must be codex, claude, opencode, or shell")
 	}
-	if opts.session == "" {
-		if interactive {
-			opts.session, err = a.readControllerPrompt(reader, "Tmux session", "vmbox")
-			if err != nil {
-				return err
-			}
-		} else {
-			opts.session = "vmbox"
-		}
-	}
 	if opts.prompt == "" {
 		if !interactive {
 			return fmt.Errorf("task requires --prompt outside an interactive terminal")

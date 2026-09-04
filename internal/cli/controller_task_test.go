@@ -67,14 +67,14 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 	defer server.Close()
 
 	app := New()
-	app.In = strings.NewReader("1\n2\n\nresearch robinhood chain\n")
+	app.In = strings.NewReader("1\n2\nwhat's today's date?\n")
 	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	app.IsTerminal = func() bool { return true }
 	c := config.Context{Controller: server.URL}
 	if err := app.controllerTask(context.Background(), c, "secret", nil); err != nil {
 		t.Fatal(err)
 	}
-	if request.Agent != "claude" || request.Session != "vmbox" || request.Prompt != "research robinhood chain" {
+	if request.Agent != "claude" || request.Session != "" || request.Prompt != "what's today's date?" {
 		t.Fatalf("request=%+v", request)
 	}
 	if !strings.Contains(app.Out.(*bytes.Buffer).String(), "Select a logical box") || !strings.Contains(app.Out.(*bytes.Buffer).String(), "Choose an agent") {

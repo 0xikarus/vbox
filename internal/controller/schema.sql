@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS logical_boxes (
   name text NOT NULL,
   provider text NOT NULL,
   provider_credential text NOT NULL DEFAULT '',
+  default_agent text NOT NULL DEFAULT 'claude' CHECK (default_agent IN ('codex','claude','opencode','shell')),
   state text NOT NULL CHECK (state IN ('detached','reserved','attaching','running','draining','hibernating','hibernated','deleting','failed')),
   volume_id text NOT NULL,
   volume_name text NOT NULL,
@@ -176,6 +177,7 @@ CREATE TABLE IF NOT EXISTS logical_boxes (
   UNIQUE(slot_id),
   UNIQUE(account_id, provider, volume_id)
 );
+ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS default_agent text NOT NULL DEFAULT 'claude' CHECK (default_agent IN ('codex','claude','opencode','shell'));
 CREATE TABLE IF NOT EXISTS allocation_requests (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
