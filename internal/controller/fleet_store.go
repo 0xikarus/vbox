@@ -326,7 +326,7 @@ func (s *Store) ReleaseAssignment(ctx context.Context, accountID, logicalBoxID s
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale compute-slot fencing token")
 	}
-	result, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state=$5,slot_id=NULL,lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4`, accountID, logicalBoxID, generation, fencingToken, finalState)
+	result, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state=$5,restoration_state='saved',slot_id=NULL,lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4`, accountID, logicalBoxID, generation, fencingToken, finalState)
 	if err != nil {
 		return err
 	}

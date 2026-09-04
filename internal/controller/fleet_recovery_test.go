@@ -147,6 +147,24 @@ func TestCompleteLogicalBoxCreationCastsAuditProvider(t *testing.T) {
 	}
 }
 
+func TestReleaseAssignmentMarksHibernateSnapshotSaved(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT slot_id::text FROM logical_boxes").
+		WithArgs("account-a", "box-1", int64(4), "fence-1").
+		WillReturnRows(sqlmock.NewRows([]string{"slot_id"}).AddRow("slot-1"))
+	mock.ExpectExec("UPDATE compute_slots SET state='free'").
+		WithArgs("account-a", "slot-1", int64(4), "fence-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5,restoration_state='saved'").
+		WithArgs("account-a", "box-1", int64(4), "fence-1", v1.LogicalBoxHibernated).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := store.ReleaseAssignment(context.Background(), "account-a", "box-1", 4, "fence-1", v1.LogicalBoxHibernated); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestReusableBoxTaskSelectsOnlyLiveWork(t *testing.T) {
 	tasks := func(states ...string) []v1.BoxTask {
 		var values []v1.BoxTask
