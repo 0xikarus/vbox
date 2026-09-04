@@ -58,32 +58,23 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 	}
 	ticker := time.NewTicker(agentReplyPollInterval)
 	defer ticker.Stop()
-	lastReply := ""
-	stableCompletePolls := 0
+	var progress agentReplyProgress
+	if existing, found, err := s.Store.AgentBoxMessage(ctx, accountID, message.ID); err != nil {
+		return err
+	} else if found && existing.State == "streaming" {
+		progress.lastReply = existing.Text
+	}
 	for {
 		result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-screen", task.Session, "2000"}, provider.ExecOptions{})
 		if execErr == nil && result.ExitCode == 0 {
 			var snapshot v1.TerminalSnapshot
 			if json.Unmarshal([]byte(result.Stdout), &snapshot) == nil {
 				reply, complete := extractAgentReply(task.Agent, message.Text, snapshot.Content)
-				if reply != "" {
-					if reply != lastReply {
-						lastReply = reply
-						stableCompletePolls = 0
-					}
-					if complete {
-						stableCompletePolls++
-					} else {
-						stableCompletePolls = 0
-					}
-					state := "streaming"
-					if stableCompletePolls >= 2 {
-						state = "delivered"
-					}
+				if reply, state, done := progress.observe(reply, complete); reply != "" {
 					if _, err := s.Store.UpsertAgentBoxMessage(ctx, accountID, task.ID, message.ID, reply, state); err != nil {
 						return err
 					}
-					if state == "delivered" {
+					if done {
 						return nil
 					}
 				}
@@ -95,6 +86,39 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 		case <-ticker.C:
 		}
 	}
+}
+
+type agentReplyProgress struct {
+	lastReply            string
+	stableCompletePolls  int
+	missingBoundaryPolls int
+}
+
+func (p *agentReplyProgress) observe(reply string, complete bool) (string, string, bool) {
+	if reply == "" {
+		if p.lastReply == "" {
+			return "", "", false
+		}
+		p.missingBoundaryPolls++
+		if p.missingBoundaryPolls >= 2 {
+			return p.lastReply, "delivered", true
+		}
+		return "", "", false
+	}
+	p.missingBoundaryPolls = 0
+	if reply != p.lastReply {
+		p.lastReply = reply
+		p.stableCompletePolls = 0
+	}
+	if complete {
+		p.stableCompletePolls++
+	} else {
+		p.stableCompletePolls = 0
+	}
+	if p.stableCompletePolls >= 2 {
+		return reply, "delivered", true
+	}
+	return reply, "streaming", false
 }
 
 func extractAgentReply(agent, prompt, content string) (string, bool) {

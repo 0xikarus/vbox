@@ -82,6 +82,29 @@ func TestExtractAgentReplyCompletesWhenNextInputIsAlreadyStaged(t *testing.T) {
 	}
 }
 
+func TestAgentReplyProgressFinalizesWhenCapturedBoundaryScrollsAway(t *testing.T) {
+	var progress agentReplyProgress
+	if reply, state, done := progress.observe("partial output", false); reply != "partial output" || state != "streaming" || done {
+		t.Fatalf("initial observation=(%q,%q,%v)", reply, state, done)
+	}
+	if reply, state, done := progress.observe("", false); reply != "" || state != "" || done {
+		t.Fatalf("first missing boundary=(%q,%q,%v)", reply, state, done)
+	}
+	if reply, state, done := progress.observe("", false); reply != "partial output" || state != "delivered" || !done {
+		t.Fatalf("second missing boundary=(%q,%q,%v)", reply, state, done)
+	}
+}
+
+func TestAgentReplyProgressRequiresStableCompleteOutput(t *testing.T) {
+	var progress agentReplyProgress
+	if _, state, done := progress.observe("answer", true); state != "streaming" || done {
+		t.Fatalf("first complete observation state=%q done=%v", state, done)
+	}
+	if _, state, done := progress.observe("answer", true); state != "delivered" || !done {
+		t.Fatalf("stable complete observation state=%q done=%v", state, done)
+	}
+}
+
 func TestUpsertAgentBoxMessageStreamsAndFinalizesCorrelatedReply(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectExec("INSERT INTO box_messages").
@@ -97,6 +120,22 @@ func TestUpsertAgentBoxMessageStreamsAndFinalizesCorrelatedReply(t *testing.T) {
 	changed, err = store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "answer", "delivered")
 	if err != nil || !changed {
 		t.Fatalf("finalized=%v err=%v", changed, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgentBoxMessageRestoresStreamingReplyAfterWatcherRestart(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	mock.ExpectQuery("FROM box_messages WHERE account_id").
+		WithArgs("account-a", "agent-reply:message-1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
+			AddRow("reply-1", "task-1", "", "agent", "partial", "streaming", now, now))
+	message, found, err := store.AgentBoxMessage(context.Background(), "account-a", "message-1")
+	if err != nil || !found || message.Text != "partial" || message.State != "streaming" {
+		t.Fatalf("message=%+v found=%v err=%v", message, found, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

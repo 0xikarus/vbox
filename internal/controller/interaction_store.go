@@ -279,6 +279,14 @@ func (s *Store) UpsertAgentBoxMessage(ctx context.Context, accountID, taskID, re
 	return changed == 1, nil
 }
 
+func (s *Store) AgentBoxMessage(ctx context.Context, accountID, replyTo string) (v1.BoxMessage, bool, error) {
+	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, boxMessageSelect+" WHERE account_id=$1 AND direction='agent' AND idempotency_key=$2", accountID, "agent-reply:"+replyTo))
+	if errors.Is(err, sql.ErrNoRows) {
+		return message, false, nil
+	}
+	return message, err == nil, err
+}
+
 func (s *Store) ClaimBoxMessage(ctx context.Context, accountID, id string) (bool, error) {
 	result, err := s.DB.ExecContext(ctx, "UPDATE box_messages SET state='delivering',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='queued'", accountID, id)
 	if err != nil {
