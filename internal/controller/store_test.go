@@ -187,6 +187,30 @@ func TestEnvironmentProviderCredentialUsesSingleAccountOwnerAndEncryptsToken(t *
 	}
 }
 
+func TestEnvironmentProviderCredentialDoesNotOverwriteOwnerManagedCredential(t *testing.T) {
+	store, mock := testStore(t)
+	envelope, err := secrets.New(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Envelope = envelope
+	now := time.Now().UTC()
+	existingConfig := json.RawMessage(`{"tokenEnvironment":"RAILWAY_API_TOKEN"}`)
+	mock.ExpectQuery(`SELECT a.id::text,u.id::text,u.subject`).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "subject"}).AddRow("account-a", "owner-a", "operator"))
+	mock.ExpectQuery(`INSERT INTO provider_credentials`).WithArgs(sqlmock.AnyArg(), "account-a", "railway", "primary", excludesPlaintext("project-token"), sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}))
+	mock.ExpectQuery(`SELECT id::text,config,created_at,updated_at FROM provider_credentials`).WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows([]string{"id", "config", "created_at", "updated_at"}).AddRow("credential-a", existingConfig, now, now))
+	value, err := store.PutEnvironmentProviderCredential(context.Background(), "railway", "primary", v1.PutProviderCredentialRequest{Secret: json.RawMessage(`{"token":"project-token"}`), Config: json.RawMessage(`{"tokenEnvironment":"RAILWAY_TOKEN"}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(value.Config) != string(existingConfig) {
+		t.Fatalf("owner-managed config was replaced: %s", value.Config)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEnvironmentProviderCredentialRejectsMultipleAccounts(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`SELECT a.id::text,u.id::text,u.subject`).WillReturnRows(sqlmock.NewRows([]string{"account_id", "user_id", "subject"}).AddRow("account-a", "owner-a", "one").AddRow("account-b", "owner-b", "two"))

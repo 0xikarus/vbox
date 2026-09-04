@@ -487,15 +487,45 @@ LIMIT 2`)
 	return owners[0], nil
 }
 
-// PutEnvironmentProviderCredential imports a provider token supplied to the
+// PutEnvironmentProviderCredential seeds a provider token supplied to the
 // controller process. It is intentionally limited to installations with one
-// account and records the owning user in the normal encrypted audit path.
+// account. An owner-managed credential already in the vault always wins, so a
+// restart cannot silently replace it with a less capable environment token.
 func (s *Store) PutEnvironmentProviderCredential(ctx context.Context, providerName, name string, req v1.PutProviderCredentialRequest) (v1.ProviderCredential, error) {
 	owner, err := s.environmentOwner(ctx)
 	if err != nil {
 		return v1.ProviderCredential{}, err
 	}
-	return s.PutProviderCredential(ctx, owner, providerName, name, req)
+	if providerName == "" || name == "" {
+		return v1.ProviderCredential{}, fmt.Errorf("provider and credential name are required")
+	}
+	if s.Envelope == nil {
+		return v1.ProviderCredential{}, fmt.Errorf("controller encryption key is not configured")
+	}
+	if !validJSONObject(req.Secret, true) {
+		return v1.ProviderCredential{}, fmt.Errorf("secret must be a non-empty JSON object")
+	}
+	if len(req.Config) == 0 {
+		req.Config = json.RawMessage(`{}`)
+	}
+	if !validJSONObject(req.Config, false) {
+		return v1.ProviderCredential{}, fmt.Errorf("config must be a JSON object")
+	}
+	sealed, err := s.Envelope.Seal(owner.AccountID, req.Secret)
+	if err != nil {
+		return v1.ProviderCredential{}, err
+	}
+	value := v1.ProviderCredential{ID: uuid(), AccountID: owner.AccountID, Provider: providerName, Name: name, Config: req.Config}
+	err = s.DB.QueryRowContext(ctx, `INSERT INTO provider_credentials(id,account_id,provider,name,encrypted_value,config) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(account_id,provider,name) DO NOTHING RETURNING id::text,created_at,updated_at`, value.ID, owner.AccountID, providerName, name, sealed, req.Config).Scan(&value.ID, &value.CreatedAt, &value.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = s.DB.QueryRowContext(ctx, `SELECT id::text,config,created_at,updated_at FROM provider_credentials WHERE account_id=$1 AND provider=$2 AND name=$3`, owner.AccountID, providerName, name).Scan(&value.ID, &value.Config, &value.CreatedAt, &value.UpdatedAt)
+		return value, err
+	}
+	if err != nil {
+		return value, err
+	}
+	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.put','provider_credential',$3,jsonb_build_object('provider',$4::text,'name',$5::text))`, owner.AccountID, owner.UserID, value.ID, providerName, name)
+	return value, nil
 }
 
 // SeedEnvironmentFleetConfig initializes fleet capacity only when it has not

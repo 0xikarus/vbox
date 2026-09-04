@@ -177,27 +177,32 @@ func bootstrapWorkload(ctx context.Context, p provider.Provider, box provider.Bo
 }
 
 func seedRailwayCredentialFromEnvironment(ctx context.Context, store *controller.Store) error {
-	token := strings.TrimSpace(os.Getenv("RAILWAY_TOKEN"))
+	tokenEnvironment := "RAILWAY_API_TOKEN"
+	token := strings.TrimSpace(os.Getenv(tokenEnvironment))
+	if token == "" {
+		tokenEnvironment = "RAILWAY_TOKEN"
+		token = strings.TrimSpace(os.Getenv(tokenEnvironment))
+	}
 	if token == "" {
 		return nil
 	}
 	projectID := strings.TrimSpace(os.Getenv("RAILWAY_PROJECT_ID"))
 	environmentID := strings.TrimSpace(os.Getenv("RAILWAY_ENVIRONMENT_ID"))
 	if projectID == "" || environmentID == "" {
-		return fmt.Errorf("RAILWAY_TOKEN requires RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID")
+		return fmt.Errorf("%s requires RAILWAY_PROJECT_ID and RAILWAY_ENVIRONMENT_ID", tokenEnvironment)
 	}
 	secret, err := json.Marshal(map[string]string{"token": token})
 	if err != nil {
 		return err
 	}
 	config, err := json.Marshal(map[string]string{
-		"projectId": projectID, "environmentId": environmentID, "tokenEnvironment": "RAILWAY_TOKEN",
+		"projectId": projectID, "environmentId": environmentID, "tokenEnvironment": tokenEnvironment,
 	})
 	if err != nil {
 		return err
 	}
 	if _, err := store.PutEnvironmentProviderCredential(ctx, "railway", "primary", v1.PutProviderCredentialRequest{Secret: secret, Config: config}); err != nil {
-		return fmt.Errorf("import RAILWAY_TOKEN into encrypted provider credential: %w", err)
+		return fmt.Errorf("import %s into encrypted provider credential: %w", tokenEnvironment, err)
 	}
 	return nil
 }
