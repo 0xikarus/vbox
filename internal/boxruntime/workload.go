@@ -185,9 +185,11 @@ func withinWorkloadHome(path string) bool {
 // ever tighten files that user already owns.
 const SecureGitHubConfigScript = `set -eu
 config="${HOME}/.config/gh"
+[ -d "$HOME" ] && chmod 0700 "$HOME"
 [ -d "$config" ] || exit 0
 chmod 0700 "${HOME}/.config" "$config"
 [ -f "$config/hosts.yml" ] && chmod 0600 "$config/hosts.yml"
+[ -f "${HOME}/.gitconfig" ] && chmod 0600 "${HOME}/.gitconfig"
 exit 0`
 
 // GitIdentityArguments returns the `git config --global` invocations that record

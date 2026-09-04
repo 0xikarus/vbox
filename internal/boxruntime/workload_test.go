@@ -151,3 +151,16 @@ func TestGitIdentityArgumentsSkipUnresolvedFields(t *testing.T) {
 		t.Fatalf("arguments=%v want=%v", arguments, want)
 	}
 }
+
+func TestSecureGitHubConfigNarrowsHomeAndCredentialFiles(t *testing.T) {
+	for _, expected := range []string{
+		`chmod 0700 "$HOME"`,
+		`chmod 0700 "${HOME}/.config" "$config"`,
+		`chmod 0600 "$config/hosts.yml"`,
+		`chmod 0600 "${HOME}/.gitconfig"`,
+	} {
+		if !strings.Contains(SecureGitHubConfigScript, expected) {
+			t.Fatalf("secure GitHub script missing %q: %s", expected, SecureGitHubConfigScript)
+		}
+	}
+}
