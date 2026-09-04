@@ -132,7 +132,14 @@ type service struct {
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
-	Regions   []struct {
+	Replicas  *struct {
+		Configured int `json:"configured"`
+		Running    int `json:"running"`
+		Crashed    int `json:"crashed"`
+		Exited     int `json:"exited"`
+		Total      int `json:"total"`
+	} `json:"replicas,omitempty"`
+	Regions []struct {
 		Name string `json:"name"`
 	} `json:"regions"`
 }
@@ -335,6 +342,24 @@ func state(status string) provider.State {
 	}
 }
 
+// Railway keeps the last successful deployment status after its only replica
+// has exited. Service.Status alone therefore says SUCCESS for a container that
+// direct SSH cannot reach. Prefer live replica counts when the CLI supplies
+// them, while retaining the status-only fallback for older CLI responses.
+func serviceState(value service) provider.State {
+	result := state(value.Status)
+	if result != provider.StateRunning || value.Replicas == nil {
+		return result
+	}
+	if value.Replicas.Running > 0 {
+		return provider.StateRunning
+	}
+	if value.Replicas.Crashed > 0 {
+		return provider.StateFailed
+	}
+	return provider.StateStopped
+}
+
 func (p *Provider) variables(ctx context.Context, service string) (map[string]string, error) {
 	result, err := p.run(ctx, "variables", "--service", service, "--json")
 	if err != nil || result.ExitCode != 0 {
@@ -362,7 +387,7 @@ func (p *Provider) inspectService(ctx context.Context, service service, includeR
 	cpu, _ := strconv.ParseFloat(values["VMBOX_CPU"], 64)
 	memory, _ := strconv.ParseInt(values["VMBOX_MEMORY_MIB"], 10, 64)
 	disk, _ := strconv.ParseInt(values["VMBOX_DISK_GIB"], 10, 64)
-	box := provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: state(service.Status), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}
+	box := provider.Box{ID: service.ID, Name: strings.TrimPrefix(service.Name, "vmbox-"), Provider: p.Name(), State: serviceState(service), ProviderState: service.Status, Region: region, Image: values["VMBOX_IMAGE"], Resources: provider.Resources{CPU: cpu, MemoryMiB: memory, DiskGiB: disk}, Owner: provider.Owner{AccountID: values["VMBOX_ACCOUNT_ID"], BoxID: values["VMBOX_BOX_ID"], RunID: values["VMBOX_RUN_ID"], Lease: values["VMBOX_LEASE"]}, CreatedAt: service.CreatedAt, UpdatedAt: service.UpdatedAt, Connection: provider.Connection{Transport: "railway-ssh", Endpoint: service.Name}, Storage: &provider.Storage{Name: service.Name + "-data", MountPath: "/data", SizeGiB: disk}}
 	if includeResources {
 		if actual, resourceErr := p.resources(ctx, service.ID); resourceErr == nil {
 			if actual.CPU > 0 {
@@ -747,7 +772,7 @@ func (p *Provider) SanitizeSlot(ctx context.Context, id string) error {
 			return fmt.Errorf("refusing to sanitize compute slot %s while volume %s remains attached", service.Name, volume.ID)
 		}
 	}
-	if state(service.Status) == provider.StateStopped {
+	if serviceState(service) == provider.StateStopped {
 		return nil
 	}
 	_, err = p.Stop(ctx, service.ID)

@@ -267,6 +267,31 @@ func TestEmptyDeploymentStatusIsStopped(t *testing.T) {
 	}
 }
 
+func TestSuccessfulDeploymentWithExitedReplicaIsStopped(t *testing.T) {
+	var exited service
+	if err := json.Unmarshal([]byte(`{"id":"service-id","name":"vmbox-box","status":"SUCCESS","replicas":{"configured":1,"running":0,"crashed":0,"exited":1,"total":1}}`), &exited); err != nil {
+		t.Fatal(err)
+	}
+	if got := serviceState(exited); got != provider.StateStopped {
+		t.Fatalf("serviceState(exited SUCCESS) = %q, want %q", got, provider.StateStopped)
+	}
+	exited.Replicas.Running = 1
+	exited.Replicas.Exited = 0
+	if got := serviceState(exited); got != provider.StateRunning {
+		t.Fatalf("serviceState(running SUCCESS) = %q, want %q", got, provider.StateRunning)
+	}
+}
+
+func TestSuccessfulDeploymentWithCrashedReplicaIsFailed(t *testing.T) {
+	var crashed service
+	if err := json.Unmarshal([]byte(`{"id":"service-id","name":"vmbox-box","status":"SUCCESS","replicas":{"configured":1,"running":0,"crashed":1,"exited":0,"total":1}}`), &crashed); err != nil {
+		t.Fatal(err)
+	}
+	if got := serviceState(crashed); got != provider.StateFailed {
+		t.Fatalf("serviceState(crashed SUCCESS) = %q, want %q", got, provider.StateFailed)
+	}
+}
+
 func TestSetRegionUsesMultiRegionConfigAndClearsDefaults(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`{"data":{"serviceInstanceUpdate":true}}`)}}}
 	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
