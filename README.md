@@ -4,11 +4,9 @@ Provider-neutral development boxes with exact-argv jobs, durable `/data`, and an
 
 ## Build
 
-Go 1.26 or newer is required.
-
-Install the Go CLI directly with `./install.sh --go-cli`. Running `install.sh`
-without that flag keeps the legacy shell installation path available during
-migration.
+Go 1.26 or Docker is required. `./install.sh` always installs the Go CLI; when
+Go is unavailable locally, the installer uses the Go Docker image as its build
+environment.
 
 Either way, `install.sh` also writes the standalone deployment bundle that
 `vmbox` hands to `railway up`. Railway uploads that directory verbatim as the
@@ -59,7 +57,6 @@ image, then configure the context with the immutable
 ## Standalone
 
 Contexts contain provider identifiers, never credential values. Provider tokens stay in their documented environment variables.
-An existing shell installation is imported automatically from `~/.config/vmbox/config` on first Go CLI use; only its Railway project, environment, and region are migrated, never credentials.
 
 ```bash
 vmbox context add local-docker --provider docker --docker-context default
@@ -108,7 +105,8 @@ vmbox-controller
 
 export VMBOX_CONTROLLER_TOKEN='...'
 vmbox context add team --provider docker --docker-context build-host --controller https://controller.example
-vmbox --context team new worker --detach -- codex exec 'work on the supplied task'
+vmbox --context team boxes create worker --allocate
+vmbox --context team worker
 ```
 
 A valid controller context is automatically used and displayed. If the controller is unavailable, vmbox fails closed; `--standalone` is the only way to bypass it. The versioned scheduler contract is [docs/openapi.yaml](docs/openapi.yaml).
@@ -125,4 +123,4 @@ vmbox-finish --success --summary 'Opened PR #42'
 
 Events are sequenced and durable. Output previews strip control sequences, normalize carriage returns, cap size, and redact configured secrets. Raw job execution remains generic; Codex, Claude Code, OpenCode, Bun, and Foundry are optional image components, not scheduler concepts.
 
-See [docs/PROVIDERS.md](docs/PROVIDERS.md), [docs/CONTROLLER.md](docs/CONTROLLER.md), and [docs/MIGRATION.md](docs/MIGRATION.md).
+See [docs/PROVIDERS.md](docs/PROVIDERS.md) and [docs/CONTROLLER.md](docs/CONTROLLER.md).

@@ -92,7 +92,7 @@ func writeInventoryList(output io.Writer, inventory v1.BoxInventory) error {
 		if box.SlotID != "" {
 			compute = "assigned"
 		}
-		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\tcontroller\tvmbox boxes open %s\n", box.Name, box.State, valueOrDash(box.Provider), valueOrDash(box.VolumeName), compute, box.Name); err != nil {
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\tcontroller\tvmbox %s\n", box.Name, box.State, valueOrDash(box.Provider), valueOrDash(box.VolumeName), compute, box.Name); err != nil {
 			return err
 		}
 	}
@@ -108,7 +108,7 @@ func writeInventoryList(output io.Writer, inventory v1.BoxInventory) error {
 	if err := table.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(output, "\nController boxes persist independently from fleet slots. External services are listed for visibility only.\nFree fleet slots: vmbox fleet status    JSON: vmbox ls --json\n")
+	_, err := fmt.Fprint(output, "\nController boxes persist independently from fleet slots. External services are listed for visibility only.\nOpen a box: vmbox NAME    Free fleet slots: vmbox fleet status    JSON: vmbox ls --json\n")
 	return err
 }
 

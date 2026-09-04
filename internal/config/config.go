@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -69,10 +67,9 @@ type Context struct {
 	ComputeBoxSlots    *int   `json:"compute_box_slots,omitempty"`
 }
 type File struct {
-	Current      string                   `json:"current"`
-	Contexts     map[string]Context       `json:"contexts"`
-	LastSetups   map[string]CreationSetup `json:"lastSetups,omitempty"`
-	MigratedFrom string                   `json:"-"`
+	Current    string                   `json:"current"`
+	Contexts   map[string]Context       `json:"contexts"`
+	LastSetups map[string]CreationSetup `json:"lastSetups,omitempty"`
 }
 
 func DefaultPath() string {
@@ -92,16 +89,7 @@ func Load(path string) (File, error) {
 	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		if migrated, ok, migrateErr := migrateLegacyRailway(filepath.Join(filepath.Dir(path), "config")); migrateErr != nil {
-			return File{}, migrateErr
-		} else if ok {
-			if saveErr := Save(path, migrated); saveErr != nil {
-				return File{}, fmt.Errorf("save migrated Railway setup: %w", saveErr)
-			}
-			migrated.MigratedFrom = filepath.Join(filepath.Dir(path), "config")
-			return migrated, nil
-		}
-		return File{Contexts: make(map[string]Context)}, nil
+		return File{Contexts: make(map[string]Context), LastSetups: make(map[string]CreationSetup)}, nil
 	}
 	if err != nil {
 		return File{}, err
@@ -119,92 +107,6 @@ func Load(path string) (File, error) {
 	return file, nil
 }
 
-// migrateLegacyRailway reads only the non-secret target identifiers understood
-// by the old shell CLI. It deliberately does not source the file or import any
-// credential value.
-func migrateLegacyRailway(path string) (File, bool, error) {
-	data, err := os.ReadFile(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return File{}, false, nil
-	}
-	if err != nil {
-		return File{}, false, fmt.Errorf("read legacy vmbox config: %w", err)
-	}
-	values := make(map[string]string)
-	for _, line := range strings.Split(string(data), "\n") {
-		key, value, ok := legacyAssignment(line)
-		if !ok {
-			continue
-		}
-		switch key {
-		case "VMBOX_PROJECT_ID", "VMBOX_ENVIRONMENT_ID", "VMBOX_DEFAULT_REGION":
-			if safeLegacyIdentifier(value) {
-				values[key] = value
-			}
-		}
-	}
-	project, environment := values["VMBOX_PROJECT_ID"], values["VMBOX_ENVIRONMENT_ID"]
-	if project == "" || environment == "" {
-		return File{}, false, nil
-	}
-	legacyRegion := values["VMBOX_DEFAULT_REGION"]
-	if legacyRegion == "" {
-		legacyRegion = "us-east"
-	}
-	region := map[string]string{
-		"eu-west": "ams", "us-west": "sfo", "us-east": "iad", "southeast-asia": "sin",
-	}[legacyRegion]
-	if region == "" {
-		region = legacyRegion
-	}
-	return File{
-		Current: "railway",
-		Contexts: map[string]Context{"railway": {
-			Name: "railway", Provider: "railway", Project: project, Environment: environment,
-			RailwayCLIAuth: true, Cluster: region,
-		}},
-		LastSetups: make(map[string]CreationSetup),
-	}, true, nil
-}
-
-func legacyAssignment(line string) (string, string, bool) {
-	line = strings.TrimSpace(line)
-	if line == "" || strings.HasPrefix(line, "#") {
-		return "", "", false
-	}
-	line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
-	key, raw, ok := strings.Cut(line, "=")
-	if !ok {
-		return "", "", false
-	}
-	key, raw = strings.TrimSpace(key), strings.TrimSpace(raw)
-	if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
-		if strings.Contains(raw[1:len(raw)-1], "'") {
-			return "", "", false
-		}
-		return key, raw[1 : len(raw)-1], true
-	}
-	if strings.HasPrefix(raw, `"`) {
-		value, err := strconv.Unquote(raw)
-		return key, value, err == nil
-	}
-	value, _, _ := strings.Cut(raw, "#")
-	return key, strings.TrimSpace(value), true
-}
-
-func safeLegacyIdentifier(value string) bool {
-	if value == "" || len(value) > 200 {
-		return false
-	}
-	for _, character := range value {
-		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
-			(character >= '0' && character <= '9') || character == '-' || character == '_' || character == '.' {
-			continue
-		}
-		return false
-	}
-	return true
-}
 func Save(path string, file File) error {
 	if path == "" {
 		path = DefaultPath()

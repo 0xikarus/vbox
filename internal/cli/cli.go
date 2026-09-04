@@ -113,9 +113,6 @@ parsed:
 	if err != nil {
 		return err
 	}
-	if file.MigratedFrom != "" {
-		fmt.Fprintf(a.Err, "vmbox: imported existing Railway setup from %s\n", file.MigratedFrom)
-	}
 	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		a.usage()
 		return nil
@@ -999,7 +996,10 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			return fmt.Errorf("unknown notifications command %q", args[1])
 		}
 	default:
-		return fmt.Errorf("unknown controller command %q", args[0])
+		if strings.HasPrefix(args[0], "-") || len(args) != 1 {
+			return fmt.Errorf("unknown controller command %q", args[0])
+		}
+		return a.controllerBoxes(ctx, c, token, []string{"open", args[0]})
 	}
 }
 func (a *App) request(ctx context.Context, c config.Context, token, method, path string, input, output any, headers map[string]string) (int, error) {
@@ -1047,7 +1047,7 @@ func (a *App) usage() {
 	fmt.Fprint(a.Out, `vmbox - provider-neutral development box orchestrator
 
 Usage:
-  vmbox [--context NAME] [--standalone] <box> [--detach] [-- COMMAND [ARG...]]
+  vmbox [--context NAME] [--standalone] <box>
   vmbox new|create <box> [--reuse] [--detach] [creation options] [-- COMMAND [ARG...]]
   vmbox run <box> [--detach] -- COMMAND [ARG...]
   vmbox ls [--json] | status <box> | task-status <box> [run-id] | logs <box> [--follow]
@@ -1067,8 +1067,10 @@ explicitly when shell parsing is desired. Contexts without a controller run
 standalone. A configured controller is used automatically; --standalone bypasses
 it explicitly, and controller failures never silently fall back.
 
-For Railway, stop removes only the active deployment. The service and /data stay
-intact; vmbox <box> or vmbox resume redeploys it. Only clean deletes the box.
+In controller mode, vmbox <box> restores the logical box when necessary and
+opens its tmux session. In standalone Railway mode, stop removes only the active
+deployment; vmbox <box> redeploys it while preserving the service and /data.
+Only an explicit delete/clean operation removes persistent storage.
 
 Creation options:
   Tools/auth:     --component ID, --application-profile APP=PATH,
