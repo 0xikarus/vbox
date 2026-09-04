@@ -3,7 +3,9 @@ package controller
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +25,24 @@ type fakeProvider struct {
 	created provider.CreateRequest
 	argv    []string
 	deleted provider.Owner
+}
+
+type taskRuntimeProvider struct {
+	fakeProvider
+	calls  [][]string
+	digest string
+}
+
+func (p *taskRuntimeProvider) Exec(_ context.Context, _ string, argv []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+	p.calls = append(p.calls, append([]string(nil), argv...))
+	switch len(p.calls) {
+	case 1:
+		return provider.ExecResult{Stdout: p.digest + "\n"}, nil
+	case 2:
+		return provider.ExecResult{Stdout: "ok\n"}, nil
+	default:
+		return provider.ExecResult{}, nil
+	}
 }
 
 func (*fakeProvider) Name() string { return "fake" }
@@ -73,6 +93,27 @@ func (p *fakeProvider) Exec(_ context.Context, _ string, argv []string, _ provid
 }
 func (*fakeProvider) Reconcile(_ context.Context, box provider.Box) (provider.Box, error) {
 	return box, nil
+}
+
+func TestBoxTaskStagesMatchingRuntimeBeforeStartingAgent(t *testing.T) {
+	runtime := []byte("current controller runtime")
+	p := &taskRuntimeProvider{digest: fmt.Sprintf("%x", sha256.Sum256(runtime))}
+	server := NewServer(nil, nil)
+	server.WorkerRuntime = runtime
+	task := v1.BoxTask{Session: "fresh-claude", Agent: "claude"}
+	message := v1.BoxMessage{ID: "message-1", Text: "hello"}
+	if _, err := server.startBoxTaskRuntime(context.Background(), p, "service-1", task, message); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.calls) != 3 {
+		t.Fatalf("calls=%v", p.calls)
+	}
+	if got := p.calls[0]; len(got) < 2 || got[0] != "/usr/local/bin/vmbox-runtime" || got[1] != "put-file" {
+		t.Fatalf("first call did not stage the runtime: %v", got)
+	}
+	if got := p.calls[2]; len(got) != 6 || got[0] != "vmbox-runtime" || got[1] != "tmux-task" || got[2] != task.Session || got[3] != task.Agent || got[4] != message.ID {
+		t.Fatalf("task started before matching runtime was installed: %v", got)
+	}
 }
 
 func TestOwnerEndpointsRejectUserRole(t *testing.T) {

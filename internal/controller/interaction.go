@@ -87,8 +87,7 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "failed", err.Error())
 		return err
 	}
-	prompt := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
-	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
+	result, execErr := s.startBoxTaskRuntime(ctx, prov, assignment.Slot.ServiceID, task, message)
 	if execErr != nil {
 		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "ambiguous", execErr.Error())
 		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", "initial prompt delivery is ambiguous; inspect the terminal before retrying")
@@ -107,6 +106,14 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 		return err
 	}
 	return s.Store.AppendSystemBoxMessage(ctx, accountID, task.ID, "online · "+task.Agent+" is ready", task.ID+":online")
+}
+
+func (s *Server) startBoxTaskRuntime(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask, message v1.BoxMessage) (provider.ExecResult, error) {
+	if err := stageWorkspaceRuntime(ctx, prov, serviceID, s.WorkerRuntime); err != nil {
+		return provider.ExecResult{}, fmt.Errorf("stage matching task runtime: %w", err)
+	}
+	prompt := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
+	return prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
 }
 
 func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.BoxTask, message v1.BoxMessage, submit bool) error {
