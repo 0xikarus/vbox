@@ -36,6 +36,7 @@ var agentReadyPollInterval = 200 * time.Millisecond
 var agentReadyTimeout = 20 * time.Second
 var tmuxSubmitPause = waitBeforeTmuxSubmit
 var agentReadySettlePause = waitForAgentSettle
+var tmuxSubmitConfirmPause = waitBeforeTmuxSubmitConfirmation
 
 func waitBeforeTmuxSubmit(ctx context.Context) error {
 	timer := time.NewTimer(150 * time.Millisecond)
@@ -50,6 +51,17 @@ func waitBeforeTmuxSubmit(ctx context.Context) error {
 
 func waitForAgentSettle(ctx context.Context) error {
 	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func waitBeforeTmuxSubmitConfirmation(ctx context.Context) error {
+	timer := time.NewTimer(300 * time.Millisecond)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():
@@ -136,10 +148,10 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 			}
 			return nil
 		}
-		if _, err := tmuxCommand(ctx, "\r", "load-buffer", "-b", buffer, "-"); err != nil {
+		if err := pasteTmuxCarriageReturn(ctx, buffer, session); err != nil {
 			return ErrAmbiguousMessage
 		}
-		if _, err := tmuxCommand(ctx, "", "paste-buffer", "-d", "-b", buffer, "-t", session); err != nil {
+		if err := confirmTmuxSubmit(ctx, buffer, session, text); err != nil {
 			return ErrAmbiguousMessage
 		}
 	}
@@ -147,6 +159,55 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 		return ErrAmbiguousMessage
 	}
 	return nil
+}
+
+func pasteTmuxCarriageReturn(ctx context.Context, buffer, session string) error {
+	if _, err := tmuxCommand(ctx, "\r", "load-buffer", "-b", buffer, "-"); err != nil {
+		return err
+	}
+	_, err := tmuxCommand(ctx, "", "paste-buffer", "-d", "-b", buffer, "-t", session)
+	return err
+}
+
+func confirmTmuxSubmit(ctx context.Context, buffer, session, text string) error {
+	for attempt := 0; attempt < 20; attempt++ {
+		if err := tmuxSubmitConfirmPause(ctx); err != nil {
+			return err
+		}
+		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-t", session)
+		if err != nil {
+			return err
+		}
+		if terminalBlocksSubmit(string(content)) || !tmuxInputStillStaged(string(content), text) {
+			return nil
+		}
+		if err := pasteTmuxCarriageReturn(ctx, buffer, session); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("task input remained staged after bounded submit retries")
+}
+
+func tmuxInputStillStaged(content, text string) bool {
+	needle := strings.TrimSpace(strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")[0])
+	if needle == "" {
+		return false
+	}
+	lines := strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n")
+	for index := len(lines) - 1; index >= 0; index-- {
+		line := strings.TrimSpace(lines[index])
+		for _, marker := range []string{"❯", "›"} {
+			if !strings.HasPrefix(line, marker) {
+				continue
+			}
+			input := strings.TrimSpace(strings.TrimPrefix(line, marker))
+			if input == "" {
+				return false
+			}
+			return input == needle || len(input) >= 8 && strings.HasPrefix(needle, input)
+		}
+	}
+	return false
 }
 
 func terminalBlocksSubmit(content string) bool {

@@ -40,14 +40,17 @@ func TestDeliverTmuxInputRefusesAmbiguousReplay(t *testing.T) {
 }
 
 func TestDeliverTmuxInputWaitsAfterPasteBeforeSubmit(t *testing.T) {
-	originalCommand, originalPause := tmuxCommand, tmuxSubmitPause
-	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalPause })
+	originalCommand, originalPause, originalConfirm := tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause = originalCommand, originalPause, originalConfirm
+	})
 	paused := false
 	submitted := false
 	tmuxSubmitPause = func(context.Context) error {
 		paused = true
 		return nil
 	}
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
 	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 		if len(args) > 0 && args[0] == "send-keys" {
 			t.Fatal("task submit used tmux's symbolic key instead of a terminal byte")
@@ -65,6 +68,39 @@ func TestDeliverTmuxInputWaitsAfterPasteBeforeSubmit(t *testing.T) {
 	}
 	if !paused || !submitted {
 		t.Fatalf("pause=%v submitted=%v", paused, submitted)
+	}
+}
+
+func TestDeliverTmuxInputRetriesOnlySubmitWhileClaudeInputIsStaged(t *testing.T) {
+	originalCommand, originalPause, originalConfirm := tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause = originalCommand, originalPause, originalConfirm
+	})
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
+	carriageReturns, captures := 0, 0
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if stdin == "hello" {
+			return nil, nil
+		}
+		if stdin == "\r" {
+			carriageReturns++
+			return nil, nil
+		}
+		if len(args) > 0 && args[0] == "capture-pane" {
+			captures++
+			if captures < 3 {
+				return []byte("Claude Code v2\n────────────────\n❯\u00a0hello\n────────────────"), nil
+			}
+			return []byte("❯ hello\n● Working\n────────────────\n❯\u00a0\n────────────────"), nil
+		}
+		return nil, nil
+	}
+	if err := DeliverTmuxInput(context.Background(), t.TempDir(), "claude", "message_retry", "hello", true); err != nil {
+		t.Fatal(err)
+	}
+	if carriageReturns != 2 {
+		t.Fatalf("carriage returns=%d, want 2 without replaying prompt text", carriageReturns)
 	}
 }
 
