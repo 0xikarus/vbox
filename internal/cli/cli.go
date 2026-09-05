@@ -104,8 +104,19 @@ func (a *App) Run(ctx context.Context, args []string) error {
 		}
 	}
 parsed:
-	if len(args) == 0 || args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
-		a.usage()
+	if len(args) == 0 {
+		if a.IsTerminal == nil || !a.IsTerminal() {
+			a.usage()
+			return nil
+		}
+		args = []string{"menu"}
+	}
+	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
+		if len(args) == 2 && args[1] == "--all" {
+			a.usageFull()
+		} else {
+			a.usage()
+		}
 		return nil
 	}
 	file, err := config.Load(a.ConfigPath)
@@ -256,6 +267,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		c.ProviderCredential = def.ProviderCredential
 	}
 	switch args[0] {
+	case "menu":
+		return a.controllerMenu(ctx, file, c, token)
 	case "fleet":
 		return a.controllerFleet(ctx, c, token, args[1:])
 	case "boxes", "box":
@@ -631,6 +644,31 @@ func (a *App) request(ctx context.Context, c config.Context, token, method, path
 	return resp.StatusCode, nil
 }
 func (a *App) usage() {
+	fmt.Fprint(a.Out, `vmbox — persistent remote boxes
+
+  vmbox                         Choose a box (↑/↓, Enter), or create one
+  vmbox BOX                     Open its shell; wake it if needed
+  vmbox new NAME                Configure, create and connect
+  vmbox ls                      List boxes
+  vmbox status BOX              Show its current state
+  vmbox hibernate BOX           Release compute; keep the workspace
+
+  vmbox BOX --session           Choose another existing tmux session
+  vmbox BOX --start-cli 'claude' Start a command in a new persistent shell
+  vmbox task BOX                Choose Codex, Claude or a shell one-shot
+  vmbox task BOX codex --prompt 'YOUR TASK'
+  vmbox task-status BOX         Read task results and exit codes
+
+Inside a box, run claude, codex, or any shell command yourself.
+Detach: Ctrl-a, then d. Choose Keep running to leave programs alive.
+Hibernation retains files, not live processes. One-shots hibernate when idle.
+
+Setup: vmbox providers | vmbox profiles list | vmbox context list
+Full reference: vmbox help --all    Diagnostics: vmbox --verbose COMMAND
+`)
+}
+
+func (a *App) usageFull() {
 	fmt.Fprint(a.Out, `vmbox — controller-managed persistent boxes
   vmbox [--context NAME] BOX [codex|claude|shell | --session [NAME] | --start-cli COMMAND]
   vmbox ls [--json] | status BOX [--json] | sessions BOX [--json]
