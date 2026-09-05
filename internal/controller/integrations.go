@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/notifications"
@@ -92,7 +93,7 @@ func telegramInbound(value DecryptedNotification, config map[string]any, answere
 			chats[id] = true
 		}
 	}
-	return notifications.Telegram{AllowedUsers: users, AllowedChats: chats, Answerer: answerer, AccountID: value.AccountID, UserMap: stringMap(config["userMap"])}
+	return notifications.Telegram{AllowedUsers: users, AllowedChats: chats, Answerer: answerer, AccountID: value.AccountID, UserMap: stringMap(config["userMap"]), DefaultCoworker: stringField(config, "defaultCoworker")}
 }
 
 func discordInbound(value DecryptedNotification, config map[string]any, publicKey ed25519.PublicKey, answerer notifications.Answerer) notifications.Discord {
@@ -119,6 +120,9 @@ func validateInteractiveNotification(kind string, req v1.PutNotificationRequest)
 	}
 	if kind == "telegram" && (stringField(secret, "token") == "" || stringField(secret, "webhookSecret") == "") {
 		return fmt.Errorf("Telegram requires token and webhookSecret")
+	}
+	if box := stringField(config, "defaultCoworker"); box != "" && (len(box) > 128 || strings.ContainsAny(box, " \t\r\n")) {
+		return fmt.Errorf("defaultCoworker must be a box name or ID without whitespace")
 	}
 	if kind == "discord" {
 		key, err := hex.DecodeString(stringField(secret, "publicKey"))

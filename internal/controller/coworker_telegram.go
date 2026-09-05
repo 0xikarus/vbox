@@ -10,10 +10,23 @@ import (
 )
 
 func (s *Store) SendOwnerCoworkerMessage(ctx context.Context, p Principal, box, key, text string) (int64, error) {
+	return s.sendOwnerCoworkerMessage(ctx, p, box, key, text, nil)
+}
+
+type telegramReplyRoute struct {
+	Destination string `json:"destination"`
+	ChatID      int64  `json:"chatId"`
+}
+
+func (s *Store) sendOwnerCoworkerMessage(ctx context.Context, p Principal, box, key, text string, route *telegramReplyRoute) (int64, error) {
 	if p.Role != "owner" || key == "" || len(key) > 128 || strings.TrimSpace(text) == "" || len(text) > 16384 {
 		return 0, fmt.Errorf("owner, retry key, and message up to 16 KiB required")
 	}
-	data, _ := json.Marshal(map[string]string{"text": text, "userId": p.UserID})
+	fields := map[string]any{"text": text, "userId": p.UserID}
+	if route != nil {
+		fields["telegram"] = route
+	}
+	data, _ := json.Marshal(fields)
 	tx, err := s.beginCoworkerWrite(ctx, p.AccountID)
 	if err != nil {
 		return 0, err
@@ -40,7 +53,7 @@ func (s *Server) telegramCoworkerCommand(value DecryptedNotification, secret map
 			if len(fields) != 3 {
 				return fmt.Errorf("usage: /coworker BOX TEXT")
 			}
-			seq, err := s.Store.SendOwnerCoworkerMessage(ctx, p, fields[1], fmt.Sprintf("telegram:%s:%d", value.ID, updateID), fields[2])
+			seq, err := s.Store.sendOwnerCoworkerMessage(ctx, p, fields[1], fmt.Sprintf("telegram:%s:%d", value.ID, updateID), fields[2], &telegramReplyRoute{Destination: value.Name, ChatID: chatID})
 			if err != nil {
 				return err
 			}

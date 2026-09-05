@@ -42,6 +42,7 @@ func testCoworkerHTTP(t *testing.T, ctx context.Context, store *Store, owner, ou
 	second, secondToken := enroll(owner, "coworker-http-second")
 	foreign, foreignToken := enroll(outsider, "coworker-http-foreign")
 	controller := NewServer(store, nil)
+	t.Run("Telegram correlated reply", func(t *testing.T) { testTelegramCorrelatedReply(t, ctx, controller, owner, first, second) })
 	hibernateStarted := make(chan string, 1)
 	controller.StartHibernate = func(_ context.Context, p Principal, id string) error {
 		if p.AccountID != owner.AccountID {

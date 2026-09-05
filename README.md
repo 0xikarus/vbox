@@ -203,7 +203,7 @@ not establish that its authentication is valid.
 vmbox coworkers enable --confirm
 vmbox new coworker-review --profile codex=work --allocate
 vmbox coworkers spawn coworker-review codex --prompt "Review the project; track your work on the shared board." --confirm
-vmbox coworker-review                  # attach to coworker-primary
+vmbox coworker-review --session coworker-primary
 vmbox coworkers list
 vmbox coworkers disable --confirm
 ```
@@ -232,7 +232,7 @@ development-channel opt-in and an interactive startup consent dialog:
 
 ```bash
 vmbox coworkers spawn coworker-review claude --prompt "Review the project." --confirm --allow-development-channel
-vmbox coworker-review
+vmbox coworker-review --session coworker-primary
 ```
 
 Organization channel policy still applies. No permission-relay capability is
@@ -245,8 +245,20 @@ The web configuration page has a read-only coworker message view (latest 100
 events). Existing Telegram notification destinations support `/coworker BOX TEXT`
 and `/coworker-messages BOX` (latest five outgoing messages). Commands require the
 webhook secret, configured sender/chat allowlists, and a mapped controller owner.
-Inbound messages use durable update keys. Reading messages is explicit; this is
-not an automatic Telegram broadcast subscription.
+Inbound messages use durable update keys. Set `config.defaultCoworker` on a
+Telegram notification destination to route ordinary, non-command messages to
+that opted-in coworker. The sender must still be allowlisted and mapped to a
+controller owner. Configure Telegram's webhook to the controller integration URL
+with the destination's webhook secret; keep the bot token in encrypted secrets.
+
+For automatic replies, instruct the coworker to call MCP `reply_owner` with the
+incoming `owner_message` event's sequence and its actual response text. The
+controller derives the chat from the recorded event; the agent cannot choose an
+arbitrary recipient. Each event permits one reply of up to 3500 bytes. Identical
+retries return the stored sent status. A timeout or crash during delivery is
+recorded as unconfirmed and is not automatically replayed: inspect Telegram
+before recovery to avoid duplicate messages. `/coworker-messages` remains a manual
+view of inter-box messages, not a broadcast subscription.
 
 Protocol references: [Codex App Server](https://learn.chatgpt.com/docs/app-server),
 [Claude channels](https://code.claude.com/docs/en/channels-reference),
