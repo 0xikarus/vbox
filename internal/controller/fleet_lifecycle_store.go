@@ -264,6 +264,9 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 	if box.OwnerUserID != p.UserID && p.Role != "owner" {
 		return assignment, fmt.Errorf("logical box belongs to another user")
 	}
+	if target == v1.LogicalBoxDeleting && box.State == v1.LogicalBoxHibernating && strings.HasPrefix(box.LeaseOwner, "hibernate_") && box.LeaseExpiresAt != nil && box.LeaseExpiresAt.After(time.Now()) {
+		return assignment, fmt.Errorf("workspace flush is active; wait for hibernation before confirming deletion")
+	}
 	assignment.Box = box
 	if target == v1.LogicalBoxHibernating && (box.State == v1.LogicalBoxHibernated || box.State == v1.LogicalBoxDetached) {
 		assignment.Released = true
@@ -297,6 +300,9 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 	}
 	assignment.Slot = slot
 	if target == v1.LogicalBoxHibernating && box.State == v1.LogicalBoxHibernating {
+		return assignment, tx.Commit()
+	}
+	if target == v1.LogicalBoxDeleting && box.State == v1.LogicalBoxDeleting {
 		return assignment, tx.Commit()
 	}
 	expires := time.Now().UTC().Add(5 * time.Minute)
@@ -399,12 +405,27 @@ func (s *Store) RecordReleaseFailure(ctx context.Context, accountID string, assi
 	return tx.Commit()
 }
 
-func (s *Store) DeleteLogicalBoxRecord(ctx context.Context, p Principal, assignment fleetAssignment) error {
+func (s *Store) DeleteLogicalBoxRecord(ctx context.Context, p Principal, assignment fleetAssignment, claims ...string) error {
+	claim := ""
+	if len(claims) > 0 {
+		claim = claims[0]
+	}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	// Remove only this box's inbox and token. Keep messages in sibling inboxes
+	// with a tombstoned sender and a fresh key outside the owner's retry keys.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM coworker_events WHERE account_id=$1 AND recipient_box_id=$2`, p.AccountID, assignment.Box.ID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE coworker_events SET sender_box_id=NULL,message_key=$3 || ':' || sequence::text,data=data || jsonb_build_object('deletedSenderBox',$4::text) WHERE account_id=$1 AND sender_box_id=$2`, p.AccountID, assignment.Box.ID, "deleted:"+uuid(), assignment.Box.Name); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM coworkers WHERE account_id=$1 AND box_id=$2`, p.AccountID, assignment.Box.ID); err != nil {
+		return err
+	}
 	if assignment.Slot.ID != "" {
 		result, err := tx.ExecContext(ctx, "UPDATE compute_slots SET state='free',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,deployment_instance_id=NULL,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state='draining'", p.AccountID, assignment.Slot.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken)
 		if err != nil {
@@ -414,7 +435,7 @@ func (s *Store) DeleteLogicalBoxRecord(ctx context.Context, p Principal, assignm
 			return fmt.Errorf("stale compute-slot delete fence")
 		}
 	}
-	result, err := tx.ExecContext(ctx, "DELETE FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='deleting' AND ($3='' OR (assignment_generation=$4 AND fencing_token=$3))", p.AccountID, assignment.Box.ID, assignment.FencingToken, assignment.Box.AssignmentGeneration)
+	result, err := tx.ExecContext(ctx, "DELETE FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='deleting' AND ($3='' OR (assignment_generation=$4 AND fencing_token=$3)) AND ($5='' OR lease_owner=$5)", p.AccountID, assignment.Box.ID, assignment.FencingToken, assignment.Box.AssignmentGeneration, claim)
 	if err != nil {
 		return err
 	}

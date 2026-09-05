@@ -46,6 +46,7 @@ type Server struct {
 	// StartHibernate lets tests observe the durable hand-off without running a
 	// provider operation. Production leaves it nil and uses the reconciler.
 	StartHibernate func(context.Context, Principal, string) error
+	StartDelete    func(context.Context, Principal, string) error
 }
 
 // startBoxTask runs a new task without making the caller wait for the agent.
@@ -139,15 +140,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))
 	mux.HandleFunc("GET /v1/login-profiles", s.owner(s.listLoginProfiles))
 	mux.HandleFunc("GET /v1/locations", s.auth(s.locationsHandler))
-	mux.HandleFunc("POST /mcp/coworkers", s.coworkerAuth(s.coworkerMCP))
-	mux.HandleFunc("GET /mcp/coworkers", s.coworkerAuth(s.coworkerMCP))
-	mux.HandleFunc("DELETE /mcp/coworkers", s.coworkerAuth(s.coworkerMCP))
-	mux.HandleFunc("GET /v1/coworker/events", s.coworkerAuth(s.coworkerEvents))
-	mux.HandleFunc("GET /v1/coworkers/settings", s.owner(s.coworkerSettings))
-	mux.HandleFunc("PUT /v1/coworkers/settings", s.owner(s.coworkerSettings))
-	mux.HandleFunc("GET /v1/coworkers", s.owner(s.coworkerOwnerList))
-	mux.HandleFunc("GET /v1/coworkers/messages", s.owner(s.coworkerOwnerMessages))
-	mux.HandleFunc("POST /v1/coworkers/{id}/spawn", s.owner(s.spawnCoworker))
 	mux.HandleFunc("PUT /v1/login-profiles/{application}/{name}", s.owner(s.saveLoginProfile))
 	mux.HandleFunc("GET /v1/provider-schemas", s.owner(s.providerSchemasHandler))
 	mux.HandleFunc("GET /v1/controller-defaults", s.auth(s.defaultProviderHandler))
@@ -526,6 +518,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
 		s.Logger.Error("initial logical box hibernate reconciliation failed", "error", err)
 	}
+	if err := s.ReconcileLogicalBoxDeletesNow(ctx); err != nil {
+		s.Logger.Error("initial logical box deletion reconciliation failed", "error", err)
+	}
 	if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 		s.Logger.Error("initial logical box task reconciliation failed", "error", err)
 	}
@@ -561,6 +556,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
 					s.Logger.Error("logical box hibernate reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileLogicalBoxDeletesNow(ctx); err != nil {
+					s.Logger.Error("logical box deletion reconciliation failed", "error", err)
 				}
 				if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 					s.Logger.Error("logical box task reconciliation failed", "error", err)

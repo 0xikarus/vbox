@@ -28,8 +28,6 @@ before(async()=>{
    '/v1/controller-defaults':{provider:'railway',providerCredential:'primary'},
    '/v1/fleet/status':{desiredSlots:2},
    '/v1/notifications':[],
-   '/v1/coworkers':[{id:'coworker-1',name:'coworker-test',agent:'codex',state:'running',enabled:true}],
-   '/v1/coworkers/messages':[{sequence:42,sender:'coworker-test',recipient:'coworker-peer',kind:'message',data:{text:'<img src=x onerror="window.messageInjected=true"> Grüße'}}],
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
@@ -62,12 +60,6 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  const capacitySaved=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/v1/fleet/slots'));
  await page.click('#slots button');await capacitySaved;
  assert.equal(requests.findLast(r=>r.path==='/v1/fleet/slots').body.compute_box_slots,2);
- assert(!requests.some(r=>!r.path.startsWith('/v1/coworkers/')&&/\/terminal|\/messages|\/tasks|chat-groups/.test(r.path)));
- await page.click('#coworker-refresh');
- await page.waitForFunction(()=>document.querySelector('#coworker-messages').textContent.includes('Grüße'));
- assert.equal(await page.$('#coworker-messages img'),null);
- assert.equal(await page.evaluate(()=>window.messageInjected),undefined);
- assert(!requests.some(r=>r.path.startsWith('/v1/coworkers')&&r.method!=='GET'));
  assert.equal(await page.$('#terminal'),null);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:mobile?'/tmp/vmbox-config-mobile.png':'/tmp/vmbox-config-desktop.png',fullPage:true});

@@ -21,9 +21,4 @@ func TestRemovedTelegramIntegrationIsUnavailable(t *testing.T) {
 	if _, err := (&Store{}).PutNotification(context.Background(), Principal{}, "telegram", "removed", v1.PutNotificationRequest{}); err == nil {
 		t.Fatal("removed destination kind accepted")
 	}
-	for _, tool := range coworkerTools() {
-		if tool.(map[string]any)["name"] == "reply_owner" {
-			t.Fatal("Telegram reply tool still advertised")
-		}
-	}
 }

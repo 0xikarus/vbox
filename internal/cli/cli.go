@@ -286,7 +286,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	case "profiles":
 		return a.controllerLoginProfiles(ctx, c, token, args[1:])
 	case "coworkers":
-		return a.controllerCoworkers(ctx, c, token, args[1:])
+		return fmt.Errorf("coworker features have been removed; use vmbox BOX or vmbox task BOX")
 	case "allocate":
 		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
 	case "hibernate":

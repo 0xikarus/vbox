@@ -47,9 +47,13 @@ func (a *App) overview(ctx context.Context, contextName string) error {
 		fmt.Fprintln(a.Out, "No boxes yet.")
 	} else {
 		w := tabwriter.NewWriter(a.Out, 0, 4, 2, ' ', 0)
-		fmt.Fprintln(w, "\nBOX\tSTATE\tPHASE")
+		fmt.Fprintln(w, "\nBOX\tSTATE\tPHASE / ERROR")
 		for _, box := range boxes {
-			fmt.Fprintf(w, "%s\t%s\t%s\n", tuiLabel(box.Name, 100), tuiLabel(string(box.State), 40), tuiLabel(box.RestorationState, 100))
+			detail := box.RestorationState
+			if box.FailureReason != "" {
+				detail += " · " + box.FailureReason
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\n", tuiLabel(box.Name, 100), tuiLabel(string(box.State), 40), tuiLabel(detail, 200))
 		}
 		if err := w.Flush(); err != nil {
 			return err

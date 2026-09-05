@@ -60,75 +60,6 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/LoginProfile'}}}
         '400': {description: Invalid name, application, file or size}
         '409': {description: Name already exists or storage/encryption unavailable}
-  /v1/coworkers/settings:
-    get:
-      summary: Owner-only account coworker gate; disabled by default
-      responses: {'200': {description: Object with enabled boolean}}
-    put:
-      summary: Owner-only explicit account coworker gate update
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [enabled]
-              properties:
-                enabled: {type: boolean}
-      responses: {'200': {description: Object with enabled boolean}}
-  /v1/coworkers:
-    get:
-      summary: Owner-only enrolled coworkers in this account
-      responses: {'200': {description: Array of id, name, state, agent and enabled objects}}
-  /v1/coworkers/messages:
-    get:
-      summary: Owner-only latest 100 durable events, newest first
-      responses: {'200': {description: Array of sequence, sender name, recipient name, kind, data and createdAt objects}}
-  /v1/coworkers/{id}/spawn:
-    parameters: [{$ref: '#/components/parameters/ID'}]
-    post:
-      summary: Owner explicitly starts an allocated coworker- box in coworker-primary
-      description: Requires enabled account gate. Provisions a private per-box token; does not return it. Does not create or allocate a box. Claude development-channel startup requires attached interactive consent.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [agent, prompt, confirm]
-              properties:
-                agent: {enum: [claude, codex]}
-                prompt: {type: string, minLength: 1, description: Maximum 64 KiB UTF-8}
-                confirm: {const: true}
-                allowDevelopmentChannel: {type: boolean, default: false}
-      responses:
-        '201': {description: Session, agent and started state; does not prove agent readiness}
-        '400': {description: Invalid request or missing explicit consent}
-        '409': {description: Gate disabled, box not running, existing coworker session or assignment conflict}
-        '502': {description: Worker startup or transport unconfirmed; inspect sessions before retrying}
-  /v1/coworker/events:
-    get:
-      security: [{coworkerToken: []}]
-      summary: Per-box durable inbox, ascending sequence, at most 100 events
-      parameters:
-        - {in: query, name: after, schema: {type: integer, format: int64, minimum: 0, default: 0}}
-      responses:
-        '200': {description: Array of sequence, sender box ID (or owner), kind, data and createdAt objects}
-        '401': {description: Invalid token, disabled gate or inactive box}
-  /mcp/coworkers:
-    post:
-      security: [{coworkerToken: []}]
-      summary: Stateless JSON MCP endpoint for opted-in running coworkers
-      description: Supports initialize, ping, tools/list and tools/call. Tools are coworkers_list, message_send, board_read, board_edit and hibernate_self. Use tools/list for input schemas. All operations are account-scoped; hibernate_self requires completed=true and cannot target another box. Origin-bearing requests are rejected. Claude uses the stdio channel bridge; Codex connects via its configured HTTP MCP server.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: {type: object, required: [jsonrpc, method], properties: {jsonrpc: {const: '2.0'}, method: {type: string}, id: {}, params: {type: object}}}
-      responses:
-        '200': {description: JSON-RPC response; tool failures use MCP isError}
-        '202': {description: Notification accepted}
-        '401': {description: Invalid token, disabled gate or inactive box}
   /v1/logical-boxes/{id}/process-tasks:
     parameters:
       - {in: path, name: id, required: true, schema: {type: string}}
@@ -435,12 +366,12 @@ paths:
       responses: {'200': {description: Hibernated logical box, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBox'}}}}}
   /v1/logical-boxes/{id}/volume:
     delete:
-      description: Permanently delete only this logical box volume; fleet capacity is unchanged.
+      description: Queue permanent deletion of this exact logical box volume. Processing survives client disconnects and is resumed after controller restart; inspect box state, restorationState and failureReason for progress. Fleet capacity is unchanged.
       parameters: [{$ref: '#/components/parameters/ID'}]
       requestBody:
         required: true
         content: {application/json: {schema: {type: object, required: [confirmation], properties: {confirmation: {type: string, description: Exact logical box name.}}}}}
-      responses: {'204': {description: Volume deleted}, '409': {description: Confirmation or lifecycle conflict}}
+      responses: {'202': {description: Durable deletion accepted; not yet complete}, '409': {description: Confirmation or lifecycle conflict}}
   /v1/logical-boxes/{id}/connection:
     get:
       description: Owner-only fenced direct-SSH target for the current allocation.
@@ -587,7 +518,6 @@ paths:
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
-    coworkerToken: {type: http, scheme: bearer, description: Controller-provisioned per-box token; not an owner login token}
   parameters:
     ID: {name: id, in: path, required: true, schema: {type: string}}
     IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 255}}

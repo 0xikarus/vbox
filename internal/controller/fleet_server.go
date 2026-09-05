@@ -175,9 +175,11 @@ func (s *Server) deleteLogicalBoxVolumeHandler(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.deleteLogicalBoxVolume(r.Context(), p, r.PathValue("id"), request.Confirmation); err != nil {
+	box, err := s.queueLogicalBoxDelete(r.Context(), p, r.PathValue("id"), request.Confirmation)
+	if err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	s.startLogicalBoxDelete(p, box.ID)
+	writeJSON(w, http.StatusAccepted, box)
 }

@@ -364,6 +364,11 @@ CREATE TABLE IF NOT EXISTS coworker_boards (
   board jsonb NOT NULL DEFAULT '{"tasks":[]}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+-- Retired feature: retain historical data for scoped box cleanup, but revoke
+-- enrollment and discard recoverable credentials. No coworker API is exposed.
+UPDATE coworker_settings SET enabled=false WHERE enabled;
+UPDATE coworkers SET enabled=false,encrypted_token='' WHERE enabled OR encrypted_token<>'';
 CREATE TABLE IF NOT EXISTS session_observations (
  account_id uuid NOT NULL,
  box_id uuid NOT NULL,

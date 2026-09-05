@@ -216,11 +216,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			fmt.Fprintln(a.Err, "vmbox: deletion cancelled; logical box and volume were kept")
 			return nil
 		}
-		if _, err := a.request(ctx, c, token, http.MethodDelete, "/v1/logical-boxes/"+url.PathEscape(box.ID)+"/volume", map[string]string{"confirmation": box.Name}, nil, nil); err != nil {
-			return err
-		}
-		fmt.Fprintf(a.Err, "vmbox: deleted only volume %s (%s); compute fleet size is unchanged\n", box.VolumeName, box.VolumeID)
-		return nil
+		return a.requestVolumeDeletion(ctx, c, token, box)
 	default:
 		return fmt.Errorf("unknown boxes command %q", args[0])
 	}
@@ -426,11 +422,7 @@ func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Contex
 			fmt.Fprintln(a.Err, "vmbox: deletion cancelled; logical box and volume were kept")
 			return nil
 		}
-		if _, err := a.request(ctx, c, token, http.MethodDelete, "/v1/logical-boxes/"+url.PathEscape(fresh.ID)+"/volume", map[string]string{"confirmation": fresh.Name}, nil, nil); err != nil {
-			return err
-		}
-		fmt.Fprintf(a.Err, "vmbox: deleted only volume %s (%s); compute fleet size is unchanged\n", fresh.VolumeName, fresh.VolumeID)
-		return nil
+		return a.requestVolumeDeletion(ctx, c, token, fresh)
 	default:
 		fmt.Fprintln(a.Err, "vmbox: unrecognized choice; keeping the box running")
 		return a.keepControllerRunning(box.Name)

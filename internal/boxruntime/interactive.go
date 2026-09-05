@@ -43,8 +43,3 @@ func interactiveArgv(agent string) ([]string, error) {
 		return nil, fmt.Errorf("interactive agent must be codex, claude, or shell")
 	}
 }
-
-func StartCoworker(ctx context.Context, root string) error {
-	_, err := tmuxOutput(ctx, "new-session", "-d", "-s", "coworker-primary", "-c", filepath.Join(filepath.Dir(root), "workspace"), "--", "vmbox-runtime", "coworker-run")
-	return err
-}

@@ -222,60 +222,19 @@ creation recovery remembers those selections. Account owners manage and provisio
 saved profiles. Expired upstream logins still need renewal; saving a profile does
 not establish that its authentication is valid.
 
-## Opt-in coworkers
+## Deleting a box
 
-```bash
-vmbox coworkers enable --confirm
-vmbox new coworker-review --profile codex=work --allocate
-vmbox coworkers spawn coworker-review codex --prompt "Review the project; track your work on the shared board." --confirm
-vmbox coworker-review --session coworker-primary
-vmbox coworkers list
-vmbox coworkers disable --confirm
-```
+`vmbox delete-volume BOX` requires typing the exact box name. It queues permanent
+deletion and returns promptly; it does not claim the volume is already gone.
+The controller finishes flush, detach, provider deletion and slot cleanup in the
+background, and resumes interrupted attempts after restart. `vmbox` and
+`vmbox status BOX` show the precise phase and any failure. Failed attempts retry
+with a delay; an unexpected attached volume stops deletion rather than deleting
+someone else's storage. Fleet size is unchanged; the cleaned slot becomes free.
 
-The account gate defaults off. Spawning additionally requires explicit confirmation,
-a running logical box named `coworker-*`, and a task prompt. It does not silently
-create or allocate a box. A second spawn refuses an existing `coworker-primary`.
-The controller provisions a private per-box token over SSH; it is not an owner
-token and cannot administer providers or other boxes. Disabling the gate denies
-new coworker API calls; it does not terminate an already-running agent turn.
-
-The shared MCP exposes active coworker discovery, durable messages, a small JSON
-Kanban board, and self-hibernation. Message retries use an identical key and body.
-The board supports create/move/assign/comment with revision checks, at most 100
-tasks, and a 64 KiB total limit. Comments carry the calling box's identity. Agents
-manage the meaning and progress of their work; board status is not a process exit
-code. Peer text is not owner authority or approval.
-
-Codex uses its installed App Server and existing login/model settings. Incoming
-events are queued between turns. Delivery checkpoints preserve thread and turn
-identities; an unresolved submission stops automatic replay and requires inspection.
-The runtime waits between messages. Agents must finish each turn rather than
-polling or calling wait/sleep to remain available; otherwise queued events cannot
-be delivered. Each input includes this delivery contract.
-Unattended permission requests are not approved automatically.
-
-Claude uses a local stdio channel. Custom channels currently require an explicit
-development-channel opt-in and an interactive startup consent dialog:
-
-```bash
-vmbox coworkers spawn coworker-review claude --prompt "Review the project." --confirm --allow-development-channel
-vmbox coworker-review --session coworker-primary
-```
-
-Organization channel policy still applies. No permission-relay capability is
-requested. Channel restart can redeliver events; sequence IDs identify duplicates.
-The `hibernate_self` tool requires `completed=true`, queues the existing fenced
-flush/unmount workflow, releases compute, and retains the volume. It closes the
-agent process; a workspace restore is not process survival.
-
-The web configuration page has a read-only coworker message view (latest 100
-events). Coworker discovery, durable inter-box messages, and the shared board
-remain available through MCP. Telegram integration is not supported.
-
-Protocol references: [Codex App Server](https://learn.chatgpt.com/docs/app-server),
-[Claude channels](https://code.claude.com/docs/en/channels-reference),
-[MCP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
+Coworker MCP, inter-agent adapters and their CLI/web controls have been removed.
+Ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
+Historical coworker data is retained only for safe cleanup; credentials are revoked.
 
 ## Build and verification
 
