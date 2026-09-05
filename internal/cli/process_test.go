@@ -26,6 +26,18 @@ func TestProcessPositionalAgents(t *testing.T) {
 	}
 }
 
+func TestInteractiveOverridesReachOpenDispatcher(t *testing.T) {
+	for _, agent := range []string{"codex", "claude", "shell"} {
+		a := New()
+		a.Environ = map[string]string{"TEST_TOKEN": "test"}
+		a.IsTerminal = func() bool { return false }
+		err := a.controller(context.Background(), config.File{}, config.Context{TokenEnv: "TEST_TOKEN"}, []string{"helper1", agent})
+		if err == nil || !strings.Contains(err.Error(), "requires an interactive terminal") {
+			t.Fatalf("%s did not reach interactive open: %v", agent, err)
+		}
+	}
+}
+
 func TestInteractivePickerStartsChosenAgent(t *testing.T) {
 	chosen := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

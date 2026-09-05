@@ -549,7 +549,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			return fmt.Errorf("unknown notifications command %q", args[1])
 		}
 	default:
-		if strings.HasPrefix(args[0], "-") || (len(args) != 1 && !(len(args) == 3 && args[1] == "--session")) {
+		interactiveOverride := len(args) == 2 && (args[1] == "codex" || args[1] == "claude" || args[1] == "shell")
+		if strings.HasPrefix(args[0], "-") || (len(args) != 1 && !interactiveOverride && !(len(args) == 3 && args[1] == "--session")) {
 			return fmt.Errorf("unknown controller command %q", args[0])
 		}
 		return a.controllerBoxes(ctx, c, token, append([]string{"open"}, args...))
