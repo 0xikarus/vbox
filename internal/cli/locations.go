@@ -31,9 +31,17 @@ func (a *App) pickLocation(ctx context.Context, c config.Context, token string) 
 	if i > 0 {
 		region = locations[i-1].ID
 	}
+	return region, a.rememberLocation(c, region)
+}
+
+func (a *App) rememberLocation(c config.Context, region string) error {
+	if c.Name == "" {
+		return nil
+	}
+	key := c.Provider + "/" + c.ProviderCredential
 	file, err := config.Load(a.ConfigPath)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if stored, ok := file.Contexts[c.Name]; ok && stored.Controller == c.Controller {
 		if stored.LocationPresets == nil {
@@ -42,8 +50,8 @@ func (a *App) pickLocation(ctx context.Context, c config.Context, token string) 
 		stored.LocationPresets[key] = region
 		file.Contexts[c.Name] = stored
 		if err := config.Save(a.ConfigPath, file); err != nil {
-			return "", err
+			return err
 		}
 	}
-	return region, nil
+	return nil
 }

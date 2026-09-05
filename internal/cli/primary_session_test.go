@@ -24,6 +24,16 @@ func TestPrimarySelectionAndReconnect(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/v1/logical-boxes/box-id/sessions/interactive":
+			var in struct {
+				Agent      string
+				ReuseShell bool
+				StartCLI   string
+			}
+			if json.NewDecoder(r.Body).Decode(&in) != nil || in.Agent != "shell" || !in.ReuseShell || in.StartCLI != "" {
+				t.Error("plain reconnect must ensure shell without replay")
+			}
+			json.NewEncoder(w).Encode(map[string]string{"session": second.Name})
 		case "/v1/logical-boxes/box-id/sessions":
 			json.NewEncoder(w).Encode(v1.SessionInventory{State: "live", Assignment: fence, Sessions: []v1.Session{first, second}})
 		case "/v1/logical-boxes/box-id/sessions/primary":

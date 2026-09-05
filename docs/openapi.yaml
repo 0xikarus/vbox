@@ -180,7 +180,9 @@ paths:
               required: [agent]
               properties:
                 agent: {type: string, enum: [codex, claude, shell]}
-      responses: {'201': {description: Object containing exact created session name}, '409': {description: Box assignment changed}, '502': {description: Startup unconfirmed; inspect sessions before retrying}}
+                reuseShell: {type: boolean, default: false, description: Reuse the remembered shell or create it if missing. Requires agent shell and no startCli.}
+                startCli: {type: string, maxLength: 16384, description: Optional command to run once in a new shell before returning to the login shell. Requires agent shell; maximum 16 KiB and no NUL.}
+      responses: {'200': {description: Object containing exact reused shell session name}, '201': {description: Object containing exact created session name}, '400': {description: Invalid agent or startup/reuse options}, '409': {description: Box assignment changed}, '502': {description: Inventory or startup unconfirmed; inspect sessions before retrying}}
   /healthz:
     get:
       security: []

@@ -431,11 +431,15 @@ func TestControllerCreateUsesLogicalBoxesWithoutSubmittingRun(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Name != "worker" || !request.AllocateWhenReady {
+			if request.Name != "worker" || request.AllocateWhenReady || request.DefaultAgent != "shell" {
 				t.Fatalf("logical box request=%+v", request)
 			}
 			w.WriteHeader(http.StatusAccepted)
 			json.NewEncoder(w).Encode(v1.LogicalBox{ID: "box-1", Name: "worker", State: v1.LogicalBoxHibernated})
+		case r.URL.Path == "/v1/logical-boxes/box-1/allocate":
+			json.NewEncoder(w).Encode(v1.Allocation{RequestID: "allocation", State: "ready"})
+		case r.URL.Path == "/v1/logical-boxes/box-1":
+			json.NewEncoder(w).Encode(v1.LogicalBox{ID: "box-1", Name: "worker", State: v1.LogicalBoxRunning})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/runs":
 			createdRuns++
 			w.WriteHeader(http.StatusCreated)

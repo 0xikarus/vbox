@@ -32,24 +32,25 @@ restarting worker compute or replacing existing sessions.
 ## Interactive mode
 
 ```bash
-vmbox helper1                    # reconnect to the remembered primary session
+vmbox helper1                    # wake if needed; reconnect to the persistent shell
 vmbox helper1 codex              # start interactive Codex without the picker
 vmbox helper1 claude             # start interactive Claude without the picker
 vmbox helper1 shell              # start a plain persistent shell
+vmbox helper1 --start-cli 'claude' # new shell: run this command, then stay in shell
 vmbox sessions helper1 --json
 vmbox helper1 --session          # full-screen session picker: ↑/↓, Enter, Esc
 vmbox helper1 --session NAME     # attach to this exact session and remember it
 ```
 
-The controller remembers the primary session per logical box, across CLI clients.
-With no remembered primary, a sole existing session is adopted; multiple sessions
-open a full-screen TUI. Selecting a session makes it primary. If the remembered
-session is missing, existing sessions are offered again—none are deleted.
-Only when no sessions exist does plain `vmbox BOX` offer a Codex/Claude/shell TUI,
-defaulting to the box's configured agent. Bare `--session` never creates a session.
-Each explicit agent override starts a **new** tmux session and makes it primary.
-The preference uses the exact session name across restore; attachment validates
-the current session identity and box assignment before connecting.
+The controller remembers the shell session per logical box, across CLI clients.
+Plain `vmbox BOX` reuses that shell or creates it if missing, without an agent
+picker. Start Claude, Codex, or any other installed program yourself inside it.
+Reconnecting to a running shell preserves its programs; it does not restart them.
+Use `--session` to select other existing sessions; none are deleted and bare
+`--session` never creates a session. Explicit agent overrides start a new session.
+`--start-cli COMMAND` also creates a new shell, runs the command once, and leaves
+a usable shell when it exits. Ordinary reconnects never replay this command.
+Attachment validates the current session identity and box assignment.
 Agents are optional: a box can contain shells and multiple agent sessions at once.
 Normal `claude` and `codex` commands keep their interactive interfaces and menus.
 You can run other installed tools, including OpenCode, from a shell.
@@ -59,10 +60,33 @@ Disconnecting keeps the worker and tmux processes running. Persistent interactiv
 sessions prevent one-shot tasks from automatically hibernating their box.
 `vmbox hibernate helper1` is a separate explicit action: it saves workspace state,
 stops live processes, and retains the disk. Restoration is not process survival.
+Shell-first sessions restore as shells, without relaunching their previous agents
+or replaying `--start-cli`.
+
+## Creating a box
+
+`vmbox new NAME` opens one persistent form for provider, location, disk size,
+optional saved Claude/Codex login profiles, and an optional startup command.
+Use ↑/↓ or Tab to move, ←/→ to change options, and Enter to edit text.
+Profile uploads happen only after **Create**. Errors retain your entered values.
+By default creation finishes by connecting, exactly like `vmbox NAME`.
+The form also offers **Leave running** and **Leave hibernated**.
+
+```bash
+vmbox new research
+vmbox new research --no-dialog --start-cli 'claude'
+vmbox new batch --no-dialog --no-profiles --hibernate --json
+vmbox new service --no-dialog --detach --start-cli './start-service.sh'
+```
+
+Scripts must explicitly use `--detach` (leave running) or `--hibernate`;
+`--allocate` remains an alias for leave running. Raw lifecycle phases require
+`--verbose`; normal creation progress stays inside the form.
 
 ## One-shot mode
 
 ```bash
+vmbox task helper1               # ↑/↓ agent selector, then task prompt
 vmbox task helper1 codex --prompt "Fix the failing tests and verify the change" --json
 vmbox task helper1 claude --prompt "Review the code and summarize your findings" --json
 vmbox task helper1 shell --prompt "make test" --json

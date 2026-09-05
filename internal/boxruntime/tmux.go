@@ -28,8 +28,9 @@ type TmuxSnapshot struct {
 }
 
 type TmuxSession struct {
-	Name    string       `json:"name"`
-	Windows []TmuxWindow `json:"windows"`
+	Name       string       `json:"name"`
+	ShellFirst bool         `json:"shellFirst,omitempty"`
+	Windows    []TmuxWindow `json:"windows"`
 }
 
 type TmuxWindow struct {
@@ -87,7 +88,7 @@ func SaveTmuxState(ctx context.Context, root string) (TmuxSnapshot, error) {
 		"#{session_name}", "#{window_index}", "#{window_name}", "#{window_layout}",
 		"#{pane_index}", "#{pane_title}", "#{pane_current_path}", "#{pane_current_command}",
 		"#{pane_pid}", "#{window_active}", "#{pane_active}",
-	}, "\x1f")
+	}, "\t")
 	output, err := tmuxOutput(ctx, "list-panes", "-a", "-F", format)
 	if err != nil && !tmuxServerAbsent(err) {
 		return snapshot, err
@@ -98,10 +99,19 @@ func SaveTmuxState(ctx context.Context, root string) (TmuxSnapshot, error) {
 			return snapshot, err
 		}
 		for sessionIndex := range snapshot.Sessions {
+			session := &snapshot.Sessions[sessionIndex]
+			marker, markerErr := tmuxOutput(ctx, "show-options", "-v", "-t", "="+session.Name+":", "@vmbox-shell")
+			// Older controller-created shells used this prefix before the
+			// marker existed. Preserve their shell-first restore semantics too.
+			session.ShellFirst = (markerErr == nil && strings.TrimSpace(string(marker)) == "1") || strings.HasPrefix(session.Name, "shell-")
 			for windowIndex := range snapshot.Sessions[sessionIndex].Windows {
 				window := &snapshot.Sessions[sessionIndex].Windows[windowIndex]
 				for paneIndex := range window.Panes {
 					pane := &window.Panes[paneIndex]
+					if session.ShellFirst {
+						pane.ResumeStrategy = "shell"
+						pane.ResumeArgv = []string{"vmbox-runtime", "welcome"}
+					}
 					target := fmt.Sprintf("%s:%d.%d", snapshot.Sessions[sessionIndex].Name, window.Index, pane.Index)
 					name := fmt.Sprintf("%x.log", sha256.Sum256([]byte(target)))
 					path := filepath.Join(directory, name)
@@ -132,6 +142,11 @@ func parseTmuxPanes(data []byte, savedAt time.Time) (TmuxSnapshot, error) {
 	scanner.Buffer(buffer, 1024*1024)
 	for scanner.Scan() {
 		fields := strings.Split(scanner.Text(), "\x1f")
+		// tmux 3.4 renders the unit separator as literal \\037, but
+		// preserves tabs. Keep accepting legacy rows for compatibility.
+		if len(fields) == 1 {
+			fields = strings.Split(scanner.Text(), "\t")
+		}
 		if len(fields) != 11 {
 			return snapshot, fmt.Errorf("decode tmux pane row: expected 11 fields, got %d", len(fields))
 		}
@@ -302,6 +317,11 @@ func restoreTmuxSession(ctx context.Context, snapshot TmuxSnapshot, session Tmux
 		}
 		if _, err := tmuxOutput(ctx, args...); err != nil {
 			return fmt.Errorf("restore tmux window %s:%d: %w", session.Name, window.Index, err)
+		}
+		if windowOffset == 0 && session.ShellFirst {
+			if _, err := tmuxOutput(ctx, "set-option", "-t", "="+session.Name+":", "@vmbox-shell", "1"); err != nil {
+				return err
+			}
 		}
 		for paneOffset, pane := range window.Panes {
 			target := fmt.Sprintf("%s:%d", session.Name, window.Index)

@@ -215,6 +215,9 @@ never applies a remote QWERTY mapping.
 `)
 		return nil
 	case "welcome":
+		if len(args) != 1 && !(len(args) == 3 && args[1] == "--start-cli") {
+			return fmt.Errorf("usage: welcome [--start-cli COMMAND]")
+		}
 		welcome := filepath.Join(os.Getenv("HOME"), ".vmbox-welcome")
 		if data, err := os.ReadFile(welcome); err == nil {
 			_, _ = os.Stdout.Write(data)
@@ -228,6 +231,15 @@ never applies a remote QWERTY mapping.
 		shell := os.Getenv("SHELL")
 		if shell == "" {
 			shell = "/bin/bash"
+		}
+		if len(args) == 3 {
+			// Explicit user startup commands run once, before the persistent
+			// shell. Their exit must not close the interactive workspace.
+			start := exec.Command(shell, "-lc", args[2])
+			start.Stdin, start.Stdout, start.Stderr = os.Stdin, os.Stdout, os.Stderr
+			if err := start.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Startup command exited: %v\n", err)
+			}
 		}
 		cmd := exec.Command(shell, "-l")
 		cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr

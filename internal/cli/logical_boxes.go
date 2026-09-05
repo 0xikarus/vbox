@@ -69,7 +69,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return a.logicalBoxOutput(box, asJSON)
 	case "create", "new":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--allocate|--detach]")
+			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
 		}
 		fs := flag.NewFlagSet("new", flag.ContinueOnError)
 		fs.SetOutput(a.Err)
@@ -90,6 +90,9 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			return nil
 		})
 		noProfiles := fs.Bool("no-profiles", false, "skip agent credential provisioning")
+		noDialog := fs.Bool("no-dialog", false, "use explicit arguments without the creation dialog")
+		hibernated := fs.Bool("hibernate", false, "create the workspace without leaving compute running")
+		startCLI := fs.String("start-cli", "", "run an explicit command once in the new persistent shell")
 		allocate := fs.Bool("allocate", false, "allocate a warm slot after volume creation")
 		detach := fs.Bool("detach", false, "allocate a warm slot and leave it running without opening tmux")
 		if err := fs.Parse(args[2:]); err != nil {
@@ -101,40 +104,37 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		if *noProfiles && len(selectedProfiles) > 0 {
 			return fmt.Errorf("--no-profiles cannot be combined with --profile")
 		}
-		if *region == "" && a.IsTerminal != nil && a.IsTerminal() {
-			value, err := a.pickLocation(ctx, c, token)
-			if err != nil {
-				return err
-			}
-			*region = value
+		if *hibernated && (*allocate || *detach || *startCLI != "") {
+			return fmt.Errorf("--hibernate cannot be combined with --allocate, --detach or --start-cli")
 		}
-		if !*noProfiles && len(selectedProfiles) == 0 && a.IsTerminal != nil && a.IsTerminal() {
-			var err error
-			selectedProfiles, err = a.pickCreationProfiles(ctx, c, token)
-			if err != nil {
-				return err
-			}
+		mode := creationConnect
+		if *allocate || *detach {
+			mode = creationDetached
 		}
-		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Region: *region, DiskGiB: *disk, AllocateWhenReady: *allocate || *detach, AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
+		if *hibernated {
+			mode = creationHibernated
+		}
+		terminal := a.IsTerminal != nil && a.IsTerminal()
+		if !terminal && mode == creationConnect {
+			return fmt.Errorf("scripts must specify --detach (running) or --hibernate; automatic connection needs a terminal")
+		}
+		if asJSON && mode == creationConnect {
+			return fmt.Errorf("--json requires --detach or --hibernate")
+		}
+		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Region: *region, DiskGiB: *disk, DefaultAgent: "shell", AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
 		request.LoginProfiles = selectedProfiles
-		var box v1.LogicalBox
-		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes", request, &box, map[string]string{"Idempotency-Key": request.AllocationRequestKey})
-		if err != nil {
-			return err
-		}
-		if a.Verbose {
-			fmt.Fprintf(a.Err, "vmbox: logical box %q accepted (%d); initializing its persistent volume on a fenced warm slot\n", box.Name, status)
-		}
-		box, err = a.waitLogicalBoxCreation(ctx, c, token, box)
-		if err != nil {
-			return err
-		}
-		return a.logicalBoxOutput(box, asJSON)
+		return a.createWorkspace(ctx, c, token, request, mode, *startCLI, terminal && !*noDialog && !asJSON, *noProfiles, asJSON)
 	case "allocate", "open":
 		session := ""
 		agent := ""
+		startCLI := ""
 		forcePicker := false
-		if args[0] == "open" && len(args) == 4 && args[2] == "--session" {
+		if args[0] == "open" && len(args) == 4 && args[2] == "--start-cli" {
+			startCLI = args[3]
+			if strings.TrimSpace(startCLI) == "" {
+				return fmt.Errorf("--start-cli requires a command")
+			}
+		} else if args[0] == "open" && len(args) == 4 && args[2] == "--session" {
 			session = args[3]
 			if session == "" {
 				return fmt.Errorf("session name cannot be empty; use --session without a value for the picker")
@@ -158,7 +158,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 				return err
 			}
 			if box.State == v1.LogicalBoxRunning {
-				return a.openInteractive(ctx, c, token, box, session, agent, forcePicker)
+				return a.openInteractiveStartup(ctx, c, token, box, session, agent, forcePicker, startCLI)
 			}
 		}
 		key := "cli-allocate:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())
@@ -176,7 +176,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			if err != nil {
 				return err
 			}
-			return a.openInteractive(ctx, c, token, box, session, agent, forcePicker)
+			return a.openInteractiveStartup(ctx, c, token, box, session, agent, forcePicker, startCLI)
 		}
 		return a.providerOutput(allocation, asJSON)
 	case "hibernate":
@@ -246,7 +246,18 @@ func (a *App) waitLogicalBoxCreation(ctx context.Context, c config.Context, toke
 	defer ticker.Stop()
 	for {
 		if box.RestorationState != lastPhase {
-			fmt.Fprintf(a.Err, "vmbox: phase=%s state=%s\n", box.RestorationState, box.State)
+			message := "Preparing workspace…"
+			if box.State == v1.LogicalBoxHibernated || box.State == v1.LogicalBoxDetached {
+				message = "Workspace saved"
+			}
+			if a.Verbose {
+				message = fmt.Sprintf("phase=%s state=%s", box.RestorationState, box.State)
+			}
+			if a.creationProgress != nil {
+				a.creationProgress(message)
+			} else if a.Verbose {
+				fmt.Fprintln(a.Err, message)
+			}
 			lastPhase = box.RestorationState
 		}
 		switch box.State {
@@ -278,7 +289,18 @@ func (a *App) waitAllocation(ctx context.Context, c config.Context, token string
 			message = fmt.Sprintf("waiting-for-capacity queue=%d", allocation.QueuePosition)
 		}
 		if message != last {
-			fmt.Fprintf(a.Err, "vmbox: allocation=%s phase=%s retry=%d\n", allocation.RequestID, message, allocation.RetryCount)
+			progress := "Starting box…"
+			if allocation.State == "queued" {
+				progress = fmt.Sprintf("Waiting for compute (position %d)…", allocation.QueuePosition)
+			}
+			if a.Verbose {
+				progress = fmt.Sprintf("allocation=%s phase=%s retry=%d", allocation.RequestID, message, allocation.RetryCount)
+			}
+			if a.creationProgress != nil {
+				a.creationProgress(progress)
+			} else {
+				fmt.Fprintln(a.Err, progress)
+			}
 			last = message
 		}
 		switch allocation.State {

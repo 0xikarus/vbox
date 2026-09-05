@@ -7,6 +7,10 @@ import (
 )
 
 func StartInteractive(ctx context.Context, root, session, agent string) error {
+	return StartInteractiveCommand(ctx, root, session, agent, "")
+}
+
+func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI string) error {
 	if !processID.MatchString(session) {
 		return fmt.Errorf("invalid session name")
 	}
@@ -14,9 +18,18 @@ func StartInteractive(ctx context.Context, root, session, agent string) error {
 	if err != nil {
 		return err
 	}
+	if startCLI != "" {
+		if agent != "shell" || len(startCLI) > 16384 {
+			return fmt.Errorf("start-cli requires shell and a command up to 16 KiB")
+		}
+		argv = append(argv, "--start-cli", startCLI)
+	}
 	args := []string{"new-session", "-d", "-s", session, "-c", filepath.Join(filepath.Dir(root), "workspace"), "--"}
 	args = append(args, argv...)
 	_, err = tmuxOutput(ctx, args...)
+	if err == nil && agent == "shell" {
+		_, err = tmuxOutput(ctx, "set-option", "-t", "="+session+":", "@vmbox-shell", "1")
+	}
 	return err
 }
 

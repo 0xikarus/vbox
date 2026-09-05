@@ -36,6 +36,7 @@ type App struct {
 	Runner            procexec.Runner
 	IsTerminal        func() bool
 	Verbose           bool
+	creationProgress  func(string)
 }
 
 type stringList []string
@@ -228,6 +229,15 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	// Provider selection comes from controller state, not client SDKs or local
 	// provisioning credentials. Legacy selectors must match before mutation.
 	needsDefault := args[0] == "new" || args[0] == "create" || args[0] == "fleet" || args[0] == "run" || ((args[0] == "boxes" || args[0] == "box") && len(args) > 1 && (args[1] == "new" || args[1] == "create"))
+	creationDialog := (args[0] == "new" || args[0] == "create" || ((args[0] == "boxes" || args[0] == "box") && len(args) > 1 && (args[1] == "new" || args[1] == "create"))) && a.IsTerminal != nil && a.IsTerminal()
+	for _, arg := range args {
+		if arg == "--no-dialog" || arg == "--json" {
+			creationDialog = false
+		}
+	}
+	if creationDialog {
+		needsDefault = false
+	}
 	if needsDefault {
 		var def v1.FleetConfig
 		if status, err := a.request(ctx, c, token, http.MethodGet, "/v1/controller-defaults", nil, &def, nil); err != nil {
@@ -573,7 +583,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		}
 	default:
 		interactiveOverride := len(args) == 2 && (args[1] == "codex" || args[1] == "claude" || args[1] == "shell" || args[1] == "--session")
-		if strings.HasPrefix(args[0], "-") || (len(args) != 1 && !interactiveOverride && !(len(args) == 3 && args[1] == "--session")) {
+		if strings.HasPrefix(args[0], "-") || (len(args) != 1 && !interactiveOverride && !(len(args) == 3 && (args[1] == "--session" || args[1] == "--start-cli"))) {
 			return fmt.Errorf("unknown controller command %q", args[0])
 		}
 		return a.controllerBoxes(ctx, c, token, append([]string{"open"}, args...))
@@ -622,10 +632,10 @@ func (a *App) request(ctx context.Context, c config.Context, token, method, path
 }
 func (a *App) usage() {
 	fmt.Fprint(a.Out, `vmbox — controller-managed persistent boxes
-  vmbox [--context NAME] BOX [codex|claude|shell | --session [NAME]]
+  vmbox [--context NAME] BOX [codex|claude|shell | --session [NAME] | --start-cli COMMAND]
   vmbox ls [--json] | status BOX [--json] | sessions BOX [--json]
-  vmbox new BOX [--disk GiB] [--region ID] [--allocate|--detach]
-  vmbox task BOX codex|claude|shell --prompt TEXT
+  vmbox new BOX [--disk GiB] [--region ID] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]
+  vmbox task [BOX] [codex|claude|shell] [--prompt TEXT]
              [--session NAME] [--idempotency-key KEY] [--json]
   vmbox task-status BOX [TASK_ID]
   vmbox task-output BOX TASK_ID

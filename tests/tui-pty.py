@@ -11,11 +11,13 @@ import termios
 import time
 
 
-def run(keys, expected):
+def run(keys, expected, task=False):
     master, slave = pty.openpty()
     before = termios.tcgetattr(slave)
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))
     env = dict(os.environ, VMBOX_TUI_PTY_TEST="1", TERM="xterm-256color")
+    if task:
+        env["VMBOX_TUI_PTY_TASK"] = "1"
     child = subprocess.Popen([sys.argv[1], "-test.run", "^TestTUIRealTerminalHelper$"],
                              stdin=slave, stdout=slave, stderr=slave, env=env)
     output = b""
@@ -29,7 +31,7 @@ def run(keys, expected):
                 output += os.read(master, 65536)
 
     try:
-        until(b"Real terminal sessions")
+        until(b"Choose an agent" if task else b"Real terminal sessions")
         assert not termios.tcgetattr(slave)[3] & termios.ICANON
         # Resize while the picker waits for real terminal input.
         fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 10, 40, 0, 0))
@@ -51,4 +53,9 @@ def run(keys, expected):
 run(b"\x1b[B\x1b[B\x1b[A\r", b"RESULT=1 ERROR=<nil>")
 run(b"\x1b[F\r", b"RESULT=39 ERROR=<nil>")
 run(b"\x1b", b"RESULT=-1 ERROR=selection cancelled")
+run(b"\r", b"AGENT=codex ERROR=<nil>", task=True)
+run(b"\x1b[B\r", b"AGENT=claude ERROR=<nil>", task=True)
+run(b"\x1b[A\r", b"AGENT=shell ERROR=<nil>", task=True)
+run(b"\x1b", b"AGENT= ERROR=selection cancelled", task=True)
 print("PASS: real PTY arrows/Enter, long-list navigation, resize, Escape, terminal restoration")
+print("PASS: one-shot agent selector Codex/Claude/shell and cancellation in real PTY")

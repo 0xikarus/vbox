@@ -107,6 +107,7 @@ func TestProcessPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := fleetAssignment{Box: v1.LogicalBox{ID: box, AssignmentGeneration: 1}, Slot: v1.ComputeSlot{ID: slot, ServiceID: "test-service"}, FencingToken: "fence"}
+	t.Run("interactive shell reuse", func(t *testing.T) { testInteractiveShellReuse(t, server, p, box) })
 	prov := &idleProcessProvider{inv: v1.SessionInventory{State: "live", Assignment: nativeFence(a), Sessions: []v1.Session{}}}
 	if err = server.hibernateAfterProcess(ctx, p, a, prov); err != nil || prov.calls != 0 {
 		t.Fatal("queued guard", err, prov.calls)

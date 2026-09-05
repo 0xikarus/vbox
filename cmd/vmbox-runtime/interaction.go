@@ -46,13 +46,17 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		}
 		return true, json.NewEncoder(os.Stdout).Encode(result)
 	case "interactive-start":
-		if len(args) != 4 {
+		if len(args) != 4 && len(args) != 5 {
 			return true, fmt.Errorf("interactive-start requires assignment, session, agent")
 		}
 		if _, err := boxruntime.NativeSessions(context.Background(), args[1]); err != nil {
 			return true, err
 		}
-		return true, boxruntime.StartInteractive(context.Background(), runtime.Root, args[2], args[3])
+		startCLI := ""
+		if len(args) == 5 {
+			startCLI = args[4]
+		}
+		return true, boxruntime.StartInteractiveCommand(context.Background(), runtime.Root, args[2], args[3], startCLI)
 	case "coworker-start":
 		if len(args) != 2 {
 			return true, fmt.Errorf("coworker-start requires assignment")

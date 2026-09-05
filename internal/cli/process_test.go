@@ -38,7 +38,7 @@ func TestInteractiveOverridesReachOpenDispatcher(t *testing.T) {
 	}
 }
 
-func TestInteractivePickerStartsChosenAgent(t *testing.T) {
+func TestInteractiveDefaultsToShellWithoutPicker(t *testing.T) {
 	chosen := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -60,11 +60,14 @@ func TestInteractivePickerStartsChosenAgent(t *testing.T) {
 	}))
 	defer server.Close()
 	a := New()
-	a.In = strings.NewReader("\x1b[B\r")
+	a.In = strings.NewReader("")
 	a.Out = &bytes.Buffer{}
 	a.Err = &bytes.Buffer{}
 	err := a.openInteractive(context.Background(), config.Context{Controller: server.URL}, "test", v1.LogicalBox{ID: "id", DefaultAgent: "claude"}, "", "", false)
 	if err == nil || chosen != "shell" {
 		t.Fatal(chosen, err)
+	}
+	if strings.Contains(a.Err.(*bytes.Buffer).String(), "\x1b[?1049h") {
+		t.Fatal("plain shell connection opened an agent picker")
 	}
 }

@@ -32,14 +32,14 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 		if !interactive {
 			return fmt.Errorf("task requires a logical box outside an interactive terminal")
 		}
-		opts.box, err = a.promptTaskBox(ctx, c, token, reader)
+		opts.box, err = a.promptTaskBox(ctx, c, token)
 		if err != nil {
 			return err
 		}
 	}
 	if opts.agent == "" {
 		if interactive {
-			opts.agent, err = a.promptTaskAgent(reader)
+			opts.agent, err = a.promptTaskAgent(ctx)
 			if err != nil {
 				return err
 			}
@@ -176,7 +176,7 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 	return opts, nil
 }
 
-func (a *App) promptTaskBox(ctx context.Context, c config.Context, token string, reader *bufio.Reader) (string, error) {
+func (a *App) promptTaskBox(ctx context.Context, c config.Context, token string) (string, error) {
 	var boxes []v1.LogicalBox
 	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
 		return "", err
@@ -184,42 +184,24 @@ func (a *App) promptTaskBox(ctx context.Context, c config.Context, token string,
 	if len(boxes) == 0 {
 		return "", fmt.Errorf("no logical boxes are available; create one with 'vmbox new NAME'")
 	}
-	fmt.Fprintln(a.Out, "Select a logical box:")
+	labels := make([]string, len(boxes))
 	for index, box := range boxes {
-		fmt.Fprintf(a.Out, "  %d) %s (%s)\n", index+1, box.Name, box.State)
+		labels[index] = fmt.Sprintf("%s (%s)", box.Name, box.State)
 	}
-	choice, err := a.readControllerPrompt(reader, "Box number or name", "1")
+	choice, err := a.selectTUI(ctx, "Select a logical box", labels, 0)
 	if err != nil {
 		return "", err
 	}
-	if number, numberErr := strconv.Atoi(choice); numberErr == nil {
-		if number < 1 || number > len(boxes) {
-			return "", fmt.Errorf("box selection must be between 1 and %d", len(boxes))
-		}
-		return boxes[number-1].Name, nil
-	}
-	for _, box := range boxes {
-		if box.Name == choice {
-			return choice, nil
-		}
-	}
-	return "", fmt.Errorf("logical box %q is not in the controller inventory", choice)
+	return boxes[choice].Name, nil
 }
 
-func (a *App) promptTaskAgent(reader *bufio.Reader) (string, error) {
-	fmt.Fprintln(a.Out, "Choose an agent: 1) codex  2) claude  3) shell")
-	choice, err := a.readControllerPrompt(reader, "Agent number or name", "1")
+func (a *App) promptTaskAgent(ctx context.Context) (string, error) {
+	agents := []string{"codex", "claude", "shell"}
+	choice, err := a.selectTUI(ctx, "Choose an agent", []string{"Codex", "Claude", "Shell command"}, 0)
 	if err != nil {
 		return "", err
 	}
-	agents := []string{"codex", "claude", "shell"}
-	if number, numberErr := strconv.Atoi(choice); numberErr == nil {
-		if number < 1 || number > len(agents) {
-			return "", fmt.Errorf("agent selection must be between 1 and %d", len(agents))
-		}
-		return agents[number-1], nil
-	}
-	return strings.ToLower(choice), nil
+	return agents[choice], nil
 }
 
 func validTaskAgent(value string) bool {

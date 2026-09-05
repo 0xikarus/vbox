@@ -15,6 +15,11 @@ func TestTUIRealTerminalHelper(t *testing.T) {
 		t.Skip("PTY harness only")
 	}
 	a := New()
+	if os.Getenv("VMBOX_TUI_PTY_TASK") == "1" {
+		agent, err := a.promptTaskAgent(context.Background())
+		fmt.Fprintf(a.Err, "AGENT=%s ERROR=%v\n", agent, err)
+		return
+	}
 	labels := make([]string, 40)
 	for i := range labels {
 		labels[i] = fmt.Sprintf("session-%02d", i)

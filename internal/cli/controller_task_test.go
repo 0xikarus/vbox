@@ -67,7 +67,7 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 	defer server.Close()
 
 	app := New()
-	app.In = strings.NewReader("1\n2\nwhat's today's date?\n")
+	app.In = strings.NewReader("\r\x1b[B\rwhat's today's date?\n")
 	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	app.IsTerminal = func() bool { return true }
 	c := config.Context{Controller: server.URL}
@@ -77,8 +77,30 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 	if request.Agent != "claude" || request.Session != "" || request.Prompt != "what's today's date?" {
 		t.Fatalf("request=%+v", request)
 	}
-	if !strings.Contains(app.Out.(*bytes.Buffer).String(), "Select a logical box") || !strings.Contains(app.Out.(*bytes.Buffer).String(), "Choose an agent") {
-		t.Fatalf("dialog output=%q", app.Out.(*bytes.Buffer).String())
+	if !strings.Contains(app.Err.(*bytes.Buffer).String(), "Select a logical box") || !strings.Contains(app.Err.(*bytes.Buffer).String(), "Choose an agent") {
+		t.Fatalf("dialog output=%q", app.Err.(*bytes.Buffer).String())
+	}
+}
+
+func TestTaskAgentTUISelectionAndCancellation(t *testing.T) {
+	for _, tt := range []struct{ keys, want string }{
+		{"\r", "codex"}, {"\x1b[B\r", "claude"}, {"\x1b[A\r", "shell"},
+	} {
+		a := New()
+		a.In = strings.NewReader(tt.keys)
+		a.Err = &bytes.Buffer{}
+		got, err := a.promptTaskAgent(context.Background())
+		if err != nil || got != tt.want {
+			t.Fatalf("got=%q err=%v want=%q", got, err, tt.want)
+		}
+	}
+	a := New()
+	a.In = strings.NewReader("q")
+	a.Out, a.Err = &bytes.Buffer{}, &bytes.Buffer{}
+	a.IsTerminal = func() bool { return true }
+	// No configured controller: cancellation must return before any request.
+	if err := a.controllerTask(context.Background(), config.Context{}, "", []string{"box", "--prompt", "work"}); err == nil || !strings.Contains(err.Error(), "cancelled") {
+		t.Fatalf("cancellation=%v", err)
 	}
 }
 

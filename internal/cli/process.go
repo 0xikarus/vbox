@@ -47,6 +47,23 @@ func (a *App) processOutput(ctx context.Context, c config.Context, token string,
 }
 
 func (a *App) openInteractive(ctx context.Context, c config.Context, token string, box v1.LogicalBox, session, agent string, forcePicker bool) error {
+	return a.openInteractiveStartup(ctx, c, token, box, session, agent, forcePicker, "")
+}
+
+func (a *App) openInteractiveStartup(ctx context.Context, c config.Context, token string, box v1.LogicalBox, session, agent string, forcePicker bool, startCLI string) error {
+	if session == "" && !forcePicker && (agent == "" || startCLI != "") {
+		var out struct {
+			Session string `json:"session"`
+		}
+		_, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(box.ID)+"/sessions/interactive", map[string]any{"agent": "shell", "reuseShell": startCLI == "", "startCli": startCLI}, &out, nil)
+		if err != nil {
+			return err
+		}
+		if out.Session == "" {
+			return fmt.Errorf("controller returned no shell session")
+		}
+		return a.attachRemembered(ctx, c, token, box, out.Session, nil, false)
+	}
 	if session != "" {
 		return a.attachRemembered(ctx, c, token, box, session, nil, true)
 	}

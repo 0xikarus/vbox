@@ -325,7 +325,9 @@ func (s *Server) hibernateAfterProcess(ctx context.Context, p Principal, a fleet
 
 func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	var req struct {
-		Agent string `json:"agent"`
+		Agent      string `json:"agent"`
+		StartCLI   string `json:"startCli,omitempty"`
+		ReuseShell bool   `json:"reuseShell,omitempty"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, 400, err)
@@ -333,6 +335,10 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 	}
 	if req.Agent != "codex" && req.Agent != "claude" && req.Agent != "shell" {
 		writeError(w, 400, fmt.Errorf("choose codex, claude, or shell"))
+		return
+	}
+	if len(req.StartCLI) > 16384 || strings.ContainsRune(req.StartCLI, 0) || ((req.StartCLI != "" || req.ReuseShell) && req.Agent != "shell") || (req.ReuseShell && req.StartCLI != "") {
+		writeError(w, 400, fmt.Errorf("startCli requires a new shell; reuseShell cannot replay a startup command"))
 		return
 	}
 	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
@@ -367,11 +373,44 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 502, err)
 		return
 	}
+	if req.ReuseShell {
+		var remembered string
+		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(metadata->>'shellSession', CASE WHEN metadata->>'primarySession' LIKE 'shell-%' THEN metadata->>'primarySession' END, '') FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&remembered); err != nil {
+			writeError(w, 500, err)
+			return
+		}
+		result, inspectErr := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "native-sessions", nativeFence(a)}, provider.ExecOptions{})
+		var inv v1.SessionInventory
+		if inspectErr != nil || result.ExitCode != 0 || json.Unmarshal([]byte(result.Stdout), &inv) != nil || inv.State != "live" || inv.Assignment != nativeFence(a) || inv.Partial {
+			writeError(w, 502, fmt.Errorf("shell inventory unconfirmed; no session created"))
+			return
+		}
+		for _, existing := range inv.Sessions {
+			if existing.Name == remembered {
+				if err = tx.Commit(); err != nil {
+					writeError(w, 409, err)
+					return
+				}
+				writeJSON(w, 200, map[string]string{"session": remembered})
+				return
+			}
+		}
+	}
 	session := generatedTaskSession(req.Agent)
-	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "interactive-start", nativeFence(a), session, req.Agent}, provider.ExecOptions{})
+	argv := []string{"vmbox-runtime", "interactive-start", nativeFence(a), session, req.Agent}
+	if req.StartCLI != "" {
+		argv = append(argv, req.StartCLI)
+	}
+	result, err := prov.Exec(ctx, a.Slot.ServiceID, argv, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		writeError(w, 502, fmt.Errorf("interactive startup unconfirmed; inspect sessions before retrying"))
 		return
+	}
+	if req.Agent == "shell" {
+		if _, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{shellSession}',to_jsonb($3::text)),updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID, session); err != nil {
+			writeError(w, 500, fmt.Errorf("shell started but its identity could not be saved; inspect sessions before retrying"))
+			return
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		writeError(w, 409, err)
