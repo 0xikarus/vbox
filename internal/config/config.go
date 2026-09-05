@@ -45,7 +45,7 @@ type CreationSetup struct {
 
 type Context struct {
 	Name               string `json:"name"`
-	Provider           string `json:"provider"`
+	Provider           string `json:"provider,omitempty"`
 	Controller         string `json:"controller,omitempty"`
 	ControllerImage    string `json:"controllerImage,omitempty"`
 	ControllerSource   string `json:"controllerSource,omitempty"`

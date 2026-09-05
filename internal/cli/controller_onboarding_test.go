@@ -27,7 +27,7 @@ func TestMissingControllerFailsClosedNonInteractively(t *testing.T) {
 	app.IsTerminal = func() bool { return false }
 
 	err := app.Run(context.Background(), []string{"ls"})
-	if err == nil || !strings.Contains(err.Error(), "controller is not configured") || !strings.Contains(err.Error(), "--standalone") {
+	if err == nil || !strings.Contains(err.Error(), "provider-only context cannot be used") {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -39,7 +39,7 @@ func TestFirstRunPromptsForAndSavesController(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(v1.BoxInventory{})
+		_ = json.NewEncoder(w).Encode([]v1.LogicalBox{})
 	}))
 	defer server.Close()
 
@@ -63,10 +63,10 @@ func TestFirstRunPromptsForAndSavesController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ctx.Name != "production" || ctx.Controller != server.URL || ctx.Provider != "railway" || ctx.ProviderCredential != "primary" || ctx.TokenEnv != "VMBOX_CONTROLLER_TOKEN" {
+	if ctx.Name != "production" || ctx.Controller != server.URL || ctx.Provider != "" || ctx.ProviderCredential != "" || ctx.TokenEnv != "VMBOX_CONTROLLER_TOKEN" {
 		t.Fatalf("saved context=%+v", ctx)
 	}
-	for _, expected := range []string{"Controller URL", "Context name [production]", "Provider [railway]", "Provider credential [primary]", "never stored"} {
+	for _, expected := range []string{"Controller URL", "Context name [production]", "never stored"} {
 		if !strings.Contains(stderr.String(), expected) {
 			t.Fatalf("prompt missing %q: %s", expected, stderr.String())
 		}
@@ -85,7 +85,7 @@ func TestStandaloneMustBeExplicitWhenContextHasNoController(t *testing.T) {
 	app.In, app.Out, app.Err = strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{}
 	app.IsTerminal = func() bool { return false }
 	err := app.Run(context.Background(), []string{"--standalone", "clean"})
-	if err == nil || !strings.Contains(err.Error(), "clean requires") {
+	if err == nil || !strings.Contains(err.Error(), "standalone mode has been removed") {
 		t.Fatalf("error=%v", err)
 	}
 }

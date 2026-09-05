@@ -14,6 +14,6 @@ func main() {
 	defer cancel()
 	if err := cli.New().Run(ctx, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "vmbox:", err)
-		os.Exit(1)
+		os.Exit(cli.ExitCode(err))
 	}
 }

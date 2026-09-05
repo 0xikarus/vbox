@@ -147,7 +147,7 @@ func TestProviderCredentialCRUDNeverReturnsOrStoresPlaintext(t *testing.T) {
 	store.Envelope = envelope
 	now := time.Now().UTC()
 	secret := json.RawMessage(`{"token":"never-store-this-plaintext"}`)
-	config := json.RawMessage(`{"projectId":"p"}`)
+	config := json.RawMessage(`{"projectId":"p","environmentId":"e"}`)
 	mock.ExpectQuery(`INSERT INTO provider_credentials`).WithArgs(sqlmock.AnyArg(), "account-a", "railway", "primary", excludesPlaintext("never-store-this-plaintext"), config).WillReturnRows(sqlmock.NewRows([]string{"id", "created_at", "updated_at"}).AddRow("00000000-0000-4000-8000-000000000001", now, now))
 	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account-a", "user-a", "00000000-0000-4000-8000-000000000001", "railway", "primary").WillReturnResult(sqlmock.NewResult(1, 1))
 	value, err := store.PutProviderCredential(context.Background(), Principal{AccountID: "account-a", UserID: "user-a"}, "railway", "primary", v1.PutProviderCredentialRequest{Secret: secret, Config: config})

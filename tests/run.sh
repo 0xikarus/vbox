@@ -35,20 +35,9 @@ HOME="$test_root/home" PATH="$fixtures:$PATH" \
 
 installed_help="$("$test_root/bin/vmbox" --help)"
 grep -Fq 'Go vmbox test binary' <<<"$installed_help"
-test -x "$test_root/data/vmbox/runtime/vmbox-runtime-linux-amd64"
-test -x "$test_root/data/vmbox/runtime/vmbox-runtime-linux-arm64"
-test -x "$test_root/data/vmbox/runtime/vmbox-entrypoint"
-pass 'installer always builds the Go CLI and runtime payloads'
-
-bundle="$test_root/data/vmbox/service"
-for required in Dockerfile .dockerignore entrypoint.sh tmux.conf go.mod go.sum cmd internal; do
-  test -e "$bundle/$required"
-done
-if find "$bundle" -type f \( -name 'auth.json' -o -name 'credentials' -o -name '*.key' \) | grep -q .; then
-  echo 'installed bundle contains a credential-shaped file' >&2
-  exit 1
-fi
-pass 'installed deployment bundle is complete and credential-free'
+test ! -e "$test_root/data/vmbox/service"
+test ! -e "$test_root/data/vmbox/runtime"
+pass 'installer builds only CLI; no standalone bundle or worker payload'
 
 for removed_option in --go-cli --workspace-token; do
   if HOME="$test_root/home" PATH="$fixtures:$PATH" \

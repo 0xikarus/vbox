@@ -579,12 +579,19 @@ func (s *Store) ListProviderCredentials(ctx context.Context, accountID string) (
 		if err := rows.Scan(&value.ID, &value.AccountID, &value.Provider, &value.Name, &value.Config, &value.CreatedAt, &value.UpdatedAt); err != nil {
 			return nil, err
 		}
+		value.Config = publicProviderConfig(value.Provider, value.Config)
 		values = append(values, value)
 	}
 	return values, rows.Err()
 }
 
 func (s *Store) PutProviderCredential(ctx context.Context, p Principal, providerName, name string, req v1.PutProviderCredentialRequest) (v1.ProviderCredential, error) {
+	if len(req.Config) == 0 {
+		req.Config = json.RawMessage(`{}`)
+	}
+	if err := validateProviderConfig(providerName, req.Config); err != nil {
+		return v1.ProviderCredential{}, err
+	}
 	if providerName == "" || name == "" {
 		return v1.ProviderCredential{}, fmt.Errorf("provider and credential name are required")
 	}
@@ -605,9 +612,9 @@ func (s *Store) PutProviderCredential(ctx context.Context, p Principal, provider
 		return v1.ProviderCredential{}, err
 	}
 	value := v1.ProviderCredential{ID: uuid(), AccountID: p.AccountID, Provider: providerName, Name: name, Config: req.Config}
-	err = s.DB.QueryRowContext(ctx, `INSERT INTO provider_credentials(id,account_id,provider,name,encrypted_value,config) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(account_id,provider,name) DO UPDATE SET encrypted_value=excluded.encrypted_value,config=excluded.config,updated_at=now() RETURNING id::text,created_at,updated_at`, value.ID, p.AccountID, providerName, name, sealed, req.Config).Scan(&value.ID, &value.CreatedAt, &value.UpdatedAt)
+	err = s.DB.QueryRowContext(ctx, `INSERT INTO provider_credentials(id,account_id,provider,name,encrypted_value,config) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(account_id,provider,name) DO NOTHING RETURNING id::text,created_at,updated_at`, value.ID, p.AccountID, providerName, name, sealed, req.Config).Scan(&value.ID, &value.CreatedAt, &value.UpdatedAt)
 	if err != nil {
-		return value, err
+		return value, fmt.Errorf("provider create failed or alias already exists; edit with PATCH and If-Match revision")
 	}
 	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.put','provider_credential',$3,jsonb_build_object('provider',$4::text,'name',$5::text))`, p.AccountID, p.UserID, value.ID, providerName, name)
 	return value, nil

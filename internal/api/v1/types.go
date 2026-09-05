@@ -8,7 +8,7 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-const CompatibilityVersion = "v1alpha1"
+const CompatibilityVersion = "v1alpha2"
 
 type JobState string
 

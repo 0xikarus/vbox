@@ -297,3 +297,37 @@ CREATE TABLE IF NOT EXISTS chat_group_deliveries (
 );
 CREATE INDEX IF NOT EXISTS chat_group_deliveries_state_idx
   ON chat_group_deliveries(account_id,state,updated_at);
+-- Additive controller-first metadata. No terminal transcripts are retained.
+CREATE TABLE IF NOT EXISTS controller_defaults (
+ account_id uuid PRIMARY KEY REFERENCES accounts(id),
+ provider text NOT NULL,
+ provider_credential text NOT NULL,
+ FOREIGN KEY(account_id,provider,provider_credential) REFERENCES provider_credentials(account_id,provider,name)
+);
+CREATE TABLE IF NOT EXISTS session_observations (
+ account_id uuid NOT NULL,
+ box_id uuid NOT NULL,
+ incarnation text NOT NULL,
+ session_name text NOT NULL,
+ fingerprint text NOT NULL,
+ state text NOT NULL,
+ revision uuid NOT NULL,
+ sequence bigserial NOT NULL,
+ observed_at timestamptz NOT NULL,
+ partial boolean NOT NULL DEFAULT false,
+ PRIMARY KEY(account_id,box_id,incarnation)
+);
+CREATE TABLE IF NOT EXISTS session_probe_watermarks (
+ account_id uuid NOT NULL,
+ box_id uuid NOT NULL,
+ observed_at timestamptz NOT NULL,
+ PRIMARY KEY(account_id,box_id)
+);
+CREATE TABLE IF NOT EXISTS session_acknowledgements (
+ account_id uuid NOT NULL,
+ user_id uuid NOT NULL,
+ box_id uuid NOT NULL,
+ incarnation text NOT NULL,
+ sequence bigint NOT NULL,
+ PRIMARY KEY(account_id,user_id,box_id,incarnation)
+);

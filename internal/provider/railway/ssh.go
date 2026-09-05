@@ -120,6 +120,9 @@ func (p *Provider) ensureSSHMaster(ctx context.Context, target string) error {
 	}
 	check := append(p.sshOptions(controlPath), "-O", "check", "--", target)
 	checked, checkErr := p.runSSHHandshake(ctx, check)
+	if hostKeyChanged(checked) {
+		return checkErr
+	}
 	if checkErr == nil && checked.ExitCode == 0 {
 		p.masterByTarget[target] = true
 		return nil
@@ -177,17 +180,10 @@ func removeStaleControlSocket(path string) error {
 
 func (p *Provider) runSSHHandshake(ctx context.Context, argv []string) (procexec.Result, error) {
 	result, err := p.runner.Run(ctx, argv, nil, nil, nil)
-	if p.cfg.SSHKnownHostsFile == "" || !hostKeyChanged(result) {
-		return result, err
+	if hostKeyChanged(result) {
+		return result, fmt.Errorf("SSH host key changed; verify rotation out of band before updating known hosts")
 	}
-	removed, removeErr := p.runner.Run(ctx, []string{"ssh-keygen", "-f", p.cfg.SSHKnownHostsFile, "-R", railwaySSHHost}, nil, nil, nil)
-	if removeErr != nil {
-		return result, fmt.Errorf("repair Railway SSH host key: %w", removeErr)
-	}
-	if removed.ExitCode != 0 {
-		return result, fmt.Errorf("repair Railway SSH host key exited with status %d", removed.ExitCode)
-	}
-	return p.runner.Run(ctx, argv, nil, nil, nil)
+	return result, err
 }
 
 func hostKeyChanged(result procexec.Result) bool {

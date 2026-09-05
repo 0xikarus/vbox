@@ -78,10 +78,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
 	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
 	mux.HandleFunc("GET /v1/inventory", s.auth(s.boxInventoryHandler))
+	mux.HandleFunc("GET /v1/capabilities", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
+		writeJSON(w, 200, map[string]any{"nativeSessions": true, "nativeAttach": p.Role == "owner", "snapshotUpdates": true, "providerEdits": p.Role == "owner"})
+	}))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/sessions", s.auth(s.sessionsHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/updates", s.auth(s.updatesHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/updates/ack", s.auth(s.ackUpdateHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/sessions/welcome", s.owner(s.nativeWelcomeHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/sessions/enable", s.owner(s.enableNativeHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/native-connection", s.owner(s.nativeConnectionHandler))
 	mux.HandleFunc("POST /v1/logical-boxes", s.auth(s.createLogicalBoxHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/allocate", s.auth(s.reserveLogicalBox))
 	mux.HandleFunc("GET /v1/logical-boxes", s.auth(s.listLogicalBoxes))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}", s.auth(s.getLogicalBox))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/status", s.auth(s.boxStatusHandler))
 	mux.HandleFunc("PATCH /v1/logical-boxes/{id}", s.auth(s.updateLogicalBoxHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/hibernate", s.auth(s.hibernateLogicalBoxHandler))
 	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/volume", s.auth(s.deleteLogicalBoxVolumeHandler))
@@ -120,6 +130,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/users", s.owner(s.createUser))
 	mux.HandleFunc("DELETE /v1/users/{id}", s.owner(s.removeUser))
 	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))
+	mux.HandleFunc("GET /v1/provider-schemas", s.owner(s.providerSchemasHandler))
+	mux.HandleFunc("GET /v1/controller-defaults", s.auth(s.defaultProviderHandler))
+	mux.HandleFunc("PUT /v1/controller-defaults", s.owner(s.defaultProviderHandler))
+	mux.HandleFunc("GET /v1/provider-credentials/{provider}/{name}", s.owner(s.providerShowHandler))
+	mux.HandleFunc("PATCH /v1/provider-credentials/{provider}/{name}", s.owner(s.providerPatchHandler))
+	mux.HandleFunc("POST /v1/provider-credentials/{provider}/{name}/validate", s.owner(s.providerValidateHandler))
 	mux.HandleFunc("PUT /v1/provider-credentials/{provider}/{name}", s.owner(s.putProviderCredential))
 	mux.HandleFunc("DELETE /v1/provider-credentials/{provider}/{name}", s.owner(s.deleteProviderCredential))
 	mux.HandleFunc("GET /v1/notifications", s.owner(s.listNotifications))
@@ -741,11 +757,7 @@ func (s *Server) putProviderCredential(w http.ResponseWriter, r *http.Request, p
 }
 
 func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request, p Principal) {
-	if err := s.Store.DeleteProviderCredential(r.Context(), p, r.PathValue("provider"), r.PathValue("name")); err != nil {
-		writeError(w, 404, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	writeError(w, http.StatusConflict, fmt.Errorf("provider deletion requires an explicit resource/default migration; no credentials deleted"))
 }
 
 func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request, p Principal) {

@@ -1,3 +1,5 @@
+//go:build vmbox_operator
+
 package cli
 
 import (

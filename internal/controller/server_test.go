@@ -376,9 +376,9 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 		contentType string
 		contains    []string
 	}{
-		{path: "/", contentType: "text/html", contains: []string{"viewport-fit=cover", "terminal-status", "detach-terminal", "box-default-agent", "rel=\"icon\"", "/favicon.svg", "app.js"}},
-		{path: "/app.css", contentType: "text/css", contains: []string{"@media (max-width: 720px)", ".terminal-guide", ".terminal-column", ".fullscreen-fallback"}},
-		{path: "/app.js", contentType: "text/javascript", contains: []string{"sessionStorage", "pagehide", "pageshow", "controller.abort()", "/terminal/input", "terminalStatus", "state.selection"}},
+		{path: "/", contentType: "text/html", contains: []string{"width=device-width", "Index of /controller", "vmbox BOX --session NAME", "app.js"}},
+		{path: "/app.css", contentType: "text/css", contains: []string{"@media(max-width:600px)", "[hidden]"}},
+		{path: "/app.js", contentType: "text/javascript", contains: []string{"/v1/provider-schemas", "If-Match", "defaultAgent", "epoch++"}},
 		{path: "/favicon.svg", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
 		{path: "/favicon.ico", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
 	} {

@@ -42,7 +42,7 @@ func TestControllerTaskSchedulesAgentAndReportsReconnect(t *testing.T) {
 		t.Fatalf("request=%+v", request)
 	}
 	output := app.Out.(*bytes.Buffer).String()
-	if !strings.Contains(output, "Scheduled claude task task-1") || !strings.Contains(output, "vmbox research") || !strings.Contains(output, "allocate compute automatically") {
+	if !strings.Contains(output, "Scheduled claude task task-1") || !strings.Contains(output, `vmbox "research" --session "review"`) || !strings.Contains(output, "allocate compute automatically") {
 		t.Fatalf("output=%q", output)
 	}
 }

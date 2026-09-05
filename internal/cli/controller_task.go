@@ -17,6 +17,7 @@ import (
 
 type controllerTaskOptions struct {
 	box, agent, session, prompt string
+	idempotency                 string
 	jsonOutput                  bool
 }
 
@@ -61,8 +62,11 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 
 	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt}
 	var task v1.BoxTask
+	if opts.idempotency == "" {
+		opts.idempotency = "cli-task:" + opts.box + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	}
 	status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(opts.box)+"/tasks", request, &task, map[string]string{
-		"Idempotency-Key": "cli-task:" + opts.box + ":" + strconv.FormatInt(time.Now().UnixNano(), 36),
+		"Idempotency-Key": opts.idempotency,
 	})
 	if err != nil {
 		return err
@@ -71,7 +75,7 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 		return json.NewEncoder(a.Out).Encode(task)
 	}
 	fmt.Fprintf(a.Out, "Scheduled %s task %s on %s (%s, HTTP %d).\n", task.Agent, task.ID, task.BoxName, task.State, status)
-	fmt.Fprintf(a.Out, "The controller will allocate compute automatically. Reconnect with: vmbox %s\n", task.BoxName)
+	fmt.Fprintf(a.Out, "The controller will allocate compute automatically. Reconnect with: vmbox %q --session %q\n", task.BoxName, task.Session)
 	return nil
 }
 
@@ -112,6 +116,8 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 		switch arg {
 		case "--agent":
 			opts.agent, err = next()
+		case "--idempotency-key":
+			opts.idempotency, err = next()
 		case "--session":
 			opts.session, err = next()
 		case "--prompt":

@@ -24,15 +24,6 @@ func setupRegions(ctx context.Context, c config.Context, current string, p provi
 		}
 		values = append(values, setupRegion{ID: id, Label: label})
 	}
-	switch c.Provider {
-	case "railway":
-		add("ams", "EU West · Amsterdam")
-		add("sfo", "US West · California")
-		add("iad", "US East · Virginia")
-		add("sin", "Southeast Asia · Singapore")
-		add(current, current)
-	default:
-		add(current, current)
-	}
+	add(current, current)
 	return values
 }

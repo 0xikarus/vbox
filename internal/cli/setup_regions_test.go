@@ -14,8 +14,8 @@ import (
 )
 
 func TestSetupRegionsUseProviderIdentifiers(t *testing.T) {
-	railway := setupRegions(context.Background(), config.Context{Provider: "railway"}, "", nil)
-	want := map[string]bool{"ams": true, "sfo": true, "iad": true, "sin": true}
+	railway := setupRegions(context.Background(), config.Context{Provider: "future-provider"}, "custom-region", nil)
+	want := map[string]bool{"custom-region": true}
 	if len(railway) != len(want) {
 		t.Fatalf("Railway regions = %#v", railway)
 	}
@@ -60,7 +60,7 @@ func TestReusableSetupRestoresSelectionsAndSaveIntent(t *testing.T) {
 		t.Fatalf("configureSetup error = %v", err)
 	}
 	screen := out.String()
-	if !strings.Contains(screen, "[x] US East") || !strings.Contains(screen, "[x] "+markdown) || !strings.Contains(screen, "[x] Save this setup for --reuse in this working directory") {
+	if !strings.Contains(screen, "[x] iad") || !strings.Contains(screen, "[x] "+markdown) || !strings.Contains(screen, "[x] Save this setup for --reuse in this working directory") {
 		t.Fatalf("saved selections were not restored: %q", screen)
 	}
 	if _, err := loadSetup(file, "test", t.TempDir()); err == nil || !strings.Contains(err.Error(), "no complete reusable setup") {

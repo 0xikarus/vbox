@@ -14,43 +14,13 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-func TestStandaloneListIsReadableWithExplicitJSONFallback(t *testing.T) {
-	p := newCLIProvider()
-	p.boxes["strategy"] = provider.Box{Name: "strategy", State: provider.StateRunning, Region: "ams", Resources: provider.Resources{CPU: 1, MemoryMiB: 2048, DiskGiB: 10}}
-	app := New()
-	var output bytes.Buffer
-	app.Out, app.Err = &output, &bytes.Buffer{}
-	file := config.File{Contexts: map[string]config.Context{"test": {Name: "test", Provider: "test"}}}
-	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"ls"}); err != nil {
-		t.Fatal(err)
-	}
-	readable := output.String()
-	for _, expected := range []string{"NAME", "STATE", "MANAGEMENT", "OPEN / RESUME", "standalone", "strategy", "running", "ams", "2 GiB", "vmbox strategy", "Ctrl-a", "vmbox ls --json"} {
-		if !strings.Contains(readable, expected) {
-			t.Fatalf("readable list missing %q: %s", expected, readable)
-		}
-	}
-	if strings.HasPrefix(strings.TrimSpace(readable), "[") {
-		t.Fatalf("default list is raw JSON: %s", readable)
-	}
-
-	output.Reset()
-	if err := app.standalone(context.Background(), file, p, file.Contexts["test"], []string{"ls", "--json"}); err != nil {
-		t.Fatal(err)
-	}
-	var boxes []provider.Box
-	if err := json.Unmarshal(output.Bytes(), &boxes); err != nil || len(boxes) != 1 || boxes[0].Name != "strategy" {
-		t.Fatalf("JSON boxes=%+v error=%v output=%s", boxes, err, output.String())
-	}
-}
-
 func TestControllerListIsReadable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(v1.BoxInventory{
-			LogicalBoxes:   []v1.LogicalBox{{ID: "box-1", Name: "worker", Provider: "railway", State: v1.LogicalBoxRunning, VolumeName: "worker-data", SlotID: "slot-1"}},
-			ConnectedBoxes: []v1.ConnectedBox{{ID: "outside-1", Name: "manual-service", Provider: "railway", State: provider.StateRunning, Management: "external"}},
-		})
+		if r.URL.Path != "/v1/logical-boxes" {
+			t.Errorf("unexpected provider discovery: %s", r.URL.Path)
+		}
+		json.NewEncoder(w).Encode([]v1.LogicalBox{{ID: "box-1", Name: "worker", State: v1.LogicalBoxRunning, SlotID: "slot-1"}})
 	}))
 	defer server.Close()
 	app := New()
@@ -61,7 +31,7 @@ func TestControllerListIsReadable(t *testing.T) {
 	if err := app.controller(context.Background(), config.File{}, c, []string{"ls"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"NAME", "MANAGEMENT", "worker", "worker-data", "controller", "vmbox worker", "manual-service", "external", "--standalone"} {
+	for _, expected := range []string{"NAME", "STATE", "worker", "slot-1"} {
 		if !strings.Contains(output.String(), expected) {
 			t.Fatalf("controller list missing %q: %s", expected, output.String())
 		}
@@ -83,7 +53,7 @@ func TestControllerStatusUsesLogicalBoxName(t *testing.T) {
 	if err := app.controller(context.Background(), config.File{}, c, []string{"status", "worker"}); err != nil {
 		t.Fatal(err)
 	}
-	if requested != "GET /v1/logical-boxes/worker" {
+	if requested != "GET /v1/logical-boxes/worker/status" {
 		t.Fatalf("status requested %q", requested)
 	}
 }
@@ -120,8 +90,8 @@ func TestControllerBareNameOpensLogicalBox(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "opening a logical box requires an interactive terminal") {
 		t.Fatalf("bare-name open error = %v", err)
 	}
-	if requested != "GET /v1/logical-boxes/worker" {
-		t.Fatalf("bare name requested %q", requested)
+	if requested != "" {
+		t.Fatalf("noninteractive attach contacted controller: %q", requested)
 	}
 }
 

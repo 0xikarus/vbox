@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: vmbox controller API
-  version: v1alpha1
+  version: v1alpha2
   description: Repository-neutral box, run, event, question, lifecycle, cost, quota, and notification contracts.
 servers:
   - url: https://controller.example
@@ -85,8 +85,31 @@ paths:
       description: Owner-only credential metadata listing; secret values are never returned.
       responses: {'200': {description: Provider credential metadata}}
   /v1/provider-credentials/{provider}/{name}:
+    get:
+      description: Owner-only public metadata. Secret values are never returned.
+      parameters:
+        - {name: provider, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses: {'200': {description: Metadata with updatedAt revision}}
+    patch:
+      description: Owner-only partial image edit or explicit secret replacement. Target fields immutable. Null deletes image. Omitted secret preserved.
+      parameters:
+        - {name: provider, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+        - {name: If-Match, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config: {type: object, additionalProperties: true}
+                secret: {type: object, writeOnly: true}
+                replaceSecret: {type: boolean}
+      responses: {'200': {description: Public metadata}, '409': {description: Missing or stale revision or forbidden target edit}}
     put:
-      description: Owner-only encrypted create or rotation.
+      description: Owner-only encrypted create. Existing aliases cannot be replaced by legacy PUT.
       parameters:
         - {name: provider, in: path, required: true, schema: {type: string}}
         - {name: name, in: path, required: true, schema: {type: string}}
@@ -95,11 +118,11 @@ paths:
         content: {application/json: {schema: {$ref: '#/components/schemas/PutSecret'}}}
       responses: {'200': {description: Credential metadata}}
     delete:
-      description: Owner-only credential removal.
+      description: Removal is blocked pending explicit resource and default migration.
       parameters:
         - {name: provider, in: path, required: true, schema: {type: string}}
         - {name: name, in: path, required: true, schema: {type: string}}
-      responses: {'204': {description: Credential removed}}
+      responses: {'409': {description: Migration required; credential retained}}
   /v1/notifications:
     get:
       description: Owner-only destination metadata listing; secrets are never returned.
@@ -302,6 +325,69 @@ paths:
     get:
       parameters: [{$ref: '#/components/parameters/ID'}]
       responses: {'200': {description: Allocation status}}
+  /v1/capabilities:
+    get:
+      description: Authenticated feature flags, permission-scoped. Check nativeAttach before allocating for attachment.
+      responses: {'200': {description: Boolean nativeSessions, nativeAttach, snapshotUpdates, providerEdits}}
+  /v1/controller-defaults:
+    get:
+      responses: {'200': {description: Controller-held provider and providerCredential}, '409': {description: Default not configured}}
+    put:
+      description: Owner-only initial alias selection. A differing established default fails closed.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [provider, providerCredential], properties: {provider: {type: string}, providerCredential: {type: string}}}}}
+      responses: {'200': {description: Default selected}, '409': {description: Missing alias or explicit migration required}}
+  /v1/provider-schemas:
+    get:
+      responses: {'200': {description: Owner-only provider configuration field schemas and mutation rules}}
+  /v1/provider-credentials/{provider}/{name}/validate:
+    post:
+      description: Owner-only bounded read inventory probe; does not claim create/delete/SSH permissions.
+      parameters:
+        - {name: provider, in: path, required: true, schema: {type: string}}
+        - {name: name, in: path, required: true, schema: {type: string}}
+      responses: {'200': {description: Checked and unchecked capabilities}, '422': {description: Redacted validation failure}}
+  /v1/logical-boxes/{id}/sessions:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      description: Real runtime IDs, exact names, assignment-bound incarnations, pane counts and fingerprints. 64 sessions/128 panes; caps marked partial. Offline reads never allocate.
+      responses: {'200': {description: SessionInventory}, '502': {description: Observation unknown; not task completion}}
+  /v1/logical-boxes/{id}/status:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      description: Logical box, historical tasks, and cached session observations with timestamps; explicitly stale or unknown. No provider probe or allocation.
+      responses: {'200': {description: LogicalBox plus tasks, sessions and observationState}, '404': {description: Box not found in caller scope}}
+  /v1/logical-boxes/{id}/sessions/enable:
+    post:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      description: Explicit owner-only migration of a running box; stages runtime and binds existing tmux server under assignment lock without restarting compute.
+      responses: {'200': {description: Enabled}, '409': {description: Assignment unavailable}, '502': {description: Runtime migration failed}}
+  /v1/logical-boxes/{id}/sessions/welcome:
+    post:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      description: Owner-only welcome creation, separate from attach. Fails if sessions already exist.
+      responses: {'200': {description: SessionInventory}, '409': {description: Refresh inventory}}
+  /v1/logical-boxes/{id}/native-connection:
+    get:
+      parameters:
+        - {$ref: '#/components/parameters/ID'}
+        - {name: sessionId, in: query, required: true, schema: {type: string}}
+        - {name: incarnation, in: query, required: true, schema: {type: string}}
+      description: Owner-only structured OpenSSH handoff; assignment fence is rechecked inside tmux immediately before exact-ID attach. No create/replace or arbitrary local command.
+      responses: {'200': {description: Connection, logicalBoxId, sessionId, incarnation and assignment}, '409': {description: Stale assignment or session}, '502': {description: Transport unavailable}}
+  /v1/logical-boxes/{id}/updates:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      description: On-demand bounded observations and up to 256 unacknowledged metadata revisions. No transcripts, implicit ack, wake, or agent completion claims.
+      responses: {'200': {description: Inventory, updates, and coverage limits}, '502': {description: Observation unknown}}
+  /v1/logical-boxes/{id}/updates/ack:
+    post:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [session, revision], properties: {session: {type: string}, revision: {type: string}}}}}
+      responses: {'200': {description: Exact revision acknowledged for authenticated user}, '409': {description: Stale, foreign or unknown revision; nothing newer acknowledged}}
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}

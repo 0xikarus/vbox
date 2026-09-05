@@ -103,6 +103,10 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 		return fail("restoring-tmux-guide", fmt.Errorf("tmux guide update exited with status %d: %s", guide.ExitCode, strings.TrimSpace(guide.Stderr)))
 	}
 	deploymentID := connection.Metadata["deploymentInstanceId"]
+	bound, bindErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "native-bind", nativeFence(assignment)}, provider.ExecOptions{})
+	if bindErr != nil || bound.ExitCode != 0 {
+		return fail("binding-native-sessions", fmt.Errorf("worker could not bind native session assignment"))
+	}
 	if err := s.Store.CompleteAssignment(ctx, accountID, assignment.Box.ID, allocation.AssignmentGeneration, allocation.FencingToken, deploymentID); err != nil {
 		return fail("marking-ready", err)
 	}

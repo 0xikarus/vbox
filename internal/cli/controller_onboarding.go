@@ -15,7 +15,7 @@ import (
 // for it explicitly with --standalone.
 func (a *App) promptControllerContext(file config.File, requestedName string, existing config.Context) (config.File, config.Context, error) {
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return file, existing, fmt.Errorf("controller is not configured; run 'vmbox context add NAME --provider PROVIDER --controller URL' or pass --standalone")
+		return file, existing, fmt.Errorf("controller is not configured; run 'vmbox context add NAME --controller URL'")
 	}
 	reader := bufio.NewReader(a.In)
 	fmt.Fprintln(a.Err, "vmbox: no controller is configured; connect this CLI to one now.")
@@ -39,33 +39,7 @@ func (a *App) promptControllerContext(file config.File, requestedName string, ex
 	if err != nil {
 		return file, existing, err
 	}
-	providerDefault := existing.Provider
-	if providerDefault == "" {
-		providerDefault = "railway"
-	}
-	providerName, err := a.readControllerPrompt(reader, "Provider", providerDefault)
-	if err != nil {
-		return file, existing, err
-	}
-	switch providerName {
-	case "docker", "incus", "railway":
-	default:
-		return file, existing, fmt.Errorf("unsupported provider %q (available: docker, incus, railway)", providerName)
-	}
-	credentialDefault := existing.ProviderCredential
-	if credentialDefault == "" {
-		credentialDefault = "primary"
-	}
-	credential, err := a.readControllerPrompt(reader, "Provider credential", credentialDefault)
-	if err != nil {
-		return file, existing, err
-	}
-
-	configured := existing
-	configured.Name = name
-	configured.Controller = strings.TrimRight(controller, "/")
-	configured.Provider = providerName
-	configured.ProviderCredential = credential
+	configured := config.Context{Name: name, Controller: strings.TrimRight(controller, "/"), TokenEnv: existing.TokenEnv}
 	if configured.TokenEnv == "" {
 		configured.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
 	}

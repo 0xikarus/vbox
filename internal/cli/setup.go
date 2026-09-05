@@ -781,31 +781,6 @@ const (
 	standaloneSetupProbe    = `if [ "${VMBOX_SETUP_STATE:-}" != pending ] || [ -f /data/home/.vmbox-setup-complete ]; then printf 'complete\n'; else printf 'pending\n'; fi`
 )
 
-func (a *App) standaloneSetupPending(ctx context.Context, p provider.Provider, name string) (bool, error) {
-	result, err := p.Exec(ctx, name, []string{"sh", "-c", standaloneSetupProbe}, provider.ExecOptions{})
-	if err != nil || result.ExitCode != 0 {
-		return false, fmt.Errorf("inspect saved setup state inside %q", name)
-	}
-	switch strings.TrimSpace(result.Stdout) {
-	case "pending":
-		return true, nil
-	case "complete":
-		return false, nil
-	default:
-		return false, fmt.Errorf("inspect saved setup state inside %q: unexpected response", name)
-	}
-}
-
-func (a *App) markStandaloneSetupComplete(ctx context.Context, p provider.Provider, name string) error {
-	data := []byte("complete\n")
-	digest := sha256.Sum256(data)
-	result, err := p.Exec(ctx, name, []string{"vmbox-runtime", "put-file", standaloneSetupMarker, "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(data), Stderr: a.Err})
-	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != fmt.Sprintf("%x", digest[:]) {
-		return fmt.Errorf("record completed setup inside %q", name)
-	}
-	return nil
-}
-
 func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name string, prepared preparedSetup) error {
 	return a.uploadPreparedWith(ctx, name, prepared, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 		return p.Exec(ctx, name, argv, opts)
@@ -1054,77 +1029,6 @@ func saveSetup(path string, file config.File, contextName, workingDirectory stri
 	setup.WorkingDirectory = directory
 	file.LastSetups[key] = setup
 	return config.Save(path, file)
-}
-
-func (a *App) selectStandaloneBox(ctx context.Context, p provider.Provider, title string) (string, error) {
-	boxes, err := p.List(ctx)
-	if err != nil {
-		return "", err
-	}
-	if len(boxes) == 0 {
-		return "", fmt.Errorf("no boxes are available")
-	}
-	sort.Slice(boxes, func(i, j int) bool { return boxes[i].Name < boxes[j].Name })
-	if a.IsTerminal == nil || !a.IsTerminal() {
-		for _, box := range boxes {
-			fmt.Fprintf(a.Out, "%s\t%s\n", box.Name, box.State)
-		}
-		return "", fmt.Errorf("selection requires an interactive terminal")
-	}
-	reader := bufio.NewReader(a.In)
-	cursor, selected := 0, -1
-	confirm := len(boxes)
-	for {
-		fmt.Fprint(a.Out, "\033[2J\033[H")
-		fmt.Fprintln(a.Out, title)
-		fmt.Fprintln(a.Out, "↑/↓ or j/k: move  Space: select  Enter: only on Confirm  q: cancel")
-		for i, box := range boxes {
-			prefix, marker := "  ", " "
-			if cursor == i {
-				prefix = "> "
-			}
-			if selected == i {
-				marker = "x"
-			}
-			fmt.Fprintf(a.Out, "%s[%s] %-24s %s\n", prefix, marker, box.Name, box.State)
-		}
-		prefix := "  "
-		if cursor == confirm {
-			prefix = "> "
-		}
-		fmt.Fprintf(a.Out, "%s[ Confirm ]\n", prefix)
-		key, readErr := readMenuKey(reader)
-		if readErr != nil {
-			return "", errSetupCancelled
-		}
-		switch key {
-		case 'j':
-			cursor = (cursor + 1) % (len(boxes) + 1)
-		case 'k':
-			cursor = (cursor - 1 + len(boxes) + 1) % (len(boxes) + 1)
-		case ' ':
-			if cursor < len(boxes) {
-				if selected == cursor {
-					selected = -1
-				} else {
-					selected = cursor
-				}
-			}
-		case '\n', '\r':
-			if cursor == confirm && selected >= 0 {
-				fmt.Fprint(a.Out, "\033[2J\033[H")
-				return boxes[selected].Name, nil
-			}
-		}
-	}
-}
-
-func (a *App) selectStandaloneResize(ctx context.Context, p provider.Provider, args []string) (string, []string, error) {
-	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
-		return args[0], args[1:], nil
-	}
-	name, err := a.selectStandaloneBox(ctx, p, "Select a box to resize")
-	return name, args, err
 }
 
 func (a *App) selectResizeResources(title string) (provider.Resources, error) {

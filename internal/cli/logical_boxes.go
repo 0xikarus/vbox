@@ -45,10 +45,20 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		}
 		return nil
 	case "status":
-		if len(args) != 2 {
+		if len(args) != 2 && !(len(args) == 3 && args[2] == "--json") {
 			return fmt.Errorf("usage: vmbox boxes status NAME")
 		}
-		box, err := a.controllerLogicalBox(ctx, c, token, args[1])
+		var status json.RawMessage
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(args[1])+"/status", nil, &status, nil); err != nil {
+			return err
+		}
+		return json.NewEncoder(a.Out).Encode(status)
+	case "update":
+		if len(args) != 4 || args[2] != "--default-agent" {
+			return fmt.Errorf("usage: boxes update BOX --default-agent AGENT")
+		}
+		var box v1.LogicalBox
+		_, err := a.request(ctx, c, token, http.MethodPatch, "/v1/logical-boxes/"+url.PathEscape(args[1]), v1.UpdateLogicalBoxRequest{DefaultAgent: args[3]}, &box, nil)
 		if err != nil {
 			return err
 		}
@@ -82,16 +92,25 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		}
 		return json.NewEncoder(a.Out).Encode(box)
 	case "allocate", "open":
-		if len(args) != 2 {
+		session := ""
+		if args[0] == "open" && len(args) == 4 && args[2] == "--session" {
+			session = args[3]
+		} else if len(args) != 2 {
 			return fmt.Errorf("usage: vmbox boxes %s NAME", args[0])
 		}
 		if args[0] == "open" {
+			if a.IsTerminal == nil || !a.IsTerminal() {
+				return fmt.Errorf("opening a logical box requires an interactive terminal")
+			}
+			if err := a.requireCapability(ctx, c, token, "nativeAttach"); err != nil {
+				return err
+			}
 			box, err := a.controllerLogicalBox(ctx, c, token, args[1])
 			if err != nil {
 				return err
 			}
 			if box.State == v1.LogicalBoxRunning {
-				return a.attachControllerLogicalBox(ctx, c, token, box)
+				return a.attachNative(ctx, c, token, box, session)
 			}
 		}
 		key := "cli-allocate:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())
@@ -109,7 +128,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			if err != nil {
 				return err
 			}
-			return a.attachControllerLogicalBox(ctx, c, token, box)
+			return a.attachNative(ctx, c, token, box, session)
 		}
 		return json.NewEncoder(a.Out).Encode(allocation)
 	case "hibernate":
@@ -221,57 +240,7 @@ func (a *App) waitAllocation(ctx context.Context, c config.Context, token string
 }
 
 func (a *App) attachControllerLogicalBox(ctx context.Context, c config.Context, token string, box v1.LogicalBox) error {
-	if a.IsTerminal == nil || !a.IsTerminal() {
-		return fmt.Errorf("opening a logical box requires an interactive terminal")
-	}
-	var resolved v1.LogicalBoxConnection
-	path := "/v1/logical-boxes/" + url.PathEscape(box.ID) + "/connection?session=vmbox"
-	if _, err := a.request(ctx, c, token, http.MethodGet, path, nil, &resolved, nil); err != nil {
-		return err
-	}
-	selected, err := a.connectionProvider(c)
-	if err != nil {
-		return err
-	}
-	attacher, ok := selected.(provider.ConnectionSessionAttacher)
-	if !ok {
-		return fmt.Errorf("provider %s cannot attach using a controller-resolved connection", selected.Name())
-	}
-	executor, ok := selected.(provider.ConnectionExecutor)
-	if !ok {
-		return fmt.Errorf("provider %s cannot prepare a controller-resolved connection", selected.Name())
-	}
-	execute := func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
-		return executor.ExecConnection(ctx, resolved.Connection, argv, opts)
-	}
-	if err := a.refreshControllerWelcome(ctx, resolved, execute); err != nil {
-		return err
-	}
-	rawRestore, err := makeRaw(a.In)
-	if err != nil {
-		return fmt.Errorf("configure interactive terminal: %w", err)
-	}
-	restored := false
-	restore := func() {
-		if !restored {
-			rawRestore()
-			restored = true
-		}
-	}
-	defer restore()
-	result, attachErr := attacher.AttachConnection(ctx, resolved.Connection, resolved.Session, []string{"vmbox-runtime", "welcome"}, provider.ExecOptions{Interactive: true, Stdin: a.In, Stdout: a.Out, Stderr: a.Err})
-	restore()
-	if ctx.Err() != nil || result.ExitCode == 255 {
-		fmt.Fprintf(a.Err, "\nvmbox: connection closed; %q and its tmux session are still running\n", box.Name)
-		return nil
-	}
-	if attachErr != nil {
-		return attachErr
-	}
-	if result.ExitCode != 0 {
-		return fmt.Errorf("SSH session exited with status %d; logical box remains running", result.ExitCode)
-	}
-	return a.postControllerInteractiveExit(ctx, c, token, box)
+	return a.attachNative(ctx, c, token, box, "")
 }
 
 func (a *App) controllerLogicalBoxAuth(ctx context.Context, c config.Context, token string, args []string) error {
@@ -290,20 +259,13 @@ func (a *App) controllerLogicalBoxAuth(ctx context.Context, c config.Context, to
 	if _, err := a.request(ctx, c, token, http.MethodGet, path, nil, &resolved, nil); err != nil {
 		return err
 	}
-	selected, err := a.connectionProvider(c)
-	if err != nil {
-		return err
-	}
-	executor, ok := selected.(provider.ConnectionExecutor)
-	if !ok {
-		return fmt.Errorf("provider %s cannot sync over a controller-resolved connection", selected.Name())
-	}
+	executor := a.nativeTransport()
 	setup, err := a.selectAuthentication(ctx, args[1:])
 	if err != nil {
 		return err
 	}
 	return a.uploadSelectedAuthentication(ctx, box.Name, setup, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
-		return executor.ExecConnection(ctx, resolved.Connection, argv, opts)
+		return executor.ExecConnection(ctx, resolved.Connection, provider.AsWorkloadUser(argv), opts)
 	})
 }
 

@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -159,33 +158,14 @@ func TestIdleSessionRecognizesOnlyShellPanes(t *testing.T) {
 	}
 }
 
-func TestExecRepairsRotatedHostKeyBeforeStartingMaster(t *testing.T) {
-	services := `[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`
-	instance := runningDeploymentInstance("deployment-instance")
-	dir := t.TempDir()
-	knownHosts := filepath.Join(dir, "known_hosts")
-	controlDir := filepath.Join(dir, "control")
-	runner := &procexec.FakeRunner{Results: []procexec.Result{
-		{Stdout: []byte(services)},
-		{Stdout: []byte(instance)},
-		{ExitCode: 255, Stderr: []byte("WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!")},
-		{},
-		{ExitCode: 255, Stderr: []byte("Control socket does not exist")},
-		{},
-		{Stdout: []byte("ok")},
-	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHKnownHostsFile: knownHosts, SSHControlDir: controlDir}, runner)
-	result, err := p.Exec(context.Background(), "box", []string{"printf", "ok"}, provider.ExecOptions{})
-	if err != nil || result.ExitCode != 0 || result.Stdout != "ok" {
-		t.Fatalf("result=%+v err=%v calls=%#v", result, err, runner.Calls)
+func TestExecRejectsChangedHostKeyWithoutRepair(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`)}, {Stdout: []byte(runningDeploymentInstance("deployment-instance"))}, {ExitCode: 255, Stderr: []byte("REMOTE HOST IDENTIFICATION HAS CHANGED")}}}
+	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHKnownHostsFile: filepath.Join(t.TempDir(), "known_hosts"), SSHControlDir: t.TempDir()}, runner)
+	if _, err := p.Exec(context.Background(), "box", []string{"true"}, provider.ExecOptions{}); err == nil {
+		t.Fatal("changed host key accepted")
 	}
-	want := []string{"ssh-keygen", "-f", knownHosts, "-R", "ssh.railway.com"}
-	if got := runner.Calls[3].Argv; !reflect.DeepEqual(got, want) {
-		t.Fatalf("host-key cleanup=%#v want=%#v", got, want)
-	}
-	master := strings.Join(runner.Calls[5].Argv, " ")
-	if !strings.Contains(master, " -M -f ") || strings.Contains(master, " -N ") || !strings.Contains(master, "ControlMaster=yes") || !strings.Contains(master, "ControlPersist=120") || !strings.HasSuffix(master, " "+railwaySSHMasterKeepalive) {
-		t.Fatalf("explicit detached master was not started: %s", master)
+	if len(runner.Calls) != 3 {
+		t.Fatalf("unexpected repair/retry: %d calls", len(runner.Calls))
 	}
 }
 
