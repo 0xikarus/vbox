@@ -163,6 +163,7 @@ func runCodexProtocol(ctx context.Context, input io.Reader, sendTo io.Writer, ou
 	defer deadline.Stop()
 	var timeout <-chan time.Time = deadline.C
 	start := func(text string, sequence int64) error {
+		text += "\n\nRuntime delivery contract: handle only this input and finish your turn with a final response. Staying available is handled by the host process, which waits and delivers the next event AFTER your turn completes. Do not use wait/sleep tools, polling loops, or background watchers to await future messages. After replying with MCP, finish this turn; this does not stop the coworker process."
 		state.Pending = true
 		state.PendingSequence = sequence
 		state.Turn = ""

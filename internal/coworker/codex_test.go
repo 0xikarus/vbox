@@ -36,6 +36,9 @@ func TestCodexProtocolDeliveryState(t *testing.T) {
 		if m.Method != method {
 			t.Fatalf("method=%s want=%s", m.Method, method)
 		}
+		if method == "turn/start" && !bytes.Contains(m.Params, []byte("finish your turn with a final response")) {
+			t.Fatal("event delivery omitted the return-to-host contract")
+		}
 	}
 	read("initialize")
 	encoder.Encode(map[string]any{"id": 1, "result": map[string]any{}})

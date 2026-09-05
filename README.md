@@ -225,6 +225,9 @@ code. Peer text is not owner authority or approval.
 Codex uses its installed App Server and existing login/model settings. Incoming
 events are queued between turns. Delivery checkpoints preserve thread and turn
 identities; an unresolved submission stops automatic replay and requires inspection.
+The runtime waits between messages. Agents must finish each turn rather than
+polling or calling wait/sleep to remain available; otherwise queued events cannot
+be delivered. Each input includes this delivery contract.
 Unattended permission requests are not approved automatically.
 
 Claude uses a local stdio channel. Custom channels currently require an explicit
