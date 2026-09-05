@@ -89,6 +89,8 @@ inside the form; `--verbose` adds request IDs and retry counts.
 
 ## One-shot mode
 
+Live lifecycle evidence and coverage limits: [shell-first verification](docs/SHELL-FIRST-VERIFICATION.md).
+
 ```bash
 vmbox task helper1               # ↑/↓ agent selector, then task prompt
 vmbox task helper1 codex --prompt "Fix the failing tests and verify the change" --json

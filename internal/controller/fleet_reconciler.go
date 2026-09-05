@@ -192,8 +192,16 @@ func (s *Server) ensureFleetSlot(ctx context.Context, accountID string, slot v1.
 }
 func remainingScaleDown(actual, desired int, slots []v1.ComputeSlot) int {
 	excess := actual - desired
+	// Retire idle capacity first. A draining slot may be saving/deleting a
+	// workspace, not retiring from the fleet, and must not pin an idle service.
+	removable := 0
 	for _, slot := range slots {
-		if slot.State == v1.FleetSlotDraining && excess > 0 {
+		if removableSlotState(slot.State) {
+			removable++
+		}
+	}
+	for _, slot := range slots {
+		if slot.State == v1.FleetSlotDraining && excess > removable {
 			excess--
 		}
 	}

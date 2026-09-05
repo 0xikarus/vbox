@@ -73,8 +73,23 @@ func TestRemainingScaleDownCountsDrainingSlotOnlyOnce(t *testing.T) {
 	if got := remainingScaleDown(4, 2, slots); got != 1 {
 		t.Fatalf("remainingScaleDown()=%d, want 1", got)
 	}
-	if got := remainingScaleDown(4, 3, slots); got != 0 {
-		t.Fatalf("remainingScaleDown()=%d, want 0", got)
+	if got := remainingScaleDown(4, 3, slots); got != 1 {
+		t.Fatalf("remainingScaleDown()=%d, want 1 idle slot removed", got)
+	}
+}
+
+func TestScaleDownRemovesIdleCapacityDespiteWorkspaceDrain(t *testing.T) {
+	slots := []v1.ComputeSlot{
+		{Ordinal: 1, State: v1.FleetSlotDraining},
+		{Ordinal: 2, State: v1.FleetSlotOccupied},
+		{Ordinal: 3, State: v1.FleetSlotFree},
+	}
+	if got := remainingScaleDown(3, 2, slots); got != 1 {
+		t.Fatalf("remainingScaleDown()=%d, want temporary idle slot removed", got)
+	}
+	slots[2].State = v1.FleetSlotOccupied
+	if got := remainingScaleDown(3, 2, slots); got != 0 {
+		t.Fatalf("remainingScaleDown()=%d, must not drain another occupied slot", got)
 	}
 }
 
