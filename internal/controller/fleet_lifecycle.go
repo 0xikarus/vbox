@@ -269,6 +269,11 @@ func (s *Server) completeLogicalBoxHibernate(ctx context.Context, p Principal, a
 	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "saving-workspace"); err != nil {
 		return fail(err)
 	}
+	// A running volume may still have the runtime from an earlier controller
+	// revision. Apply snapshot fixes before saving, without restarting compute.
+	if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+		return fail(fmt.Errorf("stage hibernate runtime: %w", err))
+	}
 	prepareCommand := "prepare-hibernate"
 	if strings.HasPrefix(assignment.Box.RestorationState, "auto-") {
 		prepareCommand = "prepare-idle-hibernate"
