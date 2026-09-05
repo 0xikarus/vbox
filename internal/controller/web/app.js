@@ -5,9 +5,9 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 const state = {
   token: sessionStorage.getItem('vmbox.controller.token') || '',
   boxes: [], external: [], groups: [], credentials: [], notifications: [], fleet: null,
-  box: null, tasks: [], task: null, taskMessages: [], group: null, groupMessages: [], recipients: new Set(),
+  box: null, tasks: [], task: null, group: null, groupMessages: [], recipients: new Set(),
   groupScreens: new Map(), groupScreenRefreshAt: 0, previewBoxID: '',
-  provider: '', credential: '', chatTimer: null, controllers: new Set(), closed: false,
+  provider: '', credential: '', chatTimer: null, controllers: new Set(), closed: false, selection: 0, terminalRequests: new Set(), refreshing: false,
 };
 
 const stateLabel = value => String(value || 'unknown').replaceAll('_', ' ');
@@ -76,6 +76,9 @@ function terminalKey(event) {
 		ArrowUp:'Up', ArrowDown:'Down', ArrowRight:'Right', ArrowLeft:'Left',
 		Home:'Home', End:'End', Delete:'DC', PageUp:'PPage', PageDown:'NPage',
   };
+  if (event.isComposing || event.key === 'Dead') return null;
+  if (event.getModifierState?.('AltGraph') || (event.ctrlKey && event.altKey && event.key.length === 1)) return {text:event.key};
+  if ((event.ctrlKey || event.metaKey) && (event.key.toLowerCase() === 'v' || (event.shiftKey && event.key.toLowerCase() === 'c'))) return null;
   if (event.ctrlKey && !event.altKey && !event.metaKey) {
     if (event.key.length === 1) {
       const upper = event.key.toUpperCase();
@@ -162,7 +165,10 @@ function logout(showMessage = true) {
 
 function showView(name) {
   if (name === 'boxes') {
-    setTerminalPane(false);
+    stopPolling();
+    state.selection++;
+    state.box = null;
+    state.task = null;
     $('#app').classList.remove('show-main');
     return;
   }
@@ -175,14 +181,7 @@ function showView(name) {
   if (name === 'fleet') renderFleet();
 }
 
-function setTerminalPane(open) {
-  const body = $('#chat-view .chat-body');
-  const button = $('#toggle-terminal');
-  body.classList.toggle('terminal-open', open);
-  button.setAttribute('aria-pressed', String(open));
-  button.textContent = open ? 'Chat' : 'Terminal';
-  if (open && state.box?.state === 'running') refreshTerminal(true);
-}
+
 
 function avatar(name, group = false) {
   return group ? '#' : String(name || '?').slice(0, 1).toUpperCase();
@@ -384,149 +383,130 @@ async function refreshAll(silent = false) {
 }
 
 async function selectBox(id) {
+  flushTerminalInput();
+  stopPolling();
+  const generation = ++state.selection;
   state.group = null;
   state.box = state.boxes.find(box => box.id === id);
+  state.task = null;
+  state.tasks = [];
   if (!state.box) return;
+  $('#terminal').textContent = '';
+  $('#terminal-input').value = '';
+  terminalStatus('Loading terminal…');
   renderRoster();
   $('#chat-name').textContent = state.box.name;
-  $('#chat-state').textContent = `${boxLifecycleLabel(state.box)} · ${state.box.slotId ? 'compute assigned' : 'persistent storage retained'}`;
-  $('#chat-avatar').textContent = avatar(state.box.name);
-  $('#box-default-agent').value = state.box.defaultAgent || 'claude';
-  $('#allocate').hidden = !['detached', 'hibernated'].includes(state.box.state);
-  $('#hibernate').hidden = state.box.state !== 'running';
-  setTerminalPane(false);
-  renderTerminalPrompt(null, 'vmbox');
   showView('chat');
   try {
-    state.tasks = await api(`/v1/logical-boxes/${encodeURIComponent(id)}/tasks`) || [];
-    const active = [...state.tasks].reverse().find(task => task.state === 'active') || state.tasks.at(-1) || null;
-    state.task = active;
+    const tasks = await api('/v1/logical-boxes/' + encodeURIComponent(id) + '/tasks') || [];
+    if (generation !== state.selection) return;
+    state.tasks = tasks;
+    state.task = [...tasks].reverse().find(task => task.state === 'active') || tasks.at(-1) || null;
     renderTaskTabs();
-    if (active) await refreshConversation();
-    else {
-      $('#messages').innerHTML = `<div class="empty"><strong>This box is ready for a conversation.</strong><br>Send a message below. If it is offline, ${escapeHTML(state.box.defaultAgent || 'claude')} and a compute slot start automatically.</div>`;
-      $('#terminal').textContent = state.box.state === 'running' ? 'No tmux agent session yet.' : 'The terminal appears after this box gets compute.';
-    }
+    await refreshConversation();
+    if (generation === state.selection) startPolling(refreshConversation);
+  } catch (error) {
+    if (generation !== state.selection) return;
+    terminalStatus(error.message + ' · retrying');
     startPolling(refreshConversation);
-  } catch (error) { toast(error.message, true); }
+  }
 }
 
 function renderTaskTabs() {
-  $('#task-tabs').innerHTML = `<button class="task-chip new-task-chip">＋ New session</button>${state.tasks.map(task => `<button class="task-chip ${state.task?.id === task.id ? 'selected' : ''}" data-task="${escapeHTML(task.id)}">${escapeHTML(task.agent)} · ${escapeHTML(stateLabel(task.state))}</button>`).join('')}`;
-  $('.new-task-chip')?.addEventListener('click', openTaskDialog);
+  const markup = '<button class="task-chip new-task-chip">+ New session</button>' + state.tasks.map(task =>
+    '<button class="task-chip ' + (state.task?.id === task.id ? 'selected' : '') + '" data-task="' + escapeHTML(task.id) + '">' +
+    escapeHTML(task.session) + ' · ' + escapeHTML(task.agent) + ' · ' + escapeHTML(stateLabel(task.state)) + '</button>').join('');
+  const tabs = $('#task-tabs');
+  if (tabs.innerHTML === markup) return;
+  tabs.innerHTML = markup;
+  $('.new-task-chip').addEventListener('click', openTaskDialog);
   $$('[data-task]').forEach(button => button.addEventListener('click', () => selectTask(button.dataset.task)));
 }
 
 async function selectTask(id) {
-  state.task = state.tasks.find(task => task.id === id) || await api(`/v1/tasks/${encodeURIComponent(id)}`);
+  const task = state.tasks.find(task => task.id === id);
+  if (!task || !state.box) return;
+  flushTerminalInput();
+  ++state.selection;
+  state.task = task;
+  $('#terminal').textContent = '';
+  $('#terminal-input').value = '';
+  terminalStatus('Loading terminal…');
   renderTaskTabs();
-  $('#chat-state').textContent = `${stateLabel(state.box.state)} · ${state.task.agent} ${stateLabel(state.task.state)}`;
-  await refreshConversation();
-  startPolling(refreshConversation);
+  await refreshTerminal(true);
+}
+
+function terminalStatus(message = '') {
+  const status = $('#terminal-status');
+  status.textContent = message;
+  status.hidden = !message;
 }
 
 async function refreshConversation(silent = false) {
-  if (!state.box || document.hidden || state.closed) return;
+  if (!state.box || document.hidden || state.closed || state.refreshing) return;
+  const generation = state.selection;
+  const id = state.box.id;
+  state.refreshing = true;
   try {
-    const freshBox = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}`, {timeout:10000});
-    state.box = freshBox;
-    $('#box-default-agent').value = freshBox.defaultAgent || 'claude';
-    const index = state.boxes.findIndex(box => box.id === freshBox.id);
-    if (index >= 0) state.boxes[index] = freshBox;
-    $('#chat-state').textContent = `${boxLifecycleLabel(freshBox)} · ${freshBox.slotId ? 'compute assigned' : 'persistent storage retained'}`;
-    $('#allocate').hidden = !['detached', 'hibernated'].includes(freshBox.state);
-    $('#hibernate').hidden = freshBox.state !== 'running';
-    if (!state.task) {
-      state.tasks = await api(`/v1/logical-boxes/${encodeURIComponent(freshBox.id)}/tasks`) || [];
-      state.task = [...state.tasks].reverse().find(task => task.state === 'active') || state.tasks.at(-1) || null;
-      renderTaskTabs();
-    }
-    if (state.task) {
-      state.task = await api(`/v1/tasks/${encodeURIComponent(state.task.id)}`, {timeout:10000});
-      const messages = await api(`/v1/tasks/${encodeURIComponent(state.task.id)}/messages`, {timeout:10000});
-      state.taskMessages = messages || [];
-      const container = $('#messages');
-      const nearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-      container.innerHTML = messages?.length ? messages.map(message => `
-        <article class="message ${escapeHTML(message.direction)} ${escapeHTML(message.state)}">
-          <div>${escapeHTML(message.text)}</div>
-          <div class="message-meta"><button type="button" class="message-forward" data-forward-task-message="${escapeHTML(message.id)}">Forward</button><span>${message.state === 'streaming' ? 'streaming…' : escapeHTML(stateLabel(message.state))}</span><time>${escapeHTML(stamp(message.updatedAt || message.createdAt))}</time></div>
-        </article>`).join('') : '<div class="empty">Waiting for the first message.</div>';
-      $$('[data-forward-task-message]').forEach(button => button.addEventListener('click', () => {
-        const message = state.taskMessages.find(value => value.id === button.dataset.forwardTaskMessage);
-        if (message) openForwardDialog(message.text);
-      }));
-      if (nearBottom) container.scrollTop = container.scrollHeight;
-      renderTaskTabs();
-    }
+    const [box, tasks] = await Promise.all([
+      api('/v1/logical-boxes/' + encodeURIComponent(id), {timeout:10000}),
+      api('/v1/logical-boxes/' + encodeURIComponent(id) + '/tasks', {timeout:10000}),
+    ]);
+    if (generation !== state.selection || state.box?.id !== id) return;
+    state.box = box;
+    state.tasks = tasks || [];
+    state.task = state.tasks.find(task => task.id === state.task?.id) ||
+      [...state.tasks].reverse().find(task => task.state === 'active') || state.tasks.at(-1) || null;
+    $('#box-default-agent').value = box.defaultAgent || 'claude';
+    $('#chat-state').textContent = boxLifecycleLabel(box) + (box.failureReason ? ' · ' + box.failureReason : '');
+    $('#allocate').hidden = !['detached', 'hibernated'].includes(box.state);
+    $('#allocate').textContent = 'Restore / start';
+    $('#hibernate').hidden = box.state !== 'running';
+    const index = state.boxes.findIndex(value => value.id === id);
+    if (index >= 0) state.boxes[index] = box;
+    renderTaskTabs();
     renderRoster();
-    if (freshBox.state === 'running') await refreshTerminal(true);
-    else {
-      $('#terminal').textContent = 'Compute is detached. Sending a message starts this box automatically.';
-      renderTerminalPrompt(null, state.task?.session || 'vmbox');
+    if (box.state === 'running') await refreshTerminal(true);
+    else terminalStatus(box.failureReason || 'Compute ' + boxLifecycleLabel(box) + '. Restore or start a new session.');
+  } catch (error) {
+    if (generation === state.selection) {
+      terminalStatus(error.message + ' · retrying automatically');
+      if (!silent) toast(error.message, true);
     }
-  } catch (error) { if (!silent) toast(error.message, true); }
+  } finally {
+    state.refreshing = false;
+  }
 }
 
 async function refreshTerminal(silent = false) {
-  if (!state.box || state.box.state !== 'running') return;
+  if (!state.box || state.box.state !== 'running' || state.closed) return;
+  const boxID = state.box.id;
   const session = state.task?.session || 'vmbox';
+  const generation = state.selection;
+  const requestKey = generation + ':' + boxID + ':' + session;
+  if (state.terminalRequests.has(requestKey)) return;
+  state.terminalRequests.add(requestKey);
   try {
-    const snapshot = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal?session=${encodeURIComponent(session)}&history=300`, {timeout:10000});
-    $('#terminal').textContent = snapshot.content || 'Terminal is empty.';
-    $('#terminal-title').textContent = `tmux · ${snapshot.session}${snapshot.command ? ` · ${snapshot.command}` : ''}`;
-    $('#terminal-size').textContent = snapshot.width && snapshot.height ? `${snapshot.width}×${snapshot.height}` : '';
-    renderTerminalPrompt(snapshot.prompt, session);
-  } catch (error) {
-    $('#terminal').textContent = `Screen mirror unavailable\n\n${error.message}`;
-    renderTerminalPrompt(null, session);
-    if (!silent) toast(error.message, true);
-  }
-}
-
-function renderTerminalPrompt(prompt, session) {
-  const panel = $('#terminal-prompt');
-  if (!prompt?.id || !prompt.choices?.length) {
-    panel.hidden = true;
-    panel.replaceChildren();
-    return;
-  }
-  panel.hidden = false;
-  panel.innerHTML = `
-    <strong>${escapeHTML(prompt.text || 'Terminal input required')}</strong>
-    <div class="terminal-prompt-choices">
-      ${prompt.choices.map(choice => `<button type="button" class="terminal-prompt-choice" data-prompt-value="${escapeHTML(choice.value)}">${escapeHTML(choice.value)}. ${escapeHTML(choice.label)}</button>`).join('')}
-    </div>
-    <p>Detected from the live tmux session. Choosing once sends that exact response and presses Enter.</p>`;
-  $$('[data-prompt-value]', panel).forEach(button => button.addEventListener('click', async () => {
-    const buttons = $$('[data-prompt-value]', panel);
-    buttons.forEach(item => { item.disabled = true; });
-    try {
-      const choice = prompt.choices.find(choice => choice.value === button.dataset.promptValue);
-      const endpoint = `/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`;
-      await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {
-        method:'POST',
-        headers:{'Idempotency-Key':`terminal-prompt-${session}-${prompt.id}-${button.dataset.promptValue}`},
-        body:JSON.stringify({text:choice?.input || button.dataset.promptValue, submit:choice?.submit !== false}),
-        timeout:30000,
-      });
-      if (prompt.resumeInput) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await api(endpoint, {
-          method:'POST',
-          headers:{'Idempotency-Key':`terminal-prompt-${session}-${prompt.id}-resume`},
-          body:JSON.stringify({text:state.task?.prompt || '\r', submit:Boolean(state.task?.prompt)}),
-          timeout:30000,
-        });
-      }
-      panel.hidden = true;
-      toast(`Sent terminal choice ${button.dataset.promptValue}`);
-      setTimeout(() => refreshTerminal(true), 350);
-    } catch (error) {
-      buttons.forEach(item => { item.disabled = false; });
-      toast(error.message, true);
+    const snapshot = await api('/v1/logical-boxes/' + encodeURIComponent(boxID) + '/terminal?session=' + encodeURIComponent(session) + '&history=300', {timeout:10000});
+    if (generation !== state.selection || state.box?.id !== boxID) return;
+    const screen = $('#terminal');
+    const follow = !screen.textContent || screen.scrollHeight - screen.scrollTop - screen.clientHeight < 40;
+    const selection = window.getSelection();
+    const selecting = selection && !selection.isCollapsed && screen.contains(selection.anchorNode);
+    if (!selecting && screen.textContent !== (snapshot.content || '')) {
+      screen.textContent = snapshot.content || '';
+      if (follow) screen.scrollTop = screen.scrollHeight;
     }
-  }));
+    $('#terminal-title').textContent = 'tmux · ' + snapshot.session + (snapshot.command ? ' · ' + snapshot.command : '');
+    $('#terminal-size').textContent = snapshot.width && snapshot.height ? snapshot.width + '×' + snapshot.height : '';
+    terminalStatus();
+  } catch (error) {
+    if (generation !== state.selection || state.box?.id !== boxID) return;
+    terminalStatus(error.message + ' · retrying automatically');
+    if (!silent) toast(error.message, true);
+  } finally {
+    state.terminalRequests.delete(requestKey);
+  }
 }
 
 function renderGroupMessages() {
@@ -620,6 +600,9 @@ async function refreshGroupScreens(force = false) {
 }
 
 async function selectGroup(id) {
+  flushTerminalInput();
+  stopPolling();
+  ++state.selection;
   state.box = null;
   state.task = null;
   state.group = state.groups.find(group => group.id === id);
@@ -884,33 +867,7 @@ $('#box-menu').addEventListener('click', async () => {
   } catch (error) { toast(error.message, true); }
 });
 
-$('#message-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  if (!state.box) return;
-  const input = $('#message');
-  const text = input.value;
-  if (!text.trim()) return;
-  input.value = '';
-  try {
-    if (state.task?.state === 'active' && state.box.state === 'running') {
-      await api(`/v1/tasks/${encodeURIComponent(state.task.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('message')}, body:JSON.stringify({text}), timeout:30000});
-      toast(`Message delivered to ${state.task.agent}`);
-    } else {
-      const pending = state.task && ['queued','waiting_capacity','starting'].includes(state.task.state) ? state.task : null;
-      const body = {text, agent:pending?.agent || state.box.defaultAgent || 'claude'};
-      if (pending?.session) body.session = pending.session;
-      const result = await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/messages`, {method:'POST', headers:{'Idempotency-Key':idempotency('direct')}, body:JSON.stringify(body), timeout:30000});
-      state.task = result.task;
-      if (!state.tasks.some(task => task.id === result.task.id)) state.tasks.push(result.task);
-      renderTaskTabs();
-      toast(result.started ? `Box is starting ${result.task.agent}` : 'Message queued');
-    }
-    await refreshConversation(true);
-  } catch (error) {
-    input.value = text;
-    toast(error.message, true);
-  }
-});
+
 
 $('#box-default-agent').addEventListener('change', async event => {
   if (!state.box) return;
@@ -948,12 +905,20 @@ $('#group-message-form').addEventListener('submit', async event => {
 
 $('#share-terminal').addEventListener('click', () => {
   if (!state.box) return;
-  openForwardDialog($('#terminal').textContent);
+  const selection = window.getSelection();
+  const selected = selection && $('#terminal').contains(selection.anchorNode) && $('#terminal').contains(selection.focusNode) ? selection.toString() : '';
+  openForwardDialog(selected || $('#terminal').textContent);
 });
 
-$('#toggle-terminal').addEventListener('click', () => {
-  setTerminalPane(!$('#chat-view .chat-body').classList.contains('terminal-open'));
+$('#detach-terminal').addEventListener('click', () => {
+  flushTerminalInput();
+  showView('boxes');
+  toast('Detached. Compute and agents keep running.');
 });
+
+$$('[data-terminal-key]').forEach(button => button.addEventListener('click', () => {
+  queueTerminalKeys([button.dataset.terminalKey.toUpperCase().startsWith('C-') ? button.dataset.terminalKey.toUpperCase() : button.dataset.terminalKey]);
+}));
 
 $('#terminal').addEventListener('keydown', event => {
 	const input = terminalKey(event);
@@ -973,9 +938,17 @@ $('#terminal').addEventListener('paste', event => {
 $('#fullscreen-terminal').addEventListener('click', async () => {
   const terminal = $('#chat-view .terminal-column');
   try {
+    if (terminal.classList.contains('fullscreen-fallback')) {
+      terminal.classList.remove('fullscreen-fallback');
+      $('#fullscreen-terminal').textContent = 'Fullscreen';
+      return;
+    }
     if (document.fullscreenElement === terminal) await document.exitFullscreen();
     else await terminal.requestFullscreen();
-  } catch (error) { toast(`Fullscreen unavailable: ${error.message}`, true); }
+  } catch {
+    terminal.classList.toggle('fullscreen-fallback');
+    $('#fullscreen-terminal').textContent = terminal.classList.contains('fullscreen-fallback') ? 'Exit fullscreen' : 'Fullscreen';
+  }
 });
 
 document.addEventListener('fullscreenchange', () => {
@@ -1004,21 +977,13 @@ $('#close-terminal-preview').addEventListener('click', () => {
   $('#terminal-preview-dialog').close();
 });
 
-$('#terminal-form').addEventListener('submit', async event => {
+$('#terminal-form').addEventListener('submit', event => {
   event.preventDefault();
-  if (!state.box) return;
   const input = $('#terminal-input');
-  const text = input.value;
-  if (!text) return;
-  const session = state.task?.session || 'vmbox';
+  if (!state.box || state.box.state !== 'running') return;
+  queueTerminalInput(input.value);
   input.value = '';
-  try {
-    await api(`/v1/logical-boxes/${encodeURIComponent(state.box.id)}/terminal/input?session=${encodeURIComponent(session)}`, {method:'POST', headers:{'Idempotency-Key':idempotency('terminal')}, body:JSON.stringify({text, submit:true})});
-    setTimeout(() => refreshTerminal(true), 350);
-  } catch (error) {
-    input.value = text;
-    toast(error.message, true);
-  }
+  queueTerminalKeys(['Enter']);
 });
 
 $('#copy-detail').addEventListener('click', async () => {
@@ -1026,7 +991,7 @@ $('#copy-detail').addEventListener('click', async () => {
   catch { toast('Copy was blocked by the browser', true); }
 });
 
-for (const id of ['message', 'group-message']) {
+for (const id of ['group-message']) {
   $(`#${id}`).addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();

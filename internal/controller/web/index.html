@@ -13,7 +13,7 @@
     <form id="login-form" class="login-card">
       <div class="brand-mark" aria-hidden="true">v</div>
       <p class="eyebrow">VMBOX CONTROLLER</p>
-      <h1>A quieter place<br>for busy agents.</h1>
+      <h1>vmbox</h1>
       <p class="muted">Your bearer token stays in this browser tab. Closing this page never stops a box or its tmux session.</p>
       <label>Password<input id="token" type="password" autocomplete="current-password" required placeholder="Enter controller password"></label>
       <button class="primary" type="submit">Open controller</button>
@@ -23,19 +23,19 @@
 
   <div id="app" class="app-shell" hidden>
     <nav class="rail" aria-label="Main navigation">
-      <button class="logo-button" data-view="home" aria-label="Dashboard">v</button>
+      <button class="logo-button" data-view="home" aria-label="Dashboard">vmbox</button>
       <div class="rail-actions">
-        <button data-view="home" class="nav-button selected" title="Dashboard" aria-label="Dashboard">⌂</button>
-        <button data-view="boxes" class="nav-button" title="Chats" aria-label="Chats">◌</button>
-        <button data-view="fleet" class="nav-button" title="Fleet capacity" aria-label="Fleet capacity">≋</button>
-        <button data-view="settings" class="nav-button" title="Settings" aria-label="Settings">⚙</button>
+        <button data-view="home" class="nav-button selected">Index</button>
+        <button data-view="boxes" class="nav-button">Boxes</button>
+        <button data-view="fleet" class="nav-button">Capacity</button>
+        <button data-view="settings" class="nav-button">Settings</button>
       </div>
-      <button id="logout" class="nav-button logout" title="Log out" aria-label="Log out">↪</button>
+      <button id="logout" class="nav-button logout">Log out</button>
     </nav>
 
     <aside class="roster-pane">
       <header class="pane-header">
-        <div><p class="eyebrow">WORKSPACES</p><h2>Conversations</h2></div>
+        <div><p class="eyebrow">WORKSPACES</p><h2>Boxes and groups</h2></div>
         <div class="header-actions">
           <button id="new-group" class="icon-button" title="New group" aria-label="New group">♯</button>
           <button id="new-box" class="icon-button accent" title="New box" aria-label="New box">＋</button>
@@ -63,7 +63,7 @@
     <main class="main-pane">
       <section id="home-view" class="view page-view">
         <header class="topbar">
-          <div><p class="eyebrow">CONTROL CENTER</p><h1>Your agent fleet.</h1><p class="lede">Persistent workspaces, reusable compute, no surprise shutdowns.</p></div>
+          <div><h1>Index of /workspaces</h1><p class="lede">Select a box to open its terminal.</p></div>
           <button class="secondary" id="home-new-task">Start an agent</button>
         </header>
         <div id="stats" class="stats-grid"></div>
@@ -87,32 +87,26 @@
           <div class="chat-title"><h2 id="chat-name">Box</h2><p id="chat-state">Persistent workspace</p></div>
           <div class="chat-actions">
             <label class="agent-picker" title="Default agent for new conversations"><span>Default</span><select id="box-default-agent" aria-label="Default agent for this box"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
-            <button id="toggle-terminal" class="text-button terminal-toggle" type="button" aria-pressed="false">Terminal</button>
-            <button id="share-terminal" class="text-button" title="Forward current screen to another box">Share screen</button>
+            <button id="share-terminal" class="text-button" title="Forward selected output or the current screen to another box">Forward context</button>
+            <button id="detach-terminal" class="text-button" title="Leave compute and agents running">Detach</button>
             <button id="allocate" class="text-button">Start</button>
             <button id="hibernate" class="text-button">Hibernate</button>
             <button id="box-menu" class="icon-button" aria-label="Delete workspace volume">⋮</button>
           </div>
         </header>
         <div class="chat-body">
-          <div class="chat-column">
+          <section class="terminal-column">
             <div id="task-tabs" class="task-tabs"></div>
-            <section id="terminal-prompt" class="terminal-prompt" aria-live="polite" hidden></section>
-            <div id="messages" class="messages"></div>
-            <form id="message-form" class="composer">
-              <textarea id="message" rows="1" placeholder="Message this box — offline boxes start their configured agent" aria-label="Message this box"></textarea>
-              <button type="submit" class="send-button" aria-label="Send">↑</button>
-            </form>
-          </div>
-          <aside class="terminal-column">
             <div class="terminal-bar"><span class="terminal-lights"><i></i><i></i><i></i></span><span id="terminal-title">tmux · vmbox</span><span class="spacer"></span><span id="terminal-size"></span><button id="fullscreen-terminal" type="button" title="Toggle fullscreen terminal">Fullscreen</button></div>
+            <div id="terminal-status" class="terminal-status" role="status" hidden></div>
             <pre id="terminal" tabindex="0" role="application" aria-label="Interactive tmux terminal; click and type">Choose a running box to mirror its tmux screen.</pre>
             <div class="terminal-guide" aria-label="tmux keyboard guide">
               <span><b>WRITE</b> q / Esc</span><span><b>SCROLL</b> Ctrl-a s · wheel</span><span><b>DETACH</b> Ctrl-a d</span><span><b>HELP</b> Ctrl-a h</span>
               <small>Click the screen and type · QWERTZ-safe · browser input is forwarded to tmux · closing this page keeps agents running</small>
             </div>
-            <form id="terminal-form" class="terminal-input"><input id="terminal-input" placeholder="Send exact terminal input"><button>Send</button></form>
-          </aside>
+            <div class="terminal-keys" aria-label="Terminal keys"><button type="button" data-terminal-key="Escape">Esc</button><button type="button" data-terminal-key="Tab">Tab</button><button type="button" data-terminal-key="C-c">Ctrl-C</button><button type="button" data-terminal-key="C-d">Ctrl-D</button><button type="button" data-terminal-key="Up">↑</button><button type="button" data-terminal-key="Down">↓</button><button type="button" data-terminal-key="Left">←</button><button type="button" data-terminal-key="Right">→</button><button type="button" data-terminal-key="BSpace">⌫</button><button type="button" data-terminal-key="Enter">Enter</button></div>
+            <form id="terminal-form" class="terminal-input"><input id="terminal-input" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Exact terminal input" placeholder="Type or paste terminal input"><button>Enter</button></form>
+          </section>
         </div>
       </section>
 
@@ -220,7 +214,7 @@
     <form id="forward-form" class="dialog-form">
       <div class="dialog-heading"><div><p class="eyebrow">FORWARD</p><h2>Forward to a box</h2></div><button type="button" class="icon-button close-dialog">×</button></div>
       <div class="two-col"><label>Destination box<select name="box" id="forward-box" required></select></label><label>Agent<select name="agent"><option value="">Box default</option><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label></div>
-      <label>Original message<textarea name="source" rows="7" readonly required></textarea></label>
+      <label>Selected context (edit before forwarding)<textarea name="source" rows="7" required></textarea></label>
       <label>Append instructions (optional)<textarea name="append" rows="4" placeholder="Add context or tell the destination agent what to do…"></textarea></label>
       <p class="muted">Only the selected box receives this. Leaving Agent unchanged uses that box’s saved default.</p>
       <div class="dialog-actions"><button type="button" class="secondary close-dialog">Cancel</button><button class="primary">Forward</button></div>

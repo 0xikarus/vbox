@@ -9,6 +9,7 @@ import puppeteer from 'puppeteer-core';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const webRoot = resolve(root, 'internal/controller/web');
 const requests = [];
+let terminalDelay = 0;
 const now = '2026-09-04T10:00:00Z';
 const boxes = [
   {id:'box-1', name:'codex-box', provider:'railway', providerCredential:'primary', defaultAgent:'codex', state:'running', volumeId:'volume-1', volumeName:'codex-data', slotId:'slot-1'},
@@ -89,7 +90,10 @@ before(async () => {
     ]);
     if (request.method === 'POST' && taskMessages) return json(response, 202, {id:'delivered-message', taskId:taskMessages[1], direction:'user', text:body.text, state:'delivered', createdAt:now, updatedAt:now});
     const terminal = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/terminal$/);
-    if (request.method === 'GET' && terminal) return json(response, 200, {session:url.searchParams.get('session'), command:terminal[1] === 'box-1' ? 'codex' : 'claude', content:`${terminal[1]} live agent output\nworking safely`, width:120, height:35, capturedAt:now, prompt:terminal[1] === 'box-1' ? {id:'codex-update', text:'Update available!', resumeInput:true, choices:[{value:'1',label:'Update',input:'\r',submit:false},{value:'2',label:'Skip',input:'\u001b[B\r',submit:false}]} : null});
+    if (request.method === 'GET' && terminal) {
+      if (terminal[1] === 'box-1' && terminalDelay) await new Promise(resolve => setTimeout(resolve, terminalDelay));
+      return json(response, 200, {session:url.searchParams.get('session'), command:'arbitrary-program', content:`${terminal[1]} live agent output\nworking safely`, width:120, height:35, capturedAt:now});
+    }
     const terminalInput = url.pathname.match(/^\/v1\/logical-boxes\/(box-[12])\/terminal\/input$/);
     if (request.method === 'POST' && terminalInput) {
       response.writeHead(204);
@@ -112,6 +116,69 @@ before(async () => {
   browser = await puppeteer.launch({executablePath, headless:true, args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 
+test('UI remains small and self-contained', async () => {
+  const css = await readFile(resolve(webRoot, 'app.css'), 'utf8');
+  assert(Buffer.byteLength(css) < 5 * 1024, 'Keep the shared stylesheet below 5 KiB');
+  assert(!/@import|url\(/.test(css), 'No font or asset downloads');
+});
+
+test('terminal input, selection races, fullscreen, and reconnect', async () => {
+  boxes[0].state = 'running';
+  const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(baseURL, {waitUntil:'networkidle0'});
+  await page.type('#token', 'browser-test-password');
+  await page.click('#login-form button[type="submit"]');
+  await page.waitForSelector('[data-box="box-1"]');
+  terminalDelay = 600;
+  const pending = page.waitForRequest(request => request.url().includes('/box-1/terminal?'));
+  await page.click('[data-box="box-1"]');
+  await pending;
+  await page.click('[data-box="box-2"]');
+  await page.waitForFunction(() => document.querySelector('#terminal').textContent.startsWith('box-2'));
+  await new Promise(resolve => setTimeout(resolve, 750));
+  terminalDelay = 0;
+  assert.match(await page.$eval('#terminal', el => el.textContent), /^box-2/);
+  assert.equal(await page.$eval('#chat-name', el => el.textContent), 'claude-box');
+
+  const start = requests.length;
+  await page.focus('#terminal');
+  for (const key of ['Backspace', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']) await page.keyboard.press(key);
+  await page.keyboard.down('Control');
+  await page.keyboard.press('c');
+  await page.keyboard.up('Control');
+  await page.evaluate(() => {
+    const screen = document.querySelector('#terminal');
+    screen.dispatchEvent(new KeyboardEvent('keydown', {key:'@',ctrlKey:true,altKey:true,bubbles:true,cancelable:true}));
+    const data = new DataTransfer();
+    data.setData('text/plain', 'äöü pasted\nsecond line');
+    screen.dispatchEvent(new ClipboardEvent('paste', {clipboardData:data,bubbles:true,cancelable:true}));
+  });
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.querySelector('#connection-label').textContent === 'Live');
+  for (let i=0;i<60 && requests.slice(start).filter(r => r.method === 'POST').length < 8;i++) await new Promise(resolve => setTimeout(resolve,50));
+  const inputs = requests.slice(start).filter(r => r.method === 'POST');
+  assert(inputs.every(r => r.path === '/v1/logical-boxes/box-2/terminal/input' && r.search.includes('claude-live')));
+  assert.deepEqual(inputs.flatMap(r => r.body.keys || []), ['BSpace','Up','Down','Left','Right','C-C','Enter']);
+  assert.equal(inputs.map(r => r.body.text || '').join(''), '@äöü pasted\nsecond line');
+
+  await page.click('#fullscreen-terminal');
+  await page.waitForFunction(() => document.fullscreenElement || document.querySelector('.fullscreen-fallback'));
+  await page.click('#fullscreen-terminal');
+  await page.waitForFunction(() => !document.fullscreenElement && !document.querySelector('.fullscreen-fallback'));
+  await page.setOfflineMode(true);
+  await page.waitForFunction(() => document.querySelector('#terminal-status').textContent.includes('retrying'), {timeout:15000});
+  assert.match(await page.$eval('#terminal', el => el.textContent), /^box-2/);
+  await page.setOfflineMode(false);
+  await page.waitForFunction(() => document.querySelector('#terminal-status').hidden, {timeout:15000});
+  const mutations = requests.filter(r => r.method !== 'GET').length;
+  await page.click('#detach-terminal');
+  assert.equal(requests.filter(r => r.method !== 'GET').length, mutations);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
 after(async () => {
   await browser?.close();
   await new Promise(resolveClosed => server?.close(resolveClosed));
@@ -119,6 +186,8 @@ after(async () => {
 
 test('controller routes exact sessions and supports safe group collaboration', async () => {
   const page = await browser.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
   await page.setViewport({width:1440, height:900});
   await page.goto(baseURL, {waitUntil:'networkidle0'});
   await page.type('#token', 'browser-test-password');
@@ -138,29 +207,16 @@ test('controller routes exact sessions and supports safe group collaboration', a
 
   await page.click('[data-box="box-1"]');
   await page.waitForSelector('[data-task="task-1"].selected');
-  await page.waitForSelector('#messages .message.agent.streaming');
-  assert.match(await page.$eval('#messages .message.agent.streaming', element => element.textContent), /streaming…/);
-  await page.type('#message', "What's today's date?");
-  await page.keyboard.press('Enter');
-  await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('delivered to codex'));
-  assert(requests.some(value => value.method === 'POST' && value.path === '/v1/tasks/task-1/messages' && value.body.text === "What's today's date?"));
-  assert(!requests.some(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/messages' && value.body?.session === 'vmbox'));
-
-  await page.waitForFunction(() => {
-    const button = document.querySelector('[data-prompt-value="2"]');
-    return button && !button.disabled && button.getClientRects().length > 0;
-  });
-  await page.evaluate(() => document.querySelector('[data-prompt-value="2"]')?.click());
-  for (let attempt = 0; attempt < 40 && requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length < 2; attempt++) {
-    await new Promise(resolveWait => setTimeout(resolveWait, 50));
-  }
-  const terminalPosts = requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input');
-  const promptToast = await page.$eval('#toast', element => element.textContent);
-  assert.equal(terminalPosts.length, 2, `${JSON.stringify(terminalPosts)} toast=${promptToast}`);
-  assert.equal(terminalPosts.at(-2).body.text, '\u001b[B\r');
-  assert.equal(terminalPosts.at(-2).body.submit, false);
-  assert.equal(terminalPosts.at(-1).body.text, 'work');
-  assert.equal(terminalPosts.at(-1).body.submit, true);
+  await page.waitForFunction(() => document.querySelector('#terminal').textContent.includes('box-1 live agent output'));
+  assert.equal(await page.$('#message-form'), null);
+  assert.equal(await page.$('#messages'), null);
+  assert.equal(await page.$('#terminal-prompt'), null);
+  const widths = await page.evaluate(() => ({
+    body: document.querySelector('.chat-body').clientWidth,
+    terminal: document.querySelector('.terminal-column').clientWidth,
+  }));
+  assert.equal(widths.terminal, widths.body);
+  assert(!requests.some(value => value.path === '/v1/tasks/task-1/messages'));
 
   assert.equal(await page.$eval('#fullscreen-terminal', element => element.textContent), 'Fullscreen');
   const interactiveStart = requests.filter(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-1/terminal/input').length;
@@ -179,13 +235,13 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('starts claude'));
   assert(requests.some(value => value.method === 'PATCH' && value.path === '/v1/logical-boxes/box-1' && value.body.defaultAgent === 'claude'));
 
-  await page.click('[data-forward-task-message]');
+  await page.click('#share-terminal');
   await page.select('#forward-box', 'box-2');
   await page.type('#forward-form [name="append"]', 'Compare this with your findings.');
   await page.click('#forward-form .primary');
   await page.waitForFunction(() => document.querySelector('#toast').textContent.includes('Forwarded to claude-box'));
   const forwarded = requests.find(value => value.method === 'POST' && value.path === '/v1/logical-boxes/box-2/messages');
-  assert.match(forwarded.body.text, /Initial research prompt/);
+  assert.match(forwarded.body.text, /box-1 live agent output/);
   assert.match(forwarded.body.text, /Compare this with your findings/);
   assert.equal(forwarded.body.agent, 'claude');
 
@@ -224,12 +280,20 @@ test('controller routes exact sessions and supports safe group collaboration', a
   await mobile.goto(baseURL, {waitUntil:'networkidle0'});
   await mobile.type('#token', 'browser-test-password');
   await Promise.all([mobile.click('#login-form button[type="submit"]'), mobile.waitForSelector('#app:not([hidden])')]);
+  await mobile.click('[data-view="boxes"]');
   await mobile.waitForSelector('[data-box="box-1"]', {visible:true});
   assert.equal(await mobile.evaluate(() => fetch('/favicon.svg').then(response => response.status)), 200);
   await mobile.click('[data-box="box-1"]');
   await mobile.waitForSelector('#chat-view:not([hidden])');
-  await mobile.$eval('#toggle-terminal', element => element.click());
-  assert.equal(await mobile.$eval('#toggle-terminal', element => element.textContent), 'Chat');
-  assert(await mobile.$eval('#chat-view .chat-body', element => element.classList.contains('terminal-open')));
+  assert.equal(await mobile.$('#message-form'), null);
+  await mobile.waitForSelector('#terminal', {visible:true});
+  const layout = await mobile.evaluate(() => {
+    const bounds = document.querySelector('#terminal').getBoundingClientRect();
+    return {width:bounds.width, height:bounds.height, overflow:document.documentElement.scrollWidth > innerWidth};
+  });
+  assert(layout.width >= 380);
+  assert(layout.height > 300);
+  assert.equal(layout.overflow, false);
+  assert.deepEqual(errors, []);
   await mobile.close();
 });
