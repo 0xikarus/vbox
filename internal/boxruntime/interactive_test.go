@@ -59,7 +59,10 @@ func testInteractiveShellReal(t *testing.T, startCLI bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	t.Cleanup(func() { _, _ = tmuxOutput(context.Background(), "kill-session", "-t", "=specs-test") })
+	t.Cleanup(func() {
+		_, _ = tmuxOutput(context.Background(), "set-option", "-g", "exit-empty", "on")
+		_, _ = tmuxOutput(context.Background(), "kill-session", "-t", "=specs-test")
+	})
 	command := ""
 	marker := filepath.Join(base, "startup-count")
 	if startCLI {
@@ -155,5 +158,15 @@ func testInteractiveShellReal(t *testing.T, startCLI bool) {
 	option, err := tmuxOutput(ctx, "show-options", "-v", "-t", "=specs-test:", "@vmbox-shell")
 	if err != nil || strings.TrimSpace(string(option)) != "1" {
 		t.Fatalf("restored shell marker: %q %v", option, err)
+	}
+	if err := SetNativeAssignment(ctx, strings.Repeat("a", 64)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tmuxOutput(ctx, "kill-session", "-t", "=specs-test"); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := SaveTmuxState(ctx, root)
+	if err != nil || len(empty.Sessions) != 0 {
+		t.Fatalf("empty bound server snapshot: %+v %v", empty, err)
 	}
 }

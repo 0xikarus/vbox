@@ -90,6 +90,18 @@ func SaveTmuxState(ctx context.Context, root string) (TmuxSnapshot, error) {
 		"#{pane_pid}", "#{window_active}", "#{pane_active}",
 	}, "\t")
 	output, err := tmuxOutput(ctx, "list-panes", "-a", "-F", format)
+	// An assignment-bound server can intentionally remain alive with zero
+	// sessions. tmux 3.4 reports "no current target" for list-panes then.
+	// Independently confirm the empty inventory instead of treating arbitrary
+	// target/transport failures as an empty snapshot.
+	if err != nil && strings.HasSuffix(err.Error(), ": no current target") {
+		inventory, inventoryErr := tmuxOutput(ctx, "list-sessions", "-F", "#{session_name}")
+		if inventoryErr == nil && len(strings.TrimSpace(string(inventory))) == 0 {
+			output, err = nil, nil
+		} else if tmuxServerAbsent(inventoryErr) {
+			err = inventoryErr
+		}
+	}
 	if err != nil && !tmuxServerAbsent(err) {
 		return snapshot, err
 	}
