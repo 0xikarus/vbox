@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -51,6 +52,27 @@ func testTelegramCorrelatedReply(t *testing.T, ctx context.Context, s *Server, o
 	}
 	if sends != 1 {
 		t.Fatal("reply duplicated", sends)
+	}
+	response := httptest.NewRecorder()
+	s.coworkerOwnerMessages(response, httptest.NewRequest(http.MethodGet, "/v1/coworkers/messages", nil).WithContext(ctx), owner)
+	var messages []struct {
+		Sequence   int64  `json:"sequence"`
+		ReplyState string `json:"replyState"`
+	}
+	if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &messages) != nil {
+		t.Fatal("could not read owner delivery status", response.Code)
+	}
+	found := false
+	for _, message := range messages {
+		if message.Sequence == seq {
+			found = true
+			if message.ReplyState != "sent" {
+				t.Fatalf("reply state = %q, want sent", message.ReplyState)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("reply event missing from owner messages")
 	}
 	if _, err = s.replyTelegramOwner(ctx, id, seq, "changed response"); err == nil {
 		t.Fatal("changed retry accepted")
