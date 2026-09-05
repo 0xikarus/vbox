@@ -199,7 +199,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			return nil
 		}
 		if box.State != v1.LogicalBoxRunning {
-			progress("Starting box…")
+			progress("requesting-allocation")
 			if allocation.RequestID == "" {
 				if _, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(box.ID)+"/allocate", map[string]string{"leaseOwner": "cli"}, &allocation, map[string]string{"Idempotency-Key": request.AllocationRequestKey + ":open"}); err != nil {
 					return err

@@ -45,6 +45,10 @@ vmbox helper1 --session NAME     # attach to this exact session and remember it
 The controller remembers the shell session per logical box, across CLI clients.
 Plain `vmbox BOX` reuses that shell or creates it if missing, without an agent
 picker. Start Claude, Codex, or any other installed program yourself inside it.
+If hibernation is already in progress, opening queues a durable resume request:
+the controller finishes the safe unmount, then allocates and reconnects. It does
+not interrupt an unmount. Progress shows the actual phase, such as
+`hibernating · detaching-volume (resume queued)` or `restoring-tmux`.
 Reconnecting to a running shell preserves its programs; it does not restart them.
 Use `--session` to select other existing sessions; none are deleted and bare
 `--session` never creates a session. Explicit agent overrides start a new session.
@@ -80,8 +84,8 @@ vmbox new service --no-dialog --detach --start-cli './start-service.sh'
 ```
 
 Scripts must explicitly use `--detach` (leave running) or `--hibernate`;
-`--allocate` remains an alias for leave running. Raw lifecycle phases require
-`--verbose`; normal creation progress stays inside the form.
+`--allocate` remains an alias for leave running. Actual lifecycle phases appear
+inside the form; `--verbose` adds request IDs and retry counts.
 
 ## One-shot mode
 

@@ -249,6 +249,32 @@ func (s *Store) ReserveAllocation(ctx context.Context, p Principal, logicalBox, 
 		}
 		return allocation, nil
 	}
+	if box.State == v1.LogicalBoxHibernating || box.State == v1.LogicalBoxHibernated || box.State == v1.LogicalBoxDetached {
+		// Reuse pending intent even after detach, before the scheduler has
+		// claimed it; otherwise a second opener leaves a stale resume queued.
+		allocation, queuedErr := scanAllocation(tx.QueryRowContext(ctx, allocationSelect+` WHERE r.account_id=$1 AND r.logical_box_id=$2 AND r.state='queued' ORDER BY r.created_at LIMIT 1`, p.AccountID, box.ID))
+		if queuedErr == nil {
+			if err := tx.Commit(); err != nil {
+				return allocation, err
+			}
+			return allocation, nil
+		}
+		if !errors.Is(queuedErr, sql.ErrNoRows) {
+			return allocation, queuedErr
+		}
+	}
+	if box.State == v1.LogicalBoxHibernating {
+		// Never race a workspace unmount. The scheduler reserves only
+		// detached, slot-free boxes.
+		_, err = tx.ExecContext(ctx, `INSERT INTO allocation_requests(id,account_id,logical_box_id,state,idempotency_key,requested_by,phase) VALUES($1,$2,$3,'queued',$4,$5,'waiting-for-hibernate')`, uuid(), p.AccountID, box.ID, idempotency, p.UserID)
+		if err != nil {
+			return v1.Allocation{}, err
+		}
+		if err = tx.Commit(); err != nil {
+			return v1.Allocation{}, err
+		}
+		return s.allocationByKey(ctx, p.AccountID, idempotency)
+	}
 	if box.State != v1.LogicalBoxDetached && box.State != v1.LogicalBoxHibernated {
 		return v1.Allocation{}, fmt.Errorf("logical box %q is %s, not detached", box.Name, box.State)
 	}

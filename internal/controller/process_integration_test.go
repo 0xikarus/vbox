@@ -202,4 +202,31 @@ func TestProcessPostgres(t *testing.T) {
 	if w.Code != 404 {
 		t.Fatal("foreign task output accessible", w.Code)
 	}
+	// Resume during hibernation is durable, deduplicated, and cannot reserve
+	// compute until the old assignment has safely released its volume.
+	resume, err := s.ReserveAllocation(ctx, p, box, "resume-during-hibernate", "cli", time.Minute)
+	if err != nil || resume.State != "queued" || resume.Phase != "waiting-for-hibernate" {
+		t.Fatalf("resume=%+v err=%v", resume, err)
+	}
+	again, err := s.ReserveAllocation(ctx, p, box, "second-terminal", "cli", time.Minute)
+	if err != nil || again.RequestID != resume.RequestID {
+		t.Fatalf("duplicate resume=%+v err=%v", again, err)
+	}
+	if _, ready, err := s.ReserveNextQueuedAllocation(ctx, p.AccountID, "railway", ""); err != nil || ready {
+		t.Fatalf("allocated during hibernation: ready=%t err=%v", ready, err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernated',slot_id=NULL WHERE id=$1`, box); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE compute_slots SET state='free',health='healthy' WHERE id=$1`, slot); err != nil {
+		t.Fatal(err)
+	}
+	afterDetach, err := s.ReserveAllocation(ctx, p, box, "third-terminal-after-detach", "cli", time.Minute)
+	if err != nil || afterDetach.RequestID != resume.RequestID {
+		t.Fatalf("lost queued resume after detach: %+v %v", afterDetach, err)
+	}
+	resumed, ready, err := s.ReserveNextQueuedAllocation(ctx, p.AccountID, "railway", "")
+	if err != nil || !ready || resumed.RequestID != resume.RequestID {
+		t.Fatalf("resume after detach=%+v ready=%t err=%v", resumed, ready, err)
+	}
 }

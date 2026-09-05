@@ -246,10 +246,7 @@ func (a *App) waitLogicalBoxCreation(ctx context.Context, c config.Context, toke
 	defer ticker.Stop()
 	for {
 		if box.RestorationState != lastPhase {
-			message := "Preparing workspace…"
-			if box.State == v1.LogicalBoxHibernated || box.State == v1.LogicalBoxDetached {
-				message = "Workspace saved"
-			}
+			message := tuiLabel(fmt.Sprintf("%s · %s", box.State, box.RestorationState), 240)
 			if a.Verbose {
 				message = fmt.Sprintf("phase=%s state=%s", box.RestorationState, box.State)
 			}
@@ -285,13 +282,22 @@ func (a *App) waitAllocation(ctx context.Context, c config.Context, token string
 	defer ticker.Stop()
 	for {
 		message := allocation.Phase
-		if allocation.State == "queued" {
+		if allocation.State == "queued" && allocation.Phase == "waiting-for-hibernate" {
+			box, err := a.controllerLogicalBox(ctx, c, token, allocation.LogicalBoxID)
+			if err != nil {
+				return allocation, err
+			}
+			message = fmt.Sprintf("%s · %s (resume queued)", box.State, box.RestorationState)
+			if box.FailureReason != "" {
+				message += " · " + box.FailureReason
+			}
+		} else if allocation.State == "queued" {
 			message = fmt.Sprintf("waiting-for-capacity queue=%d", allocation.QueuePosition)
 		}
 		if message != last {
-			progress := "Starting box…"
-			if allocation.State == "queued" {
-				progress = fmt.Sprintf("Waiting for compute (position %d)…", allocation.QueuePosition)
+			progress := tuiLabel(message, 240)
+			if progress == "" {
+				progress = allocation.State
 			}
 			if a.Verbose {
 				progress = fmt.Sprintf("allocation=%s phase=%s retry=%d", allocation.RequestID, message, allocation.RetryCount)
@@ -407,7 +413,7 @@ func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Contex
 		if _, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(box.ID)+"/hibernate", map[string]any{}, &updated, nil); err != nil {
 			return err
 		}
-		fmt.Fprintf(a.Err, "vmbox: hibernated %q; volume %s (%s) retained and compute slot freed\n", updated.Name, updated.VolumeName, updated.VolumeID)
+		fmt.Fprintf(a.Err, "%s · %s · %s; volume retained\n", updated.Name, updated.State, updated.RestorationState)
 		return nil
 	case "3", "delete", "delete volume":
 		fresh, err := a.controllerLogicalBox(ctx, c, token, box.ID)
