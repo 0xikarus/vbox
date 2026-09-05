@@ -65,6 +65,10 @@ func (a *App) controllerSessions(ctx context.Context, c config.Context, token st
 }
 
 func (a *App) attachNative(ctx context.Context, c config.Context, token string, box v1.LogicalBox, name string) error {
+	return a.attachRemembered(ctx, c, token, box, name, nil, false)
+}
+
+func (a *App) attachRemembered(ctx context.Context, c config.Context, token string, box v1.LogicalBox, name string, expected *v1.Session, remember bool) error {
 	if a.IsTerminal == nil || !a.IsTerminal() {
 		return fmt.Errorf("attachment requires a terminal; use vmbox sessions or task --json")
 	}
@@ -109,6 +113,9 @@ func (a *App) attachNative(ctx context.Context, c config.Context, token string, 
 	if selected == nil {
 		return fmt.Errorf("exact session %q not found (partial inventory=%t); nothing created", name, inv.Partial)
 	}
+	if expected != nil && (selected.ID != expected.ID || selected.Incarnation != expected.Incarnation) {
+		return fmt.Errorf("selected session was recreated; select again (nothing attached)")
+	}
 	var conn v1.NativeConnection
 	query := url.Values{"sessionId": {selected.ID}, "incarnation": {selected.Incarnation}}
 	if _, err = a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(box.ID)+"/native-connection?"+query.Encode(), nil, &conn, nil); err != nil {
@@ -116,6 +123,11 @@ func (a *App) attachNative(ctx context.Context, c config.Context, token string, 
 	}
 	if conn.LogicalBoxID != box.ID || conn.SessionID != selected.ID || conn.Incarnation != selected.Incarnation || conn.Assignment != inv.Assignment {
 		return fmt.Errorf("controller returned a mismatched session handoff")
+	}
+	if remember {
+		if _, err = a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(box.ID)+"/sessions/primary", map[string]string{"sessionId": selected.ID, "incarnation": selected.Incarnation}, nil, nil); err != nil {
+			return fmt.Errorf("could not remember primary session: %w", err)
+		}
 	}
 	restore, err := makeRaw(a.In)
 	if err != nil {

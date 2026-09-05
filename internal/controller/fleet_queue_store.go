@@ -19,14 +19,14 @@ func (s *Store) ReserveNextQueuedAllocation(ctx context.Context, accountID, prov
 	defer tx.Rollback()
 	var requestID, boxID string
 	var boxGeneration int64
-	err = tx.QueryRowContext(ctx, "SELECT r.id::text,b.id::text,b.assignment_generation FROM allocation_requests r JOIN logical_boxes b ON b.id=r.logical_box_id WHERE r.account_id=$1 AND r.state='queued' AND b.provider=$2 AND b.provider_credential=$3 AND b.state IN ('detached','hibernated') AND b.slot_id IS NULL ORDER BY r.created_at,r.id FOR UPDATE OF r,b SKIP LOCKED LIMIT 1", accountID, providerName, credential).Scan(&requestID, &boxID, &boxGeneration)
+	err = tx.QueryRowContext(ctx, "SELECT r.id::text,b.id::text,b.assignment_generation FROM allocation_requests r JOIN logical_boxes b ON b.id=r.logical_box_id WHERE r.account_id=$1 AND r.state='queued' AND b.provider=$2 AND b.provider_credential=$3 AND b.state IN ('detached','hibernated') AND b.slot_id IS NULL AND EXISTS (SELECT 1 FROM compute_slots available WHERE available.account_id=$1 AND available.provider=$2 AND available.provider_credential=$3 AND available.state='free' AND available.health='healthy' AND (COALESCE(b.metadata->>'region','')='' OR b.metadata->>'region'=available.region) AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=available.id)) ORDER BY r.created_at,r.id FOR UPDATE OF r,b SKIP LOCKED LIMIT 1", accountID, providerName, credential).Scan(&requestID, &boxID, &boxGeneration)
 	if errors.Is(err, sql.ErrNoRows) {
 		return v1.Allocation{}, false, nil
 	}
 	if err != nil {
 		return v1.Allocation{}, false, err
 	}
-	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", accountID, providerName, credential))
+	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND EXISTS (SELECT 1 FROM logical_boxes location WHERE location.id=$4 AND location.account_id=$1 AND (COALESCE(location.metadata->>'region','')='' OR location.metadata->>'region'=s.region)) AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", accountID, providerName, credential, boxID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return v1.Allocation{}, false, nil
 	}

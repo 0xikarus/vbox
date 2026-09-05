@@ -13,7 +13,7 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/config"
 )
 
-func TestControllerTaskSchedulesAgentAndReportsReconnect(t *testing.T) {
+func TestControllerTaskSchedulesAgentWithQuietSummary(t *testing.T) {
 	var request v1.CreateBoxTaskRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/logical-boxes/research/process-tasks" {
@@ -42,7 +42,7 @@ func TestControllerTaskSchedulesAgentAndReportsReconnect(t *testing.T) {
 		t.Fatalf("request=%+v", request)
 	}
 	output := app.Out.(*bytes.Buffer).String()
-	if !strings.Contains(output, "Scheduled claude task task-1") || !strings.Contains(output, `vmbox task-status "research" task-1`) || !strings.Contains(output, "hibernate when idle") {
+	if output != "research · task-1 · queued\n" || app.Err.(*bytes.Buffer).Len() != 0 {
 		t.Fatalf("output=%q", output)
 	}
 }

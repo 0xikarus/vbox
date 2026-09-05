@@ -16,6 +16,10 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 	}
 	request.Normalize()
 	if request.VolumeID != "" || request.VolumeName != "" {
+		if len(request.LoginProfiles) > 0 {
+			writeError(w, 400, fmt.Errorf("saved profiles may only be provisioned when creating a new workspace"))
+			return
+		}
 		if p.Role != "owner" {
 			writeError(w, http.StatusForbidden, fmt.Errorf("only an account owner may import an existing volume"))
 			return

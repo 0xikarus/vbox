@@ -42,6 +42,8 @@ func TestInteractivePickerStartsChosenAgent(t *testing.T) {
 	chosen := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case "/v1/logical-boxes/id/sessions/primary":
+			json.NewEncoder(w).Encode(map[string]string{"session": ""})
 		case "/v1/logical-boxes/id/sessions":
 			json.NewEncoder(w).Encode(v1.SessionInventory{State: "live", Sessions: []v1.Session{}})
 		case "/v1/logical-boxes/id/sessions/interactive":
@@ -58,10 +60,10 @@ func TestInteractivePickerStartsChosenAgent(t *testing.T) {
 	}))
 	defer server.Close()
 	a := New()
-	a.In = strings.NewReader("shell\n")
+	a.In = strings.NewReader("\x1b[B\r")
 	a.Out = &bytes.Buffer{}
 	a.Err = &bytes.Buffer{}
-	err := a.openInteractive(context.Background(), config.Context{Controller: server.URL}, "test", v1.LogicalBox{ID: "id", DefaultAgent: "claude"}, "", "")
+	err := a.openInteractive(context.Background(), config.Context{Controller: server.URL}, "test", v1.LogicalBox{ID: "id", DefaultAgent: "claude"}, "", "", false)
 	if err == nil || chosen != "shell" {
 		t.Fatal(chosen, err)
 	}

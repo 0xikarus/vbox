@@ -5,19 +5,20 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/0xikarus/vmbox-service/internal/config"
+	"golang.org/x/term"
 )
 
 // promptControllerContext makes controller management the safe first-run
-// default. Standalone operation remains available only when the caller asks
-// for it explicitly with --standalone.
+// default. There is no standalone fallback.
 func (a *App) promptControllerContext(file config.File, requestedName string, existing config.Context) (config.File, config.Context, error) {
 	if a.IsTerminal == nil || !a.IsTerminal() {
 		return file, existing, fmt.Errorf("controller is not configured; run 'vmbox context add NAME --controller URL'")
 	}
-	reader := bufio.NewReader(a.In)
+	reader := bufio.NewReader(singleByteReader{a.In})
 	fmt.Fprintln(a.Err, "vmbox: no controller is configured; connect this CLI to one now.")
 
 	controller, err := a.readControllerPrompt(reader, "Controller URL", existing.Controller)
@@ -53,6 +54,34 @@ func (a *App) promptControllerContext(file config.File, requestedName string, ex
 	}
 	fmt.Fprintf(a.Err, "vmbox: saved controller context %q; authentication is read from %s and is never stored in the config\n", name, configured.TokenEnv)
 	return file, configured, nil
+}
+
+// Avoid buffering keys meant for the next picker, password prompt, or SSH.
+type singleByteReader struct{ io.Reader }
+
+func (r singleByteReader) Read(p []byte) (int, error) {
+	if len(p) > 1 {
+		p = p[:1]
+	}
+	return r.Reader.Read(p)
+}
+
+func (a *App) readSecret(label string) (string, error) {
+	file, ok := a.In.(*os.File)
+	if a.IsTerminal == nil || !a.IsTerminal() || !ok || !term.IsTerminal(int(file.Fd())) {
+		return "", fmt.Errorf("%s missing; configure its environment variable securely (hidden input requires a terminal)", label)
+	}
+	fmt.Fprintf(a.Err, "%s (hidden, this invocation only): ", label)
+	value, err := term.ReadPassword(int(file.Fd()))
+	fmt.Fprintln(a.Err)
+	defer clear(value)
+	if err != nil {
+		return "", fmt.Errorf("could not read hidden input")
+	}
+	if len(value) == 0 {
+		return "", fmt.Errorf("%s is required", label)
+	}
+	return string(value), nil
 }
 
 func (a *App) readControllerPrompt(reader *bufio.Reader, label, defaultValue string) (string, error) {

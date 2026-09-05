@@ -47,6 +47,7 @@ func (s *Server) notificationInbound(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		adapter := telegramInbound(value, config, answerer)
+		adapter.CoworkerCommand = s.telegramCoworkerCommand(value, secret)
 		err = adapter.HandleUpdate(r.Context(), r.Body)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)

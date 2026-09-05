@@ -78,7 +78,7 @@ func validateProviderConfig(name string, raw json.RawMessage) error {
 }
 
 func (s *Server) providerSchemasHandler(w http.ResponseWriter, r *http.Request, p Principal) {
-	writeJSON(w, 200, map[string]any{"providers": providerSchemas, "secretInput": "JSON object; railway requires token", "update": "PATCH with If-Match=updatedAt; null deletes config fields; omitted secret preserved; replaceSecret required", "retarget": "Target fields are immutable; create a new alias. Deletion requires reviewed migration."})
+	writeJSON(w, 200, map[string]any{"providers": providerSchemas, "required": map[string][]string{"railway": {"projectId", "environmentId"}}, "secretInput": "JSON object; railway requires token", "update": "PATCH with If-Match=updatedAt; null deletes config fields; omitted secret preserved; replaceSecret required", "retarget": "Target fields are immutable; create a new alias. Deletion requires reviewed migration."})
 }
 
 func (s *Server) providerShowHandler(w http.ResponseWriter, r *http.Request, p Principal) {

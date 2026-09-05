@@ -74,12 +74,18 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 	if opts.jsonOutput {
 		return json.NewEncoder(a.Out).Encode(task)
 	}
-	fmt.Fprintf(a.Out, "Scheduled %s task %s on %s (%s, HTTP %d).\n", task.Agent, task.ID, task.BoxName, task.State, status)
-	fmt.Fprintf(a.Out, "The controller will allocate compute, retain the exit code/output, and hibernate when idle. Status: vmbox task-status %q %s\n", task.BoxName, task.ID)
+	fmt.Fprintf(a.Out, "%s · %s · %s\n", tuiLabel(task.BoxName, 100), tuiLabel(task.ID, 100), tuiLabel(task.State, 40))
+	if a.Verbose {
+		fmt.Fprintf(a.Err, "Scheduled %s (HTTP %d). Status: vmbox task-status %q %s\n", task.Agent, status, task.BoxName, task.ID)
+	}
 	return nil
 }
 
 func (a *App) controllerTaskStatus(ctx context.Context, c config.Context, token string, args []string) error {
+	asJSON := len(args) > 0 && args[len(args)-1] == "--json"
+	if asJSON {
+		args = args[:len(args)-1]
+	}
 	if len(args) < 1 || len(args) > 2 {
 		return fmt.Errorf("task-status requires a logical box and optional task ID")
 	}
@@ -89,7 +95,15 @@ func (a *App) controllerTaskStatus(ctx context.Context, c config.Context, token 
 		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(box)+"/process-tasks", nil, &tasks, nil); err != nil {
 			return err
 		}
-		return json.NewEncoder(a.Out).Encode(tasks)
+		if asJSON {
+			return json.NewEncoder(a.Out).Encode(tasks)
+		}
+		for _, task := range tasks {
+			if err := a.processTaskSummary(task); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	var task v1.ProcessTask
 	status, err := a.request(ctx, c, token, http.MethodGet, "/v1/process-tasks/"+url.PathEscape(args[1]), nil, &task, nil)
@@ -102,7 +116,19 @@ func (a *App) controllerTaskStatus(ctx context.Context, c config.Context, token 
 	if task.BoxName != box && task.LogicalBoxID != box {
 		return fmt.Errorf("task %q belongs to logical box %q, not %q", task.ID, task.BoxName, box)
 	}
-	return json.NewEncoder(a.Out).Encode(task)
+	if asJSON {
+		return json.NewEncoder(a.Out).Encode(task)
+	}
+	return a.processTaskSummary(task)
+}
+
+func (a *App) processTaskSummary(task v1.ProcessTask) error {
+	exit := ""
+	if task.ExitCode != nil {
+		exit = fmt.Sprintf(" · exit %d", *task.ExitCode)
+	}
+	_, err := fmt.Fprintf(a.Out, "%s · %s · %s%s\n", tuiLabel(task.ID, 100), tuiLabel(task.Agent, 30), tuiLabel(task.State, 40), exit)
+	return err
 }
 
 func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {

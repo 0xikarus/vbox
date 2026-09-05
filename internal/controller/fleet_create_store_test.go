@@ -78,6 +78,26 @@ func TestRemainingScaleDownCountsDrainingSlotOnlyOnce(t *testing.T) {
 	}
 }
 
+func TestCreationDoesNotFallBackFromRequestedRegion(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &Store{DB: db}
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery(`FROM compute_slots.*AND s.region=\$4.*FOR UPDATE OF s SKIP LOCKED LIMIT 1`).WithArgs("account-a", "railway", "primary", "requested-region").WillReturnRows(sqlmock.NewRows(computeSlotColumns()))
+	mock.ExpectRollback()
+	_, err = store.BeginLogicalBoxCreation(context.Background(), Principal{AccountID: "account-a", UserID: "user-a"}, v1.CreateLogicalBoxRequest{Name: "regional", Provider: "railway", ProviderCredential: "primary", Region: "requested-region"})
+	if err == nil {
+		t.Fatal("unexpected creation without regional capacity")
+	}
+	if err = mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestRepairableSlotStateRetriesOnlyIncompleteCapacity(t *testing.T) {
 	for _, state := range []v1.FleetSlotState{v1.FleetSlotStarting, v1.FleetSlotStopped, v1.FleetSlotUnhealthy} {
 		if !repairableSlotState(state) {

@@ -9,6 +9,12 @@ lightweight web UI only configures resources; work happens through the CLI.
 Go 1.26 or Docker builds the CLI. OpenSSH is required for native attachment.
 No Railway, Docker or Incus client/token is needed for ordinary CLI operations.
 
+In a terminal, missing controller configuration starts a connection guide. Missing
+authentication offers hidden input for that invocation; tokens are not saved in
+the CLI config. Scripts never prompt: configure the controller context and token
+environment first. The controller/context banner is hidden unless you put
+`--verbose` before the command.
+
 ```bash
 ./install.sh
 vmbox context add team --controller https://YOUR-CONTROLLER
@@ -26,16 +32,24 @@ restarting worker compute or replacing existing sessions.
 ## Interactive mode
 
 ```bash
-vmbox helper1                    # choose Codex, Claude, shell, or an existing session
+vmbox helper1                    # reconnect to the remembered primary session
 vmbox helper1 codex              # start interactive Codex without the picker
 vmbox helper1 claude             # start interactive Claude without the picker
 vmbox helper1 shell              # start a plain persistent shell
 vmbox sessions helper1 --json
-vmbox helper1 --session NAME     # attach to this exact existing session
+vmbox helper1 --session          # full-screen session picker: ↑/↓, Enter, Esc
+vmbox helper1 --session NAME     # attach to this exact session and remember it
 ```
 
-The picker defaults to the box's configured agent. Each explicit agent override
-starts a **new** tmux session; use `--session` to reconnect without creating one.
+The controller remembers the primary session per logical box, across CLI clients.
+With no remembered primary, a sole existing session is adopted; multiple sessions
+open a full-screen TUI. Selecting a session makes it primary. If the remembered
+session is missing, existing sessions are offered again—none are deleted.
+Only when no sessions exist does plain `vmbox BOX` offer a Codex/Claude/shell TUI,
+defaulting to the box's configured agent. Bare `--session` never creates a session.
+Each explicit agent override starts a **new** tmux session and makes it primary.
+The preference uses the exact session name across restore; attachment validates
+the current session identity and box assignment before connecting.
 Agents are optional: a box can contain shells and multiple agent sessions at once.
 Normal `claude` and `codex` commands keep their interactive interfaces and menus.
 You can run other installed tools, including OpenCode, from a shell.
@@ -75,7 +89,9 @@ code, and combined stdout/stderr:
 - `launch_failed` or `unknown`: no fabricated exit code. Connection loss does not
   imply completion, and ambiguous execution is never automatically replayed.
 
-Output/status commands return JSON without waking compute. The first 1 MiB of
+Output/status commands do not wake compute. Status is readable by default;
+task-output prints the captured text. Add `--json` for structured results.
+The first 1 MiB of
 combined output is retained on the worker and copied into controller storage;
 truncation is explicitly reported. Running output is a periodically collected
 snapshot, not a guaranteed live stream. Task results contain command output, so
@@ -99,6 +115,19 @@ not task completion. It does not replace `task-status` or `task-output`.
 
 ## Controller administration
 
+`vmbox providers` lists readable provider aliases. Bare `providers show` and
+`providers default` offer an arrow-key picker. With no providers, the guide asks
+for controller-defined configuration fields, accepts secret JSON from a secure
+environment variable or hidden input, and confirms before saving. Missing default
+selection is guided before resuming the original creation command.
+
+Interactive box creation asks for a location from the controller's existing fleet
+and remembers it per provider alias. `--region ID` overrides the picker; creation
+fails if that region has no healthy free initialization slot. This does not create
+new regional fleet capacity. The selected region is retained for direct and queued
+restores; a box waits for matching capacity instead of moving regions. Regional
+latency probing is not currently available.
+
 ```bash
 vmbox providers schema
 vmbox providers create railway primary --config-file railway.json --secret-env PROVIDER_SECRET_JSON
@@ -116,6 +145,84 @@ removed. Existing resources, credentials and legacy local bundles are preserved.
 
 Read [controller-first contracts and migration](docs/CONTROLLER-FIRST.md),
 [controller operations](docs/CONTROLLER.md), and [OpenAPI](docs/openapi.yaml).
+
+## Saved agent login profiles
+
+```bash
+vmbox profiles                         # named Claude/Codex profiles, no secrets
+vmbox profiles save codex work --from /path/to/codex-profile
+vmbox profiles save claude personal --from /path/to/claude-profile
+vmbox new research --profile codex=work --profile claude=personal
+vmbox new clean-box --no-profiles
+```
+
+Profiles are encrypted under the controller account, with encryption bound to
+the application and profile name. Saving an existing name fails instead of
+overwriting it. Only supported profile files are uploaded (512 KiB total limit).
+The list API returns metadata only; there is no plaintext export endpoint.
+
+Interactive creation offers saved profiles, explicit local upload, or skip for
+each application. Noninteractive creation without `--profile` provisions no agent
+credentials. To upload from a script, save the local profile first, then select
+it by name. Only selected profiles are copied into the new persistent volume;
+creation recovery remembers those selections. Account owners manage and provision
+saved profiles. Expired upstream logins still need renewal; saving a profile does
+not establish that its authentication is valid.
+
+## Opt-in coworkers
+
+```bash
+vmbox coworkers enable --confirm
+vmbox new coworker-review --profile codex=work --allocate
+vmbox coworkers spawn coworker-review codex --prompt "Review the project; track your work on the shared board." --confirm
+vmbox coworker-review                  # attach to coworker-primary
+vmbox coworkers list
+vmbox coworkers disable --confirm
+```
+
+The account gate defaults off. Spawning additionally requires explicit confirmation,
+a running logical box named `coworker-*`, and a task prompt. It does not silently
+create or allocate a box. A second spawn refuses an existing `coworker-primary`.
+The controller provisions a private per-box token over SSH; it is not an owner
+token and cannot administer providers or other boxes. Disabling the gate denies
+new coworker API calls; it does not terminate an already-running agent turn.
+
+The shared MCP exposes active coworker discovery, durable messages, a small JSON
+Kanban board, and self-hibernation. Message retries use an identical key and body.
+The board supports create/move/assign/comment with revision checks, at most 100
+tasks, and a 64 KiB total limit. Comments carry the calling box's identity. Agents
+manage the meaning and progress of their work; board status is not a process exit
+code. Peer text is not owner authority or approval.
+
+Codex uses its installed App Server and existing login/model settings. Incoming
+events are queued between turns. Delivery checkpoints preserve thread and turn
+identities; an unresolved submission stops automatic replay and requires inspection.
+Unattended permission requests are not approved automatically.
+
+Claude uses a local stdio channel. Custom channels currently require an explicit
+development-channel opt-in and an interactive startup consent dialog:
+
+```bash
+vmbox coworkers spawn coworker-review claude --prompt "Review the project." --confirm --allow-development-channel
+vmbox coworker-review
+```
+
+Organization channel policy still applies. No permission-relay capability is
+requested. Channel restart can redeliver events; sequence IDs identify duplicates.
+The `hibernate_self` tool requires `completed=true`, queues the existing fenced
+flush/unmount workflow, releases compute, and retains the volume. It closes the
+agent process; a workspace restore is not process survival.
+
+The web configuration page has a read-only coworker message view (latest 100
+events). Existing Telegram notification destinations support `/coworker BOX TEXT`
+and `/coworker-messages BOX` (latest five outgoing messages). Commands require the
+webhook secret, configured sender/chat allowlists, and a mapped controller owner.
+Inbound messages use durable update keys. Reading messages is explicit; this is
+not an automatic Telegram broadcast subscription.
+
+Protocol references: [Codex App Server](https://learn.chatgpt.com/docs/app-server),
+[Claude channels](https://code.claude.com/docs/en/channels-reference),
+[MCP transport](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
 
 ## Build and verification
 

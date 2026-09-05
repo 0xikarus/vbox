@@ -35,6 +35,7 @@ type App struct {
 	ExitPromptTimeout time.Duration
 	Runner            procexec.Runner
 	IsTerminal        func() bool
+	Verbose           bool
 }
 
 type stringList []string
@@ -86,6 +87,9 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	contextName := ""
 	for len(args) > 0 {
 		switch args[0] {
+		case "--verbose":
+			a.Verbose = true
+			args = args[1:]
 		case "--standalone":
 			return fmt.Errorf("standalone mode has been removed; configure a controller context; existing standalone resources are untouched")
 		case "--context":
@@ -129,7 +133,9 @@ parsed:
 	if active.TokenEnv == "" {
 		active.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
 	}
-	fmt.Fprintf(a.Err, "vmbox: controller · context %s\n", active.Name)
+	if a.Verbose {
+		fmt.Fprintf(a.Err, "vmbox: controller · context %s\n", active.Name)
+	}
 	return a.controller(ctx, file, active, args)
 }
 
@@ -210,15 +216,28 @@ func splitRun(args []string) (name string, detach, reuse bool, argv []string, er
 func (a *App) controller(ctx context.Context, file config.File, c config.Context, args []string) error {
 	token := a.Environ[c.TokenEnv]
 	if token == "" {
-		return fmt.Errorf("controller token environment %s is empty; refusing standalone fallback", c.TokenEnv)
+		if a.IsTerminal == nil || !a.IsTerminal() {
+			return fmt.Errorf("controller token environment %s is empty; configure it securely; refusing standalone fallback", c.TokenEnv)
+		}
+		var err error
+		token, err = a.readSecret("Controller token")
+		if err != nil {
+			return err
+		}
 	}
 	// Provider selection comes from controller state, not client SDKs or local
 	// provisioning credentials. Legacy selectors must match before mutation.
 	needsDefault := args[0] == "new" || args[0] == "create" || args[0] == "fleet" || args[0] == "run" || ((args[0] == "boxes" || args[0] == "box") && len(args) > 1 && (args[1] == "new" || args[1] == "create"))
 	if needsDefault {
 		var def v1.FleetConfig
-		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/controller-defaults", nil, &def, nil); err != nil {
-			return err
+		if status, err := a.request(ctx, c, token, http.MethodGet, "/v1/controller-defaults", nil, &def, nil); err != nil {
+			if status != http.StatusConflict || a.IsTerminal == nil || !a.IsTerminal() {
+				return err
+			}
+			def, err = a.chooseDefaultProvider(ctx, c, token)
+			if err != nil {
+				return err
+			}
 		}
 		if (c.Provider != "" && c.Provider != def.Provider) || (c.ProviderCredential != "" && c.ProviderCredential != def.ProviderCredential) {
 			return fmt.Errorf("legacy context provider selection differs from controller default; migrate explicitly before proceeding")
@@ -245,6 +264,10 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerUpdates(ctx, c, token, args[1:])
 	case "providers":
 		return a.controllerProviders(ctx, c, token, args[1:])
+	case "profiles":
+		return a.controllerLoginProfiles(ctx, c, token, args[1:])
+	case "coworkers":
+		return a.controllerCoworkers(ctx, c, token, args[1:])
 	case "allocate":
 		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
 	case "hibernate":
@@ -549,7 +572,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			return fmt.Errorf("unknown notifications command %q", args[1])
 		}
 	default:
-		interactiveOverride := len(args) == 2 && (args[1] == "codex" || args[1] == "claude" || args[1] == "shell")
+		interactiveOverride := len(args) == 2 && (args[1] == "codex" || args[1] == "claude" || args[1] == "shell" || args[1] == "--session")
 		if strings.HasPrefix(args[0], "-") || (len(args) != 1 && !interactiveOverride && !(len(args) == 3 && args[1] == "--session")) {
 			return fmt.Errorf("unknown controller command %q", args[0])
 		}
@@ -599,7 +622,7 @@ func (a *App) request(ctx context.Context, c config.Context, token, method, path
 }
 func (a *App) usage() {
 	fmt.Fprint(a.Out, `vmbox — controller-managed persistent boxes
-  vmbox [--context NAME] BOX [codex|claude|shell | --session NAME]
+  vmbox [--context NAME] BOX [codex|claude|shell | --session [NAME]]
   vmbox ls [--json] | status BOX [--json] | sessions BOX [--json]
   vmbox new BOX [--disk GiB] [--region ID] [--allocate|--detach]
   vmbox task BOX codex|claude|shell --prompt TEXT
@@ -623,6 +646,8 @@ Controller login does not provision SSH identity. Configure your SSH agent or
 VMBOX_SSH_IDENTITY_FILE; optionally VMBOX_SSH_KNOWN_HOSTS_FILE. Changed host keys
 fail closed. Native attachment requires the account owner role and a terminal.
 Exact session selection never creates or replaces a session. Detach with Ctrl-a d.
+BOX reconnects to its remembered primary. --session opens a full-screen picker;
+--session NAME selects directly. Your selection is remembered by the controller.
 Updates are bounded on-demand snapshots, not agent completion. Reads never ack.
 One-shot tasks retain output/exit codes and hibernate only when no sibling work
 remains. Exit code 0 is process success, not proof the prompt was completed.

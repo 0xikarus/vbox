@@ -53,6 +53,14 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 			return true, err
 		}
 		return true, boxruntime.StartInteractive(context.Background(), runtime.Root, args[2], args[3])
+	case "coworker-start":
+		if len(args) != 2 {
+			return true, fmt.Errorf("coworker-start requires assignment")
+		}
+		if _, err := boxruntime.NativeSessions(context.Background(), args[1]); err != nil {
+			return true, err
+		}
+		return true, boxruntime.StartCoworker(context.Background(), runtime.Root)
 	case "native-bind", "native-sessions", "native-welcome":
 		if len(args) != 2 {
 			return true, fmt.Errorf("%s requires ASSIGNMENT", args[0])

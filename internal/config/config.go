@@ -44,27 +44,28 @@ type CreationSetup struct {
 }
 
 type Context struct {
-	Name               string `json:"name"`
-	Provider           string `json:"provider,omitempty"`
-	Controller         string `json:"controller,omitempty"`
-	ControllerImage    string `json:"controllerImage,omitempty"`
-	ControllerSource   string `json:"controllerSource,omitempty"`
-	Account            string `json:"account,omitempty"`
-	TokenEnv           string `json:"tokenEnv,omitempty"`
-	Project            string `json:"project,omitempty"`
-	Environment        string `json:"environment,omitempty"`
-	RailwayCLIAuth     bool   `json:"railwayCliAuth,omitempty"`
-	Cluster            string `json:"cluster,omitempty"`
-	Image              string `json:"image,omitempty"`
-	DockerContext      string `json:"dockerContext,omitempty"`
-	DockerHost         string `json:"dockerHost,omitempty"`
-	DockerTLSVerify    bool   `json:"dockerTLSVerify,omitempty"`
-	DockerCertPath     string `json:"dockerCertPath,omitempty"`
-	IncusRemote        string `json:"incusRemote,omitempty"`
-	IncusProject       string `json:"incusProject,omitempty"`
-	IncusVM            bool   `json:"incusVm,omitempty"`
-	ProviderCredential string `json:"providerCredential,omitempty"`
-	ComputeBoxSlots    *int   `json:"compute_box_slots,omitempty"`
+	LocationPresets    map[string]string `json:"locationPresets,omitempty"`
+	Name               string            `json:"name"`
+	Provider           string            `json:"provider,omitempty"`
+	Controller         string            `json:"controller,omitempty"`
+	ControllerImage    string            `json:"controllerImage,omitempty"`
+	ControllerSource   string            `json:"controllerSource,omitempty"`
+	Account            string            `json:"account,omitempty"`
+	TokenEnv           string            `json:"tokenEnv,omitempty"`
+	Project            string            `json:"project,omitempty"`
+	Environment        string            `json:"environment,omitempty"`
+	RailwayCLIAuth     bool              `json:"railwayCliAuth,omitempty"`
+	Cluster            string            `json:"cluster,omitempty"`
+	Image              string            `json:"image,omitempty"`
+	DockerContext      string            `json:"dockerContext,omitempty"`
+	DockerHost         string            `json:"dockerHost,omitempty"`
+	DockerTLSVerify    bool              `json:"dockerTLSVerify,omitempty"`
+	DockerCertPath     string            `json:"dockerCertPath,omitempty"`
+	IncusRemote        string            `json:"incusRemote,omitempty"`
+	IncusProject       string            `json:"incusProject,omitempty"`
+	IncusVM            bool              `json:"incusVm,omitempty"`
+	ProviderCredential string            `json:"providerCredential,omitempty"`
+	ComputeBoxSlots    *int              `json:"compute_box_slots,omitempty"`
 }
 type File struct {
 	Current    string                   `json:"current"`

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,10 @@ import (
 )
 
 func (a *App) processOutput(ctx context.Context, c config.Context, token string, args []string) error {
+	asJSON := len(args) > 0 && args[len(args)-1] == "--json"
+	if asJSON {
+		args = args[:len(args)-1]
+	}
 	if len(args) != 2 {
 		return fmt.Errorf("usage: task-output BOX TASK_ID")
 	}
@@ -26,39 +29,92 @@ func (a *App) processOutput(ctx context.Context, c config.Context, token string,
 	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/process-tasks/"+url.PathEscape(args[1])+"/output", nil, &out, nil); err != nil {
 		return err
 	}
-	return json.NewEncoder(a.Out).Encode(out)
+	if asJSON {
+		return json.NewEncoder(a.Out).Encode(out)
+	}
+	var result struct {
+		Output    string `json:"output"`
+		Truncated bool   `json:"truncated"`
+	}
+	if err := json.Unmarshal(out, &result); err != nil {
+		return err
+	}
+	if result.Truncated {
+		fmt.Fprintln(a.Err, "Output truncated by controller.")
+	}
+	_, err := fmt.Fprint(a.Out, result.Output)
+	return err
 }
 
-func (a *App) openInteractive(ctx context.Context, c config.Context, token string, box v1.LogicalBox, session, agent string) error {
+func (a *App) openInteractive(ctx context.Context, c config.Context, token string, box v1.LogicalBox, session, agent string, forcePicker bool) error {
 	if session != "" {
-		return a.attachNative(ctx, c, token, box, session)
+		return a.attachRemembered(ctx, c, token, box, session, nil, true)
 	}
 	if agent == "" {
 		inv, err := a.sessionInventory(ctx, c, token, box.ID)
 		if err != nil {
 			return err
 		}
-		if len(inv.Sessions) > 0 {
-			fmt.Fprintln(a.Err, "Existing sessions:")
-			for _, s := range inv.Sessions {
-				fmt.Fprintf(a.Err, "  %s\n", s.Name)
+		if inv.State != "live" {
+			return fmt.Errorf("session inventory is %s", inv.State)
+		}
+		var primary struct {
+			Session string `json:"session"`
+		}
+		if _, err = a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(box.ID)+"/sessions/primary", nil, &primary, nil); err != nil {
+			return fmt.Errorf("primary session unavailable; controller may need upgrading: %w", err)
+		}
+		initial := 0
+		for i, s := range inv.Sessions {
+			if s.Name == primary.Session {
+				if !forcePicker {
+					return a.attachRemembered(ctx, c, token, box, s.Name, &s, false)
+				}
+				initial = i
 			}
-			fmt.Fprintln(a.Err, "Enter an exact session name to reconnect, or choose codex / claude / shell to start a new session.")
 		}
-		defaultAgent := box.DefaultAgent
-		if defaultAgent != "claude" && defaultAgent != "shell" {
-			defaultAgent = "codex"
+		if len(inv.Sessions) > 0 {
+			// Adopt a single existing session once; never create a duplicate just
+			// because the box has not recorded a primary yet.
+			i := 0
+			if forcePicker || len(inv.Sessions) > 1 || primary.Session != "" {
+				labels := make([]string, len(inv.Sessions))
+				for j, s := range inv.Sessions {
+					labels[j] = s.Name
+					if s.Name == primary.Session {
+						labels[j] += "  (primary)"
+					}
+				}
+				title := "Sessions · " + box.Name
+				if inv.Partial {
+					title += " (partial inventory)"
+				}
+				i, err = a.selectTUI(ctx, title, labels, initial)
+				if err != nil {
+					return err
+				}
+			}
+			selected := inv.Sessions[i]
+			return a.attachRemembered(ctx, c, token, box, selected.Name, &selected, true)
 		}
-		choice, err := a.readControllerPrompt(bufio.NewReader(a.In), "Agent (codex / claude / shell) or session", defaultAgent)
+		if forcePicker || inv.Partial {
+			return fmt.Errorf("no selectable sessions (partial=%t); nothing created", inv.Partial)
+		}
+		agents := []string{"codex", "claude", "shell"}
+		for i, value := range agents {
+			if value == box.DefaultAgent {
+				initial = i
+			}
+		}
+		title := "Start interactive session · " + box.Name
+		if primary.Session != "" {
+			title = "Primary session unavailable · choose a new agent"
+		}
+		i, err := a.selectTUI(ctx, title, agents, initial)
 		if err != nil {
 			return err
 		}
-		for _, s := range inv.Sessions {
-			if s.Name == choice {
-				return a.attachNative(ctx, c, token, box, s.Name)
-			}
-		}
-		agent = choice
+		agent = agents[i]
 	}
 	if agent != "codex" && agent != "claude" && agent != "shell" {
 		return fmt.Errorf("choose codex, claude, shell, or an exact session name")
@@ -72,5 +128,5 @@ func (a *App) openInteractive(ctx context.Context, c config.Context, token strin
 	if out.Session == "" {
 		return fmt.Errorf("controller returned no interactive session")
 	}
-	return a.attachNative(ctx, c, token, box, out.Session)
+	return a.attachRemembered(ctx, c, token, box, out.Session, nil, true)
 }

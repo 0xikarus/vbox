@@ -41,24 +41,51 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		return creation, err
 	}
 	defer tx.Rollback()
+	seenProfiles := map[string]bool{}
+	for _, profile := range request.LoginProfiles {
+		if p.Role != "owner" {
+			return creation, fmt.Errorf("only an account owner may provision saved login profiles")
+		}
+		if seenProfiles[profile.Application] {
+			return creation, fmt.Errorf("select only one profile per application")
+		}
+		seenProfiles[profile.Application] = true
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM login_profiles WHERE account_id=$1 AND application=$2 AND name=$3)`, p.AccountID, profile.Application, profile.Name).Scan(&exists); err != nil {
+			return creation, err
+		}
+		if !exists {
+			return creation, fmt.Errorf("selected login profile not found in this account")
+		}
+	}
 	if err := tx.QueryRowContext(ctx, "SELECT id::text FROM logical_boxes WHERE account_id=$1 AND name=$2", p.AccountID, request.Name).Scan(new(string)); err == nil {
 		return creation, fmt.Errorf("logical box %q already exists", request.Name)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return creation, err
 	}
-	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", p.AccountID, request.Provider, request.ProviderCredential))
+	locationFilter := ""
+	queryArgs := []any{p.AccountID, request.Provider, request.ProviderCredential}
+	if request.Region != "" {
+		locationFilter = " AND s.region=$4"
+		queryArgs = append(queryArgs, request.Region)
+	}
+	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy'"+locationFilter+" AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", queryArgs...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return creation, fmt.Errorf("no healthy free compute slot is available to initialize the workspace volume")
 	}
 	if err != nil {
 		return creation, err
 	}
+	// Pin the workspace to the selected slot even when the caller accepted
+	// any location. Restores must not silently move a regional volume.
+	request.Region = slot.Region
+	creation.Request.Region = slot.Region
 	id := uuid()
 	generation := slot.AssignmentGeneration + 1
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.AllocateWhenReady, "allocationIdempotencyKey": request.AllocationRequestKey})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.AllocateWhenReady, "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles})
 	if err != nil {
 		return creation, err
 	}
@@ -172,13 +199,23 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	rows.Close()
 	result := make([]logicalBoxCreation, 0, len(keys))
 	for _, value := range keys {
 		assignment, err := s.assignment(ctx, value.accountID, value.id)
 		if err != nil {
 			return nil, err
 		}
+		var raw []byte
+		if err := s.DB.QueryRowContext(ctx, `SELECT COALESCE(metadata->'loginProfiles','[]'::jsonb) FROM logical_boxes WHERE account_id=$1 AND id=$2`, value.accountID, value.id).Scan(&raw); err != nil {
+			return nil, err
+		}
+		var profiles []v1.LoginProfileRef
+		if err := json.Unmarshal(raw, &profiles); err != nil {
+			return nil, err
+		}
 		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: value.allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
+		result[len(result)-1].Request.LoginProfiles = profiles
 	}
 	return result, nil
 }

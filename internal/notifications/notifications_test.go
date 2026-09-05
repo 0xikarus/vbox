@@ -57,6 +57,25 @@ func TestTelegramRequiresUserAndChatAllowlists(t *testing.T) {
 	}
 }
 
+func TestTelegramCoworkerCommandsRetainAllowlists(t *testing.T) {
+	calls := 0
+	adapter := Telegram{AllowedUsers: map[int64]bool{7: true}, AllowedChats: map[int64]bool{9: true}, UserMap: map[string]string{"7": "owner-7"}, CoworkerCommand: func(_ context.Context, user string, update, chat int64, text string) error {
+		calls++
+		if user != "owner-7" || update != 42 || chat != 9 {
+			t.Error("identity lost")
+		}
+		return nil
+	}}
+	allowed := `{"update_id":42,"message":{"text":"/coworker coworker-test hello","from":{"id":7},"chat":{"id":9}}}`
+	if err := adapter.HandleUpdate(context.Background(), bytes.NewBufferString(allowed)); err != nil || calls != 1 {
+		t.Fatal("allowed coworker command failed", err)
+	}
+	blocked := `{"update_id":43,"message":{"text":"/coworker coworker-test hello","from":{"id":7},"chat":{"id":10}}}`
+	if err := adapter.HandleUpdate(context.Background(), bytes.NewBufferString(blocked)); err == nil || calls != 1 {
+		t.Fatal("allowlist bypass")
+	}
+}
+
 func TestDiscordButtonOpensModalAndSubmissionAnswers(t *testing.T) {
 	publicKey, privateKey, err := ed25519.GenerateKey(nil)
 	if err != nil {

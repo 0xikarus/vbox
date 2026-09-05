@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -33,6 +35,10 @@ func (s *Server) defaultProviderHandler(w http.ResponseWriter, r *http.Request, 
 	var value v1.FleetConfig
 	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT provider,provider_credential FROM controller_defaults WHERE account_id=$1`, p.AccountID).Scan(&value.Provider, &value.ProviderCredential)
 	if err != nil {
+		if !errors.Is(err, sql.ErrNoRows) {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read controller provider default; retry later"))
+			return
+		}
 		writeError(w, 409, fmt.Errorf("controller provider default not configured; use providers default PROVIDER NAME"))
 		return
 	}

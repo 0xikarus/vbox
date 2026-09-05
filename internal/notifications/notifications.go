@@ -94,14 +94,15 @@ func (w Webhook) Send(ctx context.Context, value Delivery) error {
 }
 
 type Telegram struct {
-	Token        string
-	ChatID       int64
-	AllowedUsers map[int64]bool
-	AllowedChats map[int64]bool
-	Client       *http.Client
-	Answerer     Answerer
-	AccountID    string
-	UserMap      map[string]string
+	CoworkerCommand func(context.Context, string, int64, int64, string) error
+	Token           string
+	ChatID          int64
+	AllowedUsers    map[int64]bool
+	AllowedChats    map[int64]bool
+	Client          *http.Client
+	Answerer        Answerer
+	AccountID       string
+	UserMap         map[string]string
 }
 
 func (Telegram) Name() string { return "telegram" }
@@ -124,7 +125,8 @@ func (t Telegram) Send(ctx context.Context, value Delivery) error {
 }
 func (t Telegram) HandleUpdate(ctx context.Context, body io.Reader) error {
 	var update struct {
-		Message struct {
+		UpdateID int64 `json:"update_id"`
+		Message  struct {
 			Text string `json:"text"`
 			Chat struct {
 				ID int64 `json:"id"`
@@ -144,6 +146,13 @@ func (t Telegram) HandleUpdate(ctx context.Context, body io.Reader) error {
 		return fmt.Errorf("Telegram chat is not allowlisted")
 	}
 	fields := strings.SplitN(strings.TrimSpace(update.Message.Text), " ", 3)
+	if len(fields) > 0 && (fields[0] == "/coworker" || fields[0] == "/coworker-messages") {
+		userID := t.UserMap[strconv.FormatInt(update.Message.From.ID, 10)]
+		if userID == "" || t.CoworkerCommand == nil {
+			return fmt.Errorf("coworker commands unavailable for this mapped user")
+		}
+		return t.CoworkerCommand(ctx, userID, update.UpdateID, update.Message.Chat.ID, update.Message.Text)
+	}
 	if len(fields) != 3 || fields[0] != "/answer" {
 		return fmt.Errorf("expected /answer QUESTION_ID TEXT")
 	}

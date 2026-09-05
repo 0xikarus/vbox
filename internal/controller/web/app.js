@@ -31,3 +31,10 @@ $('#provider').addEventListener('submit',action(async e=>{const f=e.target.eleme
 $('#default').addEventListener('submit',action(async e=>{const f=e.target.elements;await api('/v1/controller-defaults','PUT',{provider:f.provider.value,providerCredential:f.alias.value});await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{if(!defaults)throw Error('Configure controller default first');await api('/v1/fleet/slots','PUT',{provider:defaults.provider,providerCredential:defaults.providerCredential,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));
+$('#coworker-refresh').addEventListener('click',action(async()=>{
+ const version=epoch,[coworkers,messages]=await Promise.all([api('/v1/coworkers'),api('/v1/coworkers/messages')]);if(version!==epoch)return;
+ $('#coworker-list').replaceChildren(...coworkers.map(c=>node('p',c.name+' · '+c.agent+' · '+c.state+(c.enabled?'':' · disabled'))));
+ const table=document.createElement('table'),head=document.createElement('tr');['Sequence','From','To','Kind','Message'].forEach(t=>head.append(node('th',t)));table.append(head);
+ for(const m of messages){const row=document.createElement('tr');[m.sequence,m.sender,m.recipient,m.kind,m.data?.text??JSON.stringify(m.data)].forEach(v=>row.append(node('td',v)));table.append(row)}
+ $('#coworker-messages').replaceChildren(table);
+}));

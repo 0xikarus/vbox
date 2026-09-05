@@ -19,12 +19,16 @@ import (
 )
 
 func (a *App) controllerBoxes(ctx context.Context, c config.Context, token string, args []string) error {
+	asJSON := len(args) > 0 && args[len(args)-1] == "--json"
+	if asJSON {
+		args = args[:len(args)-1]
+	}
 	if len(args) == 0 {
 		args = []string{"list"}
 	}
 	switch args[0] {
 	case "list", "ls":
-		jsonOutput := len(args) == 2 && args[1] == "--json"
+		jsonOutput := asJSON
 		if len(args) > 2 || (len(args) == 2 && !jsonOutput) {
 			return fmt.Errorf("usage: vmbox boxes [list] [--json]")
 		}
@@ -52,7 +56,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(args[1])+"/status", nil, &status, nil); err != nil {
 			return err
 		}
-		return json.NewEncoder(a.Out).Encode(status)
+		return a.providerOutput(status, asJSON)
 	case "update":
 		if len(args) != 4 || args[2] != "--default-agent" {
 			return fmt.Errorf("usage: boxes update BOX --default-agent AGENT")
@@ -62,7 +66,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		if err != nil {
 			return err
 		}
-		return json.NewEncoder(a.Out).Encode(box)
+		return a.logicalBoxOutput(box, asJSON)
 	case "create", "new":
 		if len(args) < 2 {
 			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--allocate|--detach]")
@@ -71,6 +75,21 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		fs.SetOutput(a.Err)
 		disk := fs.Int64("disk", 10, "persistent workspace size in GiB")
 		region := fs.String("region", "", "preferred region")
+		var selectedProfiles []v1.LoginProfileRef
+		fs.Func("profile", "saved login profile APP=NAME (repeat for each app)", func(value string) error {
+			app, name, ok := strings.Cut(value, "=")
+			if !ok || name == "" || (app != "claude" && app != "codex") {
+				return fmt.Errorf("--profile requires claude=NAME or codex=NAME")
+			}
+			for _, ref := range selectedProfiles {
+				if ref.Application == app {
+					return fmt.Errorf("select only one %s profile", app)
+				}
+			}
+			selectedProfiles = append(selectedProfiles, v1.LoginProfileRef{Application: app, Name: name})
+			return nil
+		})
+		noProfiles := fs.Bool("no-profiles", false, "skip agent credential provisioning")
 		allocate := fs.Bool("allocate", false, "allocate a warm slot after volume creation")
 		detach := fs.Bool("detach", false, "allocate a warm slot and leave it running without opening tmux")
 		if err := fs.Parse(args[2:]); err != nil {
@@ -79,23 +98,49 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		if fs.NArg() != 0 {
 			return fmt.Errorf("unexpected creation argument %q", fs.Arg(0))
 		}
+		if *noProfiles && len(selectedProfiles) > 0 {
+			return fmt.Errorf("--no-profiles cannot be combined with --profile")
+		}
+		if *region == "" && a.IsTerminal != nil && a.IsTerminal() {
+			value, err := a.pickLocation(ctx, c, token)
+			if err != nil {
+				return err
+			}
+			*region = value
+		}
+		if !*noProfiles && len(selectedProfiles) == 0 && a.IsTerminal != nil && a.IsTerminal() {
+			var err error
+			selectedProfiles, err = a.pickCreationProfiles(ctx, c, token)
+			if err != nil {
+				return err
+			}
+		}
 		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Region: *region, DiskGiB: *disk, AllocateWhenReady: *allocate || *detach, AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
+		request.LoginProfiles = selectedProfiles
 		var box v1.LogicalBox
 		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes", request, &box, map[string]string{"Idempotency-Key": request.AllocationRequestKey})
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(a.Err, "vmbox: logical box %q accepted (%d); initializing its persistent volume on a fenced warm slot\n", box.Name, status)
+		if a.Verbose {
+			fmt.Fprintf(a.Err, "vmbox: logical box %q accepted (%d); initializing its persistent volume on a fenced warm slot\n", box.Name, status)
+		}
 		box, err = a.waitLogicalBoxCreation(ctx, c, token, box)
 		if err != nil {
 			return err
 		}
-		return json.NewEncoder(a.Out).Encode(box)
+		return a.logicalBoxOutput(box, asJSON)
 	case "allocate", "open":
 		session := ""
 		agent := ""
+		forcePicker := false
 		if args[0] == "open" && len(args) == 4 && args[2] == "--session" {
 			session = args[3]
+			if session == "" {
+				return fmt.Errorf("session name cannot be empty; use --session without a value for the picker")
+			}
+		} else if args[0] == "open" && len(args) == 3 && args[2] == "--session" {
+			forcePicker = true
 		} else if args[0] == "open" && len(args) == 3 && (args[2] == "codex" || args[2] == "claude" || args[2] == "shell") {
 			agent = args[2]
 		} else if len(args) != 2 {
@@ -113,7 +158,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 				return err
 			}
 			if box.State == v1.LogicalBoxRunning {
-				return a.openInteractive(ctx, c, token, box, session, agent)
+				return a.openInteractive(ctx, c, token, box, session, agent, forcePicker)
 			}
 		}
 		key := "cli-allocate:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())
@@ -131,9 +176,9 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			if err != nil {
 				return err
 			}
-			return a.openInteractive(ctx, c, token, box, session, agent)
+			return a.openInteractive(ctx, c, token, box, session, agent, forcePicker)
 		}
-		return json.NewEncoder(a.Out).Encode(allocation)
+		return a.providerOutput(allocation, asJSON)
 	case "hibernate":
 		if len(args) != 2 {
 			return fmt.Errorf("usage: vmbox hibernate NAME")
@@ -151,6 +196,9 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		fmt.Fprintf(a.Err, "vmbox: hibernated %q; volume %s (%s) was retained and its compute slot was freed\n", box.Name, box.VolumeName, box.VolumeID)
 		return nil
 	case "delete-volume":
+		if a.IsTerminal == nil || !a.IsTerminal() {
+			return fmt.Errorf("volume deletion requires an interactive confirmation; nothing deleted")
+		}
 		if len(args) != 2 {
 			return fmt.Errorf("usage: vmbox delete-volume NAME")
 		}
@@ -176,6 +224,14 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 	default:
 		return fmt.Errorf("unknown boxes command %q", args[0])
 	}
+}
+
+func (a *App) logicalBoxOutput(box v1.LogicalBox, asJSON bool) error {
+	if asJSON {
+		return json.NewEncoder(a.Out).Encode(box)
+	}
+	_, err := fmt.Fprintf(a.Out, "%s · %s\n", tuiLabel(box.Name, 100), tuiLabel(string(box.State), 40))
+	return err
 }
 
 func (a *App) controllerLogicalBox(ctx context.Context, c config.Context, token, id string) (v1.LogicalBox, error) {

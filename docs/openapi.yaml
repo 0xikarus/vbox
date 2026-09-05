@@ -8,6 +8,127 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/locations:
+    get:
+      summary: Available location presets from the controller-managed fleet
+      parameters:
+        - {$ref: '#/components/parameters/ProviderQuery'}
+        - {$ref: '#/components/parameters/ProviderCredentialQuery'}
+      responses:
+        '200':
+          description: Region IDs and healthy free slot counts; no latency estimate
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string}
+                    availableSlots: {type: integer}
+  /v1/login-profiles:
+    get:
+      summary: Owner-only account login profile metadata; never credential contents
+      responses:
+        '200':
+          description: Saved profiles
+          content:
+            application/json:
+              schema: {type: array, items: {$ref: '#/components/schemas/LoginProfile'}}
+  /v1/login-profiles/{application}/{name}:
+    parameters:
+      - {in: path, name: application, required: true, schema: {enum: [claude, codex]}}
+      - {in: path, name: name, required: true, schema: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$'}}
+    put:
+      summary: Owner-only encrypted account profile creation; refuses overwrite
+      description: Maximum 512 KiB decoded. Codex accepts auth.json and config.toml. Claude accepts .credentials.json, settings.json and .claude.json. No plaintext export endpoint exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [files]
+              properties:
+                files:
+                  type: object
+                  minProperties: 1
+                  additionalProperties: {type: string, contentEncoding: base64}
+      responses:
+        '201':
+          description: Saved metadata
+          content: {application/json: {schema: {$ref: '#/components/schemas/LoginProfile'}}}
+        '400': {description: Invalid name, application, file or size}
+        '409': {description: Name already exists or storage/encryption unavailable}
+  /v1/coworkers/settings:
+    get:
+      summary: Owner-only account coworker gate; disabled by default
+      responses: {'200': {description: Object with enabled boolean}}
+    put:
+      summary: Owner-only explicit account coworker gate update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: {type: boolean}
+      responses: {'200': {description: Object with enabled boolean}}
+  /v1/coworkers:
+    get:
+      summary: Owner-only enrolled coworkers in this account
+      responses: {'200': {description: Array of id, name, state, agent and enabled objects}}
+  /v1/coworkers/messages:
+    get:
+      summary: Owner-only latest 100 durable events, newest first
+      responses: {'200': {description: Array of sequence, sender name, recipient name, kind, data and createdAt objects}}
+  /v1/coworkers/{id}/spawn:
+    parameters: [{$ref: '#/components/parameters/ID'}]
+    post:
+      summary: Owner explicitly starts an allocated coworker- box in coworker-primary
+      description: Requires enabled account gate. Provisions a private per-box token; does not return it. Does not create or allocate a box. Claude development-channel startup requires attached interactive consent.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent, prompt, confirm]
+              properties:
+                agent: {enum: [claude, codex]}
+                prompt: {type: string, minLength: 1, description: Maximum 64 KiB UTF-8}
+                confirm: {const: true}
+                allowDevelopmentChannel: {type: boolean, default: false}
+      responses:
+        '201': {description: Session, agent and started state; does not prove agent readiness}
+        '400': {description: Invalid request or missing explicit consent}
+        '409': {description: Gate disabled, box not running, existing coworker session or assignment conflict}
+        '502': {description: Worker startup or transport unconfirmed; inspect sessions before retrying}
+  /v1/coworker/events:
+    get:
+      security: [{coworkerToken: []}]
+      summary: Per-box durable inbox, ascending sequence, at most 100 events
+      parameters:
+        - {in: query, name: after, schema: {type: integer, format: int64, minimum: 0, default: 0}}
+      responses:
+        '200': {description: Array of sequence, sender box ID (or owner), kind, data and createdAt objects}
+        '401': {description: Invalid token, disabled gate or inactive box}
+  /mcp/coworkers:
+    post:
+      security: [{coworkerToken: []}]
+      summary: Stateless JSON MCP endpoint for opted-in running coworkers
+      description: Supports initialize, ping, tools/list and tools/call. Tools are coworkers_list, message_send, board_read, board_edit and hibernate_self. Use tools/list for input schemas. All operations are account-scoped; hibernate_self requires completed=true and cannot target another box. Origin-bearing requests are rejected. Claude uses the stdio channel bridge; Codex connects via its configured HTTP MCP server.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [jsonrpc, method], properties: {jsonrpc: {const: '2.0'}, method: {type: string}, id: {}, params: {type: object}}}
+      responses:
+        '200': {description: JSON-RPC response; tool failures use MCP isError}
+        '202': {description: Notification accepted}
+        '401': {description: Invalid token, disabled gate or inactive box}
   /v1/logical-boxes/{id}/process-tasks:
     parameters:
       - {in: path, name: id, required: true, schema: {type: string}}
@@ -410,6 +531,29 @@ paths:
       parameters: [{$ref: '#/components/parameters/ID'}]
       description: Logical box, historical tasks, and cached session observations with timestamps; explicitly stale or unknown. No provider probe or allocation.
       responses: {'200': {description: LogicalBox plus tasks, sessions and observationState}, '404': {description: Box not found in caller scope}}
+  /v1/logical-boxes/{id}/sessions/primary:
+    get:
+      summary: Read the controller-persisted primary session name (owner only)
+      responses:
+        '200':
+          description: Object with session string; empty when unset
+    put:
+      summary: Remember an exact live session as primary (owner only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId, incarnation]
+              properties:
+                sessionId: {type: string}
+                incarnation: {type: string}
+      responses:
+        '200':
+          description: Primary session name saved without changing other box metadata
+        '409':
+          description: Session or box assignment changed; select again
   /v1/logical-boxes/{id}/sessions/enable:
     post:
       parameters: [{$ref: '#/components/parameters/ID'}]
@@ -443,12 +587,25 @@ paths:
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
+    coworkerToken: {type: http, scheme: bearer, description: Controller-provisioned per-box token; not an owner login token}
   parameters:
     ID: {name: id, in: path, required: true, schema: {type: string}}
     IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 255}}
     ProviderQuery: {name: provider, in: query, required: true, schema: {type: string}}
     ProviderCredentialQuery: {name: providerCredential, in: query, schema: {type: string}}
   schemas:
+    LoginProfileRef:
+      type: object
+      required: [application, name]
+      properties:
+        application: {enum: [claude, codex]}
+        name: {type: string}
+    LoginProfile:
+      allOf:
+        - {$ref: '#/components/schemas/LoginProfileRef'}
+        - type: object
+          properties:
+            createdAt: {type: string, format: date-time}
     FleetConfig:
       type: object
       required: [provider, compute_box_slots]
@@ -497,6 +654,11 @@ components:
         provider: {type: string}
         providerCredential: {type: string}
         region: {type: string}
+        defaultAgent: {enum: [shell, claude, codex, opencode]}
+        loginProfiles:
+          type: array
+          description: Owner-only saved profile selection, at most one per application; omitted means no saved credentials provisioned
+          items: {$ref: '#/components/schemas/LoginProfileRef'}
         diskGiB: {type: integer, format: int64, default: 10}
         volumeId: {type: string, description: Owner-only import; must be paired with volumeName.}
         volumeName: {type: string, description: Owner-only import; must be paired with volumeId.}

@@ -32,6 +32,14 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id, provider, name)
 );
+CREATE TABLE IF NOT EXISTS login_profiles (
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  application text NOT NULL CHECK (application IN ('claude', 'codex')),
+  name text NOT NULL,
+  encrypted_value text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id, application, name)
+);
 CREATE TABLE IF NOT EXISTS notification_destinations (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),
@@ -319,6 +327,42 @@ CREATE TABLE IF NOT EXISTS controller_defaults (
  provider text NOT NULL,
  provider_credential text NOT NULL,
  FOREIGN KEY(account_id,provider,provider_credential) REFERENCES provider_credentials(account_id,provider,name)
+);
+CREATE TABLE IF NOT EXISTS coworker_settings (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id),
+  enabled boolean NOT NULL DEFAULT false
+);
+CREATE TABLE IF NOT EXISTS coworkers (
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  box_id uuid NOT NULL REFERENCES logical_boxes(id),
+  token_hash bytea NOT NULL UNIQUE,
+  encrypted_token text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,box_id)
+);
+CREATE TABLE IF NOT EXISTS coworker_events (
+  sequence bigserial PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  recipient_box_id uuid NOT NULL,
+  sender_box_id uuid,
+  message_key text NOT NULL,
+  kind text NOT NULL,
+  data jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  acknowledged_at timestamptz,
+  FOREIGN KEY(account_id,recipient_box_id) REFERENCES coworkers(account_id,box_id),
+  FOREIGN KEY(account_id,sender_box_id) REFERENCES coworkers(account_id,box_id),
+  UNIQUE(account_id,sender_box_id,message_key)
+);
+CREATE INDEX IF NOT EXISTS coworker_inbox ON coworker_events(account_id,recipient_box_id,sequence);
+ALTER TABLE coworker_events ALTER COLUMN sender_box_id DROP NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS coworker_owner_message_key ON coworker_events(account_id,message_key) WHERE sender_box_id IS NULL;
+CREATE TABLE IF NOT EXISTS coworker_boards (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id),
+  revision bigint NOT NULL DEFAULT 0,
+  board jsonb NOT NULL DEFAULT '{"tasks":[]}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE IF NOT EXISTS session_observations (
  account_id uuid NOT NULL,

@@ -253,7 +253,7 @@ func (s *Store) ReserveAllocation(ctx context.Context, p Principal, logicalBox, 
 		return v1.Allocation{}, fmt.Errorf("logical box %q is %s, not detached", box.Name, box.State)
 	}
 	requestID := uuid()
-	row := tx.QueryRowContext(ctx, computeSlotSelect+` WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1`, p.AccountID, box.Provider, box.ProviderCredential)
+	row := tx.QueryRowContext(ctx, computeSlotSelect+` WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND EXISTS (SELECT 1 FROM logical_boxes location WHERE location.id=$4 AND location.account_id=$1 AND (COALESCE(location.metadata->>'region','')='' OR location.metadata->>'region'=s.region)) AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1`, p.AccountID, box.Provider, box.ProviderCredential, box.ID)
 	slot, slotErr := scanComputeSlot(row)
 	if errors.Is(slotErr, sql.ErrNoRows) {
 		_, err = tx.ExecContext(ctx, `INSERT INTO allocation_requests(id,account_id,logical_box_id,state,idempotency_key,requested_by,phase) VALUES($1,$2,$3,'queued',$4,$5,'waiting-for-capacity') ON CONFLICT(account_id,idempotency_key) DO NOTHING`, requestID, p.AccountID, box.ID, idempotency, p.UserID)

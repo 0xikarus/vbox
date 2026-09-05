@@ -156,6 +156,9 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 		if err := probeInitializedWorkspace(ctx, prov, serviceID, s.WorkerRuntime); err != nil {
 			return fail(err)
 		}
+		if err := s.provisionCreationProfiles(ctx, prov, creation); err != nil {
+			return fail(err)
+		}
 		if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-detaching"); err != nil {
 			return fail(err)
 		}

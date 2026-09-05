@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/boxruntime"
+	"github.com/0xikarus/vmbox-service/internal/coworker"
 )
 
 func main() {
@@ -43,6 +44,35 @@ func run() error {
 		return err
 	}
 	switch args[0] {
+	case "coworker-run":
+		if len(args) != 1 {
+			return fmt.Errorf("coworker-run accepts no arguments")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		return coworker.RunConfigured(ctx, os.Stdin, os.Stdout, os.Stderr)
+	case "coworker-codex":
+		if len(args) != 1 {
+			return fmt.Errorf("coworker-codex accepts prompt on stdin only")
+		}
+		prompt, err := io.ReadAll(io.LimitReader(os.Stdin, 65537))
+		if err != nil || len(prompt) > 65536 {
+			return fmt.Errorf("coworker prompt must be at most 64 KiB")
+		}
+		stateDir := "/data/home/.vmbox-coworker"
+		if err := os.MkdirAll(stateDir, 0700); err != nil {
+			return err
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		return (coworker.Client{URL: os.Getenv("VMBOX_COWORKER_URL"), Token: os.Getenv("VMBOX_COWORKER_TOKEN")}).Codex(ctx, filepath.Join(stateDir, "codex-state.json"), string(prompt), os.Stdout)
+	case "coworker-channel":
+		if len(args) != 1 {
+			return fmt.Errorf("coworker-channel accepts no arguments")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		return (coworker.Client{URL: os.Getenv("VMBOX_COWORKER_URL"), Token: os.Getenv("VMBOX_COWORKER_TOKEN")}).ClaudeChannel(ctx, os.Stdin, os.Stdout)
 	case "health":
 		fmt.Println("ok")
 		return nil
