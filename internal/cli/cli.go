@@ -105,11 +105,7 @@ func (a *App) Run(ctx context.Context, args []string) error {
 	}
 parsed:
 	if len(args) == 0 {
-		if a.IsTerminal == nil || !a.IsTerminal() {
-			a.usage()
-			return nil
-		}
-		args = []string{"menu"}
+		return a.overview(ctx, contextName)
 	}
 	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		if len(args) == 2 && args[1] == "--all" {
@@ -646,7 +642,8 @@ func (a *App) request(ctx context.Context, c config.Context, token, method, path
 func (a *App) usage() {
 	fmt.Fprint(a.Out, `vmbox — persistent remote boxes
 
-  vmbox                         Choose a box (↑/↓, Enter), or create one
+  vmbox                         Show context and box states (read-only)
+  vmbox menu                    Choose a box (↑/↓, Enter), or create one
   vmbox BOX                     Open its shell; wake it if needed
   vmbox new NAME                Configure, create and connect
   vmbox ls                      List boxes

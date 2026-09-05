@@ -6,12 +6,15 @@ lightweight web UI only configures resources; work happens through the CLI.
 
 ## Everyday use
 
-Run **`vmbox`** for an arrow-key box picker: Enter opens the selected box's shell,
-or choose **Create a box**. Deleting boxes are excluded; `vmbox ls` still shows
-them. Esc cancels without opening or creating anything.
+Run **`vmbox`** to see your controller context and box states. It never opens a
+dialog, prompts for credentials, starts compute, or connects to a shell.
+Use **`vmbox menu`** for the optional arrow-key picker: Enter opens a shell,
+or choose **Create a box**. The picker excludes deleting boxes; the overview
+still shows them. Esc cancels without opening or creating anything.
 
 ```bash
-vmbox                         # pick or create a box
+vmbox                         # show context and box states
+vmbox menu                    # optional box picker / create action
 vmbox new work                # configure, create, then connect
 vmbox work                    # return to its shell (wake if needed)
 vmbox work --session          # pick another existing tmux session
@@ -22,7 +25,7 @@ vmbox help                    # short guide; help --all for full reference
 
 Inside the shell, start `codex`, `claude`, or your own command. To disconnect
 without stopping it, press **Ctrl-a, then d**, and choose **Keep running**.
-Without a terminal, bare `vmbox` prints help and does not prompt or connect.
+Bare `vmbox` is read-only in both terminals and scripts; `vmbox help` works offline.
 
 ## Install and connect
 

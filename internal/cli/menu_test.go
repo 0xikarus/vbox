@@ -14,7 +14,7 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/config"
 )
 
-func TestBareCommandOpensPickerWithoutMutatingOnCancel(t *testing.T) {
+func TestExplicitMenuOpensPickerWithoutMutatingOnCancel(t *testing.T) {
 	for _, empty := range []bool{false, true} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Method != http.MethodGet || r.URL.Path != "/v1/logical-boxes" {
@@ -36,7 +36,7 @@ func TestBareCommandOpensPickerWithoutMutatingOnCancel(t *testing.T) {
 		a.ConfigPath, a.In, a.Out, a.Err = path, strings.NewReader("q"), &bytes.Buffer{}, &screen
 		a.Environ = map[string]string{"TEST_TOKEN": "synthetic"}
 		a.IsTerminal = func() bool { return true }
-		err := a.Run(context.Background(), nil)
+		err := a.Run(context.Background(), []string{"menu"})
 		server.Close()
 		if err == nil || !strings.Contains(err.Error(), "selection cancelled") {
 			t.Fatal("bare command did not open cancellable picker", err)
@@ -51,7 +51,7 @@ func TestBareCommandOpensPickerWithoutMutatingOnCancel(t *testing.T) {
 }
 
 func TestHelpIsOfflineAndShortByDefault(t *testing.T) {
-	for _, args := range [][]string{nil, {"help"}, {"help", "--all"}} {
+	for _, args := range [][]string{{"help"}, {"help", "--all"}} {
 		var out bytes.Buffer
 		a := New()
 		a.ConfigPath = "/nonexistent/vmbox-test/config"
