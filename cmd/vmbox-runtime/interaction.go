@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 )
 
@@ -17,6 +18,41 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		return false, nil
 	}
 	switch args[0] {
+	case "process-start":
+		if len(args) != 2 {
+			return true, fmt.Errorf("process-start requires encoded task")
+		}
+		b, err := base64.RawURLEncoding.DecodeString(args[1])
+		if err != nil {
+			return true, err
+		}
+		var task v1.ProcessTask
+		if err = json.Unmarshal(b, &task); err != nil {
+			return true, err
+		}
+		return true, boxruntime.StartProcess(context.Background(), runtime.Root, task)
+	case "process-run":
+		if len(args) != 3 {
+			return true, fmt.Errorf("process-run requires root and ID")
+		}
+		return true, boxruntime.RunProcess(args[1], args[2])
+	case "process-status":
+		if len(args) != 2 {
+			return true, fmt.Errorf("process-status requires ID")
+		}
+		result, err := boxruntime.ReadProcess(runtime.Root, args[1])
+		if err != nil {
+			return true, err
+		}
+		return true, json.NewEncoder(os.Stdout).Encode(result)
+	case "interactive-start":
+		if len(args) != 4 {
+			return true, fmt.Errorf("interactive-start requires assignment, session, agent")
+		}
+		if _, err := boxruntime.NativeSessions(context.Background(), args[1]); err != nil {
+			return true, err
+		}
+		return true, boxruntime.StartInteractive(context.Background(), runtime.Root, args[2], args[3])
 	case "native-bind", "native-sessions", "native-welcome":
 		if len(args) != 2 {
 			return true, fmt.Errorf("%s requires ASSIGNMENT", args[0])

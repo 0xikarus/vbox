@@ -367,7 +367,7 @@ func (s *Store) RenewLogicalBoxHibernate(ctx context.Context, accountID, boxID, 
 }
 
 func (s *Store) SetLogicalBoxHibernatePhase(ctx context.Context, accountID, boxID, token, phase string) error {
-	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET restoration_state=$4,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='hibernating' AND lease_owner=$3`, accountID, boxID, token, phase)
+	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET restoration_state=CASE WHEN restoration_state LIKE 'auto-%' THEN 'auto-' || $4 ELSE $4 END,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='hibernating' AND lease_owner=$3`, accountID, boxID, token, phase)
 	if err != nil {
 		return err
 	}

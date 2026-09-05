@@ -93,8 +93,11 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return json.NewEncoder(a.Out).Encode(box)
 	case "allocate", "open":
 		session := ""
+		agent := ""
 		if args[0] == "open" && len(args) == 4 && args[2] == "--session" {
 			session = args[3]
+		} else if args[0] == "open" && len(args) == 3 && (args[2] == "codex" || args[2] == "claude" || args[2] == "shell") {
+			agent = args[2]
 		} else if len(args) != 2 {
 			return fmt.Errorf("usage: vmbox boxes %s NAME", args[0])
 		}
@@ -110,7 +113,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 				return err
 			}
 			if box.State == v1.LogicalBoxRunning {
-				return a.attachNative(ctx, c, token, box, session)
+				return a.openInteractive(ctx, c, token, box, session, agent)
 			}
 		}
 		key := "cli-allocate:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())
@@ -128,7 +131,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			if err != nil {
 				return err
 			}
-			return a.attachNative(ctx, c, token, box, session)
+			return a.openInteractive(ctx, c, token, box, session, agent)
 		}
 		return json.NewEncoder(a.Out).Encode(allocation)
 	case "hibernate":

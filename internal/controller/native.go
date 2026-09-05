@@ -150,9 +150,26 @@ func (s *Server) nativeWelcomeHandler(w http.ResponseWriter, r *http.Request, p 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	// Old clients may still request a welcome session. Serialize that launch
+	// against the same box lock used by automatic one-shot hibernation.
+	tx, err := s.Store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	defer tx.Rollback()
+	var generation int64
+	if err = tx.QueryRowContext(ctx, `SELECT assignment_generation FROM logical_boxes WHERE id=$1 AND account_id=$2 AND state='running' AND fencing_token=$3 FOR UPDATE`, box.ID, p.AccountID, a.FencingToken).Scan(&generation); err != nil || generation != a.Box.AssignmentGeneration {
+		writeError(w, 409, fmt.Errorf("assignment changed"))
+		return
+	}
 	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "native-welcome", nativeFence(a)}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		writeError(w, 409, fmt.Errorf("welcome session could not be created; refresh session inventory"))
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		writeError(w, 409, err)
 		return
 	}
 	s.sessionsHandler(w, r, p)

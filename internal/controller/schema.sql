@@ -220,6 +220,22 @@ ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS requested_role text NOT NULL DEFA
 ALTER TABLE box_tasks ALTER COLUMN requested_role DROP DEFAULT;
 CREATE INDEX IF NOT EXISTS box_tasks_reconcile_idx
   ON box_tasks(account_id,state,created_at,id);
+-- One-shot process execution is deliberately separate from historical
+-- interactive tasks. Process exit is not a claim about prompt completion.
+CREATE TABLE IF NOT EXISTS process_tasks (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  logical_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  requested_role text NOT NULL,
+  idempotency_key text NOT NULL,
+  state text NOT NULL,
+  result jsonb NOT NULL,
+  auto_checked boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,idempotency_key)
+);
+CREATE INDEX IF NOT EXISTS process_tasks_pending_idx ON process_tasks(created_at) WHERE NOT auto_checked;
 CREATE TABLE IF NOT EXISTS box_messages (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

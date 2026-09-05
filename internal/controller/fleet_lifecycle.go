@@ -269,7 +269,11 @@ func (s *Server) completeLogicalBoxHibernate(ctx context.Context, p Principal, a
 	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "saving-workspace"); err != nil {
 		return fail(err)
 	}
-	prepared, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
+	prepareCommand := "prepare-hibernate"
+	if strings.HasPrefix(assignment.Box.RestorationState, "auto-") {
+		prepareCommand = "prepare-idle-hibernate"
+	}
+	prepared, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", prepareCommand}, provider.ExecOptions{})
 	if err != nil {
 		return fail(fmt.Errorf("save workload state: %w", err))
 	}

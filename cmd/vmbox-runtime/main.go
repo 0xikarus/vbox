@@ -79,13 +79,17 @@ func run() error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(result)
-	case "prepare-hibernate":
+	case "prepare-hibernate", "prepare-idle-hibernate":
 		if len(args) != 1 {
 			return fmt.Errorf("prepare-hibernate accepts no arguments")
 		}
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		defer cancel()
-		result, err := boxruntime.PrepareHibernate(ctx, runtime.Root)
+		prepare := boxruntime.PrepareHibernate
+		if args[0] == "prepare-idle-hibernate" {
+			prepare = boxruntime.PrepareIdleHibernate
+		}
+		result, err := prepare(ctx, runtime.Root)
 		if err != nil {
 			if len(result.Blockers) > 0 {
 				_ = json.NewEncoder(os.Stderr).Encode(result)

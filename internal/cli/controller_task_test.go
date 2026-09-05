@@ -16,7 +16,7 @@ import (
 func TestControllerTaskSchedulesAgentAndReportsReconnect(t *testing.T) {
 	var request v1.CreateBoxTaskRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/logical-boxes/research/tasks" {
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/logical-boxes/research/process-tasks" {
 			t.Fatalf("request=%s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Idempotency-Key") == "" {
@@ -42,7 +42,7 @@ func TestControllerTaskSchedulesAgentAndReportsReconnect(t *testing.T) {
 		t.Fatalf("request=%+v", request)
 	}
 	output := app.Out.(*bytes.Buffer).String()
-	if !strings.Contains(output, "Scheduled claude task task-1") || !strings.Contains(output, `vmbox "research" --session "review"`) || !strings.Contains(output, "allocate compute automatically") {
+	if !strings.Contains(output, "Scheduled claude task task-1") || !strings.Contains(output, `vmbox task-status "research" task-1`) || !strings.Contains(output, "hibernate when idle") {
 		t.Fatalf("output=%q", output)
 	}
 }
@@ -54,7 +54,7 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/logical-boxes":
 			_ = json.NewEncoder(w).Encode([]v1.LogicalBox{{ID: "box-1", Name: "research", State: v1.LogicalBoxHibernated}})
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/logical-boxes/research/tasks":
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/logical-boxes/research/process-tasks":
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
@@ -107,7 +107,7 @@ func TestControllerTaskStatusUsesTaskAPIAndChecksBox(t *testing.T) {
 	if err := app.controllerTaskStatus(context.Background(), config.Context{Controller: server.URL}, "secret", []string{"research", "task-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if requested != "GET /v1/tasks/task-1" {
+	if requested != "GET /v1/process-tasks/task-1" {
 		t.Fatalf("task status requested %q", requested)
 	}
 	if err := app.controllerTaskStatus(context.Background(), config.Context{Controller: server.URL}, "secret", []string{"other", "task-1"}); err == nil || !strings.Contains(err.Error(), "belongs to logical box") {
@@ -128,7 +128,7 @@ func TestControllerTaskStatusListsBoxTasksWithoutID(t *testing.T) {
 	if err := app.controllerTaskStatus(context.Background(), config.Context{Controller: server.URL}, "secret", []string{"research"}); err != nil {
 		t.Fatal(err)
 	}
-	if requested != "GET /v1/logical-boxes/research/tasks" {
+	if requested != "GET /v1/logical-boxes/research/process-tasks" {
 		t.Fatalf("task list requested %q", requested)
 	}
 }

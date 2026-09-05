@@ -8,6 +8,58 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/logical-boxes/{id}/process-tasks:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    post:
+      summary: Submit one-shot execution; agent tracks its own work
+      parameters:
+        - {in: header, name: Idempotency-Key, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent, prompt]
+              properties:
+                agent: {type: string, enum: [codex, claude, shell]}
+                prompt: {type: string, minLength: 1, maxLength: 100000}
+                session: {type: string}
+      responses:
+        '202': {description: Queued process task}
+        '200': {description: Existing identical idempotent request}
+        '409': {description: Conflicting request}
+    get:
+      summary: List one-shot execution metadata without waking compute
+      responses: {'200': {description: Process task list}}
+  /v1/process-tasks/{id}:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    get:
+      summary: Cached process state, timestamps, nullable exitCode, signal and outputTruncated
+      responses: {'200': {description: Execution metadata; exited does not prove semantic task completion}, '404': {description: Task inaccessible or not found}}
+  /v1/process-tasks/{id}/output:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    get:
+      summary: Cached combined output (first 1 MiB) and truncation flag, without waking compute
+      responses: {'200': {description: Object with taskId, output and truncated}, '404': {description: Task inaccessible or not found}}
+  /v1/logical-boxes/{id}/sessions/interactive:
+    parameters:
+      - {in: path, name: id, required: true, schema: {type: string}}
+    post:
+      summary: Owner-only persistent interactive session; serialized against auto-hibernation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agent]
+              properties:
+                agent: {type: string, enum: [codex, claude, shell]}
+      responses: {'201': {description: Object containing exact created session name}, '409': {description: Box assignment changed}, '502': {description: Startup unconfirmed; inspect sessions before retrying}}
   /healthz:
     get:
       security: []

@@ -67,19 +67,42 @@ running boxes require an explicit owner migration after controller deployment:
 existing server while holding the assignment lock; it does not restart workers,
 kill sessions or create a session. An unavailable runtime/fence fails closed.
 
-`vmbox BOX` requires a terminal before allocation. Zero sessions causes a separate
-controller welcome creation; one attaches directly; multiple show a numbered
-picker. `--session NAME` selects an exact existing name, never creates/replaces it.
+`vmbox BOX` requires a terminal before allocation. It offers a Codex/Claude/shell
+picker (defaulting to the configured box agent) and existing session names for
+reconnection. `vmbox BOX claude` or `vmbox BOX shell` bypasses the picker and creates
+a new interactive session. `--session NAME` selects an exact existing name, never
+creates/replaces it. Detached interactive sessions keep the box running.
 Runtime IDs and assignment-bound incarnations prevent prefix matches and attaching
 to a same-name replacement. A random server incarnation also prevents ID reuse
 after tmux restart/re-enabling. The fence check and attach share a tmux command queue.
 Manual names with spaces/Unicode are preserved; names are not shell-interpolated.
 Reads (`ls`, `status`, `sessions`, `updates`) never allocate or wake compute.
 
-`vmbox task BOX --agent AGENT --session NAME --prompt TEXT --idempotency-key KEY --json`
-retains detached controller launch and returns the real task. Human output prints
-the exact reconnect command. Ambiguous prompt delivery is never replayed. Agent
-menus/authentication errors remain failures, not manufactured responses.
+`vmbox task BOX AGENT --prompt TEXT --idempotency-key KEY --json` launches one-shot
+Codex (`exec`), Claude (`-p`), or shell (`bash -lc`) execution. `--agent` remains a
+compatibility alias; OpenCode one-shot support is not implemented. No interactive
+screen parsing is used. `task-status BOX [TASK_ID]` reports execution state and
+nullable exit code; `task-output BOX TASK_ID` returns cached output JSON. An agent
+tracks the meaning/progress of its own prompt; vmbox does not assess that work.
+
+New `/process-tasks` APIs are separate from legacy interactive `/tasks` APIs; old
+interactive histories and sessions are not converted. Status can still retrieve
+an old interactive task by explicit ID. One-shot listings contain one-shot tasks
+only. Old clients submitting `/tasks` keep their old interactive behavior.
+
+The worker keeps a durable claim and result journal in `/data/.vmbox/processes/`.
+Retries never execute an already claimed process again. Combined stdout/stderr
+is drained and the first 1 MiB retained, with truncation explicitly indicated.
+Results are copied to controller storage before automatic hibernation and remain
+readable while compute is off. States are queued/starting/running/unknown/exited/
+launch_failed. `exited` with code 0 means process success only; nonzero is the real
+process failure code. Signal termination has a separate signal and null exit
+code. Unknown outcomes never imply completion or permit auto-hibernation.
+
+After completion (including failure), the controller hibernates only when no
+pending/unknown task, legacy active task, or live tmux session remains. Submission,
+managed interactive creation, and the idle decision serialize on the box row and
+assignment fence. Interactive sessions are persistent even after client detach.
 
 ## Updates
 

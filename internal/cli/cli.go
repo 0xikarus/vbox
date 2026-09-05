@@ -237,6 +237,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerTask(ctx, c, token, args[1:])
 	case "task-status":
 		return a.controllerTaskStatus(ctx, c, token, args[1:])
+	case "task-output":
+		return a.processOutput(ctx, c, token, args[1:])
 	case "sessions":
 		return a.controllerSessions(ctx, c, token, args[1:])
 	case "updates":
@@ -596,12 +598,13 @@ func (a *App) request(ctx context.Context, c config.Context, token, method, path
 }
 func (a *App) usage() {
 	fmt.Fprint(a.Out, `vmbox — controller-managed persistent boxes
-  vmbox [--context NAME] BOX [--session NAME]
+  vmbox [--context NAME] BOX [codex|claude|shell | --session NAME]
   vmbox ls [--json] | status BOX [--json] | sessions BOX [--json]
   vmbox new BOX [--disk GiB] [--region ID] [--allocate|--detach]
-  vmbox task BOX --agent claude|codex|opencode|shell --prompt TEXT
+  vmbox task BOX codex|claude|shell --prompt TEXT
              [--session NAME] [--idempotency-key KEY] [--json]
   vmbox task-status BOX [TASK_ID]
+  vmbox task-output BOX TASK_ID
   vmbox updates [BOX] [--json]
   vmbox updates ack BOX --session NAME --revision REV
   vmbox boxes update BOX --default-agent AGENT
@@ -620,6 +623,8 @@ VMBOX_SSH_IDENTITY_FILE; optionally VMBOX_SSH_KNOWN_HOSTS_FILE. Changed host key
 fail closed. Native attachment requires the account owner role and a terminal.
 Exact session selection never creates or replaces a session. Detach with Ctrl-a d.
 Updates are bounded on-demand snapshots, not agent completion. Reads never ack.
+One-shot tasks retain output/exit codes and hibernate only when no sibling work
+remains. Exit code 0 is process success, not proof the prompt was completed.
 Standalone and client-side controller provisioning have been removed.
 `)
 }

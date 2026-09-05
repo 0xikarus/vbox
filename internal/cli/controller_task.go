@@ -47,8 +47,8 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 			opts.agent = "codex"
 		}
 	}
-	if !validTaskAgent(opts.agent) {
-		return fmt.Errorf("agent must be codex, claude, opencode, or shell")
+	if opts.agent != "codex" && opts.agent != "claude" && opts.agent != "shell" {
+		return fmt.Errorf("one-shot agent must be codex, claude, or shell")
 	}
 	if opts.prompt == "" {
 		if !interactive {
@@ -61,11 +61,11 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 	}
 
 	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt}
-	var task v1.BoxTask
+	var task v1.ProcessTask
 	if opts.idempotency == "" {
 		opts.idempotency = "cli-task:" + opts.box + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
 	}
-	status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(opts.box)+"/tasks", request, &task, map[string]string{
+	status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(opts.box)+"/process-tasks", request, &task, map[string]string{
 		"Idempotency-Key": opts.idempotency,
 	})
 	if err != nil {
@@ -75,7 +75,7 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 		return json.NewEncoder(a.Out).Encode(task)
 	}
 	fmt.Fprintf(a.Out, "Scheduled %s task %s on %s (%s, HTTP %d).\n", task.Agent, task.ID, task.BoxName, task.State, status)
-	fmt.Fprintf(a.Out, "The controller will allocate compute automatically. Reconnect with: vmbox %q --session %q\n", task.BoxName, task.Session)
+	fmt.Fprintf(a.Out, "The controller will allocate compute, retain the exit code/output, and hibernate when idle. Status: vmbox task-status %q %s\n", task.BoxName, task.ID)
 	return nil
 }
 
@@ -85,14 +85,18 @@ func (a *App) controllerTaskStatus(ctx context.Context, c config.Context, token 
 	}
 	box := args[0]
 	if len(args) == 1 {
-		var tasks []v1.BoxTask
-		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(box)+"/tasks", nil, &tasks, nil); err != nil {
+		var tasks []v1.ProcessTask
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(box)+"/process-tasks", nil, &tasks, nil); err != nil {
 			return err
 		}
 		return json.NewEncoder(a.Out).Encode(tasks)
 	}
-	var task v1.BoxTask
-	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/tasks/"+url.PathEscape(args[1]), nil, &task, nil); err != nil {
+	var task v1.ProcessTask
+	status, err := a.request(ctx, c, token, http.MethodGet, "/v1/process-tasks/"+url.PathEscape(args[1]), nil, &task, nil)
+	if status == http.StatusNotFound {
+		_, err = a.request(ctx, c, token, http.MethodGet, "/v1/tasks/"+url.PathEscape(args[1]), nil, &task, nil)
+	}
+	if err != nil {
 		return err
 	}
 	if task.BoxName != box && task.LogicalBoxID != box {
@@ -115,6 +119,9 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 		var err error
 		switch arg {
 		case "--agent":
+			if opts.agent != "" {
+				return opts, fmt.Errorf("agent specified twice; use task BOX AGENT --prompt TEXT")
+			}
 			opts.agent, err = next()
 		case "--idempotency-key":
 			opts.idempotency, err = next()
@@ -128,10 +135,13 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 			if strings.HasPrefix(arg, "-") {
 				return opts, fmt.Errorf("unknown task option %q", arg)
 			}
-			if opts.box != "" {
-				return opts, fmt.Errorf("task accepts only one logical box")
+			if opts.box == "" {
+				opts.box = arg
+			} else if opts.agent == "" {
+				opts.agent = arg
+			} else {
+				return opts, fmt.Errorf("usage: task BOX codex|claude|shell --prompt TEXT")
 			}
-			opts.box = arg
 		}
 		if err != nil {
 			return opts, err
@@ -171,12 +181,12 @@ func (a *App) promptTaskBox(ctx context.Context, c config.Context, token string,
 }
 
 func (a *App) promptTaskAgent(reader *bufio.Reader) (string, error) {
-	fmt.Fprintln(a.Out, "Choose an agent: 1) codex  2) claude  3) opencode  4) shell")
+	fmt.Fprintln(a.Out, "Choose an agent: 1) codex  2) claude  3) shell")
 	choice, err := a.readControllerPrompt(reader, "Agent number or name", "1")
 	if err != nil {
 		return "", err
 	}
-	agents := []string{"codex", "claude", "opencode", "shell"}
+	agents := []string{"codex", "claude", "shell"}
 	if number, numberErr := strconv.Atoi(choice); numberErr == nil {
 		if number < 1 || number > len(agents) {
 			return "", fmt.Errorf("agent selection must be between 1 and %d", len(agents))

@@ -79,12 +79,17 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
 	mux.HandleFunc("GET /v1/inventory", s.auth(s.boxInventoryHandler))
 	mux.HandleFunc("GET /v1/capabilities", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
-		writeJSON(w, 200, map[string]any{"nativeSessions": true, "nativeAttach": p.Role == "owner", "snapshotUpdates": true, "providerEdits": p.Role == "owner"})
+		writeJSON(w, 200, map[string]any{"nativeSessions": true, "nativeAttach": p.Role == "owner", "snapshotUpdates": true, "providerEdits": p.Role == "owner", "oneShotTasks": true, "interactiveLaunch": p.Role == "owner"})
 	}))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/sessions", s.auth(s.sessionsHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/updates", s.auth(s.updatesHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/updates/ack", s.auth(s.ackUpdateHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/sessions/welcome", s.owner(s.nativeWelcomeHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/sessions/interactive", s.owner(s.interactiveStartHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/process-tasks", s.auth(s.createProcessHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/process-tasks", s.auth(s.processResultHandler))
+	mux.HandleFunc("GET /v1/process-tasks/{id}", s.auth(s.processResultHandler))
+	mux.HandleFunc("GET /v1/process-tasks/{id}/output", s.auth(s.processResultHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/sessions/enable", s.owner(s.enableNativeHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/native-connection", s.owner(s.nativeConnectionHandler))
 	mux.HandleFunc("POST /v1/logical-boxes", s.auth(s.createLogicalBoxHandler))
@@ -510,6 +515,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 		s.Logger.Error("initial logical box task reconciliation failed", "error", err)
 	}
+	if err := s.ReconcileProcessesNow(ctx); err != nil {
+		s.Logger.Error("initial process reconciliation failed", "error", err)
+	}
 	if err := s.ReconcileGroupDeliveriesNow(ctx); err != nil {
 		s.Logger.Error("initial group message reconciliation failed", "error", err)
 	}
@@ -542,6 +550,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileBoxInteractionsNow(ctx); err != nil {
 					s.Logger.Error("logical box task reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileProcessesNow(ctx); err != nil {
+					s.Logger.Error("process reconciliation failed", "error", err)
 				}
 				if err := s.ReconcileGroupDeliveriesNow(ctx); err != nil {
 					s.Logger.Error("group message reconciliation failed", "error", err)
