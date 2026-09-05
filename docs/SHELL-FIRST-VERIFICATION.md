@@ -24,7 +24,15 @@ commits/deployment. README describes current commands and limitations.
 The user approved a temporary third slot. Only disposable box
 `lifecycle-proof-0905b` (ID `6a253f7b-a454-4879-8a7c-e53500000000`) was mutated
 for these final lifecycle checks. User box `test` and running
-`coworker-telegram` were not interrupted. Cleanup is pending final confirmation.
+`coworker-telegram` were not interrupted. The disposable box and its volume were
+permanently deleted; its API now returns 404. A scale-down bug initially counted
+the unrelated draining user box against the removal and left the idle slot behind.
+Revision `295ece77b1b2e2312fb7af298bf4d0379e6ed554` fixes this by retiring idle
+capacity first, with regression coverage and full Go/PostgreSQL tests and vet
+passing. Railway deployment `ed0bb0ae-390b-4dbb-9fd2-ce9a338c848d` succeeded.
+Final fleet inspection confirmed **desired=2, actual=2**: only the original
+services remain, the coworker is running, and user box `test` remains in its
+pre-existing deleting/draining state.
 
 Known cosmetic issue: the tmux footer can render a literal `nobold]` and initially
 empty metadata. The specs welcome and shell access work; this issue is not claimed
