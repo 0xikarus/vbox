@@ -36,4 +36,5 @@ pre-existing deleting/draining state.
 
 Known cosmetic issue: the tmux footer can render a literal `nobold]` and initially
 empty metadata. The specs welcome and shell access work; this issue is not claimed
-fixed. Telegram controller slash-command expansion remains in [TODO](TODO.md).
+fixed. Telegram integration and its slash-command TODO were subsequently removed
+at the user's request; the earlier delivery evidence above is historical.

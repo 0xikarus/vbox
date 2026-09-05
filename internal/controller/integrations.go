@@ -3,14 +3,11 @@ package controller
 import (
 	"context"
 	"crypto/ed25519"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
-	"strings"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/notifications"
@@ -28,6 +25,10 @@ func (a integrationAnswerer) Answer(ctx context.Context, accountID, userID, ques
 
 func (s *Server) notificationInbound(w http.ResponseWriter, r *http.Request) {
 	kind, accountID, name := r.PathValue("kind"), r.PathValue("account"), r.PathValue("name")
+	if kind != "discord" {
+		writeError(w, http.StatusNotFound, fmt.Errorf("unsupported notification integration"))
+		return
+	}
 	value, err := s.Store.Notification(r.Context(), accountID, kind, name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, fmt.Errorf("notification destination not found"))
@@ -40,21 +41,6 @@ func (s *Server) notificationInbound(w http.ResponseWriter, r *http.Request) {
 	}
 	answerer := integrationAnswerer{store: s.Store}
 	switch kind {
-	case "telegram":
-		expected, _ := secret["webhookSecret"].(string)
-		provided := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
-		if expected == "" || len(expected) != len(provided) || subtle.ConstantTimeCompare([]byte(expected), []byte(provided)) != 1 {
-			writeError(w, http.StatusUnauthorized, fmt.Errorf("invalid Telegram webhook secret"))
-			return
-		}
-		adapter := telegramInbound(value, config, answerer)
-		adapter.CoworkerCommand = s.telegramCoworkerCommand(value, secret)
-		err = adapter.HandleUpdate(r.Context(), r.Body)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
 	case "discord":
 		publicKey, err := hex.DecodeString(stringField(secret, "publicKey"))
 		if err != nil || len(publicKey) != ed25519.PublicKeySize {
@@ -81,21 +67,6 @@ func (s *Server) notificationInbound(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func telegramInbound(value DecryptedNotification, config map[string]any, answerer notifications.Answerer) notifications.Telegram {
-	users, chats := map[int64]bool{}, map[int64]bool{}
-	for _, item := range value.AllowedUsers {
-		if id, err := strconv.ParseInt(item, 10, 64); err == nil {
-			users[id] = true
-		}
-	}
-	for _, item := range value.AllowedChats {
-		if id, err := strconv.ParseInt(item, 10, 64); err == nil {
-			chats[id] = true
-		}
-	}
-	return notifications.Telegram{AllowedUsers: users, AllowedChats: chats, Answerer: answerer, AccountID: value.AccountID, UserMap: stringMap(config["userMap"]), DefaultCoworker: stringField(config, "defaultCoworker")}
-}
-
 func discordInbound(value DecryptedNotification, config map[string]any, publicKey ed25519.PublicKey, answerer notifications.Answerer) notifications.Discord {
 	users, guilds, channels := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	for _, item := range value.AllowedUsers {
@@ -111,18 +82,12 @@ func discordInbound(value DecryptedNotification, config map[string]any, publicKe
 }
 
 func validateInteractiveNotification(kind string, req v1.PutNotificationRequest) error {
-	if kind != "telegram" && kind != "discord" {
+	if kind != "discord" {
 		return nil
 	}
 	var secret, config map[string]any
 	if json.Unmarshal(req.Secret, &secret) != nil || json.Unmarshal(req.Config, &config) != nil {
 		return fmt.Errorf("invalid notification secret or config")
-	}
-	if kind == "telegram" && (stringField(secret, "token") == "" || stringField(secret, "webhookSecret") == "") {
-		return fmt.Errorf("Telegram requires token and webhookSecret")
-	}
-	if box := stringField(config, "defaultCoworker"); box != "" && (len(box) > 128 || strings.ContainsAny(box, " \t\r\n")) {
-		return fmt.Errorf("defaultCoworker must be a box name or ID without whitespace")
 	}
 	if kind == "discord" {
 		key, err := hex.DecodeString(stringField(secret, "publicKey"))

@@ -233,11 +233,11 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		if err != nil || len(inbox) != 1 || inbox[0].Kind != "board" {
 			t.Fatal("atomic board event missing")
 		}
-		ownerSeq, err := s.SendOwnerCoworkerMessage(ctx, p, boxID, "telegram:test:1", "owner message")
+		ownerSeq, err := s.SendOwnerCoworkerMessage(ctx, p, boxID, "owner:test:1", "owner message")
 		if err != nil {
 			t.Fatal(err)
 		}
-		retrySeq, err := s.SendOwnerCoworkerMessage(ctx, p, boxID, "telegram:test:1", "owner message")
+		retrySeq, err := s.SendOwnerCoworkerMessage(ctx, p, boxID, "owner:test:1", "owner message")
 		if err != nil || retrySeq != ownerSeq {
 			t.Fatal("owner message retry duplicated")
 		}
@@ -245,7 +245,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		if err != nil || len(ownerInbox) != 1 || ownerInbox[0].Sender != "owner" || ownerInbox[0].Kind != "owner_message" {
 			t.Fatal("owner attribution lost")
 		}
-		if _, err := s.SendOwnerCoworkerMessage(ctx, q, boxID, "telegram:other:1", "cross account"); err == nil {
+		if _, err := s.SendOwnerCoworkerMessage(ctx, q, boxID, "owner:other:1", "cross account"); err == nil {
 			t.Fatal("cross-account owner message accepted")
 		}
 		t.Run("concurrent event commit ordering", func(t *testing.T) {

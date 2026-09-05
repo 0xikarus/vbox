@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS login_profiles (
 CREATE TABLE IF NOT EXISTS notification_destinations (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),
-  kind text NOT NULL CHECK (kind IN ('webhook', 'telegram', 'discord')),
+  kind text NOT NULL CHECK (kind IN ('webhook', 'discord')),
   name text NOT NULL,
   encrypted_secret text NOT NULL,
   config jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -358,14 +358,6 @@ CREATE TABLE IF NOT EXISTS coworker_events (
 CREATE INDEX IF NOT EXISTS coworker_inbox ON coworker_events(account_id,recipient_box_id,sequence);
 ALTER TABLE coworker_events ALTER COLUMN sender_box_id DROP NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS coworker_owner_message_key ON coworker_events(account_id,message_key) WHERE sender_box_id IS NULL;
-CREATE TABLE IF NOT EXISTS coworker_telegram_replies (
-  event_sequence bigint PRIMARY KEY REFERENCES coworker_events(sequence) ON DELETE CASCADE,
-  body text NOT NULL,
-  state text NOT NULL CHECK (state IN ('sending','sent','uncertain')),
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
-
 CREATE TABLE IF NOT EXISTS coworker_boards (
   account_id uuid PRIMARY KEY REFERENCES accounts(id),
   revision bigint NOT NULL DEFAULT 0,

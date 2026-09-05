@@ -702,8 +702,8 @@ func (s *Store) ListNotifications(ctx context.Context, accountID string, decrypt
 }
 
 func (s *Store) PutNotification(ctx context.Context, p Principal, kind, name string, req v1.PutNotificationRequest) (v1.NotificationDestination, error) {
-	if kind != "webhook" && kind != "telegram" && kind != "discord" {
-		return v1.NotificationDestination{}, fmt.Errorf("notification kind must be webhook, telegram, or discord")
+	if kind != "webhook" && kind != "discord" {
+		return v1.NotificationDestination{}, fmt.Errorf("notification kind must be webhook or discord")
 	}
 	if name == "" || !validJSONObject(req.Secret, true) {
 		return v1.NotificationDestination{}, fmt.Errorf("name and a non-empty secret JSON object are required")

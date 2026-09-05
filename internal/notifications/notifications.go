@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -91,84 +90,6 @@ func (w Webhook) Send(ctx context.Context, value Delivery) error {
 		req.Header.Set("X-VMBox-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
 	}
 	return send(w.Client, req)
-}
-
-type Telegram struct {
-	CoworkerCommand func(context.Context, string, int64, int64, string) error
-	DefaultCoworker string
-	Token           string
-	ChatID          int64
-	AllowedUsers    map[int64]bool
-	AllowedChats    map[int64]bool
-	Client          *http.Client
-	Answerer        Answerer
-	AccountID       string
-	UserMap         map[string]string
-}
-
-func (Telegram) Name() string { return "telegram" }
-func (t Telegram) Send(ctx context.Context, value Delivery) error {
-	if t.Token == "" {
-		return fmt.Errorf("Telegram token is empty")
-	}
-	text := fmt.Sprintf("vmbox %s · %s\n%s", value.Box, value.State, value.Message)
-	body := map[string]any{"chat_id": t.ChatID, "text": text}
-	if value.QuestionID != "" {
-		body["text"] = text + "\nReply with: /answer " + value.QuestionID + " YOUR ANSWER"
-	}
-	data, _ := json.Marshal(body)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.telegram.org/bot"+t.Token+"/sendMessage", bytes.NewReader(data))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	return send(t.Client, req)
-}
-func (t Telegram) HandleUpdate(ctx context.Context, body io.Reader) error {
-	var update struct {
-		UpdateID int64 `json:"update_id"`
-		Message  struct {
-			Text string `json:"text"`
-			Chat struct {
-				ID int64 `json:"id"`
-			} `json:"chat"`
-			From struct {
-				ID int64 `json:"id"`
-			} `json:"from"`
-		} `json:"message"`
-	}
-	if err := json.NewDecoder(io.LimitReader(body, 1<<20)).Decode(&update); err != nil {
-		return err
-	}
-	if !t.AllowedUsers[update.Message.From.ID] {
-		return fmt.Errorf("Telegram user is not allowlisted")
-	}
-	if len(t.AllowedChats) > 0 && !t.AllowedChats[update.Message.Chat.ID] {
-		return fmt.Errorf("Telegram chat is not allowlisted")
-	}
-	fields := strings.SplitN(strings.TrimSpace(update.Message.Text), " ", 3)
-	if t.DefaultCoworker != "" && strings.TrimSpace(update.Message.Text) != "" && !strings.HasPrefix(strings.TrimSpace(update.Message.Text), "/") {
-		userID := t.UserMap[strconv.FormatInt(update.Message.From.ID, 10)]
-		if userID == "" || t.CoworkerCommand == nil {
-			return fmt.Errorf("coworker messages unavailable for this mapped user")
-		}
-		return t.CoworkerCommand(ctx, userID, update.UpdateID, update.Message.Chat.ID, "/coworker "+t.DefaultCoworker+" "+update.Message.Text)
-	}
-	if len(fields) > 0 && (fields[0] == "/coworker" || fields[0] == "/coworker-messages") {
-		userID := t.UserMap[strconv.FormatInt(update.Message.From.ID, 10)]
-		if userID == "" || t.CoworkerCommand == nil {
-			return fmt.Errorf("coworker commands unavailable for this mapped user")
-		}
-		return t.CoworkerCommand(ctx, userID, update.UpdateID, update.Message.Chat.ID, update.Message.Text)
-	}
-	if len(fields) != 3 || fields[0] != "/answer" {
-		return fmt.Errorf("expected /answer QUESTION_ID TEXT")
-	}
-	userID := t.UserMap[strconv.FormatInt(update.Message.From.ID, 10)]
-	if userID == "" {
-		return fmt.Errorf("Telegram user is not mapped to a controller user")
-	}
-	return t.Answerer.Answer(ctx, t.AccountID, userID, fields[1], fields[2])
 }
 
 type Discord struct {
@@ -297,4 +218,3 @@ func send(client *http.Client, req *http.Request) error {
 	}
 	return nil
 }
-func ParseTelegramID(value string) (int64, error) { return strconv.ParseInt(value, 10, 64) }

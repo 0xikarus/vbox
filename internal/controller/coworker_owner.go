@@ -29,7 +29,7 @@ func (s *Server) coworkerSettings(w http.ResponseWriter, r *http.Request, p Prin
 }
 
 func (s *Server) coworkerOwnerMessages(w http.ResponseWriter, r *http.Request, p Principal) {
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT e.sequence,COALESCE(s.name,'owner'),t.name,e.kind,e.data,e.created_at,COALESCE(reply.state,'') FROM coworker_events e LEFT JOIN logical_boxes s ON s.id=e.sender_box_id AND s.account_id=e.account_id JOIN logical_boxes t ON t.id=e.recipient_box_id AND t.account_id=e.account_id LEFT JOIN coworker_telegram_replies reply ON reply.event_sequence=e.sequence WHERE e.account_id=$1 ORDER BY e.sequence DESC LIMIT 100`, p.AccountID)
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT e.sequence,COALESCE(s.name,'owner'),t.name,e.kind,e.data,e.created_at FROM coworker_events e LEFT JOIN logical_boxes s ON s.id=e.sender_box_id AND s.account_id=e.account_id JOIN logical_boxes t ON t.id=e.recipient_box_id AND t.account_id=e.account_id WHERE e.account_id=$1 ORDER BY e.sequence DESC LIMIT 100`, p.AccountID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("could not list coworker messages"))
 		return
@@ -38,13 +38,13 @@ func (s *Server) coworkerOwnerMessages(w http.ResponseWriter, r *http.Request, p
 	out := []map[string]any{}
 	for rows.Next() {
 		var sequence int64
-		var sender, recipient, kind, created, replyState string
+		var sender, recipient, kind, created string
 		var data json.RawMessage
-		if err = rows.Scan(&sequence, &sender, &recipient, &kind, &data, &created, &replyState); err != nil {
+		if err = rows.Scan(&sequence, &sender, &recipient, &kind, &data, &created); err != nil {
 			writeError(w, 500, fmt.Errorf("could not read coworker messages"))
 			return
 		}
-		out = append(out, map[string]any{"sequence": sequence, "sender": sender, "recipient": recipient, "kind": kind, "data": data, "createdAt": created, "replyState": replyState})
+		out = append(out, map[string]any{"sequence": sequence, "sender": sender, "recipient": recipient, "kind": kind, "data": data, "createdAt": created})
 	}
 	if rows.Err() != nil {
 		writeError(w, 500, fmt.Errorf("coworker message listing interrupted"))

@@ -557,7 +557,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			secretEnv := fs.String("secret-env", "", "environment variable containing a JSON secret object")
 			configText := fs.String("config", "{}", "non-secret destination config JSON")
 			var users, chats stringList
-			fs.Var(&users, "allow-user", "allowed Telegram/Discord user ID (repeatable)")
+			fs.Var(&users, "allow-user", "allowed Discord user ID (repeatable)")
 			fs.Var(&chats, "allow-chat", "allowed chat, channel, or guild ID (repeatable)")
 			if err := fs.Parse(args[4:]); err != nil {
 				return err

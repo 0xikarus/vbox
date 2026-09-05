@@ -54,8 +54,8 @@ vmbox notifications setup webhook ops --secret-env WEBHOOK_SECRET_JSON
 vmbox notifications test webhook ops
 ```
 
-Webhook, Telegram and Discord secret inputs are JSON objects from named secure
-environment variables. Telegram/Discord also require user and chat/channel
+Webhook and Discord secret inputs are JSON objects from named secure
+environment variables. Discord also require user and chat/channel
 allowlists. Notification/integration message APIs and historical groups remain
 supported backend records; removing their web views does not erase them.
 

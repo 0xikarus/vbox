@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"encoding/hex"
@@ -37,42 +36,6 @@ func TestWebhookSignatureAndNoSecretInPayload(t *testing.T) {
 	adapter := Webhook{URL: server.URL, Secret: secret, Client: server.Client()}
 	if err := adapter.Send(context.Background(), Delivery{RunID: "run", Message: "done"}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestTelegramRequiresUserAndChatAllowlists(t *testing.T) {
-	recorder := &answerRecorder{}
-	telegram := Telegram{AllowedUsers: map[int64]bool{7: true}, AllowedChats: map[int64]bool{9: true}, Answerer: recorder, UserMap: map[string]string{"7": "user-7"}}
-	allowed := `{"message":{"text":"/answer q_1 yes","from":{"id":7},"chat":{"id":9}}}`
-	if err := telegram.HandleUpdate(context.Background(), bytes.NewBufferString(allowed)); err != nil {
-		t.Fatal(err)
-	}
-	if !recorder.called {
-		t.Fatal("authorized answer was not delivered")
-	}
-	recorder.called = false
-	blocked := `{"message":{"text":"/answer q_1 yes","from":{"id":7},"chat":{"id":10}}}`
-	if err := telegram.HandleUpdate(context.Background(), bytes.NewBufferString(blocked)); err == nil || recorder.called {
-		t.Fatalf("non-allowlisted chat accepted: %v", err)
-	}
-}
-
-func TestTelegramCoworkerCommandsRetainAllowlists(t *testing.T) {
-	calls := 0
-	adapter := Telegram{AllowedUsers: map[int64]bool{7: true}, AllowedChats: map[int64]bool{9: true}, UserMap: map[string]string{"7": "owner-7"}, CoworkerCommand: func(_ context.Context, user string, update, chat int64, text string) error {
-		calls++
-		if user != "owner-7" || update != 42 || chat != 9 {
-			t.Error("identity lost")
-		}
-		return nil
-	}}
-	allowed := `{"update_id":42,"message":{"text":"/coworker coworker-test hello","from":{"id":7},"chat":{"id":9}}}`
-	if err := adapter.HandleUpdate(context.Background(), bytes.NewBufferString(allowed)); err != nil || calls != 1 {
-		t.Fatal("allowed coworker command failed", err)
-	}
-	blocked := `{"update_id":43,"message":{"text":"/coworker coworker-test hello","from":{"id":7},"chat":{"id":10}}}`
-	if err := adapter.HandleUpdate(context.Background(), bytes.NewBufferString(blocked)); err == nil || calls != 1 {
-		t.Fatal("allowlist bypass")
 	}
 }
 

@@ -805,8 +805,8 @@ func (s *Server) putNotification(w http.ResponseWriter, r *http.Request, p Princ
 		return
 	}
 	kind := r.PathValue("kind")
-	if (kind == "telegram" || kind == "discord") && (len(req.AllowedUsers) == 0 || len(req.AllowedChats) == 0) {
-		writeError(w, 400, fmt.Errorf("Telegram and Discord require non-empty user and chat/channel allowlists"))
+	if kind == "discord" && (len(req.AllowedUsers) == 0 || len(req.AllowedChats) == 0) {
+		writeError(w, 400, fmt.Errorf("Discord requires non-empty user and chat/channel allowlists"))
 		return
 	}
 	if err := validateInteractiveNotification(kind, req); err != nil {
@@ -917,31 +917,6 @@ func (s *Server) notificationAdapter(value DecryptedNotification) (notifications
 			return nil, fmt.Errorf("webhook URL is required")
 		}
 		return notifications.Webhook{URL: url, Secret: []byte(stringValue(secret, "signingSecret")), Client: s.HTTP}, nil
-	case "telegram":
-		chatID, err := strconv.ParseInt(stringValue(config, "chatId"), 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("Telegram chatId: %w", err)
-		}
-		users := make(map[int64]bool)
-		chats := make(map[int64]bool)
-		for _, item := range value.AllowedUsers {
-			id, err := strconv.ParseInt(item, 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("Telegram allowed user: %w", err)
-			}
-			users[id] = true
-		}
-		for _, item := range value.AllowedChats {
-			id, err := strconv.ParseInt(item, 10, 64)
-			if err != nil {
-				return nil, fmt.Errorf("Telegram allowed chat: %w", err)
-			}
-			chats[id] = true
-		}
-		if !chats[chatID] {
-			return nil, fmt.Errorf("Telegram destination chatId must be allowlisted")
-		}
-		return notifications.Telegram{Token: stringValue(secret, "token"), ChatID: chatID, AllowedUsers: users, AllowedChats: chats, Client: s.HTTP}, nil
 	case "discord":
 		url := stringValue(secret, "webhookUrl")
 		if url == "" {

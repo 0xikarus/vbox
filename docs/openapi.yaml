@@ -304,9 +304,9 @@ paths:
       responses: {'200': {description: Notification destinations}}
   /v1/notifications/{kind}/{name}:
     put:
-      description: Configure or rotate an encrypted webhook, Telegram, or Discord destination.
+      description: Configure or rotate an encrypted webhook or Discord destination.
       parameters:
-        - {name: kind, in: path, required: true, schema: {enum: [webhook, telegram, discord]}}
+        - {name: kind, in: path, required: true, schema: {enum: [webhook, discord]}}
         - {name: name, in: path, required: true, schema: {type: string}}
       requestBody:
         required: true
@@ -326,16 +326,14 @@ paths:
   /v1/integrations/{kind}/{account}/{name}:
     post:
       security: []
-      description: Provider-authenticated Telegram webhook or Discord interaction callback. External identities must be allowlisted and mapped to active controller users before they may answer a question.
+      description: Provider-authenticated Discord interaction callback. External identities must be allowlisted and mapped to active controller users before they may answer a question.
       parameters:
-        - {name: kind, in: path, required: true, schema: {enum: [telegram, discord]}}
+        - {name: kind, in: path, required: true, schema: {enum: [discord]}}
         - {name: account, in: path, required: true, schema: {type: string, format: uuid}}
         - {name: name, in: path, required: true, schema: {type: string}}
       responses:
         '200': {description: Discord interaction response}
-        '204': {description: Telegram update accepted}
         '400': {description: Invalid or unauthorized interaction payload}
-        '401': {description: Invalid Telegram webhook secret}
   /v1/fleet/status:
     get:
       description: Fleet capacity and slot state for a provider and credential.
@@ -918,5 +916,5 @@ components:
         secret: {type: object, writeOnly: true, minProperties: 1}
         config: {type: object, description: Non-secret destination configuration.}
         allowedUsers: {type: array, items: {type: string}}
-        allowedChats: {type: array, items: {type: string}, description: Telegram chats or Discord guild/channel identifiers.}
+        allowedChats: {type: array, items: {type: string}, description: Discord guild/channel identifiers.}
         enabled: {type: boolean, default: true}
