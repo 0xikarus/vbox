@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/boxruntime"
+	"github.com/0xikarus/vmbox-service/internal/loginprofile"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
@@ -18,9 +19,10 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	if len(creation.Request.LoginProfiles) == 0 {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	request := boxruntime.SyncRequest{}
+	var githubHost, githubUser string
 	defer func() {
 		for _, f := range request.Files {
 			clear(f.Data)
@@ -30,6 +32,22 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: creation.AccountID}, ref.Application, ref.Name)
 		if err != nil {
 			return fmt.Errorf("selected login profile unavailable; no credentials provisioned")
+		}
+		if ref.Application == "github" {
+			if err := loginprofile.Validate(ref.Application, profile.Files, time.Now()); err != nil {
+				return err
+			}
+			var credential loginprofile.GitHub
+			_ = json.Unmarshal(profile.Files["credential.json"], &credential)
+			githubHost, githubUser = credential.Host, credential.User
+			// JSON quoted strings are valid YAML scalars. Only the selected
+			// account is exported, never the local multi-account credential store.
+			data := []byte(fmt.Sprintf("%q:\n    user: %q\n    oauth_token: %q\n    git_protocol: https\n", credential.Host, credential.User, credential.Token))
+			for _, value := range profile.Files {
+				clear(value)
+			}
+			request.Files = append(request.Files, boxruntime.SyncFile{Path: "/data/home/.config/gh/hosts.yml", Mode: "0600", Data: data})
+			continue
 		}
 		names := make([]string, 0, len(profile.Files))
 		for name := range profile.Files {
@@ -68,6 +86,11 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "sync-files"}, provider.ExecOptions{Stdin: bytes.NewReader(payload)})
 	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != fmt.Sprintf("%x", sha256.Sum256(payload)) {
 		return fmt.Errorf("selected credential transfer failed integrity verification")
+	}
+	for _, ref := range creation.Request.LoginProfiles {
+		if err := verifyProvisionedLogin(ctx, prov, a.Slot.ServiceID, ref.Application, githubHost, githubUser); err != nil {
+			return err
+		}
 	}
 	result, err = prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {

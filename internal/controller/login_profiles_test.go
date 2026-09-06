@@ -79,7 +79,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"token":"synthetic-private-profile"}`)}}
+	req := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-private-profile"}`)}}
 	for _, name := range []string{"work", "personal"} {
 		if _, err = s.SaveLoginProfile(ctx, p, "codex", name, req); err != nil {
 			t.Fatal(err)
@@ -209,6 +209,9 @@ func (p *profileTestTransport) AttachedStorage(context.Context, string) (*provid
 	return &provider.Storage{ID: p.volume}, nil
 }
 func (p *profileTestTransport) Exec(ctx context.Context, _ string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if strings.Join(argv, " ") == "codex login status" || (len(argv) > 1 && argv[0] == "codex" && argv[1] == "exec") {
+		return provider.ExecResult{}, nil
+	}
 	if len(argv) == 2 && argv[1] == "prepare-hibernate" {
 		if container := os.Getenv("VMBOX_TEST_WORKER_CONTAINER"); container != "" {
 			return runProfileWorker(ctx, container, argv, nil)

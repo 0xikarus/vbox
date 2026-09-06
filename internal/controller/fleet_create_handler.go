@@ -3,7 +3,9 @@ package controller
 import (
 	"context"
 	"fmt"
+	"github.com/0xikarus/vmbox-service/internal/loginprofile"
 	"net/http"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
@@ -35,6 +37,25 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		}
 		writeJSON(w, http.StatusCreated, box)
 		return
+	}
+	for _, ref := range request.LoginProfiles {
+		if p.Role != "owner" {
+			writeError(w, 403, fmt.Errorf("only an account owner may provision saved profiles"))
+			return
+		}
+		profile, err := s.Store.LoadLoginProfile(r.Context(), p, ref.Application, ref.Name)
+		if err != nil {
+			writeError(w, 400, fmt.Errorf("selected %s profile %s is unavailable", ref.Application, ref.Name))
+			return
+		}
+		err = loginprofile.Validate(ref.Application, profile.Files, time.Now())
+		for _, data := range profile.Files {
+			clear(data)
+		}
+		if err != nil {
+			writeError(w, 400, fmt.Errorf("%s/%s: %w", ref.Application, ref.Name, err))
+			return
+		}
 	}
 	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), p, request)
 	if err != nil {

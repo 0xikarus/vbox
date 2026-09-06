@@ -28,6 +28,9 @@ func TestCreationDiscoversAllSupportedLoginsWithoutReadingSecrets(t *testing.T) 
 		t.Fatal(err)
 	}
 	for _, p := range profiles {
+		if p.app == "github" {
+			continue
+		} // GitHub accounts are discovered through gh, not directory scans.
 		if len(p.localPaths) != 2 {
 			t.Fatalf("%s: got %d local profiles", p.app, len(p.localPaths))
 		}

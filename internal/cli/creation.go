@@ -94,6 +94,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 				return err
 			}
 			profiles, err = a.discoverCreationLogins(saved, request.LoginProfiles)
+			a.addCreationGitHubAccounts(ctx, profiles)
 			if err != nil {
 				return err
 			}

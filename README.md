@@ -222,6 +222,24 @@ Read [controller-first contracts and migration](docs/CONTROLLER-FIRST.md),
 
 ## Saved agent login profiles
 
+Creation also offers GitHub accounts discovered by `gh auth status`, including
+keychain-backed logins. Only the selected account is exported after Create;
+Skip remains the default. To save one explicitly:
+`vmbox profiles save github work --from github.com:YOUR-USER`, then create with
+`--profile github=work`. The controller encrypts this token per account/profile
+and provisions a private `~/.config/gh/hosts.yml` for the box user.
+
+Malformed or expired saved Claude/Codex profiles are rejected before a slot or
+volume is reserved. Refresh locally with `claude auth login` or `codex login`,
+save under a **new profile name**, then select that profile and retry creation.
+Existing saved profiles are immutable snapshots, not a live sync of local logins.
+
+After transfer, creation checks the selected logins as the unprivileged box user.
+Claude/Codex checks include a brief one-shot provider request (small agent usage
+charges may apply); GitHub checks the selected account with the API and configures
+its HTTPS git credential helper. Failures stop creation rather than claiming the
+box is authenticated. CLI output and credential contents are not included in errors.
+
 ```bash
 vmbox profiles                         # named Claude/Codex profiles, no secrets
 vmbox profiles save codex work --from /path/to/codex-profile

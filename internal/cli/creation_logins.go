@@ -15,7 +15,7 @@ func (a *App) discoverCreationLogins(saved []v1.LoginProfile, refs []v1.LoginPro
 		return nil, fmt.Errorf("could not discover local login profiles: %w", err)
 	}
 	var result []creationProfileFields
-	for _, app := range []string{"claude", "codex"} {
+	for _, app := range []string{"claude", "codex", "github"} {
 		selection := &formField{Value: "Skip", Choices: []string{"Skip", "Upload local"}}
 		paths := map[string]string{}
 		usedNames := map[string]bool{}
@@ -31,6 +31,9 @@ func (a *App) discoverCreationLogins(saved []v1.LoginProfile, refs []v1.LoginPro
 			selection.Choices = append(selection.Choices, "Saved: "+name)
 		}
 		defaultPath := filepath.Join(a.Environ["HOME"], "."+app)
+		if app == "github" {
+			defaultPath = "github.com:YOUR-USER"
+		}
 		for _, p := range local {
 			if p.Component != app {
 				continue
@@ -63,6 +66,9 @@ func (a *App) discoverCreationLogins(saved []v1.LoginProfile, refs []v1.LoginPro
 			}
 		}
 		path := &formField{Label: "  Local path", Value: defaultPath, When: func() bool { return selection.Value == "Upload local" }}
+		if app == "github" {
+			path.Label = "  Account HOST:USER"
+		}
 		name := "personal"
 		for i := 2; usedNames[name]; i++ {
 			name = fmt.Sprintf("personal-%d", i)

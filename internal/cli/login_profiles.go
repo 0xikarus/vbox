@@ -97,7 +97,7 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 			return json.NewEncoder(a.Out).Encode(profiles)
 		}
 		if len(profiles) == 0 {
-			fmt.Fprintln(a.Out, "No saved login profiles. Upload one with: vmbox profiles save claude|codex NAME --from PATH")
+			fmt.Fprintln(a.Out, "No saved login profiles. Use: vmbox profiles save claude|codex NAME --from PATH, or profiles save github NAME --from HOST:USER")
 		}
 		for _, profile := range profiles {
 			fmt.Fprintf(a.Out, "%s · %s\n", tuiLabel(profile.Application, 30), tuiLabel(profile.Name, 64))
@@ -105,7 +105,7 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 		return nil
 	}
 	if len(args) != 5 || args[0] != "save" || args[3] != "--from" {
-		return fmt.Errorf("usage: vmbox profiles [list] [--json] | profiles save claude|codex NAME --from PATH [--json]")
+		return fmt.Errorf("usage: vmbox profiles [list] [--json] | profiles save claude|codex NAME --from PATH | profiles save github NAME --from HOST:USER [--json]")
 	}
 	profile, err := a.saveLocalLoginProfile(ctx, c, token, args[1], args[2], args[4])
 	if err != nil {
@@ -120,6 +120,9 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 
 func (a *App) saveLocalLoginProfile(ctx context.Context, c config.Context, token, application, name, path string) (v1.LoginProfile, error) {
 	var result v1.LoginProfile
+	if application == "github" {
+		return a.saveGitHubLoginProfile(ctx, c, token, name, path)
+	}
 	if application != "claude" && application != "codex" {
 		return result, fmt.Errorf("saved profiles support claude or codex")
 	}

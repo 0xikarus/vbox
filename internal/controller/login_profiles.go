@@ -8,6 +8,8 @@ import (
 	"regexp"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/loginprofile"
+	"time"
 )
 
 var loginProfileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
@@ -17,10 +19,11 @@ func validateLoginProfile(application, name string, req v1.SaveLoginProfileReque
 	allowed := map[string]map[string]bool{
 		"claude": {".credentials.json": true, "settings.json": true, ".claude.json": true},
 		"codex":  {"auth.json": true, "config.toml": true},
+		"github": {"credential.json": true},
 	}
 	files, ok := allowed[application]
 	if !ok || !loginProfileName.MatchString(name) {
-		return fmt.Errorf("use claude or codex and a profile name of 1–64 letters, digits, dots, underscores or hyphens")
+		return fmt.Errorf("use claude, codex or github and a profile name of 1–64 letters, digits, dots, underscores or hyphens")
 	}
 	if len(req.Files) == 0 {
 		return fmt.Errorf("profile contains no files")
@@ -45,6 +48,9 @@ func profileEncryptionScope(account, application, name string) string {
 func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, name string, req v1.SaveLoginProfileRequest) (v1.LoginProfile, error) {
 	value := v1.LoginProfile{Application: application, Name: name}
 	if err := validateLoginProfile(application, name, req); err != nil {
+		return value, err
+	}
+	if err := loginprofile.Validate(application, req.Files, time.Now()); err != nil {
 		return value, err
 	}
 	if s.Envelope == nil {
@@ -126,6 +132,10 @@ func (s *Server) saveLoginProfile(w http.ResponseWriter, r *http.Request, p Prin
 	}()
 	app, name := r.PathValue("application"), r.PathValue("name")
 	if err := validateLoginProfile(app, name, req); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	if err := loginprofile.Validate(app, req.Files, time.Now()); err != nil {
 		writeError(w, 400, err)
 		return
 	}

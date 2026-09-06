@@ -69,7 +69,7 @@ func TestCreationDialogDefersUploadsAndRetainsThemOnRetry(t *testing.T) {
 			if cancel {
 				keys += "\x03"
 			} else {
-				keys += strings.Repeat("\t", 6) + "\r\r"
+				keys += strings.Repeat("\t", 7) + "\r\r"
 			}
 			a.In = strings.NewReader(keys)
 			err := a.createWorkspace(context.Background(), config.Context{Controller: server.URL}, "test", v1.CreateLogicalBoxRequest{Name: "test", DiskGiB: 10, DefaultAgent: "shell", AllocationRequestKey: "unique"}, creationHibernated, "", true, false, false)
