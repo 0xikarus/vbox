@@ -81,6 +81,9 @@ func (a *App) pickCreationProfiles(ctx context.Context, c config.Context, token 
 }
 
 func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, token string, args []string) error {
+	if len(args) == 1 && args[0] == "upload" {
+		return a.uploadProfilesDialog(ctx, c, token)
+	}
 	asJSON := len(args) > 0 && args[len(args)-1] == "--json"
 	if asJSON {
 		args = args[:len(args)-1]

@@ -36,6 +36,10 @@ and select them when creating a box. Uploads happen only through the CLI. Saved 
 never exported, and immutable: upload refreshed credentials under a new name.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
+Run `vmbox profiles upload` to detect and upload local Claude/Codex/GitHub logins
+in an inline dialog without creating a box or allocating compute. For scripts,
+use `vmbox profiles save APPLICATION NAME --from SOURCE` (`SOURCE` is a local
+directory for Claude/Codex, or `HOST:USER` for GitHub).
 In the creation dialog, press Enter on a login row to expand its profile list inline.
 Saved profiles reuse controller credentials; selecting a detected Local login uploads
 it when you create the box. Custom local path is only for an undetected location.

@@ -25,6 +25,10 @@ type formField struct {
 // A single alternate-screen lifetime covers edits, inline choices, submission,
 // progress and recoverable errors. Profile deletion is separately confirmed.
 func (a *App) runForm(ctx context.Context, title string, fields []*formField, submit func(func(string)) error) error {
+	return a.runFormButton(ctx, title, "Create", fields, submit)
+}
+
+func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fields []*formField, submit func(func(string)) error) error {
 	if a.IsTerminal == nil || !a.IsTerminal() {
 		return fmt.Errorf("dialog requires a terminal; use explicit CLI arguments")
 	}
@@ -84,8 +88,8 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 				}
 			}
 		}
-		lines = append(lines, "[ Create ]    Esc: cancel")
-		help := "↑/↓ Tab: move · ←/→: choose · Enter: edit/create"
+		lines = append(lines, "[ "+submitLabel+" ]    Esc: cancel")
+		help := "↑/↓ Tab: move · ←/→: choose · Enter: edit/" + strings.ToLower(submitLabel)
 		if picker != nil {
 			help = "↑/↓: select profile · Enter: use · d: delete saved · Esc: back"
 			if confirmDelete {
@@ -291,7 +295,7 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 				continue
 			}
 			if selected == len(rows) {
-				status = "Creating…"
+				status = submitLabel + "…"
 				render()
 				if err := submit(func(message string) { status = message; render() }); err != nil {
 					status = err.Error()

@@ -692,6 +692,7 @@ func (a *App) usage() {
   vmbox ls                      List boxes
   vmbox whoami                  Show controller account, user and role
   vmbox logout                  Clear this context's saved controller token
+  vmbox profiles upload         Upload local logins without creating a box
   vmbox status BOX              Show its current state
   vmbox hibernate BOX           Release compute; keep the workspace
 
