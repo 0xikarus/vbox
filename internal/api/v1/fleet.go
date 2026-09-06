@@ -37,6 +37,7 @@ const (
 )
 
 type FleetConfig struct {
+	Region             string    `json:"region,omitempty"`
 	Provider           string    `json:"provider"`
 	ProviderCredential string    `json:"providerCredential,omitempty"`
 	ComputeBoxSlots    int       `json:"compute_box_slots"`

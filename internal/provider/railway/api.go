@@ -86,6 +86,9 @@ func (p *Provider) setRegion(ctx context.Context, serviceID, region string) erro
 		return nil
 	}
 	regions := map[string]any{"pdx": nil, "ams": nil, "sfo": nil, "iad": nil, "sin": nil}
+	for _, id := range []string{"us-west2", "us-east4-eqdc4a", "europe-west4-drams3a", "asia-southeast1-eqsg3a"} {
+		regions[id] = nil
+	}
 	regions[region] = map[string]any{"numReplicas": 1}
 	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID, "input": map[string]any{"multiRegionConfig": regions}}
 	result, err := p.api(ctx, serviceUpdateMutation, variables)

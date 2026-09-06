@@ -10,6 +10,16 @@ import (
 
 type State string
 
+// RegionProvider supplies deployment choices without provider logic in clients.
+type RegionProvider interface {
+	Regions(context.Context) ([]Region, error)
+}
+
+type Region struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
 const (
 	StateUnknown      State = "unknown"
 	StateProvisioning State = "provisioning"

@@ -26,6 +26,16 @@ func (s *Server) ReconcileFleetNow(ctx context.Context) error {
 }
 
 func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1.FleetConfig) error {
+	// Serialize placement edits and reconciliation, including across controllers.
+	lock, err := s.Store.lockFleetPlacement(ctx, accountID, config.Provider, config.ProviderCredential)
+	if err != nil {
+		return err
+	}
+	defer lock.Rollback()
+	config, err = s.Store.FleetConfig(ctx, accountID, config.Provider, config.ProviderCredential)
+	if err != nil {
+		return err
+	}
 	if err := config.Validate(); err != nil {
 		return err
 	}
@@ -65,7 +75,7 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 			slot := v1.ComputeSlot{
 				Provider: config.Provider, ProviderCredential: config.ProviderCredential,
 				Ordinal: maxOrdinal, State: v1.FleetSlotStarting, Health: "starting",
-				Image: s.DefaultImage,
+				Image: s.DefaultImage, Region: config.Region,
 			}
 			slot, err = s.Store.UpsertComputeSlot(ctx, accountID, slot)
 			if err != nil {
@@ -168,7 +178,7 @@ func (s *Server) ensureFleetSlot(ctx context.Context, accountID string, slot v1.
 		return slot, err
 	}
 	box, err := prov.Create(ctx, provider.CreateRequest{
-		Name: fleetSlotName(accountID, slot.Ordinal), Image: s.DefaultImage,
+		Name: fleetSlotName(accountID, slot.Ordinal), Image: s.DefaultImage, Region: slot.Region,
 		Resources: provider.Resources{CPU: 2, MemoryMiB: 4096},
 		Owner:     provider.Owner{AccountID: accountID, BoxID: "compute-slot:" + slot.ID},
 		Detached:  true,

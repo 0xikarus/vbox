@@ -28,9 +28,11 @@ func fleetQuery(c config.Context) string {
 
 func (a *App) controllerFleet(ctx context.Context, c config.Context, token string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox fleet status|slots|slots set COUNT")
+		return fmt.Errorf("usage: vmbox fleet status|slots|slots set COUNT|location [set REGION]")
 	}
 	switch args[0] {
+	case "location":
+		return a.controllerFleetLocation(ctx, c, token, args[1:])
 	case "status":
 		if len(args) > 2 || (len(args) == 2 && args[1] != "--json") {
 			return fmt.Errorf("usage: vmbox fleet status [--json]")

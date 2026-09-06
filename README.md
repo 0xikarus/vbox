@@ -94,6 +94,13 @@ or replaying `--start-cli`.
 
 `vmbox new NAME` opens one persistent form for provider, location, disk size,
 optional saved Claude/Codex login profiles, and an optional startup command.
+The form automatically discovers saved controller profiles and local Claude/Codex
+credential files in default and alternate profile directories, including
+`CODEX_HOME` and `CLAUDE_CONFIG_DIR`. Login rows show saved/local counts; use
+←/→ to select a saved or detected local profile. Active local profiles are labeled.
+Config-only directories are excluded. Detection does not verify login expiry or
+upload credentials: **Skip** remains the default, and uploads occur only on Create.
+For another directory, choose **Upload local** and edit its path.
 Use ↑/↓ or Tab to move, ←/→ to change options, and Enter to edit text.
 Profile uploads happen only after **Create**. Errors retain your entered values.
 By default creation finishes by connecting, exactly like `vmbox NAME`.
@@ -180,6 +187,20 @@ fails if that region has no healthy free initialization slot. This does not crea
 new regional fleet capacity. The selected region is retained for direct and queued
 restores; a box waits for matching capacity instead of moving regions. Regional
 latency probing is not currently available.
+
+Fleet placement is controller-managed. `vmbox fleet location` opens a region
+picker populated from the provider API; scripts can use
+`vmbox fleet location set REGION`. Railway discovery is project-scoped and
+requires permission to query `regions`; authorization failures are shown, not
+replaced by a guessed list. The configured project token may not allow this query.
+The controller validates the selected region against the same live catalogue.
+
+Changing placement currently requires **no logical boxes and zero desired and
+actual slots** for that provider alias. For an already-empty fleet, run
+`vmbox fleet slots set 0`, wait for `vmbox fleet status` to show zero actual slots,
+select its location, then scale back up. Existing boxes/volumes are never migrated
+by this command. Do not delete workspaces just to change placement. A saved region
+is retained across scaling and controller restarts; new slots use it explicitly.
 
 ```bash
 vmbox providers schema

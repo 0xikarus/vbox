@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -24,6 +23,14 @@ const (
 type creationProfileFields struct {
 	app                   string
 	selection, path, name *formField
+	localPaths            map[string]string
+}
+
+func (p creationProfileFields) uploadPath() string {
+	if p.selection.Value == "Upload local" {
+		return p.path.Value
+	}
+	return p.localPaths[p.selection.Value]
 }
 
 func (a *App) createWorkspace(ctx context.Context, c config.Context, token string, request v1.CreateLogicalBoxRequest, mode, startCLI string, dialog, noProfiles, asJSON bool) error {
@@ -86,22 +93,12 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/login-profiles", nil, &saved, nil); err != nil {
 				return err
 			}
-			for _, app := range []string{"claude", "codex"} {
-				selection := &formField{Label: app + " login", Value: "Skip", Choices: []string{"Skip", "Upload local"}}
-				for _, profile := range saved {
-					if profile.Application == app {
-						selection.Choices = append(selection.Choices, "Saved: "+profile.Name)
-					}
-				}
-				for _, ref := range request.LoginProfiles {
-					if ref.Application == app {
-						selection.Value = "Saved: " + ref.Name
-					}
-				}
-				path := &formField{Label: "  Local path", Value: filepath.Join(a.Environ["HOME"], "."+app), When: func() bool { return selection.Value == "Upload local" }}
-				profileName := &formField{Label: "  Save as", Value: "personal", When: path.When}
-				profiles = append(profiles, creationProfileFields{app, selection, path, profileName})
-				fields = append(fields, selection, path, profileName)
+			profiles, err = a.discoverCreationLogins(saved, request.LoginProfiles)
+			if err != nil {
+				return err
+			}
+			for _, p := range profiles {
+				fields = append(fields, p.selection, p.path, p.name)
 			}
 		}
 		fields = append(fields, startup, after)
@@ -146,8 +143,8 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			profileSettings := []string{}
 			for _, p := range profiles {
 				profileSettings = append(profileSettings, p.app, p.selection.Value)
-				if p.selection.Value == "Upload local" {
-					profileSettings = append(profileSettings, p.path.Value, p.name.Value)
+				if path := p.uploadPath(); path != "" {
+					profileSettings = append(profileSettings, path, p.name.Value)
 				}
 			}
 			encoded, _ := json.Marshal([]any{request.Name, request.Provider, request.ProviderCredential, request.Region, request.DiskGiB, mode, startCLI, request.LoginProfiles, profileSettings})
@@ -160,9 +157,9 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			if dialog && !noProfiles {
 				request.LoginProfiles = nil
 				for _, p := range profiles {
-					if p.selection.Value == "Upload local" {
+					if path := p.uploadPath(); path != "" {
 						progress("Uploading selected " + p.app + " profile…")
-						profile, err := a.saveLocalLoginProfile(ctx, c, token, p.app, p.name.Value, p.path.Value)
+						profile, err := a.saveLocalLoginProfile(ctx, c, token, p.app, p.name.Value, path)
 						if err != nil {
 							return err
 						}

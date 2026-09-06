@@ -78,6 +78,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/fleet/status", s.auth(s.fleetStatus))
 	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
 	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
+	mux.HandleFunc("GET /v1/fleet/regions", s.auth(s.fleetRegions))
+	mux.HandleFunc("PUT /v1/fleet/location", s.owner(s.setFleetLocation))
 	mux.HandleFunc("GET /v1/inventory", s.auth(s.boxInventoryHandler))
 	mux.HandleFunc("GET /v1/capabilities", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
 		writeJSON(w, 200, map[string]any{"nativeSessions": true, "nativeAttach": p.Role == "owner", "snapshotUpdates": true, "providerEdits": p.Role == "owner", "oneShotTasks": true, "interactiveLaunch": p.Role == "owner"})

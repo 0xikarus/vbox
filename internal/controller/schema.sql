@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS fleet_settings (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id, provider, provider_credential)
 );
+ALTER TABLE fleet_settings ADD COLUMN IF NOT EXISTS region text NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS compute_slots (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

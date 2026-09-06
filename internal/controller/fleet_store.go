@@ -21,7 +21,7 @@ func (s *Store) FleetConfig(ctx context.Context, accountID, providerName, creden
 	if err != nil {
 		return config, err
 	}
-	err = s.DB.QueryRowContext(ctx, `SELECT provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings WHERE account_id=$1 AND provider=$2 AND provider_credential=$3`, accountID, providerName, credential).Scan(&config.Provider, &config.ProviderCredential, &config.ComputeBoxSlots, &config.UpdatedAt)
+	err = s.DB.QueryRowContext(ctx, `SELECT provider,provider_credential,compute_box_slots,updated_at,region FROM fleet_settings WHERE account_id=$1 AND provider=$2 AND provider_credential=$3`, accountID, providerName, credential).Scan(&config.Provider, &config.ProviderCredential, &config.ComputeBoxSlots, &config.UpdatedAt, &config.Region)
 	return config, err
 }
 
