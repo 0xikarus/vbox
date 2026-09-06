@@ -33,13 +33,21 @@ try{
   await page.evaluate(()=>{window.disconnect=openWorkspaceTerminal('box','recorder',s=>document.querySelector('#status').textContent=s)});
   await page.waitForFunction(()=>document.querySelector('#status').textContent.startsWith('Connected'));
   await page.waitForFunction(()=>document.querySelector('.xterm-rows').textContent.includes('RECORDER')||document.querySelector('.xterm-rows').textContent.includes('RECEIVED'));
+  const originalSize=tmux('display-message','-p','-t','recorder','#{window_width}x#{window_height}').trim();
+  await page.setViewport(mobile?{width:430,height:900,isMobile:true,hasTouch:true}:{width:1000,height:750});
+  await wait(()=>tmux('display-message','-p','-t','recorder','#{window_width}x#{window_height}').trim()!==originalSize);
   const before=(await readFile(file)).length,marker=randomBytes(6).toString('hex')+'zYüß';
   await page.focus('.xterm-helper-textarea');await page.keyboard.type(marker);await page.keyboard.press('Enter');await page.keyboard.press('Backspace');await page.keyboard.press('ArrowUp');await page.keyboard.down('Control');await page.keyboard.press('c');await page.keyboard.up('Control');
   const expected=Buffer.from(marker+'\r\x7f\x1b[A\x03');
   await wait(async()=> (await readFile(file)).length>=before+expected.length);
   assert.deepEqual((await readFile(file)).subarray(before),expected);
+  const pid=tmux('display-message','-p','-t','recorder','#{pane_pid}').trim();
+  await page.evaluate(()=>window.disconnect());
+  await page.evaluate(()=>{window.disconnect=openWorkspaceTerminal('box','recorder',s=>document.querySelector('#status').textContent=s)});
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.startsWith('Connected'));
+  assert.equal(tmux('display-message','-p','-t','recorder','#{pane_pid}').trim(),pid,'reconnect replaced process');
   await page.screenshot({path:join(dir,mobile?'mobile.png':'desktop.png')});
   await page.close();await new Promise(r=>setTimeout(r,150));assert.equal((await readFile(file)).length,before+expected.length,'input replayed');assert.deepEqual(errors,[]);
  }
- assert.equal(tmux('has-session','-t','recorder'),'');console.log('PASS: desktop/mobile real browser input bytes, no replay after close, tmux survives. Artifacts: '+dir);
+ assert.equal(tmux('has-session','-t','recorder'),'');console.log('PASS: desktop/mobile real browser input bytes, real tmux resize, reconnect preserves process, no replay after close. Artifacts: '+dir);
 }finally{await browser?.close();if(sockets){for(const ws of sockets.clients)ws.terminate();sockets.close()}if(server)await new Promise(r=>server.close(r));try{tmux('kill-server')}catch{}}

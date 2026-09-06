@@ -75,7 +75,7 @@ restarting worker compute or replacing existing sessions.
 
 ## Interactive mode
 
-### Web workspace (development)
+### Web workspace
 
 Click a box name in the controller to open `/boxes/BOX_ID`. The page wakes the box
 through the allocation queue and reconnects to the same persistent shell used by
@@ -102,8 +102,9 @@ stopping worker processes. Browser streams currently require the Railway provide
 fenced streaming transport. Other providers return an explicit unsupported error.
 
 Rebuild bundled assets with `npm ci && node scripts/build-web.mjs`. noVNC and
-xterm licenses are retained alongside the bundles. This feature is not yet
-production-validated; see `docs/WEB-WORKSPACE.md` for the remaining verification.
+xterm licenses are retained alongside the bundles. The feature is deployed, but
+production worker streaming is not yet validated; see `docs/WEB-WORKSPACE.md`
+for evidence and remaining verification.
 
 ```bash
 vmbox helper1                    # wake if needed; reconnect to the persistent shell

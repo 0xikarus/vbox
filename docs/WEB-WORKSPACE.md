@@ -1,8 +1,8 @@
 # Web workspace implementation
 
-Status: in progress; not deployed. The CLI authentication/profile changes in the
-worktree are separate from this feature. Existing task-reconciliation drafts must
-not be silently included in a release.
+Status: deployed in `4b9079b`; production worker validation is incomplete.
+The release includes the requested CLI authentication/profile improvements.
+Existing task-reconciliation drafts remain uncommitted and were excluded.
 
 ## Evidence collected, 2026-09-06
 
@@ -19,13 +19,23 @@ not be silently included in a release.
   incorrectly attempting a terminal attach.
 - Runtime/browser tests bypass production HTTP authorization and provider SSH;
   they do not prove the production controller stream works end-to-end.
-- Production remains successful deployment `f37efc48-aa54-4ebc-9f28-d42187d76dd7`,
-  commit `af0a3f695e712ec9c162da803d66347f752ebbe2` (read-only check).
+- Production deployment `1489bd07-e7b2-4eb8-b7e5-51747020c9e5` succeeded for
+  `4b9079b3aae30f24ae65a162012a16cc37225421`. Live 390×844 browser login,
+  HttpOnly/Secure/Strict cookie, page reload without re-entering the token,
+  workspace links and logout invalidation all passed, with no browser errors.
+- Further real tmux checks passed: browser resize changes actual window
+  dimensions; reconnect preserves the recorder process and does not replay input.
+  Artifacts: `/tmp/vmbox-browser-terminal-0z2o0G/`.
+- Desktop navigation through the Address bar button and native text-entry control
+  reached Firefox's `about:robots`; screenshot visually verified at
+  `/tmp/vmbox-desktop-navigation.png`. This is not a physical mobile-keyboard test.
+- Both production slots are occupied (`analyze-tracker`, `tt2`). Approval for a
+  temporary third slot/test box has been requested; neither user box was stopped.
 
 Remaining: full controller-authenticated stream integration and production
-validation; actual desktop input/browser navigation; network interruption,
-resize/scroll/selection and cross-session isolation tests; package enablement
-validation; scoped release excluding unrelated drafts; final cleanup/report.
+validation; network interruption, scroll/selection and cross-session isolation
+tests; package enablement validation; final cleanup/report. Temporary production
+capacity must not be added until approved.
 
 ## Required behavior
 
