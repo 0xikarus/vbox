@@ -9,6 +9,7 @@ your CLI connects to the controller, not directly to provider APIs.
 ### 1. Install
 
 You need Git, OpenSSH, and either Go 1.26 or Docker on your laptop.
+On Windows, follow the [Windows setup](#windows-setup-wsl) below instead.
 
 ```bash
 git clone https://github.com/0xikarus/vmbox-service.git
@@ -80,6 +81,68 @@ Run `claude`, `codex`, or any shell command inside it.
 
 Disconnect with **Ctrl-a, then d**. Leave the box running to preserve its processes.
 Reconnect with `vmbox work`; hibernation preserves files, not running programs.
+
+## Windows setup (WSL)
+
+Use Ubuntu inside Windows through WSL. The current installer supports Linux and
+macOS, not native PowerShell. Your boxes still run remotely; you do not need a
+second controller or Railway fleet.
+
+1. Open **PowerShell as Administrator** and run:
+
+   ```powershell
+   wsl --install -d Ubuntu-24.04
+   ```
+
+   Restart if asked, then open **Ubuntu** from Start and create its local username
+   and password. See [Microsoft's WSL instructions](https://learn.microsoft.com/en-us/windows/wsl/install).
+
+2. Run the remaining commands **inside Ubuntu**, not PowerShell:
+
+   ```bash
+   sudo apt update
+   sudo apt install -y git gh openssh-client golang-go
+   gh auth login
+   ```
+
+   Sign in with a GitHub account that has access to this private repository, then:
+
+   ```bash
+   gh repo clone 0xikarus/vmbox-service
+   cd vmbox-service
+   GOTOOLCHAIN=auto ./install.sh
+   source ~/.bashrc
+   ```
+
+   Go downloads the compiler version required by the project automatically.
+   See [Go toolchain selection](https://go.dev/doc/toolchain).
+
+3. Connect to the existing controller (replace the URL):
+
+   ```bash
+   vmbox context add team --controller https://YOUR-CONTROLLER
+   vmbox context use team
+   vmbox whoami
+   ```
+
+   Enter your controller token at the hidden prompt. It is verified and saved
+   inside Ubuntu for reuse. **SSH authentication is separate:** your registered
+   private key must also be available inside Ubuntu, through an SSH agent or
+   `VMBOX_SSH_IDENTITY_FILE`. Do not upload or share your private key.
+
+4. Once SSH is configured:
+
+   ```bash
+   vmbox                 # list boxes and useful commands
+   vmbox new work        # create and connect
+   vmbox work            # reconnect later
+   ```
+
+   Disconnect with **Ctrl-a, then d**, then choose **Leave unchanged** to keep
+   programs running. Saved controller profiles are already available; Windows-local
+   Claude/Codex logins are not automatically discovered inside Ubuntu. Use local
+   Linux logins or existing saved profiles. This WSL path has not been verified
+   end-to-end on a Windows machine in this repository's current test run.
 
 ## Common setup problems
 
