@@ -54,6 +54,9 @@ func TestBareCommandShowsInfoWithoutDialogOrMutation(t *testing.T) {
 			if strings.Contains(out.String(), "\x1b[") || stderr.Len() != 0 || !strings.Contains(out.String(), "test-context") {
 				t.Fatal("overview prompted or hid context", out.String(), stderr.String())
 			}
+			if strings.Contains(out.String(), "vmbox menu") || !strings.Contains(out.String(), "vmbox delete BOX") || !strings.Contains(out.String(), "vmbox new NAME") {
+				t.Fatal("overview must show compact command hints without a picker")
+			}
 			if prompts != 0 && (!terminal || authenticated) {
 				t.Fatal("unexpected authentication prompt")
 			}

@@ -117,3 +117,16 @@ func TestUnifiedFormPasteCannotSubmit(t *testing.T) {
 		t.Fatalf("paste=%q", f.Value)
 	}
 }
+
+func TestFormAddsEntryInline(t *testing.T) {
+	a := New()
+	a.Err = &bytes.Buffer{}
+	a.IsTerminal = func() bool { return true }
+	field := &formField{Label: "Path"}
+	add := &formField{Label: "Add entry", AddFields: func() []*formField { return []*formField{field} }}
+	a.In = strings.NewReader("\r\r/custom/path\r\t\t\r")
+	err := a.runFormButton(context.Background(), "Upload", "Upload", []*formField{add}, func(func(string)) error { return nil })
+	if err != nil || field.Value != "/custom/path" {
+		t.Fatal("inline entry failed", err, field.Value)
+	}
+}

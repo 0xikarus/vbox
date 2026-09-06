@@ -23,7 +23,7 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 		if err := os.Mkdir(path, 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(path, ".credentials.json"), []byte(`{"synthetic":"profile"}`), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(path, ".credentials.json"), []byte(`{"email":"person@example.test","synthetic":"profile"}`), 0600); err != nil {
 			t.Fatal(err)
 		}
 		uploads := 0
@@ -31,9 +31,9 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 			switch {
 			case r.Method == "GET" && r.URL.Path == "/v1/login-profiles":
 				json.NewEncoder(w).Encode([]v1.LoginProfile{})
-			case r.Method == "PUT" && r.URL.Path == "/v1/login-profiles/claude/personal":
+			case r.Method == "PUT" && r.URL.Path == "/v1/login-profiles/claude/person-example.test":
 				uploads++
-				json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "personal"})
+				json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "person-example.test"})
 			default:
 				t.Error("unexpected operation", r.Method, r.URL.Path)
 				http.NotFound(w, r)
@@ -45,11 +45,11 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 		a.IsTerminal = func() bool { return true }
 		var output, screen bytes.Buffer
 		a.Out, a.Err = &output, &screen
-		keys := "\r\x1b[B\r" // choose custom path, retaining discovered default
+		keys := " \r " // Space enables, Enter disables, Space enables again.
 		if cancel {
 			keys += "\x03"
 		} else {
-			keys += strings.Repeat("\t", 5) + "\r"
+			keys += strings.Repeat("\t", 2) + "\r"
 		}
 		a.In = strings.NewReader(keys)
 		err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"})
@@ -62,6 +62,11 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 		}
 		if !strings.Contains(screen.String(), "[ Upload ]") {
 			t.Fatal("wrong submit label")
+		}
+		for _, want := range []string{"Account", "Source", "[ ] claude", "[x] claude", "Space/Enter"} {
+			if !strings.Contains(screen.String(), want) {
+				t.Fatalf("table missing %q", want)
+			}
 		}
 		server.Close()
 	}

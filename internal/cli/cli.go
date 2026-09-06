@@ -264,8 +264,6 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		c.ProviderCredential = def.ProviderCredential
 	}
 	switch args[0] {
-	case "menu":
-		return a.controllerMenu(ctx, file, c, token)
 	case "whoami":
 		return a.controllerWhoami(ctx, c, token, args[1:])
 	case "fleet":
@@ -294,8 +292,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
 	case "hibernate":
 		return a.controllerBoxes(ctx, c, token, append([]string{"hibernate"}, args[1:]...))
-	case "delete-volume":
-		return a.controllerBoxes(ctx, c, token, append([]string{"delete-volume"}, args[1:]...))
+	case "delete", "delete-volume":
+		return a.controllerBoxes(ctx, c, token, append([]string{"delete"}, args[1:]...))
 	case "new", "create":
 		return a.controllerBoxes(ctx, c, token, append([]string{"new"}, args[1:]...))
 	case "run":
@@ -686,7 +684,6 @@ func (a *App) usage() {
 	fmt.Fprint(a.Out, `vmbox — persistent remote boxes
 
   vmbox                         Show context and box states (read-only)
-  vmbox menu                    Choose a box (↑/↓, Enter), or create one
   vmbox BOX                     Open its shell; wake it if needed
   vmbox new NAME                Configure, create and connect
   vmbox ls                      List boxes
@@ -695,6 +692,7 @@ func (a *App) usage() {
   vmbox profiles upload         Upload local logins without creating a box
   vmbox status BOX              Show its current state
   vmbox hibernate BOX           Release compute; keep the workspace
+  vmbox delete BOX              Permanently delete box and files (confirmation required)
 
   vmbox BOX --session           Choose another existing tmux session
   vmbox BOX --start-cli 'claude' Start a command in a new persistent shell
@@ -703,7 +701,7 @@ func (a *App) usage() {
   vmbox task-status BOX         Read task results and exit codes
 
 Inside a box, run claude, codex, or any shell command yourself.
-Detach: Ctrl-a, then d. Choose Keep running to leave programs alive.
+Detach: Ctrl-a, then d. Choose Leave unchanged to leave programs alive.
 Hibernation retains files, not live processes. One-shots hibernate when idle.
 
 Setup: vmbox providers | vmbox profiles list | vmbox context list
@@ -725,7 +723,7 @@ func (a *App) usageFull() {
   vmbox boxes update BOX --default-agent AGENT
   vmbox providers list|schema|show|create|update|validate|default
   vmbox fleet status|slots|slots set COUNT
-  vmbox allocate|hibernate|delete-volume BOX
+  vmbox allocate|hibernate|delete BOX
   vmbox context add NAME --controller URL [--token-env ENV]
   vmbox context use|list
   vmbox users list|add|remove

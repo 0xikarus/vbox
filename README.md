@@ -1,31 +1,119 @@
 # vmbox
 
-Persistent remote boxes, controlled by a provider-agnostic CLI and a mandatory
-controller. Use an interactive terminal or submit a one-shot command. The optional
-lightweight web UI only configures resources; work happens through the CLI.
+Persistent remote Linux boxes. Connect to a shell, run Claude/Codex yourself,
+or submit a one-shot task. The controller manages providers, compute and storage;
+your CLI connects to the controller, not directly to provider APIs.
+
+## Quick setup
+
+### 1. Install
+
+You need Git, OpenSSH, and either Go 1.26 or Docker on your laptop.
+
+```bash
+git clone https://github.com/0xikarus/vmbox-service.git
+cd vmbox-service
+./install.sh
+```
+
+The CLI installs to `~/.local/bin`. Open a new terminal if `vmbox` is not found.
+
+### 2. Connect to your controller
+
+Ask your controller administrator for its HTTPS URL and your login token.
+If you are setting up the controller itself, start with the
+[operator setup guide](docs/CONTROLLER.md).
+
+```bash
+vmbox context add team --controller https://YOUR-CONTROLLER
+vmbox context use team
+vmbox whoami
+```
+
+When asked, paste the token into the hidden prompt. The CLI verifies and saves it
+locally for future commands. `vmbox logout` removes this saved login.
+An exported `VMBOX_CONTROLLER_TOKEN` overrides the saved token; unset it if stale.
+Your controller token is separate from SSH authentication: load your registered
+SSH key into an SSH agent, or set `VMBOX_SSH_IDENTITY_FILE` to its path.
+Native shell access requires the account owner role.
+
+### 3. Configure capacity (controller owner, first time only)
+
+Skip this step if your administrator already configured the fleet.
+
+```bash
+vmbox providers                  # inspect existing providers
+vmbox providers create           # guided setup, if none exists
+vmbox providers default          # choose the default provider
+vmbox fleet location             # choose location before provisioning slots
+vmbox fleet slots set 1          # provision one compute slot; incurs provider costs
+vmbox fleet status              # wait for healthy capacity
+```
+
+Choose location on an empty fleet; this command does not migrate existing boxes.
+Each running box needs a compute slot. A hibernated box retains its disk but frees
+its compute slot. Creating a workspace also needs a healthy free slot temporarily.
+
+### 4. Save logins (optional)
+
+Log in to Claude, Codex or GitHub locally first, then run:
+
+```bash
+vmbox profiles upload
+```
+
+The table lists discovered accounts and their source paths. Use **↑/↓** to move,
+**Space or Enter** to select profiles, then select **Upload** and press Enter.
+**Add entry** accepts an undiscovered path or GitHub account. Names are derived
+from account identity; no manual naming is required. Nothing is uploaded until
+you submit. You can also select local logins while creating a box.
+
+### 5. Create and connect
+
+```bash
+vmbox new work
+```
+
+Choose provider, location, disk size and any saved/local logins. Leave the startup
+command blank for a shell. **Create and connect** opens the box when ready.
+Run `claude`, `codex`, or any shell command inside it.
+
+Disconnect with **Ctrl-a, then d**. Leave the box running to preserve its processes.
+Reconnect with `vmbox work`; hibernation preserves files, not running programs.
+
+## Common setup problems
+
+- **Cannot authenticate:** run `vmbox logout`, unset a stale exported
+  `VMBOX_CONTROLLER_TOKEN`, then run `vmbox whoami` to log in again.
+- **No healthy free compute slot:** inspect `vmbox fleet status`. Hibernate an
+  unneeded box or have the owner add capacity. Check that the region matches.
+- **SSH permission denied:** check your SSH agent/key; controller login alone
+  does not authenticate SSH.
+- **Agent login expired:** refresh the login locally, then run
+  `vmbox profiles upload` again. Saved profiles are snapshots, not live sync.
+
+More detail: [controller administration](#controller-administration),
+[interactive sessions](#interactive-mode), [one-shot tasks](#one-shot-mode).
 
 ## Everyday use
 
-Run **`vmbox`** to see your controller context and box states. It never opens a
-dialog, prompts for credentials, starts compute, or connects to a shell.
-Use **`vmbox menu`** for the optional arrow-key picker: Enter opens a shell,
-or choose **Create a box**. The picker excludes deleting boxes; the overview
-still shows them. Esc cancels without opening or creating anything.
+Run **`vmbox`** to see your boxes, their states and a short command helper.
+It does not open a box picker, start compute, or connect to a shell.
+If authentication is missing, a terminal can prompt for your controller token.
 
 ```bash
 vmbox                         # show context and box states
 vmbox whoami                  # show authenticated account, user, and role
-vmbox menu                    # optional box picker / create action
 vmbox new work                # configure, create, then connect
 vmbox work                    # return to its shell (wake if needed)
-vmbox work --session          # pick another existing tmux session
 vmbox task work               # pick Codex, Claude, or a shell one-shot
 vmbox hibernate work          # stop compute, retain files
+vmbox delete work             # permanently delete box and files; asks for confirmation
 vmbox help                    # short guide; help --all for full reference
 ```
 
 Inside the shell, start `codex`, `claude`, or your own command. To disconnect
-without stopping it, press **Ctrl-a, then d**, and choose **Keep running**.
+without stopping it, press **Ctrl-a, then d**, and choose **Leave unchanged**.
 Bare `vmbox` is read-only in both terminals and scripts; `vmbox help` works offline.
 Use `vmbox whoami --json` for machine-readable identity. This requires a controller
 with the `/v1/whoami` endpoint and does not display credentials.
@@ -37,7 +125,10 @@ never exported, and immutable: upload refreshed credentials under a new name.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
 Run `vmbox profiles upload` to detect and upload local Claude/Codex/GitHub logins
-in an inline dialog without creating a box or allocating compute. For scripts,
+in a table without creating a box or allocating compute. Space or Enter toggles
+each profile's upload checkbox; **Add entry** adds a custom path or GitHub account. There is no
+name prompt: names use the account email/username/ID when available, otherwise
+the source directory, with a suffix for existing names. For scripts,
 use `vmbox profiles save APPLICATION NAME --from SOURCE` (`SOURCE` is a local
 directory for Claude/Codex, or `HOST:USER` for GitHub).
 In the creation dialog, press Enter on a login row to expand its profile list inline.
@@ -66,7 +157,7 @@ environment first. The controller/context banner is hidden unless you put
 ```bash
 ./install.sh
 vmbox context add team --controller https://YOUR-CONTROLLER
-# Supply VMBOX_CONTROLLER_TOKEN through secure environment configuration.
+# Run vmbox whoami and enter your token when prompted.
 vmbox ls --json
 vmbox helper1
 ```
@@ -78,6 +169,22 @@ For an existing worker that has not enabled native sessions, run
 restarting worker compute or replacing existing sessions.
 
 ## Interactive mode
+
+### Copy and paste
+
+- Drag over text and release to copy it into tmux's buffer.
+- For keyboard selection: **Ctrl-a s**, move to the start, **Space**, move to
+  the end, then **Enter** to copy.
+- **Ctrl-a v** pastes the tmux buffer. Applications requesting bracketed paste
+  receive the paste as a block, rather than individual typed lines.
+- To use your laptop clipboard instead, hold **Shift** while dragging, then use
+  your terminal's copy/paste shortcuts (usually **Ctrl-Shift-C/V** on Linux,
+  **Cmd-C/V** on macOS). Terminal shortcuts vary.
+
+Tmux also exports copies via OSC 52 when the terminal supports and permits it.
+Some terminals do not; use local selection in that case. These managed bindings
+require the updated worker tmux configuration; installing the CLI alone does not
+update an already-running worker's configuration.
 
 ### Web workspace
 
@@ -138,7 +245,7 @@ Agents are optional: a box can contain shells and multiple agent sessions at onc
 Normal `claude` and `codex` commands keep their interactive interfaces and menus.
 You can run other installed tools, including OpenCode, from a shell.
 
-Detach with **Ctrl-a, then d**, and choose **Keep running** at the CLI exit prompt.
+Detach with **Ctrl-a, then d**, and choose **Leave unchanged** at the CLI exit prompt.
 Disconnecting keeps the worker and tmux processes running. Persistent interactive
 sessions prevent one-shot tasks from automatically hibernating their box.
 `vmbox hibernate helper1` is a separate explicit action: it saves workspace state,
@@ -153,10 +260,10 @@ optional saved Claude/Codex login profiles, and an optional startup command.
 The form automatically discovers saved controller profiles and local Claude/Codex
 credential files in default and alternate profile directories, including
 `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. Login rows show saved/local counts; use
-←/→ to select a saved or detected local profile. Active local profiles are labeled.
+Enter to expand the inline profile list. Active local profiles are labeled.
 Config-only directories are excluded. Detection does not verify login expiry or
 upload credentials: **Skip** remains the default, and uploads occur only on Create.
-For another directory, choose **Upload local** and edit its path.
+For another directory, choose the custom local path option and edit its path.
 Use ↑/↓ or Tab to move, ←/→ to change options, and Enter to edit text.
 Profile uploads happen only after **Create**. Errors retain your entered values.
 By default creation finishes by connecting, exactly like `vmbox NAME`.
@@ -270,8 +377,9 @@ vmbox fleet slots set 2
 Provider secrets stay encrypted on the controller; public reads never return
 them. Updates are revision-protected and preserve omitted secrets. Retargeting
 or deleting provider aliases requires explicit resource migration.
-Standalone mode, provider-specific client contexts and web terminal sharing are
-removed. Existing resources, credentials and legacy local bundles are preserved.
+Standalone mode and provider-specific client contexts are removed. Existing
+resources, credentials and legacy local bundles are preserved. The optional
+web workspace is described above, including its verification limits.
 
 Read [controller-first contracts and migration](docs/CONTROLLER-FIRST.md),
 [controller operations](docs/CONTROLLER.md), and [OpenAPI](docs/openapi.yaml).
@@ -319,7 +427,8 @@ not establish that its authentication is valid.
 
 ## Deleting a box
 
-`vmbox delete-volume BOX` requires typing the exact box name. It queues permanent
+`vmbox delete BOX` works without connecting first and requires typing the exact
+box name. It queues permanent
 deletion and returns promptly; it does not claim the volume is already gone.
 The controller finishes flush, detach, provider deletion and slot cleanup in the
 background, and resumes interrupted attempts after restart. `vmbox` and

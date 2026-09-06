@@ -58,6 +58,6 @@ func (a *App) overview(ctx context.Context, contextName string) error {
 			return err
 		}
 	}
-	fmt.Fprintln(a.Out, "\nOpen: vmbox BOX    Create: vmbox new NAME    Picker: vmbox menu    Help: vmbox help")
+	fmt.Fprintln(a.Out, "\nvmbox BOX            Connect / resume\nvmbox new NAME       Create a box\nvmbox hibernate BOX  Stop compute; keep files\nvmbox delete BOX     Delete box and files\nvmbox help           More commands")
 	return nil
 }

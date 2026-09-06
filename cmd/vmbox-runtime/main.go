@@ -185,6 +185,12 @@ Write and scroll
                  Move through scrollback
   Ctrl-f         Search forward in scrollback
   Space, Enter   Start selection, then copy and return to writing
+  Mouse drag     Select text; release to copy to the tmux buffer
+  Ctrl-a v       Paste the tmux buffer (bracketed paste when supported)
+  Shift + drag   Select with your laptop terminal instead of tmux
+  Ctrl-Shift-C/V Copy/paste locally in Linux terminals (Cmd-C/V on macOS)
+                 Remote clipboard copy requires terminal OSC 52 support;
+                 if unsupported, use Shift-drag and local copy instead.
   q or Escape    Leave scroll mode and return to writing mode
 
 Windows and panes
@@ -200,7 +206,7 @@ Safe disconnect and lifecycle
   Detach only disconnects the terminal; every live process keeps running.
   Hibernate saves restorable state, stops live processes, retains the volume,
   and frees its compute slot. Arbitrary processes do not survive hibernation.
-  Delete volume permanently deletes the logical box and workspace data; it
+  Delete box permanently deletes the logical box and workspace data; it
   requires a separate destructive confirmation and does not delete the slot.
 
 Keyboard input is passed through unchanged. vmbox never swaps Y and Z and

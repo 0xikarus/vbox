@@ -195,12 +195,12 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		}
 		fmt.Fprintf(a.Err, "vmbox: hibernated %q; volume %s (%s) was retained and its compute slot was freed\n", box.Name, box.VolumeName, box.VolumeID)
 		return nil
-	case "delete-volume":
+	case "delete", "delete-volume":
 		if a.IsTerminal == nil || !a.IsTerminal() {
 			return fmt.Errorf("volume deletion requires an interactive confirmation; nothing deleted")
 		}
 		if len(args) != 2 {
-			return fmt.Errorf("usage: vmbox delete-volume NAME")
+			return fmt.Errorf("usage: vmbox delete BOX")
 		}
 		box, err := a.controllerLogicalBox(ctx, c, token, args[1])
 		if err != nil {
@@ -393,9 +393,9 @@ func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Contex
 		timeout = defaultExitPromptTimeout
 	}
 	fmt.Fprintln(a.Err, "\nWhat should happen to this box?")
-	fmt.Fprintln(a.Err, "  1. Keep running       (default)")
+	fmt.Fprintln(a.Err, "  1. Leave unchanged    (default; keep running if already running)")
 	fmt.Fprintln(a.Err, "  2. Shut down compute  Hibernate: retain the volume and free the compute slot")
-	fmt.Fprintln(a.Err, "  3. Delete volume      Permanently delete this logical box and its workspace data")
+	fmt.Fprintln(a.Err, "  3. Delete box         Permanently delete this logical box and its workspace data")
 	fmt.Fprint(a.Err, "Choice [1]: ")
 	line, ok := readLineWithTimeout(ctx, reader, timeout)
 	if !ok {
@@ -430,6 +430,6 @@ func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Contex
 }
 
 func (a *App) keepControllerRunning(name string) error {
-	fmt.Fprintf(a.Err, "vmbox: keeping %q running; reconnect with: vmbox %s\n", name, name)
+	fmt.Fprintf(a.Err, "vmbox: leaving %q unchanged; connect with: vmbox %s\n", name, name)
 	return nil
 }

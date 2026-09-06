@@ -20,6 +20,10 @@ type formField struct {
 	List         bool
 	DeleteChoice func(string) error
 	OnSelect     func(string)
+	AddFields    func() []*formField
+	Checkbox     bool
+	RenderRow    func(int) string
+	TableHeader  string
 }
 
 // A single alternate-screen lifetime covers edits, inline choices, submission,
@@ -72,7 +76,9 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 				value = "••••••"
 			}
 			line := fmt.Sprintf("%-18s %s", f.Label, value)
-			if f.List {
+			if f.RenderRow != nil {
+				line = f.RenderRow(width - 4)
+			} else if f.List {
 				line += "  [Enter: profiles]"
 			} else if len(f.Choices) > 0 {
 				line += "  ‹ ›"
@@ -90,6 +96,14 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 		}
 		lines = append(lines, "[ "+submitLabel+" ]    Esc: cancel")
 		help := "↑/↓ Tab: move · ←/→: choose · Enter: edit/" + strings.ToLower(submitLabel)
+		header := ""
+		for _, f := range rows {
+			if f.TableHeader != "" {
+				header = f.TableHeader
+				help = "↑/↓ Tab: move · Space/Enter: toggle profile · Enter: action/edit"
+				break
+			}
+		}
 		if picker != nil {
 			help = "↑/↓: select profile · Enter: use · d: delete saved · Esc: back"
 			if confirmDelete {
@@ -102,11 +116,17 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 			statusLines = append(statusLines, strings.Repeat("─", width-1))
 		}
 		page := max(1, height-5-len(statusLines))
+		if header != "" {
+			page = max(1, page-2)
+		}
 		start := max(0, min(cursor-page/2, len(lines)-page))
 		var b strings.Builder
 		fmt.Fprintf(&b, "\x1b[H\x1b[2J%s\r\n%s\r\n\r\n", tuiLabel(title, width-1), tuiLabel(help, width-1))
 		for _, line := range statusLines {
 			fmt.Fprintf(&b, "%s\r\n", line)
+		}
+		if header != "" {
+			fmt.Fprintf(&b, "  %s\r\n  %s\r\n", tuiLabel(header, width-4), strings.Repeat("─", width-4))
 		}
 		for i := start; i < min(len(lines), start+page); i++ {
 			if i == cursor {
@@ -289,6 +309,10 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 			selected = (selected + 1) % (len(rows) + 1)
 			continue
 		}
+		if key == ' ' && !editing && selected < len(rows) && rows[selected].Checkbox {
+			cycle(1)
+			continue
+		}
 		if key == '\r' || key == '\n' {
 			if editing {
 				editing = false
@@ -304,6 +328,7 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 				return nil
 			}
 			if len(rows[selected].Choices) > 0 {
+				// Ordinary fields keep their existing selection behavior.
 				if rows[selected].List {
 					picker = rows[selected]
 					choice = 0
@@ -314,6 +339,14 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 					}
 				} else {
 					cycle(1)
+				}
+			} else if rows[selected].AddFields != nil {
+				for i, f := range fields {
+					if f == rows[selected] {
+						extra := f.AddFields()
+						fields = append(fields[:i], append(extra, fields[i:]...)...)
+						break
+					}
 				}
 			} else {
 				editing = true

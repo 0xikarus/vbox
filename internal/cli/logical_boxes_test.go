@@ -13,6 +13,51 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/config"
 )
 
+func TestDeleteWithoutConnecting(t *testing.T) {
+	for _, tc := range []struct{ name, keys, method, path string }{
+		{"delete", "research\n", "DELETE", "/v1/logical-boxes/box-id/volume"},
+		{"cancel-delete", "wrong\n", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mutations := 0
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == "GET" && (r.URL.Path == "/v1/logical-boxes/research" || r.URL.Path == "/v1/logical-boxes/box-id") {
+					json.NewEncoder(w).Encode(v1.LogicalBox{ID: "box-id", Name: "research", State: v1.LogicalBoxHibernated})
+					return
+				}
+				if tc.method != "" && r.Method == tc.method && r.URL.Path == tc.path {
+					mutations++
+					if r.Method == "DELETE" {
+						var body map[string]string
+						json.NewDecoder(r.Body).Decode(&body)
+						if body["confirmation"] != "research" {
+							t.Error("missing confirmation")
+						}
+					}
+					json.NewEncoder(w).Encode(v1.LogicalBox{Name: "research", State: v1.LogicalBoxHibernated})
+					return
+				}
+				t.Errorf("unexpected request (must not allocate/connect): %s %s", r.Method, r.URL.Path)
+				http.NotFound(w, r)
+			}))
+			defer s.Close()
+			a := New()
+			a.In, a.Out, a.Err = strings.NewReader(tc.keys), &bytes.Buffer{}, &bytes.Buffer{}
+			a.IsTerminal = func() bool { return true }
+			if err := a.controllerBoxes(context.Background(), config.Context{Controller: s.URL}, "synthetic", []string{"delete", "research"}); err != nil {
+				t.Fatal(err)
+			}
+			want := 0
+			if tc.method != "" {
+				want = 1
+			}
+			if mutations != want {
+				t.Fatalf("mutations=%d want %d", mutations, want)
+			}
+		})
+	}
+}
+
 func TestControllerHibernateReportsAcceptedBackgroundProgress(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/v1/logical-boxes/research/hibernate" {
