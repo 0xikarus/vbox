@@ -71,7 +71,10 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 		}
 		lines = append(lines, "[ Create ]    Esc: cancel")
 		statusLines := formStatusLines(status, width-1)
-		statusLines = statusLines[:min(len(statusLines), max(1, height-6))]
+		statusLines = statusLines[:min(len(statusLines), max(1, height-7))]
+		if len(statusLines) > 0 {
+			statusLines = append(statusLines, strings.Repeat("─", width-1))
+		}
 		page := max(1, height-5-len(statusLines))
 		start := max(0, min(selected-page/2, len(lines)-page))
 		var b strings.Builder

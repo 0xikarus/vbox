@@ -53,6 +53,11 @@ func TestUnifiedFormOneScreenAndRetry(t *testing.T) {
 	if err != nil || calls != 2 {
 		t.Fatal(err, calls)
 	}
+	for _, status := range []string{"Initializing workspace", "temporary failure; retry"} {
+		if !strings.Contains(out.String(), status+"\r\n"+strings.Repeat("─", 79)+"\r\n") {
+			t.Fatal("missing divider below status", status)
+		}
+	}
 	if strings.Count(out.String(), "\x1b[?1049h") != 1 || strings.Count(out.String(), "\x1b[?1049l") != 1 {
 		t.Fatal("dialog changed screens")
 	}
