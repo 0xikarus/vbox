@@ -25,7 +25,7 @@ function renderProfiles(identity,profiles){
  const choices=$('#profile-choices'),selected={};choices.querySelectorAll('select').forEach(s=>selected[s.name]=s.value);choices.replaceChildren();
  for(const app of ['claude','codex','github']){
   const entries=profiles.filter(p=>p.application===app),branch=document.createElement('details');branch.open=true;branch.append(node('summary',app+' ('+entries.length+')'));const list=document.createElement('ul');
-  for(const p of entries)list.append(node('li',p.name+' · saved '+p.createdAt));if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
+  for(const p of entries){const item=node('li',p.name+' · saved '+p.createdAt+' ');item.append(button('Delete',async()=>{if(!confirm('Delete saved profile '+app+' / '+p.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(p.name),'DELETE');await refresh()}));list.append(item)}if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
   const label=node('label',app+' login '),select=document.createElement('select');select.name=app;const empty=node('option','None');empty.value='';select.append(empty);
   for(const p of entries){const option=node('option',p.name);option.value=p.name;select.append(option)}if(entries.some(p=>p.name===selected[app]))select.value=selected[app];label.append(select);choices.append(label);
  }$('#profile-tree').replaceChildren(tree);
@@ -47,22 +47,9 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;await refresh();e.target.reset();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',()=>{epoch++;token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#profile-result').textContent='';$('#error').textContent=''});
+$('#logout').addEventListener('click',()=>{epoch++;token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''});
 $('#refresh').addEventListener('click',action(refresh));
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value}));await api('/v1/logical-boxes','POST',{name:f.name.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,loginProfiles},{'Idempotency-Key':crypto.randomUUID()});await refresh()}));
-$('#profile-upload').addEventListener('submit',action(async e=>{
- const form=e.target,f=form.elements,version=epoch,app=f.application.value,name=f.name.value,selected=Array.from(f.files.files),allowed={claude:['.credentials.json','settings.json','.claude.json'],codex:['auth.json','config.toml'],github:['credential.json']},files={};
- $('#profile-result').textContent='';
- if(selected.reduce((n,file)=>n+file.size,0)>512*1024)throw Error('Profile exceeds 512 KiB');
- const seen=new Set();for(const file of selected){if(!allowed[app].includes(file.name)||!file.size||seen.has(file.name))throw Error('Unsupported, empty, or duplicate file for '+app);seen.add(file.name)}
- const submit=form.querySelector('button');submit.disabled=true;
- try{
-  for(const file of selected){const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);files[file.name]=btoa(binary)}
-  if(version!==epoch)return;
-  await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(name),'PUT',{files});
-  if(version!==epoch)return;form.reset();$('#profile-result').textContent='Saved '+app+' / '+name;await refresh();
- }finally{for(const key of Object.keys(files))delete files[key];f.files.value='';submit.disabled=false}
-}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{if(!defaults)throw Error('Configure controller default first');await api('/v1/fleet/slots','PUT',{provider:defaults.provider,providerCredential:defaults.providerCredential,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));

@@ -11,16 +11,18 @@ import (
 )
 
 type formField struct {
-	Label   string
-	Value   string
-	Choices []string
-	Hidden  bool
-	When    func() bool
-	Secret  bool
+	Label        string
+	Value        string
+	Choices      []string
+	Hidden       bool
+	When         func() bool
+	Secret       bool
+	List         bool
+	DeleteChoice func(string) error
 }
 
 // A single alternate-screen lifetime covers edits, inline choices, submission,
-// progress and recoverable errors. Submit is the only mutation boundary.
+// progress and recoverable errors. Profile deletion is separately confirmed.
 func (a *App) runForm(ctx context.Context, title string, fields []*formField, submit func(func(string)) error) error {
 	if a.IsTerminal == nil || !a.IsTerminal() {
 		return fmt.Errorf("dialog requires a terminal; use explicit CLI arguments")
@@ -33,6 +35,9 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 	fmt.Fprint(a.Err, "\x1b[?1049h\x1b[?25l\x1b[?2004h")
 	defer fmt.Fprint(a.Err, "\x1b[?2004l\x1b[0m\x1b[?25h\x1b[?1049l")
 	selected, editing := 0, false
+	var picker *formField
+	choice := 0
+	confirmDelete := false
 	status := ""
 	visible := func() []*formField {
 		out := []*formField{}
@@ -61,7 +66,9 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 				value = "••••••"
 			}
 			line := fmt.Sprintf("%-18s %s", f.Label, value)
-			if len(f.Choices) > 0 {
+			if f.List {
+				line += "  [Enter: profiles]"
+			} else if len(f.Choices) > 0 {
 				line += "  ‹ ›"
 			}
 			if editing && i == selected {
@@ -70,20 +77,30 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 			lines = append(lines, line)
 		}
 		lines = append(lines, "[ Create ]    Esc: cancel")
+		cursor := selected
+		help := "↑/↓ Tab: move · ←/→: choose · Enter: edit/create"
+		if picker != nil {
+			lines = append([]string{}, picker.Choices...)
+			cursor = choice
+			help = "↑/↓: select profile · Enter: use · d: delete saved · Esc: back"
+			if confirmDelete {
+				help = "Delete saved profile? y: confirm · any other key: cancel"
+			}
+		}
 		statusLines := formStatusLines(status, width-1)
 		statusLines = statusLines[:min(len(statusLines), max(1, height-7))]
 		if len(statusLines) > 0 {
 			statusLines = append(statusLines, strings.Repeat("─", width-1))
 		}
 		page := max(1, height-5-len(statusLines))
-		start := max(0, min(selected-page/2, len(lines)-page))
+		start := max(0, min(cursor-page/2, len(lines)-page))
 		var b strings.Builder
-		fmt.Fprintf(&b, "\x1b[H\x1b[2J%s\r\n%s\r\n\r\n", tuiLabel(title, width-1), tuiLabel("↑/↓ Tab: move · ←/→: choose · Enter: edit/create", width-1))
+		fmt.Fprintf(&b, "\x1b[H\x1b[2J%s\r\n%s\r\n\r\n", tuiLabel(title, width-1), tuiLabel(help, width-1))
 		for _, line := range statusLines {
 			fmt.Fprintf(&b, "%s\r\n", line)
 		}
 		for i := start; i < min(len(lines), start+page); i++ {
-			if i == selected {
+			if i == cursor {
 				b.WriteString("\x1b[7m› ")
 			} else {
 				b.WriteString("  ")
@@ -102,6 +119,9 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 			return
 		}
 		f := rows[selected]
+		if f.List {
+			return
+		}
 		if len(f.Choices) == 0 {
 			return
 		}
@@ -127,12 +147,33 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 		if key == 3 || key == 4 {
 			return fmt.Errorf("creation cancelled")
 		}
+		if picker != nil && confirmDelete {
+			confirmDelete = false
+			if key == 'y' {
+				value := picker.Choices[choice]
+				if err := picker.DeleteChoice(value); err != nil {
+					status = err.Error()
+				} else {
+					picker.Choices = append(picker.Choices[:choice], picker.Choices[choice+1:]...)
+					if picker.Value == value {
+						picker.Value = picker.Choices[0]
+					}
+					choice = min(choice, len(picker.Choices)-1)
+					status = "Saved profile deleted. Existing boxes are unchanged."
+				}
+			}
+			continue
+		}
 		if key == 27 {
 			next, ok, err := a.selectionByte(ctx, 120)
 			if err != nil {
 				return err
 			}
 			if !ok {
+				if picker != nil {
+					picker = nil
+					continue
+				}
 				if editing {
 					editing = false
 					continue
@@ -190,6 +231,15 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 				}
 				continue
 			}
+			if picker != nil {
+				if code == 'A' {
+					choice = (choice + len(picker.Choices) - 1) % len(picker.Choices)
+				}
+				if code == 'B' {
+					choice = (choice + 1) % len(picker.Choices)
+				}
+				continue
+			}
 			switch code {
 			case 'A':
 				editing = false
@@ -208,6 +258,17 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 			case 'Z':
 				editing = false
 				selected = (selected + len(rows)) % (len(rows) + 1)
+			}
+			continue
+		}
+		if picker != nil {
+			if key == '\r' || key == '\n' {
+				picker.Value = picker.Choices[choice]
+				picker = nil
+				status = ""
+			} else if key == 'd' && picker.DeleteChoice != nil && strings.HasPrefix(picker.Choices[choice], "Saved: ") {
+				confirmDelete = true
+				status = "Delete " + picker.Choices[choice] + "? Cannot be undone; pending creations may fail."
 			}
 			continue
 		}
@@ -231,7 +292,17 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 				return nil
 			}
 			if len(rows[selected].Choices) > 0 {
-				cycle(1)
+				if rows[selected].List {
+					picker = rows[selected]
+					choice = 0
+					for i, value := range picker.Choices {
+						if value == picker.Value {
+							choice = i
+						}
+					}
+				} else {
+					cycle(1)
+				}
 			} else {
 				editing = true
 			}

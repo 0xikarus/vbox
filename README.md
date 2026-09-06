@@ -31,11 +31,14 @@ Use `vmbox whoami --json` for machine-readable identity. This requires a control
 with the `/v1/whoami` endpoint and does not display credentials.
 
 The web admin panel’s **Profiles** section shows an expandable account → application
-→ profile tree. Owners can upload portable Claude, Codex, and GitHub login files
-and select saved profiles when creating a box. Saved credentials are encrypted,
+→ profile tree. Owners can delete saved profiles (with confirmation)
+and select them when creating a box. Uploads happen only through the CLI. Saved credentials are encrypted,
 never exported, and immutable: upload refreshed credentials under a new name.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
+In the creation dialog, press Enter on a login row to open its profile list.
+Use ↑/↓ and Enter to select; `d` followed by `y` deletes a saved profile.
+Deletion is permanent and may interrupt pending creations referencing that profile.
 
 ## Install and connect
 

@@ -99,6 +99,14 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 				return err
 			}
 			for _, p := range profiles {
+				p.selection.List = true
+				p.selection.DeleteChoice = func(value string) error {
+					_, err := a.request(ctx, c, token, http.MethodDelete, "/v1/login-profiles/"+url.PathEscape(p.app)+"/"+url.PathEscape(strings.TrimPrefix(value, "Saved: ")), nil, nil, nil)
+					if err == nil {
+						p.selection.Label = p.app + " login"
+					}
+					return err
+				}
 				fields = append(fields, p.selection, p.path, p.name)
 			}
 		}

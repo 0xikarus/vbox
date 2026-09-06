@@ -73,6 +73,27 @@ func TestUnifiedFormCancelDoesNotSubmit(t *testing.T) {
 	}
 }
 
+func TestProfileListDeletionAndSelection(t *testing.T) {
+	a := New()
+	a.Err = &bytes.Buffer{}
+	a.IsTerminal = func() bool { return true }
+	f := &formField{Label: "Login", Value: "Saved: old", Choices: []string{"Skip", "Saved: old", "Saved: fresh"}, List: true}
+	deleted := 0
+	f.DeleteChoice = func(value string) error {
+		if value != "Saved: old" {
+			t.Fatal(value)
+		}
+		deleted++
+		return nil
+	}
+	// Enter picker; cancel deletion once; confirm it; choose remaining profile; submit.
+	a.In = strings.NewReader("\rdndy\r\t\r")
+	err := a.runForm(context.Background(), "Create", []*formField{f}, func(func(string)) error { return nil })
+	if err != nil || deleted != 1 || f.Value != "Saved: fresh" {
+		t.Fatal(err, deleted, f.Value)
+	}
+}
+
 func TestUnifiedFormPasteCannotSubmit(t *testing.T) {
 	a := New()
 	a.Err = &bytes.Buffer{}

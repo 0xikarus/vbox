@@ -36,6 +36,7 @@ before(async()=>{
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
   if(req.method==='POST' && path==='/v1/logical-boxes')return res.end(JSON.stringify({id:'created'}));
+  if(req.method==='DELETE' && path==='/v1/login-profiles/claude/personal'){res.statusCode=204;return res.end()}
   res.statusCode=404;res.end(JSON.stringify({error:'unexpected endpoint'}));
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));base='http://127.0.0.1:'+server.address().port;
@@ -66,11 +67,10 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'}]);
  await page.waitForNetworkIdle();
- await page.click('#profiles > details > summary');await page.select('#profile-upload select','codex');await page.type('#profile-upload input[name=name]','browser-test');
- await page.$eval('#profile-upload input[type=file]',input=>{const data=new DataTransfer();data.items.add(new File(['{"test":"synthetic-only"}'],'auth.json',{type:'application/json'}));input.files=data.files});
- const uploaded=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/login-profiles/'));await page.click('#profile-upload button');await uploaded;
- assert.equal(Buffer.from(requests.findLast(r=>r.path.includes('/login-profiles/')).body.files['auth.json'],'base64').toString(),'{"test":"synthetic-only"}');
- await page.waitForNetworkIdle();assert.equal(await page.$eval('#profile-upload input[type=file]',n=>n.files.length),0);
+ assert.equal(await page.$('#profile-upload'),null);
+ const beforeDelete=requests.filter(r=>r.method==='DELETE').length;
+ page.once('dialog',d=>d.dismiss());await page.click('#profile-tree button');await page.waitForNetworkIdle();assert.equal(requests.filter(r=>r.method==='DELETE').length,beforeDelete);
+ page.once('dialog',d=>d.accept());const deleted=page.waitForResponse(r=>r.request().method()==='DELETE');await page.click('#profile-tree button');await deleted;await page.waitForNetworkIdle();
  assert.match(await page.$eval('#capacity',n=>n.textContent),/Free: 1/);
  assert.equal(await page.$eval('#capacity details',n=>n.open),false);
  assert.equal(await page.$eval('#schema',n=>n.parentElement.open),false);

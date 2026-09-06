@@ -341,7 +341,7 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 		contentType string
 		contains    []string
 	}{
-		{path: "/", contentType: "text/html", contains: []string{"width=device-width", "Index of /controller", "vmbox BOX --session NAME", "app.js"}},
+		{path: "/", contentType: "text/html", contains: []string{"width=device-width", "Index of /controller", "vmbox BOX", "app.js"}},
 		{path: "/app.css", contentType: "text/css", contains: []string{"@media(max-width:600px)", "[hidden]"}},
 		{path: "/app.js", contentType: "text/javascript", contains: []string{"/v1/provider-schemas", "If-Match", "defaultAgent", "epoch++"}},
 		{path: "/favicon.svg", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},

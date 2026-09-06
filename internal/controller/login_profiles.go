@@ -117,6 +117,25 @@ func (s *Server) listLoginProfiles(w http.ResponseWriter, r *http.Request, p Pri
 	writeJSON(w, 200, values)
 }
 
+func (s *Server) deleteLoginProfile(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
+	result, err := s.Store.DB.ExecContext(r.Context(), `DELETE FROM login_profiles WHERE account_id=$1 AND application=$2 AND name=$3`, p.AccountID, r.PathValue("application"), r.PathValue("name"))
+	if err != nil {
+		writeError(w, 500, fmt.Errorf("could not delete login profile"))
+		return
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		writeError(w, 500, fmt.Errorf("could not confirm profile deletion"))
+		return
+	}
+	if n == 0 {
+		writeError(w, 404, fmt.Errorf("login profile not found"))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) saveLoginProfile(w http.ResponseWriter, r *http.Request, p Principal) {
 	w.Header().Set("Cache-Control", "no-store")
 	r.Body = http.MaxBytesReader(w, r.Body, 768*1024)
