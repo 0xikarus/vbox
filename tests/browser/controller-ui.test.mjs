@@ -26,12 +26,16 @@ before(async()=>{
    '/v1/provider-credentials':[{provider:'railway',name:'primary',config:{projectId:'p',environmentId:'e',image:'old'},updatedAt:revision}],
    '/v1/provider-schemas':{providers:{railway:{image:'string'}}},
    '/v1/controller-defaults':{provider:'railway',providerCredential:'primary'},
-   '/v1/fleet/status':{desiredSlots:2},
+   '/v1/fleet/status':{desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,unhealthySlots:0,slots:[{ordinal:1,state:'occupied',health:'healthy',region:'europe-west4',logicalBoxName:'helper ü'},{ordinal:2,state:'free',health:'healthy',region:'europe-west4'}]},
    '/v1/notifications':[],
+   '/v1/whoami':{accountId:'account-1',accountName:'Team'},
+   '/v1/login-profiles':[{application:'claude',name:'personal',createdAt:revision}],
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
+  if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
+  if(req.method==='POST' && path==='/v1/logical-boxes')return res.end(JSON.stringify({id:'created'}));
   res.statusCode=404;res.end(JSON.stringify({error:'unexpected endpoint'}));
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));base='http://127.0.0.1:'+server.address().port;
@@ -56,7 +60,22 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.click('#provider button');await saved;
  const edit=requests.findLast(r=>r.method==='PATCH'&&r.path.endsWith('/primary'));assert.equal(edit.revision,revision);assert.deepEqual(edit.body,{config:{image:'new'}});
  await page.waitForNetworkIdle();
- await page.type('#slots input','2');
+ assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles/s);
+ await page.select('#profile-choices select[name=claude]','personal');
+ await page.type('#create input[name=name]','profile-box');
+ const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
+ assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'}]);
+ await page.waitForNetworkIdle();
+ await page.click('#profiles > details > summary');await page.select('#profile-upload select','codex');await page.type('#profile-upload input[name=name]','browser-test');
+ await page.$eval('#profile-upload input[type=file]',input=>{const data=new DataTransfer();data.items.add(new File(['{"test":"synthetic-only"}'],'auth.json',{type:'application/json'}));input.files=data.files});
+ const uploaded=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().includes('/login-profiles/'));await page.click('#profile-upload button');await uploaded;
+ assert.equal(Buffer.from(requests.findLast(r=>r.path.includes('/login-profiles/')).body.files['auth.json'],'base64').toString(),'{"test":"synthetic-only"}');
+ await page.waitForNetworkIdle();assert.equal(await page.$eval('#profile-upload input[type=file]',n=>n.files.length),0);
+ assert.match(await page.$eval('#capacity',n=>n.textContent),/Free: 1/);
+ assert.equal(await page.$eval('#capacity details',n=>n.open),false);
+ assert.equal(await page.$eval('#schema',n=>n.parentElement.open),false);
+ assert.match(await page.$eval('#destinations',n=>n.textContent),/No notification destinations/);
+ assert.equal(await page.$eval('#slots input',n=>n.value),'2');
  const capacitySaved=page.waitForResponse(r=>r.request().method()==='PUT'&&r.url().endsWith('/v1/fleet/slots'));
  await page.click('#slots button');await capacitySaved;
  assert.equal(requests.findLast(r=>r.path==='/v1/fleet/slots').body.compute_box_slots,2);

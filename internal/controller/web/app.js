@@ -8,7 +8,28 @@ async function api(path,method='GET',body,headers={}){
 function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';try{await fn(e)}catch(err){$('#error').textContent=err.message}}}
 function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
 function button(text,fn){const b=node('button',text);b.type='button';b.addEventListener('click',action(fn));return b}
+function dataTable(headers,rows){const table=document.createElement('table'),head=document.createElement('tr');for(const h of headers)head.append(node('th',h));table.append(head);for(const values of rows){const row=document.createElement('tr');for(const value of values)row.append(node('td',value??'—'));table.append(row)}return table}
+function rawDetails(value){const d=document.createElement('details');d.append(node('summary','Technical details · JSON'),node('pre',JSON.stringify(value,null,2)));return d}
+function renderCapacity(fleet){
+ const root=$('#capacity');root.replaceChildren(node('p',`Desired: ${fleet.desiredSlots??'—'} · Total: ${fleet.actualSlots??'—'} · Free: ${fleet.freeSlots??'—'} · Occupied: ${fleet.occupiedSlots??'—'} · Unhealthy: ${fleet.unhealthySlots??'—'}`));
+ const slots=fleet.slots||[];
+ root.append(slots.length?dataTable(['Slot','State','Health','Location','Box'],slots.map(s=>[s.ordinal,s.state,s.health,s.region,s.logicalBoxName||'—'])):node('p','No compute slots configured. Set capacity below to provision compute.'));
+ const detached=fleet.detachedLogicalBoxes||[];if(detached.length)root.append(node('h3','Detached workspaces'),dataTable(['Box','State'],detached.map(b=>[b.name,b.state])));
+ if(fleet.unhealthySlots)root.append(node('p','Some slots are unhealthy. Check provider deployments and controller diagnostics before increasing capacity.'));
+ root.append(rawDetails(fleet));const input=$('#slots input');if(document.activeElement!==input)input.value=fleet.desiredSlots??'';
+}
+function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){root.append(node('p','No notification destinations configured. Notifications are optional.'));return}root.append(dataTable(['Name','Type','Status','Allowed users','Allowed chats'],values.map(n=>[n.name,n.kind,n.enabled?'Enabled':'Disabled',(n.allowedUsers||[]).join(', ')||'Not specified',(n.allowedChats||[]).join(', ')||'Not specified'])),rawDetails(values))}
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
+function renderProfiles(identity,profiles){
+ const tree=document.createElement('details');tree.open=true;tree.append(node('summary',identity.accountName+' ('+identity.accountId+')'));
+ const choices=$('#profile-choices'),selected={};choices.querySelectorAll('select').forEach(s=>selected[s.name]=s.value);choices.replaceChildren();
+ for(const app of ['claude','codex','github']){
+  const entries=profiles.filter(p=>p.application===app),branch=document.createElement('details');branch.open=true;branch.append(node('summary',app+' ('+entries.length+')'));const list=document.createElement('ul');
+  for(const p of entries)list.append(node('li',p.name+' · saved '+p.createdAt));if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
+  const label=node('label',app+' login '),select=document.createElement('select');select.name=app;const empty=node('option','None');empty.value='';select.append(empty);
+  for(const p of entries){const option=node('option',p.name);option.value=p.name;select.append(option)}if(entries.some(p=>p.name===selected[app]))select.value=selected[app];label.append(select);choices.append(label);
+ }$('#profile-tree').replaceChildren(tree);
+}
 async function refresh(){
  const version=epoch,[caps,boxes]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes')]);if(version!==epoch)return;
  document.querySelectorAll('[data-owner]').forEach(n=>n.hidden=!caps.providerEdits);
@@ -17,17 +38,31 @@ async function refresh(){
  for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;
  select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);row.append(node('td',b.name),node('td',b.state),cell,node('td','vmbox '+JSON.stringify(b.name)));table.append(row)}$('#box-list').replaceChildren(table);
  if(!caps.providerEdits)return;
- const [providers,schema,notifications]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications')]);if(version!==epoch)return;
+ const [providers,schema,notifications,identity,profiles]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications'),api('/v1/whoami'),api('/v1/login-profiles')]);if(version!==epoch)return;
+ renderProfiles(identity,profiles);
  $('#provider-list').replaceChildren();
- for(const p of providers){const line=node('p',p.provider+' / '+p.name+' ');line.append(button('Edit',()=>{const f=$('#provider').elements;f.provider.value=p.provider;f.alias.value=p.name;f.config.value=JSON.stringify(p.config||{},null,2);f.secret.value='';f.revision.value=p.updatedAt}),button('Validate',async()=>{$('#schema').textContent=JSON.stringify(await api(pp(p.provider,p.name)+'/validate','POST',{}),null,2)}));$('#provider-list').append(line)}
- $('#schema').textContent=JSON.stringify(schema,null,2);$('#destinations').textContent=JSON.stringify(notifications,null,2);defaults=null;
- try{const d=await api('/v1/controller-defaults'),q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;defaults=d;$('#capacity').textContent=JSON.stringify(fleet,null,2)}catch(err){if(version===epoch)$('#capacity').textContent=err.message}
+ if(!providers.length)$('#provider-list').append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));
+ for(const p of providers){const line=node('p',p.provider+' / '+p.name+' ');line.append(button('Edit',()=>{const f=$('#provider').elements;f.provider.value=p.provider;f.alias.value=p.name;f.config.value=JSON.stringify(p.config||{},null,2);f.secret.value='';f.revision.value=p.updatedAt;$('#provider-editor').open=true;f.config.focus()}),button('Validate',async()=>{const result=await api(pp(p.provider,p.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}),button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:p.provider,providerCredential:p.name});await refresh()}));const details=document.createElement('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(p.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));$('#provider-list').append(line,details)}
+ $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
+ try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;await refresh();e.target.reset();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',()=>{epoch++;token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#error').textContent=''});
+$('#logout').addEventListener('click',()=>{epoch++;token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#profile-result').textContent='';$('#error').textContent=''});
 $('#refresh').addEventListener('click',action(refresh));
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults');await api('/v1/logical-boxes','POST',{name:f.name.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential},{'Idempotency-Key':crypto.randomUUID()});await refresh()}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value}));await api('/v1/logical-boxes','POST',{name:f.name.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,loginProfiles},{'Idempotency-Key':crypto.randomUUID()});await refresh()}));
+$('#profile-upload').addEventListener('submit',action(async e=>{
+ const form=e.target,f=form.elements,version=epoch,app=f.application.value,name=f.name.value,selected=Array.from(f.files.files),allowed={claude:['.credentials.json','settings.json','.claude.json'],codex:['auth.json','config.toml'],github:['credential.json']},files={};
+ $('#profile-result').textContent='';
+ if(selected.reduce((n,file)=>n+file.size,0)>512*1024)throw Error('Profile exceeds 512 KiB');
+ const seen=new Set();for(const file of selected){if(!allowed[app].includes(file.name)||!file.size||seen.has(file.name))throw Error('Unsupported, empty, or duplicate file for '+app);seen.add(file.name)}
+ const submit=form.querySelector('button');submit.disabled=true;
+ try{
+  for(const file of selected){const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(const byte of bytes)binary+=String.fromCharCode(byte);files[file.name]=btoa(binary)}
+  if(version!==epoch)return;
+  await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(name),'PUT',{files});
+  if(version!==epoch)return;form.reset();$('#profile-result').textContent='Saved '+app+' / '+name;await refresh();
+ }finally{for(const key of Object.keys(files))delete files[key];f.files.value='';submit.disabled=false}
+}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
-$('#default').addEventListener('submit',action(async e=>{const f=e.target.elements;await api('/v1/controller-defaults','PUT',{provider:f.provider.value,providerCredential:f.alias.value});await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{if(!defaults)throw Error('Configure controller default first');await api('/v1/fleet/slots','PUT',{provider:defaults.provider,providerCredential:defaults.providerCredential,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));

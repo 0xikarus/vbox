@@ -14,6 +14,7 @@ still shows them. Esc cancels without opening or creating anything.
 
 ```bash
 vmbox                         # show context and box states
+vmbox whoami                  # show authenticated account, user, and role
 vmbox menu                    # optional box picker / create action
 vmbox new work                # configure, create, then connect
 vmbox work                    # return to its shell (wake if needed)
@@ -26,6 +27,15 @@ vmbox help                    # short guide; help --all for full reference
 Inside the shell, start `codex`, `claude`, or your own command. To disconnect
 without stopping it, press **Ctrl-a, then d**, and choose **Keep running**.
 Bare `vmbox` is read-only in both terminals and scripts; `vmbox help` works offline.
+Use `vmbox whoami --json` for machine-readable identity. This requires a controller
+with the `/v1/whoami` endpoint and does not display credentials.
+
+The web admin panel’s **Profiles** section shows an expandable account → application
+→ profile tree. Owners can upload portable Claude, Codex, and GitHub login files
+and select saved profiles when creating a box. Saved credentials are encrypted,
+never exported, and immutable: upload refreshed credentials under a new name.
+Profiles are account-wide, not assigned to individual users; existing boxes are
+unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
 
 ## Install and connect
 

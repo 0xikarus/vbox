@@ -137,6 +137,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/questions/{id}/answer", s.auth(s.answer))
 	mux.HandleFunc("POST /v1/hosts/heartbeat", s.auth(s.hostHeartbeat))
 	mux.HandleFunc("GET /v1/users", s.owner(s.listUsers))
+	mux.HandleFunc("GET /v1/whoami", s.auth(s.whoami))
 	mux.HandleFunc("POST /v1/users", s.owner(s.createUser))
 	mux.HandleFunc("DELETE /v1/users/{id}", s.owner(s.removeUser))
 	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))

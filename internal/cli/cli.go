@@ -265,6 +265,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	switch args[0] {
 	case "menu":
 		return a.controllerMenu(ctx, file, c, token)
+	case "whoami":
+		return a.controllerWhoami(ctx, c, token, args[1:])
 	case "fleet":
 		return a.controllerFleet(ctx, c, token, args[1:])
 	case "boxes", "box":
@@ -647,6 +649,7 @@ func (a *App) usage() {
   vmbox BOX                     Open its shell; wake it if needed
   vmbox new NAME                Configure, create and connect
   vmbox ls                      List boxes
+  vmbox whoami                  Show controller account, user and role
   vmbox status BOX              Show its current state
   vmbox hibernate BOX           Release compute; keep the workspace
 
