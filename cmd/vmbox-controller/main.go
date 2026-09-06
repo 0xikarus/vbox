@@ -108,9 +108,11 @@ func run() error {
 		return providerForCredential(providerName, credential, railwaySSHIdentity)
 	}
 	server.Bootstrap = bootstrapWorkload
-	if err := server.StartReconciler(ctx); err != nil {
-		return fmt.Errorf("startup reconciliation: %w", err)
-	}
+	// Provider recovery can take minutes (including Railway/SSH timeouts).
+	// It must not prevent login, whoami or health checks from being served.
+	// StartReconciler retains its ordered initial pass and periodic loop.
+	reconciliationStarted := startReconciliation(ctx, server.StartReconciler)
+	defer func() { cancel(); <-reconciliationStarted }()
 	listen := os.Getenv("VMBOX_CONTROLLER_LISTEN")
 	if listen == "" {
 		listen = ":8080"
@@ -132,6 +134,18 @@ func run() error {
 	}
 	return err
 }
+
+func startReconciliation(ctx context.Context, start func(context.Context) error) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		if err := start(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("startup reconciliation failed", "error", err)
+		}
+	}()
+	return done
+}
+
 func openStore(ctx context.Context, dsn string) (*controller.Store, error) {
 	if dsn == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required")
