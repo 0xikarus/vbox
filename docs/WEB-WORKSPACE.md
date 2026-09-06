@@ -1,6 +1,8 @@
 # Web workspace implementation
 
-Status: deployed in `4b9079b`; production worker validation is incomplete.
+Status: deployed in `4b9079b`; production terminal/VNC validation now has real
+end-to-end evidence, with remaining failures and coverage gaps documented in
+[the September 7 live report](WEB-WORKSPACE-LIVE-0907.md).
 The release includes the requested CLI authentication/profile improvements.
 Existing task-reconciliation drafts remain uncommitted and were excluded.
 

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/config"
@@ -85,21 +86,21 @@ func writeFleetStatus(output interface{ Write([]byte) (int, error) }, status v1.
 		status.StartingSlots, status.DrainingSlots, status.UnhealthySlots, status.StoppedSlots,
 		status.PendingAllocations)
 	if len(status.Slots) > 0 {
-		fmt.Fprintln(output, "SLOT  STATE      BOX                 SERVICE              DEPLOYMENT           REGION  IMAGE VERSION        HEALTH")
+		table := tabwriter.NewWriter(output, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(table, "SLOT\tSTATE\tBOX\tREGION\tHEALTH\tSERVICE\tDEPLOYMENT\tIMAGE")
 		for _, slot := range status.Slots {
-			deployment := slot.DeploymentInstanceID
-			if len(deployment) > 20 {
-				deployment = deployment[:20]
-			}
-			fmt.Fprintf(output, "%-5d %-10s %-19s %-20s %-20s %-7s %-20s %s\n", slot.Ordinal, slot.State, slot.LogicalBoxName, slot.ServiceID, deployment, slot.Region, slot.ImageVersion, slot.Health)
-			if slot.LeaseOwner != "" {
-				expires := "none"
-				if slot.LeaseExpiresAt != nil {
-					expires = slot.LeaseExpiresAt.Format("2006-01-02T15:04:05Z07:00")
-				}
-				fmt.Fprintf(output, "      lease=%s expires=%s\n", slot.LeaseOwner, expires)
+			fmt.Fprintf(table, "%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", slot.Ordinal,
+				fleetCell(string(slot.State), 13), fleetCell(slot.LogicalBoxName, 24),
+				fleetCell(slot.Region, 20), fleetCell(slot.Health, 13),
+				fleetCell(slot.ServiceID, 9), fleetCell(slot.DeploymentInstanceID, 9), fleetCell(slot.ImageVersion, 13))
+		}
+		table.Flush()
+		for _, slot := range status.Slots {
+			if slot.FailureReason != "" {
+				fmt.Fprintf(output, "Slot %d: %s\n", slot.Ordinal, tuiLabel(slot.FailureReason, 140))
 			}
 		}
+		fmt.Fprintln(output, "Full IDs and lease details: vmbox fleet status --json")
 	}
 	if len(status.DetachedLogicalBoxes) > 0 {
 		names := make([]string, 0, len(status.DetachedLogicalBoxes))
@@ -108,4 +109,11 @@ func writeFleetStatus(output interface{ Write([]byte) (int, error) }, status v1.
 		}
 		fmt.Fprintf(output, "detached: %s\n", strings.Join(names, ", "))
 	}
+}
+
+func fleetCell(value string, width int) string {
+	if value == "" {
+		return "—"
+	}
+	return tuiLabel(value, width)
 }

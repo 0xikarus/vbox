@@ -69,6 +69,19 @@ func (a *App) controllerToken(ctx context.Context, c config.Context) (string, er
 	return token, nil
 }
 
+// A stale shell export must not hide a successful interactive login forever.
+// Environment credentials still win when accepted; automation stays fail-closed.
+func (a *App) savedControllerToken(c config.Context) (string, error) {
+	data, err := os.ReadFile(a.tokenPath(c))
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("cannot read saved controller token")
+	}
+	return string(data), nil
+}
+
 func (a *App) controllerLogout(c config.Context) error {
 	if err := os.Remove(a.tokenPath(c)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot remove saved controller token")

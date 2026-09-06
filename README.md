@@ -210,9 +210,12 @@ In a terminal, missing controller configuration starts a connection guide. Missi
 authentication offers hidden input and saves a verified token in a separate local
 0600 file under the CLI config directory, scoped to context and controller URL.
 This includes bare `vmbox`. Run `vmbox logout` to delete that saved token (not revoke
-it on the server). Environment tokens take precedence; use `unset VMBOX_CONTROLLER_TOKEN`
-to clear an exported token too. If an existing token is rejected,
-the CLI asks for a replacement and retries once; permission denials do not prompt.
+it on the server). Environment tokens take precedence when accepted; use
+`unset VMBOX_CONTROLLER_TOKEN` to clear an exported token too. In an interactive
+terminal, a rejected environment token falls back to the saved login before
+asking again, so a stale shell export cannot hide your saved replacement.
+If neither works, the CLI asks for a replacement and saves it after a successful
+retry; permission denials and server outages do not prompt.
 Scripts never prompt: configure the controller context and token
 environment first. The controller/context banner is hidden unless you put
 `--verbose` before the command.

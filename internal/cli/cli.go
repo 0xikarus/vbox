@@ -611,6 +611,24 @@ func (a *App) request(ctx context.Context, c config.Context, token, method, path
 	if a.IsTerminal == nil || !a.IsTerminal() {
 		return status, fmt.Errorf("controller authentication rejected; set %s to a valid token or run vmbox in a terminal to sign in", c.TokenEnv)
 	}
+	if token == a.Environ[c.TokenEnv] && token != "" {
+		saved, readErr := a.savedControllerToken(c)
+		if readErr != nil {
+			return status, readErr
+		}
+		if saved != "" && saved != token {
+			status, err = a.requestOnce(ctx, c, saved, method, path, input, output, headers)
+			if status != http.StatusUnauthorized {
+				if status >= 200 && status < 300 {
+					if a.authReplacements == nil {
+						a.authReplacements = make(map[string]string)
+					}
+					a.authReplacements[key] = saved
+				}
+				return status, err
+			}
+		}
+	}
 	if _, attempted := a.authReplacements[key]; attempted {
 		return status, fmt.Errorf("controller token rejected; retry with a valid controller token")
 	}
