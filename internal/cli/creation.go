@@ -107,6 +107,9 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 	previousProgress := a.creationProgress
 	defer func() { a.creationProgress = previousProgress }()
 	submit := func(progress func(string)) error {
+		meter := &creationMeter{}
+		emit := progress
+		progress = func(message string) { emit(meter.render(message)) }
 		a.creationProgress = progress
 		if ambiguous {
 			return fmt.Errorf("creation outcome unconfirmed; cancel and inspect vmbox boxes status %s before retrying", request.Name)
@@ -197,6 +200,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			return err
 		}
 		if mode == creationHibernated {
+			emit(meter.complete())
 			return nil
 		}
 		if box.State != v1.LogicalBoxRunning {
@@ -217,6 +221,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			}
 			box = refreshed
 		}
+		emit(meter.complete())
 		return nil
 	}
 	if dialog {
