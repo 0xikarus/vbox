@@ -177,6 +177,9 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 				if status == 0 || status >= 500 {
 					ambiguous = true
 				}
+				if strings.Contains(err.Error(), "no healthy free compute slot is available") {
+					return a.creationCapacityError(ctx, c, token, request, err)
+				}
 				return err
 			}
 			if box.ID == "" {

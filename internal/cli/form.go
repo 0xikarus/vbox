@@ -70,10 +70,15 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 			lines = append(lines, line)
 		}
 		lines = append(lines, "[ Create ]    Esc: cancel")
-		page := max(1, height-5)
+		statusLines := formStatusLines(status, width-1)
+		statusLines = statusLines[:min(len(statusLines), max(1, height-6))]
+		page := max(1, height-5-len(statusLines))
 		start := max(0, min(selected-page/2, len(lines)-page))
 		var b strings.Builder
 		fmt.Fprintf(&b, "\x1b[H\x1b[2J%s\r\n%s\r\n\r\n", tuiLabel(title, width-1), tuiLabel("↑/↓ Tab: move · ←/→: choose · Enter: edit/create", width-1))
+		for _, line := range statusLines {
+			fmt.Fprintf(&b, "%s\r\n", line)
+		}
 		for i := start; i < min(len(lines), start+page); i++ {
 			if i == selected {
 				b.WriteString("\x1b[7m› ")
@@ -83,7 +88,6 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 			b.WriteString(tuiLabel(lines[i], width-4))
 			b.WriteString("\x1b[0m\r\n")
 		}
-		fmt.Fprintf(&b, "\x1b[%d;1H%s", height, tuiLabel(status, width-1))
 		if screen := b.String(); screen != lastScreen {
 			fmt.Fprint(a.Err, screen)
 			lastScreen = screen
@@ -263,4 +267,29 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 			f.Value += string(data)
 		}
 	}
+}
+
+// Keep actionable errors beside the form instead of clipping them to a footer.
+func formStatusLines(status string, width int) []string {
+	if status == "" {
+		return nil
+	}
+	width = max(1, width)
+	var lines []string
+	for _, paragraph := range strings.Split(status, "\n") {
+		runes := []rune(tuiLabel(paragraph, len([]rune(paragraph))+1))
+		for len(runes) > width {
+			end := width
+			for i := width; i > 0; i-- {
+				if runes[i] == ' ' {
+					end = i
+					break
+				}
+			}
+			lines = append(lines, string(runes[:end]))
+			runes = []rune(strings.TrimLeft(string(runes[end:]), " "))
+		}
+		lines = append(lines, string(runes))
+	}
+	return lines
 }
