@@ -24,21 +24,23 @@ type ProviderResolver func(context.Context, string, string, string) (provider.Pr
 type NotificationSink func(context.Context, v1.Run, string, v1.JobState, string, string)
 
 type Server struct {
-	Store          *Store
-	Providers      *provider.Registry
-	Logger         *slog.Logger
-	MaxConcurrent  int
-	mu             sync.Mutex
-	recent         map[string][]time.Time
-	replyWatches   map[string]struct{}
-	PublicURL      string
-	DefaultImage   string
-	WorkerRuntime  []byte
-	Resolve        ProviderResolver
-	Bootstrap      func(context.Context, provider.Provider, provider.Box, []string) error
-	HTTP           *http.Client
-	ReconcileEvery time.Duration
-	Deliver        NotificationSink
+	Store           *Store
+	Providers       *provider.Registry
+	Logger          *slog.Logger
+	MaxConcurrent   int
+	mu              sync.Mutex
+	browserSessions map[[32]byte]browserSession
+	webStreams      int
+	recent          map[string][]time.Time
+	replyWatches    map[string]struct{}
+	PublicURL       string
+	DefaultImage    string
+	WorkerRuntime   []byte
+	Resolve         ProviderResolver
+	Bootstrap       func(context.Context, provider.Provider, provider.Box, []string) error
+	HTTP            *http.Client
+	ReconcileEvery  time.Duration
+	Deliver         NotificationSink
 	// StartTask hands a freshly created task to its agent. It is a field so
 	// that tests can observe the hand-off instead of racing a detached
 	// goroutine against their fixtures.
@@ -70,6 +72,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
 	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /boxes/{id}", uiHandler("workspace.html", "text/html; charset=utf-8", false))
+	mux.HandleFunc("GET /workspace.js", uiHandler("workspace.js", "text/javascript; charset=utf-8", false))
+	for _, asset := range []string{"xterm.js", "xterm-fit.js", "workspace-terminal.js", "novnc.js", "workspace-desktop.js"} {
+		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/javascript; charset=utf-8", false))
+	}
+	for _, asset := range []string{"xterm.css", "workspace.css"} {
+		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/css; charset=utf-8", false))
+	}
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal/stream", s.owner(s.webTerminal))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop", s.owner(s.startDesktop))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop/enable", s.owner(s.enableDesktop))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/stream", s.owner(s.webDesktop))
+	mux.HandleFunc("POST /v1/browser-session", s.auth(s.browserLogin))
+	mux.HandleFunc("GET /v1/browser-session", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	mux.HandleFunc("DELETE /v1/browser-session", s.browserLogout)
 	mux.HandleFunc("GET /favicon.svg", uiHandler("favicon.svg", "image/svg+xml", false))
 	mux.HandleFunc("GET /favicon.ico", uiHandler("favicon.svg", "image/svg+xml", false))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -167,6 +187,9 @@ type handler func(http.ResponseWriter, *http.Request, Principal)
 func (s *Server) auth(next handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		token, ok := authorizationValue(r.Header.Get("Authorization"), "Bearer")
+		if !ok && r.Header.Get("Authorization") == "" {
+			token, ok = s.browserToken(r)
+		}
 		if !ok {
 			writeError(w, http.StatusUnauthorized, fmt.Errorf("Bearer authorization is required"))
 			return
@@ -947,6 +970,11 @@ func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		if strings.HasPrefix(r.URL.Path, "/boxes/") {
+			// Terminal palettes and noVNC geometry generate styles at runtime.
+			// Script execution remains restricted to locally bundled assets.
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		}
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		w.Header().Set("Cache-Control", "no-store")

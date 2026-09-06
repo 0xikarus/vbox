@@ -243,6 +243,10 @@ func validatedConnectionTarget(connection provider.Connection) (string, error) {
 }
 
 func (p *Provider) directSSHTarget(ctx context.Context, target string, remote []string, interactive bool, stdin io.Reader, stdout, stderr io.Writer) (procexec.Result, error) {
+	return p.directSSHTargetMode(ctx, target, remote, interactive, false, stdin, stdout, stderr)
+}
+
+func (p *Provider) directSSHTargetMode(ctx context.Context, target string, remote []string, interactive, streaming bool, stdin io.Reader, stdout, stderr io.Writer) (procexec.Result, error) {
 	if _, err := p.controlPath(target); err != nil {
 		return procexec.Result{}, err
 	}
@@ -265,10 +269,13 @@ func (p *Provider) directSSHTarget(ctx context.Context, target string, remote []
 	}
 	args = append(args, "-o", "ControlMaster=no", "--", target, command)
 	var result procexec.Result
-	if interactive {
+	if interactive || streaming {
 		if attached, ok := p.runner.(procexec.AttachedRunner); ok {
 			result, err = attached.RunAttached(ctx, args, stdin, stdout, stderr)
 		} else {
+			if streaming {
+				return procexec.Result{}, fmt.Errorf("streaming requires an uncaptured process runner")
+			}
 			result, err = p.runner.Run(ctx, args, stdin, stdout, stderr)
 		}
 	} else {

@@ -65,7 +65,7 @@ func TestCreationDialogDefersUploadsAndRetainsThemOnRetry(t *testing.T) {
 			a.Out = &bytes.Buffer{}
 			a.Environ = map[string]string{"HOME": home}
 			a.IsTerminal = func() bool { return true }
-			keys := strings.Repeat("\t", 4) + "\r\x1b[B\r" // select Upload local from list, no write yet
+			keys := strings.Repeat("\t", 4) + "\r\x1b[B\r" // select Custom local path… from list, no write yet
 			if cancel {
 				keys += "\x03"
 			} else {

@@ -16,7 +16,7 @@ func (a *App) discoverCreationLogins(saved []v1.LoginProfile, refs []v1.LoginPro
 	}
 	var result []creationProfileFields
 	for _, app := range []string{"claude", "codex", "github"} {
-		selection := &formField{Value: "Skip", Choices: []string{"Skip", "Upload local"}}
+		selection := &formField{Value: "Skip", Choices: []string{"Skip", "Custom local path…"}}
 		paths := map[string]string{}
 		usedNames := map[string]bool{}
 		var savedNames []string
@@ -65,7 +65,7 @@ func (a *App) discoverCreationLogins(saved []v1.LoginProfile, refs []v1.LoginPro
 				selection.Value = "Saved: " + ref.Name
 			}
 		}
-		path := &formField{Label: "  Local path", Value: defaultPath, When: func() bool { return selection.Value == "Upload local" }}
+		path := &formField{Label: "  Local path", Value: defaultPath, When: func() bool { return selection.Value == "Custom local path…" }}
 		if app == "github" {
 			path.Label = "  Account HOST:USER"
 		}
@@ -73,7 +73,7 @@ func (a *App) discoverCreationLogins(saved []v1.LoginProfile, refs []v1.LoginPro
 		for i := 2; usedNames[name]; i++ {
 			name = fmt.Sprintf("personal-%d", i)
 		}
-		profileName := &formField{Label: "  Save as", Value: name, When: func() bool { return selection.Value == "Upload local" || paths[selection.Value] != "" }}
+		profileName := &formField{Label: "  Save as", Value: name, When: func() bool { return selection.Value == "Custom local path…" || paths[selection.Value] != "" }}
 		result = append(result, creationProfileFields{app: app, selection: selection, path: path, name: profileName, localPaths: paths})
 	}
 	return result, nil

@@ -14,15 +14,17 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-  if(['/','/app.js','/app.css','/favicon.ico'].includes(path)){
-   const file=path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
+  if(['/','/app.js','/app.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
   }
   res.setHeader('Content-Type','application/json');
+  if(path==='/v1/browser-session' && ['POST','DELETE'].includes(req.method)){res.statusCode=204;return res.end()}
   const values={
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
    '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude'}],
+   '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running'},
    '/v1/provider-credentials':[{provider:'railway',name:'primary',config:{projectId:'p',environmentId:'e',image:'old'},updatedAt:revision}],
    '/v1/provider-schemas':{providers:{railway:{image:'string'}}},
    '/v1/controller-defaults':{provider:'railway',providerCredential:'primary'},
@@ -32,6 +34,7 @@ before(async()=>{
    '/v1/login-profiles':[{application:'claude',name:'personal',createdAt:revision}],
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
+  if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
@@ -43,6 +46,16 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
+test('box link opens separate mobile workspace and reuses shell',async()=>{
+ const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+ await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#box-list a');
+ await Promise.all([page.waitForNavigation(),page.click('#box-list a')]);
+ await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
+ assert.equal(new URL(page.url()).pathname,'/boxes/box-1');
+ assert(requests.some(r=>r.path.endsWith('/sessions/interactive')&&r.body.agent==='shell'&&r.body.reuseShell===true));
+ assert.deepEqual(errors,[]);await page.close();
+});
 test('configuration UI stays tiny and has no terminal code',async()=>{
  const css=await readFile(resolve(root,'app.css'),'utf8'),js=await readFile(resolve(root,'app.js'),'utf8');
  assert(Buffer.byteLength(css)<2048);assert(!/@import|url\(/.test(css));
@@ -82,6 +95,6 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.equal(await page.$('#terminal'),null);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:mobile?'/tmp/vmbox-config-mobile.png':'/tmp/vmbox-config-desktop.png',fullPage:true});
- await page.click('#logout');assert(await page.$eval('#app',n=>n.hidden));assert.equal(await page.$eval('#provider textarea[name=secret]',n=>n.value),'');
+ await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#app').hidden);assert.equal(await page.$eval('#provider textarea[name=secret]',n=>n.value),'');
  assert.deepEqual(errors,[]);await page.close();
 });

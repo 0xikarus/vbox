@@ -1,0 +1,2 @@
+#terminal-screen{height:65vh;min-height:240px;background:#000;padding:4px}#terminal-screen:fullscreen{height:100vh;width:100vw;box-sizing:border-box}.terminal-keys{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.terminal-keys button{min-width:38px;min-height:38px}#terminal-screen .xterm{height:100%}#desktop-screen{min-height:200px}
+#desktop-screen:not(:empty){height:65vh;background:#222;overflow:auto}#desktop-screen:fullscreen{height:100vh;width:100vw}

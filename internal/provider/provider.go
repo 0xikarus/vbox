@@ -165,6 +165,12 @@ type ConnectionExecutor interface {
 	ExecConnection(context.Context, Connection, []string, ExecOptions) (ExecResult, error)
 }
 
+// ConnectionStreamer transports a long-lived stream without captured output,
+// execution history, or command replay after ambiguous transport failure.
+type ConnectionStreamer interface {
+	StreamConnection(context.Context, Connection, []string, ExecOptions) (ExecResult, error)
+}
+
 const (
 	WorkloadUser = "vmbox"
 	WorkloadHome = "/data/home"

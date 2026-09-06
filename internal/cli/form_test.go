@@ -92,6 +92,18 @@ func TestProfileListDeletionAndSelection(t *testing.T) {
 	if err != nil || deleted != 1 || f.Value != "Saved: fresh" {
 		t.Fatal(err, deleted, f.Value)
 	}
+	inline := false
+	for _, screen := range strings.Split(a.Err.(*bytes.Buffer).String(), "\x1b[H\x1b[2J") {
+		if strings.Contains(screen, "↑/↓: select profile") {
+			inline = true
+			if !strings.Contains(screen, "Login") || !strings.Contains(screen, "[ Create ]") {
+				t.Fatal("picker replaced the creation form")
+			}
+		}
+	}
+	if !inline {
+		t.Fatal("picker was not rendered")
+	}
 }
 
 func TestUnifiedFormPasteCannotSubmit(t *testing.T) {

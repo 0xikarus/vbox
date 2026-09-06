@@ -43,6 +43,29 @@ func run() error {
 		return err
 	}
 	switch args[0] {
+	case "desktop-enable", "desktop-start", "desktop-run", "desktop-stream":
+		if len(args) != 2 {
+			return fmt.Errorf("desktop command requires ASSIGNMENT")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		switch args[0] {
+		case "desktop-enable":
+			return boxruntime.EnableDesktop(ctx, args[1])
+		case "desktop-start":
+			return boxruntime.StartDesktop(ctx, args[1])
+		case "desktop-run":
+			return boxruntime.RunDesktop(ctx, args[1])
+		default:
+			return boxruntime.StreamDesktop(ctx, args[1], os.Stdin, os.Stdout)
+		}
+	case "web-terminal":
+		if len(args) != 4 {
+			return fmt.Errorf("web-terminal requires ASSIGNMENT SESSION_ID INCARNATION")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		return boxruntime.WebTerminal(ctx, args[1], args[2], args[3], os.Stdin, os.Stdout)
 	case "health":
 		fmt.Println("ok")
 		return nil

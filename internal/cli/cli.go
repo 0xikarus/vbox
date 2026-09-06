@@ -37,6 +37,8 @@ type App struct {
 	IsTerminal        func() bool
 	Verbose           bool
 	creationProgress  func(string)
+	authReplacements  map[string]string
+	authPrompt        func(string) (string, error)
 }
 
 type stringList []string
@@ -141,6 +143,12 @@ parsed:
 	if active.TokenEnv == "" {
 		active.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
 	}
+	if args[0] == "logout" {
+		if len(args) != 1 {
+			return fmt.Errorf("usage: vmbox logout")
+		}
+		return a.controllerLogout(active)
+	}
 	if a.Verbose {
 		fmt.Fprintf(a.Err, "vmbox: controller · context %s\n", active.Name)
 	}
@@ -222,16 +230,9 @@ func splitRun(args []string) (name string, detach, reuse bool, argv []string, er
 }
 
 func (a *App) controller(ctx context.Context, file config.File, c config.Context, args []string) error {
-	token := a.Environ[c.TokenEnv]
-	if token == "" {
-		if a.IsTerminal == nil || !a.IsTerminal() {
-			return fmt.Errorf("controller token environment %s is empty; configure it securely; refusing standalone fallback", c.TokenEnv)
-		}
-		var err error
-		token, err = a.readSecret("Controller token")
-		if err != nil {
-			return err
-		}
+	token, err := a.controllerToken(ctx, c)
+	if err != nil {
+		return err
 	}
 	// Provider selection comes from controller state, not client SDKs or local
 	// provisioning credentials. Legacy selectors must match before mutation.
@@ -601,6 +602,46 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	}
 }
 func (a *App) request(ctx context.Context, c config.Context, token, method, path string, input, output any, headers map[string]string) (int, error) {
+	key := c.Controller + "\x00" + token
+	if replacement, ok := a.authReplacements[key]; ok {
+		token = replacement
+	}
+	status, err := a.requestOnce(ctx, c, token, method, path, input, output, headers)
+	if status != http.StatusUnauthorized {
+		return status, err
+	}
+	if a.IsTerminal == nil || !a.IsTerminal() {
+		return status, fmt.Errorf("controller authentication rejected; set %s to a valid token or run vmbox in a terminal to sign in", c.TokenEnv)
+	}
+	if _, attempted := a.authReplacements[key]; attempted {
+		return status, fmt.Errorf("controller token rejected; retry with a valid controller token")
+	}
+	fmt.Fprintln(a.Err, "Controller token rejected. Enter your current controller token.")
+	prompt := a.readSecret
+	if a.authPrompt != nil {
+		prompt = a.authPrompt
+	}
+	replacement, promptErr := prompt("Controller token")
+	if promptErr != nil {
+		return status, promptErr
+	}
+	if a.authReplacements == nil {
+		a.authReplacements = make(map[string]string)
+	}
+	a.authReplacements[key] = replacement
+	status, err = a.requestOnce(ctx, c, replacement, method, path, input, output, headers)
+	if status == http.StatusUnauthorized {
+		return status, fmt.Errorf("controller token rejected; retry with a valid controller token")
+	}
+	if status >= 200 && status < 300 {
+		if saveErr := a.saveControllerToken(c, replacement); saveErr != nil {
+			return status, saveErr
+		}
+	}
+	return status, err
+}
+
+func (a *App) requestOnce(ctx context.Context, c config.Context, token, method, path string, input, output any, headers map[string]string) (int, error) {
 	var body io.Reader
 	if input != nil {
 		data, err := json.Marshal(input)
@@ -650,6 +691,7 @@ func (a *App) usage() {
   vmbox new NAME                Configure, create and connect
   vmbox ls                      List boxes
   vmbox whoami                  Show controller account, user and role
+  vmbox logout                  Clear this context's saved controller token
   vmbox status BOX              Show its current state
   vmbox hibernate BOX           Release compute; keep the workspace
 

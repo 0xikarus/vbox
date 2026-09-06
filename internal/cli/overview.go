@@ -13,7 +13,7 @@ import (
 )
 
 // The default command is observational, even in a terminal. In particular it
-// must never enter onboarding, read a secret, allocate compute or attach SSH.
+// must never allocate compute or attach SSH. Authentication may prompt.
 func (a *App) overview(ctx context.Context, contextName string) error {
 	file, err := config.Load(a.ConfigPath)
 	if err != nil {
@@ -31,10 +31,9 @@ func (a *App) overview(ctx context.Context, contextName string) error {
 	if c.TokenEnv == "" {
 		c.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
 	}
-	token := a.Environ[c.TokenEnv]
-	if token == "" {
-		fmt.Fprintf(a.Out, "Authentication not configured: supply %s securely.\nNo connection attempted. Use vmbox menu for interactive login.\n", tuiLabel(c.TokenEnv, 100))
-		return nil
+	token, err := a.controllerToken(ctx, c)
+	if err != nil {
+		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()

@@ -19,6 +19,7 @@ type formField struct {
 	Secret       bool
 	List         bool
 	DeleteChoice func(string) error
+	OnSelect     func(string)
 }
 
 // A single alternate-screen lifetime covers edits, inline choices, submission,
@@ -60,6 +61,7 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 		rows := visible()
 		selected = min(selected, len(rows))
 		lines := make([]string, 0, len(rows)+1)
+		cursor := selected
 		for i, f := range rows {
 			value := f.Value
 			if f.Secret && value != "" {
@@ -75,13 +77,16 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 				line += " ▏"
 			}
 			lines = append(lines, line)
+			if picker == f {
+				cursor = len(lines) + choice
+				for _, value := range f.Choices {
+					lines = append(lines, "    "+value)
+				}
+			}
 		}
 		lines = append(lines, "[ Create ]    Esc: cancel")
-		cursor := selected
 		help := "↑/↓ Tab: move · ←/→: choose · Enter: edit/create"
 		if picker != nil {
-			lines = append([]string{}, picker.Choices...)
-			cursor = choice
 			help = "↑/↓: select profile · Enter: use · d: delete saved · Esc: back"
 			if confirmDelete {
 				help = "Delete saved profile? y: confirm · any other key: cancel"
@@ -264,8 +269,11 @@ func (a *App) runForm(ctx context.Context, title string, fields []*formField, su
 		if picker != nil {
 			if key == '\r' || key == '\n' {
 				picker.Value = picker.Choices[choice]
+				if picker.OnSelect != nil {
+					picker.OnSelect(picker.Value)
+				}
 				picker = nil
-				status = ""
+				status = "Saved: reuse controller profile. Local: upload when you create; nothing is uploaded while selecting."
 			} else if key == 'd' && picker.DeleteChoice != nil && strings.HasPrefix(picker.Choices[choice], "Saved: ") {
 				confirmDelete = true
 				status = "Delete " + picker.Choices[choice] + "? Cannot be undone; pending creations may fail."

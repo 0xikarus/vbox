@@ -1136,6 +1136,23 @@ func (p *Provider) ExecConnection(ctx context.Context, connection provider.Conne
 	return provider.ExecResult{ExitCode: result.ExitCode, Stdout: string(result.Stdout), Stderr: string(result.Stderr), StartedAt: started, FinishedAt: time.Now().UTC()}, nil
 }
 
+func (p *Provider) StreamConnection(ctx context.Context, connection provider.Connection, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if len(argv) == 0 || opts.Interactive || opts.Detach {
+		return provider.ExecResult{}, fmt.Errorf("invalid streaming command")
+	}
+	target, err := validatedConnectionTarget(connection)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	encoded, err := json.Marshal(argv)
+	if err != nil {
+		return provider.ExecResult{}, err
+	}
+	remote := provider.AsWorkloadUser([]string{"vmbox-runtime", "direct-json", base64.RawURLEncoding.EncodeToString(encoded)})
+	result, err := p.directSSHTargetMode(ctx, target, remote, false, true, opts.Stdin, opts.Stdout, opts.Stderr)
+	return provider.ExecResult{ExitCode: result.ExitCode}, err
+}
+
 func (p *Provider) AttachSession(ctx context.Context, id, session string, command []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 	if session == "" {
 		return provider.ExecResult{}, fmt.Errorf("tmux session name cannot be empty")

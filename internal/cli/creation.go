@@ -27,7 +27,7 @@ type creationProfileFields struct {
 }
 
 func (p creationProfileFields) uploadPath() string {
-	if p.selection.Value == "Upload local" {
+	if p.selection.Value == "Custom local path…" {
 		return p.path.Value
 	}
 	return p.localPaths[p.selection.Value]

@@ -19,6 +19,27 @@ func (a *App) addCreationGitHubAccounts(ctx context.Context, profiles []creation
 	accounts := a.discoverGitHub(ctx)
 	for _, p := range profiles {
 		if p.app == "github" {
+			p.selection.OnSelect = func(value string) {
+				_, user, ok := strings.Cut(p.localPaths[value], ":")
+				if !ok || user == "" {
+					return
+				}
+				name := user
+				for i := 2; ; i++ {
+					used := false
+					for _, option := range p.selection.Choices {
+						if option == "Saved: "+name {
+							used = true
+							break
+						}
+					}
+					if !used {
+						break
+					}
+					name = fmt.Sprintf("%s-%d", user, i)
+				}
+				p.name.Value = name
+			}
 			for _, account := range accounts {
 				label := "Local: " + account.User + "@" + account.Host
 				if account.Active {

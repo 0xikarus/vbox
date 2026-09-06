@@ -31,6 +31,15 @@ func TestCreationGitHubDiscoveryAndSelectedExport(t *testing.T) {
 		t.Fatal("discovery exported or selected a credential")
 	}
 	p.selection.Value = "Local: bob@github.com"
+	p.selection.OnSelect(p.selection.Value)
+	if p.name.Value != "bob" {
+		t.Fatalf("profile name = %q", p.name.Value)
+	}
+	p.selection.Choices = append(p.selection.Choices, "Saved: bob")
+	p.selection.OnSelect(p.selection.Value)
+	if p.name.Value != "bob-2" {
+		t.Fatalf("collision name = %q", p.name.Value)
+	}
 	if p.uploadPath() != "github.com:bob" {
 		t.Fatal("wrong selected account")
 	}

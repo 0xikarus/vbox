@@ -2,12 +2,15 @@
 const $=s=>document.querySelector(s);
 let token='',defaults=null,epoch=0;
 async function api(path,method='GET',body,headers={}){
- const r=await fetch(path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
+ const r=await fetch(path,{method,credentials:'same-origin',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
 }
 function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';try{await fn(e)}catch(err){$('#error').textContent=err.message}}}
 function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
 function button(text,fn){const b=node('button',text);b.type='button';b.addEventListener('click',action(fn));return b}
+// Restore same-tab navigation without storing credentials in JavaScript storage.
+async function restoreLogin(){try{await api('/v1/browser-session');await refresh();$('#login').hidden=true;$('#app').hidden=false}catch{}}
+window.addEventListener('DOMContentLoaded',restoreLogin);
 function dataTable(headers,rows){const table=document.createElement('table'),head=document.createElement('tr');for(const h of headers)head.append(node('th',h));table.append(head);for(const values of rows){const row=document.createElement('tr');for(const value of values)row.append(node('td',value??'—'));table.append(row)}return table}
 function rawDetails(value){const d=document.createElement('details');d.append(node('summary','Technical details · JSON'),node('pre',JSON.stringify(value,null,2)));return d}
 function renderCapacity(fleet){
@@ -36,7 +39,7 @@ async function refresh(){
  const table=document.createElement('table'),head=document.createElement('tr');['Name','State','Default agent','CLI'].forEach(t=>head.append(node('th',t)));table.append(head);
  for(const b of boxes){const row=document.createElement('tr'),cell=document.createElement('td'),select=document.createElement('select');
  for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;
- select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);row.append(node('td',b.name),node('td',b.state),cell,node('td','vmbox '+JSON.stringify(b.name)));table.append(row)}$('#box-list').replaceChildren(table);
+ select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);const name=node('td',''),link=node('a',b.name);link.href='/boxes/'+encodeURIComponent(b.id);name.append(link);row.append(name,node('td',b.state),cell,node('td','vmbox '+JSON.stringify(b.name)));table.append(row)}$('#box-list').replaceChildren(table);
  if(!caps.providerEdits)return;
  const [providers,schema,notifications,identity,profiles]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications'),api('/v1/whoami'),api('/v1/login-profiles')]);if(version!==epoch)return;
  renderProfiles(identity,profiles);
@@ -46,8 +49,8 @@ async function refresh(){
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
-$('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;await refresh();e.target.reset();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',()=>{epoch++;token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''});
+$('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value}));await api('/v1/logical-boxes','POST',{name:f.name.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,loginProfiles},{'Idempotency-Key':crypto.randomUUID()});await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));

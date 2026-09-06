@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>vmbox workspace</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/xterm.css"><link rel="stylesheet" href="/workspace.css">
+<nav><a href="/">Controller</a> · <button id="logout">Log out</button></nav>
+<h1 id="name">Workspace</h1>
+<form id="login" hidden><label>Controller token <input name="token" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<p id="status" role="status" aria-live="polite">Checking authentication…</p><p id="error" role="alert"></p>
+<main id="workspace" hidden>
+<p><button id="connect">Resume / reconnect</button> <button id="hibernate">Hibernate</button></p>
+<p>Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.</p>
+<section id="terminal"><h2>Terminal</h2><p id="session"></p><div class="terminal-keys" aria-label="Terminal keys"></div><div id="terminal-screen"></div></section>
+<section id="desktop"><h2>Desktop</h2><p>Optional graphical workspace. Enable installs Firefox, Openbox and VNC on this worker (extra download, disk and RAM). It does not restart the box. A replacement worker may need enablement again. Closing the viewer leaves it running.</p><button id="enable-desktop">Enable desktop packages</button> <button id="start-desktop">Start / reconnect desktop</button><p id="desktop-status" role="status"></p><div id="desktop-controls" class="terminal-keys"></div><div id="desktop-screen"></div></section>
+</main><script src="/xterm.js" defer></script><script src="/xterm-fit.js" defer></script><script src="/workspace-terminal.js" defer></script><script src="/novnc.js" defer></script><script src="/workspace-desktop.js" defer></script><script src="/workspace.js" defer></script></html>

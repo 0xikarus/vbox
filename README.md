@@ -36,7 +36,10 @@ and select them when creating a box. Uploads happen only through the CLI. Saved 
 never exported, and immutable: upload refreshed credentials under a new name.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
-In the creation dialog, press Enter on a login row to open its profile list.
+In the creation dialog, press Enter on a login row to expand its profile list inline.
+Saved profiles reuse controller credentials; selecting a detected Local login uploads
+it when you create the box. Custom local path is only for an undetected location.
+GitHub defaults the saved profile name to the selected username (with a suffix if taken).
 Use ↑/↓ and Enter to select; `d` followed by `y` deletes a saved profile.
 Deletion is permanent and may interrupt pending creations referencing that profile.
 
@@ -46,8 +49,13 @@ Go 1.26 or Docker builds the CLI. OpenSSH is required for native attachment.
 No Railway, Docker or Incus client/token is needed for ordinary CLI operations.
 
 In a terminal, missing controller configuration starts a connection guide. Missing
-authentication offers hidden input for that invocation; tokens are not saved in
-the CLI config. Scripts never prompt: configure the controller context and token
+authentication offers hidden input and saves a verified token in a separate local
+0600 file under the CLI config directory, scoped to context and controller URL.
+This includes bare `vmbox`. Run `vmbox logout` to delete that saved token (not revoke
+it on the server). Environment tokens take precedence; use `unset VMBOX_CONTROLLER_TOKEN`
+to clear an exported token too. If an existing token is rejected,
+the CLI asks for a replacement and retries once; permission denials do not prompt.
+Scripts never prompt: configure the controller context and token
 environment first. The controller/context banner is hidden unless you put
 `--verbose` before the command.
 
@@ -66,6 +74,36 @@ For an existing worker that has not enabled native sessions, run
 restarting worker compute or replacing existing sessions.
 
 ## Interactive mode
+
+### Web workspace (development)
+
+Click a box name in the controller to open `/boxes/BOX_ID`. The page wakes the box
+through the allocation queue and reconnects to the same persistent shell used by
+`vmbox BOX`. The separate workspace page loads its own terminal and desktop assets;
+the configuration panel remains lightweight.
+
+Terminal input is streamed to a real tmux PTY. Mobile controls provide Esc, Tab,
+arrows and common Ctrl keys. Closing/reloading the page disconnects the viewer,
+not the session; reconnect does not replay input. Hibernate explicitly stops
+processes and releases compute while retaining workspace files.
+
+For a graphical browser, choose **Enable desktop packages**, then **Start /
+reconnect desktop**. Enablement installs TigerVNC, Openbox and Firefox on the
+current Debian-compatible worker without restarting it. A replacement worker may
+need enablement again. Operators can instead build the worker image with
+`--build-arg VMBOX_DESKTOP=true`. VNC is available only through a private Unix
+socket and the owner-authenticated controller stream, never a public VNC port.
+Firefox may report reduced sandbox protection when the provider restricts user
+namespaces; no sandbox-disabling browser flags are configured.
+
+Browser login uses an eight-hour, HttpOnly, same-site cookie backed by controller
+memory. Logout invalidates it; controller restart requires login again without
+stopping worker processes. Browser streams currently require the Railway provider's
+fenced streaming transport. Other providers return an explicit unsupported error.
+
+Rebuild bundled assets with `npm ci && node scripts/build-web.mjs`. noVNC and
+xterm licenses are retained alongside the bundles. This feature is not yet
+production-validated; see `docs/WEB-WORKSPACE.md` for the remaining verification.
 
 ```bash
 vmbox helper1                    # wake if needed; reconnect to the persistent shell

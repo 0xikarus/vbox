@@ -67,11 +67,14 @@ func (r singleByteReader) Read(p []byte) (int, error) {
 }
 
 func (a *App) readSecret(label string) (string, error) {
+	if a.authPrompt != nil && label == "Controller token" {
+		return a.authPrompt(label)
+	}
 	file, ok := a.In.(*os.File)
 	if a.IsTerminal == nil || !a.IsTerminal() || !ok || !term.IsTerminal(int(file.Fd())) {
 		return "", fmt.Errorf("%s missing; configure its environment variable securely (hidden input requires a terminal)", label)
 	}
-	fmt.Fprintf(a.Err, "%s (hidden, this invocation only): ", label)
+	fmt.Fprintf(a.Err, "%s (hidden): ", label)
 	value, err := term.ReadPassword(int(file.Fd()))
 	fmt.Fprintln(a.Err)
 	defer clear(value)
