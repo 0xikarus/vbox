@@ -24,7 +24,7 @@ func (a *App) overview(ctx context.Context, contextName string) error {
 		fmt.Fprintln(a.Out, "No controller connected.\nSetup: vmbox context add NAME --controller URL\nHelp:  vmbox help")
 		return nil
 	}
-	fmt.Fprintf(a.Out, "vmbox · context %s\n", tuiLabel(c.Name, 100))
+	fmt.Fprintf(a.Out, "Boxes · %s\n", tuiLabel(c.Name, 100))
 	if err := validateControllerURL(c.Controller); err != nil {
 		return err
 	}
