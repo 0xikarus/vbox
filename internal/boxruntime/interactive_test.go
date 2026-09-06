@@ -26,6 +26,32 @@ func TestInteractiveShellUsesSpecsWelcome(t *testing.T) {
 	}
 }
 
+func TestInteractiveAppliesPreviouslySavedContext(t *testing.T) {
+	bin := t.TempDir()
+	log := filepath.Join(bin, "calls")
+	if err := os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$TMUX_TEST_LOG\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	t.Setenv("TMUX_TEST_LOG", log)
+	root := t.TempDir()
+	if err := SetTmuxContext(context.Background(), root, "fresh-box", "slot-2", "running", "connected"); err != nil {
+		t.Fatal(err)
+	}
+	if err := StartInteractive(context.Background(), root, "new-shell", "shell"); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range []string{"VMBOX_NAME fresh-box", "VMBOX_COMPUTE_SLOT slot-2", "VMBOX_ASSIGNMENT_STATE running", "VMBOX_CONNECTION_HEALTH connected"} {
+		if !strings.Contains(string(data), "set-environment -t new-shell "+value) {
+			t.Errorf("context not applied: %s", value)
+		}
+	}
+}
+
 func TestInteractiveShellRealWelcome(t *testing.T) {
 	testInteractiveShellReal(t, false)
 }

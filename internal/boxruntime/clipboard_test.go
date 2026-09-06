@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -46,6 +47,26 @@ func TestManagedTmuxCopyPaste(t *testing.T) {
 	t.Cleanup(func() { _ = exec.Command("tmux", "-S", socket, "kill-server").Run() })
 	marker := "copy-" + ID("")
 	run("new-session", "-d", "-s", "source", "printf '%s\\n' '"+marker+"'; sleep 30")
+	for key, value := range map[string]string{"VMBOX_NAME": "fresh-box", "VMBOX_COMPUTE_SLOT": "slot-2", "VMBOX_ASSIGNMENT_STATE": "running", "VMBOX_CONNECTION_HEALTH": "connected"} {
+		run("set-environment", "-t", "source", key, value)
+	}
+	footer := strings.TrimSpace(string(run("show-options", "-g", "-v", "status-format[0]")))
+	for _, width := range []string{"80", "180"} {
+		format := strings.ReplaceAll(footer, "#{client_width}", width)
+		rendered := string(run("display-message", "-p", "-t", "source", format))
+		plain := regexp.MustCompile(`#\[[^\]]*\]`).ReplaceAllString(rendered, "")
+		for _, want := range []string{"fresh-box", "slot-2"} {
+			if !strings.Contains(plain, want) {
+				t.Fatalf("footer width %s missing %s: %s", width, want, plain)
+			}
+		}
+		if strings.Contains(plain, "nobold]") {
+			t.Fatalf("malformed footer: %s", plain)
+		}
+		if width == "180" && (!strings.Contains(plain, "STATE: running") || !strings.Contains(plain, "NET: connected")) {
+			t.Fatalf("missing wide footer details: %s", plain)
+		}
+	}
 	wait := func(check func() bool) {
 		t.Helper()
 		for deadline := time.Now().Add(3 * time.Second); time.Now().Before(deadline); {

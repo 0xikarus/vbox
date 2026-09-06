@@ -30,6 +30,9 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if err == nil && agent == "shell" {
 		_, err = tmuxOutput(ctx, "set-option", "-t", "="+session+":", "@vmbox-shell", "1")
 	}
+	if err == nil {
+		err = ApplyTmuxContext(ctx, root, session)
+	}
 	return err
 }
 
