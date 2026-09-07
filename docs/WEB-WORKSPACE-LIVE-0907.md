@@ -51,9 +51,9 @@ interruption used browser emulation, not a real radio/Wi-Fi outage. No second
 production box was driven for cross-box isolation. Mobile VNC interaction,
 long idle periods and sustained output/backpressure remain unverified.
 
-The goal is **not all-green**: investigate stream exit/disconnect feedback first,
-then the intermittent reconnect timeout. Do not deploy the unrelated Codex
-startup/task-reconciliation drafts as part of these fixes.
+These were the first-pass failures, not an all-green run. The stream-exit and
+mobile follow-up below supersedes the corresponding open verification items.
+The unrelated Codex startup/task-reconciliation drafts remain excluded.
 
 ### Stream-exit follow-up
 
@@ -62,8 +62,60 @@ but `OSRunner.RunAttached` did not return while the browser-side writer remained
 open. The controller used `io.Pipe`, causing `os/exec` to wait on a blocked stdin
 copy goroutine. Switching this transport to `os.Pipe` lets the child inherit its
 stdin descriptor directly. The regression failed before the change and passed
-afterward; full Go tests/vet also passed. This is not yet a new production
-Ctrl-a d proof; that live check remains required.
+afterward; full Go tests/vet also passed. It deployed as `4248b0a` and was then
+verified in production as described below.
+
+### Final production follow-up
+
+Used only new disposable box `web-final-0907`
+(`16625725-d168-4d4d-8764-fa2900000000`), on a pre-existing healthy free slot.
+The owner's `ttf` box was not operated on.
+
+- **PASS:** Ctrl-a d produced a disconnected browser state in 1.318 seconds;
+  the original shell PID 186 survived.
+- **PASS:** three full page reloads returned to that same shell PID in
+  5.361, 9.582 and 6.701 seconds, without creating replacement shells.
+- **PASS:** desktop enable/start through the 390×844 touch-enabled browser
+  completed in 24.187 seconds.
+- **PASS:** tapping Address bar and using the desktop keyboard control navigated
+  the real Firefox to `about:robots`. Both normal and fullscreen screenshots were
+  visually inspected; controls stayed within the mobile viewport.
+- **PASS:** mobile VNC fullscreen entered/exited, and reconnect retained VNC
+  PID 3345. No uncaught browser exceptions occurred.
+- Initial cold resume reported `Failed to fetch`, while independent controller
+  inspection showed the same box had reached `running / restored`. Reconnecting
+  to that existing operation worked; no replacement allocation or worker restart
+  was issued. The precise network failure remains unproven, not relabeled as a
+  harness bug. Network errors now explain that the operation may still be running
+  and offer explicit reload/reconnect guidance without replaying input.
+- A successful detach previously displayed an unwarranted runtime-enable hint.
+  Stream-close feedback now says the stream ended and offers reconnect, without
+  guessing that the runtime is mismatched.
+
+Final artifacts: `/tmp/vmbox-final-0907/results.json`, `mobile-firefox.png`,
+`mobile-fullscreen.png`, and `cleanup.json`. The focused harness is
+`/tmp/vmbox-final-0907.mjs`. The JSON results describe the successful follow-up;
+the initial cold-resume failure is preserved in this report.
+Cleanup permanently deleted only this disposable box and test volume in 46.9
+seconds. Desired capacity remained four, with three free slots and one occupied
+user slot; the test assignment was gone.
+
+## Requirement audit
+
+| Requested behavior | Authoritative evidence |
+| --- | --- |
+| Click a box into its own workspace page | Production `/boxes/ID` pages; browser navigation regression test checks the box link and shell-reuse request. |
+| Same lifecycle as `vmbox BOX` | Both use allocation and `sessions/interactive` with `agent: shell`, `reuseShell: true`; live cold resume and hibernate/resume recovered the retained volume. |
+| Faithful interactive tmux in the browser | Independently verified received bytes, changing screen/cursor state, session isolation, resize, reconnect, detach and process identity. |
+| Real optional VNC desktop and browser | Production package enablement, private Unix-socket VNC, visible Firefox navigation, and retained VNC process across reconnect. |
+| Usable on mobile/on the go | Initially 390×844 terminal and VNC runs, reachable controls, touch-emulated address-bar interaction, input, fullscreen and explicit network recovery. Physical device/clipboard limitations remain as stated above. |
+| Persistent workspace, viewer disconnect is not deletion | Worker process and input identities survived page and controller restarts; hibernation retained the exact volume and unique workspace file. |
+
+These checks establish the requested feature, not perfect availability: transient
+provider/network failures can require explicit reconnect. This report does not
+claim the underlying sporadic network failures have been eliminated. The existing
+worker-image footer cosmetic issue and physical-device coverage remain separate
+limitations, not proof of data loss or loss of the persistent workspace.
 
 ## Scope and artifacts
 

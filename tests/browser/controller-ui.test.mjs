@@ -56,6 +56,24 @@ test('box link opens separate mobile workspace and reuses shell',async()=>{
  assert(requests.some(r=>r.path.endsWith('/sessions/interactive')&&r.body.agent==='shell'&&r.body.reuseShell===true));
  assert.deepEqual(errors,[]);await page.close();
 });
+test('workspace network failure explains safe recovery',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;let failed=false;
+  window.fetch=(path,...args)=>{
+   if(String(path).endsWith('/sessions/interactive')&&!failed){failed=true;return Promise.reject(new TypeError('Failed to fetch'))}
+   return original(path,...args);
+  };
+ });
+ await page.goto(base+'/boxes/box-1');
+ await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('operation may still be running'));
+ assert.match(await page.$eval('#error',e=>e.textContent),/Resume \/ reconnect.*not replayed/);
+ assert.equal(await page.$eval('#connect',e=>e.disabled),false);
+ await page.click('#connect');
+ await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
+ assert.equal(await page.$eval('#error',e=>e.textContent),'');
+ await page.close();
+});
 test('configuration UI stays tiny and has no terminal code',async()=>{
  const css=await readFile(resolve(root,'app.css'),'utf8'),js=await readFile(resolve(root,'app.js'),'utf8');
  assert(Buffer.byteLength(css)<2048);assert(!/@import|url\(/.test(css));

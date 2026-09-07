@@ -154,7 +154,7 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 	}
 	result, err := executor.StreamConnection(ctx, conn, command, provider.ExecOptions{Stdin: input, Stdout: terminalSocketWriter{ctx, ws}, Stderr: io.Discard})
 	if err != nil || result.ExitCode != 0 {
-		_ = ws.Close(websocket.StatusInternalError, "Terminal disconnected; reconnect or enable the matching worker runtime")
+		_ = ws.Close(websocket.StatusInternalError, "Terminal stream ended; reconnect to return to your session")
 		return
 	}
 	_ = ws.Close(websocket.StatusNormalClosure, "Terminal detached")
