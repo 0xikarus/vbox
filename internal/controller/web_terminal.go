@@ -93,7 +93,11 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 	} // Origin checked above against configured public URL.
 	defer ws.CloseNow()
 	ws.SetReadLimit(128 * 1024)
-	input, writer := io.Pipe()
+	input, writer, err := workspaceInput()
+	if err != nil {
+		_ = ws.Close(websocket.StatusInternalError, "Could not open terminal transport")
+		return
+	}
 	defer input.Close()
 	defer writer.Close()
 	go func() {

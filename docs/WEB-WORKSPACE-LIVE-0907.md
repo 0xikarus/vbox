@@ -55,6 +55,16 @@ The goal is **not all-green**: investigate stream exit/disconnect feedback first
 then the intermittent reconnect timeout. Do not deploy the unrelated Codex
 startup/task-reconciliation drafts as part of these fixes.
 
+### Stream-exit follow-up
+
+A real local subprocess test reproduced an input-pipe deadlock: the child exited,
+but `OSRunner.RunAttached` did not return while the browser-side writer remained
+open. The controller used `io.Pipe`, causing `os/exec` to wait on a blocked stdin
+copy goroutine. Switching this transport to `os.Pipe` lets the child inherit its
+stdin descriptor directly. The regression failed before the change and passed
+afterward; full Go tests/vet also passed. This is not yet a new production
+Ctrl-a d proof; that live check remains required.
+
 ## Scope and artifacts
 
 Only disposable box `web-proof-0907`
