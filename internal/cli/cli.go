@@ -266,6 +266,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	switch args[0] {
 	case "whoami":
 		return a.controllerWhoami(ctx, c, token, args[1:])
+	case "desktop":
+		return a.controllerDesktop(ctx, c, token, args[1:])
 	case "fleet":
 		return a.controllerFleet(ctx, c, token, args[1:])
 	case "boxes", "box":
@@ -703,6 +705,7 @@ func (a *App) usage() {
 
   vmbox                         Show context and box states (read-only)
   vmbox BOX                     Open its shell; wake it if needed
+  vmbox desktop BOX             Open its desktop in a local VNC viewer
   vmbox new NAME                Configure, create and connect
   vmbox ls                      List boxes
   vmbox whoami                  Show controller account, user and role

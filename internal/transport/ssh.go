@@ -20,6 +20,18 @@ type SSH struct {
 }
 
 func (s SSH) ExecConnection(ctx context.Context, conn provider.Connection, remote []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	return s.execConnection(ctx, conn, remote, opts, false)
+}
+
+// StreamConnection preserves binary streams without retaining their contents.
+func (s SSH) StreamConnection(ctx context.Context, conn provider.Connection, remote []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	if opts.Interactive || opts.Detach {
+		return provider.ExecResult{}, fmt.Errorf("streaming transport does not allocate a terminal or detach")
+	}
+	return s.execConnection(ctx, conn, remote, opts, true)
+}
+
+func (s SSH) execConnection(ctx context.Context, conn provider.Connection, remote []string, opts provider.ExecOptions, stream bool) (provider.ExecResult, error) {
 	if conn.Transport != "openssh" {
 		return provider.ExecResult{}, fmt.Errorf("unsupported controller transport %q", conn.Transport)
 	}
@@ -56,8 +68,10 @@ func (s SSH) ExecConnection(ctx context.Context, conn provider.Connection, remot
 	}
 	var result procexec.Result
 	var err error
-	if attached, ok := runner.(procexec.AttachedRunner); ok && opts.Interactive {
+	if attached, ok := runner.(procexec.AttachedRunner); ok && (opts.Interactive || stream) {
 		result, err = attached.RunAttached(ctx, args, opts.Stdin, opts.Stdout, opts.Stderr)
+	} else if stream {
+		return provider.ExecResult{}, fmt.Errorf("runner does not support uncaptured streaming")
 	} else {
 		result, err = runner.Run(ctx, args, opts.Stdin, opts.Stdout, opts.Stderr)
 	}

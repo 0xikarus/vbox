@@ -252,6 +252,34 @@ Some terminals do not; use local selection in that case. These managed bindings
 require the updated worker tmux configuration; installing the CLI alone does not
 update an already-running worker's configuration.
 
+### Desktop from the CLI
+
+```bash
+vmbox desktop helper1 --enable  # First time: install desktop packages on the worker
+vmbox desktop helper1           # Resume and open the same desktop in a local window
+```
+
+Install a TigerVNC-compatible `vncviewer` locally (on Debian/Ubuntu:
+`sudo apt install tigervnc-viewer`), or pass `--viewer /path/to/vncviewer`.
+The viewer needs a working graphical display; run the command from your normal
+desktop terminal. Windows users run the CLI and Linux viewer inside WSL with GUI
+support, rather than using a native Windows CLI installer.
+
+The controller manages wake-up and desktop startup. The CLI then opens a
+single-viewer, loopback-only VNC connection carried over direct SSH, using the
+same SSH identity as `vmbox BOX`. It requires no local provider token or SDK.
+Closing the viewer closes this local connection, **not** the remote desktop or
+box. Use `vmbox hibernate helper1` when you want to release compute.
+
+For a different viewer, use `vmbox desktop helper1 --no-viewer` and open the
+printed `vnc://127.0.0.1:PORT` address locally. Ctrl-C closes the tunnel. Only the
+first viewer connection is accepted; rerun the command to reconnect. As with
+an ordinary localhost SSH tunnel, use this only on a trusted local machine.
+
+`--enable` is explicit consent to install optional packages on that worker; a
+replacement worker may need it again. Without it, missing components produce
+an error rather than an automatic package installation.
+
 ### Web workspace
 
 Click a box name in the controller to open `/boxes/BOX_ID`. The page wakes the box
