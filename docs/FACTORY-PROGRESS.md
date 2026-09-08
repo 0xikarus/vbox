@@ -16,17 +16,30 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 - UI worker: `factory-ui-0908`, box ID
   `1e2139db-766f-4a7e-8440-ced500000000`, task ID
   `0458ec2e-c979-4bb4-8b6b-edad00000000`, branch `factory/ui-plan-0908`.
-  Last observed **running**. Scope: factory JS/CSS and scoped UI tests only.
+  Finished **exit 0**, source `d6742b6`, integrated as `f1c2048`. Worker reports
+  15/15 real Chromium fixture tests inside its box (not live backend proof).
 - Asset worker: `factory-assets-0908`, box ID
   `1bf0d5e0-129f-4828-86f6-672200000000`, task ID
   `a23c41ab-7ed4-4312-815e-ee0200000000`, branch `factory/assets-0908`.
-  Last observed **running**. Scope: private asset package and tests only.
+  Finished **exit 0**, source `67048b8`, integrated as `ae59d73`. Worker reports
+  build/vet/race/concurrency tests passed inside its box. PNG/JPEG supported;
+  WebP correctly rejected until a decoder dependency is integrated and tested.
 - Integration box: `factory-integration-0908`, ID
   `cf712a55-c4b7-4626-86d9-28dd00000000`. Test task
-  `faa411d0-a078-4901-8b3b-009b00000000` last observed **queued**, pinned to
+  `faa411d0-a078-4901-8b3b-009b00000000` finished **exit 0**, pinned to
   `9c99351`. Installs Go 1.26.0 (official checksum verified) and isolated local
   PostgreSQL inside the box, then runs core tests/vet with real DB tests enabled.
-  Observe this exact task; do not start another because its queue/resume is slow.
+  Real PostgreSQL tests passed, including lease recovery, deduplicated replies,
+  persisted plan revisions and rejection of exit-0-without-plan; Go vet passed.
+- Gateway/API/tab integration at `eb3142c` is now queued for full Go tests/vet in
+  the integration box: task `8eed46c7-ab42-4719-82cd-5c0e00000000`. The box was
+  hibernated before submission; if PostgreSQL packages/daemon did not survive,
+  inspect the actual failure and prepare the new worker before another test.
+- Gateway strips browser/identity headers and injects account/user plus a dedicated
+  service credential. New feature is disabled without explicit backend config.
+  Factory HTTP handlers and private-assets adapter exist; service executable,
+  GitHub backend, planning dispatcher and actual multimodal delivery remain next.
+  No backend/server has been deployed. UI fixture checks are not end-to-end proof.
 - Both use the saved Codex profile that passed provisioning and existing GitHub
   credentials. Other Claude/Codex profile selections were rejected at create
   (HTTP 400); those rejected requests did not create their requested workspaces.
@@ -47,6 +60,6 @@ The UI must show idea -> agent responses/questions -> editable plan -> approval
 linked record, not a replacement for the UI conversation. The original broader
 plan still needs reconciliation with this full approved workflow.
 
-Not complete: no functional factory service/UI integration yet, no live App or
+Not complete: no running factory service yet, no live App or
 multimodal planning proof, no feature build/review/integration workflow. Existing
 unrelated startup/reconciliation drafts remain excluded from all factory commits.
