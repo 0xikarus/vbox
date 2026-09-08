@@ -90,14 +90,11 @@ func run(ctx context.Context, r Request, executable string) (result Result, err 
 		}
 	}()
 	git := func(args ...string) (string, error) { return inspect(ctx, r.Workspace, args...) }
-	top, e := git("rev-parse", "--show-toplevel")
-	if e != nil || top != r.Workspace {
-		return result, errors.New("workspace must be Git checkout root")
-	}
-	gd, e := git("rev-parse", "--absolute-git-dir")
-	if e != nil || !within(r.Workspace, gd) {
+	metadata, e := openPath(filepath.Join(r.Workspace, ".git"), true)
+	if e != nil {
 		return result, errors.New("Git metadata must be private inside checkout")
 	}
+	metadata.Close()
 	if _, e = git("check-ref-format", "refs/heads/"+r.Branch); e != nil {
 		return result, errors.New("invalid branch")
 	}
@@ -140,7 +137,7 @@ func run(ctx context.Context, r Request, executable string) (result Result, err 
 		}
 		args = append(args, "--image", p)
 	}
-	if _, e = git("checkout", "-b", r.Branch, r.BaseSHA); e != nil {
+	if e = createBranch(ctx, r.Workspace, r.Branch, r.BaseSHA); e != nil {
 		return result, errors.New("create new branch failed")
 	}
 	prompt, _ := json.Marshal(r.Prompt)
@@ -155,21 +152,19 @@ func run(ctx context.Context, r Request, executable string) (result Result, err 
 	output := &transcript{remaining: 1 << 20}
 	cmd.Stdout = output
 	cmd.Stderr = output
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = 2 * time.Second
+	group := prepareProcess(cmd, 2*time.Second)
 	if cmd.Start() != nil {
 		return result, errors.New("builder process could not start")
 	}
-	processErr := cmd.Wait()
-	// Kill residual group members before inspecting Git, even if the leader exited normally.
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	if st, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
-		if st.Signaled() {
-			result.Signal = int(st.Signal())
-		} else {
-			code := st.ExitStatus()
-			result.ExitCode = &code
+	processErr := group.wait(cmd)
+	if cmd.ProcessState != nil {
+		if st, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok {
+			if st.Signaled() {
+				result.Signal = int(st.Signal())
+			} else {
+				code := st.ExitStatus()
+				result.ExitCode = &code
+			}
 		}
 	}
 	result.Truncated = output.truncated
@@ -197,7 +192,7 @@ func run(ctx context.Context, r Request, executable string) (result Result, err 
 	if result.HEAD == "" || result.HEAD == r.BaseSHA || result.Branch != r.Branch || !result.Clean || ae != nil {
 		return result, errors.New("Git candidate requirements not met")
 	}
-	stats, de := inspect(inspectCtx, r.Workspace, "diff", "--numstat", "--no-renames", "--no-ext-diff", r.BaseSHA, result.HEAD, "--")
+	stats, de := inspect(inspectCtx, r.Workspace, "diff", "--numstat", "--no-renames", "--no-ext-diff", "--no-textconv", r.BaseSHA, result.HEAD, "--")
 	if de != nil {
 		return result, errors.New("Git change summary unavailable")
 	}
@@ -226,26 +221,12 @@ func within(root, p string) bool {
 func gitEnvironment() []string {
 	env := []string{}
 	for _, v := range os.Environ() {
-		if !strings.HasPrefix(v, "GIT_") {
+		name, _, _ := strings.Cut(v, "=")
+		if !blockedEnvironment(name) {
 			env = append(env, v)
 		}
 	}
 	return append(env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_NO_REPLACE_OBJECTS=1", "GIT_TERMINAL_PROMPT=0")
-}
-func inspect(ctx context.Context, workspace string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-optional-locks", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", workspace}, args...)...)
-	cmd.Env = gitEnvironment()
-	var b limitedText
-	cmd.Stdout = &b
-	cmd.Stderr = io.Discard
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = time.Second
-	err := cmd.Run()
-	if b.truncated {
-		err = errors.New("Git output exceeds limit")
-	}
-	return strings.TrimSpace(b.String()), err
 }
 
 // Transcript bytes are counted and discarded, never stored or copied into reports.

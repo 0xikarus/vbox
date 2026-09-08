@@ -46,3 +46,31 @@ Using `/data/workspace/toolchains/go/bin/go` inside this box:
 - `go test -race ./internal/factory/builder` could not run: CGO is disabled and this box has no C compiler. Ordinary tests/build/vet passed.
 
 No controller/shared/main/go.mod changes, other boxes, fleet work, delegated agents, PRs or deployment. Only the requested implementation branch is published by the outer task; the builder itself never publishes.
+
+## Review follow-up — 2026-09-08
+
+Continued from `9713c80` on `factory/feature-builder-0908`. Ran `git fetch origin proposal/software-factory` and read the established implementation using `git show FETCH_HEAD:internal/factory/verification/runner.go` and its tests/README. Fetched proposal commit: `3003f4ec85c430c1d72c55449c7293339ae17981`. The builder now uses the same Linux waitid WEXITED|WNOWAIT ownership ordering: observe without reaping, lock cancellation, kill residual owned group, disable subsequent cancellation, then reap using cmd.Wait. Trusted Git commands use the same ordering.
+
+Validation executed inside this box, Linux `6.18.15+deb13-cloud-amd64`, `go version go1.26.8 linux/amd64`:
+
+- `/data/workspace/toolchains/go/bin/go test ./internal/factory/builder -count=1 -v` — exit 0, `ok github.com/0xikarus/vmbox-service/internal/factory/builder 2.630s`.
+- `/data/workspace/toolchains/go/bin/go vet ./internal/factory/builder` — exit 0, no diagnostics.
+- `git diff --check` — exit 0.
+
+Exact new process-test observations:
+
+```text
+TestOwnedProcessGroup/normal-leader-exit:
+leader signal=0 exit=0; owned child stopped; unrelated sibling alive
+TestOwnedProcessGroup/cancellation:
+leader signal=9 exit=<nil>; owned child stopped; unrelated sibling alive
+TestLateCancellationCannotSignalReusedIdentity: PASS
+```
+
+The first two cases run real shell/child processes and wait for a child PID readiness file before releasing the leader or cancelling. The child holds inherited output pipes open. Normal exit still yields a valid committed candidate; cancellation yields context.Canceled, SIGKILL and no candidate. A killed orphan may be absent or zombie while awaiting PID 1 reaping. The late-cancellation case deterministically substitutes a live sibling's identity after reaping and verifies the closed cancellation gate returns os.ErrProcessDone without killing it; this models reuse, rather than claiming to force kernel PID reuse.
+
+`TestAgentCredentialEnvironment` passed: a real fixture agent does not inherit VMBOX/controller/factory/Railway/GitHub publication sentinel variables or GIT_CONFIG_COUNT, while HOME, XDG_CONFIG_HOME, CODEX_HOME, CLAUDE_CONFIG_DIR, OPENAI_API_KEY and ANTHROPIC_API_KEY retain their values. Namespace filtering is not an OS sandbox: arbitrarily named secrets, credentials on disk, inherited descriptors, network access and deliberate process-group escape require caller isolation.
+
+`TestInspectionDoesNotExecuteLocalConfig` passed with included local clean/smudge/required filter, external diff/textconv and fsmonitor configuration pointing to a marker-writing executable: trusted status detects changed bytes, trusted diff and branch creation succeed, and no execution marker appears. Inspection uses fresh metadata and overriding attributes; branch creation updates refs without checkout filters. `TestInspectionIgnoresIndexTrustFlags` passed for assume-unchanged and skip-worktree. Submodules and linked-worktree metadata are explicitly unsupported. Agent-invoked Git still has local repository configuration.
+
+All existing controlled builder tests passed. The opt-in `TestLiveImplementation` was skipped; this follow-up does not claim a new live-agent trial. Model/auth/permission CLI arguments are unchanged. Only builder files changed; no merge or deployment was performed.
