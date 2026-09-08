@@ -201,6 +201,20 @@ export function mountFactory(root, request) {
     attemptStatus.setAttribute('role', 'status'); detail.append(attemptStatus);
     // work.error is the server's user-safe diagnostic, rendered as inert text.
     if (work.error) detail.append(el('p', work.error, 'factory-error'));
+    if (list(work.featureAttempts).length) {
+      detail.append(el('h3', 'Feature execution'));
+      const scroll = el('div', undefined, 'factory-table'), table = el('table'), head = el('thead'), titles = el('tr'), body = el('tbody');
+      for (const label of ['Feature', 'Stage', 'Process', 'Outcome']) titles.append(el('th', label));
+      head.append(titles); table.append(head);
+      for (const a of work.featureAttempts) {
+        const row = el('tr'), process = el('td', a.state || 'unknown');
+        if (a.boxId) link(process, 'Box', '/boxes/' + encodeURIComponent(a.boxId));
+        const exit = Number.isInteger(a.exitCode) ? `exit ${a.exitCode}` : Number.isInteger(a.signal) && a.signal > 0 ? `signal ${a.signal}` : 'exit not observed';
+        row.append(el('td', a.featureId), el('td', a.stage), process, el('td', `${exit}${a.failure ? ' · ' + a.failure : ''}`));
+        body.append(row);
+      }
+      table.append(body); scroll.append(table); detail.append(scroll, el('p', 'Process exit is not feature acceptance. Verification, independent review and a matching PR are separate steps.'));
+    }
     savedAssets(detail, work.assets);
     detail.append(el('h3', 'Saved responses'));
     if (!list(work.messages).length) detail.append(el('p', 'No responses recorded yet.'));

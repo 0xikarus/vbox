@@ -250,6 +250,23 @@ func (s Store) mutate(ctx context.Context, account, workID string, version int, 
 		w.Features[i].PRURL = n.PRURL
 		if n.Attempt != nil {
 			w.Features[i].BoxID = n.Attempt.BoxID
+			a := n.Attempt
+			projected := factory.FeatureAttempt{ID: a.ID, FeatureID: n.Feature.ID, Stage: a.Stage, State: a.State, BoxID: a.BoxID, TaskID: a.TaskID, Failure: a.Failure}
+			if a.Process != nil {
+				projected.ExitCode = a.Process.ExitCode
+				projected.Signal = a.Process.Signal
+			}
+			found := false
+			for j := range w.FeatureAttempts {
+				if w.FeatureAttempts[j].ID == a.ID {
+					w.FeatureAttempts[j] = projected
+					found = true
+					break
+				}
+			}
+			if !found {
+				w.FeatureAttempts = append(w.FeatureAttempts, projected)
+			}
 		}
 	}
 	w.State = "implementing"

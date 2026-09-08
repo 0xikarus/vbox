@@ -127,7 +127,7 @@ func TestDurableFeatureAdmissionIdentityAndIsolation(t *testing.T) {
 }
 
 func TestTerminalFailureReleasesCapacityWithoutInventingExit(t *testing.T) {
-	s, _ := database(t)
+	s, core := database(t)
 	ctx := context.Background()
 	w := approved()
 	w.MaxWorkers = 2
@@ -166,6 +166,14 @@ func TestTerminalFailureReleasesCapacityWithoutInventingExit(t *testing.T) {
 	}
 	if _, err = s.Bind(ctx, "a", w.ID, x.Version, "api", p.AttemptID, p.BoxID, p.TaskID); !errors.Is(err, ErrConflict) {
 		t.Fatal("failed task replayed")
+	}
+	projected, err := core.Get(ctx, "a", w.ID)
+	if err != nil || len(projected.FeatureAttempts) != 1 {
+		t.Fatal("failure projection missing", err)
+	}
+	outcome := projected.FeatureAttempts[0]
+	if outcome.ExitCode == nil || *outcome.ExitCode != 0 || outcome.Failure != "candidate_rejected" || outcome.FeatureID != "api" {
+		t.Fatal("UI lost semantic/process distinction")
 	}
 	if _, err = s.Reserve(ctx, "a", w.ID, x.Version, "docs", "build", 1); err != nil {
 		t.Fatal("failure did not free admission", err)

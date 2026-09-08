@@ -31,26 +31,41 @@ type Attempt struct {
 	Signal   int    `json:"signal,omitempty"`
 }
 
+// FeatureAttempt is a read-only UI projection of controller-observed execution.
+// Planning attempts and approved feature specifications remain separate.
+type FeatureAttempt struct {
+	ID        string `json:"id"`
+	FeatureID string `json:"featureId"`
+	Stage     string `json:"stage"`
+	State     string `json:"state"`
+	BoxID     string `json:"boxId,omitempty"`
+	TaskID    string `json:"taskId,omitempty"`
+	ExitCode  *int   `json:"exitCode"`
+	Signal    int    `json:"signal,omitempty"`
+	Failure   string `json:"failure,omitempty"`
+}
+
 type Work struct {
 	CreateWork
-	ID                   string     `json:"id"`
-	Revision             int        `json:"revision"`
-	State                string     `json:"state"`
-	RepositoryName       string     `json:"repositoryName"`
-	BaseSHA              string     `json:"baseSha"`
-	Assets               []AssetRef `json:"assets"`
-	CreatedAt            time.Time  `json:"createdAt"`
-	UpdatedAt            time.Time  `json:"updatedAt"`
-	BoxID                string     `json:"boxId,omitempty"`
-	BoxName              string     `json:"boxName,omitempty"`
-	MasterIssueURL       string     `json:"masterIssueUrl,omitempty"`
-	Messages             []Message  `json:"messages"`
-	Plans                []Plan     `json:"plans"`
-	Features             []Feature  `json:"features"`
-	Attempts             []Attempt  `json:"attempts"`
-	ApprovedPlanRevision int        `json:"approvedPlanRevision,omitempty"`
-	MaxWorkers           int        `json:"maxWorkers,omitempty"`
-	Error                string     `json:"error,omitempty"`
+	ID                   string           `json:"id"`
+	Revision             int              `json:"revision"`
+	State                string           `json:"state"`
+	RepositoryName       string           `json:"repositoryName"`
+	BaseSHA              string           `json:"baseSha"`
+	Assets               []AssetRef       `json:"assets"`
+	CreatedAt            time.Time        `json:"createdAt"`
+	UpdatedAt            time.Time        `json:"updatedAt"`
+	BoxID                string           `json:"boxId,omitempty"`
+	BoxName              string           `json:"boxName,omitempty"`
+	MasterIssueURL       string           `json:"masterIssueUrl,omitempty"`
+	Messages             []Message        `json:"messages"`
+	Plans                []Plan           `json:"plans"`
+	Features             []Feature        `json:"features"`
+	Attempts             []Attempt        `json:"attempts"`
+	FeatureAttempts      []FeatureAttempt `json:"featureAttempts,omitempty"`
+	ApprovedPlanRevision int              `json:"approvedPlanRevision,omitempty"`
+	MaxWorkers           int              `json:"maxWorkers,omitempty"`
+	Error                string           `json:"error,omitempty"`
 }
 
 // Store uses its own tables. Controller/provider state remains behind its API.

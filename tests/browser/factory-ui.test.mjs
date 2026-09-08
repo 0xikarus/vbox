@@ -60,6 +60,21 @@ async function saved(page, id = 'w1') {
   await page.waitForFunction(id => document.querySelector('.factory > section:last-of-type').textContent.includes('Work ' + id), {}, id);
 }
 async function clickText(page, label) { await page.evaluate(label => Array.from(document.querySelectorAll('button')).find(b => b.textContent === label).click(), label); }
+test('feature outcomes distinguish exit zero, semantic rejection and missing exit', async t => {
+  const item = record('outcomes', 'implementing');
+  item.featureAttempts = [
+    {id:'a',featureId:'api',stage:'build',state:'exited',exitCode:0,failure:'candidate_rejected'},
+    {id:'b',featureId:'docs',stage:'build',state:'submitted',exitCode:null},
+    {id:'c',featureId:'ui',stage:'verify',state:'exited',exitCode:null,signal:9},
+  ];
+  const {page} = await fixture(t, {items:[item]});
+  await saved(page, 'outcomes');
+  const text = await page.$eval('#root', e => e.textContent);
+  assert.match(text, /exit 0 · candidate_rejected/);
+  assert.match(text, /exit not observed/);
+  assert.match(text, /signal 9/);
+  assert.match(text, /Process exit is not feature acceptance/);
+});
 async function upload(page, name = 'images', type = 'image/png') {
   await page.evaluate(({ name, type }) => {
     const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII='), c => c.charCodeAt(0));
