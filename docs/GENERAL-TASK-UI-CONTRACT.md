@@ -63,3 +63,21 @@ accepted task before fresh staging/cap issuance. Report startup/auth failures.
 
 All tests/builds run inside vmbox boxes. No main merge or production deployment.
 This contract describes work being implemented, not a claim of existing support.
+
+## Current implementation handles
+
+Shared contract/controller helpers: `f31ca0b`; launch regression coverage:
+`c7f12f6`. In-box task `23a037d7-6797-4a52-84ea-de5c00000000` passed
+the builder/verifier/general task controller tests and scoped vet with exit 0.
+
+- UI worker: `64178c3a-a54e-4931-8b74-bf5500000000`,
+  `factory/general-task-ui-0908`, box `factory-ui-0908`.
+- Backend worker: `2cb9bb86-818d-4115-8a03-3ead00000000`,
+  `factory/general-task-backend-0908`, box `factory-assets-0908`.
+- Runtime worker: `e513f195-c09e-4013-8100-1cae00000000`,
+  `factory/general-task-runtime-0908`, box `factory-review-0908`.
+
+All three were observed running. Root has uncommitted navigation/static-route
+wiring in app.js, index.html and server.go; integrate it with the actual UI
+assets, not separately. Backend startup/runtime configuration and full real
+UI-to-worker acceptance still need integration after these workers finish.
