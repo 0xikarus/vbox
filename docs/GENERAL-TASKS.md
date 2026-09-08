@@ -46,7 +46,18 @@ No external messages, purchases, bookings, browsing or repository mutations.
   `factory-ui-0908`.
 - Logistics worker: `2ebb8bcf-3167-4ba5-84b9-329300000000`, box
   `factory-integration-0908`.
-- Both worker submissions accepted (queued); no result or synthesis yet.
+- Agenda worker completed with actual exit 0 and a timed 120-minute agenda.
+- Initial logistics worker exited 1: Codex received HTTP 401 authentication
+  errors. Controller access worked, but that box lacked usable agent auth.
+- Explicit logistics retry `fd83a13a-25ee-4884-8cb0-c15800000000` on
+  `factory-assets-0908` completed with exit 0 using its existing saved login.
+  No credentials or model settings were changed; the failed attempt remains.
+- Both actual final worker outputs were sent to coordinator synthesis task
+  `f9b50f95-ddab-43f6-8ae3-a0e500000000` on `factory-review-0908`.
+  Synthesis is queued; semantic acceptance is not yet established.
+
+Dispatch must distinguish controller authorization from per-box agent login
+readiness. A failed authentication attempt must remain visible across retries.
 
 This first trial is dispatched by the implementation agent through the existing
 controller API. It is **not** proof that the new UI or scoped coordinator
