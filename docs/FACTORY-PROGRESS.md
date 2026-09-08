@@ -73,8 +73,10 @@ Latest continuation (2026-09-08):
   `vmbox-planner`: bounded private stdin job, actual agent exit/signal receipt,
   durable start marker, create-only evidence, and authenticated result delivery.
   Lost delivery responses retry the stored receipt, not the agent execution.
-  New command tests/build task `c9939798-f6f2-4521-813b-0d0200000000` is running
-  in the integration box. These fixture tests are not a live planning-loop proof.
+  New command tests/vet/build task `c9939798-f6f2-4521-813b-0d0200000000` passed
+  with exit 0 in the integration box. These fixtures are not live planning proof.
+  Combined regression at `49356c4` is queued as
+  `ddfe708c-4025-4220-822f-b3f100000000` in the same box.
 - `fc3a4be` preserves provisioning identity/phase in the dispatcher and adds
   controller-resolved connections plus fixed-command planner submission. The
   private staging transport and concrete Start/Observe adapter remain unwired.
@@ -89,7 +91,7 @@ Latest continuation (2026-09-08):
   `5bcc63f`. Encrypted App configuration is integrated at `6b90d12`.
   Live authorized-App verification remains outstanding.
 - Planner runtime worker `9ff13c42-5b3c-4069-8574-e48400000000` exited 0
-  and pushed `3a6bf9c` on `factory/planner-runtime-0908`. Not integrated yet.
+  and pushed `3a6bf9c` on `factory/planner-runtime-0908` (integrated as `e017437`).
   Its evidence records actual Codex image grounding (exit 0, valid structured
   result); Claude live authentication failed. This is not UI-to-box proof.
 - Diagnostic `d441852c-d4ca-4a98-8db9-4beb00000000` exited 0 in the integration
