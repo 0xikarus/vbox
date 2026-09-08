@@ -210,19 +210,28 @@ func TestStageLocalShell(t *testing.T) {
 }
 
 func TestStageBuilderRoleCannotReplacePlannerOrReuseAttempt(t *testing.T) {
+	testStagedRole(t, "builder")
+}
+
+func TestStageVerifierRoleCannotReplacePlannerOrReuseAttempt(t *testing.T) {
+	testStagedRole(t, "verifier")
+}
+
+func testStagedRole(t *testing.T, role string) {
+	t.Helper()
 	s, in, f, _ := setup(t)
 	mustStage(t, s, in)
 	planner, err := os.ReadFile(filepath.Join(f.root, "bin/vmbox-planner"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.Role = "builder"
+	s.Role = role
 	if err = s.Stage(context.Background(), in); err == nil {
 		t.Fatal("attempt role changed")
 	}
 	in.AttemptID = strings.Repeat("c", 32)
 	mustStage(t, s, in)
-	binary, err := os.ReadFile(filepath.Join(f.root, "bin/vmbox-builder"))
+	binary, err := os.ReadFile(filepath.Join(f.root, "bin/vmbox-"+role))
 	if err != nil || !bytes.Equal(binary, planner) {
 		t.Fatal("builder transfer mismatch", err)
 	}

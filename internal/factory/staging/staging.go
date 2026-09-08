@@ -60,7 +60,7 @@ func (s Stager) Stage(ctx context.Context, in Input) error {
 	if role == "" {
 		role = "planner"
 	}
-	if role != "planner" && role != "builder" {
+	if role != "planner" && role != "builder" && role != "verifier" {
 		return fmt.Errorf("unsupported staging role")
 	}
 	if !identity.MatchString(in.AttemptID) || !repository.MatchString(in.Repository) || !revision.MatchString(in.BaseSHA) || len(in.SourceToken) > 4096 || !token.MatchString(in.SourceToken) {

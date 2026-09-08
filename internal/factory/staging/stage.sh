@@ -56,7 +56,7 @@ work=$(mktemp -d "$root/scratch/stage.XXXXXXXXXXXX")
 read -r digest
 [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || fail
 read -r attempt; [[ "$attempt" =~ ^[0-9a-f]{32}$ ]] || fail
-read -r role; [[ "$role" == planner || "$role" == builder ]] || fail
+read -r role; [[ "$role" == planner || "$role" == builder || "$role" == verifier ]] || fail
 stage_binary="bin/vmbox-$role"
 read -r repo; [[ "$repo" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$ ]] || fail
 read -r sha; [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || fail

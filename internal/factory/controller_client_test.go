@@ -77,6 +77,19 @@ func TestControllerBindingRevalidatesAuthority(t *testing.T) {
 }
 
 func TestBuilderBoxAndTaskRecoveryStaySeparateFromPlanning(t *testing.T) {
+	testIndependentBox(t, false)
+}
+
+func TestVerifierBoxHasNoProfilesAndRecoversItsOwnTask(t *testing.T) {
+	testIndependentBox(t, true)
+}
+
+func testIndependentBox(t *testing.T, verifier bool) {
+	t.Helper()
+	role, prefix := "builder", "factory-build"
+	if verifier {
+		role, prefix = "verifier", "factory-verify"
+	}
 	attempt := strings.Repeat("c", 32)
 	work := Work{ID: strings.Repeat("a", 32), CreateWork: CreateWork{Agent: "codex", Profile: "saved"}, BoxID: "planner"}
 	boxes := []v1.LogicalBox{{ID: "planner", Name: "factory-plan-" + work.ID, State: v1.LogicalBoxRunning}}
@@ -102,7 +115,11 @@ func TestBuilderBoxAndTaskRecoveryStaySeparateFromPlanning(t *testing.T) {
 			if json.NewDecoder(r.Body).Decode(&in) != nil {
 				t.Error("invalid creation")
 			}
-			if in.Name != "factory-build-"+attempt || len(in.LoginProfiles) != 1 || in.LoginProfiles[0].Application != "codex" || in.LoginProfiles[0].Name != "saved" || r.Header.Get("Idempotency-Key") != "factory-build-box:"+attempt {
+			validProfiles := len(in.LoginProfiles) == 1 && in.LoginProfiles[0].Application == "codex" && in.LoginProfiles[0].Name == "saved"
+			if verifier {
+				validProfiles = len(in.LoginProfiles) == 0
+			}
+			if in.Name != prefix+"-"+attempt || !validProfiles || in.DefaultAgent != "shell" || r.Header.Get("Idempotency-Key") != prefix+"-box:"+attempt {
 				t.Error("wrong builder provisioning")
 			}
 			creates++
@@ -121,8 +138,8 @@ func TestBuilderBoxAndTaskRecoveryStaySeparateFromPlanning(t *testing.T) {
 			if json.NewDecoder(r.Body).Decode(&in) != nil {
 				t.Error("invalid task")
 			}
-			want := "exec /data/workspace/.vmbox-factory/bin/vmbox-builder < /data/workspace/.vmbox-factory/attempts/" + attempt + "/job.json"
-			if in.Prompt != want || in.Agent != "shell" || r.Header.Get("Idempotency-Key") != "factory-build:"+attempt {
+			want := "exec /data/workspace/.vmbox-factory/bin/vmbox-" + role + " < /data/workspace/.vmbox-factory/attempts/" + attempt + "/job.json"
+			if in.Prompt != want || in.Agent != "shell" || r.Header.Get("Idempotency-Key") != prefix+":"+attempt {
 				t.Error("builder command changed")
 			}
 			task := v1.ProcessTask{ID: "task", LogicalBoxID: "builder", Agent: "shell", Prompt: in.Prompt}
@@ -135,24 +152,28 @@ func TestBuilderBoxAndTaskRecoveryStaySeparateFromPlanning(t *testing.T) {
 	}))
 	defer server.Close()
 	c := &ControllerClient{URL: server.URL, Token: "fixture", AccountID: "a"}
+	ensure, submit, find := c.EnsureBuilderBox, c.SubmitBuilder, c.FindBuilder
+	if verifier {
+		ensure, submit, find = c.EnsureVerifierBox, c.SubmitVerifier, c.FindVerifier
+	}
 	ctx := context.Background()
-	b, err := c.EnsureBuilderBox(ctx, "a", work, attempt, "")
+	b, err := ensure(ctx, "a", work, attempt, "")
 	if err != nil || b.ID != "builder" {
 		t.Fatal(b, err)
 	}
-	if _, err = c.EnsureBuilderBox(ctx, "a", work, attempt, b.ID); err != nil {
+	if _, err = ensure(ctx, "a", work, attempt, b.ID); err != nil {
 		t.Fatal(err)
 	}
 	if creates != 1 || allocations != 1 {
 		t.Fatal("builder identity not recovered")
 	}
-	if _, err = c.EnsureBuilderBox(ctx, "a", work, attempt, "planner"); err == nil {
+	if _, err = ensure(ctx, "a", work, attempt, "planner"); err == nil {
 		t.Fatal("planner reused as builder")
 	}
-	if _, err = c.SubmitBuilder(ctx, "a", b.ID, attempt); err != nil {
+	if _, err = submit(ctx, "a", b.ID, attempt); err != nil {
 		t.Fatal(err)
 	}
-	recovered, err := c.FindBuilder(ctx, "a", b.ID, attempt)
+	recovered, err := find(ctx, "a", b.ID, attempt)
 	if err != nil || recovered == nil || recovered.ID != "task" {
 		t.Fatal("builder receipt not found", err)
 	}
@@ -160,7 +181,7 @@ func TestBuilderBoxAndTaskRecoveryStaySeparateFromPlanning(t *testing.T) {
 		t.Fatal("builder mistaken for planner")
 	}
 	tasks = append(tasks, tasks[0])
-	if _, err = c.FindBuilder(ctx, "a", b.ID, attempt); err == nil {
+	if _, err = find(ctx, "a", b.ID, attempt); err == nil {
 		t.Fatal("ambiguous duplicate accepted")
 	}
 }

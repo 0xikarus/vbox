@@ -139,6 +139,19 @@ func (c *ControllerClient) EnsureBuilderBox(ctx context.Context, account string,
 	return c.ensureFactoryBox(ctx, w, "factory-build-"+attemptID, "factory-build-box:"+attemptID, "factory-build-resume:"+attemptID)
 }
 
+// EnsureVerifierBox provisions an independent shell-only workspace. Verification
+// must not inherit the builder's agent or GitHub login profiles.
+func (c *ControllerClient) EnsureVerifierBox(ctx context.Context, account string, w Work, attemptID, boxID string) (v1.LogicalBox, error) {
+	if err := c.Authorize(ctx, account); err != nil {
+		return v1.LogicalBox{}, err
+	}
+	if !factoryIdentity(w.ID) || !factoryIdentity(attemptID) {
+		return v1.LogicalBox{}, fmt.Errorf("invalid verifier identity")
+	}
+	w.BoxID, w.Agent, w.Profile = boxID, "shell", ""
+	return c.ensureFactoryBox(ctx, w, "factory-verify-"+attemptID, "factory-verify-box:"+attemptID, "factory-verify-resume:"+attemptID)
+}
+
 func factoryIdentity(id string) bool {
 	if len(id) != 32 {
 		return false
@@ -180,7 +193,11 @@ func (c *ControllerClient) ensureFactoryBox(ctx context.Context, w Work, name, c
 		return v1.LogicalBox{}, err
 	}
 	var b v1.LogicalBox
-	err := c.request(ctx, "POST", "/v1/logical-boxes", createKey, v1.CreateLogicalBoxRequest{Name: name, Provider: defaults.Provider, ProviderCredential: defaults.ProviderCredential, DefaultAgent: "shell", DiskGiB: 10, LoginProfiles: []v1.LoginProfileRef{{Application: w.Agent, Name: w.Profile}}}, &b)
+	profiles := []v1.LoginProfileRef{}
+	if w.Profile != "" {
+		profiles = append(profiles, v1.LoginProfileRef{Application: w.Agent, Name: w.Profile})
+	}
+	err := c.request(ctx, "POST", "/v1/logical-boxes", createKey, v1.CreateLogicalBoxRequest{Name: name, Provider: defaults.Provider, ProviderCredential: defaults.ProviderCredential, DefaultAgent: "shell", DiskGiB: 10, LoginProfiles: profiles}, &b)
 	return b, err
 }
 
@@ -221,6 +238,10 @@ func (c *ControllerClient) SubmitBuilder(ctx context.Context, account, boxID, at
 	return c.submitFactoryJob(ctx, account, boxID, attemptID, "builder", "factory-build:")
 }
 
+func (c *ControllerClient) SubmitVerifier(ctx context.Context, account, boxID, attemptID string) (v1.ProcessTask, error) {
+	return c.submitFactoryJob(ctx, account, boxID, attemptID, "verifier", "factory-verify:")
+}
+
 func (c *ControllerClient) submitFactoryJob(ctx context.Context, account, boxID, attemptID, binary, keyPrefix string) (v1.ProcessTask, error) {
 	var task v1.ProcessTask
 	if boxID == "" || len(attemptID) != 32 {
@@ -251,6 +272,10 @@ func (c *ControllerClient) FindPlanner(ctx context.Context, account, boxID, atte
 
 func (c *ControllerClient) FindBuilder(ctx context.Context, account, boxID, attemptID string) (*v1.ProcessTask, error) {
 	return c.findFactoryJob(ctx, account, boxID, attemptID, "builder")
+}
+
+func (c *ControllerClient) FindVerifier(ctx context.Context, account, boxID, attemptID string) (*v1.ProcessTask, error) {
+	return c.findFactoryJob(ctx, account, boxID, attemptID, "verifier")
 }
 
 func (c *ControllerClient) findFactoryJob(ctx context.Context, account, boxID, attemptID, binary string) (*v1.ProcessTask, error) {
