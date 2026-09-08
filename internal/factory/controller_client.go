@@ -164,6 +164,33 @@ func factoryIdentity(id string) bool {
 	return true
 }
 
+// EnsureTaskBox provisions a general coordinator/worker without a repository.
+// Every durable attempt owns a separate box with its explicitly selected login.
+func (c *ControllerClient) EnsureTaskBox(ctx context.Context, account, workID, attemptID, boxID, agent, profile string) (v1.LogicalBox, error) {
+	if err := c.Authorize(ctx, account); err != nil {
+		return v1.LogicalBox{}, err
+	}
+	if !factoryIdentity(workID) || !factoryIdentity(attemptID) || (agent != "codex" && agent != "claude") || strings.TrimSpace(profile) == "" {
+		return v1.LogicalBox{}, fmt.Errorf("invalid general task identity or profile")
+	}
+	w := Work{ID: workID, BoxID: boxID, CreateWork: CreateWork{Agent: agent, Profile: profile}}
+	return c.ensureFactoryBox(ctx, w, "task-"+attemptID, "task-box:"+attemptID, "task-resume:"+attemptID)
+}
+
+func (c *ControllerClient) SubmitTaskRunner(ctx context.Context, account, boxID, attemptID string) (v1.ProcessTask, error) {
+	return c.submitFactoryJob(ctx, account, boxID, attemptID, "task-runner", "task-run:")
+}
+func (c *ControllerClient) FindTaskRunner(ctx context.Context, account, boxID, attemptID string) (*v1.ProcessTask, error) {
+	return c.findFactoryJob(ctx, account, boxID, attemptID, "task-runner")
+}
+func factoryJobCommand(binary, attemptID string) string {
+	root := "/data/workspace/.vmbox-factory"
+	if binary == "task-runner" {
+		root = "/data/workspace/.vmbox-tasks"
+	}
+	return "exec " + root + "/bin/vmbox-" + binary + " < " + root + "/attempts/" + attemptID + "/job.json"
+}
+
 func (c *ControllerClient) ensureFactoryBox(ctx context.Context, w Work, name, createKey, resumeKey string) (v1.LogicalBox, error) {
 	var boxes []v1.LogicalBox
 	if err := c.request(ctx, "GET", "/v1/logical-boxes", "", nil, &boxes); err != nil {
@@ -255,8 +282,7 @@ func (c *ControllerClient) submitFactoryJob(ctx context.Context, account, boxID,
 	if err := c.Authorize(ctx, account); err != nil {
 		return task, err
 	}
-	root := "/data/workspace/.vmbox-factory/attempts/" + attemptID
-	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-" + binary + " < " + root + "/job.json"
+	command := factoryJobCommand(binary, attemptID)
 	err := c.request(ctx, "POST", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/process-tasks", keyPrefix+attemptID, v1.CreateBoxTaskRequest{Agent: "shell", Prompt: command}, &task)
 	if err == nil && (task.ID == "" || task.LogicalBoxID != boxID || task.Agent != "shell" || task.Prompt != command) {
 		err = fmt.Errorf("submitted planner identity changed")
@@ -294,7 +320,7 @@ func (c *ControllerClient) findFactoryJob(ctx context.Context, account, boxID, a
 	if err := c.request(ctx, "GET", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/process-tasks", "", nil, &tasks); err != nil {
 		return nil, err
 	}
-	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-" + binary + " < /data/workspace/.vmbox-factory/attempts/" + attemptID + "/job.json"
+	command := factoryJobCommand(binary, attemptID)
 	var found *v1.ProcessTask
 	for _, task := range tasks {
 		if task.Prompt != command {
