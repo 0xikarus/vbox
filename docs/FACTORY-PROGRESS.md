@@ -35,10 +35,26 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
   the integration box: task `8eed46c7-ab42-4719-82cd-5c0e00000000`. The box was
   hibernated before submission; if PostgreSQL packages/daemon did not survive,
   inspect the actual failure and prepare the new worker before another test.
+- That combined task exited 1 before tests: replacement worker lacked
+  `pg_ctlcluster`. `104d38c` adds repeatable in-box setup with an isolated private
+  PostgreSQL cluster (no TCP); task `9afb096e-dd7c-4c07-80e7-c63700000000`
+  then executed actual tests. Factory core/assets passed, but full suite failed:
+  new all-method gateway route conflicted with `GET /`, and existing
+  `TestIdleHibernateRealTmux` reported a remaining server. Vet was not reached.
+- `c846166` fixes gateway routing with explicit HTTP methods and adds the service
+  executable plus idempotent planner dispatcher. It is NOT deployed; repository
+  and execution adapters are still unconfigured (no fake fallback). Verification
+  task `e4fd512a-d13a-4544-8707-ef7400000000` is queued in the integration box,
+  including five bounded repeats of the observed tmux test for diagnosis.
+- GitHub App client worker reuses the UI box: task
+  `518995c7-fde8-4e7f-8fc4-7c9500000000`, last observed **running**, branch
+  `factory/github-app-0908`, owns `internal/factory/githubapp/**` only. Scope:
+  scoped installation tokens, authorized repository listing/resolution and HTTP
+  security tests. Live App credentials remain requested, not assumed available.
 - Gateway strips browser/identity headers and injects account/user plus a dedicated
   service credential. New feature is disabled without explicit backend config.
-  Factory HTTP handlers and private-assets adapter exist; service executable,
-  GitHub backend, planning dispatcher and actual multimodal delivery remain next.
+  Factory HTTP handlers, private-assets adapter, service executable and dispatcher
+  exist; GitHub wiring and actual box/multimodal execution remain next.
   No backend/server has been deployed. UI fixture checks are not end-to-end proof.
 - Both use the saved Codex profile that passed provisioning and existing GitHub
   credentials. Other Claude/Codex profile selections were rejected at create
