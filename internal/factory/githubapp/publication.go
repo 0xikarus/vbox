@@ -130,19 +130,26 @@ func (c *Client) PublishIssueComment(ctx context.Context, a WriteAuthority, op P
 }
 
 func (c *Client) issueScope(ctx context.Context, a WriteAuthority) (factory.Repository, accessToken, error) {
+	if !a.IssuesWrite {
+		return factory.Repository{}, accessToken{}, ErrNotAllowed
+	}
+	return c.publicationScope(ctx, a.AccountID, a.RepositoryID, map[string]string{"metadata": "read", "issues": "write"})
+}
+
+func (c *Client) publicationScope(ctx context.Context, account, repositoryID string, permissions map[string]string) (factory.Repository, accessToken, error) {
 	fail := func(err error) (factory.Repository, accessToken, error) {
 		return factory.Repository{}, accessToken{}, err
 	}
-	id, err := strconv.ParseInt(a.RepositoryID, 10, 64)
-	if !a.IssuesWrite || a.AccountID == "" || err != nil || id <= 0 || strconv.FormatInt(id, 10) != a.RepositoryID {
+	id, err := strconv.ParseInt(repositoryID, 10, 64)
+	if account == "" || err != nil || id <= 0 || strconv.FormatInt(id, 10) != repositoryID {
 		return fail(ErrNotAllowed)
 	}
-	repos, err := c.List(ctx, a.AccountID)
+	repos, err := c.List(ctx, account)
 	if err != nil {
 		return fail(err)
 	}
 	for _, r := range repos {
-		if r.ID != a.RepositoryID {
+		if r.ID != repositoryID {
 			continue
 		}
 		jwt, err := c.jwt()
@@ -154,18 +161,23 @@ func (c *Client) issueScope(ctx context.Context, a WriteAuthority) (factory.Repo
 			Permissions map[string]string `json:"permissions"`
 		}
 		_, err = c.request(ctx, "POST", fmt.Sprintf("/app/installations/%d/access_tokens", r.InstallationID), jwt,
-			map[string]any{"repository_ids": []int64{id}, "permissions": map[string]string{"metadata": "read", "issues": "write"}}, &token)
+			map[string]any{"repository_ids": []int64{id}, "permissions": permissions}, &token)
 		if err != nil {
 			return fail(err)
 		}
-		if token.Token == "" || !token.ExpiresAt.After(time.Now().Add(time.Minute)) || token.Permissions["issues"] != "write" {
+		if token.Token == "" || !token.ExpiresAt.After(time.Now().Add(time.Minute)) {
 			return fail(ErrNotAllowed)
+		}
+		for name, level := range permissions {
+			if name != "metadata" && token.Permissions[name] != level {
+				return fail(ErrNotAllowed)
+			}
 		}
 		visible, err := c.repositories(ctx, token.accessToken, r.InstallationID)
 		if err != nil {
 			return fail(err)
 		}
-		if len(visible) != 1 || visible[0].ID != a.RepositoryID {
+		if len(visible) != 1 || visible[0].ID != repositoryID {
 			return fail(ErrNotAllowed)
 		}
 		// Reject dot segments even if an upstream response passes the name regexp.

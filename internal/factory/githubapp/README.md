@@ -1,5 +1,27 @@
 # Scoped GitHub App repository client
 
+## Feature pull requests
+
+`PublishPullRequest` requires explicit operator `PullAuthority`, a reviewed
+candidate SHA and an already-pushed `factory/` branch. It requests only metadata
+read, contents read and pull requests write for that repository. It never pushes,
+merges or enables auto-merge. The same durable intent/serialization and
+`ReconcileOnly` requirements as issue publication apply. Stable markers bind the
+payload; all-state paginated scans and an individual PR read reject conflicting,
+closed, foreign-repository or changed-head results. The actual candidate is
+checked before creation and after publication. Concurrent future branch changes
+still require revalidation before integration; no immutable-PR claim is made.
+
+This method currently supports GitHub.com only (literal loopback for tests).
+Enterprise PR web URL configuration is not implemented. HTTP fixtures cover
+scope, lost POST responses, repeated reconciliation, head changes and denied
+grants; live App creation remains unverified.
+
+API shape/permissions checked against GitHub's
+[pull request REST documentation](https://docs.github.com/en/rest/pulls/pulls#create-a-pull-request)
+on 2026-09-08. Caller-side review approval, branch transfer and durable publication
+coordinator wiring remain separate requirements.
+
 `New(Config)` copies a trusted controller-account → installation-ID allowlist.
 Repository IDs are canonical positive decimal GitHub REST IDs. Unknown accounts
 fail closed. An installation may be shared only by explicitly listing it for each
