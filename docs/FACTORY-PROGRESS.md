@@ -9,6 +9,10 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 - Read the full goal attachment and current source/state.
 - Shared first-slice contract committed/pushed as `69b5072`.
 - Added core work/plan types and validation tests (not yet executed in-box).
+- `75c7698` adds core types and approval validation. `9c99351` adds PostgreSQL
+  work/conversation storage, optimistic revisions, idempotent replies/approval,
+  durable planning attempts and reclaimable fenced leases. Source is pushed;
+  functionality is not yet integrated into the controller UI.
 - UI worker: `factory-ui-0908`, box ID
   `1e2139db-766f-4a7e-8440-ced500000000`, task ID
   `0458ec2e-c979-4bb4-8b6b-edad00000000`, branch `factory/ui-plan-0908`.
@@ -16,7 +20,13 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 - Asset worker: `factory-assets-0908`, box ID
   `1bf0d5e0-129f-4828-86f6-672200000000`, task ID
   `a23c41ab-7ed4-4312-815e-ee0200000000`, branch `factory/assets-0908`.
-  Last observed **queued**. Scope: private asset package and tests only.
+  Last observed **running**. Scope: private asset package and tests only.
+- Integration box: `factory-integration-0908`, ID
+  `cf712a55-c4b7-4626-86d9-28dd00000000`. Test task
+  `faa411d0-a078-4901-8b3b-009b00000000` last observed **queued**, pinned to
+  `9c99351`. Installs Go 1.26.0 (official checksum verified) and isolated local
+  PostgreSQL inside the box, then runs core tests/vet with real DB tests enabled.
+  Observe this exact task; do not start another because its queue/resume is slow.
 - Both use the saved Codex profile that passed provisioning and existing GitHub
   credentials. Other Claude/Codex profile selections were rejected at create
   (HTTP 400); those rejected requests did not create their requested workspaces.
@@ -26,6 +36,7 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 ## Next actions
 
 Poll the exact task IDs above; observation failures must not cause resubmission.
+Three isolated boxes now exist; total fleet remains 4, below the approved 6.
 Integrate only their scoped commits into the feature branch after inspecting
 actual diffs/test evidence. Continue coordinator persistence, account gateway,
 repository/App broker, image staging and real planning response ingestion.
