@@ -66,6 +66,25 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- Remote builder adapter `f2e1368` and correction `292758c` are integrated as
+  `879fba3` and `3117362`. Correction task
+  `d706218c-8f9f-445f-8db5-781300000000` exited 0. Its tests call actual
+  Store Reserve/Bind projection code through SQL fixtures, then Start/Observe;
+  this is not a live controller build or a PostgreSQL concurrency test.
+- Pending-box regression task `971aba3f-79b9-4274-8c22-448b00000000`
+  at `f0ad1ed` exited 0: full Go tests, isolated PostgreSQL tests and vet passed, including
+  the real tmux test that previously hit a filesystem-flush timeout.
+- Build scheduler worker `b286bb31-65ad-4c7d-8714-2c8700000000` is queued
+  in `factory-assets-0908` on `factory/build-scheduler-0908` from `3117362`.
+  Scope is `internal/factory/builddispatch/**`: leased coordination, pending
+  box/task recovery, capacity, actual build exit handling and durable candidate
+  metadata. Artifact transfer and independent verification remain separate
+  required work; no scheduler deployment or live GitHub writes are authorized.
+- Lease test task `b9dd3dbc-ae01-4392-8ec1-031300000000` exited 1:
+  the new fixture omitted MaxWorkers, so admission correctly rejected its
+  zero-capacity work before lease recovery checks. Set explicit capacity 2;
+  this is a fixture correction, not a change to production admission policy.
+
 - `9f2271e` adds renewable per-account/work execution coordination leases.
   The leased Store checks ownership/expiry inside each mutation transaction;
   a replaced scheduler cannot bind results or release its successor's lease.

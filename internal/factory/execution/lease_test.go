@@ -11,6 +11,7 @@ func TestSchedulerLeaseRecoveryFencesOldWriter(t *testing.T) {
 	s, _ := database(t)
 	ctx := context.Background()
 	w := approved()
+	w.MaxWorkers = 2
 	b, _ := json.Marshal(w)
 	if _, err := s.DB.Exec(`INSERT INTO factory_work_items(id,account_id,user_id,request_key,request_hash,revision,state,document,created_at,updated_at) VALUES($1,'a','u','lease','lease',2,'build_queued',$2,now(),now())`, w.ID, b); err != nil {
 		t.Fatal(err)
