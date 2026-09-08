@@ -2,7 +2,7 @@
 
 Feature branch: `proposal/software-factory`. No main merge or production deploy.
 Maximum authorized fleet capacity: **6**. Current desired capacity remains 4;
-two isolated workers use existing capacity. User box `tt2` is untouched.
+isolated implementation/test workers use existing capacity. User box `tt2` is untouched.
 
 ## 2026-09-08 bootstrap
 
@@ -65,6 +65,22 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 ## Next actions
 
 Latest continuation (2026-09-08):
+
+- `0e0c9bd` terminal failure handling passed full Go/PostgreSQL tests and vet in
+  task `05894bfe-dad0-476a-8bad-47ff00000000`, actual exit 0. No local tests ran.
+- `1a38dc5` projects durable feature-attempt history into the Factory UI:
+  actual exit/signal/unknown outcomes remain separate from semantic acceptance.
+  Combined Go/PostgreSQL plus Chromium fixture task
+  `9e2c475c-3ccd-4e45-8010-858d00000000` is queued in the integration box.
+  Browser fixtures are not a substitute for live UI → App → worker acceptance.
+- Created disposable `factory-review-0908`, box
+  `48734647-d155-4284-8b13-671700000000`, using the existing fourth slot.
+  Independent-review adapter task `33c971ab-45af-420e-8af6-7c2a00000000` is
+  running on branch `factory/independent-review-0908`, scoped only to
+  `internal/factory/reviewer/**`. It must inspect real source/diff and preserve
+  actual process outcomes, with a real Codex defective-source review test.
+  Builder review follow-up `eecb6fea-9fe1-4066-85bd-edbb00000000` is also running.
+  Neither worker's pending changes are integrated. Desired fleet capacity is 4.
 
 - `3003f4e` passed full Go tests, real PostgreSQL tests and vet inside the
   integration box: task `4bc3d356-64e7-4064-8bb1-533800000000`, actual exit 0.
