@@ -34,6 +34,8 @@ type Server struct {
 	recent          map[string][]time.Time
 	replyWatches    map[string]struct{}
 	PublicURL       string
+	FactoryURL      string
+	FactoryToken    string
 	DefaultImage    string
 	WorkerRuntime   []byte
 	Resolve         ProviderResolver
@@ -69,6 +71,7 @@ func NewServer(store *Store, providers *provider.Registry) *Server {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/factory/", s.auth(s.factoryGateway))
 	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
 	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))
