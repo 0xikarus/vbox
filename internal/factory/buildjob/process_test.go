@@ -140,7 +140,7 @@ func TestRealBundleAndReceiptRedelivery(t *testing.T) {
 		t.Fatal("pre-baseline ancestry exported")
 	}
 	git(t, imported, "checkout", "--detach", head)
-	checked, err := verification.Run(context.Background(), verification.Request{Workspace: imported, ExpectedSHA: head, OutputDir: filepath.Join(t.TempDir(), "evidence"), Checks: []factory.Check{{Argv: []string{"/bin/sh", "-c", "test \"$(cat file)\" = candidate"}, Cwd: ".", TimeoutSeconds: 5}}})
+	checked, err := verification.Run(context.Background(), verification.Request{Workspace: imported, ExpectedSHA: head, OutputDir: t.TempDir(), Checks: []factory.Check{{Argv: []string{"/bin/sh", "-c", "test \"$(cat file)\" = candidate"}, Cwd: ".", TimeoutSeconds: 5}}})
 	if err != nil || !checked.AllPassed || len(checked.Checks) != 1 || checked.Checks[0].ExitCode == nil || *checked.Checks[0].ExitCode != 0 {
 		t.Fatal("independent imported-source check failed", checked, err)
 	}
