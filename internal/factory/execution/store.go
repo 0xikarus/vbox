@@ -16,7 +16,10 @@ import (
 var ErrConflict = errors.New("feature execution revision or identity changed")
 var ErrCapacity = errors.New("feature worker capacity is occupied")
 
-type Store struct{ DB *sql.DB }
+type Store struct {
+	DB    *sql.DB
+	lease *Lease
+}
 type Snapshot struct {
 	Version int
 	Graph   Graph
@@ -26,6 +29,10 @@ func (s Store) Migrate(ctx context.Context) error {
 	_, err := s.DB.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS factory_execution_graphs (
  account_id TEXT NOT NULL, work_id TEXT NOT NULL REFERENCES factory_work_items(id),
  version BIGINT NOT NULL, document JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+ PRIMARY KEY(account_id,work_id));
+CREATE TABLE IF NOT EXISTS factory_execution_leases (
+ account_id TEXT NOT NULL, work_id TEXT NOT NULL REFERENCES factory_work_items(id),
+ token TEXT NOT NULL, expires_at TIMESTAMPTZ NOT NULL,
  PRIMARY KEY(account_id,work_id))`)
 	return err
 }
@@ -35,6 +42,9 @@ func (s Store) Initialize(ctx context.Context, account, workID string) (Snapshot
 		return Snapshot{}, err
 	}
 	defer tx.Rollback()
+	if err = s.guardLease(ctx, tx, account, workID); err != nil {
+		return Snapshot{}, err
+	}
 	var raw, stored []byte
 	var previous Snapshot
 	if err = tx.QueryRowContext(ctx, `SELECT document FROM factory_work_items WHERE account_id=$1 AND id=$2 FOR UPDATE`, account, workID).Scan(&raw); err != nil {
@@ -251,6 +261,9 @@ func (s Store) mutate(ctx context.Context, account, workID string, version int, 
 	}
 	defer tx.Rollback()
 	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(1986880102,1)`); err != nil {
+		return Snapshot{}, err
+	}
+	if err = s.guardLease(ctx, tx, account, workID); err != nil {
 		return Snapshot{}, err
 	}
 	var workJSON, graphJSON []byte
