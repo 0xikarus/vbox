@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/factory/planner"
+	"github.com/0xikarus/vmbox-service/internal/factory/resultinbox"
 	"golang.org/x/sys/unix"
 )
 
@@ -33,14 +34,7 @@ type Job struct {
 
 // Envelope distinguishes the agent's actual exit from this delivery command's
 // exit. An exit of zero is not a claim that the proposed feature was verified.
-type Envelope struct {
-	Version   int             `json:"version"`
-	AttemptID string          `json:"attemptId"`
-	ExitCode  *int            `json:"exitCode"`
-	Signal    int             `json:"signal"`
-	Document  json.RawMessage `json:"document,omitempty"`
-	Truncated bool            `json:"truncated"`
-}
+type Envelope = resultinbox.Result
 
 type receipt struct {
 	RequestHash string   `json:"requestHash"`
@@ -164,6 +158,9 @@ func deliver(ctx context.Context, job Job, result Envelope, client *http.Client)
 	b, err := json.Marshal(result)
 	if err != nil || len(b) > 400000 {
 		return fmt.Errorf("result envelope exceeds limit")
+	}
+	if _, err = resultinbox.Decode(b); err != nil {
+		return fmt.Errorf("invalid result envelope")
 	}
 	c := http.Client{Timeout: 20 * time.Second}
 	if client != nil {

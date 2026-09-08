@@ -19,6 +19,14 @@ type PlannerRunner interface {
 	Observe(context.Context, Claim) (Observation, error)
 }
 
+type planningRejection struct{ reason string }
+
+func (e planningRejection) Error() string { return e.reason }
+
+// RejectPlanning records a permanent pre-launch rejection without inventing a
+// process exit. Only trusted, user-safe diagnostics should be passed here.
+func RejectPlanning(reason string) error { return planningRejection{reason: reason} }
+
 // Pending represents controller provisioning, not a submitted process. Keep the
 // box identity while polling the same attempt instead of hiding multi-minute
 // lifecycle transitions behind a generic submission error.
@@ -88,6 +96,13 @@ func (d *Dispatcher) Step(ctx context.Context) error {
 	if a.TaskID == "" {
 		submission, err := d.Runner.Start(ctx, c)
 		if err != nil {
+			var rejected planningRejection
+			if errors.As(err, &rejected) {
+				w.State = "planning_failed"
+				a.State = "not_started"
+				w.Error = rejected.reason
+				return d.Store.SaveClaim(ctx, c, w)
+			}
 			// An ambiguous remote response is not a failed task; retain the same
 			// queued attempt so its idempotent submission can be recovered.
 			w.Error = "Planning submission is awaiting confirmation; the same attempt will be reconciled."
@@ -125,6 +140,9 @@ func (d *Dispatcher) Step(ctx context.Context) error {
 		w.Error = ""
 		if o.State == "unknown" {
 			w.Error = "Planning execution outcome is unknown; inspect its box before retrying."
+		}
+		if o.State == "result_missing" {
+			w.Error = "The delivery process exited without a durable agent result; its exit code is not the agent outcome. Inspect the saved attempt receipt."
 		}
 		return d.Store.SaveClaim(ctx, c, w)
 	}

@@ -20,10 +20,10 @@ import (
 )
 
 // Synthetic worker result fixture; no real agent execution is claimed.
-const fixture = `{"version":1,"attemptID":"attempt","exitCode":0,"document":{"answer":"fixture"},"truncated":false}`
+const fixture = `{"version":1,"attemptId":"attempt","exitCode":0,"document":{"answer":"fixture"},"truncated":false}`
 
 func TestDecode(t *testing.T) {
-	valid := []string{fixture, `{"version":1,"attemptID":"attempt","exitCode":null,"signal":"SIGTERM","truncated":true}`}
+	valid := []string{fixture, `{"version":1,"attemptId":"attempt","exitCode":null,"signal":15,"truncated":true}`}
 	for _, s := range valid {
 		if _, err := Decode([]byte(s)); err != nil {
 			t.Fatal(err)
@@ -33,7 +33,7 @@ func TestDecode(t *testing.T) {
 		fixture + ` {}`, fixture + ` null`, strings.Replace(fixture, `"version":1`, `"version":1,"version":1`, 1),
 		strings.Replace(fixture, `"version":1`, `"Version":1`, 1), strings.Replace(fixture, `"version":1`, `"version":2`, 1),
 		strings.Replace(fixture, `"exitCode":0,`, ``, 1), strings.Replace(fixture, `"exitCode":0`, `"exitCode":null`, 1),
-		strings.Replace(fixture, `"exitCode":0`, `"exitCode":0,"signal":"SIGTERM"`, 1),
+		strings.Replace(fixture, `"exitCode":0`, `"exitCode":0,"signal":15`, 1),
 		strings.Replace(fixture, `"exitCode":0`, `"exitCode":-1`, 1), strings.Replace(fixture, `"exitCode":0`, `"exitCode":256`, 1),
 		strings.Replace(fixture, `"truncated":false`, `"truncated":null`, 1), strings.Replace(fixture, `"truncated":false`, `"unknown":false`, 1),
 		`null`, `[]`, `{`, fixture[:len(fixture)-1],

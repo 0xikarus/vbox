@@ -205,3 +205,36 @@ func (c *ControllerClient) SubmitPlanner(ctx context.Context, account, boxID, at
 	}
 	return task, err
 }
+
+// FindPlanner recovers an accepted submission before any fresh staging or grant
+// issuance. This also works after the box hibernates or a capability expires.
+func (c *ControllerClient) FindPlanner(ctx context.Context, account, boxID, attemptID string) (*v1.ProcessTask, error) {
+	if boxID == "" || len(attemptID) != 32 {
+		return nil, fmt.Errorf("invalid planning identity")
+	}
+	for _, ch := range attemptID {
+		if !strings.ContainsRune("0123456789abcdef", ch) {
+			return nil, fmt.Errorf("invalid planning identity")
+		}
+	}
+	if err := c.Authorize(ctx, account); err != nil {
+		return nil, err
+	}
+	var tasks []v1.ProcessTask
+	if err := c.request(ctx, "GET", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/process-tasks", "", nil, &tasks); err != nil {
+		return nil, err
+	}
+	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-planner < /data/workspace/.vmbox-factory/attempts/" + attemptID + "/job.json"
+	var found *v1.ProcessTask
+	for _, task := range tasks {
+		if task.Prompt != command {
+			continue
+		}
+		if found != nil || task.ID == "" || task.LogicalBoxID != boxID || task.Agent != "shell" {
+			return nil, fmt.Errorf("ambiguous planning task identity")
+		}
+		copy := task
+		found = &copy
+	}
+	return found, nil
+}

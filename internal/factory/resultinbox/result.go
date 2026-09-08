@@ -8,13 +8,13 @@ import (
 )
 
 // Result is a worker's report, never verified completion. ExitCode must be an
-// actual process exit status (0..255), or null with a nonempty Signal. Document
+// actual process exit status (0..255), or null with a POSIX Signal. Document
 // is optional inert JSON: no paths are opened and no URLs are fetched.
 type Result struct {
 	Version   int             `json:"version"`
-	AttemptID string          `json:"attemptID"`
+	AttemptID string          `json:"attemptId"`
 	ExitCode  *int            `json:"exitCode"`
-	Signal    *string         `json:"signal,omitempty"`
+	Signal    int             `json:"signal"`
 	Document  json.RawMessage `json:"document,omitempty"`
 	Truncated bool            `json:"truncated"`
 }
@@ -45,7 +45,7 @@ func Decode(body []byte) (Result, error) {
 			return r, ErrInvalid
 		}
 		switch name {
-		case "version", "attemptID", "exitCode", "signal", "document", "truncated":
+		case "version", "attemptId", "exitCode", "signal", "document", "truncated":
 		default:
 			return r, ErrInvalid
 		}
@@ -64,7 +64,7 @@ func Decode(body []byte) (Result, error) {
 	if _, err = d.Token(); err != io.EOF {
 		return r, ErrInvalid
 	}
-	for _, key := range []string{"version", "attemptID", "exitCode", "truncated"} {
+	for _, key := range []string{"version", "attemptId", "exitCode", "truncated"} {
 		v, ok := fields[key]
 		if !ok || (key != "exitCode" && bytes.Equal(v, []byte("null"))) {
 			return r, ErrInvalid
@@ -74,10 +74,10 @@ func Decode(body []byte) (Result, error) {
 		return Result{}, ErrInvalid
 	}
 	if r.ExitCode == nil {
-		if r.Signal == nil || !validID(*r.Signal) {
+		if r.Signal < 1 || r.Signal > 64 {
 			return Result{}, ErrInvalid
 		}
-	} else if *r.ExitCode < 0 || *r.ExitCode > 255 || r.Signal != nil {
+	} else if *r.ExitCode < 0 || *r.ExitCode > 255 || r.Signal != 0 {
 		return Result{}, ErrInvalid
 	}
 	return r, nil

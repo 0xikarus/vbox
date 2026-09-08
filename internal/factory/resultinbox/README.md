@@ -17,8 +17,8 @@ func Decode(body []byte) (Result, error)
 ```
 
 `Result` fields are `Version int`, `AttemptID string`, `ExitCode *int`,
-`Signal *string`, `Document json.RawMessage`, and `Truncated bool`, with JSON names
-`version`, `attemptID`, `exitCode`, `signal`, `document`, `truncated`.
+`Signal int`, `Document json.RawMessage`, and `Truncated bool`, with JSON names
+`version`, `attemptId`, `exitCode`, `signal`, `document`, `truncated`.
 
 Use an application-owned `*sql.DB` (for example with pgx stdlib) connected to a
 trusted PostgreSQL database/search_path. Migrate creates only
@@ -43,13 +43,13 @@ The worker should capture the actual agent process status, build this envelope,
 POST it to the configured TLS endpoint, and await a 204 before auto-hibernating:
 
 ```json
-{"version":1,"attemptID":"attempt-id","exitCode":0,"document":{"summary":"worker report"},"truncated":false}
+{"version":1,"attemptId":"attempt-id","exitCode":0,"signal":0,"document":{"summary":"worker report"},"truncated":false}
 ```
 
 This example is a synthetic fixture, not evidence of an agent execution. Required
-fields are version (exactly 1), attemptID, exitCode, and truncated. ExitCode must be
-an integer in 0..255, or null with a nonempty signal (e.g. `"signal":"SIGTERM"`).
-An exit code and non-null signal cannot both be supplied. Document is optional
+fields are version (exactly 1), attemptId, exitCode, and truncated. ExitCode must be
+an integer in 0..255, or null with a POSIX signal number in 1..64 (e.g. `"signal":15`).
+An exit code and nonzero signal cannot both be supplied. Document is optional
 inert JSON; the package never opens paths or fetches URLs. The entire UTF-8 body,
 including whitespace, is limited to 409600 bytes (400 KiB). Unknown/duplicate
 envelope fields and trailing JSON are rejected. The attempt must exactly match
