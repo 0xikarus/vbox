@@ -284,7 +284,34 @@ func (s *Service) Step(ctx context.Context) error {
 		if d.Workflow.State == "cancelling" {
 			return s.observe(runCtx, c)
 		}
-		submission, startErr := s.Runner.Start(runCtx, Input{AccountID: c.account, Workflow: c.doc.Workflow, Attempt: *a})
+		// Freeze the prompt snapshot before staging. Polling, sibling outputs and
+		// lifecycle updates must not change the manifest of an existing attempt.
+		d, e = s.leased(runCtx, c, func(d *document) error {
+			if d.Inputs == nil {
+				d.Inputs = map[string]Workflow{}
+			}
+			if _, exists := d.Inputs[c.attempt]; !exists {
+				b, err := json.Marshal(d.Workflow)
+				if err != nil {
+					return err
+				}
+				var snapshot Workflow
+				if err = json.Unmarshal(b, &snapshot); err != nil {
+					return err
+				}
+				d.Inputs[c.attempt] = snapshot
+			}
+			return nil
+		})
+		if e != nil {
+			return e
+		}
+		if d.Workflow.State == "cancelling" {
+			c.doc = d
+			return s.observe(runCtx, c)
+		}
+		a = attemptByID(&d, c.attempt)
+		submission, startErr := s.Runner.Start(runCtx, Input{AccountID: c.account, Workflow: d.Inputs[c.attempt], Attempt: *a})
 		_, err = s.leased(runCtx, c, func(d *document) error {
 			a := attemptByID(d, c.attempt)
 			if startErr != nil {

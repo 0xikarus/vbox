@@ -160,7 +160,7 @@ func retry(d *document, id string) error {
 			break
 		}
 	}
-	if old == nil || d.AttemptRevisions[id] != d.Revision || old.State != "exited" || old.ExitCode == nil || successful(*old) {
+	if old == nil || d.AttemptRevisions[id] != d.Revision || old.State != "exited" || (old.ExitCode == nil && old.Signal == 0) || successful(*old) {
 		return ErrConflict
 	}
 	if latest(d, old.Stage, old.AssignmentID).ID != id {
@@ -270,7 +270,7 @@ func acceptObservation(d *document, id string, o Observation) error {
 	a.Output = o.Result.Text
 	a.Failure = o.Failure
 	a.State = "exited"
-	if o.ExitCode == nil || (strings.TrimSpace(o.Result.Text) == "" && o.Result.Plan == nil) {
+	if (o.ExitCode == nil && o.Signal == 0) || (strings.TrimSpace(o.Result.Text) == "" && o.Result.Plan == nil && o.Failure == "" && o.ExitCode != nil && *o.ExitCode == 0) {
 		a.State = "result_missing"
 		if a.Failure == "" {
 			a.Failure = "terminal process result missing"

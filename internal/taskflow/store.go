@@ -21,12 +21,13 @@ type Store struct{ DB *sql.DB }
 // Attempts, plans and messages are append-only; attempt observations are updated
 // in place only until terminal. Revision membership survives process restarts.
 type document struct {
-	Workflow         Workflow          `json:"workflow"`
-	Revision         int               `json:"revision"`
-	AttemptRevisions map[string]int    `json:"attemptRevisions"`
-	Started          map[string]bool   `json:"started,omitempty"`
-	Results          map[string]Result `json:"results,omitempty"`
-	LastPolled       string            `json:"lastPolled,omitempty"`
+	Workflow         Workflow            `json:"workflow"`
+	Revision         int                 `json:"revision"`
+	AttemptRevisions map[string]int      `json:"attemptRevisions"`
+	Started          map[string]bool     `json:"started,omitempty"`
+	Results          map[string]Result   `json:"results,omitempty"`
+	LastPolled       string              `json:"lastPolled,omitempty"`
+	Inputs           map[string]Workflow `json:"inputs,omitempty"`
 }
 
 func (s *Store) Migrate(ctx context.Context) error {

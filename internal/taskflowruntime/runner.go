@@ -121,7 +121,7 @@ func requestFor(in taskflow.Input) (Request, error) {
 		Directive string            `json:"directive"`
 		Workflow  taskflow.Workflow `json:"workflow"`
 		Attempt   taskflow.Attempt  `json:"attempt"`
-	}{directive, w, a})
+	}{directive, w, taskflow.Attempt{ID: a.ID, Stage: a.Stage, AssignmentID: a.AssignmentID}})
 	if e != nil {
 		return Request{}, e
 	}
@@ -222,6 +222,16 @@ func (r *Runner) Start(ctx context.Context, in taskflow.Input) (taskflow.Submiss
 func (r *Runner) Observe(ctx context.Context, in taskflow.Input) (taskflow.Observation, error) {
 	a, w := in.Attempt, in.Workflow
 	c := r.config
+	if a.TaskID == "" && a.BoxID != "" {
+		// Cancellation/timeout recovery is find-only: never provision or submit.
+		found, err := c.Controller.FindTaskRunner(ctx, in.AccountID, a.BoxID, a.ID)
+		if err != nil {
+			return taskflow.Observation{}, err
+		}
+		if found != nil {
+			a.TaskID = found.ID
+		}
+	}
 	if a.TaskID == "" || a.BoxID == "" {
 		return taskflow.Observation{}, fmt.Errorf("missing submitted task")
 	}
@@ -246,7 +256,7 @@ func (r *Runner) Observe(ctx context.Context, in taskflow.Input) (taskflow.Obser
 	if e != nil || envelope.AttemptID != a.ID {
 		return taskflow.Observation{}, fmt.Errorf("invalid task receipt")
 	}
-	obs := taskflow.Observation{State: "exited", Finished: true, ExitCode: envelope.ExitCode, Signal: envelope.Signal}
+	obs := taskflow.Observation{State: "exited", Finished: true}
 	var report Report
 	if strictJSON(envelope.Document, &report) != nil || envelope.Truncated {
 		obs.Failure = "invalid_task_report"
@@ -257,6 +267,7 @@ func (r *Runner) Observe(ctx context.Context, in taskflow.Input) (taskflow.Obser
 		obs.Failure = "agent_startup_or_process_evidence_unavailable"
 		return obs, nil
 	}
+	obs.ExitCode, obs.Signal = envelope.ExitCode, envelope.Signal
 	if report.Failure != "" {
 		obs.Failure = report.Failure
 		return obs, nil

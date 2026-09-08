@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/0xikarus/vmbox-service/internal/factory"
+	"github.com/0xikarus/vmbox-service/internal/taskflow"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -72,6 +73,18 @@ func TestDurableFeatureAdmissionIdentityAndIsolation(t *testing.T) {
 	}
 	if _, err = s.Load(ctx, "foreign", w.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("foreign account read")
+	}
+	if err = (&taskflow.Store{DB: s.DB}).Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.DB.Exec(`INSERT INTO general_tasks(account_id,id,user_id,document) VALUES('other','task','u','{"workflow":{"attempts":[{"state":"running"}]}}')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.Reserve(ctx, "a", w.ID, x.Version, "api", "build", 1); !errors.Is(err, ErrCapacity) {
+		t.Fatalf("ignored general task: %v", err)
+	}
+	if _, err = s.DB.Exec(`DELETE FROM general_tasks WHERE account_id='other' AND id='task'`); err != nil {
+		t.Fatal(err)
 	}
 	x, err = s.Reserve(ctx, "a", w.ID, x.Version, "api", "build", 1)
 	if err != nil {

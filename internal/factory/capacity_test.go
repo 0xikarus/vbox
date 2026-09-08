@@ -5,7 +5,29 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+
+	"github.com/0xikarus/vmbox-service/internal/taskflow"
 )
+
+func TestPlanningCountsGeneralTasks(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	if err := (&taskflow.Store{DB: s.DB}).Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Exec(`INSERT INTO general_tasks(account_id,id,user_id,document) VALUES('other','task','u','{"workflow":{"attempts":[{"state":"running"}]}}')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Create(ctx, "a", "u", "one", CreateWork{RepositoryID: "r", Idea: "idea", Agent: "codex", Profile: "p"}, Repository{ID: "r"}, "sha", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ClaimLimited(ctx, 1); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("ignored general task: %v", err)
+	}
+	if _, err := s.ClaimLimited(ctx, 2); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestPlanningCapacityPersistsAcrossClaimsAndRestart(t *testing.T) {
 	s := testStore(t)

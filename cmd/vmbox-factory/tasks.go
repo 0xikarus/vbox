@@ -5,11 +5,47 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/factory"
+	"github.com/0xikarus/vmbox-service/internal/factory/resultinbox"
 	"github.com/0xikarus/vmbox-service/internal/taskflow"
+	"github.com/0xikarus/vmbox-service/internal/taskflowruntime"
+	"github.com/0xikarus/vmbox-service/internal/transport"
 )
+
+func configureTaskRuntime(ctx context.Context, s *factory.Service, inbox *resultinbox.Inbox) (*taskflowruntime.Runner, error) {
+	if os.Getenv("VMBOX_TASKS_EXECUTION_ENABLED") != "true" {
+		return nil, nil
+	}
+	if inbox == nil || s.Profiles == nil {
+		return nil, fmt.Errorf("tasks require controller profiles and a result inbox")
+	}
+	binary := os.Getenv("VMBOX_TASKS_RUNNER_BINARY")
+	identity := os.Getenv("VMBOX_FACTORY_SSH_IDENTITY")
+	knownHosts := os.Getenv("VMBOX_FACTORY_SSH_KNOWN_HOSTS")
+	for _, p := range []string{binary, identity, knownHosts} {
+		if !filepath.IsAbs(p) || filepath.Clean(p) != p {
+			return nil, fmt.Errorf("tasks require absolute runner binary, SSH identity and known-hosts paths")
+		}
+	}
+	for _, p := range []string{binary, identity} {
+		info, err := os.Lstat(p)
+		if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+			return nil, fmt.Errorf("task runner binary or SSH identity unavailable")
+		}
+		if p == identity && info.Mode().Perm()&0077 != 0 {
+			return nil, fmt.Errorf("task SSH identity must be private")
+		}
+	}
+	controller := &factory.ControllerClient{URL: os.Getenv("VMBOX_FACTORY_CONTROLLER_URL"), Token: os.Getenv("VMBOX_FACTORY_CONTROLLER_TOKEN"), AccountID: os.Getenv("VMBOX_FACTORY_ACCOUNT_ID")}
+	if err := controller.Authorize(ctx, controller.AccountID); err != nil {
+		return nil, fmt.Errorf("task controller binding unavailable")
+	}
+	return taskflowruntime.New(taskflowruntime.Config{Controller: controller, Inbox: inbox, Assets: s.Assets, SSH: transport.SSH{IdentityFile: identity, KnownHostsFile: knownHosts}, BinaryPath: binary, CallbackURL: os.Getenv("VMBOX_FACTORY_RESULT_URL")})
+}
 
 // General tasks share the controller's account gateway, saved profiles and
 // private attachments. GitHub configuration is deliberately not a prerequisite.

@@ -19,6 +19,7 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/factory"
 	"github.com/0xikarus/vmbox-service/internal/factory/assets"
 	"github.com/0xikarus/vmbox-service/internal/factory/resultinbox"
+	"github.com/0xikarus/vmbox-service/internal/taskflowruntime"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -96,6 +97,19 @@ func run() error {
 			return fmt.Errorf("result inbox migration failed")
 		}
 		mux.Handle("/result", inbox.Handler())
+	}
+	taskRunner, err := configureTaskRuntime(setup, service, inbox)
+	if err != nil {
+		return err
+	}
+	if taskRunner != nil {
+		tasks.Runner = taskRunner
+		tasks.Images = taskflowruntime.ImageCapabilities()
+		for i := 0; i < limit; i++ {
+			done := make(chan struct{})
+			go func() { defer close(done); runTasks(ctx, tasks) }()
+			defer func() { cancel(); <-done }()
+		}
 	}
 	dispatcher, err := configurePlanning(setup, service, inbox)
 	if err != nil {
