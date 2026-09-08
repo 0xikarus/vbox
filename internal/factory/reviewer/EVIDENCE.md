@@ -93,3 +93,51 @@ it does not claim containment of hostile code or same-user credential isolation.
 Full live test logs remain in `/data/workspace/reviewer-{codex,claude}-live.log`;
 temporary source fixtures are cleaned by Go tests. No candidate program was run,
 pushed or published by a reviewer.
+
+## Review follow-up — 2026-09-08
+
+Follow-up to `eb6aaa9` on `factory/independent-review-0908`, confined to this
+package. Fetched `origin/proposal/software-factory` at `8a8fd84` and inspected
+`internal/factory/builder/git.go`: the reviewer now keeps the copied index for the
+staged audit, removes it before `read-tree`, and audits raw bytes with a fresh
+index. Tests cover both assume-unchanged and skip-worktree hiding modifications
+before launch and during a synthetic reviewer run, while preserving source flags.
+
+`Request.VerificationWorkspace` is separately supplied by the trusted coordinator.
+Tests accept an independent verifier path absent from this box and reject missing,
+relative or unclean roots, reviewer-box cwd substitution, wrong subdirectories,
+absolute approved cwd and traversal. Artifact/box provenance remains the
+coordinator's responsibility; the adapter checks exact approved relative cwd
+resolution and candidate binding.
+
+The source prompt now includes actual base-to-candidate diff, changed text on both
+sides, and both revisions' path/mode/type/Git-object-SHA/size inventories with
+explicit omission descriptions. It does not load unchanged blob contents. A
+synthetic CLI prompt-capture regression uses an unchanged 2 MiB PNG-like binary
+asset and 1.4 MiB text file, plus the tiny price.go arithmetic defect. It verifies
+the reviewer receives the actual old/new diff, defective full changed text,
+acceptance criteria, asset SHA and omission labels. This establishes prompt
+transport, not a new model-quality trial.
+
+Changed binary/non-UTF-8, added/deleted over-limit blobs and aggregate overflow
+return `ErrIncomplete` before CLI launch, with no review or acceptance and a
+persisted explicit failure. Existing read-only source tools remain available for
+additional context. The combined inventories, changed contents and diff still
+have a 512 KiB cap; each Git command output and each changed blob also have a
+512 KiB cap. Path-count/output limits and the 30-second audit deadline can still
+reject very large repositories. See README.md for the full current limits; the
+large/non-text repository gap above describes the original live-trial revision.
+
+Validation in this box with `/data/workspace/toolchains/go/bin` on PATH:
+
+- `go test -count=1 ./internal/factory/reviewer` passed.
+- `go vet ./internal/factory/reviewer` passed.
+- `git diff --check` passed.
+- Optional `CGO_ENABLED=1 go test -race -count=1 ./internal/factory/reviewer`
+  could not build: C compiler `gcc` is unavailable in the current box. No new
+  successful race run is claimed.
+
+The completed authenticated live trial was not rerun. Its historical results and
+prompt digest above apply to the original revision. Saved authentication, model
+selection, CLI permissions, credential environment exclusion and bounded owned
+process cleanup are preserved by this follow-up.

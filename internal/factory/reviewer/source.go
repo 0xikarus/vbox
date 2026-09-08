@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 func within(root, p string) bool {
@@ -152,6 +151,10 @@ func inspect(ctx context.Context, workspace string, baseSHA string, bundle *stri
 	if e = os.WriteFile(filepath.Join(tmp, "info/attributes"), []byte("* -text -filter -ident -working-tree-encoding\n"), 0600); e != nil {
 		return sha, false, e
 	}
+	// Discard cached stats and index flags after the staged audit above.
+	if e = os.Remove(filepath.Join(tmp, "index")); e != nil && !os.IsNotExist(e) {
+		return sha, false, e
+	}
 	if _, e = run("read-tree", sha); e != nil {
 		return sha, false, e
 	}
@@ -160,33 +163,10 @@ func inspect(ctx context.Context, workspace string, baseSHA string, bundle *stri
 		return sha, false, e
 	}
 	if bundle != nil && status == "" {
-		diff, e := run("diff", "--no-ext-diff", "--no-textconv", baseSHA, sha, "--")
+		*bundle, e = sourceBundle(run, baseSHA, sha)
 		if e != nil {
 			return sha, false, e
 		}
-		files, e := run("ls-tree", "-rz", "--name-only", sha)
-		if e != nil {
-			return sha, false, e
-		}
-		var source strings.Builder
-		source.WriteString("ACTUAL GIT DIFF\n" + diff + "\nACTUAL CANDIDATE FILES\n")
-		for _, name := range strings.Split(files, "\x00") {
-			if name == "" {
-				continue
-			}
-			b, e := run("show", sha+":"+name)
-			if e != nil {
-				return sha, false, e
-			}
-			if !utf8.ValidString(b) || strings.ContainsRune(b, 0) {
-				return sha, false, errors.New("non-text candidate source is unsupported")
-			}
-			source.WriteString("\nFILE " + name + "\n" + b)
-			if source.Len() > maxSource {
-				return sha, false, errors.New("candidate source exceeds review limit")
-			}
-		}
-		*bundle = source.String()
 	}
 	return sha, status == "", nil
 }

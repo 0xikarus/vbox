@@ -46,7 +46,7 @@ func fixture(t *testing.T) Request {
 	if e != nil || !evidence.AllPassed {
 		t.Fatal(evidence, e)
 	}
-	return Request{Agent: "codex", Workspace: ws, BaseSHA: base, CandidateSHA: sha, ResultPath: filepath.Join(out, "review.json"), ApprovedFeature: factory.Feature{ID: "discount", Title: "Percentage discount", Description: "Compute a discounted price for an integer percentage from 0 through 100.", AcceptanceCriteria: []string{"Discount(100,20) must return 80; zero percent preserves price and 100 percent returns zero."}, Checks: []factory.Check{check}}, CheckEvidence: evidence}
+	return Request{Agent: "codex", Workspace: ws, VerificationWorkspace: ws, BaseSHA: base, CandidateSHA: sha, ResultPath: filepath.Join(out, "review.json"), ApprovedFeature: factory.Feature{ID: "discount", Title: "Percentage discount", Description: "Compute a discounted price for an integer percentage from 0 through 100.", AcceptanceCriteria: []string{"Discount(100,20) must return 80; zero percent preserves price and 100 percent returns zero."}, Checks: []factory.Check{check}}, CheckEvidence: evidence}
 }
 
 // Synthetic CLI fixtures exercise adapter failure semantics; these are not AI reviews.

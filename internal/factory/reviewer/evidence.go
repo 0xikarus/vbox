@@ -14,17 +14,18 @@ import (
 // Verify the supplied report's shape and binding. Artifact authentication remains
 // the coordinator's job; neither this function nor an AI can prove provenance.
 func validateEvidence(req Request) error {
+	root := req.VerificationWorkspace
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root || strings.ContainsRune(root, 0) {
+		return errors.New("trusted absolute clean verification workspace required")
+	}
 	r := req.CheckEvidence
 	if !r.AllPassed || r.Error != "" || r.ExpectedSHA != req.CandidateSHA || r.SourceSHA != req.CandidateSHA || r.FinalSourceSHA != req.CandidateSHA || !r.SourceClean || len(r.Checks) != len(req.ApprovedFeature.Checks) {
 		return errors.New("complete passing candidate-bound verification required")
 	}
 	for i, c := range r.Checks {
 		approved := req.ApprovedFeature.Checks[i]
-		cwd := approved.Cwd
-		if !filepath.IsAbs(cwd) {
-			cwd = filepath.Join(req.Workspace, cwd)
-		}
-		if approved.Cwd == "" || !within(req.Workspace, cwd) || len(approved.Argv) == 0 || approved.TimeoutSeconds < 1 || approved.TimeoutSeconds > 3600 || !reflect.DeepEqual(c.Argv, approved.Argv) || c.Cwd != cwd || c.TimeoutSeconds != approved.TimeoutSeconds || !c.Executed || c.ExitCode == nil || *c.ExitCode != 0 || c.Signal != 0 || c.Timeout || c.Cancel || c.Error != "" || c.StartedAt == nil || c.FinishedAt == nil || c.FinishedAt.Before(*c.StartedAt) {
+		cwd := filepath.Join(root, approved.Cwd)
+		if approved.Cwd == "" || filepath.IsAbs(approved.Cwd) || filepath.Clean(approved.Cwd) != approved.Cwd || strings.ContainsRune(approved.Cwd, 0) || !within(root, cwd) || len(approved.Argv) == 0 || approved.TimeoutSeconds < 1 || approved.TimeoutSeconds > 3600 || !reflect.DeepEqual(c.Argv, approved.Argv) || c.Cwd != cwd || c.TimeoutSeconds != approved.TimeoutSeconds || !c.Executed || c.ExitCode == nil || *c.ExitCode != 0 || c.Signal != 0 || c.Timeout || c.Cancel || c.Error != "" || c.StartedAt == nil || c.FinishedAt == nil || c.FinishedAt.Before(*c.StartedAt) {
 			return errors.New("approved check evidence mismatch or incomplete")
 		}
 		for j, l := range []verification.Log{c.Stdout, c.Stderr} {

@@ -26,12 +26,15 @@ const maxSource = 512 << 10
 const maxDocument = 64 << 10
 const maxEnvelope = 2 << 20
 
-// ApprovedFeature and CheckEvidence must come from the trusted coordinator's
+// ApprovedFeature, VerificationWorkspace and CheckEvidence must come from the trusted coordinator's
 // approved plan and independent verifier, never a builder-authored replacement.
 type Request struct {
 	Agent, Workspace, BaseSHA, CandidateSHA, ResultPath string
-	ApprovedFeature                                     factory.Feature
-	CheckEvidence                                       verification.Report
+	// Trusted absolute checkout path in the verifier box; need not exist locally.
+	// The coordinator owns provenance, including the verifier box identity.
+	VerificationWorkspace string
+	ApprovedFeature       factory.Feature
+	CheckEvidence         verification.Report
 }
 type Review struct {
 	CandidateSHA     string   `json:"candidateSha"`
@@ -139,9 +142,10 @@ func run(ctx context.Context, req Request, executable string) (result Result, er
 		}
 	}()
 	contextBytes, e := json.Marshal(struct {
-		Feature  factory.Feature
-		Evidence verification.Report
-	}{req.ApprovedFeature, req.CheckEvidence})
+		Feature               factory.Feature
+		Evidence              verification.Report
+		VerificationWorkspace string
+	}{req.ApprovedFeature, req.CheckEvidence, req.VerificationWorkspace})
 	if e != nil || len(contextBytes) > maxSource {
 		return result, errors.New("review context exceeds limit")
 	}
