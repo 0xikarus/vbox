@@ -64,6 +64,23 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 
 ## Next actions
 
+Latest continuation (2026-09-08):
+
+- User reconfirmed a maximum of **6 fleet slots**, not 8. Desired capacity
+  remains 4; no additional slots have been requested.
+- GitHub App worker completed with exit 0; its client is integrated at
+  `5bcc63f`. Encrypted App configuration is integrated at `6b90d12`.
+  Live authorized-App verification remains outstanding.
+- Planner runtime worker `9ff13c42-5b3c-4069-8574-e48400000000` exited 0
+  and pushed `3a6bf9c` on `factory/planner-runtime-0908`. Not integrated yet.
+  Its evidence records actual Codex image grounding (exit 0, valid structured
+  result); Claude live authentication failed. This is not UI-to-box proof.
+- Diagnostic `d441852c-d4ca-4a98-8db9-4beb00000000` exited 0 in the integration
+  box: the tmux session-loop format distinguished live and empty servers and
+  stopped only the isolated empty server. `098131f` uses that compatible format.
+- Full Go tests/vet and real PostgreSQL verification of `098131f` are queued
+  as `af61889b-0333-443c-8eda-fd2d00000000` in the integration box. Results pending.
+
 Poll the exact task IDs above; observation failures must not cause resubmission.
 Three isolated boxes now exist; total fleet remains 4, below the approved 6.
 Integrate only their scoped commits into the feature branch after inspecting
