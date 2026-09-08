@@ -77,18 +77,31 @@ func TestControllerBindingRevalidatesAuthority(t *testing.T) {
 }
 
 func TestBuilderBoxAndTaskRecoveryStaySeparateFromPlanning(t *testing.T) {
-	testIndependentBox(t, false)
+	testIndependentBox(t, "builder")
 }
 
 func TestVerifierBoxHasNoProfilesAndRecoversItsOwnTask(t *testing.T) {
-	testIndependentBox(t, true)
+	testIndependentBox(t, "verifier")
 }
 
-func testIndependentBox(t *testing.T, verifier bool) {
+func TestGeneralTaskBoxNeedsNoRepositoryAndRecoversItsOwnTask(t *testing.T) {
+	testIndependentBox(t, "task-runner")
+}
+
+func testIndependentBox(t *testing.T, role string) {
 	t.Helper()
-	role, prefix := "builder", "factory-build"
+	verifier := role == "verifier"
+	prefix := "factory-build"
 	if verifier {
-		role, prefix = "verifier", "factory-verify"
+		prefix = "factory-verify"
+	}
+	root := "/data/workspace/.vmbox-factory"
+	if role == "task-runner" {
+		prefix, root = "task", "/data/workspace/.vmbox-tasks"
+	}
+	runPrefix := prefix + ":"
+	if role == "task-runner" {
+		runPrefix = "task-run:"
 	}
 	attempt := strings.Repeat("c", 32)
 	work := Work{ID: strings.Repeat("a", 32), CreateWork: CreateWork{Agent: "codex", Profile: "saved"}, BoxID: "planner"}
@@ -138,8 +151,8 @@ func testIndependentBox(t *testing.T, verifier bool) {
 			if json.NewDecoder(r.Body).Decode(&in) != nil {
 				t.Error("invalid task")
 			}
-			want := "exec /data/workspace/.vmbox-factory/bin/vmbox-" + role + " < /data/workspace/.vmbox-factory/attempts/" + attempt + "/job.json"
-			if in.Prompt != want || in.Agent != "shell" || r.Header.Get("Idempotency-Key") != prefix+":"+attempt {
+			want := "exec " + root + "/bin/vmbox-" + role + " < " + root + "/attempts/" + attempt + "/job.json"
+			if in.Prompt != want || in.Agent != "shell" || r.Header.Get("Idempotency-Key") != runPrefix+attempt {
 				t.Error("builder command changed")
 			}
 			task := v1.ProcessTask{ID: "task", LogicalBoxID: "builder", Agent: "shell", Prompt: in.Prompt}
@@ -155,6 +168,12 @@ func testIndependentBox(t *testing.T, verifier bool) {
 	ensure, submit, find := c.EnsureBuilderBox, c.SubmitBuilder, c.FindBuilder
 	if verifier {
 		ensure, submit, find = c.EnsureVerifierBox, c.SubmitVerifier, c.FindVerifier
+	}
+	if role == "task-runner" {
+		ensure = func(ctx context.Context, account string, w Work, id, box string) (v1.LogicalBox, error) {
+			return c.EnsureTaskBox(ctx, account, w.ID, id, box, w.Agent, w.Profile)
+		}
+		submit, find = c.SubmitTaskRunner, c.FindTaskRunner
 	}
 	ctx := context.Background()
 	b, err := ensure(ctx, "a", work, attempt, "")
