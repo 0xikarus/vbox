@@ -29,6 +29,20 @@ type fixtureInbox struct {
 	err    error
 }
 
+func TestRequestIgnoresMutableAttemptLifecycle(t *testing.T) {
+	in := taskflow.Input{AccountID: "a", Workflow: taskflow.Workflow{ID: newID(), Agent: "codex", Idea: "Plan a trip"}, Attempt: taskflow.Attempt{ID: newID(), Stage: "plan", State: "provisioning"}}
+	before, err := requestFor(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Attempt.BoxID, in.Attempt.TaskID, in.Attempt.Failure = "box", "task", "temporary failure"
+	in.Attempt.State = "submitted"
+	after, err := requestFor(in)
+	if err != nil || before.Prompt != after.Prompt {
+		t.Fatal("receipt recovery changed staged prompt", err)
+	}
+}
+
 func fixtureCapability(account, work, attempt string) string {
 	h := hmac.New(sha256.New, bytes.Repeat([]byte{9}, 32))
 	h.Write([]byte("vmbox/resultinbox/capability/v1\x00"))

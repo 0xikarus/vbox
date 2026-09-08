@@ -498,6 +498,22 @@ func TestPostgresMissingResultDoesNotReplay(t *testing.T) {
 	}
 }
 
+func TestPostgresDispatchSnapshotSurvivesPolling(t *testing.T) {
+	s, f := setup(t)
+	f.uncertain = true
+	createTask(t, s, "a", "stable")
+	if err := s.Step(context.Background()); err == nil {
+		t.Fatal("expected lost submission response")
+	}
+	step(t, s)
+	if len(f.starts) != 2 || f.starts[0].Attempt.ID != f.starts[1].Attempt.ID {
+		t.Fatal("did not recover same attempt")
+	}
+	if fingerprint(f.starts[0].Workflow) != fingerprint(f.starts[1].Workflow) {
+		t.Fatal("polling changed private staging input")
+	}
+}
+
 func TestPostgresCancelUncertainAndDependencyQueue(t *testing.T) {
 	s, f := setup(t)
 	f.uncertain = true
