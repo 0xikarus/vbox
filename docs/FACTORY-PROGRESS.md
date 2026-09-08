@@ -66,6 +66,19 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- `09eff4d` adds `execution.Store.BindBox` for durable box-only provisioning
+  before a task exists, with account/version/attempt fences and atomic UI
+  projection. `Bind` now rejects changing an already reserved box even when
+  no task was bound yet. PostgreSQL regression covers restart recovery, stale
+  writes, conflicting boxes and refusal to downgrade a submitted task.
+  Full in-box Go/PostgreSQL tests and vet are queued as
+  `971aba3f-79b9-4274-8c22-448b00000000`; the task prints its checkout SHA.
+- Verifier provisioning/staging task `58c19643-c596-4885-82c1-d6b800000000`
+  at `757fd33` exited 0: controller client tests, actual Bash/Git staging
+  fixtures and scoped vet passed. This is not live verifier transfer proof.
+- Builder correction `d706218c-8f9f-445f-8db5-781300000000` remains queued
+  at the latest poll; no duplicate task was submitted.
+
 - `757fd33` adds verifier-specific independent box provisioning without saved
   login profiles, fixed wrapper submission/recovery and role-bound staging.
   New provisioning/staging regression task
