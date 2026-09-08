@@ -71,7 +71,9 @@ func NewServer(store *Store, providers *provider.Registry) *Server {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/factory/", s.auth(s.factoryGateway))
+	for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+		mux.HandleFunc(method+" /v1/factory/", s.auth(s.factoryGateway))
+	}
 	mux.HandleFunc("GET /factory.js", uiHandler("factory.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /factory.css", uiHandler("factory.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
