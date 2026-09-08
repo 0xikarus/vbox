@@ -66,6 +66,17 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- `9f2271e` adds renewable per-account/work execution coordination leases.
+  The leased Store checks ownership/expiry inside each mutation transaction;
+  a replaced scheduler cannot bind results or release its successor's lease.
+  Network operations hold no database transaction. Lease expiry is coordination
+  recovery only, not permission to replay a remote task. The scheduler loop
+  still needs wiring and must use the leased Store exclusively.
+  Added PostgreSQL restart/expiry/old-writer regression; full Go/PostgreSQL/vet
+  task `b9dd3dbc-ae01-4392-8ec1-031300000000` is queued in the review box,
+  pinned to `9f2271e`. The prior pending-binding regression task remains queued
+  in the integration box; builder correction is now running.
+
 - `09eff4d` adds `execution.Store.BindBox` for durable box-only provisioning
   before a task exists, with account/version/attempt fences and atomic UI
   projection. `Bind` now rejects changing an already reserved box even when
