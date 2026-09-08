@@ -16,6 +16,7 @@
 .factory section, .factory article { border-top: 1px solid #ddd; margin-top: 1rem; padding-top: .5rem; }
 .factory-error { color: #a00; }
 .factory-error:empty { display: none; }
+.factory-attempt { font-weight: 600; }
 .factory-gallery { display: flex; flex-wrap: wrap; gap: .75rem; }
 .factory-gallery figure, .factory-gallery > a { margin: 0; width: 10rem; max-width: 100%; }
 .factory-gallery img { display: block; width: 100%; height: 7rem; object-fit: contain; border: 1px solid #ccc; }

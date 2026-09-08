@@ -1,4 +1,5 @@
-// Real Chromium UI tests with intercepted API fixtures, not live Factory proof.
+// Real Chromium desktop/mobile UI tests with intercepted API fixtures, not live Factory proof.
+// These verify controls, rendering and upload requests, not decoder support or live planning execution.
 // npm install --prefix /tmp/factory-ui-tools puppeteer
 // VMBOX_FACTORY_PUPPETEER=/tmp/factory-ui-tools/node_modules/puppeteer/lib/puppeteer/puppeteer.js node --test tests/browser/factory-ui.test.mjs
 import assert from 'node:assert/strict';
@@ -59,12 +60,12 @@ async function saved(page, id = 'w1') {
   await page.waitForFunction(id => document.querySelector('.factory > section:last-of-type').textContent.includes('Work ' + id), {}, id);
 }
 async function clickText(page, label) { await page.evaluate(label => Array.from(document.querySelectorAll('button')).find(b => b.textContent === label).click(), label); }
-async function upload(page, name = 'images') {
-  await page.evaluate(name => {
+async function upload(page, name = 'images', type = 'image/png') {
+  await page.evaluate(({ name, type }) => {
     const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j3ioAAAAASUVORK5CYII='), c => c.charCodeAt(0));
-    const dt = new DataTransfer(); dt.items.add(new File([bytes], 'pixel.png', { type: 'image/png' }));
+    const dt = new DataTransfer(); dt.items.add(new File([bytes], type === 'image/png' ? 'pixel.png' : 'fixture-image', { type }));
     const input = document.querySelector(`[name=${name}]`); input.files = dt.files; input.dispatchEvent(new Event('change', { bubbles: true }));
-  }, name);
+  }, { name, type });
 }
 for (const mobile of [false, true]) test(`${mobile ? 'mobile' : 'desktop'}: native inputs, cookie upload, removal, separate Plan, duplicate suppression`, async t => {
   let release;
@@ -231,3 +232,91 @@ test('read response started before reply cannot overwrite its newer revision', a
   await clickText(page, 'Send reply / revise'); await page.waitForFunction(() => document.body.textContent.includes('input revision 2'));
   await release(); await new Promise(r => setTimeout(r, 100)); assert.match(await page.$eval('.factory > section:last-of-type', n => n.textContent), /input revision 2/);
 });
+
+for (const mobile of [false, true]) {
+  const viewport = mobile ? 'mobile' : 'desktop';
+  test(`${viewport}: executionReady false blocks Plan/reply and preserves saved history and drafts`, async t => {
+    const caps = { enabled: true, githubConfigured: true, executionReady: false, imageTypes: ['image/png', 'image/jpeg'], agents: [{ name: 'codex', images: true }] };
+    const { page, state, requests } = await fixture(t, { mobile, caps, handler: async (r, respond) => {
+      if (r.path === '/work-items' && r.method === 'GET') {
+        await respond(r.query ? { items: [record('w2')] } : { items: [record()], nextCursor: 'next' }); return true;
+      }
+      if (r.path === '/work-items/w2') { await respond(record('w2')); return true; }
+    } });
+    assert.match(await page.$eval('[role=status]', n => n.textContent), /configuration required.*will not be queued.*Saved work remains available/);
+    assert.equal(await page.$eval('form button[type=submit]', n => n.disabled), true);
+    assert.equal(await page.$eval('[name=workItem]', n => n.disabled), false);
+    await saved(page);
+    assert.equal(await page.$eval('[name=reply]', n => n.matches(':disabled')), true);
+    assert.equal(await page.$eval('[data-approve]', n => n.disabled), true);
+    await clickText(page, 'Load more work'); await saved(page, 'w2');
+    assert.match(await page.$eval('details[open]', n => n.textContent), /Plan revision 1/);
+    state.caps.executionReady = true;
+    await clickText(page, 'Refresh / reconnect');
+    await page.waitForFunction(() => !document.querySelector('[name=idea]').matches(':disabled'));
+    await choose(page); await page.type('[name=reply]', 'Keep this draft');
+    state.caps.executionReady = false;
+    await clickText(page, 'Refresh / reconnect');
+    await page.waitForFunction(() => document.querySelector('[name=idea]').matches(':disabled'));
+    await page.evaluate(() => {
+      for (const name of ['idea', 'reply']) document.querySelector(`[name=${name}]`).closest('form').dispatchEvent(new Event('submit', { cancelable: true }));
+    });
+    assert.equal(await page.$eval('form button[type=submit]', n => n.disabled), true);
+    assert.equal(await page.$eval('[name=reply]', n => n.closest('form').querySelector('button[type=submit]').disabled), true);
+    await saved(page); await saved(page, 'w2');
+    assert.equal(await page.$eval('[name=reply]', n => n.value), 'Keep this draft');
+    assert.equal(await page.$eval('[name=idea]', n => n.value), 'Make a useful planning UI');
+    assert.equal(requests.filter(r => r.method === 'POST').length, 0);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  });
+  test(`${viewport}: latest actual planning attempt and safe error survive generic work state`, async t => {
+    const item = record('w1', 'planning'); item.revision = 3;
+    item.attempts = [{ id: 'old', revision: 1, state: 'failed' }, { id: 'latest', revision: 3, state: 'creation-initializing' }, { id: 'stale', revision: 2, state: 'queued' }];
+    const { page, state } = await fixture(t, { mobile, items: [item] });
+    await saved(page);
+    assert.match(await page.$eval('.factory-attempt', n => n.textContent), /latest · input revision 3 · creation-initializing/);
+    const diagnostic = 'The delivery process exited without a durable agent result; its exit code is not the agent outcome. Inspect the saved attempt receipt.';
+    for (const attemptState of ['result_missing', 'not_started']) {
+      state.items[0].attempts.push({ id: 'retry-' + attemptState, revision: 3, state: attemptState, credentials: 'must-not-render', internalError: 'private-diagnostic' });
+      state.items[0].error = attemptState === 'result_missing' ? diagnostic : 'Planning execution is not configured. <img src=x onerror="window.pwned=1">';
+      await clickText(page, 'Refresh / reconnect');
+      await page.waitForFunction(s => document.querySelector('.factory-attempt').textContent.includes('retry-' + s), {}, attemptState);
+      assert.match(await page.$eval('.factory-attempt', n => n.textContent), new RegExp(`retry-${attemptState} · input revision 3 · ${attemptState}`));
+      assert.equal(await page.$eval('.factory > section:last-of-type .factory-error', n => n.textContent), state.items[0].error);
+      assert.equal(await page.evaluate(() => window.pwned), undefined);
+      assert.doesNotMatch(await page.$eval('.factory', n => n.textContent), /must-not-render|private-diagnostic/);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  });
+  test(`${viewport}: both upload composers advertise and validate only supported PNG/JPEG formats`, async t => {
+    const { page, state, requests } = await fixture(t, { mobile });
+    state.caps.imageTypes = ['image/png', 'image/jpeg', 'image/webp'];
+    await clickText(page, 'Refresh / reconnect');
+    await page.waitForSelector('[name=repository] option[value=r1]'); await choose(page); await saved(page);
+    for (const name of ['images', 'replyImages']) {
+      assert.equal(await page.$eval(`[name=${name}]`, n => n.accept), 'image/png,image/jpeg');
+      assert.match(await page.$eval(`[name=${name}]`, n => n.closest('.factory-images').textContent), /PNG \/ JPEG/);
+      assert.doesNotMatch(await page.$eval(`[name=${name}]`, n => n.closest('.factory-images').textContent), /WebP/i);
+      const before = requests.filter(r => r.path === '/assets').length;
+      await upload(page, name, 'image/webp');
+      assert.match(await page.$eval('[role=alert]', n => n.textContent), /advertised formats \(PNG \/ JPEG\)/);
+      assert.equal(requests.filter(r => r.path === '/assets').length, before);
+      for (const type of ['image/png', 'image/jpeg']) {
+        await upload(page, name, type);
+        await page.waitForFunction(name => [...document.querySelector(`[name=${name}]`).closest('.factory-images').querySelectorAll('figcaption')].some(n => n.textContent.includes('Uploaded')), {}, name);
+        await page.$eval(`[name=${name}]`, n => [...n.closest('.factory-images').querySelectorAll('button')].find(b => b.textContent === 'Remove').click());
+      }
+      assert.equal(requests.filter(r => r.path === '/assets').length, before + 2);
+    }
+    state.caps.imageTypes = ['image/jpeg'];
+    await clickText(page, 'Refresh / reconnect');
+    await page.waitForFunction(() => document.querySelector('[name=images]').accept === 'image/jpeg');
+    const before = requests.filter(r => r.path === '/assets').length;
+    await upload(page); assert.equal(requests.filter(r => r.path === '/assets').length, before);
+    assert.match(await page.$eval('[role=alert]', n => n.textContent), /advertised formats \(JPEG\)/);
+    state.caps.imageTypes = [];
+    await clickText(page, 'Refresh / reconnect');
+    await page.waitForFunction(() => document.querySelector('[name=images]').disabled);
+    assert.match(await page.$eval('.factory-images', n => n.textContent), /No image formats advertised/);
+  });
+}

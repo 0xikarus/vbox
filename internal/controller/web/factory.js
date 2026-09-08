@@ -64,29 +64,34 @@ export function mountFactory(root, request) {
     stopped = true; win.clearTimeout(timer);
     error.textContent = text(err?.message || err) + ' Refresh / reconnect to reload saved work. Your entered content is retained; retry an unchanged submission to reuse its request key.';
   }
+  const executionReady = () => capabilities?.executionReady !== false;
+  const imageTypes = () => ['image/png', 'image/jpeg'].filter(type => list(capabilities?.imageTypes ?? ['image/png', 'image/jpeg']).includes(type));
+  const imageFormats = () => imageTypes().map(type => type === 'image/png' ? 'PNG' : 'JPEG').join(' / ');
   function controls() {
-    inputs.disabled = busy || !capabilities?.enabled || !capabilities?.githubConfigured;
-    planButton.disabled = busy || !repo.value || !profile.value || !agent.value || !base.value.trim() || !idea.value.trim() || initialImages.pending() || !imagesAllowed(initialImages);
+    inputs.disabled = busy || !capabilities?.enabled || !capabilities?.githubConfigured || !executionReady();
+    planButton.disabled = inputs.disabled || !repo.value || !profile.value || !agent.value || !base.value.trim() || !idea.value.trim() || initialImages.pending() || !imagesAllowed(initialImages);
     picker.disabled = busy || !capabilities?.enabled; more.disabled = picker.disabled || historyLoading; reconnect.disabled = busy;
     replyForm.hidden = !work;
-    replyFields.disabled = busy || !work || activeState(work.state) || !['plan_ready', 'needs_clarification', 'planning_failed', 'failed'].includes(work.state) || !capabilities?.enabled;
+    replyFields.disabled = busy || !executionReady() || !work || activeState(work.state) || !['plan_ready', 'needs_clarification', 'planning_failed', 'failed'].includes(work.state) || !capabilities?.enabled;
     send.disabled = replyFields.disabled || !reply.value.trim() || replyImages.pending() || !imagesAllowed(replyImages, work?.agent);
     initialImages.update(); replyImages.update();
     const approve = detail.querySelector('[data-approve]');
     if (approve) approve.disabled = busy || !approvalReady(work);
   }
   function imagesAllowed(composer, name = agent.value) {
-    return !composer.entries.length || capabilities?.agents?.some(a => a.name === name && a.images === true);
+    return !composer.entries.length || (composer.entries.every(e => imageTypes().includes(e.file.type)) && capabilities?.agents?.some(a => a.name === name && a.images === true));
   }
   function imageComposer(parent, label) {
     const wrap = el('div', undefined, 'factory-images');
     const input = field(wrap, label, 'input', label === 'Planning images' ? 'images' : 'replyImages');
-    input.type = 'file'; input.multiple = true; input.accept = 'image/png,image/jpeg,image/webp';
-    wrap.append(el('p', 'PNG, JPEG or WebP. Up to 8 images, 10 MiB each, 40 MiB total; server validates the 25 MP limit.'));
+    input.type = 'file'; input.multiple = true;
+    const formats = el('p'); wrap.append(formats);
     const support = el('p'); wrap.append(support);
     const gallery = el('div', undefined, 'factory-gallery'); wrap.append(gallery); parent.append(wrap);
     const composer = { entries: [], pending: () => composer.entries.some(e => !e.asset), update() {
-      input.disabled = busy;
+      input.accept = imageTypes().join(',');
+      input.disabled = busy || !imageTypes().length;
+      formats.textContent = (imageFormats() || 'No image formats advertised') + '. Up to 8 images, 10 MiB each, 40 MiB total; server validates the 25 MP limit.';
       const name = label === 'Planning images' ? agent.value : work?.agent;
       support.textContent = composer.entries.length && !capabilities?.agents?.some(a => a.name === name && a.images === true) ? 'The selected agent does not advertise image support. Choose an image-capable agent or remove these images.' : '';
       gallery.querySelectorAll('button').forEach(b => { b.disabled = busy; });
@@ -119,9 +124,10 @@ export function mountFactory(root, request) {
     }
     input.addEventListener('change', () => {
       const files = Array.from(input.files); input.value = '';
+      if (input.matches(':disabled')) return;
       const total = [...composer.entries.map(e => e.file), ...files];
-      if (total.length > 8 || total.reduce((n, f) => n + f.size, 0) > 40 * 1024 * 1024 || files.some(f => f.size > 10 * 1024 * 1024 || !['image/png', 'image/jpeg', 'image/webp'].includes(f.type))) {
-        error.textContent = 'Choose at most 8 PNG/JPEG/WebP images, 10 MiB each and 40 MiB total.'; return;
+      if (total.length > 8 || total.reduce((n, f) => n + f.size, 0) > 40 * 1024 * 1024 || files.some(f => f.size > 10 * 1024 * 1024 || !imageTypes().includes(f.type))) {
+        error.textContent = `Choose at most 8 images in advertised formats (${imageFormats() || 'none'}), 10 MiB each and 40 MiB total.`; return;
       }
       for (const file of files) {
         const entry = { file, key: win.crypto.randomUUID(), url: win.URL.createObjectURL(file) };
@@ -165,7 +171,7 @@ export function mountFactory(root, request) {
   function latestPlan(value) { return list(value?.plans).reduce((best, p) => !best || p.revision > best.revision ? p : best, null); }
   function approvalReady(value) {
     const p = latestPlan(value);
-    return capabilities?.enabled && value?.state === 'plan_ready' && (p?.inputRevision ?? p?.revision) === value.revision && !list(p.questions).length && validTasks(list(p.features));
+    return capabilities?.enabled && executionReady() && value?.state === 'plan_ready' && (p?.inputRevision ?? p?.revision) === value.revision && !list(p.questions).length && validTasks(list(p.features));
   }
   function taskTable(parent, features) {
     if (!features.length) { parent.append(el('p', 'No tasks recorded.')); return; }
@@ -188,6 +194,11 @@ export function mountFactory(root, request) {
     if (!work) { detail.append(el('p', selected ? 'Loading saved work…' : 'Select saved work to view its responses and plans.')); controls(); return; }
     detail.append(el('h3', work.repositoryName || work.repositoryId), el('p', `Work ${work.id} · input revision ${work.revision} · ${work.state}`), el('p', `Agent: ${work.agent} · profile: ${text(work.profile)} · base: ${work.baseRef || ''} ${work.baseSha || ''}`), el('pre', work.idea));
     if (work.boxId) link(detail, work.boxName || 'Planning box', '/boxes/' + encodeURIComponent(work.boxId));
+    // Attempts are appended by the server; prefer the highest revision and last retry.
+    const attempt = list(work.attempts).reduce((latest, a) => !latest || a.revision >= latest.revision ? a : latest, null);
+    const attemptStatus = el('p', attempt ? `Latest planning attempt ${attempt.id} · input revision ${attempt.revision} · ${attempt.state}` : 'No planning attempt recorded.', 'factory-attempt');
+    attemptStatus.setAttribute('role', 'status'); detail.append(attemptStatus);
+    // work.error is the server's user-safe diagnostic, rendered as inert text.
     if (work.error) detail.append(el('p', work.error, 'factory-error'));
     savedAssets(detail, work.assets);
     detail.append(el('h3', 'Saved responses'));
@@ -307,7 +318,7 @@ export function mountFactory(root, request) {
     try {
       const caps = await request(API + '/capabilities');
       if (disposed || version !== setupGeneration) return;
-      capabilities = caps;
+      capabilities = caps; controls();
       if (!caps?.enabled) { notice.textContent = 'Factory is disabled. Ask the controller operator to enable it.'; controls(); return; }
       const [repos, savedProfiles] = await Promise.all([request(API + '/repositories'), request(API + '/profiles')]);
       if (disposed || version !== setupGeneration) return;
@@ -320,7 +331,7 @@ export function mountFactory(root, request) {
       for (const a of list(caps.agents)) option(agent, a.name + (a.images ? ' · images supported' : ' · text only'), a.name);
       if (list(caps.agents).some(a => a.name === previousAgent)) agent.value = previousAgent;
       profileChoices();
-      notice.textContent = !caps.githubConfigured || !repositories.length ? 'Connect the GitHub App through your controller operator, grant it access to the desired repositories, then refresh.' : !profiles.length ? 'No permitted saved profiles. Add an agent login in Profiles, then refresh.' : 'Select a repository and saved agent profile to plan. Saved work is authoritative.';
+      notice.textContent = !executionReady() ? 'Planning execution configuration required. Ask the controller operator to configure planning execution, then refresh. Plan and replies are unavailable; new planning requests will not be queued. Saved work remains available to browse.' : !caps.githubConfigured || !repositories.length ? 'Connect the GitHub App through your controller operator, grant it access to the desired repositories, then refresh.' : !profiles.length ? 'No permitted saved profiles. Add an agent login in Profiles, then refresh.' : 'Select a repository and saved agent profile to plan. Saved work is authoritative.';
       await loadHistory();
       if (disposed || version !== setupGeneration) return;
       if (!selected) { const restored = storage.get('selected'); if (restored) selectWork(restored); }
