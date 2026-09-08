@@ -91,8 +91,30 @@ func (d *Dispatcher) Step(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
-	defer cancel()
+	// A shallow checkout can take longer than one DB lease. Renew the exact
+	// claim while staging, and cancel transport immediately if ownership is lost.
+	ctx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+	renewed := make(chan struct{})
+	go func() {
+		defer close(renewed)
+		tick := time.NewTicker(20 * time.Second)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				bounded, done := context.WithTimeout(ctx, 10*time.Second)
+				err := d.Store.RenewClaim(bounded, c)
+				done()
+				if err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	defer func() { cancel(); <-renewed }()
 	w := c.Work
 	if len(w.Attempts) == 0 {
 		return fmt.Errorf("work item has no planning attempt")

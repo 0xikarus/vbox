@@ -23,6 +23,9 @@ func TestPlanningCapacityPersistsAcrossClaimsAndRestart(t *testing.T) {
 	if _, err = s.ClaimLimited(ctx, 1); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatal("worker cap exceeded")
 	}
+	if err = s.RenewClaim(ctx, first); err != nil {
+		t.Fatal("current claim could not renew")
+	}
 	if _, err = s.DB.Exec(`UPDATE factory_work_items SET lease_expires_at=NULL WHERE id=$1`, first.Work.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +33,9 @@ func TestPlanningCapacityPersistsAcrossClaimsAndRestart(t *testing.T) {
 	recovered, err := restarted.ClaimLimited(ctx, 1)
 	if err != nil || recovered.Work.ID != first.Work.ID {
 		t.Fatal("lease expiry admitted another worker instead of recovery")
+	}
+	if err = s.RenewClaim(ctx, first); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale claim renewed")
 	}
 	w := recovered.Work
 	w.State = "planning_failed"

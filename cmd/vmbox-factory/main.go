@@ -80,8 +80,9 @@ func run() error {
 	mux.Handle("/v1/factory/", service.Handler())
 	// This route accepts only an attempt-scoped callback capability, not the
 	// gateway/controller token. Mount on the factory service's own TLS endpoint.
+	var inbox *resultinbox.Inbox
 	if secret := os.Getenv("VMBOX_FACTORY_RESULT_SECRET"); secret != "" {
-		inbox, err := resultinbox.New(db, []byte(secret), 0)
+		inbox, err = resultinbox.New(db, []byte(secret), 0)
 		if err != nil {
 			return fmt.Errorf("invalid factory result secret")
 		}
@@ -89,6 +90,18 @@ func run() error {
 			return fmt.Errorf("result inbox migration failed")
 		}
 		mux.Handle("/result", inbox.Handler())
+	}
+	dispatcher, err := configurePlanning(setup, service, inbox)
+	if err != nil {
+		return err
+	}
+	if dispatcher != nil {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			dispatcher.Run(ctx, func(error) { slog.Warn("planning operation deferred; durable work item retains its status") })
+		}()
+		defer func() { cancel(); <-done }()
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		c, cancel := context.WithTimeout(r.Context(), 2*time.Second)

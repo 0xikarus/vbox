@@ -251,3 +251,18 @@ func (s *Store) SaveClaim(ctx context.Context, c Claim, w Work) error {
 	}
 	return err
 }
+
+// RenewClaim only extends the current unexpired lease. It cannot resurrect a
+// stale dispatcher or regain a claim invalidated by a revision change.
+func (s *Store) RenewClaim(ctx context.Context, c Claim) error {
+	r, err := s.DB.ExecContext(ctx, `UPDATE factory_work_items SET lease_expires_at=now()+interval '60 seconds'
+ WHERE account_id=$1 AND id=$2 AND lease=$3 AND lease_expires_at>now() AND revision=$4 AND state='planning'`, c.AccountID, c.Work.ID, c.Lease, c.Work.Revision)
+	if err != nil {
+		return err
+	}
+	n, err := r.RowsAffected()
+	if err == nil && n != 1 {
+		return ErrConflict
+	}
+	return err
+}
