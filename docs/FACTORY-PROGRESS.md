@@ -87,7 +87,9 @@ Latest continuation (2026-09-08):
   reviewer inspections and extends the real Git transfer regression through
   actual builder.Run (fixture CLI) and independent command verification.
 - Combined full Go/PostgreSQL/vet and Chromium task
-  `d3e2f72d-6ee3-4249-88ee-54f900000000` is queued at `b722ba2`.
+  `d3e2f72d-6ee3-4249-88ee-54f900000000` passed at `b722ba2`, actual exit 0;
+  all 22 Chromium fixture tests passed. This includes shallow build transfer and
+  independent command verification plus persisted negative-review history.
 - Next distinct worker task `baed1333-c0f3-46ba-8211-876f00000000` is queued in
   the confirmed-idle assets box, branch `factory/verify-job-0908`, scoped to
   verification child-process/receipt delivery. Initial local permission review
