@@ -58,6 +58,14 @@ type Node struct {
 	Verification *Verification   `json:"verification,omitempty"`
 	Review       *Review         `json:"review,omitempty"`
 	PRURL        string          `json:"prUrl,omitempty"`
+	Attempt      *StageAttempt   `json:"attempt,omitempty"`
+}
+type StageAttempt struct {
+	ID     string `json:"id"`
+	Stage  string `json:"stage"`
+	BoxID  string `json:"boxId,omitempty"`
+	TaskID string `json:"taskId,omitempty"`
+	State  string `json:"state"`
 }
 type Graph struct {
 	WorkID       string `json:"workId"`
@@ -157,7 +165,7 @@ func (g *Graph) Built(id string, b Build) error {
 }
 func (g *Graph) Verified(id string, v Verification) error {
 	n, err := g.node(id)
-	if err != nil || n.State != "needs_verification" || n.Build == nil {
+	if err != nil || (n.State != "needs_verification" && n.State != "verifying") || n.Build == nil {
 		return fmt.Errorf("feature not awaiting verification")
 	}
 	if !success(v.Process) || v.BoxID == n.Build.BoxID || v.CandidateSHA != n.Build.CandidateSHA || !v.SourceUnchanged || len(v.Checks) != len(n.Feature.Checks) {
@@ -174,7 +182,7 @@ func (g *Graph) Verified(id string, v Verification) error {
 }
 func (g *Graph) Reviewed(id string, r Review) error {
 	n, err := g.node(id)
-	if err != nil || n.State != "needs_review" || n.Build == nil {
+	if err != nil || (n.State != "needs_review" && n.State != "reviewing") || n.Build == nil {
 		return fmt.Errorf("feature not awaiting independent review")
 	}
 	if !success(r.Process) || r.BoxID == n.Build.BoxID || r.CandidateSHA != n.Build.CandidateSHA || strings.TrimSpace(r.Summary) == "" || !r.Approved || len(r.BlockingFindings) > 0 {

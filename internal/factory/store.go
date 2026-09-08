@@ -198,6 +198,8 @@ func (s *Store) ClaimLimited(ctx context.Context, limit int) (Claim, error) {
 		return Claim{}, err
 	}
 	defer tx.Rollback()
+	// Execution admission shares this lock and counts planning work too.
+	featureWorkers := 0
 	if limit > 0 {
 		var locked bool
 		if err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(1986880102,1)`).Scan(&locked); err != nil {
@@ -206,12 +208,21 @@ func (s *Store) ClaimLimited(ctx context.Context, limit int) (Claim, error) {
 		if !locked {
 			return Claim{}, sql.ErrNoRows
 		}
+		var executionConfigured bool
+		if err = tx.QueryRowContext(ctx, `SELECT to_regclass('factory_execution_graphs') IS NOT NULL`).Scan(&executionConfigured); err != nil {
+			return Claim{}, err
+		}
+		if executionConfigured {
+			if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM factory_execution_graphs e, jsonb_array_elements(e.document->'nodes') n WHERE n->>'state' IN ('building','verifying','reviewing')`).Scan(&featureWorkers); err != nil {
+				return Claim{}, err
+			}
+		}
 	}
 	var c Claim
 	var b []byte
 	err = tx.QueryRowContext(ctx, `SELECT account_id,document FROM factory_work_items WHERE
- (state='planning' OR (state='planning_queued' AND ($1=0 OR (SELECT count(*) FROM factory_work_items WHERE state='planning')<$1)))
- AND (lease_expires_at IS NULL OR lease_expires_at<now()) ORDER BY updated_at,id FOR UPDATE SKIP LOCKED LIMIT 1`, limit).Scan(&c.AccountID, &b)
+ (state='planning' OR (state='planning_queued' AND ($1=0 OR (SELECT count(*) FROM factory_work_items WHERE state='planning')+$2<$1)))
+ AND (lease_expires_at IS NULL OR lease_expires_at<now()) ORDER BY updated_at,id FOR UPDATE SKIP LOCKED LIMIT 1`, limit, featureWorkers).Scan(&c.AccountID, &b)
 	if err != nil {
 		return Claim{}, err
 	}
