@@ -66,6 +66,33 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- Builder commits `9713c8` and `c9601d6` reviewed and integrated as `d817154`
+  and `b279887`. The corrected adapter cleans owned process groups before reaping,
+  filters publishing/control environment credentials, and isolates trusted Git
+  inspection from repository filters and index trust flags. In-box focused tests
+  and vet passed in task `f611fc27-b4d4-4765-84d6-f6eb00000000` before browser launch.
+- UI at `1a38dc5` passed full Go/PostgreSQL tests and vet in task
+  `9e2c475c-3ccd-4e45-8010-858d00000000`, but that task exited 1 before browser
+  launch because the orchestration command used an incorrect Puppeteer path.
+  The next task `f611fc27-b4d4-4765-84d6-f6eb00000000` resolved the package but
+  Chromium lacked `libglib-2.0.so.0`: again no browser test passed.
+  `4a941ad` adds repeatable in-box Chromium/dependency setup. Task
+  `c54642e4-fe3b-40c9-8502-a57700000000` is running: PR/builder tests and vet
+  completed before it entered package installation; browser outcome still pending.
+- `ae0e77e` adds candidate-bound, narrowly scoped GitHub App PR publication with
+  marker reconciliation and post-publication head validation. It never pushes or
+  merges; durable coordinator wiring and live App acceptance are not complete.
+- Build-job wrapper worker `0d82c92d-8547-404e-8f13-acef00000000` is running in
+  the assets box, branch `factory/build-job-0908`, scoped to `buildjob` and
+  `cmd/vmbox-builder`: durable receipt/callback before hibernation and a bounded
+  candidate bundle for independent transfer. This is not integrated yet.
+- Reviewer worker `33c971ab-45af-420e-8af6-7c2a00000000` exited 0 and pushed
+  `eb6aaa9`. Its real Codex review rejected an arithmetic defect despite a passing
+  file-existence check; Claude remained auth-unavailable. Not integrated yet:
+  review found whole-repository text limits, verifier/reviewer path coupling and
+  raw index-audit gaps. Follow-up `b1024980-f25f-48a6-881a-b95300000000` is queued
+  on the same branch/box to correct these without changing auth or models.
+
 - `0e0c9bd` terminal failure handling passed full Go/PostgreSQL tests and vet in
   task `05894bfe-dad0-476a-8bad-47ff00000000`, actual exit 0. No local tests ran.
 - `1a38dc5` projects durable feature-attempt history into the Factory UI:

@@ -38,7 +38,8 @@ revocation after the last check, including use of a token already returned.
 
 `Resolve` supports a branch, tag or commit SHA; an empty ref selects the current
 default branch. Invalid ref syntax and non-40-hex commit responses are rejected.
-No workflow, pull-request or administration write permissions are requested.
+These source-resolution operations request no workflow, pull-request or
+administration write permissions; PR publication has its separate grant above.
 Installation tokens expire as reported by GitHub; missing tokens or less than a
 minute of remaining validity are rejected. Callers must honor the returned expiry
 and protect returned credentials. No automatic retries are made: `APIError`
