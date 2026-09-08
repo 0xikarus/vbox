@@ -45,6 +45,7 @@ func persistProjection(t *testing.T, in *Input, g execution.Graph, reserve bool)
 	mock.ExpectQuery("SELECT version,document FROM factory_execution_graphs").WithArgs(in.AccountID, in.Work.ID).WillReturnRows(sqlmock.NewRows([]string{"version", "document"}).AddRow(1, gj))
 	if reserve {
 		mock.ExpectQuery("SELECT").WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+		mock.ExpectQuery("SELECT to_regclass").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 	}
 	mock.ExpectExec("UPDATE factory_execution_graphs").WithArgs(in.AccountID, in.Work.ID, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
 	var projected factory.Work
