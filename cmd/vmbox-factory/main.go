@@ -18,6 +18,7 @@ import (
 
 	"github.com/0xikarus/vmbox-service/internal/factory"
 	"github.com/0xikarus/vmbox-service/internal/factory/assets"
+	"github.com/0xikarus/vmbox-service/internal/factory/resultinbox"
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
@@ -77,6 +78,18 @@ func run() error {
 	// fake repositories or canned agent output when configuration is absent.
 	mux := http.NewServeMux()
 	mux.Handle("/v1/factory/", service.Handler())
+	// This route accepts only an attempt-scoped callback capability, not the
+	// gateway/controller token. Mount on the factory service's own TLS endpoint.
+	if secret := os.Getenv("VMBOX_FACTORY_RESULT_SECRET"); secret != "" {
+		inbox, err := resultinbox.New(db, []byte(secret), 0)
+		if err != nil {
+			return fmt.Errorf("invalid factory result secret")
+		}
+		if err = inbox.Migrate(setup); err != nil {
+			return fmt.Errorf("result inbox migration failed")
+		}
+		mux.Handle("/result", inbox.Handler())
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		c, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 		defer cancel()

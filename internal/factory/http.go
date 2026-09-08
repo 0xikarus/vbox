@@ -53,7 +53,7 @@ func apiError(w http.ResponseWriter, status int, message string) {
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/factory/capabilities", s.auth(func(w http.ResponseWriter, r *http.Request, p Identity) {
-		replyJSON(w, 200, map[string]any{"enabled": true, "githubConfigured": s.Repositories != nil, "agents": []any{map[string]any{"name": "codex", "images": s.Images["codex"]}, map[string]any{"name": "claude", "images": s.Images["claude"]}}})
+		replyJSON(w, 200, map[string]any{"enabled": true, "executionReady": s.ExecutionReady, "imageTypes": []string{"image/png", "image/jpeg"}, "githubConfigured": s.Repositories != nil, "agents": []any{map[string]any{"name": "codex", "images": s.Images["codex"]}, map[string]any{"name": "claude", "images": s.Images["claude"]}}})
 	}))
 	mux.HandleFunc("GET /v1/factory/repositories", s.auth(func(w http.ResponseWriter, r *http.Request, p Identity) {
 		if s.Repositories == nil {

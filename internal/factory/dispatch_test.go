@@ -107,3 +107,28 @@ func TestDispatcherPersistsProvisioningIdentity(t *testing.T) {
 		t.Fatal("task not saved after provisioning")
 	}
 }
+
+type rejectedRunner struct{}
+
+func (rejectedRunner) Start(context.Context, Claim) (Submission, error) {
+	return Submission{}, RejectPlanning("The source revision is unavailable.")
+}
+func (rejectedRunner) Observe(context.Context, Claim) (Observation, error) {
+	return Observation{}, fmt.Errorf("not started")
+}
+func TestPermanentRejectionDoesNotInventExit(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	w, err := s.Create(ctx, "a", "u", "reject", CreateWork{RepositoryID: "r", Idea: "idea", Agent: "codex", Profile: "p"}, Repository{ID: "r"}, "sha", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Dispatcher{Store: s, Runner: rejectedRunner{}}
+	if err = d.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	w, err = s.Get(ctx, "a", w.ID)
+	if err != nil || w.State != "planning_failed" || w.Attempts[0].State != "not_started" || w.Attempts[0].ExitCode != nil || w.Attempts[0].TaskID != "" {
+		t.Fatal("rejection fabricated process evidence")
+	}
+}
