@@ -2,6 +2,10 @@
 # Private PostgreSQL bootstrap follows scripts/test-factory-in-box.sh.
 set -euo pipefail
 test -d /data/workspace
+if ! test -x /usr/lib/postgresql/15/bin/initdb; then
+  sudo apt-get update -qq
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends postgresql-15
+fi
 export PATH=/data/workspace/toolchains/go/bin:/usr/lib/postgresql/15/bin:$PATH
 taskflow_pg_data=$(mktemp -d /data/workspace/taskflow-pg-test.XXXXXX)
 taskflow_pg_socket=$(mktemp -d /tmp/taskflow-pg-socket.XXXXXX)

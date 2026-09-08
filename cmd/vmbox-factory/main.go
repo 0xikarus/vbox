@@ -74,9 +74,15 @@ func run() error {
 	if err = configureBackends(setup, service); err != nil {
 		return err
 	}
+	tasks, err := configureTasks(setup, db, service, nil, nil)
+	if err != nil {
+		return err
+	}
 	// Repository and execution adapters are deliberately not substituted with
 	// fake repositories or canned agent output when configuration is absent.
 	mux := http.NewServeMux()
+	mux.Handle("/v1/factory/tasks", tasks.Handler())
+	mux.Handle("/v1/factory/tasks/", tasks.Handler())
 	mux.Handle("/v1/factory/", service.Handler())
 	// This route accepts only an attempt-scoped callback capability, not the
 	// gateway/controller token. Mount on the factory service's own TLS endpoint.

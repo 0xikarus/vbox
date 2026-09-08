@@ -77,7 +77,16 @@ the builder/verifier/general task controller tests and scoped vet with exit 0.
 - Runtime worker: `e513f195-c09e-4013-8100-1cae00000000`,
   `factory/general-task-runtime-0908`, box `factory-review-0908`.
 
-All three were observed running. Root has uncommitted navigation/static-route
-wiring in app.js, index.html and server.go; integrate it with the actual UI
-assets, not separately. Backend startup/runtime configuration and full real
-UI-to-worker acceptance still need integration after these workers finish.
+UI and backend implementations are integrated on `proposal/software-factory`.
+The in-box UI regression task `d2bc557a-18d9-48da-8507-b06500000000`
+exited 0: all 14 Chromium API-fixture tests passed, plus gateway tests and vet.
+These fixtures are not proof of live agent execution.
+
+Backend review added shared admission with existing factory workers, fair
+round-robin observation, immutable submission bindings and rejection of retries
+for missing results. Verification task `22d53690-ce5a-4fbd-8623-771b00000000`
+stopped before tests (exit 127: missing PostgreSQL bootstrap); the script now
+installs its required private-cluster tooling before running.
+
+The runtime worker remains active. Runtime startup configuration and full real
+UI-to-worker acceptance remain unfinished. Nothing is deployed or merged to main.
