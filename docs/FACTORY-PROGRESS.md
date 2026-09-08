@@ -66,6 +66,20 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- `757fd33` adds verifier-specific independent box provisioning without saved
+  login profiles, fixed wrapper submission/recovery and role-bound staging.
+  New provisioning/staging regression task
+  `58c19643-c596-4885-82c1-d6b800000000` is queued in the integration box.
+- Follow-up `cd2b559e-e77e-4e1d-899b-06bc00000000` at `b34862b` exited 0:
+  verifier-related tests, full Go vet and **23/23 real Chromium API-fixture
+  checks** passed. This does not erase the prior combined runtime-test failure.
+- Remote builder worker `f02f715b-b973-40c3-87e9-77a900000000` exited 0
+  and pushed `f2e1368`; package tests/vet passed inside its box. Not integrated
+  yet: review found its input validation rejects actual Store-projected work
+  (`implementing` state and runtime feature fields). A focused worker follow-up
+  `d706218c-8f9f-445f-8db5-781300000000` is correcting this mismatch before
+  integration (queued on the same isolated worker box).
+
 - Publication coordinator worker `90d4a24d-f982-433f-8c88-eac600000000`
   finished with actual exit 0, source `a62ed8a`, integrated as `238ddac`.
   It recovered without a controller restart; the earlier restart question is
