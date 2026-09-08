@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/factory/builder"
@@ -26,6 +25,7 @@ type Artifact struct {
 	Filename string `json:"filename"`
 	SHA256   string `json:"sha256"`
 	Size     int64  `json:"size"`
+	BaseSHA  string `json:"baseSha"`
 }
 
 var commitID = regexp.MustCompile("^[0-9a-f]{40}$")
@@ -33,7 +33,7 @@ var commitID = regexp.MustCompile("^[0-9a-f]{40}$")
 // Use fresh metadata with exactly one trusted observed commit ref. Never load
 // checkout config or enumerate its refs. Objects remain untrusted Git input.
 func exportBundle(ctx context.Context, dir *os.File, request builder.Request, result builder.Result, limit int64) (*Artifact, error) {
-	if !commitID.MatchString(result.CandidateSHA) || result.CandidateSHA != result.HEAD || result.CandidateSHA == request.BaseSHA || result.Branch != request.Branch || !result.Clean || result.ExitCode == nil || *result.ExitCode != 0 || result.Signal != 0 {
+	if !commitID.MatchString(request.BaseSHA) || !commitID.MatchString(result.CandidateSHA) || result.CandidateSHA != result.HEAD || result.CandidateSHA == request.BaseSHA || result.Branch != request.Branch || !result.Clean || result.ExitCode == nil || *result.ExitCode != 0 || result.Signal != 0 {
 		return nil, errors.New("invalid candidate")
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -61,6 +61,14 @@ func exportBundle(ctx context.Context, dir *os.File, request builder.Request, re
 	if e = gitRun(ctx, nil, "--git-dir="+tmp, "update-ref", "refs/heads/candidate", result.CandidateSHA); e != nil {
 		return nil, e
 	}
+	// The trusted baseline is the only boundary. Do not copy agent-controlled
+	// shallow metadata or traverse history older than the staged baseline.
+	if e = os.WriteFile(filepath.Join(tmp, "shallow"), []byte(request.BaseSHA+"\n"), 0600); e != nil {
+		return nil, e
+	}
+	if e = gitRun(ctx, nil, "--git-dir="+tmp, "merge-base", "--is-ancestor", request.BaseSHA, result.CandidateSHA); e != nil {
+		return nil, errors.New("candidate does not descend from baseline")
+	}
 	name := ".job.bundle.tmp"
 	fd, e := unix.Openat(int(dir.Fd()), name, unix.O_WRONLY|unix.O_CREAT|unix.O_EXCL|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0600)
 	if e != nil {
@@ -71,7 +79,10 @@ func exportBundle(ctx context.Context, dir *os.File, request builder.Request, re
 	defer f.Close()
 	hash := sha256.New()
 	w := &boundedWriter{dst: io.MultiWriter(f, hash), remaining: limit}
-	if e = gitRun(ctx, w, "--git-dir="+tmp, "bundle", "create", "-", "refs/heads/candidate"); e != nil {
+	if limit <= 0 || limit > MaxArtifactBytes {
+		return nil, errors.New("invalid artifact limit")
+	}
+	if e = gitRun(ctx, w, "--git-dir="+tmp, "bundle", "create", "--version=2", "-", "refs/heads/candidate", "^"+request.BaseSHA); e != nil {
 		return nil, errors.New("bundle export failed")
 	}
 	if w.exceeded || w.remaining == limit {
@@ -89,7 +100,7 @@ func exportBundle(ctx context.Context, dir *os.File, request builder.Request, re
 	if e = dir.Sync(); e != nil {
 		return nil, e
 	}
-	return &Artifact{Filename: ArtifactFilename, SHA256: hex.EncodeToString(hash.Sum(nil)), Size: limit - w.remaining}, nil
+	return &Artifact{Filename: ArtifactFilename, SHA256: hex.EncodeToString(hash.Sum(nil)), Size: limit - w.remaining, BaseSHA: request.BaseSHA}, nil
 }
 
 type boundedWriter struct {
@@ -118,8 +129,9 @@ func gitRun(ctx context.Context, output io.Writer, args ...string) error {
 	cmd.Env = append(cmd.Env, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_NO_REPLACE_OBJECTS=1", "GIT_TERMINAL_PROMPT=0")
 	cmd.Stdout = output
 	cmd.Stderr = io.Discard
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
-	cmd.WaitDelay = time.Second
-	return cmd.Run()
+	group := prepareProcess(cmd, time.Second)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return group.wait(cmd)
 }

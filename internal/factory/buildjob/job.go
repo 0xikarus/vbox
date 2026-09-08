@@ -331,7 +331,7 @@ func readReceipt(dir *os.File, name string) (receipt, bool, error) {
 	}
 	if a := report.Artifact; a != nil {
 		digest, e := hex.DecodeString(a.SHA256)
-		if a.Filename != ArtifactFilename || a.Size <= 0 || a.Size > MaxArtifactBytes || e != nil || len(digest) != 32 {
+		if !commitID.MatchString(a.BaseSHA) || a.Filename != ArtifactFilename || a.Size <= 0 || a.Size > MaxArtifactBytes || e != nil || len(digest) != 32 {
 			return saved, false, fmt.Errorf("invalid artifact evidence")
 		}
 	}

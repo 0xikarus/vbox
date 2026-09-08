@@ -1,10 +1,12 @@
 package buildjob
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -65,10 +67,38 @@ func TestRealBundleAndReceiptRedelivery(t *testing.T) {
 	}))
 	defer server.Close()
 	j := processJob(t, server.URL, commitScript)
+	// Give the baseline real ancestry, then stage independent depth-1 clones.
+	origin := j.Request.Workspace
+	old := j.Request.BaseSHA
+	git(t, origin, "commit", "--allow-empty", "-qm", "staged baseline")
+	j.Request.BaseSHA = git(t, origin, "rev-parse", "HEAD")
+	worker, imported := filepath.Join(t.TempDir(), "worker"), filepath.Join(t.TempDir(), "verifier")
+	for _, clone := range []string{worker, imported} {
+		git(t, origin, "clone", "--depth=1", "file://"+origin, clone)
+		if git(t, clone, "rev-list", "--count", "HEAD") != "1" || exec.Command("git", "-C", clone, "cat-file", "-e", old).Run() == nil {
+			t.Fatal("staging did not exclude baseline ancestry")
+		}
+	}
+	j.Request.Workspace = worker
+	git(t, worker, "config", "user.name", "Fixture")
+	git(t, worker, "config", "user.email", "fixture@example.invalid")
 	// This unrelated ref must not be advertised or included in the export.
 	unrelated := git(t, j.Request.Workspace, "commit-tree", git(t, j.Request.Workspace, "rev-parse", "HEAD^{tree}"), "-m", "unrelated root")
 	git(t, j.Request.Workspace, "update-ref", "refs/heads/unrelated", unrelated)
-	if e := execute(context.Background(), input(j), builder.Run, server.Client()); e == nil {
+	// Exercise the job's export with a real Git feature commit. builder.Run's
+	// own inspection is outside this package and this regression's scope.
+	run := func(_ context.Context, request builder.Request) (builder.Result, error) {
+		git(t, worker, "checkout", "-b", request.Branch)
+		if err := os.WriteFile(filepath.Join(worker, "file"), []byte("candidate"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		git(t, worker, "add", "file")
+		git(t, worker, "commit", "-qm", "candidate")
+		sha := git(t, worker, "rev-parse", "HEAD")
+		zero := 0
+		return builder.Result{ExitCode: &zero, CandidateSHA: sha, HEAD: sha, Branch: request.Branch, Clean: git(t, worker, "status", "--porcelain") == ""}, nil
+	}
+	if e := execute(context.Background(), input(j), run, server.Client()); e == nil {
 		t.Fatal("expected delivery failure")
 	}
 	head := git(t, j.Request.Workspace, "rev-parse", "HEAD")
@@ -96,24 +126,68 @@ func TestRealBundleAndReceiptRedelivery(t *testing.T) {
 		t.Fatal(e)
 	}
 	h := sha256.Sum256(b)
-	if report.Artifact.Filename != ArtifactFilename || report.Artifact.Size != int64(len(b)) || report.Artifact.SHA256 != hex.EncodeToString(h[:]) {
+	if report.Artifact.BaseSHA != j.Request.BaseSHA || report.Artifact.Filename != ArtifactFilename || report.Artifact.Size != int64(len(b)) || report.Artifact.SHA256 != hex.EncodeToString(h[:]) {
 		t.Fatal("artifact mismatch")
 	}
-	imported := t.TempDir()
-	git(t, imported, "init", "-q")
 	heads := git(t, imported, "bundle", "list-heads", path)
 	if heads != head+" refs/heads/candidate" {
 		t.Fatalf("unexpected bundle refs: %s", heads)
 	}
-	git(t, imported, "fetch", path, "refs/heads/candidate:refs/heads/imported")
-	if git(t, imported, "rev-parse", "refs/heads/imported") != head {
+	if err := ImportBundle(context.Background(), imported, bytes.NewReader(b), *report.Artifact, j.Request.BaseSHA, head); err != nil {
+		t.Fatal(err)
+	}
+	if git(t, imported, "rev-parse", "refs/heads/candidate") != head {
 		t.Fatal("import mismatch")
 	}
 	if exec.Command("git", "-C", imported, "cat-file", "-e", unrelated).Run() == nil {
 		t.Fatal("unrelated object exported")
 	}
-	if git(t, imported, "show", "imported:file") != "candidate" {
+	if git(t, imported, "show", "candidate:file") != "candidate" {
 		t.Fatal("wrong content")
+	}
+	if exec.Command("git", "-C", imported, "cat-file", "-e", old).Run() == nil {
+		t.Fatal("pre-baseline ancestry exported")
+	}
+	for _, tc := range []struct {
+		name            string
+		data            []byte
+		artifact        Artifact
+		base, candidate string
+	}{
+		{"wrong trusted baseline", b, *report.Artifact, old, head},
+		{"wrong candidate", b, *report.Artifact, j.Request.BaseSHA, unrelated},
+		{"truncated", b[:len(b)-1], *report.Artifact, j.Request.BaseSHA, head},
+		{"digest", append([]byte("!"), b[1:]...), *report.Artifact, j.Request.BaseSHA, head},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if ImportBundle(context.Background(), imported, bytes.NewReader(tc.data), tc.artifact, tc.base, tc.candidate) == nil {
+				t.Fatal("invalid import accepted")
+			}
+		})
+	}
+	empty := t.TempDir()
+	git(t, empty, "init", "-q")
+	if ImportBundle(context.Background(), empty, bytes.NewReader(b), *report.Artifact, j.Request.BaseSHA, head) == nil {
+		t.Fatal("missing baseline accepted")
+	}
+	for _, header := range []string{
+		"# v2 git bundle\n" + head + " refs/heads/candidate",
+		"# v2 git bundle\n-" + old + " wrong baseline\n" + head + " refs/heads/candidate",
+		"# v2 git bundle\n-" + j.Request.BaseSHA + " baseline\n" + head + " refs/heads/candidate\n" + head + " refs/heads/extra",
+	} {
+		bad := append([]byte(header), b[bytes.Index(b, []byte("\n\n")):]...)
+		a := *report.Artifact
+		h := sha256.Sum256(bad)
+		a.Size, a.SHA256 = int64(len(bad)), hex.EncodeToString(h[:])
+		if ImportBundle(context.Background(), imported, bytes.NewReader(bad), a, j.Request.BaseSHA, head) == nil {
+			t.Fatal("invalid prerequisite/ref header accepted despite matching digest")
+		}
+	}
+	// Even with the baseline object present, a repository at another HEAD is
+	// not the exact independently staged baseline required by the importer.
+	git(t, imported, "checkout", "--detach", head)
+	if ImportBundle(context.Background(), imported, bytes.NewReader(b), *report.Artifact, j.Request.BaseSHA, head) == nil {
+		t.Fatal("different HEAD accepted")
 	}
 	// A tiny explicit cap refuses the entire export; no published partial artifact.
 	d := t.TempDir()
@@ -193,5 +267,57 @@ func TestStrictBoundedJobs(t *testing.T) {
 		}, nil); e == nil {
 			t.Fatalf("accepted %q", b[:min(len(b), 50)])
 		}
+	}
+}
+
+func TestGitRunCleansDescendants(t *testing.T) {
+	for _, cancel := range []bool{false, true} {
+		t.Run(fmt.Sprint(cancel), func(t *testing.T) {
+			bin := t.TempDir()
+			marker := filepath.Join(bin, "escaped")
+			// The descendant closes inherited pipes so pipe draining cannot hide a leak.
+			body := "#!/bin/sh\n(sleep 0.3; touch '" + marker + "') </dev/null >/dev/null 2>&1 &\n"
+			if cancel {
+				body += "sleep 30\n"
+			}
+			if err := os.WriteFile(filepath.Join(bin, "git"), []byte(body), 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+			ctx, stop := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer stop()
+			err := gitRun(ctx, nil, "version")
+			if (err != nil) != cancel {
+				t.Fatalf("unexpected Git exit: %v", err)
+			}
+			time.Sleep(500 * time.Millisecond)
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatal("Git descendant escaped cleanup")
+			}
+		})
+	}
+}
+
+func TestExportRejectsMissingCandidateAncestry(t *testing.T) {
+	j := processJob(t, "https://example.invalid", commitScript)
+	git(t, j.Request.Workspace, "commit", "--allow-empty", "-qm", "intermediate")
+	missing := git(t, j.Request.Workspace, "rev-parse", "HEAD")
+	git(t, j.Request.Workspace, "commit", "--allow-empty", "-qm", "candidate")
+	head := git(t, j.Request.Workspace, "rev-parse", "HEAD")
+	if err := os.Remove(filepath.Join(j.Request.Workspace, ".git", "objects", missing[:2], missing[2:])); err != nil {
+		t.Fatal(err)
+	}
+	dir, _, err := openReceiptDir(j.ReceiptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	zero := 0
+	result := builder.Result{ExitCode: &zero, CandidateSHA: head, HEAD: head, Branch: j.Request.Branch, Clean: true}
+	if a, err := exportBundle(context.Background(), dir, j.Request, result, MaxArtifactBytes); err == nil || a != nil {
+		t.Fatal("missing candidate ancestry silently exported")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(j.ReceiptPath), ArtifactFilename)); !os.IsNotExist(err) {
+		t.Fatal("failed export published artifact")
 	}
 }
