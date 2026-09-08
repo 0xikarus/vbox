@@ -66,6 +66,22 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 
 Latest continuation (2026-09-08):
 
+- Verification worker `166cc5e` integrated as `047b39f`. Review corrected the
+  check HOME from `/nonexistent` to a fresh private writable home/cache outside
+  source, and aligned signals to numeric POSIX values. Task
+  `227219fc-4d3e-43c8-8d9c-6bb800000000` passed verification/execution tests and
+  vet at `916fac3`, including an actual Go compilation through the runner.
+- `ebccb13` maps scoped verification reports into feature acceptance by checking
+  actual command identity, source revision, timestamps, outcomes and log digests,
+  not `AllPassed` alone. Focused task `2d6b1610-76e7-4fda-89c4-f23c00000000`
+  is queued in the integration box. Persistent feature scheduling, independent
+  review, PR publication and final integration are still required.
+- Builder adapter worker `78464022-5b21-4e50-815f-85e100000000` is running in
+  `factory-assets-0908`, branch `factory/feature-builder-0908`, scoped to actual
+  agent execution and trusted Git candidate inspection (not verified completion).
+- Publication task remains queued behind hibernation despite the guarded empty
+  server cleanup. Do not duplicate it or infer that it failed. No production
+  controller restart/deployment or direct controller DB repair was attempted.
 - `4d841f0` adds the feature dependency/acceptance transition model. Builder
   exit 0 cannot unlock dependents: clean candidate, independent exact checks,
   review and matching repository PR are separate gates. Test/vet task
