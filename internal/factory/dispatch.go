@@ -69,8 +69,9 @@ func ParsePlannerResult(data []byte) (PlannerResult, error) {
 }
 
 type Dispatcher struct {
-	Store  *Store
-	Runner PlannerRunner
+	Store      *Store
+	Runner     PlannerRunner
+	MaxWorkers int
 }
 
 // Step performs one bounded observation. It never holds a DB transaction across
@@ -79,7 +80,11 @@ func (d *Dispatcher) Step(ctx context.Context) error {
 	if d.Store == nil || d.Runner == nil {
 		return fmt.Errorf("planning execution is not configured")
 	}
-	c, err := d.Store.Claim(ctx)
+	limit := d.MaxWorkers
+	if limit == 0 {
+		limit = 3
+	}
+	c, err := d.Store.ClaimLimited(ctx, limit)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}

@@ -182,14 +182,35 @@ type Claim struct {
 // Claim recovers the SAME attempt after lease expiry. A dispatcher must use its
 // persisted attempt ID as the controller submission key, never launch a new one.
 func (s *Store) Claim(ctx context.Context) (Claim, error) {
+	return s.ClaimLimited(ctx, 0)
+}
+
+// ClaimLimited caps admitted planning work across coordinator processes sharing
+// this store. Already-admitted work remains observable at the cap and after
+// lowering it; a lease expiry does not release its compute reservation.
+func (s *Store) ClaimLimited(ctx context.Context, limit int) (Claim, error) {
+	if limit < 0 || limit > 6 {
+		return Claim{}, fmt.Errorf("invalid planning worker limit")
+	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return Claim{}, err
 	}
 	defer tx.Rollback()
+	if limit > 0 {
+		var locked bool
+		if err = tx.QueryRowContext(ctx, `SELECT pg_try_advisory_xact_lock(1986880102,1)`).Scan(&locked); err != nil {
+			return Claim{}, err
+		}
+		if !locked {
+			return Claim{}, sql.ErrNoRows
+		}
+	}
 	var c Claim
 	var b []byte
-	err = tx.QueryRowContext(ctx, `SELECT account_id,document FROM factory_work_items WHERE state IN ('planning_queued','planning') AND (lease_expires_at IS NULL OR lease_expires_at<now()) ORDER BY updated_at,id FOR UPDATE SKIP LOCKED LIMIT 1`).Scan(&c.AccountID, &b)
+	err = tx.QueryRowContext(ctx, `SELECT account_id,document FROM factory_work_items WHERE
+ (state='planning' OR (state='planning_queued' AND ($1=0 OR (SELECT count(*) FROM factory_work_items WHERE state='planning')<$1)))
+ AND (lease_expires_at IS NULL OR lease_expires_at<now()) ORDER BY updated_at,id FOR UPDATE SKIP LOCKED LIMIT 1`, limit).Scan(&c.AccountID, &b)
 	if err != nil {
 		return Claim{}, err
 	}
