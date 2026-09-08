@@ -61,11 +61,13 @@ type Node struct {
 	Attempt      *StageAttempt   `json:"attempt,omitempty"`
 }
 type StageAttempt struct {
-	ID     string `json:"id"`
-	Stage  string `json:"stage"`
-	BoxID  string `json:"boxId,omitempty"`
-	TaskID string `json:"taskId,omitempty"`
-	State  string `json:"state"`
+	ID      string   `json:"id"`
+	Stage   string   `json:"stage"`
+	BoxID   string   `json:"boxId,omitempty"`
+	TaskID  string   `json:"taskId,omitempty"`
+	State   string   `json:"state"`
+	Process *Process `json:"process,omitempty"`
+	Failure string   `json:"failure,omitempty"`
 }
 type Graph struct {
 	WorkID       string `json:"workId"`

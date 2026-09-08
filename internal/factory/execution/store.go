@@ -128,7 +128,7 @@ func (s Store) Bind(ctx context.Context, account, workID string, version int, id
 		if err != nil {
 			return err
 		}
-		if n.Attempt == nil || n.Attempt.ID != attemptID || boxID == "" || taskID == "" {
+		if n.Attempt == nil || n.Attempt.ID != attemptID || boxID == "" || taskID == "" || (n.Attempt.State != "queued" && n.Attempt.State != "submitted") {
 			return ErrConflict
 		}
 		if n.Attempt.TaskID != "" && (n.Attempt.TaskID != taskID || n.Attempt.BoxID != boxID) {
@@ -149,19 +149,61 @@ func (s Store) AcceptVerification(ctx context.Context, a, w string, v int, id st
 func (s Store) AcceptReview(ctx context.Context, a, w string, v int, id string, r Review) (Snapshot, error) {
 	return s.accept(ctx, a, w, v, id, "review", r.Process, func(g *Graph) error { return g.Reviewed(id, r) })
 }
+
+// Fail records an observed terminal process separately from semantic rejection.
+// An observation timeout or SSH failure with no actual exit is not terminal.
+// Reasons are coordinator-owned codes, never raw agent/provider diagnostics.
+func (s Store) Fail(ctx context.Context, a, w string, v int, id, stage string, p Process, reason string) (Snapshot, error) {
+	if (p.ExitCode == nil && (p.Signal < 1 || p.Signal > 64)) ||
+		(p.ExitCode != nil && (*p.ExitCode < 0 || *p.ExitCode > 255 || p.Signal != 0)) {
+		return Snapshot{}, ErrConflict
+	}
+	switch reason {
+	case "process_failed":
+		if p.ExitCode != nil && *p.ExitCode == 0 {
+			return Snapshot{}, ErrConflict
+		}
+	case "candidate_rejected", "checks_rejected", "review_rejected", "result_missing":
+	default:
+		return Snapshot{}, ErrConflict
+	}
+	return s.accept(ctx, a, w, v, id, stage, p, func(g *Graph) error {
+		n, err := g.node(id)
+		if err != nil {
+			return err
+		}
+		if (stage != "build" || n.State != "building") &&
+			(stage != "verify" || n.State != "verifying") &&
+			(stage != "review" || n.State != "reviewing") {
+			return ErrConflict
+		}
+		n.State = stage + "_failed"
+		n.Attempt.Failure = reason
+		return nil
+	})
+}
+
+// Publish is called only with an independently reconciled GitHub PR result.
+// The graph continues to distinguish PR readiness from integration acceptance.
+func (s Store) Publish(ctx context.Context, a, w string, v int, id, sha, pr string) (Snapshot, error) {
+	return s.mutate(ctx, a, w, v, func(_ *sql.Tx, _ *factory.Work, g *Graph) error {
+		return g.Published(id, sha, pr)
+	})
+}
 func (s Store) accept(ctx context.Context, a, w string, v int, id, stage string, p Process, apply func(*Graph) error) (Snapshot, error) {
 	return s.mutate(ctx, a, w, v, func(_ *sql.Tx, _ *factory.Work, g *Graph) error {
 		n, err := g.node(id)
 		if err != nil {
 			return err
 		}
-		if n.Attempt == nil || n.Attempt.Stage != stage || n.Attempt.ID != p.AttemptID || n.Attempt.TaskID == "" || n.Attempt.TaskID != p.TaskID || n.Attempt.BoxID != p.BoxID {
+		if n.Attempt == nil || n.Attempt.State != "submitted" || n.Attempt.Stage != stage || n.Attempt.ID != p.AttemptID || n.Attempt.TaskID == "" || n.Attempt.TaskID != p.TaskID || n.Attempt.BoxID != p.BoxID {
 			return ErrConflict
 		}
 		if err = apply(g); err != nil {
 			return err
 		}
 		n.Attempt.State = "exited"
+		n.Attempt.Process = &p
 		return nil
 	})
 }

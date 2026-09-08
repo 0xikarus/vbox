@@ -1,8 +1,10 @@
 # Feature-stage acceptance contract
 
-This package is a transition model, **not yet a running feature scheduler**.
-The coordinator must persist graphs/attempts with leases and approval-revision
-fencing and supply independently collected runtime evidence. Do not expose its
+This package has a transition model and PostgreSQL stage store, **not yet a
+running feature scheduler**. The store persists intent before submission, fences
+updates by account/version/approved plan, and shares worker admission with
+planning (at most six). A coordinator must still drive the controller and supply
+independently collected runtime evidence. Do not expose its
 receipt-taking methods directly to browsers or accept a builder's JSON as
 verification evidence.
 
@@ -32,6 +34,15 @@ The path for a feature is:
 product is complete**. The combined candidate must still undergo independent
 in-box verification/review and be delivered with reproducible start instructions.
 Do not convert agent exit 0, individual PRs or this flag into final acceptance.
+
+`Store.Fail` requires an observed terminal process and retains its actual exit
+or signal separately from a coordinator-owned failure code. Exit 0 with a
+rejected candidate is a semantic failure, not a fabricated nonzero exit.
+Missing exit information (including an SSH observation error) cannot release
+admission this way. Terminal attempts cannot be rebound or replayed. Automatic
+retry is not implemented; a later explicit retry must retain this evidence and
+allocate a new attempt identity. `Store.Publish` persists a trusted reconciled
+PR result, but does not itself call GitHub or prove integration success.
 
 Tests here use synthetic receipts to check acceptance rules. The separate
 verification runner must execute real commands; live build/PR integration remains

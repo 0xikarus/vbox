@@ -66,6 +66,23 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 
 Latest continuation (2026-09-08):
 
+- `3003f4e` passed full Go tests, real PostgreSQL tests and vet inside the
+  integration box: task `4bc3d356-64e7-4064-8bb1-533800000000`, actual exit 0.
+  This includes durable feature intent, version/account fences, restart identity
+  recovery, and shared planning/feature admission. It is not a running scheduler.
+- Builder task `78464022-5b21-4e50-815f-85e100000000` exited 0 and pushed
+  `9713c8`. Its evidence records a real Codex-authored commit and independent
+  numeric check. Review found post-reap process-group cleanup and inherited
+  credential risks; it is **not integrated yet**. Bounded follow-up task
+  `eecb6fea-9fe1-4066-85bd-edbb00000000` is queued in the same worker.
+- Publication task `90d4a24d-f982-433f-8c88-eac600000000` was rechecked and is
+  still queued, not failed. No duplicate submission or lifecycle reset performed.
+- Added terminal stage failure receipts and trusted PR-result persistence.
+  Semantic rejection retains actual exit 0; missing exits cannot be treated as
+  completion. Finished attempts reject late rebinding. New regression tests
+  await in-box execution. Independent review, remote scheduling, PR publication,
+  integration and live App/Claude acceptance remain unfinished.
+
 - Verification worker `166cc5e` integrated as `047b39f`. Review corrected the
   check HOME from `/nonexistent` to a fresh private writable home/cache outside
   source, and aligned signals to numeric POSIX values. Task
