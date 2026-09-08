@@ -97,6 +97,39 @@ func fixture(t *testing.T) Request {
 	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "fixture")
 	return Request{Workspace: ws, ExpectedSHA: git("rev-parse", "HEAD"), OutputDir: out, Checks: []factory.Check{command(t, "pass")}}
 }
+
+func TestActualGoBuildWithPrivateCache(t *testing.T) {
+	req := fixture(t)
+	for name, body := range map[string]string{"go.mod": "module example.invalid/verificationfixture\n\ngo 1.26\n", "main.go": "package main\nfunc main() {}\n"} {
+		if err := os.WriteFile(filepath.Join(req.Workspace, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	git := func(args ...string) string {
+		cmd := exec.Command("/usr/bin/git", args...)
+		cmd.Dir = req.Workspace
+		cmd.Env = []string{"PATH=/usr/bin:/bin", "HOME=" + t.TempDir(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null"}
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("fixture Git: %v", err)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	git("add", "go.mod", "main.go")
+	git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-m", "real build fixture")
+	req.ExpectedSHA = git("rev-parse", "HEAD")
+	output := filepath.Join(req.OutputDir, "fixture-binary")
+	req.Checks = []factory.Check{{Argv: []string{"go", "build", "-o", output, "."}, Cwd: ".", TimeoutSeconds: 120}}
+	t.Setenv("GITHUB_TOKEN", "must-not-reach-check")
+	r, err := Run(context.Background(), req)
+	if err != nil || !r.AllPassed {
+		t.Fatalf("actual Go build failed: %v; report error=%s", err, r.Error)
+	}
+	if st, err := os.Stat(output); err != nil || st.Size() == 0 {
+		t.Fatal("compiler output missing")
+	}
+	evidence(t, r)
+}
 func command(t *testing.T, args ...string) factory.Check {
 	t.Helper()
 	exe, e := os.Executable()
@@ -165,7 +198,7 @@ func TestExecution(t *testing.T) {
 					t.Fatal(r, e)
 				}
 			case "signal":
-				if c.Signal == "" || c.ExitCode != nil {
+				if c.Signal == 0 || c.ExitCode != nil {
 					t.Fatal(r)
 				}
 			case "sleep":

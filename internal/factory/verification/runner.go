@@ -45,7 +45,7 @@ type CheckReport struct {
 	FinishedAt     *time.Time `json:"finish"`
 	Executed       bool       `json:"executed"`
 	ExitCode       *int       `json:"exitCode"`
-	Signal         string     `json:"signal,omitempty"`
+	Signal         int        `json:"signal,omitempty"`
 	Timeout        bool       `json:"timeout"`
 	Cancel         bool       `json:"cancel"`
 	Stdout         Log        `json:"stdout"`
@@ -147,7 +147,7 @@ func Run(ctx context.Context, req Request) (report Report, err error) {
 			report.Checks[i].Error = e.Error()
 		}
 		r := report.Checks[i]
-		passed = passed && r.Executed && r.ExitCode != nil && *r.ExitCode == 0 && r.Signal == "" && !r.Timeout && !r.Cancel && !r.Stdout.Truncated && !r.Stderr.Truncated && r.Error == ""
+		passed = passed && r.Executed && r.ExitCode != nil && *r.ExitCode == 0 && r.Signal == 0 && !r.Timeout && !r.Cancel && !r.Stdout.Truncated && !r.Stderr.Truncated && r.Error == ""
 		// Inspection still runs after cancellation, with its own bounded context.
 		audit, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		sha, clean, auditErr := inspect(audit, workspace)
@@ -331,6 +331,12 @@ func execute(ctx context.Context, c factory.Check, cwd, dir string, i int) (r Ch
 	}()
 	runCtx, cancel := context.WithTimeout(ctx, time.Duration(c.TimeoutSeconds)*time.Second)
 	defer cancel()
+	// Build tools need a writable cache, but must not inherit the worker user's
+	// credential-bearing home. Each check gets a fresh private home in evidence.
+	checkHome, e := os.MkdirTemp(dir, "check-home-")
+	if e != nil {
+		return r, e
+	}
 	pathEnv := runtime.GOROOT() + "/bin:/usr/local/bin:/usr/bin:/bin"
 	program := c.Argv[0]
 	if !strings.ContainsRune(program, '/') {
@@ -350,7 +356,7 @@ func execute(ctx context.Context, c factory.Check, cwd, dir string, i int) (r Ch
 	cmd := exec.CommandContext(runCtx, program, c.Argv[1:]...)
 	cmd.Args[0] = c.Argv[0]
 	cmd.Dir = cwd
-	cmd.Env = []string{"PATH=" + pathEnv, "LANG=C", "LC_ALL=C", "HOME=/nonexistent", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0"}
+	cmd.Env = []string{"PATH=" + pathEnv, "LANG=C", "LC_ALL=C", "HOME=" + checkHome, "XDG_CACHE_HOME=" + filepath.Join(checkHome, ".cache"), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0"}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	var groupMu sync.Mutex
 	groupLive := true
@@ -397,7 +403,7 @@ func execute(ctx context.Context, c factory.Check, cwd, dir string, i int) (r Ch
 	r.FinishedAt = &done
 	if s := cmd.ProcessState; s != nil {
 		if status, ok := s.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-			r.Signal = status.Signal().String()
+			r.Signal = int(status.Signal())
 		} else {
 			code := s.ExitCode()
 			r.ExitCode = &code

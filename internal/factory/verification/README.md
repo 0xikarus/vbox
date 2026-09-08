@@ -30,7 +30,9 @@ before an attempt exists.
 Checks run sequentially with direct argv, no implicit shell. The child receives
 an allowlisted environment, a controlled executable search path (the building Go
 toolchain's bin, `/usr/local/bin`, `/usr/bin`, `/bin`), and no inherited publishing
-credentials or user configuration. An explicitly approved shell executable is
+credentials or user configuration. Each check gets a fresh writable private HOME
+and XDG cache beneath its evidence directory, so build tools can create caches
+without reading the worker's credential-bearing home. An explicitly approved shell executable is
 still an executable; callers own approval of its argv. Deadline is the earlier
 of context cancellation/deadline and the approved 1–3600 second timeout.
 
