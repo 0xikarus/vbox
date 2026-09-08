@@ -66,6 +66,34 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- Publication coordinator worker `90d4a24d-f982-433f-8c88-eac600000000`
+  finished with actual exit 0, source `a62ed8a`, integrated as `238ddac`.
+  It recovered without a controller restart; the earlier restart question is
+  obsolete. `96e0d55` wires publication into service startup behind explicit
+  `VMBOX_FACTORY_ISSUES_WRITE=true` policy and gates UI/API approval accordingly.
+- Combined verification task `3da3ba36-c034-46a4-8ce1-76e100000000` at
+  `96e0d55` exited 1. All Factory packages (including PostgreSQL publication
+  tests) passed, but `TestIdleHibernateRealTmux` failed while flushing the
+  workspace filesystem (`signal: killed`, shared test context is 10 seconds).
+  The exact cause of the slow flush remains unresolved. Full vet and browser
+  checks were not reached; this is not a passing combined run.
+- Verifier wrapper worker `baed1333-c0f3-46ba-8211-876f00000000` finished
+  with actual exit 0; source `2f71e81` integrated as `b34862b`. Its compiled
+  parent/child tests exercise real check exits 0/7, cancellation and SIGKILL,
+  private logs, callback refusal/retries and durable redelivery without rerun.
+  Wrapper delivery success, verifier child exit and individual check acceptance
+  remain separate. Worker tests/build/vet passed; race could not run with CGO
+  disabled. This does not prove remote candidate/log transport or scheduling.
+- Follow-up task `cd2b559e-e77e-4e1d-899b-06bc00000000` is queued in the
+  integration box, pinned to `b34862b`: verifier-related tests, full vet and
+  the previously unreached real Chromium API-fixture suite. No result yet.
+- Remote builder adapter worker `f02f715b-b973-40c3-87e9-77a900000000`
+  is running in `factory-ui-0908`, branch `factory/remote-build-0908`, scoped
+  to `internal/factory/remotebuild`. It must recover accepted tasks before
+  staging again and refuse dependency builds without prepared-source proof.
+  Durable execution scheduling, authenticated artifact transfer, PR/integration
+  orchestration and full live UI-to-product acceptance remain unfinished.
+
 - Builder staging at `af291df` passed full Go/PostgreSQL tests and vet:
   `cb52e47c-d10d-4812-8db3-e31f00000000`, actual exit 0.
 - Reviewer sources `eb6aaa9`/`4c19bb3` integrated as `a3a3fd0`/`7b37407`.
