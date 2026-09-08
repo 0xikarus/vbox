@@ -14,7 +14,9 @@ func PrepareIdleHibernate(ctx context.Context, root string) (HibernateResult, er
 	result.SnapshotPath = TmuxSnapshotPath(root)
 	// Check and stop in the same tmux command queue. A concurrently added
 	// session prevents the stop, and the subsequent probe fails closed.
-	_, err := tmuxOutput(ctx, "if-shell", "-F", "#{==:#{server_sessions},0}", "kill-server", "display-message 'workspace became busy'")
+	// The session loop expands to one x per session, including on tmux 3.3a.
+	// server_sessions is unavailable there and expands to an empty string.
+	_, err := tmuxOutput(ctx, "if-shell", "-F", "#{==:#{S:x},}", "kill-server", "display-message 'workspace became busy'")
 	if err != nil && !tmuxServerAbsent(err) {
 		return result, err
 	}
