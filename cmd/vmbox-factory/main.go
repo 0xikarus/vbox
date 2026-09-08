@@ -28,6 +28,9 @@ func main() {
 	}
 }
 func run() error {
+	if len(os.Args) == 2 && os.Args[1] == "seal-github-key" {
+		return sealGitHubKey()
+	}
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()
 	dsn := os.Getenv("VMBOX_FACTORY_DATABASE_URL")
@@ -67,6 +70,9 @@ func run() error {
 	}
 	defer assetStore.Close()
 	service := &factory.Service{Store: store, GatewayToken: token, Assets: factory.PrivateAssets{Store: assetStore}, WorkerLimit: limit}
+	if err = configureBackends(setup, service); err != nil {
+		return err
+	}
 	// Repository and execution adapters are deliberately not substituted with
 	// fake repositories or canned agent output when configuration is absent.
 	mux := http.NewServeMux()
@@ -91,7 +97,7 @@ func run() error {
 		defer done()
 		_ = server.Shutdown(shutdown)
 	}()
-	slog.Info("factory backend listening", "address", address, "repositoryAccessConfigured", false)
+	slog.Info("factory backend listening", "address", address, "repositoryAccessConfigured", service.Repositories != nil)
 	err = server.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil

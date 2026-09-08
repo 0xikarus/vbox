@@ -29,12 +29,13 @@ type RepositoryBackend interface {
 }
 
 type Service struct {
-	Store        *Store
-	GatewayToken string
-	Assets       AssetBackend
-	Repositories RepositoryBackend
-	Profiles     func(context.Context, string) ([]Profile, error)
-	WorkerLimit  int
+	ExecutionReady bool
+	Store          *Store
+	GatewayToken   string
+	Assets         AssetBackend
+	Repositories   RepositoryBackend
+	Profiles       func(context.Context, string) ([]Profile, error)
+	WorkerLimit    int
 	// Images is enabled per agent only after its installed runtime adapter can
 	// deliver actual visual inputs. File staging alone is not this capability.
 	Images map[string]bool
@@ -160,6 +161,10 @@ func (s *Service) manifest(ctx context.Context, account string, ids []string) ([
 }
 
 func (s *Service) createWork(w http.ResponseWriter, r *http.Request, p Identity) {
+	if !s.ExecutionReady {
+		apiError(w, 503, "Planning execution is not configured on this factory yet")
+		return
+	}
 	var input CreateWork
 	if !decodeBody(w, r, &input) {
 		return
@@ -210,6 +215,10 @@ func (s *Service) createWork(w http.ResponseWriter, r *http.Request, p Identity)
 }
 
 func (s *Service) addReply(w http.ResponseWriter, r *http.Request, p Identity) {
+	if !s.ExecutionReady {
+		apiError(w, 503, "Planning execution is not configured on this factory yet")
+		return
+	}
 	var input Reply
 	if !decodeBody(w, r, &input) {
 		return
