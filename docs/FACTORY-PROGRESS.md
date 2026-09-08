@@ -66,6 +66,34 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- Builder staging at `af291df` passed full Go/PostgreSQL tests and vet:
+  `cb52e47c-d10d-4812-8db3-e31f00000000`, actual exit 0.
+- Reviewer sources `eb6aaa9`/`4c19bb3` integrated as `a3a3fd0`/`7b37407`.
+  `50e05cf` adds candidate/timing/process-bound review mapping; negative reviews
+  retain exit 0 without passing acceptance. Full Go/PostgreSQL/vet task
+  `afae7d29-5249-4208-86a6-f20200000000` passed at that commit, actual exit 0.
+- `ffc98e1` durably retains rejected review summaries/findings and displays them
+  in native UI details, distinct from process failure. Its added DB/browser
+  regressions are included in pending combined task below.
+- Transfer task `6387138a-4b47-4342-844a-688000000000` became **unknown**, no
+  observed exit. Fresh Railway endpoint plus direct SSH procfs/session inspection
+  found no task/agent process or tmux session; checkout was clean at `ec33989`,
+  which was also pushed. Do not report its task exit as 0. Its recorded in-box
+  tests support the code, not recovery of the missing controller exit receipt.
+- Build-job sources `43494aa`/`ec33989` integrated as `6d9069d`/`b4eb77b`.
+  Candidate bundles now declare the exact baseline prerequisite; import verifies
+  bytes/digest/header/baseline/candidate. Review found builder inspection also
+  needed shallow metadata. `e19ad0e` retains that metadata in builder/verifier/
+  reviewer inspections and extends the real Git transfer regression through
+  actual builder.Run (fixture CLI) and independent command verification.
+- Combined full Go/PostgreSQL/vet and Chromium task
+  `d3e2f72d-6ee3-4249-88ee-54f900000000` is queued at `b722ba2`.
+- Next distinct worker task `baed1333-c0f3-46ba-8211-876f00000000` is queued in
+  the confirmed-idle assets box, branch `factory/verify-job-0908`, scoped to
+  verification child-process/receipt delivery. Initial local permission review
+  timed out before executing any submission; its permitted single retry created
+  this task. No uncertain controller submission was replayed.
+
 - Task `c54642e4-fe3b-40c9-8502-a57700000000` finished **exit 0**: PR-client
   and builder tests/vet passed, followed by **22/22 real Chromium fixture tests**
   inside the integration box. These exercise UI behavior with intercepted APIs,
