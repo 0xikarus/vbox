@@ -1,16 +1,19 @@
 'use strict';
 const $=s=>document.querySelector(s);
 let token='',defaults=null,epoch=0;
-let factoryUnmount=null;
+let factoryUnmount=null,tasksUnmount=null;
 async function openFactory(){
- const root=$('#factory'),version=epoch;
- if(location.hash!=='#factory'||$('#app').hidden){root.hidden=true;return}
- const caps=await api('/v1/capabilities');if(version!==epoch||!caps.providerEdits)return;
+ const selected=location.hash,version=epoch;
+ $('#factory').hidden=true;$('#tasks').hidden=true;
+ if(!['#factory','#tasks'].includes(selected)||$('#app').hidden)return;
+ const root=$(selected);
+ const caps=await api('/v1/capabilities');if(version!==epoch||location.hash!==selected||$('#app').hidden||!caps.providerEdits)return;
  root.hidden=false;
- if(!factoryUnmount){const {mountFactory}=await import('/factory.js');if(version!==epoch||$('#app').hidden)return;factoryUnmount=mountFactory(root,api)}
+ if(selected==='#factory'&&!factoryUnmount){const {mountFactory}=await import('/factory.js');if(version!==epoch||location.hash!==selected||$('#app').hidden)return;factoryUnmount=mountFactory(root,api)}
+ if(selected==='#tasks'&&!tasksUnmount){const {mountTasks}=await import('/tasks.js');if(version!==epoch||location.hash!==selected||$('#app').hidden)return;tasksUnmount=mountTasks(root,api)}
 }
 window.addEventListener('hashchange',()=>openFactory().catch(err=>{$('#error').textContent=err.message}));
-document.addEventListener('click',e=>{if(e.target?.id==='logout'){factoryUnmount?.();factoryUnmount=null;$('#factory').hidden=true}},true);
+document.addEventListener('click',e=>{if(e.target?.id==='logout'){factoryUnmount?.();tasksUnmount?.();factoryUnmount=null;tasksUnmount=null;$('#factory').hidden=true;$('#tasks').hidden=true}},true);
 async function api(path,method='GET',body,headers={}){
  const r=await fetch(path,{method,credentials:'same-origin',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
@@ -47,6 +50,7 @@ async function refresh(){
  const version=epoch,[caps,boxes]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes')]);if(version!==epoch)return;
  document.querySelectorAll('[data-owner]').forEach(n=>n.hidden=!caps.providerEdits);
  $('#factory').hidden=!caps.providerEdits||location.hash!=='#factory';
+ $('#tasks').hidden=!caps.providerEdits||location.hash!=='#tasks';
  const table=document.createElement('table'),head=document.createElement('tr');['Name','State','Default agent','CLI'].forEach(t=>head.append(node('th',t)));table.append(head);
  for(const b of boxes){const row=document.createElement('tr'),cell=document.createElement('td'),select=document.createElement('select');
  for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;

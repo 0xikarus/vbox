@@ -76,6 +76,8 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /factory.js", uiHandler("factory.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /factory.css", uiHandler("factory.css", "text/css; charset=utf-8", false))
+	mux.HandleFunc("GET /tasks.js", uiHandler("tasks.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /tasks.css", uiHandler("tasks.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
 	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))

@@ -154,6 +154,18 @@ test('poll errors stop, hidden views stop, cleanup invalidates in-flight respons
   await click(page,'Refresh / reconnect');while(!release)await pause(10);await page.evaluate(()=>window.dispose());await release();await pause(100);assert.equal(await page.$eval('#root',n=>n.childElementCount),0);
   await page.evaluate(()=>{window.mount();window.mount();});await page.waitForSelector('[name=task] option[value=w1]');assert.equal(await page.$$eval('.tasks',ns=>ns.length),1);
 });
+test('missing results never expose a replay action',async t=>{
+  const w=record('w1','failed');w.attempts=[{id:'lost',stage:'work',assignmentId:'research',state:'result_missing',exitCode:null,failure:'Receipt unavailable'}];
+  const {page}=await fixture(t,{items:[w]});await saved(page);
+  assert.equal(await page.$('[data-retry]'),null);
+  assert.match(await page.$eval('.tasks-detail',n=>n.textContent),/exit not observed/);
+});
+test('unchanged polling preserves the rendered output node',async t=>{
+  const {page}=await fixture(t,{items:[record('w1','running')]});await saved(page);
+  await page.evaluate(()=>{window.previousOutput=document.querySelector('.tasks-detail pre')});
+  await click(page,'Refresh / reconnect');await pause(150);
+  assert.equal(await page.evaluate(()=>window.previousOutput===document.querySelector('.tasks-detail pre')),true);
+});
 test('keyboard disclosure focus and open state survive polling on mobile',async t=>{
   const w=record('w1','running');w.attempts=[{id:'a1',stage:'work',assignmentId:'research',state:'running',exitCode:null,output:'Partial recorded output'}];
   const {page,state}=await fixture(t,{mobile:true,items:[w]});await saved(page);

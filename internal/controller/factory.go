@@ -13,6 +13,10 @@ import (
 func (s *Server) factoryGateway(w http.ResponseWriter, r *http.Request, p Principal) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.FactoryURL == "" || s.FactoryToken == "" {
+		if r.Method == "GET" && r.URL.Path == "/v1/factory/tasks/capabilities" {
+			writeJSON(w, 200, map[string]any{"enabled": false, "executionReady": false, "agents": []any{}, "maxWorkers": 0})
+			return
+		}
 		if r.Method == "GET" && r.URL.Path == "/v1/factory/capabilities" {
 			writeJSON(w, 200, map[string]any{"enabled": false, "githubConfigured": false, "agents": []any{}})
 			return

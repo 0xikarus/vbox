@@ -1,10 +1,25 @@
 package controller
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 )
+
+func TestTasksCapabilitiesAreDisabledWithoutBackend(t *testing.T) {
+	s := &Server{}
+	w := httptest.NewRecorder()
+	s.factoryGateway(w, httptest.NewRequest("GET", "/v1/factory/tasks/capabilities", nil), Principal{Role: "owner"})
+	var caps struct {
+		Enabled        bool `json:"enabled"`
+		ExecutionReady bool `json:"executionReady"`
+		MaxWorkers     int  `json:"maxWorkers"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &caps) != nil || caps.Enabled || caps.ExecutionReady || caps.MaxWorkers != 0 {
+		t.Fatal("unconfigured Tasks advertised execution", w.Code)
+	}
+}
 
 func TestFactoryGatewayReplacesUntrustedIdentity(t *testing.T) {
 	called := false

@@ -13,6 +13,7 @@ export VMBOX_CHROMIUM
 VMBOX_CHROMIUM=$(command -v chromium)
 export VMBOX_FACTORY_PUPPETEER
 VMBOX_FACTORY_PUPPETEER=$(node -e "console.log(require.resolve('puppeteer-core',{paths:['/data/workspace/factory-browser-tools']}))")
+export VMBOX_TASKS_PUPPETEER="$VMBOX_FACTORY_PUPPETEER"
 if (( $# == 0 )); then
   set -- tests/browser/factory-ui.test.mjs
 fi

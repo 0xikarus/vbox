@@ -5,7 +5,7 @@ const API = '/v1/factory';
 const array = v => Array.isArray(v) ? v : [];
 const active = s => ['planning_queued', 'planning', 'running', 'synthesizing', 'cancelling'].includes(s);
 const replyable = s => ['awaiting_reply', 'awaiting_approval', 'completed', 'needs_revision', 'failed', 'cancelled'].includes(s);
-const terminalFailure = a => a.state === 'result_missing' || a.state === 'exited' && (Boolean(a.failure) || a.signal > 0 || Number.isInteger(a.exitCode) && a.exitCode !== 0);
+const terminalFailure = a => a?.state === 'exited' && (Boolean(a.failure) || a.signal > 0 || Number.isInteger(a.exitCode) && a.exitCode !== 0);
 const mounts = new WeakMap();
 const latestPlan = w => array(w?.plans).reduce((best, p) => !best || p.revision > best.revision ? p : best, null);
 
@@ -159,7 +159,7 @@ export function mountTasks(root, api) {
   }
   function accept(value) {
     if (!value?.id || !Number.isSafeInteger(value.version)) throw Error('Invalid task response');
-    if (work?.id === value.id && value.version < work.version) return;
+    if (work?.id === value.id && value.version <= work.version) return;
     work = value;
     const i = items.findIndex(w => w.id === value.id); if (i < 0) items.unshift(value); else items[i] = value;
     renderPicker(); renderWork();
