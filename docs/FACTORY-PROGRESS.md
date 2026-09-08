@@ -66,6 +66,23 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 
 Latest continuation (2026-09-08):
 
+- Regression task `af61889b-0333-443c-8eda-fd2d00000000` completed with exit 0:
+  full Go tests, Go vet, and the script's real PostgreSQL checks passed at
+  `098131f`. This includes the formerly failing real tmux idle-hibernate test.
+- Runtime worker commit is now integrated as `e017437`. `31dac0d` adds
+  `vmbox-planner`: bounded private stdin job, actual agent exit/signal receipt,
+  durable start marker, create-only evidence, and authenticated result delivery.
+  Lost delivery responses retry the stored receipt, not the agent execution.
+  New command tests/build task `c9939798-f6f2-4521-813b-0d0200000000` is running
+  in the integration box. These fixture tests are not a live planning-loop proof.
+- `fc3a4be` preserves provisioning identity/phase in the dispatcher and adds
+  controller-resolved connections plus fixed-command planner submission. The
+  private staging transport and concrete Start/Observe adapter remain unwired.
+- Parallel publication worker `6e369119-bb53-410c-8afa-dd5400000000` is running
+  on `factory/github-publication-0908` (GitHub App issue/comment primitives).
+  Result inbox worker `d643ac8c-be0d-4f85-8035-528e00000000` is running on
+  `factory/result-inbox-0908` (scoped capabilities and durable PostgreSQL inbox).
+  Neither task's pending work is yet integrated or claimed verified.
 - User reconfirmed a maximum of **6 fleet slots**, not 8. Desired capacity
   remains 4; no additional slots have been requested.
 - GitHub App worker completed with exit 0; its client is integrated at
@@ -78,8 +95,8 @@ Latest continuation (2026-09-08):
 - Diagnostic `d441852c-d4ca-4a98-8db9-4beb00000000` exited 0 in the integration
   box: the tmux session-loop format distinguished live and empty servers and
   stopped only the isolated empty server. `098131f` uses that compatible format.
-- Full Go tests/vet and real PostgreSQL verification of `098131f` are queued
-  as `af61889b-0333-443c-8eda-fd2d00000000` in the integration box. Results pending.
+- Full Go tests/vet and real PostgreSQL verification of `098131f` passed in
+  `af61889b-0333-443c-8eda-fd2d00000000`; later commits need combined verification.
 
 Poll the exact task IDs above; observation failures must not cause resubmission.
 Three isolated boxes now exist; total fleet remains 4, below the approved 6.
