@@ -62,7 +62,7 @@ read -r binsize binhash
 read -r jobsize jobhash
 read -r count
 [[ "$binsize" =~ ^[1-9][0-9]{0,8}$ && "$jobsize" =~ ^[1-9][0-9]{0,5}$ && "$count" =~ ^(0|[1-9][0-9]{0,3})$ ]] || fail
-(( binsize <= 134217728 && jobsize <= 200000 && count <= 4096 )) || fail
+(( binsize <= 134217728 && jobsize <= 200000 && count <= 8 )) || fail
 [[ "$binhash" =~ ^[0-9a-f]{64}$ && "$jobhash" =~ ^[0-9a-f]{64}$ ]] || fail
 printf '%s\n' "$attempt" "$repo" "$sha" "$binsize $binhash" "$jobsize $jobhash" "$count" > "$work/manifest"
 ids=(); sizes=(); hashes=(); total=0; previous=

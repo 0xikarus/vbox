@@ -35,6 +35,17 @@ func (f *fixture) RunAttached(ctx context.Context, a []string, in io.Reader, out
 	f.endpoints = append(f.endpoints, a[len(a)-2])
 	f.mu.Unlock()
 	cmdline := a[len(a)-1]
+	var quoted []string
+	for _, arg := range provider.AsWorkloadUser(nil) {
+		quoted = append(quoted, "'"+strings.ReplaceAll(arg, "'", "'\"'\"'")+"'")
+	}
+	prefix := strings.Join(quoted, " ") + " "
+	if !strings.HasPrefix(cmdline, prefix) {
+		f.t.Fatal("staging did not select the workload user")
+	}
+	// The isolated fixture already runs as its test uid; assert and remove the
+	// production privilege transition rather than changing the test directory owner.
+	cmdline = strings.TrimPrefix(cmdline, prefix)
 	for _, s := range []string{"ghs_fixture_private", `{"private":"job"}`, "private-image", "fixture-binary"} {
 		if strings.Contains(strings.Join(a, " "), s) {
 			f.t.Error("payload in SSH argv")

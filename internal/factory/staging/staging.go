@@ -64,7 +64,7 @@ func (s Stager) Stage(ctx context.Context, in Input) error {
 	sort.Slice(images, func(i, j int) bool { return images[i].ID < images[j].ID })
 	total := 0
 	// Bound even empty-image metadata.
-	if len(images) > 4096 {
+	if len(images) > 8 {
 		return fmt.Errorf("too many images")
 	}
 	for i, im := range images {
@@ -109,7 +109,10 @@ func (s Stager) Stage(ctx context.Context, in Input) error {
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancel()
-	result, err := s.SSH.StreamConnection(ctx, in.Connection, []string{"/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "/bin/bash", "--noprofile", "--norc", "-c", remoteScript}, provider.ExecOptions{Stdin: io.MultiReader(readers...), Stdout: io.Discard, Stderr: io.Discard})
+	// Railway's SSH transport enters as the platform user. Staged paths must be
+	// owned by the same unprivileged user that executes controller process tasks.
+	remote := provider.AsWorkloadUser([]string{"/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "/bin/bash", "--noprofile", "--norc", "-c", remoteScript})
+	result, err := s.SSH.StreamConnection(ctx, in.Connection, remote, provider.ExecOptions{Stdin: io.MultiReader(readers...), Stdout: io.Discard, Stderr: io.Discard})
 	if err != nil || result.ExitCode != 0 {
 		return fmt.Errorf("private staging failed")
 	}

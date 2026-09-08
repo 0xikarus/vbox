@@ -6,8 +6,10 @@ is no provider client, connection cache, task launch, build, or agent execution.
 Build the planner inside the controller's box and pass that regular local file.
 Local binary path components cannot be symlinks.
 
-All attempt values and bytes travel on uncaptured SSH stdin. The SSH command is
-a static embedded Bash program, started with an empty environment. Both remote
+All attempt values and bytes travel on uncaptured SSH stdin. The SSH command uses
+the existing workload-user wrapper (`sudo -n -H -u vmbox`) before running a static
+embedded Bash program with an empty environment. This keeps staged paths owned
+by the same user as controller process tasks. Both remote
 output streams are discarded, including transport error details. Job JSON is
 opaque to staging and may contain private capabilities; it is never interpreted
 as shell or logged.
@@ -74,7 +76,7 @@ must match before detached checkout. Hooks and fsmonitor are disabled, no LFS
 filter is configured, and checkout does not recurse into submodules. Repository
 scripts are not executed.
 
-Limits: 10 MiB/image, 40 MiB/images total, 4,096 images (including empty ones),
+Limits: 10 MiB/image, 40 MiB/images total, 8 images (including empty ones),
 200,000 bytes/job, 128 MiB/nonempty binary, and 4,096 token characters. Lock wait
 is at most 120 seconds, Git init 30 seconds, fetch/checkout 120 seconds each
 (with a 5-second forced-kill grace), and the whole SSH operation has a 5-minute
@@ -85,8 +87,9 @@ coreutils, and util-linux `flock` at standard system paths.
 ## Validation in this box
 
 The tests use the real `transport.SSH.StreamConnection` and its attached-runner
-interface. The fixture checks SSH argv and output handling, executes the exact
-SSH-quoted command with a real local Bash, and redirects only the fixed root and
+interface. The fixture checks SSH argv and output handling, asserts/removes the
+workload-user wrapper (it already runs under its isolated test uid), executes the
+remaining SSH-quoted command with a real local Bash, and redirects the fixed root and
 PATH into a private temporary directory. A Git wrapper validates fetch options
 and the environment-only header, then replaces the network destination with a
 local repository. Real Git performs init, shallow fetch, SHA verification, and
