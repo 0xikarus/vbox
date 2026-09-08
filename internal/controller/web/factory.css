@@ -1,0 +1,27 @@
+.factory { color: #222; font: 1rem/1.5 system-ui, sans-serif; min-width: 0; }
+.factory *, .factory *::before, .factory *::after { box-sizing: border-box; }
+.factory [hidden] { display: none !important; }
+.factory form { display: block; margin: 1rem 0; }
+.factory fieldset { min-width: 0; border: 1px solid #ccc; padding: 1rem; }
+.factory legend, .factory h2, .factory h3 { font-weight: 600; }
+.factory label { display: block; margin: .5rem 0; max-width: 100%; }
+.factory input, .factory select, .factory textarea, .factory button { font: inherit; max-width: 100%; }
+.factory label > input, .factory label > select, .factory textarea { display: block; width: 100%; }
+.factory textarea { min-height: 7rem; resize: vertical; }
+.factory button { cursor: pointer; margin: .25rem .5rem .25rem 0; padding: .3rem .6rem; }
+.factory button:disabled { cursor: default; }
+.factory :focus-visible { outline: 2px solid #0645ad; outline-offset: 2px; }
+.factory p, .factory pre, .factory li, .factory summary, .factory a, .factory figcaption { overflow-wrap: anywhere; }
+.factory pre { white-space: pre-wrap; font: .9rem/1.5 ui-monospace, monospace; color: inherit; }
+.factory section, .factory article { border-top: 1px solid #ddd; margin-top: 1rem; padding-top: .5rem; }
+.factory-error { color: #a00; }
+.factory-error:empty { display: none; }
+.factory-gallery { display: flex; flex-wrap: wrap; gap: .75rem; }
+.factory-gallery figure, .factory-gallery > a { margin: 0; width: 10rem; max-width: 100%; }
+.factory-gallery img { display: block; width: 100%; height: 7rem; object-fit: contain; border: 1px solid #ccc; }
+.factory-table { overflow-x: auto; max-width: 100%; }
+.factory table { width: 100%; min-width: 40rem; border-collapse: collapse; table-layout: fixed; }
+.factory th, .factory td { text-align: left; vertical-align: top; padding: .5rem; border-bottom: 1px solid #ddd; white-space: pre-wrap; overflow-wrap: anywhere; }
+.factory details { margin: 1rem 0; }
+.factory summary { cursor: pointer; }
+@media (max-width: 600px) { .factory fieldset { padding: .6rem; } .factory button { min-height: 2.75rem; } }
