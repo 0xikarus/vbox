@@ -210,7 +210,11 @@ export function mountFactory(root, request) {
         const row = el('tr'), process = el('td', a.state || 'unknown');
         if (a.boxId) link(process, 'Box', '/boxes/' + encodeURIComponent(a.boxId));
         const exit = Number.isInteger(a.exitCode) ? `exit ${a.exitCode}` : Number.isInteger(a.signal) && a.signal > 0 ? `signal ${a.signal}` : 'exit not observed';
-        row.append(el('td', a.featureId), el('td', a.stage), process, el('td', `${exit}${a.failure ? ' · ' + a.failure : ''}`));
+        const outcome = el('td', `${exit}${a.failure ? ' · ' + a.failure : ''}`);
+        if (a.summary || list(a.findings).length) {
+          const details = el('details'); details.append(el('summary', 'Review findings'), el('pre', [a.summary, ...list(a.findings)].filter(Boolean).join('\n\n'))); outcome.append(details);
+        }
+        row.append(el('td', a.featureId), el('td', a.stage), process, outcome);
         body.append(row);
       }
       table.append(body); scroll.append(table); detail.append(scroll, el('p', 'Process exit is not feature acceptance. Verification, independent review and a matching PR are separate steps.'));

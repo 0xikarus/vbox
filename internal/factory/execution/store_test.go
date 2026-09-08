@@ -124,6 +124,49 @@ func TestDurableFeatureAdmissionIdentityAndIsolation(t *testing.T) {
 	if err != nil || projected.Features[0].State != "needs_verification" || projected.Features[0].BoxID != "builder" {
 		t.Fatal("UI projection missing")
 	}
+	bindStage := func(stage, box string) Process {
+		t.Helper()
+		x, err = s.Reserve(ctx, "a", w.ID, x.Version, "api", stage, 2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := process(box)
+		p.AttemptID = x.Graph.Nodes[0].Attempt.ID
+		p.TaskID = stage + "-task"
+		x, err = s.Bind(ctx, "a", w.ID, x.Version, "api", p.AttemptID, p.BoxID, p.TaskID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	vp := bindStage("verify", "verifier")
+	v := verified(x.Graph, "api")
+	v.Process = vp
+	x, err = s.AcceptVerification(ctx, "a", w.ID, x.Version, "api", v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rp := bindStage("review", "reviewer")
+	negative := reviewed()
+	negative.Process = rp
+	negative.Approved = false
+	negative.Summary = "Actual independent review rejected candidate"
+	negative.BlockingFindings = []string{"Arithmetic changes price in the wrong direction"}
+	x, err = s.RejectReview(ctx, "a", w.ID, x.Version, "api", negative)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected, err = core.Get(ctx, "a", w.ID)
+	if err != nil || len(projected.FeatureAttempts) != 3 || projected.Features[0].State != "review_failed" {
+		t.Fatal("review failure history missing", err)
+	}
+	last := projected.FeatureAttempts[2]
+	if last.ExitCode == nil || *last.ExitCode != 0 || last.Failure != "review_rejected" || last.Summary != negative.Summary || len(last.Findings) != 1 {
+		t.Fatal("negative review lost actual evidence")
+	}
+	if _, err = s.Bind(ctx, "a", w.ID, x.Version, "api", rp.AttemptID, rp.BoxID, rp.TaskID); !errors.Is(err, ErrConflict) {
+		t.Fatal("negative review replayed")
+	}
 }
 
 func TestTerminalFailureReleasesCapacityWithoutInventingExit(t *testing.T) {

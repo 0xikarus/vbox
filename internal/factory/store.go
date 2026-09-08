@@ -34,15 +34,17 @@ type Attempt struct {
 // FeatureAttempt is a read-only UI projection of controller-observed execution.
 // Planning attempts and approved feature specifications remain separate.
 type FeatureAttempt struct {
-	ID        string `json:"id"`
-	FeatureID string `json:"featureId"`
-	Stage     string `json:"stage"`
-	State     string `json:"state"`
-	BoxID     string `json:"boxId,omitempty"`
-	TaskID    string `json:"taskId,omitempty"`
-	ExitCode  *int   `json:"exitCode"`
-	Signal    int    `json:"signal,omitempty"`
-	Failure   string `json:"failure,omitempty"`
+	ID        string   `json:"id"`
+	FeatureID string   `json:"featureId"`
+	Stage     string   `json:"stage"`
+	State     string   `json:"state"`
+	BoxID     string   `json:"boxId,omitempty"`
+	TaskID    string   `json:"taskId,omitempty"`
+	ExitCode  *int     `json:"exitCode"`
+	Signal    int      `json:"signal,omitempty"`
+	Failure   string   `json:"failure,omitempty"`
+	Summary   string   `json:"summary,omitempty"`
+	Findings  []string `json:"findings,omitempty"`
 }
 
 type Work struct {

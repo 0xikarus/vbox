@@ -64,6 +64,7 @@ test('feature outcomes distinguish exit zero, semantic rejection and missing exi
   const item = record('outcomes', 'implementing');
   item.featureAttempts = [
     {id:'a',featureId:'api',stage:'build',state:'exited',exitCode:0,failure:'candidate_rejected'},
+    {id:'review',featureId:'api',stage:'review',state:'exited',exitCode:0,failure:'review_rejected',summary:'Actual review',findings:['<script>window.pwned=1</script> wrong arithmetic']},
     {id:'b',featureId:'docs',stage:'build',state:'submitted',exitCode:null},
     {id:'c',featureId:'ui',stage:'verify',state:'exited',exitCode:null,signal:9},
   ];
@@ -74,6 +75,9 @@ test('feature outcomes distinguish exit zero, semantic rejection and missing exi
   assert.match(text, /exit not observed/);
   assert.match(text, /signal 9/);
   assert.match(text, /Process exit is not feature acceptance/);
+  assert.match(text, /Review findings/);
+  assert.match(text, /wrong arithmetic/);
+  assert.equal(await page.evaluate(() => window.pwned), undefined);
 });
 async function upload(page, name = 'images', type = 'image/png') {
   await page.evaluate(({ name, type }) => {

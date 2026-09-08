@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/0xikarus/vmbox-service/internal/factory"
 )
@@ -150,6 +151,21 @@ func (s Store) AcceptReview(ctx context.Context, a, w string, v int, id string, 
 	return s.accept(ctx, a, w, v, id, "review", r.Process, func(g *Graph) error { return g.Reviewed(id, r) })
 }
 
+// RejectReview preserves a valid negative independent review, including its
+// real exit and findings. It does not convert that decision into a process error.
+func (s Store) RejectReview(ctx context.Context, a, w string, v int, id string, r Review) (Snapshot, error) {
+	return s.accept(ctx, a, w, v, id, "review", r.Process, func(g *Graph) error {
+		n, err := g.node(id)
+		if err != nil || n.State != "reviewing" || n.Build == nil || r.Approved || !success(r.Process) || r.BoxID == n.Build.BoxID || r.CandidateSHA != n.Build.CandidateSHA || strings.TrimSpace(r.Summary) == "" {
+			return ErrConflict
+		}
+		n.Review = &r
+		n.State = "review_failed"
+		n.Attempt.Failure = "review_rejected"
+		return nil
+	})
+}
+
 // Fail records an observed terminal process separately from semantic rejection.
 // An observation timeout or SSH failure with no actual exit is not terminal.
 // Reasons are coordinator-owned codes, never raw agent/provider diagnostics.
@@ -252,6 +268,10 @@ func (s Store) mutate(ctx context.Context, account, workID string, version int, 
 			w.Features[i].BoxID = n.Attempt.BoxID
 			a := n.Attempt
 			projected := factory.FeatureAttempt{ID: a.ID, FeatureID: n.Feature.ID, Stage: a.Stage, State: a.State, BoxID: a.BoxID, TaskID: a.TaskID, Failure: a.Failure}
+			if a.Stage == "review" && n.Review != nil {
+				projected.Summary = n.Review.Summary
+				projected.Findings = append([]string{}, n.Review.BlockingFindings...)
+			}
 			if a.Process != nil {
 				projected.ExitCode = a.Process.ExitCode
 				projected.Signal = a.Process.Signal
