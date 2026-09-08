@@ -160,7 +160,7 @@ func retry(d *document, id string) error {
 			break
 		}
 	}
-	if old == nil || d.AttemptRevisions[id] != d.Revision || !terminal(*old) || successful(*old) {
+	if old == nil || d.AttemptRevisions[id] != d.Revision || old.State != "exited" || old.ExitCode == nil || successful(*old) {
 		return ErrConflict
 	}
 	if latest(d, old.Stage, old.AssignmentID).ID != id {

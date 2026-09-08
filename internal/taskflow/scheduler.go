@@ -18,6 +18,38 @@ type claim struct {
 // planning/execution schedulers must add under lock (1986880102,1).
 const ActiveCountSQL = `SELECT count(*) FROM general_tasks g, jsonb_array_elements(g.document->'workflow'->'attempts') a WHERE a->>'state' IN ('provisioning','submitted','running')`
 
+// ActiveCount also works before general-task storage has been enabled.
+// Admission callers must hold the shared capacity advisory lock.
+func ActiveCount(ctx context.Context, tx *sql.Tx) (int, error) {
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT to_regclass('general_tasks') IS NOT NULL`).Scan(&exists); err != nil {
+		return 0, err
+	}
+	if !exists {
+		return 0, nil
+	}
+	var count int
+	err := tx.QueryRowContext(ctx, ActiveCountSQL).Scan(&count)
+	return count, err
+}
+
+func nextActive(d *document) string {
+	start := 0
+	for i, a := range d.Workflow.Attempts {
+		if a.ID == d.LastPolled {
+			start = i + 1
+			break
+		}
+	}
+	for offset := range d.Workflow.Attempts {
+		a := d.Workflow.Attempts[(start+offset)%len(d.Workflow.Attempts)]
+		if active(a) {
+			return a.ID
+		}
+	}
+	return ""
+}
+
 func capacity(ctx context.Context, tx *sql.Tx) (int, error) {
 	var total int
 	if err := tx.QueryRowContext(ctx, ActiveCountSQL).Scan(&total); err != nil {
@@ -103,12 +135,7 @@ func (s *Service) claim(ctx context.Context) (claim, error) {
 			}
 		}
 		if c.attempt == "" {
-			for _, a := range d.Workflow.Attempts {
-				if active(a) {
-					c.attempt = a.ID
-					break
-				}
-			}
+			c.attempt = nextActive(d)
 		}
 		if c.attempt == "" {
 			if d.Workflow.State == "cancelled" {
@@ -119,6 +146,7 @@ func (s *Service) claim(ctx context.Context) (claim, error) {
 			continue
 		}
 		c.token = newID()
+		d.LastPolled = c.attempt
 		if err = saveDocument(ctx, tx, c.account, d); err != nil {
 			return claim{}, err
 		}
@@ -264,9 +292,15 @@ func (s *Service) Step(ctx context.Context) error {
 				return nil
 			}
 			if submission.BoxID != "" {
+				if a.BoxID != "" && a.BoxID != submission.BoxID {
+					return ErrConflict
+				}
 				a.BoxID = submission.BoxID
 			}
 			if submission.TaskID != "" {
+				if a.TaskID != "" && a.TaskID != submission.TaskID {
+					return ErrConflict
+				}
 				a.TaskID = submission.TaskID
 			}
 			a.Failure = ""

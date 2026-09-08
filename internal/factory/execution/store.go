@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/0xikarus/vmbox-service/internal/factory"
+	"github.com/0xikarus/vmbox-service/internal/taskflow"
 )
 
 var ErrConflict = errors.New("feature execution revision or identity changed")
@@ -97,6 +98,11 @@ func (s Store) Reserve(ctx context.Context, account, workID string, version int,
  (SELECT count(*) FROM factory_execution_graphs e, jsonb_array_elements(e.document->'nodes') n WHERE n->>'state' IN ('building','verifying','reviewing'))`).Scan(&active); err != nil {
 			return err
 		}
+		taskWorkers, countErr := taskflow.ActiveCount(ctx, tx)
+		if countErr != nil {
+			return countErr
+		}
+		active += taskWorkers
 		local := 0
 		for _, n := range g.Nodes {
 			if n.State == "building" || n.State == "verifying" || n.State == "reviewing" {

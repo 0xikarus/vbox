@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/0xikarus/vmbox-service/internal/taskflow"
 )
 
 var ErrConflict = errors.New("factory revision or execution lease changed")
@@ -234,6 +236,11 @@ func (s *Store) ClaimLimited(ctx context.Context, limit int) (Claim, error) {
 				return Claim{}, err
 			}
 		}
+		taskWorkers, countErr := taskflow.ActiveCount(ctx, tx)
+		if countErr != nil {
+			return Claim{}, countErr
+		}
+		featureWorkers += taskWorkers
 	}
 	var c Claim
 	var b []byte

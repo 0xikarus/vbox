@@ -484,19 +484,17 @@ func TestPostgresConcurrentCreateAndSteps(t *testing.T) {
 	}
 }
 
-func TestPostgresMissingResultAndPlannerRetry(t *testing.T) {
+func TestPostgresMissingResultDoesNotReplay(t *testing.T) {
 	s, f := setup(t)
 	f.missing = true
 	w := until(t, s, createTask(t, s, "a", "create"), "failed")
 	if w.Attempts[0].State != "result_missing" || w.Attempts[0].ExitCode == nil {
 		t.Fatal("missing result lost actual exit")
 	}
-	f.missing = false
-	w = api(t, s, "a", "POST", "/"+w.ID+"/retry", "retry-plan", map[string]any{"version": w.Version, "attemptId": w.Attempts[0].ID}, 200)
-	w = runTask(t, s, w)
-	w = until(t, s, w, "completed")
-	if len(w.Attempts) != 6 || w.Attempts[0].State != "result_missing" {
-		t.Fatal("planner retry erased history")
+	api(t, s, "a", "POST", "/"+w.ID+"/retry", "retry-plan", map[string]any{"version": w.Version, "attemptId": w.Attempts[0].ID}, 409)
+	step(t, s)
+	if len(f.starts) != 1 || len(get(t, s, w).Attempts) != 1 {
+		t.Fatal("missing result replayed the process")
 	}
 }
 

@@ -26,6 +26,7 @@ type document struct {
 	AttemptRevisions map[string]int    `json:"attemptRevisions"`
 	Started          map[string]bool   `json:"started,omitempty"`
 	Results          map[string]Result `json:"results,omitempty"`
+	LastPolled       string            `json:"lastPolled,omitempty"`
 }
 
 func (s *Store) Migrate(ctx context.Context) error {
