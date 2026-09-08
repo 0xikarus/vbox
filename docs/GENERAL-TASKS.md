@@ -40,7 +40,13 @@ No external messages, purchases, bookings, browsing or repository mutations.
 - Coordinator planning task: `39ab00e4-dc56-4cd5-8395-fa4600000000`.
 - Coordinator box: `factory-review-0908`.
 - Expected assignments: agenda/facilitation; logistics/materials/accessibility.
-- Current status: queued; no worker result or synthesis yet.
+- Coordinator planning completed with actual exit 0. Its actual JSON assignments
+  were parsed and dispatched unchanged, with shared constraints, to two boxes.
+- Agenda worker: `ca82c549-a1fc-4e0c-8f4f-822400000000`, box
+  `factory-ui-0908`.
+- Logistics worker: `2ebb8bcf-3167-4ba5-84b9-329300000000`, box
+  `factory-integration-0908`.
+- Both worker submissions accepted (queued); no result or synthesis yet.
 
 This first trial is dispatched by the implementation agent through the existing
 controller API. It is **not** proof that the new UI or scoped coordinator
