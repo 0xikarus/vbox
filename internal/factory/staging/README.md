@@ -121,3 +121,16 @@ scope enforcement, power-loss durability test, forced-SIGKILL recovery test,
 agent launch, deployment, or fleet test. The real-Git fixture deliberately
 substitutes the fetch protocol with local-file transport only inside the test
 wrapper; production permits HTTPS alone.
+# Builder staging
+
+`Stager.Role` defaults to `planner`; `builder` selects the fixed
+`bin/vmbox-builder` destination. Other values are rejected. The role is part of
+the private manifest hash, so a reserved attempt cannot change roles. Each
+role's binary remains separately pinned and is never overwritten by another
+role. An older staging manifest without a role cannot be reused with the new
+protocol; reconcile an existing submitted task before attempting fresh staging.
+
+Builder staging uses the same exact-SHA depth-1 source checkout. Candidate
+transfer must therefore support shallow baselines; full-history bundle export
+alone is insufficient. Actual build launch/result/verification orchestration is
+separate from this transport.

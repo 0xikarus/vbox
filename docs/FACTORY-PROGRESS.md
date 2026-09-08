@@ -66,6 +66,27 @@ isolated implementation/test workers use existing capacity. User box `tt2` is un
 
 Latest continuation (2026-09-08):
 
+- Task `c54642e4-fe3b-40c9-8502-a57700000000` finished **exit 0**: PR-client
+  and builder tests/vet passed, followed by **22/22 real Chromium fixture tests**
+  inside the integration box. These exercise UI behavior with intercepted APIs,
+  not live GitHub App/planner acceptance.
+- `af291df` connects controller-managed builder provisioning and fixed-wrapper
+  launch/recovery. Builder boxes are keyed by durable stage attempt, distinct
+  from planners and siblings; only the selected agent login is requested.
+  Private staging now supports explicit planner/builder roles with separate
+  pinned binaries and role-bound manifests. Full Go/PostgreSQL/vet task
+  `cb52e47c-d10d-4812-8db3-e31f00000000` is queued in the integration box.
+- Build-job worker `0d82c92d-8547-404e-8f13-acef00000000` exited 0, source
+  `43494aa`, not integrated yet. Review identified a mismatch between its
+  full-history export and actual depth-1 source staging. Follow-up
+  `6387138a-4b47-4342-844a-688000000000` is running to test/correct real shallow
+  baseline → candidate bundle → independent import behavior.
+- Reviewer follow-up `b1024980-f25f-48a6-881a-b95300000000` is still running.
+  No reruns or duplicate submissions were triggered by observation timeouts.
+- Asked whether a controller-only restart is permitted to test the stalled
+  publication worker's recovery. Approval is pending; no restart or deployment
+  has occurred. Other implementation and verification work continues.
+
 - Builder commits `9713c8` and `c9601d6` reviewed and integrated as `d817154`
   and `b279887`. The corrected adapter cleans owned process groups before reaping,
   filters publishing/control environment credentials, and isolates trusted Git
