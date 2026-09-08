@@ -101,13 +101,21 @@ func (r *Runner) request(in Input) (builder.Request, error) {
 	if (in.Work.Agent != "codex" && in.Work.Agent != "claude") || !opaqueID(in.Work.Profile) || !opaqueID(in.Work.RepositoryID) || !opaqueID(in.Node.Feature.ID) || !digest(in.PreparedSourceSHA, 40) {
 		return bad()
 	}
-	g, err := execution.New(in.Work)
+	// Store.mutate projects execution state onto Work after Reserve/Bind.
+	// Revalidate approval/publication using a copy at the admission state;
+	// execution.New still checks the approved plan, source and published issues.
+	w := in.Work
+	if w.State != "build_queued" && w.State != "implementing" {
+		return bad()
+	}
+	w.State = "build_queued"
+	g, err := execution.New(w)
 	if err != nil {
 		return bad()
 	}
 	found := false
 	for _, n := range g.Nodes {
-		if n.Feature.ID == in.Node.Feature.ID && reflect.DeepEqual(n.Feature, in.Node.Feature) && n.Branch == in.Node.Branch {
+		if n.Feature.ID == in.Node.Feature.ID && samePublishedFeature(n.Feature, in.Node.Feature) && n.Branch == in.Node.Branch {
 			found = true
 		}
 	}
@@ -146,6 +154,15 @@ func (r *Runner) request(in Input) (builder.Request, error) {
 		return bad()
 	}
 	return req, nil
+}
+
+// Only these fields are mutable execution projections. IssueURL remains part
+// of the immutable publication identity, alongside all approved feature fields.
+func samePublishedFeature(a, b factory.Feature) bool {
+	a.State, b.State = "", ""
+	a.BoxID, b.BoxID = "", ""
+	a.PRURL, b.PRURL = "", ""
+	return reflect.DeepEqual(a, b)
 }
 
 func validTask(in Input, t v1.ProcessTask, box string) bool {
