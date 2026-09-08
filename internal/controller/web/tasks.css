@@ -1,0 +1,16 @@
+.tasks { max-width: 72rem; margin: auto; padding: 1rem; overflow-wrap: anywhere; }
+.tasks *, .tasks *::before, .tasks *::after { box-sizing: border-box; }
+.tasks fieldset, .tasks article, .tasks details { min-width: 0; margin-block: .75rem; padding: .75rem; border: 1px solid #8886; border-radius: .35rem; }
+.tasks label { display: block; margin-block: .75rem; }
+.tasks input, .tasks select, .tasks textarea { display: block; width: 100%; min-width: 0; min-height: 44px; max-width: 100%; margin-top: .3rem; font: inherit; }
+.tasks button, .tasks summary { min-height: 44px; padding: .6rem; cursor: pointer; font: inherit; }
+.tasks button { margin: .25rem; }
+.tasks :focus-visible { outline: 3px solid #388bff; outline-offset: 2px; }
+.tasks pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.tasks-error { color: #bd3434; }
+.tasks-gallery { display: flex; flex-wrap: wrap; gap: .75rem; }
+.tasks-gallery figure { margin: 0; max-width: 12rem; }
+.tasks-gallery img { max-width: 100%; max-height: 8rem; object-fit: contain; }
+.tasks-tree { padding-left: 1.25rem; }
+.tasks-detail > a { display: block; }
+@media (max-width: 480px) { .tasks { padding: .5rem; } .tasks fieldset, .tasks details { padding: .5rem; } .tasks ol, .tasks ul { padding-left: 1.25rem; } }
