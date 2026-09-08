@@ -54,7 +54,18 @@ No external messages, purchases, bookings, browsing or repository mutations.
   No credentials or model settings were changed; the failed attempt remains.
 - Both actual final worker outputs were sent to coordinator synthesis task
   `f9b50f95-ddab-43f6-8ae3-a0e500000000` on `factory-review-0908`.
-  Synthesis is queued; semantic acceptance is not yet established.
+  Synthesis completed with actual exit 0. It reconciled mismatched materials,
+  removed an unscheduled sorting activity, corrected the fixed spending ceiling,
+  and produced a 120-minute agenda with estimated EUR32.10 materials plus
+  EUR27.90 unspent contingency. Its verdict was accepted as a planning document,
+  conditional on venue/access support and actual prices being verified.
+  [Actual final coordinator output](GENERAL-TASK-TRIAL-RESULT.md) is preserved.
+
+Trial outcome: real coordinator, two real worker deliverables, a visible failed
+authentication attempt/retry, and substantive review/synthesis through the
+existing controller APIs. All successful processes exited 0; the failed attempt
+exited 1. No repository was required. The agenda and budget arithmetic match the
+reported totals, but estimates and real-world arrangements were not validated.
 
 Dispatch must distinguish controller authorization from per-box agent login
 readiness. A failed authentication attempt must remain visible across retries.
