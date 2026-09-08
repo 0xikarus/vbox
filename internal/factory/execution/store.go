@@ -123,6 +123,24 @@ func (s Store) Reserve(ctx context.Context, account, workID string, version int,
 		return nil
 	})
 }
+
+// BindBox durably records provisioning before a process exists. It leaves the
+// attempt queued and never fabricates a task or exit. Subsequent submission must
+// use this same box; the version fence rejects competing provisioning writers.
+func (s Store) BindBox(ctx context.Context, account, workID string, version int, id, attemptID, boxID string) (Snapshot, error) {
+	return s.mutate(ctx, account, workID, version, func(_ *sql.Tx, _ *factory.Work, g *Graph) error {
+		n, err := g.node(id)
+		if err != nil {
+			return err
+		}
+		if n.Attempt == nil || n.Attempt.ID != attemptID || boxID == "" || n.Attempt.State != "queued" || n.Attempt.TaskID != "" || (n.Attempt.BoxID != "" && n.Attempt.BoxID != boxID) {
+			return ErrConflict
+		}
+		n.Attempt.BoxID = boxID
+		return nil
+	})
+}
+
 func (s Store) Bind(ctx context.Context, account, workID string, version int, id, attemptID, boxID, taskID string) (Snapshot, error) {
 	return s.mutate(ctx, account, workID, version, func(_ *sql.Tx, _ *factory.Work, g *Graph) error {
 		n, err := g.node(id)
@@ -132,7 +150,7 @@ func (s Store) Bind(ctx context.Context, account, workID string, version int, id
 		if n.Attempt == nil || n.Attempt.ID != attemptID || boxID == "" || taskID == "" || (n.Attempt.State != "queued" && n.Attempt.State != "submitted") {
 			return ErrConflict
 		}
-		if n.Attempt.TaskID != "" && (n.Attempt.TaskID != taskID || n.Attempt.BoxID != boxID) {
+		if (n.Attempt.BoxID != "" && n.Attempt.BoxID != boxID) || (n.Attempt.TaskID != "" && n.Attempt.TaskID != taskID) {
 			return ErrConflict
 		}
 		n.Attempt.BoxID = boxID

@@ -96,9 +96,33 @@ func TestDurableFeatureAdmissionIdentityAndIsolation(t *testing.T) {
 	if _, err = s.Bind(ctx, "a", w.ID, 1, "api", attempt, "builder", "task"); !errors.Is(err, ErrConflict) {
 		t.Fatal("stale writer accepted")
 	}
+	x, err = s.BindBox(ctx, "a", w.ID, recovered.Version, "api", attempt, "builder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recovered, err = restarted.Load(ctx, "a", w.ID)
+	if err != nil || recovered.Graph.Nodes[0].Attempt.BoxID != "builder" || recovered.Graph.Nodes[0].Attempt.TaskID != "" || recovered.Graph.Nodes[0].Attempt.State != "queued" {
+		t.Fatal("pending box binding lost or fabricated a task", err)
+	}
+	pending, err := core.Get(ctx, "a", w.ID)
+	if err != nil || len(pending.FeatureAttempts) != 1 || pending.FeatureAttempts[0].BoxID != "builder" || pending.FeatureAttempts[0].ExitCode != nil {
+		t.Fatal("pending UI projection lost or fabricated exit", err)
+	}
+	if _, err = s.BindBox(ctx, "a", w.ID, x.Version, "api", attempt, "other"); !errors.Is(err, ErrConflict) {
+		t.Fatal("pending box reassigned")
+	}
+	if _, err = s.Bind(ctx, "a", w.ID, x.Version, "api", attempt, "other", "task"); !errors.Is(err, ErrConflict) {
+		t.Fatal("submission escaped pending box fence")
+	}
+	if _, err = s.BindBox(ctx, "a", w.ID, x.Version-1, "api", attempt, "builder"); !errors.Is(err, ErrConflict) {
+		t.Fatal("stale pending writer accepted")
+	}
 	x, err = s.Bind(ctx, "a", w.ID, recovered.Version, "api", attempt, "builder", "task")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err = s.BindBox(ctx, "a", w.ID, x.Version, "api", attempt, "builder"); !errors.Is(err, ErrConflict) {
+		t.Fatal("submitted task downgraded to provisioning")
 	}
 	r := built()
 	r.AttemptID = attempt
