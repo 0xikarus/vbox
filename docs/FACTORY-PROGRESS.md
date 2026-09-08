@@ -66,6 +66,27 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 
 Latest continuation (2026-09-08):
 
+- `4b3d4d0` integrates the controller planning runner: pinned source authority,
+  private staged job, assignment recheck, recovery of accepted tasks before
+  restaging, and actual agent outcomes from the scoped inbox (not wrapper exits).
+  Combined task `63fa9fb9-5f9a-4b8f-8fe9-3bfe00000000` passed full Go tests/vet
+  including real PostgreSQL result-inbox tests. No full UI-to-agent proof yet.
+- Result inbox worker `b75cac6` integrated as `aedcc5f`; its envelope was aligned
+  with core `attemptId` and numeric POSIX signals in `4b3d4d0`. `planjob` now uses
+  the shared envelope type. GitHub publication worker `c3369fd` integrated as
+  `9d19438`; issue/comment writes still require workflow/outbox wiring and live
+  GitHub App acceptance. Worker tests made no real issue writes.
+- `756f09d` adds scoped `/result` callback configuration and truthful execution/
+  image capability reporting, plus readiness and pre-launch rejection tests.
+  These newest tests await the next combined in-box run.
+- Private staging task `0a54b4e4-d2da-40aa-8243-203300000000` is running in
+  `factory-assets-0908`, branch `factory/private-staging-0908`, scoped to the new
+  staging package. UI readiness task `ff6d0f98-9caa-4f4c-8289-06d800000000` is
+  running in `factory-ui-0908`, branch `factory/ui-readiness-0908`.
+- The main proposal now reflects the full approved target: required master and
+  feature issues, per-feature PRs, controller-visible responses and evidence,
+  and in-box product verification. Only external deployment/event intake is
+  optional; the feature PR workflow is not deferred or waived.
 - Regression task `af61889b-0333-443c-8eda-fd2d00000000` completed with exit 0:
   full Go tests, Go vet, and the script's real PostgreSQL checks passed at
   `098131f`. This includes the formerly failing real tmux idle-hibernate test.
@@ -75,7 +96,7 @@ Latest continuation (2026-09-08):
   Lost delivery responses retry the stored receipt, not the agent execution.
   New command tests/vet/build task `c9939798-f6f2-4521-813b-0d0200000000` passed
   with exit 0 in the integration box. These fixtures are not live planning proof.
-  Combined regression at `49356c4` is queued as
+  Combined regression at `49356c4` passed with exit 0 as
   `ddfe708c-4025-4220-822f-b3f100000000` in the same box.
 - `fc3a4be` preserves provisioning identity/phase in the dispatcher and adds
   controller-resolved connections plus fixed-command planner submission. The

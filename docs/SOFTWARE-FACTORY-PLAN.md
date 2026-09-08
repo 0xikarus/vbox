@@ -1,11 +1,16 @@
 # Box-native software factory: audit and implementation plan
 
-2026-09-08. Code baseline: `f96c817`. Proposal, not an implemented factory.
+2026-09-08. Audit baseline: `f96c817`; implementation in progress on
+`proposal/software-factory`. See `FACTORY-PROGRESS.md` for tested commits and
+live task handles. This document describes the full target, not completed work.
 Keep this proposal and eventual implementation on feature/diff branches only.
 Do not merge to main or deploy without subsequent approval.
 Builds, tests, browser checks, review, and final integration all execute inside
-vmbox workers. External CI/CD, a public deployment, a PR, and GitHub intake are
-optional. A tested workspace with retained artifacts is a valid final delivery.
+vmbox workers. External deployment is optional; verification must not depend on
+external CI/CD. GitHub event intake is optional, but the approved goal requires a
+master issue, linked feature issues and a branch/PR per feature. A tested product
+running only inside a retained box is valid delivery; that does not waive those
+GitHub records or the controller UI workflow.
 
 ## 1. Open-issue audit
 
@@ -42,7 +47,7 @@ Controller Factory tab: repository + idea + images
                          |
                    Approve & build
                          |
-Task file / optional GitHub event
+           master issue + feature issues/dependencies
                          |
                  factory coordinator + durable DB
                          |
@@ -50,7 +55,9 @@ Task file / optional GitHub event
                          |
            implement -> verify -> review -> integrate
                          |
-             approved workspace / artifact / optional PR
+             feature PRs + reviewed integrated product
+                         |
+             retained box/artifacts + UI evidence
 ```
 
 Add a separate `vmbox-factory` service in this repository. It owns work items,
@@ -76,12 +83,13 @@ setup flow and the backend verifies access; knowing an installation ID is not
 ownership proof. Check controller authorization and installation scope on every
 operation, including repository removal/transfer and suspended installations.
 
-Planning needs read-only metadata/contents access. Publishing requires separate
-optional contents/PR write permission. Installation tokens can be restricted to
+Planning needs read-only metadata/contents access. Approved execution needs
+separate issues/contents/PR write permission. Installation tokens can be restricted to
 selected repositories/permissions and expire after one hour: broker refresh for
 active authorized attempts. Never give a coding box the App key or unrestricted
 installation credentials; never embed a token in a logged clone URL/Git config.
-Issue subscriptions/permissions are needed only for later event intake.
+Issue write permission is required for the master/feature records; webhook
+subscriptions are needed only for optional event intake.
 
 Verified references: [GitHub App repository selection](https://docs.github.com/en/apps/using-github-apps/installing-a-github-app-from-a-third-party)
 and [installation authentication/scope/expiry](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/authenticating-as-a-github-app-installation).
@@ -133,7 +141,7 @@ Images need durable worker access, not public URLs. Reuse one private asset
 subsystem for inputs and later verification evidence:
 
 1. Browser uploads through an account-authorized controller gateway endpoint.
-   Validate decoded PNG/JPEG/WebP, dimensions and size, assign safe filenames,
+   Validate decoded PNG/JPEG, dimensions and size, assign safe filenames,
    strip unnecessary metadata, and return opaque asset IDs. Proposed visible,
    configurable limits: 8 images, 10 MiB each, 40 MiB total, 25 megapixels each.
 2. Store binaries in a private object store or a dedicated persistent server
@@ -142,11 +150,11 @@ subsystem for inputs and later verification evidence:
 3. Plan references only ready, same-account assets and an immutable ordered
    manifest. No arbitrary remote image URL fetching or user-selected filesystem
    targets. Revisions cannot swap attachments under a running/approved attempt.
-4. Trusted runtime preparation downloads with an expiring attempt-scoped grant,
-   verifies digests, and stages files under
-   `/data/workspace/.vmbox-factory/WORK_ID/inputs/`. The agent receives the idea,
+4. Trusted runtime preparation reads account-scoped assets, verifies digests,
+   and streams them over a freshly resolved SSH connection into
+   `/data/workspace/.vmbox-factory/attempts/ATTEMPT_ID/images/`. The agent receives the idea,
    manifest and local files—not controller secrets or public attachment URLs.
-5. Add per-agent image-input adapters. Current one-shot requests are text-only;
+5. Add per-agent image-input adapters. The generic one-shot API remains text-only;
    mentioning a filename in a prompt does not prove the model saw the image.
    Check the installed Claude/Codex version and use an actually supported image
    interface or confirmed local image-reading tool. Explicitly reject unsupported
@@ -173,8 +181,9 @@ referenced by approved work.
 
 ### Gaps that require real implementation
 
-1. **Durable workflow coordinator:** dependencies, attempts, approval, restart
-   recovery, pause and bounded retries. No such factory exists today.
+1. **Durable workflow coordinator:** planning attempts, approval and restart
+   recovery are partially implemented. Feature dependencies, pause, bounded
+   retries and the full execution/integration workflow still require implementation.
 2. **Box reservation across stages:** assignment fencing exists, but an exclusive
    multi-stage factory reservation does not. A reservation must prevent competing
    automated writers and automatic hibernate between dependent stages. Manual
@@ -218,7 +227,8 @@ Minimum work specification:
 - Source: repository + pinned base revision, or an explicit workspace snapshot.
 - Allowed box/profile pool; chosen agent per implementation/review stage.
 - Trusted build/test/browser-check commands, working directory, toolchain manifest.
-- Output contract: workspace/artifact by default; branch/PR only if requested.
+- Output contract: master issue, linked feature issues, per-feature branch/PR,
+  inspected integrated workspace/artifacts, and all progress/evidence in the UI.
 - Deadlines, active-worker cap, attempt cap, retention, and allowed external writes.
 
 Each attempt records stage, attempt number, source/spec digests, reserved box,
@@ -268,7 +278,9 @@ At completion deliver workspace/box identity, candidate revision or snapshot,
 verification summary, artifact references and reproducible start/test commands.
 Default to retained files with compute hibernated once evidence is safe. An
 explicit “keep preview running” request needs a retained reservation/time limit.
-No PR, merge, CI job, external deployment or volume deletion is implicit.
+Feature PRs are required by the approved workflow. Merging to a repository's
+protected/default branch, external deployment, CI execution or volume deletion
+still require the corresponding explicit approval; none is implied by Plan.
 
 For vmbox's own build, prepare Go 1.26, Git and the relevant Node/browser/tmux
 tools inside workers. PostgreSQL integration tests need an isolated test DB.
@@ -300,15 +312,19 @@ sockets into an agent box to turn a test green.
 - Produce a persisted editable plan, not implementation. Reload/restart recovers
   the same attempt. Test an unrelated public and authorized private repository,
   image grounding, ungranted-repo denial and cross-account isolation.
-- Preview only on the feature branch locally or explicitly approved staging.
-  Obtain approval before expanding to implementation/deployment.
+- Preview only from the feature branch in isolated vmbox staging. The user has
+  authorized implementing all phases; each factory work item still needs its
+  own plan approval before billable implementation or GitHub publication.
+  Production controller deployment and main merge remain unapproved.
 
-### Phase 1B: approved plan -> verified workspace
+### Phase 1B: approved plan -> master issue -> feature PR -> verified workspace
 
 - Freeze versioned work/evidence/client contracts and compatibility errors.
 - Implement durable coordinator + reservations + task controls + artifact path.
-- Approve one plan, implement it, verify it in-box, request human approval,
-  retain results, and hibernate safely. Optional PR publishing stays off.
+- Approve one plan, publish its master issue and linked feature issues, implement
+  one feature on its own branch, verify it in-box and open its PR. Publish useful
+  progress/review/verification comments and show them in the UI. Retain the tested
+  workspace and hibernate safely once evidence is durable.
 - Test real build pass/failure and an agent exit 0 with failing tests; only the
   first may reach approval-ready. Restart during submission, execution and
   artifact ingestion without duplicate work or fabricated completion.
@@ -330,16 +346,17 @@ sockets into an agent box to turn a test green.
   before billable work. GitHub-specific behavior stays outside the controller.
 - Treat issue/repository text as untrusted task data, not permission to alter
   credentials, budgets, acceptance criteria, or publishing policy.
-- Optional sanitized issue/PR feedback and artifact publishing. No raw secrets/logs
-  in comments. Add operational diagnostics and retention controls after the core loop.
+- Issue/PR feedback is part of the core workflow, not deferred to event intake.
+  Keep comments meaningful and sanitized; never publish raw secrets/logs. Add
+  operational diagnostics and retention controls around the core loop.
 
 ## 6. Parallel implementation using vmbox itself
 
-This is a schedule for later execution, not permission already exercised. No
-factory workers were started during this planning audit. Read current fleet
-capacity first; three free slots existed in the last release audit but may have
-changed. Use three worker boxes initially; do not change the user's occupied box.
-Add a fourth only if the user approves the extra capacity/cost.
+Implementation is authorized and uses three isolated vmboxes, with their roles
+reused between bounded tasks. Current desired fleet capacity is 4; the user
+approved increasing it only as needed up to **6**, not 8. Recheck live capacity
+before allocation; do not change or interrupt unrelated user boxes. Current
+box/task IDs and branch evidence are in `FACTORY-PROGRESS.md`.
 
 Bootstrap with today's `vmbox new ... --no-dialog --hibernate --profile ...`
 and `vmbox task BOX codex|claude --prompt ... --idempotency-key ... --json`.
@@ -392,10 +409,16 @@ full relevant verification there, and requests approval for release. The tested
 revision must be the revision released. A final report distinguishes local/mock
 checks, real worker execution and any untested provider/platform paths.
 
-## Recommended next action
+## Current next milestone
 
-Approve Phase 0 plus the Phase 1A contracts first. Then launch the three bounded
-UI/planner/assets tasks. The first useful milestone is selecting a repository,
-entering an idea with images, and receiving a grounded plan from a real box in the
-existing UI. Next, approved plans produce tested workspaces entirely inside boxes.
-GitHub event automation, autonomous spawning and automatic publishing can wait.
+Finish the real UI-to-plan loop: integrate private SSH staging with the existing
+controller task runner and durable result inbox, configure an authorized GitHub
+App installation, then test actual repository/image planning, replies, reload and
+restart in isolated vmbox staging. Codex visual grounding has passed in its local
+adapter; Claude authentication and the full UI loop remain unverified.
+
+Then wire approved-plan issue publication, dependency scheduling, per-feature
+PRs, independent in-box review/verification and final product integration. Keep
+the conversation, questions, plan revisions, progress and evidence in the
+existing controller Factory tab throughout. Do not stop at a headless backend,
+an agent exit of zero, an issue/PR alone, or only a passing unit-test suite.
