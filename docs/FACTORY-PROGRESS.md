@@ -66,6 +66,26 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 
 Latest continuation (2026-09-08):
 
+- The planning service is now wired behind explicit configuration at `e046018`:
+  controller allocation/recovery, private SSH staging, real planner command,
+  scoped durable callback, result observation, and DB-backed worker admission.
+  Long staging renews the exact lease and cancels on lost ownership. Full Go
+  tests/vet, real PostgreSQL tests, actual built-planner transfer fixture, and
+  both planner/factory builds passed in task
+  `f5b9ce8f-e721-4d2d-8302-35db00000000` at that revision.
+- Staging worker `d2e30cc` integrated as `3daa276`; UI worker `e01f772` integrated
+  as `7e737c3` with 21 passed Chromium desktop/mobile fixture tests. No live App
+  authentication or full UI-to-agent execution was exercised by those fixtures.
+- Review found direct SSH staging lacked the standard workload-user wrapper.
+  `17666ad` corrects ownership and enforces eight images; focused verification
+  task `7294f3d0-300c-40fc-826e-6ae500000000` is queued in the integration box.
+- GitHub App ID/key-file/installation configuration names are absent from the
+  local secure environment files and process environment. Secure configuration
+  requested for live acceptance. No fallback credential or fake App was used.
+- Approved-plan publication coordinator worker
+  `90d4a24d-f982-433f-8c88-eac600000000` is queued in `factory-ui-0908`, branch
+  `factory/publication-coordinator-0908`, scoped to `internal/factory/publishing`.
+  Feature execution/review/integration and live UI planning remain incomplete.
 - `4b3d4d0` integrates the controller planning runner: pinned source authority,
   private staged job, assignment recheck, recovery of accepted tasks before
   restaging, and actual agent outcomes from the scoped inbox (not wrapper exits).

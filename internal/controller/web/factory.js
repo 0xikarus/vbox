@@ -2,7 +2,7 @@
 const API = '/v1/factory';
 const list = value => Array.isArray(value) ? value : [];
 const text = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
-const activeState = state => /^(planning_queued|waiting_capacity|restoring|preparing_inputs|planning|approved_queued|approved|build_queued|queued|implementing|building|verifying|reviewing)$/.test(state);
+const activeState = state => /^(planning_queued|waiting_capacity|restoring|preparing_inputs|planning|approved_queued|publishing_issues|approved|build_queued|queued|implementing|building|verifying|reviewing)$/.test(state);
 const mounts = new WeakMap();
 
 export function mountFactory(root, request) {
@@ -194,6 +194,7 @@ export function mountFactory(root, request) {
     if (!work) { detail.append(el('p', selected ? 'Loading saved work…' : 'Select saved work to view its responses and plans.')); controls(); return; }
     detail.append(el('h3', work.repositoryName || work.repositoryId), el('p', `Work ${work.id} · input revision ${work.revision} · ${work.state}`), el('p', `Agent: ${work.agent} · profile: ${text(work.profile)} · base: ${work.baseRef || ''} ${work.baseSha || ''}`), el('pre', work.idea));
     if (work.boxId) link(detail, work.boxName || 'Planning box', '/boxes/' + encodeURIComponent(work.boxId));
+    if (work.masterIssueUrl) link(detail, 'Master issue', work.masterIssueUrl, true);
     // Attempts are appended by the server; prefer the highest revision and last retry.
     const attempt = list(work.attempts).reduce((latest, a) => !latest || a.revision >= latest.revision ? a : latest, null);
     const attemptStatus = el('p', attempt ? `Latest planning attempt ${attempt.id} · input revision ${attempt.revision} · ${attempt.state}` : 'No planning attempt recorded.', 'factory-attempt');

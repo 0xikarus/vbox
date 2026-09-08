@@ -43,6 +43,7 @@ type Work struct {
 	UpdatedAt            time.Time  `json:"updatedAt"`
 	BoxID                string     `json:"boxId,omitempty"`
 	BoxName              string     `json:"boxName,omitempty"`
+	MasterIssueURL       string     `json:"masterIssueUrl,omitempty"`
 	Messages             []Message  `json:"messages"`
 	Plans                []Plan     `json:"plans"`
 	Features             []Feature  `json:"features"`
