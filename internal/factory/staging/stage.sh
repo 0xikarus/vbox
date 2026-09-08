@@ -56,6 +56,8 @@ work=$(mktemp -d "$root/scratch/stage.XXXXXXXXXXXX")
 read -r digest
 [[ "$digest" =~ ^[0-9a-f]{64}$ ]] || fail
 read -r attempt; [[ "$attempt" =~ ^[0-9a-f]{32}$ ]] || fail
+read -r role; [[ "$role" == planner || "$role" == builder ]] || fail
+stage_binary="bin/vmbox-$role"
 read -r repo; [[ "$repo" =~ ^[A-Za-z0-9][A-Za-z0-9-]{0,38}/[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$ ]] || fail
 read -r sha; [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || fail
 read -r binsize binhash
@@ -64,7 +66,7 @@ read -r count
 [[ "$binsize" =~ ^[1-9][0-9]{0,8}$ && "$jobsize" =~ ^[1-9][0-9]{0,5}$ && "$count" =~ ^(0|[1-9][0-9]{0,3})$ ]] || fail
 (( binsize <= 134217728 && jobsize <= 200000 && count <= 8 )) || fail
 [[ "$binhash" =~ ^[0-9a-f]{64}$ && "$jobhash" =~ ^[0-9a-f]{64}$ ]] || fail
-printf '%s\n' "$attempt" "$repo" "$sha" "$binsize $binhash" "$jobsize $jobhash" "$count" > "$work/manifest"
+printf '%s\n' "$attempt" "$role" "$repo" "$sha" "$binsize $binhash" "$jobsize $jobhash" "$count" > "$work/manifest"
 ids=(); sizes=(); hashes=(); total=0; previous=
 for ((i=0;i<count;i++)); do
  read -r id size hash
@@ -93,7 +95,7 @@ if [[ -e attempts/$attempt || -L attempts/$attempt ]]; then
  [[ $(stat -c %a "attempts/$attempt/ready") == 600 ]] || fail
  [[ $(cat "attempts/$attempt/ready") == "$digest" ]] || fail
  verify_file "attempts/$attempt/manifest" "$digest" 600
- verify_file bin/vmbox-planner "$binhash" 700
+ verify_file "$stage_binary" "$binhash" 700
  verify_file "attempts/$attempt/job.json" "$jobhash" 600
  require_private_dir "attempts/$attempt/images"
  require_private_dir "attempts/$attempt/repo"
@@ -114,9 +116,9 @@ receive "$work/attempt/job.json" "$jobsize" "$jobhash"
 for ((i=0;i<count;i++)); do receive "$work/attempt/images/${ids[i]}" "${sizes[i]}" "${hashes[i]}"; done
 # Reject trailing data before making any ready attempt visible.
 [[ $(head -c 1 | wc -c) == 0 ]] || fail
-if [[ -e bin/vmbox-planner || -L bin/vmbox-planner ]]; then
- regular bin/vmbox-planner
- [[ $(stat -c %a bin/vmbox-planner) == 700 && $(sha256sum bin/vmbox-planner | cut -d' ' -f1) == "$binhash" ]] || fail
+if [[ -e "$stage_binary" || -L "$stage_binary" ]]; then
+ regular "$stage_binary"
+ [[ $(stat -c %a "$stage_binary") == 700 && $(sha256sum "$stage_binary" | cut -d' ' -f1) == "$binhash" ]] || fail
 fi
 # All Git invocations get a clean environment and an empty template/config.
 # No inherited helper, askpass, proxy, URL rewrite, filter, hook or fsmonitor.
@@ -142,9 +144,9 @@ export GIT_CONFIG_VALUE_0=
 [[ $(git -C "$work/attempt/repo" rev-parse --verify 'FETCH_HEAD^{commit}') == "$sha" ]] || fail
 timeout -k 5 120 git -C "$work/attempt/repo" checkout --quiet --detach --force "$sha"
 # Publish the binary create-only; never replace an executable held by an agent.
-if [[ ! -e bin/vmbox-planner ]]; then
+if [[ ! -e "$stage_binary" ]]; then
  chmod 700 "$work/binary"
- mv -T "$work/binary" bin/vmbox-planner
+ mv -T "$work/binary" "$stage_binary"
 fi
 mv "$work/manifest" "$work/attempt/manifest"
 printf '%s\n' "$digest" > "$work/attempt/ready"

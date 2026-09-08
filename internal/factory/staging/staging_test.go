@@ -208,6 +208,34 @@ func TestStageLocalShell(t *testing.T) {
 		t.Fatal("changed binary accepted")
 	}
 }
+
+func TestStageBuilderRoleCannotReplacePlannerOrReuseAttempt(t *testing.T) {
+	s, in, f, _ := setup(t)
+	mustStage(t, s, in)
+	planner, err := os.ReadFile(filepath.Join(f.root, "bin/vmbox-planner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Role = "builder"
+	if err = s.Stage(context.Background(), in); err == nil {
+		t.Fatal("attempt role changed")
+	}
+	in.AttemptID = strings.Repeat("c", 32)
+	mustStage(t, s, in)
+	binary, err := os.ReadFile(filepath.Join(f.root, "bin/vmbox-builder"))
+	if err != nil || !bytes.Equal(binary, planner) {
+		t.Fatal("builder transfer mismatch", err)
+	}
+	mustStage(t, s, in)
+	after, err := os.ReadFile(filepath.Join(f.root, "bin/vmbox-planner"))
+	if err != nil || !bytes.Equal(after, planner) {
+		t.Fatal("planner overwritten")
+	}
+	s.Role = "../../other"
+	if s.Stage(context.Background(), in) == nil {
+		t.Fatal("arbitrary executable role accepted")
+	}
+}
 func TestRecoveryAndConcurrentStage(t *testing.T) {
 	s, in, f, base := setup(t)
 	write(t, filepath.Join(base, "fail-fetch"), nil, 0600)

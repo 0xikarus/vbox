@@ -30,6 +30,8 @@ const (
 type Stager struct {
 	SSH        transport.SSH
 	BinaryPath string
+	// Empty preserves planner behavior. Only trusted, fixed wrapper names exist.
+	Role string
 }
 type Input struct {
 	Connection                                  provider.Connection
@@ -54,6 +56,13 @@ var remoteScript string
 // SourceToken must be a controller-issued token scoped to read this repository;
 // its scope cannot be inferred from the opaque token itself.
 func (s Stager) Stage(ctx context.Context, in Input) error {
+	role := s.Role
+	if role == "" {
+		role = "planner"
+	}
+	if role != "planner" && role != "builder" {
+		return fmt.Errorf("unsupported staging role")
+	}
 	if !identity.MatchString(in.AttemptID) || !repository.MatchString(in.Repository) || !revision.MatchString(in.BaseSHA) || len(in.SourceToken) > 4096 || !token.MatchString(in.SourceToken) {
 		return fmt.Errorf("invalid staging identity or source credential")
 	}
@@ -96,7 +105,7 @@ func (s Stager) Stage(ctx context.Context, in Input) error {
 	}
 	hash := func(b []byte) string { return fmt.Sprintf("%x", sha256.Sum256(b)) }
 	var header strings.Builder
-	fmt.Fprintf(&header, "%s\n%s\n%s\n%d %s\n%d %s\n%d\n", in.AttemptID, in.Repository, in.BaseSHA, len(binary), hash(binary), len(in.Job), hash(in.Job), len(images))
+	fmt.Fprintf(&header, "%s\n%s\n%s\n%s\n%d %s\n%d %s\n%d\n", in.AttemptID, role, in.Repository, in.BaseSHA, len(binary), hash(binary), len(in.Job), hash(in.Job), len(images))
 	for _, im := range images {
 		fmt.Fprintf(&header, "%s %d %s\n", im.ID, len(im.Data), hash(im.Data))
 	}

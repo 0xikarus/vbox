@@ -123,7 +123,35 @@ func (c *ControllerClient) EnsurePlanningBox(ctx context.Context, account string
 			return v1.LogicalBox{}, fmt.Errorf("invalid work identity")
 		}
 	}
-	name := "factory-plan-" + w.ID
+	return c.ensureFactoryBox(ctx, w, "factory-plan-"+w.ID, "factory-create:"+w.ID, "factory-resume:"+w.Attempts[len(w.Attempts)-1].ID)
+}
+
+// EnsureBuilderBox uses a separate logical box for each persisted build attempt.
+// Recovery keeps the same identity; it never reassigns a planner or sibling box.
+func (c *ControllerClient) EnsureBuilderBox(ctx context.Context, account string, w Work, attemptID, boxID string) (v1.LogicalBox, error) {
+	if err := c.Authorize(ctx, account); err != nil {
+		return v1.LogicalBox{}, err
+	}
+	if !factoryIdentity(w.ID) || !factoryIdentity(attemptID) || (w.Agent != "codex" && w.Agent != "claude") || w.Profile == "" {
+		return v1.LogicalBox{}, fmt.Errorf("invalid builder identity or profile")
+	}
+	w.BoxID = boxID
+	return c.ensureFactoryBox(ctx, w, "factory-build-"+attemptID, "factory-build-box:"+attemptID, "factory-build-resume:"+attemptID)
+}
+
+func factoryIdentity(id string) bool {
+	if len(id) != 32 {
+		return false
+	}
+	for _, ch := range id {
+		if !strings.ContainsRune("0123456789abcdef", ch) {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *ControllerClient) ensureFactoryBox(ctx context.Context, w Work, name, createKey, resumeKey string) (v1.LogicalBox, error) {
 	var boxes []v1.LogicalBox
 	if err := c.request(ctx, "GET", "/v1/logical-boxes", "", nil, &boxes); err != nil {
 		return v1.LogicalBox{}, err
@@ -131,18 +159,18 @@ func (c *ControllerClient) EnsurePlanningBox(ctx context.Context, account string
 	for _, b := range boxes {
 		if (w.BoxID != "" && b.ID == w.BoxID) || (w.BoxID == "" && b.Name == name) {
 			if b.Name != name {
-				return v1.LogicalBox{}, fmt.Errorf("planning box identity changed")
+				return v1.LogicalBox{}, fmt.Errorf("factory box identity changed")
 			}
 			if b.State == v1.LogicalBoxHibernated || b.State == v1.LogicalBoxDetached {
 				var allocation v1.Allocation
-				err := c.request(ctx, "POST", "/v1/logical-boxes/"+url.PathEscape(b.ID)+"/allocate", "factory-resume:"+w.Attempts[len(w.Attempts)-1].ID, map[string]string{"leaseOwner": "factory:" + w.ID}, &allocation)
+				err := c.request(ctx, "POST", "/v1/logical-boxes/"+url.PathEscape(b.ID)+"/allocate", resumeKey, map[string]string{"leaseOwner": "factory:" + w.ID}, &allocation)
 				return b, err
 			}
 			return b, nil
 		}
 	}
 	if w.BoxID != "" {
-		return v1.LogicalBox{}, fmt.Errorf("previous planning box is missing; explicit recovery required")
+		return v1.LogicalBox{}, fmt.Errorf("previous factory box is missing; explicit recovery required")
 	}
 	var defaults struct {
 		Provider           string `json:"provider"`
@@ -152,7 +180,7 @@ func (c *ControllerClient) EnsurePlanningBox(ctx context.Context, account string
 		return v1.LogicalBox{}, err
 	}
 	var b v1.LogicalBox
-	err := c.request(ctx, "POST", "/v1/logical-boxes", "factory-create:"+w.ID, v1.CreateLogicalBoxRequest{Name: name, Provider: defaults.Provider, ProviderCredential: defaults.ProviderCredential, DefaultAgent: "shell", DiskGiB: 10, LoginProfiles: []v1.LoginProfileRef{{Application: w.Agent, Name: w.Profile}}}, &b)
+	err := c.request(ctx, "POST", "/v1/logical-boxes", createKey, v1.CreateLogicalBoxRequest{Name: name, Provider: defaults.Provider, ProviderCredential: defaults.ProviderCredential, DefaultAgent: "shell", DiskGiB: 10, LoginProfiles: []v1.LoginProfileRef{{Application: w.Agent, Name: w.Profile}}}, &b)
 	return b, err
 }
 
@@ -185,6 +213,15 @@ func (c *ControllerClient) Connection(ctx context.Context, account, boxID string
 // SubmitPlanner launches only a fixed command using an already-staged private
 // job. Neither agent prompts nor delivery/GitHub tokens enter task logs.
 func (c *ControllerClient) SubmitPlanner(ctx context.Context, account, boxID, attemptID string) (v1.ProcessTask, error) {
+	return c.submitFactoryJob(ctx, account, boxID, attemptID, "planner", "factory-plan:")
+}
+
+// SubmitBuilder exposes only the fixed staged wrapper, not prompts or credentials.
+func (c *ControllerClient) SubmitBuilder(ctx context.Context, account, boxID, attemptID string) (v1.ProcessTask, error) {
+	return c.submitFactoryJob(ctx, account, boxID, attemptID, "builder", "factory-build:")
+}
+
+func (c *ControllerClient) submitFactoryJob(ctx context.Context, account, boxID, attemptID, binary, keyPrefix string) (v1.ProcessTask, error) {
 	var task v1.ProcessTask
 	if boxID == "" || len(attemptID) != 32 {
 		return task, fmt.Errorf("invalid planning identity")
@@ -198,8 +235,8 @@ func (c *ControllerClient) SubmitPlanner(ctx context.Context, account, boxID, at
 		return task, err
 	}
 	root := "/data/workspace/.vmbox-factory/attempts/" + attemptID
-	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-planner < " + root + "/job.json"
-	err := c.request(ctx, "POST", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/process-tasks", "factory-plan:"+attemptID, v1.CreateBoxTaskRequest{Agent: "shell", Prompt: command}, &task)
+	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-" + binary + " < " + root + "/job.json"
+	err := c.request(ctx, "POST", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/process-tasks", keyPrefix+attemptID, v1.CreateBoxTaskRequest{Agent: "shell", Prompt: command}, &task)
 	if err == nil && (task.ID == "" || task.LogicalBoxID != boxID || task.Agent != "shell" || task.Prompt != command) {
 		err = fmt.Errorf("submitted planner identity changed")
 	}
@@ -209,6 +246,14 @@ func (c *ControllerClient) SubmitPlanner(ctx context.Context, account, boxID, at
 // FindPlanner recovers an accepted submission before any fresh staging or grant
 // issuance. This also works after the box hibernates or a capability expires.
 func (c *ControllerClient) FindPlanner(ctx context.Context, account, boxID, attemptID string) (*v1.ProcessTask, error) {
+	return c.findFactoryJob(ctx, account, boxID, attemptID, "planner")
+}
+
+func (c *ControllerClient) FindBuilder(ctx context.Context, account, boxID, attemptID string) (*v1.ProcessTask, error) {
+	return c.findFactoryJob(ctx, account, boxID, attemptID, "builder")
+}
+
+func (c *ControllerClient) findFactoryJob(ctx context.Context, account, boxID, attemptID, binary string) (*v1.ProcessTask, error) {
 	if boxID == "" || len(attemptID) != 32 {
 		return nil, fmt.Errorf("invalid planning identity")
 	}
@@ -224,7 +269,7 @@ func (c *ControllerClient) FindPlanner(ctx context.Context, account, boxID, atte
 	if err := c.request(ctx, "GET", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/process-tasks", "", nil, &tasks); err != nil {
 		return nil, err
 	}
-	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-planner < /data/workspace/.vmbox-factory/attempts/" + attemptID + "/job.json"
+	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-" + binary + " < /data/workspace/.vmbox-factory/attempts/" + attemptID + "/job.json"
 	var found *v1.ProcessTask
 	for _, task := range tasks {
 		if task.Prompt != command {
