@@ -88,5 +88,10 @@ for missing results. Verification task `22d53690-ce5a-4fbd-8623-771b00000000`
 stopped before tests (exit 127: missing PostgreSQL bootstrap); the script now
 installs its required private-cluster tooling before running.
 
-The runtime worker remains active. Runtime startup configuration and full real
-UI-to-worker acceptance remain unfinished. Nothing is deployed or merged to main.
+The runtime worker exited 0 and is integrated, including service startup wiring.
+The general task PostgreSQL and runtime race tests passed on `7125c83`; the full
+run found a remote-build SQL fixture expectation that is corrected in `7fcc32e`.
+Final verification is queued behind the test box's hibernation transition.
+Full real UI-to-worker acceptance remains unfinished and requires an isolated
+HTTPS preview/callback setup. See `TASKS-UI-VERIFICATION.md` for exact evidence.
+Nothing is deployed or merged to main.
