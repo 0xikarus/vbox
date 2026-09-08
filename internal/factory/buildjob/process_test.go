@@ -17,7 +17,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/0xikarus/vmbox-service/internal/factory"
 	"github.com/0xikarus/vmbox-service/internal/factory/builder"
+	"github.com/0xikarus/vmbox-service/internal/factory/verification"
 )
 
 func git(t *testing.T, dir string, args ...string) string {
@@ -85,20 +87,9 @@ func TestRealBundleAndReceiptRedelivery(t *testing.T) {
 	// This unrelated ref must not be advertised or included in the export.
 	unrelated := git(t, j.Request.Workspace, "commit-tree", git(t, j.Request.Workspace, "rev-parse", "HEAD^{tree}"), "-m", "unrelated root")
 	git(t, j.Request.Workspace, "update-ref", "refs/heads/unrelated", unrelated)
-	// Exercise the job's export with a real Git feature commit. builder.Run's
-	// own inspection is outside this package and this regression's scope.
-	run := func(_ context.Context, request builder.Request) (builder.Result, error) {
-		git(t, worker, "checkout", "-b", request.Branch)
-		if err := os.WriteFile(filepath.Join(worker, "file"), []byte("candidate"), 0600); err != nil {
-			t.Fatal(err)
-		}
-		git(t, worker, "add", "file")
-		git(t, worker, "commit", "-qm", "candidate")
-		sha := git(t, worker, "rev-parse", "HEAD")
-		zero := 0
-		return builder.Result{ExitCode: &zero, CandidateSHA: sha, HEAD: sha, Branch: request.Branch, Clean: git(t, worker, "status", "--porcelain") == ""}, nil
-	}
-	if e := execute(context.Background(), input(j), run, server.Client()); e == nil {
+	// Exercise the actual adapter and job, with an executable CLI fixture. This
+	// includes shallow source inspection, real commit, export and delivery.
+	if e := execute(context.Background(), input(j), builder.Run, server.Client()); e == nil {
 		t.Fatal("expected delivery failure")
 	}
 	head := git(t, j.Request.Workspace, "rev-parse", "HEAD")
@@ -148,6 +139,12 @@ func TestRealBundleAndReceiptRedelivery(t *testing.T) {
 	if exec.Command("git", "-C", imported, "cat-file", "-e", old).Run() == nil {
 		t.Fatal("pre-baseline ancestry exported")
 	}
+	git(t, imported, "checkout", "--detach", head)
+	checked, err := verification.Run(context.Background(), verification.Request{Workspace: imported, ExpectedSHA: head, OutputDir: filepath.Join(t.TempDir(), "evidence"), Checks: []factory.Check{{Argv: []string{"/bin/sh", "-c", "test \"$(cat file)\" = candidate"}, Cwd: ".", TimeoutSeconds: 5}}})
+	if err != nil || !checked.AllPassed || len(checked.Checks) != 1 || checked.Checks[0].ExitCode == nil || *checked.Checks[0].ExitCode != 0 {
+		t.Fatal("independent imported-source check failed", checked, err)
+	}
+	git(t, imported, "checkout", "--detach", j.Request.BaseSHA)
 	for _, tc := range []struct {
 		name            string
 		data            []byte

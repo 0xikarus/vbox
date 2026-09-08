@@ -79,7 +79,7 @@ func inspect(ctx context.Context, workspace string, baseSHA string, bundle *stri
 	if _, e = git("init", "--bare", "--template=", tmp); e != nil {
 		return "", false, e
 	}
-	for _, name := range []string{"HEAD", "packed-refs", "refs", "index"} {
+	for _, name := range []string{"HEAD", "packed-refs", "refs", "index", "shallow"} {
 		src := filepath.Join(gitdir, name)
 		e = filepath.WalkDir(src, func(p string, d os.DirEntry, walkErr error) error {
 			if os.IsNotExist(walkErr) && p == src && name != "HEAD" {
