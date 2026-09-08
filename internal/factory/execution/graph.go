@@ -72,7 +72,7 @@ func New(w factory.Work) (Graph, error) {
 		return Graph{}, fmt.Errorf("published approved work required")
 	}
 	p := w.Plans[len(w.Plans)-1]
-	if p.ValidateApproval() != nil || p.Revision != w.ApprovedPlanRevision || p.BaseSHA != w.BaseSHA || len(w.Features) != len(p.Features) {
+	if p.ValidateApproval() != nil || p.Revision != w.ApprovedPlanRevision || p.InputRevision < 1 || p.InputRevision >= w.Revision || p.BaseSHA != w.BaseSHA || len(w.Features) != len(p.Features) {
 		return Graph{}, fmt.Errorf("approval no longer matches feature graph")
 	}
 	if !githubURL(w.MasterIssueURL, w.RepositoryName, "issues") {

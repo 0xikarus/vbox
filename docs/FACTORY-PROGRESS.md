@@ -66,6 +66,24 @@ two isolated workers use existing capacity. User box `tt2` is untouched.
 
 Latest continuation (2026-09-08):
 
+- `4d841f0` adds the feature dependency/acceptance transition model. Builder
+  exit 0 cannot unlock dependents: clean candidate, independent exact checks,
+  review and matching repository PR are separate gates. Test/vet task
+  `0b162987-5c5d-4d09-85fc-33bc00000000` passed inside the integration box.
+  The subsequent approval-input-revision guard awaits the next combined run.
+  This model is not yet a persisted/running feature execution scheduler.
+- Verification runner task `a66884e8-47f2-42ea-832a-55aa00000000` is running in
+  the assets worker, branch `factory/verification-runner-0908`, scoped to real
+  check execution, process outcomes and evidence files.
+- Publication task `90d4a24d-f982-433f-8c88-eac600000000` remains queued behind
+  its box's `hibernating / saving-workspace` transition. A fresh Railway endpoint
+  resolution plus read-only inspection found zero tmux sessions and an empty
+  server in this disposable box. An atomic empty-session guard stopped only
+  that server (SSH exit 0); volume and task were preserved. Do not resubmit the
+  queued task. No production controller or runtime fix was deployed.
+- Focused staging ownership/image-limit tests and vet at `17666ad` passed in
+  `7294f3d0-300c-40fc-826e-6ae500000000`. The workload-user wrapper was asserted
+  by a local-shell transport fixture, not a live SSH staging acceptance test.
 - The planning service is now wired behind explicit configuration at `e046018`:
   controller allocation/recovery, private SSH staging, real planner command,
   scoped durable callback, result observation, and DB-backed worker admission.

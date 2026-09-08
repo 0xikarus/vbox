@@ -13,7 +13,7 @@ func approved() factory.Work {
 	check := factory.Check{Argv: []string{"go", "test", "./..."}, Cwd: ".", TimeoutSeconds: 60}
 	features := []factory.Feature{{ID: "api", Title: "API", AcceptanceCriteria: []string{"works"}, Checks: []factory.Check{check}}, {ID: "ui", Title: "UI", DependsOn: []string{"api"}, AcceptanceCriteria: []string{"works"}, Checks: []factory.Check{check}}, {ID: "docs", Title: "Docs", AcceptanceCriteria: []string{"works"}, Checks: []factory.Check{check}}}
 	plan := factory.Plan{Revision: 1, InputRevision: 1, Markdown: "Approved plan", BaseSHA: strings.Repeat("a", 40), Features: features}
-	w := factory.Work{ID: strings.Repeat("b", 32), State: "build_queued", RepositoryName: "owner/repo", BaseSHA: plan.BaseSHA, ApprovedPlanRevision: 1, Plans: []factory.Plan{plan}, MasterIssueURL: "https://github.com/owner/repo/issues/1", Features: append([]factory.Feature(nil), features...)}
+	w := factory.Work{ID: strings.Repeat("b", 32), Revision: 2, State: "build_queued", RepositoryName: "owner/repo", BaseSHA: plan.BaseSHA, ApprovedPlanRevision: 1, Plans: []factory.Plan{plan}, MasterIssueURL: "https://github.com/owner/repo/issues/1", Features: append([]factory.Feature(nil), features...)}
 	for i := range w.Features {
 		w.Features[i].IssueURL = "https://github.com/owner/repo/issues/2"
 	}
