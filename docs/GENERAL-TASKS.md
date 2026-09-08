@@ -14,6 +14,39 @@ remain separate for both modes.
 
 ## Implementation order
 
+### Feature-branch UI flow
+
+Once the isolated Tasks backend is configured, open **Tasks** in the controller:
+
+1. Enter the idea, choose Codex or Claude and an existing saved login profile.
+   Optionally attach PNG/JPEG images (Codex only), then choose **Plan**.
+2. Read the coordinator's plan/questions and reply in the same view. Each reply
+   creates a new planning revision; prior responses remain visible.
+3. Approve the current plan with **Run**. Dependency-ready assignments run in
+   separate boxes, within the configured shared limit (maximum six).
+4. Expand workers to inspect actual output and process exit/signal. The final
+   coordinator verdict—not a zero exit code—determines acceptance.
+
+Cancel stops further scheduling and waits for existing work; it does not pretend
+to kill running agents. Explicit retries require known process evidence. Missing
+results require reconciliation, not automatic re-execution. This first adapter
+uses read-only agent tools; arbitrary software build/edit execution remains in the
+separate software workflow. Recursive worker spawning is not implemented.
+
+The service uses the existing `VMBOX_FACTORY_*` database, gateway, controller,
+account, SSH, data-directory and result-inbox settings. Enable general execution
+with `VMBOX_TASKS_EXECUTION_ENABLED=true` and set `VMBOX_TASKS_RUNNER_BINARY` to
+the absolute path of the in-box-built `cmd/vmbox-task-runner` executable.
+`VMBOX_FACTORY_RESULT_URL` must be an independently reachable HTTPS `/result`
+endpoint on this backend. No GitHub App is required. Leave
+`VMBOX_FACTORY_EXECUTION_ENABLED` off unless also enabling software planning.
+Without runtime configuration the UI explicitly reports execution unavailable.
+
+This is feature-branch implementation, not a claim of production availability;
+the complete live UI-to-agent acceptance run is still outstanding.
+
+### Remaining integration sequence
+
 1. Live non-software delegation trial using the existing controller and saved
    authentication: coordinator proposes two assignments, two boxes execute them,
    coordinator reviews their actual results. Record limitations honestly.

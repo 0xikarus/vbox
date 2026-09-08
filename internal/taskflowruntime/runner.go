@@ -20,6 +20,7 @@ import (
 )
 
 type Controller interface {
+	FindTaskBox(context.Context, string, string) (*v1.LogicalBox, error)
 	EnsureTaskBox(context.Context, string, string, string, string, string, string) (v1.LogicalBox, error)
 	SubmitTaskRunner(context.Context, string, string, string) (v1.ProcessTask, error)
 	FindTaskRunner(context.Context, string, string, string) (*v1.ProcessTask, error)
@@ -222,6 +223,15 @@ func (r *Runner) Start(ctx context.Context, in taskflow.Input) (taskflow.Submiss
 func (r *Runner) Observe(ctx context.Context, in taskflow.Input) (taskflow.Observation, error) {
 	a, w := in.Attempt, in.Workflow
 	c := r.config
+	if a.BoxID == "" {
+		box, err := c.Controller.FindTaskBox(ctx, in.AccountID, a.ID)
+		if err != nil {
+			return taskflow.Observation{}, err
+		}
+		if box != nil {
+			a.BoxID = box.ID
+		}
+	}
 	if a.TaskID == "" && a.BoxID != "" {
 		// Cancellation/timeout recovery is find-only: never provision or submit.
 		found, err := c.Controller.FindTaskRunner(ctx, in.AccountID, a.BoxID, a.ID)

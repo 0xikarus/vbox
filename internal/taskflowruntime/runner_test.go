@@ -153,6 +153,17 @@ func TestControllerLifecycleRecoveryAndObservation(t *testing.T) {
 		t.Fatal(calls)
 	}
 	input.Attempt.TaskID = process.ID
+	lostReceipt := input
+	lostReceipt.Attempt.BoxID, lostReceipt.Attempt.TaskID = "", ""
+	calls = nil
+	if observed, err := runner.Observe(ctx, lostReceipt); err != nil || observed.Finished || observed.State != "running" {
+		t.Fatalf("find-only receipt recovery: %+v %v", observed, err)
+	}
+	for _, call := range calls {
+		if !strings.HasPrefix(call, "GET ") {
+			t.Fatalf("observation mutated controller: %s", call)
+		}
+	}
 	obs, e := runner.Observe(ctx, input)
 	if e != nil || obs.Finished || obs.State != "running" {
 		t.Fatal(obs, e)

@@ -177,6 +177,31 @@ func (c *ControllerClient) EnsureTaskBox(ctx context.Context, account, workID, a
 	return c.ensureFactoryBox(ctx, w, "task-"+attemptID, "task-box:"+attemptID, "task-resume:"+attemptID)
 }
 
+// FindTaskBox is read-only recovery, including cancellation after a lost create
+// receipt. It must never allocate or resume a box.
+func (c *ControllerClient) FindTaskBox(ctx context.Context, account, attemptID string) (*v1.LogicalBox, error) {
+	if !factoryIdentity(attemptID) {
+		return nil, fmt.Errorf("invalid task identity")
+	}
+	if err := c.Authorize(ctx, account); err != nil {
+		return nil, err
+	}
+	var boxes []v1.LogicalBox
+	if err := c.request(ctx, "GET", "/v1/logical-boxes", "", nil, &boxes); err != nil {
+		return nil, err
+	}
+	var found *v1.LogicalBox
+	for _, b := range boxes {
+		if b.Name == "task-"+attemptID {
+			if found != nil {
+				return nil, fmt.Errorf("ambiguous task box")
+			}
+			found = &b
+		}
+	}
+	return found, nil
+}
+
 func (c *ControllerClient) SubmitTaskRunner(ctx context.Context, account, boxID, attemptID string) (v1.ProcessTask, error) {
 	return c.submitFactoryJob(ctx, account, boxID, attemptID, "task-runner", "task-run:")
 }
