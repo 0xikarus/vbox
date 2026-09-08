@@ -2,7 +2,7 @@
 const API = '/v1/factory';
 const list = value => Array.isArray(value) ? value : [];
 const text = value => typeof value === 'string' ? value : value == null ? '' : JSON.stringify(value);
-const activeState = state => /^(planning_queued|waiting_capacity|restoring|preparing_inputs|planning|approved|build_queued|queued|implementing|building|verifying|reviewing)$/.test(state);
+const activeState = state => /^(planning_queued|waiting_capacity|restoring|preparing_inputs|planning|approved_queued|approved|build_queued|queued|implementing|building|verifying|reviewing)$/.test(state);
 const mounts = new WeakMap();
 
 export function mountFactory(root, request) {
@@ -69,7 +69,7 @@ export function mountFactory(root, request) {
     planButton.disabled = busy || !repo.value || !profile.value || !agent.value || !base.value.trim() || !idea.value.trim() || initialImages.pending() || !imagesAllowed(initialImages);
     picker.disabled = busy || !capabilities?.enabled; more.disabled = picker.disabled || historyLoading; reconnect.disabled = busy;
     replyForm.hidden = !work;
-    replyFields.disabled = busy || !work || activeState(work.state) || !['plan_ready', 'needs_clarification', 'failed'].includes(work.state) || !capabilities?.enabled;
+    replyFields.disabled = busy || !work || activeState(work.state) || !['plan_ready', 'needs_clarification', 'planning_failed', 'failed'].includes(work.state) || !capabilities?.enabled;
     send.disabled = replyFields.disabled || !reply.value.trim() || replyImages.pending() || !imagesAllowed(replyImages, work?.agent);
     initialImages.update(); replyImages.update();
     const approve = detail.querySelector('[data-approve]');
@@ -165,7 +165,7 @@ export function mountFactory(root, request) {
   function latestPlan(value) { return list(value?.plans).reduce((best, p) => !best || p.revision > best.revision ? p : best, null); }
   function approvalReady(value) {
     const p = latestPlan(value);
-    return capabilities?.enabled && value?.state === 'plan_ready' && p?.revision === value.revision && !list(p.questions).length && validTasks(list(p.features));
+    return capabilities?.enabled && value?.state === 'plan_ready' && (p?.inputRevision ?? p?.revision) === value.revision && !list(p.questions).length && validTasks(list(p.features));
   }
   function taskTable(parent, features) {
     if (!features.length) { parent.append(el('p', 'No tasks recorded.')); return; }

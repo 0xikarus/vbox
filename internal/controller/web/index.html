@@ -1,10 +1,11 @@
 <!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>vmbox controller</title><link rel="stylesheet" href="/app.css">
+<title>vmbox controller</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/factory.css">
 <h1>Index of /controller</h1><p>Manage boxes and credentials here. Open a shell with <code>vmbox BOX</code>.</p>
 <form id="login"><label>Controller token <input name="token" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
 <p id="error" role="alert"></p><main hidden id="app">
-<nav><a href="#boxes">Boxes</a> · <a href="#profiles" data-owner>Profiles</a> · <a href="#providers">Providers</a> · <a href="#fleet">Capacity</a> · <a href="#notifications">Notifications</a> <button id="refresh">Refresh</button><button id="logout">Log out</button></nav>
+<nav><a href="#boxes">Boxes</a> · <a href="#profiles" data-owner>Profiles</a> · <a href="#providers">Providers</a> · <a href="#fleet">Capacity</a> · <a href="#notifications">Notifications</a> · <a href="#factory" data-owner>Factory</a> <button id="refresh">Refresh</button><button id="logout">Log out</button></nav>
+<section id="factory" data-owner hidden></section>
 <section id="boxes"><h2>Logical boxes</h2><div id="box-list"></div>
 <form id="create"><label>Name <input name="name" required></label><label>Disk GiB <input name="disk" type="number" min="1" value="10"></label><div id="profile-choices" data-owner></div><button>Create persistent box</button></form></section>
 <section id="profiles" data-owner><h2>Saved login profiles</h2><p>Account-wide credentials, managed by owners. Select profiles above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>

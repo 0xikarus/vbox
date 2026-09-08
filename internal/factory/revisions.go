@@ -128,7 +128,7 @@ func (s *Store) Approve(ctx context.Context, account, id, key string, r Approval
 			return ErrConflict
 		}
 		p := w.Plans[len(w.Plans)-1]
-		if p.Revision != r.PlanRevision || p.BaseSHA != w.BaseSHA {
+		if p.Revision != r.PlanRevision || p.BaseSHA != w.BaseSHA || p.InputRevision != w.Revision {
 			return ErrConflict
 		}
 		if err := p.ValidateApproval(); err != nil {
@@ -169,6 +169,7 @@ func (s *Store) FinishPlan(ctx context.Context, c Claim, text string, plan *Plan
 		return s.SaveClaim(ctx, c, w)
 	}
 	plan.Revision = len(w.Plans) + 1
+	plan.InputRevision = w.Revision
 	plan.AttemptID = a.ID
 	plan.BaseSHA = w.BaseSHA
 	plan.CreatedAt = time.Now().UTC()

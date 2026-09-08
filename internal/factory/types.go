@@ -30,13 +30,14 @@ type Feature struct {
 }
 
 type Plan struct {
-	Revision  int       `json:"revision"`
-	Markdown  string    `json:"markdown"`
-	Questions []string  `json:"questions"`
-	Features  []Feature `json:"features"`
-	CreatedAt time.Time `json:"createdAt"`
-	AttemptID string    `json:"attemptId"`
-	BaseSHA   string    `json:"baseSha"`
+	InputRevision int       `json:"inputRevision"`
+	Revision      int       `json:"revision"`
+	Markdown      string    `json:"markdown"`
+	Questions     []string  `json:"questions"`
+	Features      []Feature `json:"features"`
+	CreatedAt     time.Time `json:"createdAt"`
+	AttemptID     string    `json:"attemptId"`
+	BaseSHA       string    `json:"baseSha"`
 }
 
 type Message struct {
