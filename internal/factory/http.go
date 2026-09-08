@@ -29,13 +29,14 @@ type RepositoryBackend interface {
 }
 
 type Service struct {
-	ExecutionReady bool
-	Store          *Store
-	GatewayToken   string
-	Assets         AssetBackend
-	Repositories   RepositoryBackend
-	Profiles       func(context.Context, string) ([]Profile, error)
-	WorkerLimit    int
+	ExecutionReady   bool
+	PublicationReady bool
+	Store            *Store
+	GatewayToken     string
+	Assets           AssetBackend
+	Repositories     RepositoryBackend
+	Profiles         func(context.Context, string) ([]Profile, error)
+	WorkerLimit      int
 	// Images is enabled per agent only after its installed runtime adapter can
 	// deliver actual visual inputs. File staging alone is not this capability.
 	Images map[string]bool
@@ -53,7 +54,7 @@ func apiError(w http.ResponseWriter, status int, message string) {
 func (s *Service) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/factory/capabilities", s.auth(func(w http.ResponseWriter, r *http.Request, p Identity) {
-		replyJSON(w, 200, map[string]any{"enabled": true, "executionReady": s.ExecutionReady, "imageTypes": []string{"image/png", "image/jpeg"}, "githubConfigured": s.Repositories != nil, "agents": []any{map[string]any{"name": "codex", "images": s.Images["codex"]}, map[string]any{"name": "claude", "images": s.Images["claude"]}}})
+		replyJSON(w, 200, map[string]any{"enabled": true, "executionReady": s.ExecutionReady, "publicationReady": s.PublicationReady, "imageTypes": []string{"image/png", "image/jpeg"}, "githubConfigured": s.Repositories != nil, "agents": []any{map[string]any{"name": "codex", "images": s.Images["codex"]}, map[string]any{"name": "claude", "images": s.Images["claude"]}}})
 	}))
 	mux.HandleFunc("GET /v1/factory/repositories", s.auth(func(w http.ResponseWriter, r *http.Request, p Identity) {
 		if s.Repositories == nil {
@@ -246,6 +247,10 @@ func (s *Service) addReply(w http.ResponseWriter, r *http.Request, p Identity) {
 }
 
 func (s *Service) approve(w http.ResponseWriter, r *http.Request, p Identity) {
+	if !s.ExecutionReady || !s.PublicationReady {
+		apiError(w, 503, "Approved-plan issue publication is not configured")
+		return
+	}
 	var input Approval
 	if !decodeBody(w, r, &input) {
 		return

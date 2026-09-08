@@ -22,7 +22,7 @@ func TestCapabilitiesExposeActualReadinessAndFormats(t *testing.T) {
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &caps) != nil || caps.ExecutionReady || strings.Join(caps.ImageTypes, ",") != "image/png,image/jpeg" {
 		t.Fatal("unavailable execution or image format advertised")
 	}
-	for _, url := range []string{"/v1/factory/work-items", "/v1/factory/work-items/work/messages"} {
+	for _, url := range []string{"/v1/factory/work-items", "/v1/factory/work-items/work/messages", "/v1/factory/work-items/work/approve"} {
 		r = httptest.NewRequest("POST", url, strings.NewReader(`{}`))
 		r.Header.Set("Authorization", "Bearer gateway-fixture")
 		r.Header.Set("X-Vmbox-Account", "account")

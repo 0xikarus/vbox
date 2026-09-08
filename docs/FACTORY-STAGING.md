@@ -84,3 +84,18 @@ Current proof and exact test revisions/handles are in `FACTORY-PROGRESS.md`.
 Factory, controller, real PostgreSQL and local-Git staging tests run inside vmbox.
 Worker GitHub/browser fixtures are not proof of a live authorized App installation
 or the full UI-to-agent loop; those remain required acceptance tests.
+# Approved-plan publication
+
+Set `VMBOX_FACTORY_ISSUES_WRITE=true` on the separate factory service to enable
+its durable issue-publication loop. This additionally requires the configured
+planning backend, database, GitHub App and bound controller account; the App
+must have Issues write permission for the authorized repository. No setting is
+changed automatically. When disabled, capability `publicationReady` is false
+and API/UI approval is unavailable, while planning and saved history remain.
+
+Approval publishes the master, dependency-ordered feature issues and a linking
+comment. Only then is work `build_queued`. This is not proof of implementation:
+feature scheduler/PR/integration wiring remains separate. Ambiguous writes are
+reconciled without another initial POST; blocked outcomes require investigation.
+No factory branch deployment or live GitHub writes have been performed by this
+integration. Test fixtures do not establish live App acceptance.

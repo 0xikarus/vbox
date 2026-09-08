@@ -171,7 +171,7 @@ export function mountFactory(root, request) {
   function latestPlan(value) { return list(value?.plans).reduce((best, p) => !best || p.revision > best.revision ? p : best, null); }
   function approvalReady(value) {
     const p = latestPlan(value);
-    return capabilities?.enabled && executionReady() && value?.state === 'plan_ready' && (p?.inputRevision ?? p?.revision) === value.revision && !list(p.questions).length && validTasks(list(p.features));
+    return capabilities?.enabled && executionReady() && capabilities?.publicationReady !== false && value?.state === 'plan_ready' && (p?.inputRevision ?? p?.revision) === value.revision && !list(p.questions).length && validTasks(list(p.features));
   }
   function taskTable(parent, features) {
     if (!features.length) { parent.append(el('p', 'No tasks recorded.')); return; }
@@ -244,6 +244,7 @@ export function mountFactory(root, request) {
       mutate('/work-items/' + encodeURIComponent(work.id) + '/approve', { expectedRevision: work.revision, planRevision: latest.revision, maxWorkers });
     });
     detail.append(approval, el('p', 'Approval starts build scheduling for this revision. It does not authorize an automatic main merge.'));
+    if (capabilities?.publicationReady === false) detail.append(el('p', 'Issue publication is disabled. Ask the controller operator to enable approved-plan publication before approving.'));
     if (!approvalReady(work)) detail.append(el('p', 'Approval requires a ready current plan, answered questions, and tasks with valid dependencies and checks. The server validates approval again.'));
     controls();
   }

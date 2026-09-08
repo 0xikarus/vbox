@@ -95,6 +95,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	publication, err := configurePublication(setup, service)
+	if err != nil {
+		return err
+	}
+	if publication != nil {
+		done := make(chan struct{})
+		go func() { defer close(done); runPublication(ctx, publication) }()
+		defer func() { cancel(); <-done }()
+	}
 	if dispatcher != nil {
 		done := make(chan struct{})
 		go func() {

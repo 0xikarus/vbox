@@ -60,6 +60,13 @@ async function saved(page, id = 'w1') {
   await page.waitForFunction(id => document.querySelector('.factory > section:last-of-type').textContent.includes('Work ' + id), {}, id);
 }
 async function clickText(page, label) { await page.evaluate(label => Array.from(document.querySelectorAll('button')).find(b => b.textContent === label).click(), label); }
+test('publication disabled blocks approval without hiding the saved plan', async t => {
+  const {page}=await fixture(t,{caps:{enabled:true,executionReady:true,publicationReady:false,githubConfigured:true,agents:[{name:'codex',images:true}]}});
+  await saved(page);
+  assert.equal(await page.$eval('[data-approve]', e=>e.disabled),true);
+  assert.match(await page.$eval('#root',e=>e.textContent),/Issue publication is disabled/);
+  assert.match(await page.$eval('#root',e=>e.textContent),/Plan revisions/);
+});
 test('feature outcomes distinguish exit zero, semantic rejection and missing exit', async t => {
   const item = record('outcomes', 'implementing');
   item.featureAttempts = [
