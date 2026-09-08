@@ -164,3 +164,44 @@ func (c *ControllerClient) Process(ctx context.Context, account, id string) (v1.
 	err := c.request(ctx, "GET", "/v1/process-tasks/"+url.PathEscape(id), "", nil, &t)
 	return t, err
 }
+
+// Connection resolves the current assignment every time; callers must never
+// cache a deployment endpoint across a box's hibernate/resume lifecycle.
+func (c *ControllerClient) Connection(ctx context.Context, account, boxID string) (v1.LogicalBoxConnection, error) {
+	var result v1.LogicalBoxConnection
+	if boxID == "" {
+		return result, fmt.Errorf("box identity required")
+	}
+	if err := c.Authorize(ctx, account); err != nil {
+		return result, err
+	}
+	err := c.request(ctx, "GET", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/connection", "", nil, &result)
+	if err == nil && result.LogicalBoxID != boxID {
+		err = fmt.Errorf("connection box identity changed")
+	}
+	return result, err
+}
+
+// SubmitPlanner launches only a fixed command using an already-staged private
+// job. Neither agent prompts nor delivery/GitHub tokens enter task logs.
+func (c *ControllerClient) SubmitPlanner(ctx context.Context, account, boxID, attemptID string) (v1.ProcessTask, error) {
+	var task v1.ProcessTask
+	if boxID == "" || len(attemptID) != 32 {
+		return task, fmt.Errorf("invalid planning identity")
+	}
+	for _, ch := range attemptID {
+		if !strings.ContainsRune("0123456789abcdef", ch) {
+			return task, fmt.Errorf("invalid planning identity")
+		}
+	}
+	if err := c.Authorize(ctx, account); err != nil {
+		return task, err
+	}
+	root := "/data/workspace/.vmbox-factory/attempts/" + attemptID
+	command := "exec /data/workspace/.vmbox-factory/bin/vmbox-planner < " + root + "/job.json"
+	err := c.request(ctx, "POST", "/v1/logical-boxes/"+url.PathEscape(boxID)+"/process-tasks", "factory-plan:"+attemptID, v1.CreateBoxTaskRequest{Agent: "shell", Prompt: command}, &task)
+	if err == nil && (task.ID == "" || task.LogicalBoxID != boxID || task.Agent != "shell" || task.Prompt != command) {
+		err = fmt.Errorf("submitted planner identity changed")
+	}
+	return task, err
+}

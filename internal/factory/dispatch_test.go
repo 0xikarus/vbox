@@ -63,3 +63,47 @@ func TestPlannerResultRejectsLogTextAndMissingData(t *testing.T) {
 		}
 	}
 }
+
+type provisioningRunner struct {
+	starts     int
+	remembered bool
+}
+
+func (r *provisioningRunner) Start(_ context.Context, c Claim) (Submission, error) {
+	r.starts++
+	if r.starts == 1 {
+		return Submission{BoxID: "box", BoxName: "planning-box", Pending: true, State: "creation-initializing"}, nil
+	}
+	r.remembered = c.Work.BoxID == "box" && c.Work.Attempts[0].State == "creation-initializing"
+	return Submission{BoxID: "box", TaskID: "task"}, nil
+}
+func (r *provisioningRunner) Observe(context.Context, Claim) (Observation, error) {
+	return Observation{}, fmt.Errorf("unexpected observation")
+}
+
+func TestDispatcherPersistsProvisioningIdentity(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	w, err := s.Create(ctx, "a", "u", "provision", CreateWork{RepositoryID: "r", Idea: "idea", Agent: "codex", Profile: "p"}, Repository{ID: "r"}, "sha", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &provisioningRunner{}
+	d := &Dispatcher{Store: s, Runner: r}
+	if err = d.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.DB.Exec(`UPDATE factory_work_items SET lease_expires_at=NULL WHERE id=$1`, w.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = d.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if !r.remembered {
+		t.Fatal("provisioning identity or phase lost")
+	}
+	w, err = s.Get(ctx, "a", w.ID)
+	if err != nil || w.Attempts[0].TaskID != "task" {
+		t.Fatal("task not saved after provisioning")
+	}
+}

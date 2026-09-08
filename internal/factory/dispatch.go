@@ -18,7 +18,14 @@ type PlannerRunner interface {
 	Start(context.Context, Claim) (Submission, error)
 	Observe(context.Context, Claim) (Observation, error)
 }
-type Submission struct{ TaskID, BoxID, BoxName string }
+
+// Pending represents controller provisioning, not a submitted process. Keep the
+// box identity while polling the same attempt instead of hiding multi-minute
+// lifecycle transitions behind a generic submission error.
+type Submission struct {
+	TaskID, BoxID, BoxName, State string
+	Pending                       bool
+}
 type Observation struct {
 	State     string
 	Finished  bool
@@ -89,8 +96,14 @@ func (d *Dispatcher) Step(ctx context.Context) error {
 			}
 			return err
 		}
-		if submission.TaskID == "" || submission.BoxID == "" {
+		if submission.BoxID == "" || (!submission.Pending && submission.TaskID == "") || (submission.Pending && submission.TaskID != "") {
 			return fmt.Errorf("planner submission lacks execution identity")
+		}
+		if submission.Pending {
+			a.State = submission.State
+			w.BoxID, w.BoxName = submission.BoxID, submission.BoxName
+			w.Error = ""
+			return d.Store.SaveClaim(ctx, c, w)
 		}
 		a.TaskID = submission.TaskID
 		a.State = "queued"
