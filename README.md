@@ -13,24 +13,29 @@ saved logins, and a prompt or shell command. Upload logins from your laptop with
 `vmbox profiles upload`; expired logins must be refreshed locally first.
 
 The controller queues the request until a healthy slot is free, creates a new
-persistent box, and opens its web tmux terminal. You can cancel while waiting for
+disposable box, and opens its web tmux terminal. You can cancel while waiting for
 capacity. Once claimed, inspect the box before interrupting it.
 
 Claude runs with `-p`, Codex with `exec`, and shell commands with Bash. Real output
 and the process exit code are saved. On completion, the otherwise idle box
-hibernates and releases compute, retaining its workspace volume. Reopening a run
-shows its terminal or saved results; it never submits the command again.
+is deleted together with its workspace volume, releasing compute. Saved output
+and exit code remain under **Recent runs**, independently of the box. Push or upload
+files you want to keep before the command exits. Reopening results never reruns it.
+Persistent interactive boxes and CLI tasks on existing boxes are unchanged.
 To intentionally repeat an identical command, choose **Start another run**, then **Run once**.
 
 For an agent, describe the goal, repository/working directory, expected result, and
 how to verify completion. Select its saved login; select GitHub login when repository
-access is needed. Model defaults to your saved configuration; choose **Specify model**
-to override it. Advanced arguments accept one literal argument per line, without shell
+access is needed. Model defaults to your saved configuration; choose a named model
+from the agent-specific dropdown, or **Custom model…** for another ID. Access depends
+on your saved account and agent version. Advanced arguments accept one literal argument per line, without shell
 quoting. They may change agent permissions, so do not paste untrusted options or secrets.
 The CLI supports the same overrides: `vmbox task BOX codex --model MODEL --arg OPTION --prompt 'TASK'`.
 
-Attach up to eight PNG/JPEG/GIF images (8 MiB each). Use the displayed `[Image 1]`
-labels in your prompt. The controller appends a numbered URL list with instructions
+Attach up to eight PNG/JPEG/GIF images (8 MiB each) by choosing files, dropping
+images onto the form, or pasting images into the prompt. Normal text paste stays
+unchanged. Use the displayed `[Image 1]` labels in your prompt.
+The controller appends a numbered URL list with instructions
 to fetch and inspect the images. Download links grant access only to the referenced
 image and expire seven days after scheduling; images are retained with account data
 (256 MiB image storage limit). Do not publish these private download links.
@@ -591,6 +596,21 @@ Installation failures are
 reported instead of running a task without its requested tools. Existing custom
 executables are never overwritten. Installing Anvil does not start it or expose
 its RPC port; start and forward it explicitly when needed.
+
+## Custom tooling
+
+Expand **Add custom tooling** in box creation or Run once and enter trusted Bash
+install commands, for example `sudo apt-get update && sudo apt-get install -y ripgrep`.
+The commands run inside the worker before the task, with a five-minute limit.
+Use package managers or your own installer; never paste credentials. Installation
+failure prevents the task from starting and is reported as `setup_failed`, not a
+successful task exit. Logs are in `~/.config/vmbox/tool-setup.log`.
+
+For persistent boxes, the saved recipe runs again on resume, including replacement
+compute. Make it safe to run repeatedly. One-shot workspaces are deleted after use.
+CLI forms include the same optional field; scripts can use
+`vmbox new NAME --setup-script 'INSTALL COMMANDS'` or
+`vmbox task BOX shell --setup-script 'INSTALL COMMANDS' --prompt 'COMMAND'`.
 
 ## Build and verification
 

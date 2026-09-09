@@ -67,7 +67,7 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 	defer server.Close()
 
 	app := New()
-	app.In = strings.NewReader("\x1b[B\r\x1b[B\r\x1b[B\rwhat's today's date?\r\x1b[B\x1b[B\x1b[B\r")
+	app.In = strings.NewReader("\x1b[B\r\x1b[B\r\x1b[B\rwhat's today's date?\r\x1b[B\x1b[B\x1b[B\x1b[B\r")
 	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	app.IsTerminal = func() bool { return true }
 	c := config.Context{Controller: server.URL}

@@ -17,11 +17,15 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	request.Normalize()
+	if err := v1.ValidateSetupScript(request.SetupScript); err != nil {
+		writeError(w, 400, err)
+		return
+	}
 	if err := v1.ValidateTools(request.Tools); err != nil {
 		writeError(w, 400, err)
 		return
 	}
-	if (request.VolumeID != "" || request.VolumeName != "") && len(request.Tools) > 0 {
+	if (request.VolumeID != "" || request.VolumeName != "") && (len(request.Tools) > 0 || request.SetupScript != "") {
 		writeError(w, 400, fmt.Errorf("install tools after importing and resuming a volume; import does not initialize it"))
 		return
 	}

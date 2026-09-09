@@ -109,6 +109,27 @@ test('Run once queues once, keeps its key on retry and permits cancellation',asy
  assert.notEqual(lastKey,calls[0].options.headers['Idempotency-Key']);
  assert.deepEqual(errors,[]);await page.close();
 });
+test('table previews stay fixed size and tool choices stay compact',async()=>{
+ for(const width of [1280,390]){
+  const page=await browser.newPage();await page.setViewport({width,height:844});await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#box-list .table-text');
+  const result=await page.evaluate(()=>{
+   const row=document.querySelector('#box-list tr:nth-child(2)'),table=row.parentElement;
+   const measure=()=>({height:row.getBoundingClientRect().height,width:table.getBoundingClientRect().width,columns:[...row.cells].map(c=>c.getBoundingClientRect().width)});
+   const before=measure();row.querySelectorAll('.table-text').forEach(n=>n.textContent='very long description '.repeat(1000));const after=measure();
+   const tools=document.querySelector('#create-tools');return {before,after,toolHeight:tools.getBoundingClientRect().height,customCollapsed:!document.querySelector('#create .custom-tools').open};
+  });
+  assert.deepEqual(result.after,result.before);assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
+ }
+});
+test('agent model choices are prefilled, kept separate and submitted with custom installation',async()=>{
+ const page=await browser.newPage();await page.evaluateOnNewDocument(()=>{const original=window.fetch;window.sentRuns=[];window.fetch=async(path,options={})=>{if(path==='/v1/run-once'&&options.method==='POST'){window.sentRuns.push(JSON.parse(options.body));return new Response(JSON.stringify({id:'chosen-model',state:'blocked'}))}if(path==='/v1/run-once/chosen-model')return new Response(JSON.stringify({id:'chosen-model',state:'blocked'}));return original(path,options)}});
+ await page.goto(base+'/#run-once');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#run-once select[name=provider] option');
+ await page.select('#run-once select[name=agent]','codex');assert.ok(await page.$('#run-once select[name=model-mode] option[value="gpt-6-astra"]'));await page.select('#run-once select[name=model-mode]','gpt-5.6-terra');
+ await page.select('#run-once select[name=agent]','claude');assert.equal(await page.$eval('#run-once select[name=model-mode]',s=>s.value),'');assert.equal(await page.$('#run-once select[name=model-mode] option[value="gpt-6-astra"]'),null);await page.select('#run-once select[name=model-mode]','sonnet');
+ await page.select('#run-once select[name=agent]','codex');assert.equal(await page.$eval('#run-once select[name=model-mode]',s=>s.value),'gpt-5.6-terra');await page.select('#run-once select[name=agent]','claude');assert.equal(await page.$eval('#run-once select[name=model-mode]',s=>s.value),'sonnet');
+ await page.select('#run-once select[name=claude]','personal');await page.type('#run-once textarea[name=prompt]','Check installed tools');await page.click('#run-once .custom-tools summary');await page.type('#run-once textarea[name=setupScript]','printf "literal $HOME"');
+ await page.evaluate(()=>[...document.querySelectorAll('#run-once form button')].find(b=>b.textContent==='Run once').click());await page.waitForFunction(()=>window.sentRuns.length===1);const body=await page.evaluate(()=>window.sentRuns[0]);assert.equal(body.model,'sonnet');assert.equal(body.setupScript,'printf "literal $HOME"');await page.close();
+});
 test('agent form preserves literal options and numbered image references',async()=>{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.evaluateOnNewDocument(()=>{
@@ -147,12 +168,49 @@ test('completed one-shot opens retained output without allocation or a new shell
   };
  });
  await page.goto(base+'/boxes/box-1');
- await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('exit 17'));
+ await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Exit code 17'));
  assert.match(await page.$eval('#terminal-screen',n=>n.textContent),/actual recorded fixture output/);
  assert.equal(new URL(page.url()).searchParams.get('run'),'finished');
  await page.click('#connect');await page.waitForNetworkIdle();
  assert.equal(requests.slice(start).filter(r=>r.method==='POST').length,0);
  await page.close();
+});
+test('model picker separates Codex and Claude and preserves selection',async()=>{
+ const page=await browser.newPage();await page.goto(base+'/#run-once');await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#run-once select[name=claude] option[value=personal]');
+ const agent='#run-once select[name=agent]',model='#run-once select[name=model-mode]';
+ await page.select(agent,'codex');
+ assert.deepEqual(await page.$$eval(model+' option',xs=>xs.map(x=>x.value)),['','gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-5.3-codex-spark','custom']);
+ await page.select(model,'gpt-5.6-terra');await page.select(agent,'claude');
+ assert.deepEqual(await page.$$eval(model+' option',xs=>xs.map(x=>x.value)),['','sonnet','opus','haiku','custom']);
+ await page.select(model,'opus');await page.select(agent,'codex');assert.equal(await page.$eval(model,x=>x.value),'gpt-5.6-terra');
+ await page.select(agent,'claude');assert.equal(await page.$eval(model,x=>x.value),'opus');
+ assert.equal(await page.$eval('#run-once input[name=model]',x=>x.parentElement.hidden),true);
+ await page.close();
+});
+test('pasted and dropped images share numbering; ordinary text paste is not intercepted',async()=>{
+ const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.evaluateOnNewDocument(()=>{const original=fetch;let image=0;window.fetch=async(path,options={})=>{
+  if(path==='/v1/run-once-images')return new Response(JSON.stringify({id:'image-'+(++image)}),{status:201});
+  if(path==='/v1/run-once'&&options.method==='POST'){window.imageSubmission=JSON.parse(options.body);return new Response(JSON.stringify({id:'paste-run',state:'queued'}));}
+  if(path==='/v1/run-once/paste-run')return new Response(JSON.stringify({id:'paste-run',state:'queued'}));return original(path,options);
+ }});
+ await page.goto(base+'/#run-once');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#run-once select[name=claude] option[value=personal]');
+ await page.select('#run-once select[name=agent]','claude');await page.select('#run-once select[name=claude]','personal');await page.select('#run-once select[name=model-mode]','sonnet');
+ await page.evaluate(()=>{const d=new DataTransfer();d.items.add(new File(['png'],'pasted.png',{type:'image/png'}));document.querySelector('#run-once textarea[name=prompt]').dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}));});
+ await page.waitForFunction(()=>document.querySelector('#run-once').textContent.includes('[Image 1] pasted.png'));
+ await page.evaluate(()=>{const d=new DataTransfer();d.items.add(new File(['png'],'dropped.png',{type:'image/png'}));document.querySelector('#run-once form').dispatchEvent(new DragEvent('drop',{dataTransfer:d,bubbles:true,cancelable:true}));});
+ await page.waitForFunction(()=>document.querySelector('#run-once').textContent.includes('[Image 2] dropped.png'));
+ assert.equal(await page.evaluate(()=>{const d=new DataTransfer();d.setData('text/plain','ordinary paste');return document.querySelector('#run-once textarea[name=prompt]').dispatchEvent(new ClipboardEvent('paste',{clipboardData:d,bubbles:true,cancelable:true}));}),true);
+ await page.type('#run-once textarea[name=prompt]','Inspect [Image 1] and [Image 2]');await page.evaluate(()=>document.querySelector('#run-once form').requestSubmit());await page.waitForFunction(()=>window.imageSubmission);
+ const body=await page.evaluate(()=>window.imageSubmission);assert.equal(body.model,'sonnet');assert.deepEqual(body.images,[{id:'image-1',number:1},{id:'image-2',number:2}]);assert.deepEqual(errors,[]);await page.close();
+});
+test('deleted one-shot box still opens archived results without fetching its box',async()=>{
+ const page=await browser.newPage();await page.evaluateOnNewDocument(()=>{const original=fetch;window.boxReads=0;window.fetch=async(path,...args)=>{
+  if(path==='/v1/run-once/deleted')return new Response(JSON.stringify({id:'deleted',boxId:'box-1',boxDeleted:true,state:'finished',task:{agent:'shell',state:'exited',exitCode:7,finishedAt:'2026-09-09T00:00:00Z',output:'archived after deletion'}}));
+  if(path==='/v1/logical-boxes/box-1'){window.boxReads++;return new Response('{}',{status:404});}return original(path,...args);
+ }});await page.goto(base+'/boxes/box-1?run=deleted');await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('Box deleted'));
+ assert.match(await page.$eval('#terminal-screen',x=>x.textContent),/archived after deletion/);assert.equal(await page.evaluate(()=>window.boxReads),0);await page.close();
 });
 test('box link opens separate mobile workspace and reuses shell',async()=>{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));

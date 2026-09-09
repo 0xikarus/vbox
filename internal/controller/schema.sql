@@ -259,6 +259,8 @@ CREATE TABLE IF NOT EXISTS run_once_requests (
  created_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(account_id,request_key)
 );
+-- Completed one-shot results outlive their disposable box and volume.
+ALTER TABLE run_once_requests ADD COLUMN IF NOT EXISTS result jsonb;
 CREATE TABLE IF NOT EXISTS run_once_images (
  id uuid PRIMARY KEY,
  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

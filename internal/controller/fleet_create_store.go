@@ -26,6 +26,9 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	request.Normalize()
 	var creation logicalBoxCreation
 	creation.AccountID, creation.UserID, creation.Request = p.AccountID, p.UserID, request
+	if err := v1.ValidateSetupScript(request.SetupScript); err != nil {
+		return creation, err
+	}
 	if err := v1.ValidateTools(request.Tools); err != nil {
 		return creation, err
 	}
@@ -90,7 +93,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.AllocateWhenReady, "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.AllocateWhenReady, "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript})
 	if err != nil {
 		return creation, err
 	}
@@ -222,6 +225,7 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: value.allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
 		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
 		result[len(result)-1].Request.Tools = stored.Tools
+		result[len(result)-1].Request.SetupScript = stored.SetupScript
 	}
 	return result, nil
 }

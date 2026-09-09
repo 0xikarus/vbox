@@ -177,6 +177,20 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 				return fail(fmt.Errorf("tool installation failed: %s", strings.TrimSpace(installed.Stderr)))
 			}
 		}
+		if strings.TrimSpace(creation.Request.SetupScript) != "" {
+			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-installing-tools"); err != nil {
+				return fail(err)
+			}
+			toolCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+			installed, err := prov.Exec(toolCtx, serviceID, []string{"vmbox-runtime", "configure-tools"}, provider.ExecOptions{Stdin: strings.NewReader(creation.Request.SetupScript)})
+			cancel()
+			if err != nil {
+				return fail(fmt.Errorf("install custom tools: %w", err))
+			}
+			if installed.ExitCode != 0 {
+				return fail(fmt.Errorf("custom tool installation failed: %s", strings.TrimSpace(installed.Stderr)))
+			}
+		}
 		if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-detaching"); err != nil {
 			return fail(err)
 		}

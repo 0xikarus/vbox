@@ -1,6 +1,16 @@
 package v1
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+func ValidateSetupScript(script string) error {
+	if len(script) > 32768 || strings.ContainsRune(script, 0) {
+		return fmt.Errorf("custom install commands must be at most 32 KiB and contain no NUL bytes")
+	}
+	return nil
+}
 
 // Tool presets are provider-independent, explicitly selected, and versioned.
 type ToolPreset struct {

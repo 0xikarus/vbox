@@ -104,6 +104,17 @@ func run() error {
 		return json.NewEncoder(os.Stdout).Encode(result)
 	case "install-tools":
 		return boxruntime.InstallTools(context.Background(), os.Getenv("HOME"), args[1:], os.Stdout)
+	case "configure-tools":
+		if len(args) != 1 {
+			return fmt.Errorf("configure-tools reads install commands from stdin")
+		}
+		script, err := io.ReadAll(io.LimitReader(os.Stdin, 32769))
+		if err != nil {
+			return err
+		}
+		return boxruntime.ConfigureToolSetup(context.Background(), os.Getenv("HOME"), string(script), os.Stdout)
+	case "restore-tools":
+		return boxruntime.RestoreToolSetup(context.Background(), os.Getenv("HOME"), os.Stdout)
 	case "prepare-hibernate", "prepare-idle-hibernate":
 		if len(args) != 1 {
 			return fmt.Errorf("prepare-hibernate accepts no arguments")

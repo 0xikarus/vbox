@@ -14,7 +14,10 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/loginprofile"
 )
 
+const archiveRunOnceSQL = `UPDATE run_once_requests q SET result=t.result,state='finished' FROM process_tasks t WHERE q.account_id=$1 AND q.box_id=$2 AND t.account_id=q.account_id AND t.id=q.id AND t.logical_box_id=q.box_id AND t.result->>'finishedAt' IS NOT NULL`
+
 type runOnceRequest struct {
+	SetupScript        string               `json:"setupScript,omitempty"`
 	Tools              []string             `json:"tools,omitempty"`
 	Images             []runOnceImageRef    `json:"images,omitempty"`
 	Agent              string               `json:"agent"`
@@ -26,13 +29,14 @@ type runOnceRequest struct {
 	LoginProfiles      []v1.LoginProfileRef `json:"loginProfiles"`
 }
 type runOnceRecord struct {
-	ID        string          `json:"id"`
-	Request   runOnceRequest  `json:"request"`
-	State     string          `json:"state"`
-	BoxID     string          `json:"boxId,omitempty"`
-	Failure   string          `json:"failure,omitempty"`
-	CreatedAt time.Time       `json:"createdAt"`
-	Task      *v1.ProcessTask `json:"task,omitempty"`
+	ID         string          `json:"id"`
+	Request    runOnceRequest  `json:"request"`
+	State      string          `json:"state"`
+	BoxID      string          `json:"boxId,omitempty"`
+	BoxDeleted bool            `json:"boxDeleted"`
+	Failure    string          `json:"failure,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	Task       *v1.ProcessTask `json:"task,omitempty"`
 }
 
 func (s *Server) boxRunOnce(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -55,6 +59,9 @@ func (s *Server) boxRunOnce(w http.ResponseWriter, r *http.Request, p Principal)
 }
 
 func (s *Server) validateRunOnce(ctx context.Context, p Principal, req runOnceRequest) error {
+	if err := v1.ValidateSetupScript(req.SetupScript); err != nil {
+		return err
+	}
 	if err := v1.ValidateTools(req.Tools); err != nil {
 		return err
 	}
@@ -139,7 +146,7 @@ func (s *Server) createRunOnce(w http.ResponseWriter, r *http.Request, p Princip
 }
 
 func (s *Server) listRunOnce(w http.ResponseWriter, r *http.Request, p Principal) {
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT q.id::text,q.request,q.state,COALESCE(q.box_id::text,''),q.failure,q.created_at,t.result FROM run_once_requests q LEFT JOIN process_tasks t ON t.id=q.id AND t.account_id=q.account_id WHERE q.account_id=$1 AND ($2='' OR q.id::text=$2) ORDER BY q.created_at DESC LIMIT 100`, p.AccountID, r.PathValue("id"))
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT q.id::text,q.request,q.state,COALESCE(q.box_id::text,''),q.failure,q.created_at,COALESCE(q.result,t.result),q.box_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM logical_boxes b WHERE b.id=q.box_id AND b.account_id=q.account_id) FROM run_once_requests q LEFT JOIN process_tasks t ON t.id=q.id AND t.account_id=q.account_id WHERE q.account_id=$1 AND ($2='' OR q.id::text=$2) ORDER BY q.created_at DESC LIMIT 100`, p.AccountID, r.PathValue("id"))
 	if err != nil {
 		writeError(w, 500, err)
 		return
@@ -149,7 +156,7 @@ func (s *Server) listRunOnce(w http.ResponseWriter, r *http.Request, p Principal
 	for rows.Next() {
 		var v runOnceRecord
 		var req, task []byte
-		if err = rows.Scan(&v.ID, &req, &v.State, &v.BoxID, &v.Failure, &v.CreatedAt, &task); err != nil {
+		if err = rows.Scan(&v.ID, &req, &v.State, &v.BoxID, &v.Failure, &v.CreatedAt, &task, &v.BoxDeleted); err != nil {
 			writeError(w, 500, err)
 			return
 		}
@@ -247,7 +254,7 @@ func (s *Server) reconcileRunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	task := v1.ProcessTask{ID: id, LogicalBoxID: boxID, BoxName: name, Agent: req.Agent, Prompt: prompt, Model: req.Model, Args: req.Args, Tools: req.Tools, Session: "task-" + id, State: "queued", CreatedAt: time.Now().UTC()}
+	task := v1.ProcessTask{ID: id, LogicalBoxID: boxID, BoxName: name, Agent: req.Agent, Prompt: prompt, Model: req.Model, Args: req.Args, Tools: req.Tools, SetupScript: req.SetupScript, Session: "task-" + id, State: "queued", CreatedAt: time.Now().UTC()}
 	result, _ := json.Marshal(task)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO process_tasks(id,account_id,logical_box_id,user_id,requested_role,idempotency_key,state,result) VALUES($1,$2,$3,$4,'owner',$5,'queued',$6) ON CONFLICT(id) DO NOTHING`, id, account, boxID, user, "run-once:"+id, result); err != nil {
 		return err

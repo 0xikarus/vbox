@@ -10,21 +10,29 @@ async function inspectRun(version){
  try{
   const run=await api('/v1/run-once/'+encodeURIComponent(runID));if(version!==epoch)return;
   if(run.boxId!==boxID)throw Error('Run does not belong to this box.');
+  if(run.task?.finishedAt){
+   const task=run.task;closeTerminal();attachedRunSession='';
+   $('#workspace').hidden=false;$('#desktop').hidden=true;$('#hibernate').hidden=true;
+   $('#name').textContent=task.boxName||'Run once results';
+   $('#session').textContent='One-shot '+task.agent+' · '+task.state;
+   $('#status').textContent=[task.exitCode!=null?'Exit code '+task.exitCode:task.signal?'Signal '+task.signal:task.state,run.boxDeleted?'Box deleted; saved results retained.':'Finished; box cleanup pending.'].join(' · ');
+   $('#connect').textContent='Refresh results';
+   const output=document.createElement('pre');output.textContent=task.output||'No output recorded.';
+   if(task.outputTruncated)output.append(document.createTextNode('\n[Saved output truncated]'));
+   $('#terminal-screen').replaceChildren(output);
+   if(!run.boxDeleted)runTimer=setTimeout(()=>inspectRun(version),5000);
+   return;
+  }
   const box=await api(bp);if(version!==epoch)return;state(box);$('#workspace').hidden=false;
   $('#desktop').hidden=true;$('#hibernate').hidden=true;$('#connect').textContent='Reconnect / check results';
   const task=run.task;
   $('#session').textContent=task?'One-shot '+task.agent+' · '+task.session:'Waiting for the task';
   $('#status').textContent=[box.state,box.restorationState,task?.state,task?.exitCode!=null?'exit '+task.exitCode:'',run.failure,box.failureReason].filter(Boolean).join(' · ');
-  if(task?.finishedAt){
-   if(attachedRunSession){closeTerminal();attachedRunSession=''}
-   const output=document.createElement('pre');output.textContent=task.output||'No output recorded.';
-   if(task.outputTruncated)output.append(document.createTextNode('\n[Saved output truncated]'));
-   $('#terminal-screen').replaceChildren(output);
-  }else if(task?.state==='running'&&box.state==='running'&&attachedRunSession!==task.session){
+  if(task?.state==='running'&&box.state==='running'&&attachedRunSession!==task.session){
    closeTerminal();attachedRunSession=task.session;
    closeTerminal=openWorkspaceTerminal(boxID,task.session,message=>{if(version===epoch)$('#status').textContent=message});
   }
-  if(!task?.finishedAt||box.state!=='hibernated')runTimer=setTimeout(()=>inspectRun(version),2000);
+  runTimer=setTimeout(()=>inspectRun(version),2000);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}
 }
 $('#enable-desktop').onclick=async()=>{if(!confirm('Install desktop packages on this worker? This uses additional disk space and downloading may take a few minutes.'))return;$('#enable-desktop').disabled=true;$('#desktop-status').textContent='Installing desktop packages (up to 3 minutes)…';try{await api(bp+'/desktop/enable','POST',{}, {},190000);$('#desktop-status').textContent='Desktop packages ready. Choose Start / reconnect desktop.'}catch(e){$('#desktop-status').textContent=e.message}finally{$('#enable-desktop').disabled=false}};

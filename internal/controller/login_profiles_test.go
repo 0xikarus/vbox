@@ -125,7 +125,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if _, err = s.DB.ExecContext(ctx, `INSERT INTO compute_slots(id,account_id,provider,ordinal,state,service_id,health,region) VALUES($1,$2,'railway',1,'free','profile-test-service','healthy','test-region')`, slot, p.AccountID); err != nil {
 		t.Fatal(err)
 	}
-	createReq := v1.CreateLogicalBoxRequest{Name: "profile-box", Provider: "railway", Tools:[]string{"foundry"}, LoginProfiles: []v1.LoginProfileRef{{Application: "codex", Name: "work"}}}
+	createReq := v1.CreateLogicalBoxRequest{Name: "profile-box", Provider: "railway", Tools: []string{"foundry"}, SetupScript: "printf custom-install", LoginProfiles: []v1.LoginProfileRef{{Application: "codex", Name: "work"}}}
 	creation, err := s.BeginLogicalBoxCreation(ctx, p, createReq)
 	if err != nil {
 		t.Fatal(err)
@@ -137,7 +137,12 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if err != nil || len(recovered) != 1 || len(recovered[0].Request.LoginProfiles) != 1 || recovered[0].Request.LoginProfiles[0].Name != "work" {
 		t.Fatalf("selection recovery failed: %v", err)
 	}
-	if len(recovered[0].Request.Tools)!=1||recovered[0].Request.Tools[0]!="foundry"{t.Fatal("tool selection lost on recovery")}
+	if len(recovered[0].Request.Tools) != 1 || recovered[0].Request.Tools[0] != "foundry" {
+		t.Fatal("tool selection lost on recovery")
+	}
+	if recovered[0].Request.SetupScript != createReq.SetupScript {
+		t.Fatal("custom installer lost on recovery")
+	}
 	storage := provider.Storage{ID: "profile-test-volume", Name: "profile-test-volume"}
 	if err = s.PersistLogicalBoxVolume(ctx, creation, storage, "creation-initializing"); err != nil {
 		t.Fatal(err)

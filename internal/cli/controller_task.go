@@ -23,6 +23,7 @@ type controllerTaskOptions struct {
 	model                       string
 	args                        []string
 	tools                       []string
+	setupScript                 string
 }
 
 func (a *App) controllerTask(ctx context.Context, c config.Context, token string, args []string) error {
@@ -73,7 +74,10 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 	if err := v1.ValidateTools(opts.tools); err != nil {
 		return err
 	}
-	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt, Model: opts.model, Args: opts.args, Tools: opts.tools}
+	if err := v1.ValidateSetupScript(opts.setupScript); err != nil {
+		return err
+	}
+	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt, Model: opts.model, Args: opts.args, Tools: opts.tools, SetupScript: opts.setupScript}
 	var task v1.ProcessTask
 	if opts.idempotency == "" {
 		opts.idempotency = "cli-task:" + opts.box + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -120,7 +124,10 @@ func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token st
 	model := &formField{Label: "Model (optional)", Value: opts.model, When: func() bool { return agent.Value != "shell" }}
 	var output bytes.Buffer
 	tools := toolFields(opts.tools)
-	err := a.runFormButton(ctx, "One-shot task · goal, expected result, verification", "Run once", append([]*formField{box, agent, prompt, model}, tools...), func(progress func(string)) error {
+	setup := &formField{Label: "Custom install commands (optional)", Value: opts.setupScript}
+	fields := append([]*formField{box, agent, prompt, model}, tools...)
+	fields = append(fields, setup)
+	err := a.runFormButton(ctx, "One-shot task · goal, expected result, verification", "Run once", fields, func(progress func(string)) error {
 		if strings.TrimSpace(prompt.Value) == "" {
 			return fmt.Errorf("enter task instructions or a shell command")
 		}
@@ -133,6 +140,9 @@ func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token st
 		}
 		for _, tool := range selectedTools(tools) {
 			args = append(args, "--tool", tool)
+		}
+		if setup.Value != "" {
+			args = append(args, "--setup-script", setup.Value)
 		}
 		if opts.session != "" {
 			args = append(args, "--session", opts.session)
@@ -237,6 +247,8 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 			var value string
 			value, err = next()
 			opts.tools = append(opts.tools, value)
+		case "--setup-script":
+			opts.setupScript, err = next()
 		case "--arg":
 			var value string
 			value, err = next()

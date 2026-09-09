@@ -33,6 +33,9 @@ func processArgv(agent, prompt string) ([]string, error) {
 }
 
 func processTaskArgv(task v1.ProcessTask) ([]string, error) {
+	if err := v1.ValidateSetupScript(task.SetupScript); err != nil {
+		return nil, err
+	}
 	if err := v1.ValidateTools(task.Tools); err != nil {
 		return nil, err
 	}
@@ -197,6 +200,9 @@ func RunProcess(root, id string) error {
 	cmd.Stdout = w
 	cmd.Stderr = w
 	setupErr := InstallTools(context.Background(), filepath.Join(filepath.Dir(root), "home"), task.Tools, w)
+	if setupErr == nil {
+		setupErr = ConfigureToolSetup(context.Background(), filepath.Join(filepath.Dir(root), "home"), task.SetupScript, w)
+	}
 	if setupErr == nil {
 		err = cmd.Run()
 	} else {

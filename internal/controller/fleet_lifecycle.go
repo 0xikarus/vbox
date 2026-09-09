@@ -69,6 +69,21 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	if health.ExitCode != 0 || strings.TrimSpace(health.Stdout) != "ok" {
 		return fail("waiting-for-runtime", fmt.Errorf("runtime health check failed with status %d: %s", health.ExitCode, strings.TrimSpace(health.Stderr)))
 	}
+	// System packages belong to replaceable compute. The retained recipe rebuilds
+	// them before declaring an allocation ready; a failed install blocks startup.
+	if err := s.Store.RenewAssignmentLease(ctx, accountID, allocation, 8*time.Minute); err != nil {
+		return fail("restoring-tools", err)
+	}
+	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "restoring-tools", "", false)
+	toolCtx, toolCancel := context.WithTimeout(ctx, 6*time.Minute)
+	toolResult, toolErr := prov.Exec(toolCtx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "restore-tools"}, provider.ExecOptions{})
+	toolCancel()
+	if toolErr != nil {
+		return fail("restoring-tools", toolErr)
+	}
+	if toolResult.ExitCode != 0 {
+		return fail("restoring-tools", fmt.Errorf("custom tool restoration failed: %s", strings.TrimSpace(toolResult.Stderr)))
+	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "restoring-workspace-metadata", "", false)
 	actual, inspectErr := prov.Inspect(ctx, assignment.Slot.ServiceID)
 	if inspectErr != nil {

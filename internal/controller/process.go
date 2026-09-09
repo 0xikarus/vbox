@@ -27,6 +27,10 @@ func (s *Server) createProcessHandler(w http.ResponseWriter, r *http.Request, p 
 		return
 	}
 	key := r.Header.Get("Idempotency-Key")
+	if err := v1.ValidateSetupScript(req.SetupScript); err != nil {
+		writeError(w, 400, err)
+		return
+	}
 	if err := v1.ValidateTools(req.Tools); err != nil {
 		writeError(w, 400, err)
 		return
@@ -60,7 +64,7 @@ func (s *Server) createProcessHandler(w http.ResponseWriter, r *http.Request, p 
 	if err == nil {
 		var task v1.ProcessTask
 		_ = json.Unmarshal(existing, &task)
-		if task.LogicalBoxID != box.ID || task.Agent != req.Agent || task.Prompt != req.Prompt || task.Model != req.Model || !slices.Equal(task.Args, req.Args) || !slices.Equal(task.Tools, req.Tools) || (req.Session != "" && task.Session != req.Session) {
+		if task.LogicalBoxID != box.ID || task.Agent != req.Agent || task.Prompt != req.Prompt || task.Model != req.Model || task.SetupScript != req.SetupScript || !slices.Equal(task.Args, req.Args) || !slices.Equal(task.Tools, req.Tools) || (req.Session != "" && task.Session != req.Session) {
 			writeError(w, 409, fmt.Errorf("idempotency key belongs to a different request"))
 			return
 		}
@@ -71,7 +75,7 @@ func (s *Server) createProcessHandler(w http.ResponseWriter, r *http.Request, p 
 		writeError(w, 500, err)
 		return
 	}
-	task := v1.ProcessTask{ID: uuid(), LogicalBoxID: box.ID, BoxName: box.Name, Agent: req.Agent, Prompt: req.Prompt, Model: req.Model, Args: req.Args, Tools: req.Tools, State: "queued", CreatedAt: time.Now().UTC()}
+	task := v1.ProcessTask{ID: uuid(), LogicalBoxID: box.ID, BoxName: box.Name, Agent: req.Agent, Prompt: req.Prompt, Model: req.Model, Args: req.Args, Tools: req.Tools, SetupScript: req.SetupScript, State: "queued", CreatedAt: time.Now().UTC()}
 	task.Session = req.Session
 	if task.Session == "" {
 		task.Session = "task-" + task.ID
@@ -314,7 +318,22 @@ func (s *Server) hibernateAfterProcess(ctx context.Context, p Principal, a fleet
 	if inv.State != "live" || inv.Assignment != nativeFence(a) || inv.Partial || len(inv.Sessions) != 0 {
 		return nil
 	}
-	_, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernating',lease_owner=NULL,lease_expires_at=NULL,restoration_state='auto-hibernate-queued',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID)
+	// Archive before releasing the box: process_tasks are cascade-deleted with
+	// the workspace. Only Run once owns a disposable box; CLI tasks on an
+	// existing persistent box retain the previous hibernation behavior.
+	archived, err := tx.ExecContext(ctx, archiveRunOnceSQL, p.AccountID, a.Box.ID)
+	if err != nil {
+		return err
+	}
+	n, err := archived.RowsAffected()
+	if err != nil {
+		return err
+	}
+	state, phase := "hibernating", "auto-hibernate-queued"
+	if n > 0 {
+		state, phase = "deleting", "delete-queued"
+	}
+	_, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state=$3,lease_owner=NULL,lease_expires_at=NULL,restoration_state=$4,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID, state, phase)
 	if err != nil {
 		return err
 	}
@@ -331,7 +350,11 @@ func (s *Server) hibernateAfterProcess(ctx context.Context, p Principal, a fleet
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	s.startLogicalBoxHibernate(p, a.Box.ID)
+	if state == "deleting" {
+		s.startLogicalBoxDelete(p, a.Box.ID)
+	} else {
+		s.startLogicalBoxHibernate(p, a.Box.ID)
+	}
 	return nil
 }
 

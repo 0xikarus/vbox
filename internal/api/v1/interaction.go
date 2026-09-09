@@ -7,12 +7,13 @@ import (
 )
 
 type CreateBoxTaskRequest struct {
-	Tools   []string `json:"tools,omitempty"`
-	Agent   string   `json:"agent"`
-	Prompt  string   `json:"prompt"`
-	Model   string   `json:"model,omitempty"`
-	Args    []string `json:"args,omitempty"`
-	Session string   `json:"session,omitempty"`
+	SetupScript string   `json:"setupScript,omitempty"`
+	Tools       []string `json:"tools,omitempty"`
+	Agent       string   `json:"agent"`
+	Prompt      string   `json:"prompt"`
+	Model       string   `json:"model,omitempty"`
+	Args        []string `json:"args,omitempty"`
+	Session     string   `json:"session,omitempty"`
 }
 
 type BoxTask struct {

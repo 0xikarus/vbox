@@ -41,6 +41,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 	var fields []*formField
 	var profiles []creationProfileFields
 	tools := toolFields(request.Tools)
+	setup := &formField{Label: "Custom install commands (optional)", Value: request.SetupScript}
 	name := &formField{Label: "Name", Value: request.Name}
 	disk := &formField{Label: "Disk GiB", Value: strconv.FormatInt(request.DiskGiB, 10)}
 	after := &formField{Label: "After creation", Value: mode, Choices: []string{creationConnect, creationDetached, creationHibernated}}
@@ -112,6 +113,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			}
 		}
 		fields = append(fields, tools...)
+		fields = append(fields, setup)
 		fields = append(fields, startup, after)
 	}
 	previousProgress := a.creationProgress
@@ -126,6 +128,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 		}
 		if dialog {
 			request.Tools = selectedTools(tools)
+			request.SetupScript = setup.Value
 			p := providerChoices[providerField.Value]
 			request.Provider, request.ProviderCredential = p.Provider, p.Name
 			request.Name = name.Value
