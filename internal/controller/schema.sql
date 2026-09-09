@@ -247,6 +247,18 @@ CREATE TABLE IF NOT EXISTS process_tasks (
   UNIQUE(account_id,idempotency_key)
 );
 CREATE INDEX IF NOT EXISTS process_tasks_pending_idx ON process_tasks(created_at) WHERE NOT auto_checked;
+CREATE TABLE IF NOT EXISTS run_once_requests (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id),
+ user_id uuid NOT NULL REFERENCES users(id),
+ request_key text NOT NULL,
+ request jsonb NOT NULL,
+ state text NOT NULL DEFAULT 'queued',
+ box_id uuid,
+ failure text NOT NULL DEFAULT '',
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id,request_key)
+);
 CREATE TABLE IF NOT EXISTS box_messages (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

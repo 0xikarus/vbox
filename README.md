@@ -6,6 +6,24 @@ your CLI connects to the controller, not directly to provider APIs.
 
 ## Quick setup
 
+### Run once from the web
+
+Open your controller and choose **Run once**. Select a provider, Claude/Codex/shell,
+saved logins, and a prompt or shell command. Upload logins from your laptop with
+`vmbox profiles upload`; expired logins must be refreshed locally first.
+
+The controller queues the request until a healthy slot is free, creates a new
+persistent box, and opens its web tmux terminal. You can cancel while waiting for
+capacity. Once claimed, inspect the box before interrupting it.
+
+Claude runs with `-p`, Codex with `exec`, and shell commands with Bash. Real output
+and the process exit code are saved. On completion, the otherwise idle box
+hibernates and releases compute, retaining its workspace volume. Reopening a run
+shows its terminal or saved results; it never submits the command again.
+
+There is no planning/coordinator service, approval graph, or automatic agent
+retry. An exit code reports process success, not whether the requested work is good.
+
 ### 1. Install
 
 You need Git, OpenSSH, and either Go 1.26 or Docker on your laptop.

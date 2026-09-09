@@ -14,7 +14,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-  if(['/','/app.js','/app.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+  if(['/','/app.js','/app.css','/run-once.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -46,6 +46,46 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
+test('Run once queues once, keeps its key on retry and permits cancellation',async()=>{
+ const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.runCalls=[];let state='queued';
+  window.fetch=async(path,options={})=>{
+   if(!String(path).startsWith('/v1/run-once'))return original(path,options);
+   window.runCalls.push({path,options});
+   if(String(path).endsWith('/cancel'))state='cancelled';
+   const run={id:'queue-fixture',request:{agent:'shell',prompt:'printf unique'},state};
+   return new Response(JSON.stringify(path==='/v1/run-once'&&!options.method?[]:run),{headers:{'Content-Type':'application/json'}});
+  };
+ });
+ await page.goto(base+'/#run-once');await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#run-once select[name=provider] option');
+ await page.type('#run-once textarea','printf unique');await page.click('#run-once form button');
+ await page.waitForFunction(()=>document.querySelector('#run-once-content').textContent.includes('Waiting for a healthy free slot'));
+ await page.click('#run-once form button');
+ const calls=await page.evaluate(()=>window.runCalls.filter(c=>c.path==='/v1/run-once'&&c.options.method==='POST'));
+ assert.equal(calls.length,2);assert.equal(calls[0].options.headers['Idempotency-Key'],calls[1].options.headers['Idempotency-Key']);
+ await page.evaluate(()=>[...document.querySelectorAll('#run-once button')].find(b=>b.textContent==='Cancel queued run').click());
+ await page.waitForFunction(()=>document.querySelector('#run-once-content').textContent.includes('cancelled'));
+ assert.deepEqual(errors,[]);await page.close();
+});
+test('completed one-shot opens retained output without allocation or a new shell',async()=>{
+ const page=await browser.newPage();const start=requests.length;
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;
+  window.fetch=async(path,...args)=>{
+   if(String(path).startsWith('/v1/run-once/'))return new Response(JSON.stringify({id:'finished',boxId:'box-1',state:'submitted',task:{agent:'shell',session:'task-finished',state:'exited',exitCode:17,finishedAt:'2026-09-09T00:00:00Z',output:'actual recorded fixture output'}}));
+   if(path==='/v1/logical-boxes/box-1')return new Response(JSON.stringify({id:'box-1',name:'finished-box',state:'hibernated'}));
+   return original(path,...args);
+  };
+ });
+ await page.goto(base+'/boxes/box-1?run=finished');
+ await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('exit 17'));
+ assert.match(await page.$eval('#terminal-screen',n=>n.textContent),/actual recorded fixture output/);
+ await page.click('#connect');await page.waitForNetworkIdle();
+ assert.equal(requests.slice(start).filter(r=>r.method==='POST').length,0);
+ await page.close();
+});
 test('box link opens separate mobile workspace and reuses shell',async()=>{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});

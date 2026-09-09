@@ -133,6 +133,9 @@ func (s *Server) processResultHandler(w http.ResponseWriter, r *http.Request, p 
 }
 
 func (s *Server) ReconcileProcessesNow(ctx context.Context) error {
+	if err := s.reconcileRunOnce(ctx); err != nil {
+		s.Logger.Warn("run-once queue reconciliation unavailable")
+	}
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT account_id::text,user_id::text,requested_role,id::text FROM process_tasks WHERE NOT auto_checked ORDER BY created_at,id LIMIT 128`)
 	if err != nil {
 		return err

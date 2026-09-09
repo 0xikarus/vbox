@@ -20,6 +20,8 @@ type logicalBoxCreation struct {
 	Assignment fleetAssignment
 }
 
+var errNoCreationSlot = errors.New("no healthy free compute slot is available to initialize the workspace volume")
+
 func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, request v1.CreateLogicalBoxRequest) (logicalBoxCreation, error) {
 	request.Normalize()
 	var creation logicalBoxCreation
@@ -71,7 +73,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	}
 	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy'"+locationFilter+" AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", queryArgs...))
 	if errors.Is(err, sql.ErrNoRows) {
-		return creation, fmt.Errorf("no healthy free compute slot is available to initialize the workspace volume")
+		return creation, errNoCreationSlot
 	}
 	if err != nil {
 		return creation, err

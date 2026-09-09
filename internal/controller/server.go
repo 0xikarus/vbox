@@ -33,8 +33,6 @@ type Server struct {
 	webStreams      int
 	replyWatches    map[string]struct{}
 	PublicURL       string
-	FactoryURL      string
-	FactoryToken    string
 	DefaultImage    string
 	WorkerRuntime   []byte
 	Resolve         ProviderResolver
@@ -70,13 +68,11 @@ func NewServer(store *Store, providers *provider.Registry) *Server {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
-		mux.HandleFunc(method+" /v1/factory/", s.auth(s.factoryGateway))
-	}
-	mux.HandleFunc("GET /factory.js", uiHandler("factory.js", "text/javascript; charset=utf-8", false))
-	mux.HandleFunc("GET /factory.css", uiHandler("factory.css", "text/css; charset=utf-8", false))
-	mux.HandleFunc("GET /tasks.js", uiHandler("tasks.js", "text/javascript; charset=utf-8", false))
-	mux.HandleFunc("GET /tasks.css", uiHandler("tasks.css", "text/css; charset=utf-8", false))
+	mux.HandleFunc("GET /run-once.js", uiHandler("run-once.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("POST /v1/run-once", s.owner(s.createRunOnce))
+	mux.HandleFunc("GET /v1/run-once", s.owner(s.listRunOnce))
+	mux.HandleFunc("GET /v1/run-once/{id}", s.owner(s.listRunOnce))
+	mux.HandleFunc("POST /v1/run-once/{id}/cancel", s.owner(s.cancelRunOnce))
 	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
 	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))

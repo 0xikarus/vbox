@@ -95,8 +95,6 @@ func run() error {
 	registry := provider.NewRegistry()
 	server := controller.NewServer(store, registry)
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
-	server.FactoryURL = os.Getenv("VMBOX_FACTORY_URL")
-	server.FactoryToken = os.Getenv("VMBOX_FACTORY_GATEWAY_TOKEN")
 	server.DefaultImage = os.Getenv("VMBOX_IMAGE")
 	server.WorkerRuntime, err = os.ReadFile("/usr/local/bin/vmbox-runtime")
 	if err != nil {
