@@ -4,7 +4,7 @@
 <h1>Index of /controller</h1><p>Manage boxes and credentials here. Open a shell with <code>vmbox BOX</code>.</p>
 <form id="login"><label>Controller token <input name="token" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
 <p id="error" role="alert"></p><main hidden id="app">
-<nav><a href="#boxes">Boxes</a> · <a href="#run-once" data-owner>Run once</a> · <a href="#profiles" data-owner>Profiles</a> · <a href="#providers">Providers</a> · <a href="#fleet">Capacity</a> · <a href="#notifications">Notifications</a> <button id="refresh">Refresh</button><button id="logout">Log out</button></nav>
+<nav><a href="#boxes">Boxes</a> · <a href="/grid" data-owner>Grid</a> · <a href="#run-once" data-owner>Run once</a> · <a href="#profiles" data-owner>Profiles</a> · <a href="#providers">Providers</a> · <a href="#fleet">Capacity</a> · <a href="#notifications">Notifications</a> <button id="refresh">Refresh</button><button id="logout">Log out</button></nav>
 <section id="run-once" data-owner hidden><h2>Run once</h2><p>Run a command or agent on a disposable box. A healthy free slot is selected automatically. After completion the box and workspace volume are deleted; output and exit code are saved here. Push or upload any files you want to keep before the command exits.</p><div id="run-once-content"></div></section>
 <script src="/run-once.js" defer></script>
 <section id="boxes"><h2>Logical boxes</h2><div id="box-list"></div>

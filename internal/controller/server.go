@@ -82,6 +82,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /boxes/{id}", uiHandler("workspace.html", "text/html; charset=utf-8", false))
 	mux.HandleFunc("GET /workspace.js", uiHandler("workspace.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /grid", uiHandler("grid.html", "text/html; charset=utf-8", false))
+	mux.HandleFunc("GET /grid.js", uiHandler("grid.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /grid.css", uiHandler("grid.css", "text/css; charset=utf-8", false))
+	mux.HandleFunc("GET /v1/grid-boxes", s.owner(s.gridBoxesHandler))
 	for _, asset := range []string{"xterm.js", "xterm-fit.js", "workspace-terminal.js", "novnc.js", "workspace-desktop.js"} {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/javascript; charset=utf-8", false))
 	}

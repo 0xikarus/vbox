@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "test:browser": "node --test tests/browser/controller-ui.test.mjs"
+    "test:browser": "node --test tests/browser/controller-ui.test.mjs tests/browser/grid.test.mjs"
   },
   "devDependencies": {
     "esbuild": "0.25.9",

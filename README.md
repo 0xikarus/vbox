@@ -597,6 +597,19 @@ reported instead of running a task without its requested tools. Existing custom
 executables are never overwritten. Installing Anvil does not start it or expose
 its RPC port; start and forward it explicitly when needed.
 
+## Grid view
+
+Open **Grid** in the controller to attach to several existing interactive boxes
+at once. The default is 2×2; choose 1–4 columns and 1–2 rows for other layouts.
+Select a running box in each tile. Its remembered primary tmux session is selected
+when available, or choose another existing interactive session. Click a terminal
+to type: input is never broadcast. Expand **Keys / fullscreen** for terminal controls.
+
+One-shot boxes and boxes with unfinished one-shot tasks are excluded. Grid never
+starts or resumes a box, or creates sessions. Resume separately with `vmbox BOX`,
+then refresh and reconnect. Clear, reducing the layout, logout, or closing the page
+only disconnects viewers; remote work keeps running. Mobile screens stack tiles.
+
 ## Custom tooling
 
 Expand **Add custom tooling** in box creation or Run once and enter trusted Bash

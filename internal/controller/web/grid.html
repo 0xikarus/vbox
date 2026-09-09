@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>vmbox grid</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/xterm.css"><link rel="stylesheet" href="/grid.css">
+<nav><a href="/">Controller</a> · <button id="logout" hidden>Log out</button></nav>
+<h1>Grid</h1><p>Persistent interactive boxes only. Select a running box, then click its terminal to type. Closing a tile leaves its box running. No automatic start or resume.</p>
+<form id="login" hidden><label>Controller token <input name="token" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
+<p id="error" role="alert"></p>
+<main id="grid-app" hidden>
+<form id="layout"><label>Columns <select name="columns"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label><label>Rows <select name="rows"><option>1</option><option selected>2</option></select></label><button>Apply layout</button><button type="button" id="refresh">Refresh boxes</button></form>
+<div id="tiles" aria-label="Box terminals"></div>
+</main>
+<script src="/xterm.js" defer></script><script src="/xterm-fit.js" defer></script><script src="/workspace-terminal.js" defer></script><script src="/grid.js" defer></script></html>
