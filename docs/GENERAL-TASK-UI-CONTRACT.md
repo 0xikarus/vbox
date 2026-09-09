@@ -91,7 +91,7 @@ installs its required private-cluster tooling before running.
 The runtime worker exited 0 and is integrated, including service startup wiring.
 The general task PostgreSQL and runtime race tests passed on `7125c83`; the full
 run found a remote-build SQL fixture expectation that is corrected in `7fcc32e`.
-Final verification is queued behind the test box's hibernation transition.
-Full real UI-to-worker acceptance remains unfinished and requires an isolated
-HTTPS preview/callback setup. See `TASKS-UI-VERIFICATION.md` for exact evidence.
-Nothing is deployed or merged to main.
+Final verification exited 0. Production deployment was subsequently approved
+and completed, including the HTTPS callback backend. Full real UI-to-worker
+acceptance remains unfinished. See `TASKS-UI-VERIFICATION.md` and
+`TASKS-ROLLOUT.md` for exact evidence. Nothing is merged to main.

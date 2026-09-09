@@ -42,8 +42,9 @@ endpoint on this backend. No GitHub App is required. Leave
 `VMBOX_FACTORY_EXECUTION_ENABLED` off unless also enabling software planning.
 Without runtime configuration the UI explicitly reports execution unavailable.
 
-This is feature-branch implementation, not a claim of production availability;
-the complete live UI-to-agent acceptance run is still outstanding.
+The Tasks tab is now deployed to production with explicit approval; main remains
+unmerged. See `TASKS-ROLLOUT.md` for deployment and readiness evidence. The complete
+live UI-to-agent acceptance run is still outstanding.
 
 ### Remaining integration sequence
 
