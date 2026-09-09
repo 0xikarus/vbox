@@ -4,6 +4,9 @@ Persistent remote Linux boxes. Connect to a shell, run Claude/Codex yourself,
 or submit a one-shot task. The controller manages providers, compute and storage;
 your CLI connects to the controller, not directly to provider APIs.
 
+Developing or continuing this repository? Read the [agent architecture and testing
+guide](docs/AGENT-GUIDE.md) for implementation entry points and lifecycle rules.
+
 ## Quick setup
 
 ### Run once from the web
