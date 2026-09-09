@@ -53,9 +53,14 @@ in the job. Capabilities retain the inbox's original deadline (30 minutes by
 default); issuance retries do not extend it.
 
 `Controller` uses exactly `EnsureTaskBox(ctx, account, workID, attemptID, boxID,
-agent, profile)`, `SubmitTaskRunner(ctx, account, boxID, attemptID)`,
+agent, profile, githubProfile)`, `SubmitTaskRunner(ctx, account, boxID, attemptID)`,
 `FindTaskRunner(ctx, account, boxID, attemptID)`, `Connection` and `Process`.
 The base commit already implements these on `factory.ControllerClient`.
+
+The optional `Workflow.GitHubProfile` is a saved profile name, not a token. When
+selected, the controller provisions that GitHub login alongside the agent login
+on every new attempt box. An empty value provisions no GitHub profile. Selection
+does not change the agent's existing tool permissions or enable publication.
 
 Persist a pending submission's BoxID before calling Start again. Once BoxID is
 known, Start searches for accepted work before Ensure, capability issuance or

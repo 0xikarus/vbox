@@ -49,13 +49,14 @@ Runtime worker owns internal/taskflowruntime and cmd/vmbox-task-runner ONLY.
 Export Runner implementing taskflow.Runner; constructor/config API documented.
 Use existing factory.ControllerClient, transport.SSH and resultinbox.Inbox.
 Root adds controller methods EnsureTaskBox(ctx,account,workID,attemptID,boxID,
-agent,profile), SubmitTaskRunner(ctx,account,boxID,attemptID), and
+agent,profile,githubProfile), SubmitTaskRunner(ctx,account,boxID,attemptID), and
 FindTaskRunner(ctx,account,boxID,attemptID).
 Box name `task-ATTEMPT`, create key `task-box:ATTEMPT`, resume `task-resume:ATTEMPT`.
 Fixed wrapper `/data/workspace/.vmbox-tasks/bin/vmbox-task-runner` reads private
 stdin `/data/workspace/.vmbox-tasks/attempts/ATTEMPT/job.json`.
 No repo/source SHA required. Stage typed private job/images/binary over current
-SSH; no controller or GitHub credential passed to workers. Callback capability
+SSH; no controller credential passed to workers. An optional saved GitHub profile
+is provisioned by the controller, not embedded in the job or process prompt. Callback capability
 is scoped by existing inbox to account/work/attempt. Real Codex/Claude normal
 saved login, structured result file/adapter, actual exit/signal, durable receipt
 before hibernate, no transcript-marker or screen parsing. Recovery must find

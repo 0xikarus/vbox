@@ -40,6 +40,19 @@ is separately documented in `GENERAL-TASKS.md`.
 
 ## Scope and remaining gaps
 
+### Optional GitHub profile selector
+
+Source `7c384dd` adds an optional saved GitHub login to task creation, persisted
+through refinement and supplied to all coordinator/worker provisioning requests.
+It defaults to none. Account/application validation and metadata-only listing are
+covered by tests; agent tool permissions are unchanged.
+
+In-box verification `f2efffbd-e99f-4b93-8d01-b62900000000` exited 0: full Go
+tests, PostgreSQL, race checks, vet, build and all 16 Chromium fixtures passed.
+The deployed backend exposes one saved GitHub profile in the current account.
+This verifies selection/provisioning requests, not a live worker's GitHub login
+or a model creating a PR.
+
 - Source-free adapters currently use read-only agent tools. Software editing and
   builds remain in the separate software workflow; recursive delegation is absent.
 - Codex image transport is implemented and fixture-tested; Claude images are
