@@ -25,6 +25,7 @@ before(async()=>{
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
    '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude'}],
    '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running'},
+   '/v1/logical-boxes/box-1/run-once':null,
    '/v1/provider-credentials':[{provider:'railway',name:'primary',config:{projectId:'p',environmentId:'e',image:'old'},updatedAt:revision}],
    '/v1/provider-schemas':{providers:{railway:{image:'string'}}},
    '/v1/controller-defaults':{provider:'railway',providerCredential:'primary'},
@@ -60,18 +61,42 @@ test('Run once queues once, keeps its key on retry and permits cancellation',asy
  });
  await page.goto(base+'/#run-once');await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#run-once select[name=provider] option');
- await page.type('#run-once textarea','printf unique');await page.click('#run-once form button');
+ await page.type('#run-once textarea[name=prompt]','printf unique');await page.click('#run-once form button');
  await page.waitForFunction(()=>document.querySelector('#run-once-content').textContent.includes('Waiting for a healthy free slot'));
  await page.click('#run-once form button');
  const calls=await page.evaluate(()=>window.runCalls.filter(c=>c.path==='/v1/run-once'&&c.options.method==='POST'));
  assert.equal(calls.length,2);assert.equal(calls[0].options.headers['Idempotency-Key'],calls[1].options.headers['Idempotency-Key']);
  await page.evaluate(()=>[...document.querySelectorAll('#run-once button')].find(b=>b.textContent==='Cancel queued run').click());
  await page.waitForFunction(()=>document.querySelector('#run-once-content').textContent.includes('cancelled'));
- await page.evaluate(()=>[...document.querySelectorAll('#run-once button')].find(b=>b.textContent==='New run').click());
+ await page.evaluate(()=>[...document.querySelectorAll('#run-once button')].find(b=>b.textContent==='Start another run').click());
  await page.click('#run-once form button');
  await page.waitForFunction(()=>window.runCalls.filter(c=>c.path==='/v1/run-once'&&c.options.method==='POST').length===3);
  const lastKey=await page.evaluate(()=>window.runCalls.filter(c=>c.path==='/v1/run-once'&&c.options.method==='POST').at(-1).options.headers['Idempotency-Key']);
  assert.notEqual(lastKey,calls[0].options.headers['Idempotency-Key']);
+ assert.deepEqual(errors,[]);await page.close();
+});
+test('agent form preserves literal options and numbered image references',async()=>{
+ const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;let image=0;
+  window.fetch=async(path,options={})=>{
+   if(path==='/v1/run-once-images')return new Response(JSON.stringify({id:'image-'+(++image)}),{status:201});
+   if(path==='/v1/run-once'&&options.method==='POST'){window.submittedRun=JSON.parse(options.body);return new Response(JSON.stringify({id:'image-run',state:'queued'}));}
+   if(path==='/v1/run-once/image-run')return new Response(JSON.stringify({id:'image-run',state:'queued'}));
+   return original(path,options);
+  };
+ });
+ await page.goto(base+'/#run-once');await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#run-once select[name=claude] option[value=personal]');
+ await page.select('#run-once select[name=agent]','claude');await page.select('#run-once select[name=claude]','personal');
+ await page.select('#run-once select[name=model-mode]','custom');await page.type('#run-once input[name=model]','custom-model');
+ await page.click('#run-once details summary');await page.type('#run-once textarea[name=args]','--option\nliteral value; $(false)');
+ await page.type('#run-once textarea[name=prompt]','Inspect [Image 1]');
+ await page.evaluate(()=>{const input=document.querySelector('#run-once input[type=file]'),data=new DataTransfer();data.items.add(new File(['fixture'],'example.png',{type:'image/png'}));input.files=data.files;input.dispatchEvent(new Event('change'));});
+ await page.waitForFunction(()=>document.querySelector('#run-once').textContent.includes('[Image 1] example.png'));
+ await page.evaluate(()=>[...document.querySelectorAll('#run-once form button')].find(b=>b.textContent==='Run once').click());
+ await page.waitForFunction(()=>window.submittedRun);
+ const body=await page.evaluate(()=>window.submittedRun);assert.equal(body.model,'custom-model');assert.deepEqual(body.args,['--option','literal value; $(false)']);assert.deepEqual(body.images,[{id:'image-1',number:1}]);assert.equal(body.prompt,'Inspect [Image 1]');
  assert.deepEqual(errors,[]);await page.close();
 });
 test('completed one-shot opens retained output without allocation or a new shell',async()=>{
@@ -79,14 +104,16 @@ test('completed one-shot opens retained output without allocation or a new shell
  await page.evaluateOnNewDocument(()=>{
   const original=window.fetch;
   window.fetch=async(path,...args)=>{
+   if(path==='/v1/logical-boxes/box-1/run-once')return new Response(JSON.stringify({id:'finished'}));
    if(String(path).startsWith('/v1/run-once/'))return new Response(JSON.stringify({id:'finished',boxId:'box-1',state:'submitted',task:{agent:'shell',session:'task-finished',state:'exited',exitCode:17,finishedAt:'2026-09-09T00:00:00Z',output:'actual recorded fixture output'}}));
    if(path==='/v1/logical-boxes/box-1')return new Response(JSON.stringify({id:'box-1',name:'finished-box',state:'hibernated'}));
    return original(path,...args);
   };
  });
- await page.goto(base+'/boxes/box-1?run=finished');
+ await page.goto(base+'/boxes/box-1');
  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('exit 17'));
  assert.match(await page.$eval('#terminal-screen',n=>n.textContent),/actual recorded fixture output/);
+ assert.equal(new URL(page.url()).searchParams.get('run'),'finished');
  await page.click('#connect');await page.waitForNetworkIdle();
  assert.equal(requests.slice(start).filter(r=>r.method==='POST').length,0);
  await page.close();

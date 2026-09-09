@@ -259,6 +259,15 @@ CREATE TABLE IF NOT EXISTS run_once_requests (
  created_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(account_id,request_key)
 );
+CREATE TABLE IF NOT EXISTS run_once_images (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ media_type text NOT NULL,
+ data bytea NOT NULL,
+ download_token text NOT NULL,
+ expires_at timestamptz NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS box_messages (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

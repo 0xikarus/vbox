@@ -20,7 +20,22 @@ Claude runs with `-p`, Codex with `exec`, and shell commands with Bash. Real out
 and the process exit code are saved. On completion, the otherwise idle box
 hibernates and releases compute, retaining its workspace volume. Reopening a run
 shows its terminal or saved results; it never submits the command again.
-To intentionally repeat an identical command, choose **New run**, then **Run once**.
+To intentionally repeat an identical command, choose **Start another run**, then **Run once**.
+
+For an agent, describe the goal, repository/working directory, expected result, and
+how to verify completion. Select its saved login; select GitHub login when repository
+access is needed. Model defaults to your saved configuration; choose **Specify model**
+to override it. Advanced arguments accept one literal argument per line, without shell
+quoting. They may change agent permissions, so do not paste untrusted options or secrets.
+The CLI supports the same overrides: `vmbox task BOX codex --model MODEL --arg OPTION --prompt 'TASK'`.
+
+Attach up to eight PNG/JPEG/GIF images (8 MiB each). Use the displayed `[Image 1]`
+labels in your prompt. The controller appends a numbered URL list with instructions
+to fetch and inspect the images. Download links grant access only to the referenced
+image and expire seven days after scheduling; images are retained with account data
+(256 MiB image storage limit). Do not publish these private download links.
+Opening a one-shot box from the box list shows its terminal/results without launching
+an unrelated interactive shell or resuming a completed run.
 
 There is no planning/coordinator service, approval graph, or automatic agent
 retry. An exit code reports process success, not whether the requested work is good.

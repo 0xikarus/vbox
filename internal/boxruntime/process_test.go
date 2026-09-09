@@ -55,6 +55,25 @@ func TestProcessArgv(t *testing.T) {
 	}
 }
 
+func TestProcessOptionsAreLiteralArguments(t *testing.T) {
+	for _, agent := range []string{"codex", "claude"} {
+		task := v1.ProcessTask{Agent: agent, Prompt: "prompt; $(false)", Model: "custom-model", Args: []string{"--option", "literal value; $(false)"}}
+		got, err := processTaskArgv(task)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"--option", "literal value; $(false)", "--model", "custom-model", "--", task.Prompt}
+		if !reflect.DeepEqual(got[len(got)-len(want):], want) {
+			t.Fatalf("argv changed: %q", got)
+		}
+	}
+	for _, task := range []v1.ProcessTask{{Agent: "shell", Model: "x"}, {Agent: "codex", Args: []string{"--"}}, {Agent: "claude", Args: []string{"bad\x00arg"}}} {
+		if _, err := processTaskArgv(task); err == nil {
+			t.Fatal("invalid options accepted")
+		}
+	}
+}
+
 func TestProcessRecordsActualExitAndNoReplay(t *testing.T) {
 	for _, test := range []struct {
 		name, prompt, output string

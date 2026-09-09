@@ -29,13 +29,25 @@ func processDir(root, id string) (string, error) {
 }
 
 func processArgv(agent, prompt string) ([]string, error) {
+	return processTaskArgv(v1.ProcessTask{Agent: agent, Prompt: prompt})
+}
+
+func processTaskArgv(task v1.ProcessTask) ([]string, error) {
+	if err := v1.ValidateProcessOptions(task.Agent, task.Model, task.Args); err != nil {
+		return nil, err
+	}
+	agent, prompt := task.Agent, task.Prompt
+	options := append([]string{}, task.Args...)
+	if task.Model != "" {
+		options = append(options, "--model", task.Model)
+	}
 	switch agent {
 	case "codex":
 		// A logical workspace need not itself be a Git checkout. This does not
 		// change the configured sandbox, model, authentication, or permissions.
-		return []string{"codex", "exec", "--skip-git-repo-check", "--", prompt}, nil
+		return append(append([]string{"codex", "exec", "--skip-git-repo-check"}, options...), "--", prompt), nil
 	case "claude":
-		return []string{"claude", "-p", "--", prompt}, nil
+		return append(append([]string{"claude", "-p"}, options...), "--", prompt), nil
 	case "shell":
 		return []string{"/bin/bash", "-lc", prompt}, nil
 	default:
@@ -77,7 +89,7 @@ func writeProcessJSON(path string, value any) error {
 // An existing journal never causes another launch, including after an ambiguous
 // SSH result or controller restart. Unknown outcomes require inspection.
 func StartProcess(ctx context.Context, root string, task v1.ProcessTask) error {
-	if _, err := processArgv(task.Agent, task.Prompt); err != nil {
+	if _, err := processTaskArgv(task); err != nil {
 		return err
 	}
 	dir, err := processDir(root, task.ID)
@@ -159,7 +171,7 @@ func RunProcess(root, id string) error {
 	if err = json.Unmarshal(b, &task); err != nil {
 		return err
 	}
-	argv, err := processArgv(task.Agent, task.Prompt)
+	argv, err := processTaskArgv(task)
 	if err != nil {
 		return err
 	}

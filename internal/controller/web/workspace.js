@@ -3,7 +3,7 @@ const $=s=>document.querySelector(s),boxID=decodeURIComponent(location.pathname.
 let epoch=0,busy=false,allocation=null,allocationKey=crypto.randomUUID();
 let closeTerminal=()=>{};
 let closeDesktop=()=>{};
-const runID=new URLSearchParams(location.search).get('run');
+let runID=new URLSearchParams(location.search).get('run');
 let runTimer,attachedRunSession='';
 async function inspectRun(version){
  if(version!==epoch)return;
@@ -39,6 +39,8 @@ async function connect(){
  if(runID){clearTimeout(runTimer);closeTerminal();attachedRunSession='';$('#error').textContent='';await inspectRun(++epoch);return}
  if(busy)return;busy=true;const version=++epoch;$('#connect').disabled=true;$('#error').textContent='';
  try{
+  const run=await api(bp+'/run-once');if(version!==epoch)return;
+  if(run?.id){runID=run.id;history.replaceState(null,'','?run='+encodeURIComponent(runID));await inspectRun(version);return}
   let box=await api(bp);if(version!==epoch)return;state(box);$('#workspace').hidden=false;
   if(box.state!=='running'){
    if(!allocation)allocation=await api(bp+'/allocate','POST',{leaseOwner:'web'},{'Idempotency-Key':allocationKey});

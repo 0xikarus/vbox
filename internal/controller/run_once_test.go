@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"image"
+	"image/png"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -53,6 +55,50 @@ func TestRunOncePostgresQueueRecoveryAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	server := NewServer(store, nil)
+	server.PublicURL = "https://controller.example"
+	var imageData bytes.Buffer
+	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 4, 3))); err != nil {
+		t.Fatal(err)
+	}
+	imageUpload := httptest.NewRecorder()
+	server.uploadRunOnceImage(imageUpload, httptest.NewRequest("POST", "/v1/run-once-images", bytes.NewReader(imageData.Bytes())), p)
+	if imageUpload.Code != 201 {
+		t.Fatalf("upload: %d %s", imageUpload.Code, imageUpload.Body.String())
+	}
+	var uploaded map[string]string
+	json.Unmarshal(imageUpload.Body.Bytes(), &uploaded)
+	imageReq := runOnceRequest{Agent: "codex", Prompt: "Inspect [Image 3]", Images: []runOnceImageRef{{ID: uploaded["id"], Number: 3}}}
+	imagePrompt, err := server.runOnceImagePrompt(ctx, p.AccountID, imageReq, true)
+	if err != nil || !strings.Contains(imagePrompt, "\n\nAttached images:\n[Image 3]: https://controller.example/") {
+		t.Fatalf("image reference: %v", err)
+	}
+	if _, err = server.runOnceImagePrompt(ctx, uuid(), imageReq, false); err == nil {
+		t.Fatal("cross-account image accepted")
+	}
+	link := strings.Split(strings.Split(imagePrompt, "[Image 3]: ")[1], "\n")[0]
+	download := httptest.NewRequest("GET", link, nil)
+	download.SetPathValue("id", uploaded["id"])
+	wImage := httptest.NewRecorder()
+	server.downloadRunOnceImage(wImage, download)
+	if wImage.Code != 200 || !bytes.Equal(wImage.Body.Bytes(), imageData.Bytes()) {
+		t.Fatal("image bytes changed")
+	}
+	download.URL.RawQuery = "token=incorrect"
+	wImage = httptest.NewRecorder()
+	server.downloadRunOnceImage(wImage, download)
+	if wImage.Code != 404 {
+		t.Fatal("invalid capability accepted")
+	}
+	if _, err = store.DB.ExecContext(ctx, `UPDATE run_once_images SET expires_at=now()-interval '1 second'`); err != nil {
+		t.Fatal(err)
+	}
+	download = httptest.NewRequest("GET", link, nil)
+	download.SetPathValue("id", uploaded["id"])
+	wImage = httptest.NewRecorder()
+	server.downloadRunOnceImage(wImage, download)
+	if wImage.Code != 404 {
+		t.Fatal("expired image link accepted")
+	}
 	req := runOnceRequest{Agent: "shell", Prompt: "printf actual-test", Provider: "railway", ProviderCredential: "primary"}
 	create := func(key string, request runOnceRequest, status int) runOnceRecord {
 		t.Helper()

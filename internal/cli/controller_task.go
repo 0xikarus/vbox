@@ -19,6 +19,8 @@ type controllerTaskOptions struct {
 	box, agent, session, prompt string
 	idempotency                 string
 	jsonOutput                  bool
+	model                       string
+	args                        []string
 }
 
 func (a *App) controllerTask(ctx context.Context, c config.Context, token string, args []string) error {
@@ -60,7 +62,10 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 		}
 	}
 
-	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt}
+	if err := v1.ValidateProcessOptions(opts.agent, opts.model, opts.args); err != nil {
+		return err
+	}
+	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt, Model: opts.model, Args: opts.args}
 	var task v1.ProcessTask
 	if opts.idempotency == "" {
 		opts.idempotency = "cli-task:" + opts.box + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -155,6 +160,12 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 			opts.session, err = next()
 		case "--prompt":
 			opts.prompt, err = next()
+		case "--model":
+			opts.model, err = next()
+		case "--arg":
+			var value string
+			value, err = next()
+			opts.args = append(opts.args, value)
 		case "--json":
 			opts.jsonOutput = true
 		default:

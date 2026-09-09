@@ -7,9 +7,11 @@ import (
 )
 
 type CreateBoxTaskRequest struct {
-	Agent   string `json:"agent"`
-	Prompt  string `json:"prompt"`
-	Session string `json:"session,omitempty"`
+	Agent   string   `json:"agent"`
+	Prompt  string   `json:"prompt"`
+	Model   string   `json:"model,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Session string   `json:"session,omitempty"`
 }
 
 type BoxTask struct {

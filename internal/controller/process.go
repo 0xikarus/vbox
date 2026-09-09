@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +27,10 @@ func (s *Server) createProcessHandler(w http.ResponseWriter, r *http.Request, p 
 		return
 	}
 	key := r.Header.Get("Idempotency-Key")
+	if err := v1.ValidateProcessOptions(req.Agent, req.Model, req.Args); err != nil {
+		writeError(w, 400, err)
+		return
+	}
 	if key == "" {
 		writeError(w, 400, fmt.Errorf("Idempotency-Key required"))
 		return
@@ -51,7 +56,7 @@ func (s *Server) createProcessHandler(w http.ResponseWriter, r *http.Request, p 
 	if err == nil {
 		var task v1.ProcessTask
 		_ = json.Unmarshal(existing, &task)
-		if task.LogicalBoxID != box.ID || task.Agent != req.Agent || task.Prompt != req.Prompt || (req.Session != "" && task.Session != req.Session) {
+		if task.LogicalBoxID != box.ID || task.Agent != req.Agent || task.Prompt != req.Prompt || task.Model != req.Model || !slices.Equal(task.Args, req.Args) || (req.Session != "" && task.Session != req.Session) {
 			writeError(w, 409, fmt.Errorf("idempotency key belongs to a different request"))
 			return
 		}
@@ -62,7 +67,7 @@ func (s *Server) createProcessHandler(w http.ResponseWriter, r *http.Request, p 
 		writeError(w, 500, err)
 		return
 	}
-	task := v1.ProcessTask{ID: uuid(), LogicalBoxID: box.ID, BoxName: box.Name, Agent: req.Agent, Prompt: req.Prompt, State: "queued", CreatedAt: time.Now().UTC()}
+	task := v1.ProcessTask{ID: uuid(), LogicalBoxID: box.ID, BoxName: box.Name, Agent: req.Agent, Prompt: req.Prompt, Model: req.Model, Args: req.Args, State: "queued", CreatedAt: time.Now().UTC()}
 	task.Session = req.Session
 	if task.Session == "" {
 		task.Session = "task-" + task.ID

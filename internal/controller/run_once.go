@@ -15,8 +15,11 @@ import (
 )
 
 type runOnceRequest struct {
+	Images             []runOnceImageRef    `json:"images,omitempty"`
 	Agent              string               `json:"agent"`
 	Prompt             string               `json:"prompt"`
+	Model              string               `json:"model,omitempty"`
+	Args               []string             `json:"args,omitempty"`
 	Provider           string               `json:"provider"`
 	ProviderCredential string               `json:"providerCredential"`
 	LoginProfiles      []v1.LoginProfileRef `json:"loginProfiles"`
@@ -31,7 +34,32 @@ type runOnceRecord struct {
 	Task      *v1.ProcessTask `json:"task,omitempty"`
 }
 
+func (s *Server) boxRunOnce(w http.ResponseWriter, r *http.Request, p Principal) {
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, 404, err)
+		return
+	}
+	var id string
+	err = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text FROM run_once_requests WHERE account_id=$1 AND box_id=$2`, p.AccountID, box.ID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeJSON(w, 200, nil)
+		return
+	}
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	writeJSON(w, 200, map[string]string{"id": id})
+}
+
 func (s *Server) validateRunOnce(ctx context.Context, p Principal, req runOnceRequest) error {
+	if _, err := s.runOnceImagePrompt(ctx, p.AccountID, req, false); err != nil {
+		return err
+	}
+	if err := v1.ValidateProcessOptions(req.Agent, req.Model, req.Args); err != nil {
+		return err
+	}
 	if (req.Agent != "claude" && req.Agent != "codex" && req.Agent != "shell") || strings.TrimSpace(req.Prompt) == "" || len(req.Prompt) > 100000 || req.Provider == "" || req.ProviderCredential == "" {
 		return fmt.Errorf("select a provider, agent and a prompt or shell command (up to 100000 bytes)")
 	}
@@ -211,7 +239,11 @@ func (s *Server) reconcileRunOnce(ctx context.Context) error {
 	} else if err != nil {
 		return err
 	}
-	task := v1.ProcessTask{ID: id, LogicalBoxID: boxID, BoxName: name, Agent: req.Agent, Prompt: req.Prompt, Session: "task-" + id, State: "queued", CreatedAt: time.Now().UTC()}
+	prompt, err := s.runOnceImagePrompt(ctx, account, req, true)
+	if err != nil {
+		return err
+	}
+	task := v1.ProcessTask{ID: id, LogicalBoxID: boxID, BoxName: name, Agent: req.Agent, Prompt: prompt, Model: req.Model, Args: req.Args, Session: "task-" + id, State: "queued", CreatedAt: time.Now().UTC()}
 	result, _ := json.Marshal(task)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO process_tasks(id,account_id,logical_box_id,user_id,requested_role,idempotency_key,state,result) VALUES($1,$2,$3,$4,'owner',$5,'queued',$6) ON CONFLICT(id) DO NOTHING`, id, account, boxID, user, "run-once:"+id, result); err != nil {
 		return err
