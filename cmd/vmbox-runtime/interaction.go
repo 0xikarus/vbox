@@ -78,7 +78,7 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		if len(args) != 4 {
 			return true, fmt.Errorf("native-attach requires ASSIGNMENT SESSION_ID INCARNATION")
 		}
-		return true, boxruntime.NativeAttach(context.Background(), args[1], args[2], args[3])
+		return true, boxruntime.NativeAttach(context.Background(), runtime.Root, args[1], args[2], args[3])
 	case "tmux-task":
 		if len(args) != 5 {
 			return true, fmt.Errorf("tmux-task requires SESSION AGENT MESSAGE_ID BASE64_PROMPT")

@@ -119,6 +119,9 @@ func StartProcess(ctx context.Context, root string, task v1.ProcessTask) error {
 		return err
 	}
 	_, err = tmuxOutput(ctx, "new-session", "-d", "-s", task.Session, "-c", filepath.Join(filepath.Dir(root), "workspace"), "--", exe, "process-run", root, task.ID)
+	if err == nil {
+		err = ApplyTmuxContext(ctx, root, task.Session)
+	}
 	return err
 }
 

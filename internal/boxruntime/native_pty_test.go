@@ -40,7 +40,7 @@ func TestNativeAttachHelper(t *testing.T) {
 	if os.Getenv("VMBOX_TEST_ATTACH") == "" {
 		return
 	}
-	if err := NativeAttach(context.Background(), os.Getenv("VMBOX_TEST_FENCE"), os.Getenv("VMBOX_TEST_SESSION"), os.Getenv("VMBOX_TEST_INCARNATION")); err != nil {
+	if err := NativeAttach(context.Background(), t.TempDir(), os.Getenv("VMBOX_TEST_FENCE"), os.Getenv("VMBOX_TEST_SESSION"), os.Getenv("VMBOX_TEST_INCARNATION")); err != nil {
 		t.Fatal(err)
 	}
 }

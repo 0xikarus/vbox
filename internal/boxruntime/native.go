@@ -121,7 +121,7 @@ func NativeSessions(ctx context.Context, expected string) (v1.SessionInventory, 
 	return out, nil
 }
 
-func NativeAttach(ctx context.Context, assignment, id, incarnation string) error {
+func NativeAttach(ctx context.Context, root, assignment, id, incarnation string) error {
 	if !nativeAssignment.MatchString(assignment) || !nativeID.MatchString(id) {
 		return fmt.Errorf("invalid attach identity")
 	}
@@ -136,6 +136,9 @@ func NativeAttach(ctx context.Context, assignment, id, incarnation string) error
 	server, err := tmuxOutput(ctx, "show-option", "-gv", "@vmbox_server_incarnation")
 	if err != nil || strings.TrimSpace(string(server)) != parts[1] {
 		return fmt.Errorf("tmux server was recreated; reconnect")
+	}
+	if err := ApplyTmuxContext(ctx, root, id); err != nil {
+		return err
 	}
 	// The check and attach execute in the same tmux server command queue. IDs
 	// are never reused within a server. A new allocation installs a new fence.

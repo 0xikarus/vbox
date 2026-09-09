@@ -63,5 +63,16 @@ func ApplyTmuxContext(ctx context.Context, root, session string) error {
 	if _, err := tmuxOutput(ctx, "source-file", "/etc/vmbox/tmux.conf"); err != nil {
 		return fmt.Errorf("restore tmux guide: %w", err)
 	}
+	return applyTmuxFooter(ctx)
+}
+
+// Keep the footer current even on workers whose base image contains an older
+// tmux.conf. The controller stages this binary without restarting the worker.
+const tmuxFooter = "#{?#{<:#{client_width},120},#[bold]BOX #{VMBOX_NAME} | SLOT #{VMBOX_COMPUTE_SLOT} | #S#[align=right]#[nobold]%H:%M ,#[align=left]#[bold] BOX: #{VMBOX_NAME} | SLOT: #{VMBOX_COMPUTE_SLOT} | SESSION: #S | STATE: #{VMBOX_ASSIGNMENT_STATE} | NET: #{VMBOX_CONNECTION_HEALTH}#[align=right]#[nobold] %H:%M }"
+
+func applyTmuxFooter(ctx context.Context) error {
+	if _, err := tmuxOutput(ctx, "set-option", "-g", "status-format[0]", tmuxFooter); err != nil {
+		return fmt.Errorf("update tmux footer: %w", err)
+	}
 	return nil
 }

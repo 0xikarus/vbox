@@ -51,6 +51,9 @@ func TestManagedTmuxCopyPaste(t *testing.T) {
 		run("set-environment", "-t", "source", key, value)
 	}
 	footer := strings.TrimSpace(string(run("show-options", "-g", "-v", "status-format[0]")))
+	if footer != tmuxFooter {
+		t.Fatal("runtime footer differs from image configuration")
+	}
 	for _, width := range []string{"80", "180"} {
 		format := strings.ReplaceAll(footer, "#{client_width}", width)
 		rendered := string(run("display-message", "-p", "-t", "source", format))

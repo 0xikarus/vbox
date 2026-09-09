@@ -66,7 +66,7 @@ func TestNativeSessionsRealTmux(t *testing.T) {
 	if _, err := NativeSessions(ctx, strings.Repeat("b", 64)); err == nil {
 		t.Fatal("stale assignment accepted")
 	}
-	if err := NativeAttach(ctx, fence, "test", inc); err == nil {
+	if err := NativeAttach(ctx, t.TempDir(), fence, "test", inc); err == nil {
 		t.Fatal("name accepted instead of exact ID")
 	}
 	old := after.Sessions[0]
@@ -88,7 +88,7 @@ func TestNativeSessionsRealTmux(t *testing.T) {
 	if _, err = tmuxOutput(ctx, "new-session", "-d", "-s", old.Name, "sleep 30"); err != nil {
 		t.Fatal(err)
 	}
-	if err = NativeAttach(ctx, fence, old.ID, old.Incarnation); err == nil {
+	if err = NativeAttach(ctx, t.TempDir(), fence, old.ID, old.Incarnation); err == nil {
 		t.Fatal("old server incarnation accepted after re-enable")
 	}
 }
