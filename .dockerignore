@@ -1,6 +1,7 @@
 *
 !tmux.conf
 !Dockerfile
+!Dockerfile.tasks
 !.dockerignore
 !entrypoint.sh
 !go.mod
@@ -9,3 +10,5 @@
 !cmd/**
 !internal/
 !internal/**
+!scripts/
+!scripts/tasks-entrypoint.sh
