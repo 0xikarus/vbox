@@ -31,7 +31,6 @@ type Server struct {
 	mu              sync.Mutex
 	browserSessions map[[32]byte]browserSession
 	webStreams      int
-	recent          map[string][]time.Time
 	replyWatches    map[string]struct{}
 	PublicURL       string
 	FactoryURL      string
@@ -67,7 +66,7 @@ func (s *Server) startBoxTask(accountID string, task v1.BoxTask) {
 }
 
 func NewServer(store *Store, providers *provider.Registry) *Server {
-	return &Server{Store: store, Providers: providers, Logger: slog.Default(), MaxConcurrent: 10, recent: make(map[string][]time.Time), replyWatches: make(map[string]struct{})}
+	return &Server{Store: store, Providers: providers, Logger: slog.Default(), MaxConcurrent: 10, replyWatches: make(map[string]struct{})}
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -208,10 +207,6 @@ func (s *Server) auth(next handler) http.HandlerFunc {
 			writeError(w, 401, err)
 			return
 		}
-		if !s.allow(p.AccountID) {
-			writeError(w, 429, fmt.Errorf("account API rate limit exceeded"))
-			return
-		}
 		next(w, r, p)
 	}
 }
@@ -244,24 +239,6 @@ func (s *Server) boxAuth(next handler) http.HandlerFunc {
 		r.Header.Set("X-VMBox-Lease", lease)
 		next(w, r, p)
 	}
-}
-func (s *Server) allow(account string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	now := time.Now()
-	cutoff := now.Add(-time.Minute)
-	values := s.recent[account][:0]
-	for _, v := range s.recent[account] {
-		if v.After(cutoff) {
-			values = append(values, v)
-		}
-	}
-	if len(values) >= 120 {
-		s.recent[account] = values
-		return false
-	}
-	s.recent[account] = append(values, now)
-	return true
 }
 func (s *Server) createRun(w http.ResponseWriter, r *http.Request, p Principal) {
 	var req v1.CreateRunRequest

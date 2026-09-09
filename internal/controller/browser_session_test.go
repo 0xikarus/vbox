@@ -62,7 +62,6 @@ func TestBrowserCookieRechecksTokenAndRole(t *testing.T) {
 	s := &Server{Store: store, PublicURL: "https://controller.example", browserSessions: map[[32]byte]browserSession{
 		sha256.Sum256([]byte("opaque-cookie")): {token: "original-token", expires: time.Now().Add(time.Hour)},
 	}}
-	s.recent = make(map[string][]time.Time)
 	for _, test := range []struct {
 		role    string
 		revoked bool
