@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,9 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 		return err
 	}
 	interactive := a.IsTerminal != nil && a.IsTerminal()
+	if interactive && (opts.box == "" || opts.agent == "" || opts.prompt == "") {
+		return a.controllerTaskForm(ctx, c, token, opts)
+	}
 	reader := bufio.NewReader(a.In)
 	if opts.box == "" {
 		if !interactive {
@@ -84,6 +88,65 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 		fmt.Fprintf(a.Err, "Scheduled %s (HTTP %d). Status: vmbox task-status %q %s\n", task.Agent, status, task.BoxName, task.ID)
 	}
 	return nil
+}
+
+// Keep selection, editing and submission in one reusable TUI lifetime.
+func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token string, opts controllerTaskOptions) error {
+	box := &formField{Label: "Box", Value: opts.box, List: true, ChoiceNoun: "boxes"}
+	if opts.box == "" {
+		var boxes []v1.LogicalBox
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
+			return err
+		}
+		for _, b := range boxes {
+			box.Choices = append(box.Choices, b.Name)
+		}
+		if len(box.Choices) == 0 {
+			return fmt.Errorf("no boxes available; create one with vmbox new NAME")
+		}
+		box.Value = box.Choices[0]
+	} else {
+		box.Choices = []string{opts.box}
+	}
+	agent := &formField{Label: "Agent", Value: opts.agent, Choices: []string{"codex", "claude", "shell"}, List: true, ChoiceNoun: "agents"}
+	if agent.Value == "" {
+		agent.Value = "codex"
+	}
+	prompt := &formField{Label: "Task / command", Value: opts.prompt}
+	model := &formField{Label: "Model (optional)", Value: opts.model, When: func() bool { return agent.Value != "shell" }}
+	var output bytes.Buffer
+	err := a.runFormButton(ctx, "One-shot task · goal, expected result, verification", "Run once", []*formField{box, agent, prompt, model}, func(progress func(string)) error {
+		if strings.TrimSpace(prompt.Value) == "" {
+			return fmt.Errorf("enter task instructions or a shell command")
+		}
+		args := []string{box.Value, agent.Value, "--prompt", prompt.Value}
+		if agent.Value != "shell" && model.Value != "" {
+			args = append(args, "--model", model.Value)
+		}
+		for _, arg := range opts.args {
+			args = append(args, "--arg", arg)
+		}
+		if opts.session != "" {
+			args = append(args, "--session", opts.session)
+		}
+		// Reuse one key if a lost response makes the user retry in this dialog.
+		if opts.idempotency == "" {
+			opts.idempotency = "cli-task:" + box.Value + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
+		}
+		args = append(args, "--idempotency-key", opts.idempotency)
+		if opts.jsonOutput {
+			args = append(args, "--json")
+		}
+		progress("Submitting one-shot task…")
+		savedOut := a.Out
+		a.Out = &output
+		defer func() { a.Out = savedOut }()
+		return a.controllerTask(ctx, c, token, args)
+	})
+	if err == nil {
+		_, err = fmt.Fprint(a.Out, output.String())
+	}
+	return err
 }
 
 func (a *App) controllerTaskStatus(ctx context.Context, c config.Context, token string, args []string) error {

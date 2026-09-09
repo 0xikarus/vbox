@@ -67,7 +67,7 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 	defer server.Close()
 
 	app := New()
-	app.In = strings.NewReader("\r\x1b[B\rwhat's today's date?\n")
+	app.In = strings.NewReader("\x1b[B\r\x1b[B\r\x1b[B\rwhat's today's date?\r\x1b[B\x1b[B\r")
 	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	app.IsTerminal = func() bool { return true }
 	c := config.Context{Controller: server.URL}
@@ -77,7 +77,7 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 	if request.Agent != "claude" || request.Session != "" || request.Prompt != "what's today's date?" {
 		t.Fatalf("request=%+v", request)
 	}
-	if !strings.Contains(app.Err.(*bytes.Buffer).String(), "Select a logical box") || !strings.Contains(app.Err.(*bytes.Buffer).String(), "Choose an agent") {
+	if !strings.Contains(app.Err.(*bytes.Buffer).String(), "One-shot task") || strings.Count(app.Err.(*bytes.Buffer).String(), "\x1b[?1049h") != 1 {
 		t.Fatalf("dialog output=%q", app.Err.(*bytes.Buffer).String())
 	}
 }
@@ -95,7 +95,7 @@ func TestTaskAgentTUISelectionAndCancellation(t *testing.T) {
 		}
 	}
 	a := New()
-	a.In = strings.NewReader("q")
+	a.In = strings.NewReader("\x03")
 	a.Out, a.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	a.IsTerminal = func() bool { return true }
 	// No configured controller: cancellation must return before any request.
@@ -113,6 +113,13 @@ func TestControllerTaskNonInteractiveRequiresBoxAndPrompt(t *testing.T) {
 	}
 	if err := app.controllerTask(context.Background(), config.Context{}, "secret", []string{"research"}); err == nil || !strings.Contains(err.Error(), "requires --prompt") {
 		t.Fatalf("missing prompt error=%v", err)
+	}
+}
+
+func TestTaskOptionOverrides(t *testing.T) {
+	got, err := parseControllerTaskOptions([]string{"box", "codex", "--model", "model-id", "--arg", "--option", "--arg", "literal value", "--prompt", "work"})
+	if err != nil || got.model != "model-id" || len(got.args) != 2 || got.args[1] != "literal value" {
+		t.Fatalf("%+v %v", got, err)
 	}
 }
 

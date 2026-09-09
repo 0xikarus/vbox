@@ -18,6 +18,7 @@ type formField struct {
 	When         func() bool
 	Secret       bool
 	List         bool
+	ChoiceNoun   string
 	DeleteChoice func(string) error
 	OnSelect     func(string)
 	AddFields    func() []*formField
@@ -79,7 +80,11 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 			if f.RenderRow != nil {
 				line = f.RenderRow(width - 4)
 			} else if f.List {
-				line += "  [Enter: profiles]"
+				noun := f.ChoiceNoun
+				if noun == "" {
+					noun = "profiles"
+				}
+				line += "  [Enter: " + noun + "]"
 			} else if len(f.Choices) > 0 {
 				line += "  ‹ ›"
 			}
@@ -106,6 +111,9 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 		}
 		if picker != nil {
 			help = "↑/↓: select profile · Enter: use · d: delete saved · Esc: back"
+			if picker.ChoiceNoun != "" {
+				help = "↑/↓: select · Enter: use · Esc: back"
+			}
 			if confirmDelete {
 				help = "Delete saved profile? y: confirm · any other key: cancel"
 			}

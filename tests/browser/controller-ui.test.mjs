@@ -22,6 +22,7 @@ before(async()=>{
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/browser-session' && ['POST','DELETE'].includes(req.method)){res.statusCode=204;return res.end()}
   const values={
+   '/v1/run-once':[],
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
    '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude'}],
    '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running'},
