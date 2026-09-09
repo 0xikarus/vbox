@@ -11,6 +11,7 @@
  const profiles=node('div');form.append(profiles);
  const prompt=field(form,'Prompt / shell command','textarea','prompt');prompt.required=true;prompt.rows=5;prompt.maxLength=100000;
  const submit=node('button','Run once');form.append(submit);
+ const fresh=node('button','New run');fresh.type='button';fresh.onclick=()=>{if(busy)return;sessionStorage.removeItem('vmbox.run-once.intent');selected='';clearTimeout(timer);generation++;current.replaceChildren();error.textContent='';status.textContent='New run ready. Review the command and logins, then choose Run once.'};form.append(fresh);
  const refresh=node('button','Refresh'),history=node('div'),current=node('div');
  root.append(status,error,form,current,refresh,history);
  async function api(path,method='GET',body,headers={}){const r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});let v;try{v=await r.json()}catch{}if(!r.ok)throw Error(v?.error||'Controller unavailable ('+r.status+'). Your draft is retained.');return v}

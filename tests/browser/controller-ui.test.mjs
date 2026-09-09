@@ -55,7 +55,7 @@ test('Run once queues once, keeps its key on retry and permits cancellation',asy
    window.runCalls.push({path,options});
    if(String(path).endsWith('/cancel'))state='cancelled';
    const run={id:'queue-fixture',request:{agent:'shell',prompt:'printf unique'},state};
-   return new Response(JSON.stringify(path==='/v1/run-once'&&!options.method?[]:run),{headers:{'Content-Type':'application/json'}});
+   return new Response(JSON.stringify(path==='/v1/run-once'&&(!options.method||options.method==='GET')?[]:run),{headers:{'Content-Type':'application/json'}});
   };
  });
  await page.goto(base+'/#run-once');await page.type('#login input','fixture');await page.click('#login button');
@@ -67,6 +67,11 @@ test('Run once queues once, keeps its key on retry and permits cancellation',asy
  assert.equal(calls.length,2);assert.equal(calls[0].options.headers['Idempotency-Key'],calls[1].options.headers['Idempotency-Key']);
  await page.evaluate(()=>[...document.querySelectorAll('#run-once button')].find(b=>b.textContent==='Cancel queued run').click());
  await page.waitForFunction(()=>document.querySelector('#run-once-content').textContent.includes('cancelled'));
+ await page.evaluate(()=>[...document.querySelectorAll('#run-once button')].find(b=>b.textContent==='New run').click());
+ await page.click('#run-once form button');
+ await page.waitForFunction(()=>window.runCalls.filter(c=>c.path==='/v1/run-once'&&c.options.method==='POST').length===3);
+ const lastKey=await page.evaluate(()=>window.runCalls.filter(c=>c.path==='/v1/run-once'&&c.options.method==='POST').at(-1).options.headers['Idempotency-Key']);
+ assert.notEqual(lastKey,calls[0].options.headers['Idempotency-Key']);
  assert.deepEqual(errors,[]);await page.close();
 });
 test('completed one-shot opens retained output without allocation or a new shell',async()=>{

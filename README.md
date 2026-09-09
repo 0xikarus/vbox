@@ -20,6 +20,7 @@ Claude runs with `-p`, Codex with `exec`, and shell commands with Bash. Real out
 and the process exit code are saved. On completion, the otherwise idle box
 hibernates and releases compute, retaining its workspace volume. Reopening a run
 shows its terminal or saved results; it never submits the command again.
+To intentionally repeat an identical command, choose **New run**, then **Run once**.
 
 There is no planning/coordinator service, approval graph, or automatic agent
 retry. An exit code reports process success, not whether the requested work is good.

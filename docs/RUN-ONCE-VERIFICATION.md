@@ -23,7 +23,12 @@ Evidence so far:
   tests passed (10.650s). Runtime TestIdleHibernateRealTmux failed during sync
   after its 10-second context expired, immediately after installing packages.
   The test script now flushes package writes first and runs package race checks
-  sequentially. Remaining tests and the rerun are pending.
+  sequentially.
+- Corrected in-box job ae0229b9-578d-4ee8-88ed-38c500000000 on 50fb8a3
+  exited 0: controller PostgreSQL/race (8.400s), real runtime/tmux race (4.636s),
+  full Go tests, vet/build, and all seven Chromium tests passed.
+- Added explicit New run control for intentional repetition of identical input;
+  its additional browser assertion still needs verification.
 
 Remaining before completion:
 
