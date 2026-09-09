@@ -35,6 +35,81 @@ func TestControllerBindingCannotCrossAccountsOrRedirect(t *testing.T) {
 	}
 }
 
+func TestTaskBoxIncludesOnlySelectedGitHubProfile(t *testing.T) {
+	for _, github := range []string{"", "team-login"} {
+		t.Run("github="+github, func(t *testing.T) {
+			creates := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var out any
+				switch r.URL.Path {
+				case "/v1/whoami":
+					out = map[string]string{"accountId": "a", "role": "owner"}
+				case "/v1/controller-defaults":
+					out = map[string]string{"provider": "railway", "providerCredential": "primary"}
+				case "/v1/logical-boxes":
+					if r.Method == "GET" {
+						out = []v1.LogicalBox{}
+						break
+					}
+					var request v1.CreateLogicalBoxRequest
+					if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+						t.Error(err)
+					}
+					want := []v1.LoginProfileRef{{Application: "codex", Name: "saved"}}
+					if github != "" {
+						want = append(want, v1.LoginProfileRef{Application: "github", Name: github})
+					}
+					gotJSON, _ := json.Marshal(request.LoginProfiles)
+					wantJSON, _ := json.Marshal(want)
+					if string(gotJSON) != string(wantJSON) {
+						t.Errorf("profiles %s, want %s", gotJSON, wantJSON)
+					}
+					creates++
+					out = v1.LogicalBox{ID: "new-box", Name: request.Name}
+				default:
+					t.Error("unexpected route", r.URL.Path)
+					w.WriteHeader(404)
+					return
+				}
+				_ = json.NewEncoder(w).Encode(out)
+			}))
+			defer server.Close()
+			client := &ControllerClient{URL: server.URL, Token: "fixture", AccountID: "a"}
+			if _, err := client.EnsureTaskBox(context.Background(), "a", strings.Repeat("a", 32), strings.Repeat("b", 32), "", "codex", "saved", github); err != nil {
+				t.Fatal(err)
+			}
+			if creates != 1 {
+				t.Fatal("missing creation")
+			}
+		})
+	}
+}
+
+func TestTaskProfilesIncludeGitHubMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/whoami" {
+			_, _ = w.Write([]byte(`{"accountId":"a","role":"owner"}`))
+			return
+		}
+		if r.URL.Path != "/v1/login-profiles" {
+			t.Error("unexpected profile route")
+			w.WriteHeader(404)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"application":"codex","name":"agent"},{"application":"github","name":"team","secret":"fixture-not-for-ui"},{"application":"unknown","name":"ignored"}]`))
+	}))
+	defer server.Close()
+	client := &ControllerClient{URL: server.URL, Token: "fixture", AccountID: "a"}
+	profiles, err := client.Profiles(context.Background(), "a")
+	if err != nil || len(profiles) != 2 || profiles[1].Application != "github" || profiles[1].Name != "team" {
+		t.Fatalf("GitHub metadata missing: %+v %v", profiles, err)
+	}
+	encoded, _ := json.Marshal(profiles)
+	if strings.Contains(string(encoded), "fixture-not-for-ui") {
+		t.Fatal("credential contents exposed")
+	}
+}
+
 func TestPlannerSubmissionCarriesOnlyFixedCommand(t *testing.T) {
 	calls := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +246,7 @@ func testIndependentBox(t *testing.T, role string) {
 	}
 	if role == "task-runner" {
 		ensure = func(ctx context.Context, account string, w Work, id, box string) (v1.LogicalBox, error) {
-			return c.EnsureTaskBox(ctx, account, w.ID, id, box, w.Agent, w.Profile)
+			return c.EnsureTaskBox(ctx, account, w.ID, id, box, w.Agent, w.Profile, "")
 		}
 		submit, find = c.SubmitTaskRunner, c.FindTaskRunner
 	}

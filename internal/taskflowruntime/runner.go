@@ -21,7 +21,7 @@ import (
 
 type Controller interface {
 	FindTaskBox(context.Context, string, string) (*v1.LogicalBox, error)
-	EnsureTaskBox(context.Context, string, string, string, string, string, string) (v1.LogicalBox, error)
+	EnsureTaskBox(context.Context, string, string, string, string, string, string, string) (v1.LogicalBox, error)
 	SubmitTaskRunner(context.Context, string, string, string) (v1.ProcessTask, error)
 	FindTaskRunner(context.Context, string, string, string) (*v1.ProcessTask, error)
 	Connection(context.Context, string, string) (v1.LogicalBoxConnection, error)
@@ -156,7 +156,7 @@ func (r *Runner) Start(ctx context.Context, in taskflow.Input) (taskflow.Submiss
 	if len(w.AssetIDs) > 8 || (len(w.AssetIDs) > 0 && !ImageCapabilities()[w.Agent]) {
 		return taskflow.Submission{}, fmt.Errorf("image input unsupported or excessive")
 	}
-	b, e := c.Controller.EnsureTaskBox(ctx, in.AccountID, w.ID, a.ID, a.BoxID, w.Agent, w.Profile)
+	b, e := c.Controller.EnsureTaskBox(ctx, in.AccountID, w.ID, a.ID, a.BoxID, w.Agent, w.Profile, w.GitHubProfile)
 	if e != nil {
 		return taskflow.Submission{}, e
 	}

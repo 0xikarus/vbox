@@ -49,6 +49,10 @@ export function mountTasks(root, api) {
   const idea = field(fields, 'Task idea', 'textarea', 'idea'); idea.required = true; idea.rows = 5;
   const agent = field(fields, 'Coordinator agent', 'select', 'agent'); agent.required = true;
   const profile = field(fields, 'Saved profile', 'select', 'profile'); profile.required = true;
+  const githubProfile = field(fields, 'GitHub profile (optional)', 'select', 'githubProfile');
+  option(githubProfile, 'None — no GitHub login', '');
+  const githubNotice = el('p'); fields.append(githubNotice);
+  fields.append(el('p', 'The selected GitHub login is installed on every coordinator and worker box. Its account permissions apply; selecting it does not change agent tool permissions.'));
   const workers = field(fields, 'Maximum workers', 'input', 'maxWorkers'); workers.type = 'number'; workers.min = '1'; workers.step = '1'; workers.value = '1'; workers.required = true;
   const images = field(fields, 'Optional PNG / JPEG attachments', 'input', 'images'); images.type = 'file'; images.multiple = true; images.accept = 'image/png,image/jpeg';
   fields.append(el('p', 'Up to 8 images, 10 MiB each, 40 MiB total. Server validates the 25 MP limit.'));
@@ -90,6 +94,14 @@ export function mountTasks(root, api) {
     if (Array.from(profile.options).some(o => o.value === previous)) profile.value = previous;
     controls();
   }
+  function githubChoices() {
+    const previous = githubProfile.value;
+    githubProfile.replaceChildren(); option(githubProfile, 'None — no GitHub login', '');
+    const saved = profiles.filter(p => p.application === 'github');
+    saved.forEach(p => option(githubProfile, p.name, p.name));
+    if (Array.from(githubProfile.options).some(o => o.value === previous)) githubProfile.value = previous;
+    githubNotice.textContent = saved.length ? '' : 'No saved GitHub profiles. Upload one using vmbox, then refresh. GitHub access is optional.';
+  }
   function renderPicker() {
     picker.replaceChildren(); option(picker, 'Choose saved task', '');
     items.forEach(w => option(picker, `${w.idea || w.id} · ${w.state} · ${w.id}`, w.id));
@@ -106,6 +118,7 @@ export function mountTasks(root, api) {
     detail.replaceChildren();
     if (!work) { detail.append(el('p', selected ? 'Loading saved task…' : 'Select a task to view its plan and results.')); controls(); return; }
     detail.append(el('h3', `Task ${work.id}`), el('p', `Version ${work.version} · ${work.state}`), el('p', `${work.agent} · profile ${work.profile} · maximum workers ${work.maxWorkers}`), el('pre', work.idea));
+    detail.append(el('p', `GitHub profile: ${work.githubProfile || 'None'}`));
     for (const id of array(work.assetIds)) {
       const a = el('a', `Attachment ${id}`); a.href = API + '/assets/' + encodeURIComponent(id); a.target = '_blank'; a.rel = 'noopener noreferrer'; detail.append(a);
     }
@@ -227,7 +240,7 @@ export function mountTasks(root, api) {
       array(caps.agents).filter(a => ['claude', 'codex'].includes(a.name)).forEach(a => option(agent, a.name + (a.images ? ' · images supported' : ' · text only'), a.name));
       if (Array.from(agent.options).some(o => o.value === previous)) agent.value = previous;
       workers.max = String(Number.isSafeInteger(caps.maxWorkers) && caps.maxWorkers > 0 ? Math.min(20, caps.maxWorkers) : 1);
-      profileChoices(); renderPicker();
+      profileChoices(); githubChoices(); renderPicker();
       notice.textContent = !ready() ? 'Setup needed: task execution is unavailable. Configure the backend, then refresh. Saved tasks remain available.' : !profiles.some(p => array(caps.agents).some(a => ['claude', 'codex'].includes(a.name) && a.name === p.application)) ? 'Setup needed: add a permitted Claude or Codex saved profile, then refresh.' : 'Describe any task and request a coordinator plan. Review it before running workers.';
       if (selected) await readWork(); controls();
     } catch (err) { if (!disposed && ticket === setupGeneration) { caps = undefined; notice.textContent = 'Setup needed: Tasks backend is unavailable. Refresh / reconnect after configuration.'; fail(err); controls(); } }
@@ -264,7 +277,7 @@ export function mountTasks(root, api) {
   });
   agent.addEventListener('change', profileChoices); form.addEventListener('input', controls); form.addEventListener('change', controls); replyForm.addEventListener('input', controls);
   picker.addEventListener('change', () => selectTask(picker.value));
-  form.addEventListener('submit', e => { e.preventDefault(); controls(); if (!create.disabled) mutate('/tasks', { idea: idea.value, agent: agent.value, profile: profile.value, assetIds: entries.map(e => e.asset), maxWorkers: Number(workers.value) }, 'create'); });
+  form.addEventListener('submit', e => { e.preventDefault(); controls(); if (!create.disabled) mutate('/tasks', { idea: idea.value, agent: agent.value, profile: profile.value, ...(githubProfile.value ? { githubProfile: githubProfile.value } : {}), assetIds: entries.map(e => e.asset), maxWorkers: Number(workers.value) }, 'create'); });
   replyForm.addEventListener('submit', e => { e.preventDefault(); controls(); if (!send.disabled) action('messages', { text: reply.value }); });
   let wasVisible = visible();
   const visibility = () => { const now = visible(); if (now !== wasVisible) { wasVisible = now; if (now) schedule(); else win.clearTimeout(timer); } };

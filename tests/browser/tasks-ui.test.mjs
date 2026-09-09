@@ -82,6 +82,32 @@ test('questions, reply refinement, version lock, unchanged retry key and exact R
   await click(page,'Run approved plan'); await page.waitForFunction(()=>document.body.textContent.includes('Version 3'));
   assert.deepEqual(requests.find(r=>r.path.endsWith('/run')).body,{version:2,planRevision:3}); assert.equal(await page.$eval('[name=reply]', n=>n.matches(':disabled')),true);
 });
+
+test('optional GitHub selection filters saved profiles, survives refresh and reaches creation', async t => {
+  const {page,requests}=await fixture(t,{handler:async(r,respond)=>{
+    if(r.path==='/profiles'){await respond([{application:'codex',name:'saved'},{application:'claude',name:'other'},{application:'github',name:'team-login'}]);return true;}
+  }});
+  await choose(page);
+  assert.deepEqual(await page.$$eval('[name=githubProfile] option',ns=>ns.map(n=>n.value)),['','team-login']);
+  assert.equal(await page.$eval('[name=githubProfile]',n=>n.value),'');
+  await page.select('[name=githubProfile]','team-login');
+  await page.select('[name=agent]','claude'); await page.select('[name=profile]','other');
+  assert.equal(await page.$eval('[name=githubProfile]',n=>n.value),'team-login');
+  await click(page,'Refresh / reconnect');
+  await page.waitForFunction(()=>!document.querySelector('[name=idea]').matches(':disabled'));
+  assert.equal(await page.$eval('[name=githubProfile]',n=>n.value),'team-login');
+  await click(page,'Request plan');
+  await page.waitForFunction(()=>document.body.textContent.includes('Task created'));
+  assert.equal(requests.find(r=>r.path==='/tasks'&&r.method==='POST').body.githubProfile,'team-login');
+  assert.match(await page.$eval('.tasks-detail',n=>n.textContent),/GitHub profile: team-login/);
+});
+
+test('missing saved GitHub logins do not block a task', async t => {
+  const {page,requests}=await fixture(t); await choose(page);
+  assert.match(await page.$eval('.tasks',n=>n.textContent),/No saved GitHub profiles/);
+  await click(page,'Request plan');await page.waitForFunction(()=>document.body.textContent.includes('Task created'));
+  assert.equal('githubProfile' in requests.find(r=>r.path==='/tasks'&&r.method==='POST').body,false);
+});
 test('plan validation rejects questions, empty criteria, duplicate IDs, missing dependencies, cycles and bounds', async t => {
   const {page,state}=await fixture(t); await saved(page);
   const invalid = [p=>p.questions=['Unresolved'],p=>p.assignments[0].acceptanceCriteria=[],p=>p.assignments[0].acceptanceCriteria=[' '],p=>p.assignments.push(structuredClone(p.assignments[0])),p=>p.assignments[0].dependsOn=['missing'],p=>p.assignments[0].dependsOn=['research'],p=>p.assignments=[],p=>p.assignments=Array.from({length:21},(_,i)=>({...assignment,id:String(i)}))];

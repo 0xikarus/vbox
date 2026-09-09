@@ -19,6 +19,10 @@ remain separate for both modes.
 Once the isolated Tasks backend is configured, open **Tasks** in the controller:
 
 1. Enter the idea, choose Codex or Claude and an existing saved login profile.
+   Optionally select a saved **GitHub profile**; that login is provisioned onto
+   every coordinator and worker box. Leave it at **None** for no GitHub login.
+   The profile's existing account permissions apply; this does not change the
+   agent's tool permissions or automatically enable repository publication.
    Optionally attach PNG/JPEG images (Codex only), then choose **Plan**.
 2. Read the coordinator's plan/questions and reply in the same view. Each reply
    creates a new planning revision; prior responses remain visible.

@@ -29,6 +29,16 @@ type fixtureInbox struct {
 	err    error
 }
 
+type profileController struct {
+	Controller
+	github string
+}
+
+func (c *profileController) EnsureTaskBox(ctx context.Context, account, work, attempt, box, agent, profile, github string) (v1.LogicalBox, error) {
+	c.github = github
+	return c.Controller.EnsureTaskBox(ctx, account, work, attempt, box, agent, profile, github)
+}
+
 func TestRequestIgnoresMutableAttemptLifecycle(t *testing.T) {
 	in := taskflow.Input{AccountID: "a", Workflow: taskflow.Workflow{ID: newID(), Agent: "codex", Idea: "Plan a trip"}, Attempt: taskflow.Attempt{ID: newID(), Stage: "plan", State: "provisioning"}}
 	before, err := requestFor(in)
@@ -131,7 +141,8 @@ func TestControllerLifecycleRecoveryAndObservation(t *testing.T) {
 	defer server.Close()
 	inbox := &fixtureInbox{}
 	stages := 0
-	runner, e := New(Config{Controller: &factory.ControllerClient{URL: server.URL, Token: "controller-fixture-secret", AccountID: account, HTTP: server.Client()}, Inbox: inbox, CallbackURL: "https://callback.example.test/tasks/result", Stage: func(_ context.Context, in Input) error {
+	controller := &profileController{Controller: &factory.ControllerClient{URL: server.URL, Token: "controller-fixture-secret", AccountID: account, HTTP: server.Client()}}
+	runner, e := New(Config{Controller: controller, Inbox: inbox, CallbackURL: "https://callback.example.test/tasks/result", Stage: func(_ context.Context, in Input) error {
 		stages++
 		if in.AttemptID != attempt || strings.Contains(string(in.Job), "controller-fixture-secret") {
 			t.Error("private staging identity")
@@ -145,8 +156,11 @@ func TestControllerLifecycleRecoveryAndObservation(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	input := taskflow.Input{AccountID: account, Workflow: taskflow.Workflow{ID: work, Agent: "codex", Profile: "saved", Idea: "Plan a family trip"}, Attempt: taskflow.Attempt{ID: attempt, Stage: "plan"}}
+	input := taskflow.Input{AccountID: account, Workflow: taskflow.Workflow{ID: work, Agent: "codex", Profile: "saved", GitHubProfile: "team-login", Idea: "Plan a family trip"}, Attempt: taskflow.Attempt{ID: attempt, Stage: "plan"}}
 	sub, e := runner.Start(ctx, input)
+	if controller.github != "team-login" {
+		t.Fatal("runtime dropped GitHub selection")
+	}
 	if e != nil || sub.BoxID != box || !sub.Pending || stages != 0 || inbox.issues != 0 {
 		t.Fatalf("box persistence boundary %+v %v", sub, e)
 	}

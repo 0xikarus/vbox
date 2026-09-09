@@ -43,6 +43,7 @@ type Workflow struct {
 	Idea             string    `json:"idea"`
 	Agent            string    `json:"agent"`
 	Profile          string    `json:"profile"`
+	GitHubProfile    string    `json:"githubProfile,omitempty"`
 	AssetIDs         []string  `json:"assetIds"`
 	MaxWorkers       int       `json:"maxWorkers"`
 	Messages         []Message `json:"messages"`
@@ -56,11 +57,12 @@ type Workflow struct {
 	UpdatedAt        time.Time `json:"updatedAt"`
 }
 type Create struct {
-	Idea       string   `json:"idea"`
-	Agent      string   `json:"agent"`
-	Profile    string   `json:"profile"`
-	AssetIDs   []string `json:"assetIds"`
-	MaxWorkers int      `json:"maxWorkers"`
+	Idea          string   `json:"idea"`
+	Agent         string   `json:"agent"`
+	Profile       string   `json:"profile"`
+	GitHubProfile string   `json:"githubProfile,omitempty"`
+	AssetIDs      []string `json:"assetIds"`
+	MaxWorkers    int      `json:"maxWorkers"`
 }
 type Input struct {
 	AccountID string

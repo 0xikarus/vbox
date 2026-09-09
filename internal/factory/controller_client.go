@@ -101,7 +101,7 @@ func (c *ControllerClient) Profiles(ctx context.Context, account string) ([]Prof
 	}
 	out := []Profile{}
 	for _, p := range profiles {
-		if p.Application == "codex" || p.Application == "claude" {
+		if p.Application == "codex" || p.Application == "claude" || p.Application == "github" {
 			out = append(out, p)
 		}
 	}
@@ -166,7 +166,7 @@ func factoryIdentity(id string) bool {
 
 // EnsureTaskBox provisions a general coordinator/worker without a repository.
 // Every durable attempt owns a separate box with its explicitly selected login.
-func (c *ControllerClient) EnsureTaskBox(ctx context.Context, account, workID, attemptID, boxID, agent, profile string) (v1.LogicalBox, error) {
+func (c *ControllerClient) EnsureTaskBox(ctx context.Context, account, workID, attemptID, boxID, agent, profile, githubProfile string) (v1.LogicalBox, error) {
 	if err := c.Authorize(ctx, account); err != nil {
 		return v1.LogicalBox{}, err
 	}
@@ -174,7 +174,14 @@ func (c *ControllerClient) EnsureTaskBox(ctx context.Context, account, workID, a
 		return v1.LogicalBox{}, fmt.Errorf("invalid general task identity or profile")
 	}
 	w := Work{ID: workID, BoxID: boxID, CreateWork: CreateWork{Agent: agent, Profile: profile}}
-	return c.ensureFactoryBox(ctx, w, "task-"+attemptID, "task-box:"+attemptID, "task-resume:"+attemptID)
+	var extra []v1.LoginProfileRef
+	if githubProfile != "" {
+		if strings.TrimSpace(githubProfile) == "" || len(githubProfile) > 256 || strings.ContainsRune(githubProfile, 0) {
+			return v1.LogicalBox{}, fmt.Errorf("invalid GitHub profile")
+		}
+		extra = append(extra, v1.LoginProfileRef{Application: "github", Name: githubProfile})
+	}
+	return c.ensureFactoryBox(ctx, w, "task-"+attemptID, "task-box:"+attemptID, "task-resume:"+attemptID, extra...)
 }
 
 // FindTaskBox is read-only recovery, including cancellation after a lost create
@@ -216,7 +223,7 @@ func factoryJobCommand(binary, attemptID string) string {
 	return "exec " + root + "/bin/vmbox-" + binary + " < " + root + "/attempts/" + attemptID + "/job.json"
 }
 
-func (c *ControllerClient) ensureFactoryBox(ctx context.Context, w Work, name, createKey, resumeKey string) (v1.LogicalBox, error) {
+func (c *ControllerClient) ensureFactoryBox(ctx context.Context, w Work, name, createKey, resumeKey string, extraProfiles ...v1.LoginProfileRef) (v1.LogicalBox, error) {
 	var boxes []v1.LogicalBox
 	if err := c.request(ctx, "GET", "/v1/logical-boxes", "", nil, &boxes); err != nil {
 		return v1.LogicalBox{}, err
@@ -249,6 +256,7 @@ func (c *ControllerClient) ensureFactoryBox(ctx context.Context, w Work, name, c
 	if w.Profile != "" {
 		profiles = append(profiles, v1.LoginProfileRef{Application: w.Agent, Name: w.Profile})
 	}
+	profiles = append(profiles, extraProfiles...)
 	err := c.request(ctx, "POST", "/v1/logical-boxes", createKey, v1.CreateLogicalBoxRequest{Name: name, Provider: defaults.Provider, ProviderCredential: defaults.ProviderCredential, DefaultAgent: "shell", DiskGiB: 10, LoginProfiles: profiles}, &b)
 	return b, err
 }

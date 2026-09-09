@@ -514,6 +514,39 @@ func TestPostgresDispatchSnapshotSurvivesPolling(t *testing.T) {
 	}
 }
 
+func TestPostgresGitHubProfilePersistsAndReachesEveryStage(t *testing.T) {
+	s, f := setup(t)
+	s.Profiles = func(_ context.Context, account string) ([]Profile, error) {
+		return []Profile{{Application: "codex", Name: "saved"}, {Application: "github", Name: "team-" + account}}, nil
+	}
+	input := Create{Idea: "Review repository information", Agent: "codex", Profile: "saved", GitHubProfile: "team-a", MaxWorkers: 2}
+	api(t, s, "b", "POST", "", "foreign", input, 400)
+	bad := input
+	bad.GitHubProfile = "saved"
+	api(t, s, "a", "POST", "", "wrong-application", bad, 400)
+	w := api(t, s, "a", "POST", "", "github", input, 200)
+	bad.GitHubProfile = ""
+	api(t, s, "a", "POST", "", "github", bad, 409)
+	w = until(t, s, runTask(t, s, w), "completed")
+	if w.GitHubProfile != "team-a" || selection(w).GitHubProfile != "team-a" {
+		t.Fatal("profile not persisted")
+	}
+	stages := map[string]bool{}
+	for _, in := range f.starts {
+		if in.Workflow.GitHubProfile != "team-a" {
+			t.Fatal("stage lost selected GitHub profile")
+		}
+		stages[in.Attempt.Stage] = true
+	}
+	if !stages["plan"] || !stages["work"] || !stages["synthesize"] {
+		t.Fatal("missing stage coverage")
+	}
+	w = api(t, s, "a", "POST", "/"+w.ID+"/messages", "refine-github", map[string]any{"version": w.Version, "text": "Refine the results"}, 200)
+	if w.GitHubProfile != "team-a" {
+		t.Fatal("refinement lost profile")
+	}
+}
+
 func TestPostgresCancelUncertainAndDependencyQueue(t *testing.T) {
 	s, f := setup(t)
 	f.uncertain = true

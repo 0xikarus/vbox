@@ -52,6 +52,20 @@ func (s *Service) validateSelection(ctx context.Context, account string, c Creat
 	if !found {
 		return invalid("selected profile does not exist")
 	}
+	if c.GitHubProfile != "" {
+		if !validText(c.GitHubProfile, 256) {
+			return invalid("invalid GitHub profile")
+		}
+		found = false
+		for _, p := range profiles {
+			if p.Application == "github" && p.Name == c.GitHubProfile {
+				found = true
+			}
+		}
+		if !found {
+			return invalid("selected GitHub profile does not exist")
+		}
+	}
 	if len(c.AssetIDs) > 8 {
 		return invalid("at most eight attachments")
 	}
@@ -73,7 +87,7 @@ func (s *Service) validateSelection(ctx context.Context, account string, c Creat
 	return nil
 }
 func selection(w Workflow) Create {
-	return Create{Idea: w.Idea, Agent: w.Agent, Profile: w.Profile, AssetIDs: w.AssetIDs, MaxWorkers: w.MaxWorkers}
+	return Create{Idea: w.Idea, Agent: w.Agent, Profile: w.Profile, GitHubProfile: w.GitHubProfile, AssetIDs: w.AssetIDs, MaxWorkers: w.MaxWorkers}
 }
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -134,6 +134,7 @@ func (s *Store) mutate(ctx context.Context, account, user, key, hash, id string,
 		now := time.Now().UTC()
 		d = document{Revision: 1, AttemptRevisions: map[string]int{}, Workflow: Workflow{ID: newID(), State: "planning_queued", Idea: create.Idea, Agent: create.Agent, Profile: create.Profile, AssetIDs: append([]string{}, create.AssetIDs...), MaxWorkers: create.MaxWorkers, Messages: []Message{{Role: "user", Text: create.Idea, CreatedAt: now}}, Plans: []Plan{}, Attempts: []Attempt{}, CreatedAt: now, UpdatedAt: now}}
 		addAttempt(&d, "plan", "")
+		d.Workflow.GitHubProfile = create.GitHubProfile
 		b, _ = json.Marshal(d)
 		_, err = tx.ExecContext(ctx, `INSERT INTO general_tasks(account_id,id,user_id,document) VALUES($1,$2,$3,$4)`, account, d.Workflow.ID, user, b)
 	} else {
