@@ -580,7 +580,9 @@ SHA-256-verified Linux release before your command starts. Installation can take
 a few minutes and requires about 120 MiB of downloads plus workspace disk space.
 Installed tools live on the persistent home volume and survive hibernation.
 
-Tools are optional: unchecked boxes stay lightweight. Installation failures are
+Tools are optional: unchecked presets add no installation or download. Operator
+worker images may already contain tools; unchecking a preset does not remove them.
+Installation failures are
 reported instead of running a task without its requested tools. Existing custom
 executables are never overwritten. Installing Anvil does not start it or expose
 its RPC port; start and forward it explicitly when needed.
@@ -605,5 +607,6 @@ neither a standalone deployment bundle nor provider tooling.
 The two-mode rollout was tested with real Claude/Codex responses, shell exit codes
 0/7, independent worker output comparisons, and persistent interactive sessions.
 Idle-hibernation guards were tested with real local tmux and disposable PostgreSQL.
-A full live Railway allocate → execute → auto-hibernate test still needs an unused
-disposable slot; the existing occupied boxes were intentionally preserved.
+Live Railway Run once tests also verified allocation, terminal output, actual
+exit codes, image inspection, and automatic hibernation with retained volumes.
+See [verification evidence](docs/RUN-ONCE-VERIFICATION.md) for results and limits.
