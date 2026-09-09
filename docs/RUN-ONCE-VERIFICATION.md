@@ -111,3 +111,20 @@ Optional tooling verification and remaining gaps:
   before freeing project capacity. Do not blindly delete retained workspaces.
 - Model/argument literal delivery is covered by runtime and browser tests; the
   live research intentionally used the saved model and permissions unchanged.
+
+Follow-up after explicit cleanup authorization:
+
+- All seven inspected `once-*` logical boxes were deleted through the controller.
+  Their two running workloads stopped; all seven exact volumes were independently
+  confirmed as pending deletion in Railway. Non-`once-*` boxes were preserved.
+- Freed capacity allowed `foundry-creation-0909` to finish creation and hibernate.
+  A later read found it running/restored on volume
+  d4a0c4f9-230f-48c2-b0a2-f1a4876c5cc4. Read-only direct SSH verified persistent
+  Forge and Anvil 1.8.1 and the managed home-volume binary link. Its existing
+  shell-9aad9c27e505 tmux session was preserved. This completes the ordinary
+  creation and post-resume Foundry check; cancellation while attaching remains
+  a separate known limitation.
+- Web box deletion now has a named destructive confirmation, a disabled button
+  while deleting, live phase/error display and read-only progress polling.
+  All ten Chromium tests pass, including cancellation, exact Unicode-name
+  confirmation, sibling preservation, asynchronous completion and mobile errors.

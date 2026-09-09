@@ -49,6 +49,38 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
+test('box deletion confirms exact identity, prevents repeats and shows asynchronous progress',async()=>{
+ const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.deleteCalls=[];window.deleteState='running';
+  window.fetch=async(path,options={})=>{
+   if(path==='/v1/logical-boxes'&&(!options.method||options.method==='GET'))return new Response(JSON.stringify([
+    ...(window.deleteState==='gone'?[]:[{id:'box-1',name:'helper ü',state:window.deleteState,defaultAgent:'shell',restorationState:window.deleteState==='deleting'?'delete-detaching-volume':'restored'}]),
+    {id:'sibling',name:'keep-me',state:'hibernated',defaultAgent:'shell'}
+   ]));
+   if(path==='/v1/logical-boxes/box-1/volume'&&options.method==='DELETE'){window.deleteCalls.push({path,body:JSON.parse(options.body)});window.deleteState='deleting';return new Response(JSON.stringify({id:'box-1',state:'deleting'}),{status:202})}
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button');
+ page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] button');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
+ page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button');
+ await page.waitForFunction(()=>document.querySelector('[data-box-id="box-1"]').textContent.includes('delete-detaching-volume'));
+ assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),true);assert.equal(await page.$('[data-box-id="box-1"] a'),null);
+ assert.deepEqual(await page.evaluate(()=>window.deleteCalls),[{path:'/v1/logical-boxes/box-1/volume',body:{confirmation:'helper ü'}}]);
+ await page.evaluate(()=>window.deleteState='gone');await page.waitForFunction(()=>!document.querySelector('[data-box-id="box-1"]'),{timeout:10000});
+ assert.ok(await page.$('[data-box-id="sibling"]'));assert.deepEqual(errors,[]);await page.close();
+});
+test('mobile box deletion reports rejection without hiding the box or replaying deletion',async()=>{
+ const page=await browser.newPage();await page.setViewport({width:390,height:844});
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.deleteCalls=0;
+  window.fetch=async(path,options={})=>{if(path==='/v1/logical-boxes/box-1/volume'&&options.method==='DELETE'){window.deleteCalls++;return new Response(JSON.stringify({error:'Creation is still active; try again after it finishes.'}),{status:409})}return original(path,options)};
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button');
+ page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button');await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Creation is still active'));
+ assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),false);assert.equal(await page.evaluate(()=>window.deleteCalls),1);assert.ok(await page.$('[data-box-id="box-1"]'));await page.close();
+});
 test('Run once queues once, keeps its key on retry and permits cancellation',async()=>{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.evaluateOnNewDocument(()=>{

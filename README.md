@@ -555,6 +555,11 @@ not establish that its authentication is valid.
 
 ## Deleting a box
 
+The controller UI also has a **Delete** button in each box row. Confirm the named
+box to stop its processes and permanently delete its workspace volume. Other
+boxes and shared compute services are kept. Deletion phases update automatically;
+provider failures stay visible. If progress cannot be checked, use **Refresh**.
+
 `vmbox delete BOX` works without connecting first and requires typing the exact
 box name. It queues permanent
 deletion and returns promptly; it does not claim the volume is already gone.
