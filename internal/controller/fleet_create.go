@@ -163,6 +163,20 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 		if err := s.provisionCreationProfiles(ctx, prov, creation); err != nil {
 			return fail(err)
 		}
+		if len(creation.Request.Tools) > 0 {
+			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-installing-tools"); err != nil {
+				return fail(err)
+			}
+			toolCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+			installed, err := prov.Exec(toolCtx, serviceID, append([]string{"vmbox-runtime", "install-tools"}, creation.Request.Tools...), provider.ExecOptions{})
+			cancel()
+			if err != nil {
+				return fail(fmt.Errorf("install selected tools: %w", err))
+			}
+			if installed.ExitCode != 0 {
+				return fail(fmt.Errorf("tool installation failed: %s", strings.TrimSpace(installed.Stderr)))
+			}
+		}
 		if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-detaching"); err != nil {
 			return fail(err)
 		}

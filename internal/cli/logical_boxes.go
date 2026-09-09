@@ -90,6 +90,8 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			return nil
 		})
 		noProfiles := fs.Bool("no-profiles", false, "skip agent credential provisioning")
+		var tools []string
+		fs.Func("tool", "install an optional tool preset (foundry); repeat for additional tools", func(value string) error { tools = append(tools, value); return v1.ValidateTools(tools) })
 		noDialog := fs.Bool("no-dialog", false, "use explicit arguments without the creation dialog")
 		hibernated := fs.Bool("hibernate", false, "create the workspace without leaving compute running")
 		startCLI := fs.String("start-cli", "", "run an explicit command once in the new persistent shell")
@@ -123,6 +125,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		}
 		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Region: *region, DiskGiB: *disk, DefaultAgent: "shell", AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
 		request.LoginProfiles = selectedProfiles
+		request.Tools = tools
 		return a.createWorkspace(ctx, c, token, request, mode, *startCLI, terminal && !*noDialog && !asJSON, *noProfiles, asJSON)
 	case "allocate", "open":
 		session := ""

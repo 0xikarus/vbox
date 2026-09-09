@@ -102,6 +102,8 @@ func run() error {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(result)
+	case "install-tools":
+		return boxruntime.InstallTools(context.Background(), os.Getenv("HOME"), args[1:], os.Stdout)
 	case "prepare-hibernate", "prepare-idle-hibernate":
 		if len(args) != 1 {
 			return fmt.Errorf("prepare-hibernate accepts no arguments")

@@ -24,6 +24,7 @@ func ValidateProcessOptions(agent, model string, args []string) error {
 
 // ProcessTask describes execution, not the semantic completion of the prompt.
 type ProcessTask struct {
+	Tools           []string   `json:"tools,omitempty"`
 	ID              string     `json:"id"`
 	LogicalBoxID    string     `json:"logicalBoxId"`
 	BoxName         string     `json:"boxName"`

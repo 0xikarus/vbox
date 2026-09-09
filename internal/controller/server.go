@@ -68,6 +68,7 @@ func NewServer(store *Store, providers *provider.Registry) *Server {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/tool-presets", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) { writeJSON(w, 200, v1.ToolPresets()) }))
 	mux.HandleFunc("GET /run-once.js", uiHandler("run-once.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("POST /v1/run-once", s.owner(s.createRunOnce))
 	mux.HandleFunc("POST /v1/run-once-images", s.owner(s.uploadRunOnceImage))

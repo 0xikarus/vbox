@@ -8,7 +8,7 @@
 <section id="run-once" data-owner hidden><h2>Run once</h2><p>Run a command or agent on a new persistent box. A healthy free slot is selected automatically. After execution the box hibernates; its workspace, output and exit code are retained.</p><div id="run-once-content"></div></section>
 <script src="/run-once.js" defer></script>
 <section id="boxes"><h2>Logical boxes</h2><div id="box-list"></div>
-<form id="create"><label>Name <input name="name" required></label><label>Disk GiB <input name="disk" type="number" min="1" value="10"></label><div id="profile-choices" data-owner></div><button>Create persistent box</button></form></section>
+<form id="create"><label>Name <input name="name" required></label><label>Disk GiB <input name="disk" type="number" min="1" value="10"></label><div id="profile-choices" data-owner></div><fieldset id="create-tools" data-owner><legend>Optional tools</legend></fieldset><button>Create persistent box</button></form></section>
 <section id="profiles" data-owner><h2>Saved login profiles</h2><p>Account-wide credentials, managed by owners. Select profiles above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>
 <p>Upload or refresh profiles through the CLI: <code>vmbox profiles save APPLICATION NAME</code>. Deleting a saved profile leaves credentials already copied into boxes untouched. Pending creations using it may fail.</p></section>
 <section id="providers" data-owner><h2>Providers</h2><p id="provider-default">Loading default provider…</p><div id="provider-list"></div><p id="provider-result" role="status"></p>

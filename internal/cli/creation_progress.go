@@ -13,7 +13,7 @@ func (m *creationMeter) render(message string) string {
 	stages := map[string]int{
 		"Uploading selected": 5, "Initializing persistent workspace": 10,
 		"creation-reserved": 10, "creation-volume-requested": 20,
-		"creation-volume-attached": 30, "creation-initializing": 40,
+		"creation-volume-attached": 30, "creation-initializing": 40, "creation-installing-tools": 55,
 		"creation-detaching": 60, "creation-sanitizing": 70,
 		"saved": 75, "requesting-allocation": 80, "verifying-slot": 82,
 		"attaching-volume": 85, "waiting-for-runtime": 90,

@@ -568,6 +568,23 @@ Coworker MCP, inter-agent adapters and their CLI/web controls have been removed.
 Ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
 Historical coworker data is retained only for safe cleanup; credentials are revoked.
 
+## Optional tools
+
+Select **Foundry** when creating a box or starting a Run once task. In the CLI
+form, use Space or Enter to toggle its checkbox. It includes `forge`, `cast`,
+`anvil`, and `chisel`; no separate selections are necessary.
+
+For scripted use, pass `--tool foundry` to `vmbox new NAME` or
+`vmbox task BOX shell --prompt 'forge --version'`. The preset downloads a pinned,
+SHA-256-verified Linux release before your command starts. Installation can take
+a few minutes and requires about 120 MiB of downloads plus workspace disk space.
+Installed tools live on the persistent home volume and survive hibernation.
+
+Tools are optional: unchecked boxes stay lightweight. Installation failures are
+reported instead of running a task without its requested tools. Existing custom
+executables are never overwritten. Installing Anvil does not start it or expose
+its RPC port; start and forward it explicitly when needed.
+
 ## Build and verification
 
 ```bash

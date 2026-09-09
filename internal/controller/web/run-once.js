@@ -16,6 +16,7 @@
  const args=field(advanced,'One argument per line; no shell quoting','textarea','args');args.rows=3;args.placeholder='--option\nvalue';
  advanced.append(node('p','Arguments are passed directly to the selected agent, not evaluated by a shell. They can change agent permissions or behavior. Do not enter tokens or passwords. Leave blank to use your saved configuration.'));
  const profiles=node('div');form.append(profiles);
+ const tools=node('fieldset');form.append(tools);
  const prompt=field(form,'Prompt / shell command','textarea','prompt');prompt.required=true;prompt.rows=5;prompt.maxLength=100000;
  const imageArea=node('div');form.append(imageArea);const images=[];let nextImage=1,uploading=false;
  const imageInput=field(imageArea,'Attach images','input','images');imageInput.type='file';imageInput.multiple=true;imageInput.accept='image/png,image/jpeg,image/gif';
@@ -61,7 +62,9 @@
  async function load(){
   section.hidden=location.hash!=='#run-once';if(!active())return;
   const ticket=++generation;clearTimeout(timer);error.textContent='';
-  try{const [ps,logins,runs]=await Promise.all([api('/v1/provider-credentials'),api('/v1/login-profiles'),api('/v1/run-once')]);if(ticket!==generation)return;
+  try{const [ps,logins,runs,presets]=await Promise.all([api('/v1/provider-credentials'),api('/v1/login-profiles'),api('/v1/run-once'),api('/v1/tool-presets')]);if(ticket!==generation)return;
+   const selectedTools=new Set([...tools.querySelectorAll('input:checked')].map(i=>i.value));tools.replaceChildren(node('legend','Optional tools · installed before your command starts'));
+   for(const preset of presets){const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=selectedTools.has(preset.id);label.append(input,document.createTextNode(' '+preset.name+' '+preset.version+' — '+preset.description));tools.append(label)}
    const old=provider.value;provider.replaceChildren();for(const p of ps)option(provider,p.provider+' / '+p.name,JSON.stringify([p.provider,p.name]));if([...provider.options].some(o=>o.value===old))provider.value=old;
    const previous=Object.fromEntries([...profiles.querySelectorAll('select')].map(s=>[s.name,s.value]));profiles.replaceChildren();
    for(const app of ['claude','codex','github']){const s=field(profiles,app+' login','select',app);option(s,'None','');for(const p of logins.filter(p=>p.application===app))option(s,p.name,p.name);if([...s.options].some(o=>o.value===previous[app]))s.value=previous[app]}
@@ -76,6 +79,7 @@
   try{const [p,name]=JSON.parse(provider.value),body={provider:p,providerCredential:name,agent:agent.value,prompt:prompt.value,loginProfiles:[...profiles.querySelectorAll('select')].filter(s=>s.value).map(s=>({application:s.name,name:s.value}))};
    if(agent.value!=='shell'){if(modelMode.value==='custom')body.model=model.value.trim();const argv=args.value.split('\n').filter(a=>a!=='');if(argv.length)body.args=argv;}
    if(agent.value!=='shell'&&images.length)body.images=images.map(({id,number})=>({id,number}));
+   const selectedTools=[...tools.querySelectorAll('input:checked')].map(i=>i.value);if(selectedTools.length)body.tools=selectedTools;
    const encoded=JSON.stringify(body);let intent;try{intent=JSON.parse(sessionStorage.getItem('vmbox.run-once.intent'))}catch{}
    if(intent?.body!==encoded)intent={body:encoded,key:crypto.randomUUID()};sessionStorage.setItem('vmbox.run-once.intent',JSON.stringify(intent));
    const run=await api('/v1/run-once','POST',body,{'Idempotency-Key':intent.key});selected=run.id;await inspect(selected);

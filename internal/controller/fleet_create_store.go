@@ -26,6 +26,9 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	request.Normalize()
 	var creation logicalBoxCreation
 	creation.AccountID, creation.UserID, creation.Request = p.AccountID, p.UserID, request
+	if err := v1.ValidateTools(request.Tools); err != nil {
+		return creation, err
+	}
 	if err := provider.ValidateName(request.Name); err != nil {
 		return creation, err
 	}
@@ -87,7 +90,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.AllocateWhenReady, "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.AllocateWhenReady, "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools})
 	if err != nil {
 		return creation, err
 	}
@@ -209,15 +212,16 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 			return nil, err
 		}
 		var raw []byte
-		if err := s.DB.QueryRowContext(ctx, `SELECT COALESCE(metadata->'loginProfiles','[]'::jsonb) FROM logical_boxes WHERE account_id=$1 AND id=$2`, value.accountID, value.id).Scan(&raw); err != nil {
+		if err := s.DB.QueryRowContext(ctx, `SELECT metadata FROM logical_boxes WHERE account_id=$1 AND id=$2`, value.accountID, value.id).Scan(&raw); err != nil {
 			return nil, err
 		}
-		var profiles []v1.LoginProfileRef
-		if err := json.Unmarshal(raw, &profiles); err != nil {
+		var stored v1.CreateLogicalBoxRequest
+		if err := json.Unmarshal(raw, &stored); err != nil {
 			return nil, err
 		}
 		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: value.allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
-		result[len(result)-1].Request.LoginProfiles = profiles
+		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
+		result[len(result)-1].Request.Tools = stored.Tools
 	}
 	return result, nil
 }

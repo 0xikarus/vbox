@@ -17,6 +17,14 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	request.Normalize()
+	if err := v1.ValidateTools(request.Tools); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	if (request.VolumeID != "" || request.VolumeName != "") && len(request.Tools) > 0 {
+		writeError(w, 400, fmt.Errorf("install tools after importing and resuming a volume; import does not initialize it"))
+		return
+	}
 	if request.VolumeID != "" || request.VolumeName != "" {
 		if len(request.LoginProfiles) > 0 {
 			writeError(w, 400, fmt.Errorf("saved profiles may only be provisioned when creating a new workspace"))

@@ -33,6 +33,9 @@ func processArgv(agent, prompt string) ([]string, error) {
 }
 
 func processTaskArgv(task v1.ProcessTask) ([]string, error) {
+	if err := v1.ValidateTools(task.Tools); err != nil {
+		return nil, err
+	}
 	if err := v1.ValidateProcessOptions(task.Agent, task.Model, task.Args); err != nil {
 		return nil, err
 	}
@@ -190,7 +193,12 @@ func RunProcess(root, id string) error {
 	cmd.Dir = filepath.Join(filepath.Dir(root), "workspace")
 	cmd.Stdout = w
 	cmd.Stderr = w
-	err = cmd.Run()
+	setupErr := InstallTools(context.Background(), filepath.Join(filepath.Dir(root), "home"), task.Tools, w)
+	if setupErr == nil {
+		err = cmd.Run()
+	} else {
+		err = setupErr
+	}
 	task.State = "exited"
 	if cmd.ProcessState != nil {
 		status := cmd.ProcessState.Sys().(syscall.WaitStatus)
@@ -203,6 +211,9 @@ func RunProcess(root, id string) error {
 	} else {
 		task.State = "launch_failed"
 		_, _ = w.Write([]byte("process could not start: " + err.Error() + "\n"))
+		if setupErr != nil {
+			task.State = "setup_failed"
+		}
 	}
 	if err = f.Sync(); err != nil {
 		f.Close()

@@ -7,6 +7,7 @@ import (
 )
 
 type CreateBoxTaskRequest struct {
+	Tools   []string `json:"tools,omitempty"`
 	Agent   string   `json:"agent"`
 	Prompt  string   `json:"prompt"`
 	Model   string   `json:"model,omitempty"`

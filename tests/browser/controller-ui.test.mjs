@@ -23,6 +23,7 @@ before(async()=>{
   if(path==='/v1/browser-session' && ['POST','DELETE'].includes(req.method)){res.statusCode=204;return res.end()}
   const values={
    '/v1/run-once':[],
+   '/v1/tool-presets':[{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'}],
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
    '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude'}],
    '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running'},
@@ -91,6 +92,7 @@ test('agent form preserves literal options and numbered image references',async(
  await page.waitForSelector('#run-once select[name=claude] option[value=personal]');
  await page.select('#run-once select[name=agent]','claude');await page.select('#run-once select[name=claude]','personal');
  await page.select('#run-once select[name=model-mode]','custom');await page.type('#run-once input[name=model]','custom-model');
+ await page.click('#run-once input[type=checkbox][value=foundry]');
  await page.click('#run-once details summary');await page.type('#run-once textarea[name=args]','--option\nliteral value; $(false)');
  await page.type('#run-once textarea[name=prompt]','Inspect [Image 1]');
  await page.evaluate(()=>{const input=document.querySelector('#run-once input[type=file]'),data=new DataTransfer();data.items.add(new File(['fixture'],'example.png',{type:'image/png'}));input.files=data.files;input.dispatchEvent(new Event('change'));});
@@ -98,6 +100,7 @@ test('agent form preserves literal options and numbered image references',async(
  await page.evaluate(()=>[...document.querySelectorAll('#run-once form button')].find(b=>b.textContent==='Run once').click());
  await page.waitForFunction(()=>window.submittedRun);
  const body=await page.evaluate(()=>window.submittedRun);assert.equal(body.model,'custom-model');assert.deepEqual(body.args,['--option','literal value; $(false)']);assert.deepEqual(body.images,[{id:'image-1',number:1}]);assert.equal(body.prompt,'Inspect [Image 1]');
+ assert.deepEqual(body.tools,['foundry']);
  assert.deepEqual(errors,[]);await page.close();
 });
 test('completed one-shot opens retained output without allocation or a new shell',async()=>{
@@ -168,8 +171,10 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles/s);
  await page.select('#profile-choices select[name=claude]','personal');
  await page.type('#create input[name=name]','profile-box');
+ await page.click('#create-tools input[value=foundry]');
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'}]);
+ assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['foundry']);
  await page.waitForNetworkIdle();
  assert.equal(await page.$('#profile-upload'),null);
  const beforeDelete=requests.filter(r=>r.method==='DELETE').length;

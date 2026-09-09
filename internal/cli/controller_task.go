@@ -22,6 +22,7 @@ type controllerTaskOptions struct {
 	jsonOutput                  bool
 	model                       string
 	args                        []string
+	tools                       []string
 }
 
 func (a *App) controllerTask(ctx context.Context, c config.Context, token string, args []string) error {
@@ -69,7 +70,10 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 	if err := v1.ValidateProcessOptions(opts.agent, opts.model, opts.args); err != nil {
 		return err
 	}
-	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt, Model: opts.model, Args: opts.args}
+	if err := v1.ValidateTools(opts.tools); err != nil {
+		return err
+	}
+	request := v1.CreateBoxTaskRequest{Agent: opts.agent, Session: opts.session, Prompt: opts.prompt, Model: opts.model, Args: opts.args, Tools: opts.tools}
 	var task v1.ProcessTask
 	if opts.idempotency == "" {
 		opts.idempotency = "cli-task:" + opts.box + ":" + strconv.FormatInt(time.Now().UnixNano(), 36)
@@ -115,7 +119,8 @@ func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token st
 	prompt := &formField{Label: "Task / command", Value: opts.prompt}
 	model := &formField{Label: "Model (optional)", Value: opts.model, When: func() bool { return agent.Value != "shell" }}
 	var output bytes.Buffer
-	err := a.runFormButton(ctx, "One-shot task · goal, expected result, verification", "Run once", []*formField{box, agent, prompt, model}, func(progress func(string)) error {
+	tools := toolFields(opts.tools)
+	err := a.runFormButton(ctx, "One-shot task · goal, expected result, verification", "Run once", append([]*formField{box, agent, prompt, model}, tools...), func(progress func(string)) error {
 		if strings.TrimSpace(prompt.Value) == "" {
 			return fmt.Errorf("enter task instructions or a shell command")
 		}
@@ -125,6 +130,9 @@ func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token st
 		}
 		for _, arg := range opts.args {
 			args = append(args, "--arg", arg)
+		}
+		for _, tool := range selectedTools(tools) {
+			args = append(args, "--tool", tool)
 		}
 		if opts.session != "" {
 			args = append(args, "--session", opts.session)
@@ -225,6 +233,10 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 			opts.prompt, err = next()
 		case "--model":
 			opts.model, err = next()
+		case "--tool":
+			var value string
+			value, err = next()
+			opts.tools = append(opts.tools, value)
 		case "--arg":
 			var value string
 			value, err = next()

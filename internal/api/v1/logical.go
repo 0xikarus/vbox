@@ -7,6 +7,7 @@ import "strings"
 // explicitly imports an existing detached volume; ordinary creation leaves
 // both empty and lets the controller create and detach the volume safely.
 type CreateLogicalBoxRequest struct {
+	Tools                []string          `json:"tools,omitempty"`
 	LoginProfiles        []LoginProfileRef `json:"loginProfiles,omitempty"`
 	Name                 string            `json:"name"`
 	Provider             string            `json:"provider"`

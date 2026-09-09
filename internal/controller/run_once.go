@@ -15,6 +15,7 @@ import (
 )
 
 type runOnceRequest struct {
+	Tools              []string             `json:"tools,omitempty"`
 	Images             []runOnceImageRef    `json:"images,omitempty"`
 	Agent              string               `json:"agent"`
 	Prompt             string               `json:"prompt"`
@@ -54,6 +55,9 @@ func (s *Server) boxRunOnce(w http.ResponseWriter, r *http.Request, p Principal)
 }
 
 func (s *Server) validateRunOnce(ctx context.Context, p Principal, req runOnceRequest) error {
+	if err := v1.ValidateTools(req.Tools); err != nil {
+		return err
+	}
 	if _, err := s.runOnceImagePrompt(ctx, p.AccountID, req, false); err != nil {
 		return err
 	}
@@ -243,7 +247,7 @@ func (s *Server) reconcileRunOnce(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	task := v1.ProcessTask{ID: id, LogicalBoxID: boxID, BoxName: name, Agent: req.Agent, Prompt: prompt, Model: req.Model, Args: req.Args, Session: "task-" + id, State: "queued", CreatedAt: time.Now().UTC()}
+	task := v1.ProcessTask{ID: id, LogicalBoxID: boxID, BoxName: name, Agent: req.Agent, Prompt: prompt, Model: req.Model, Args: req.Args, Tools: req.Tools, Session: "task-" + id, State: "queued", CreatedAt: time.Now().UTC()}
 	result, _ := json.Marshal(task)
 	if _, err = tx.ExecContext(ctx, `INSERT INTO process_tasks(id,account_id,logical_box_id,user_id,requested_role,idempotency_key,state,result) VALUES($1,$2,$3,$4,'owner',$5,'queued',$6) ON CONFLICT(id) DO NOTHING`, id, account, boxID, user, "run-once:"+id, result); err != nil {
 		return err

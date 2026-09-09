@@ -103,9 +103,12 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 		help := "↑/↓ Tab: move · ←/→: choose · Enter: edit/" + strings.ToLower(submitLabel)
 		header := ""
 		for _, f := range rows {
+			if f.Checkbox {
+				help = "↑/↓ Tab: move · Space: toggle tools · Enter: edit/" + strings.ToLower(submitLabel)
+			}
 			if f.TableHeader != "" {
 				header = f.TableHeader
-				help = "↑/↓ Tab: move · Space/Enter: toggle profile · Enter: action/edit"
+				help = "↑/↓ Tab: move · Space/Enter: toggle · Enter: action/edit"
 				break
 			}
 		}
