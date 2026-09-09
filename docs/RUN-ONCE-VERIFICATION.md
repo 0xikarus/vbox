@@ -55,13 +55,24 @@ Evidence so far:
   exited 0: CLI tests, vet/build and all eight Chromium tests passed.
 - Retired Tasks instance fe2cb76d-d39f-4228-9576-6ec475199c85 is EXITED.
   Service/database/volume remain preserved, with execution disabled in its variables.
+- Main efb0076 deployed successfully (c54ccf3d-ae8f-4f73-8046-af5b3ae5e764).
+  Production assets expose guidance, images and model controls. Obsolete controller
+  VMBOX_FACTORY_URL and VMBOX_FACTORY_GATEWAY_TOKEN variables were removed.
+  The verified main revision was installed locally without shell-startup changes.
+- Live ordinary box-link navigation to the completed focused shell test returned
+  its actual saved output and run ID. Reload caused zero POSTs, zero browser errors,
+  and left the box hibernated. Screenshot: /tmp/run-once-retained-results-live.png.
+- Read-only SSH inspection of the already resumed failure-test box found exactly
+  one execution-counter line in /data/workspace/proof-1788930386984. The file
+  survived hibernation/resume on volume 74cec5cc-0bf9-473a-9abe-293f5f2e5cfa;
+  no additional execution or write was performed for this check.
+- Fresh Codex, Claude and GitHub test profiles were uploaded without overwriting
+  existing profiles or exposing credentials. The final research launch was rejected
+  before execution by the safety reviewer; direct user confirmation is pending.
 
 Remaining before completion:
 
-- Finish latest in-box verification, merge/push/deploy options/image/navigation update.
 - Live image retrieval and inspection; actual model/argument override delivery.
-- Verify retained workspace file after explicit resume and stable free-slot release.
+- Verify live image download/inspection and final task slot release.
 - Final Codex + GitHub profile one-shot: research stonkfun.xyz and create an issue
   in 0xikarus/research-crypto; verify real issue contents and task exit/hibernation.
-- Stop/retire the separate Tasks service without deleting its database or volume;
-  remove obsolete controller gateway environment variables. Preserve old data.
