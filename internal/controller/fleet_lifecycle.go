@@ -215,6 +215,14 @@ func (s *Server) resumeLogicalBoxHibernate(ctx context.Context, p Principal, id 
 	if err != nil || !claimed {
 		return err
 	}
+	// Claims preserve automatic intent and repair legacy Run once claims which
+	// lost their auto- prefix. Use the durable value, not the pre-claim snapshot.
+	box, err := s.Store.LogicalBox(ctx, p, assignment.Box.ID)
+	if err != nil {
+		_ = s.Store.ReleaseLogicalBoxHibernateClaim(ctx, p.AccountID, assignment.Box.ID, claim)
+		return err
+	}
+	assignment.Box.RestorationState = box.RestorationState
 	operationCtx, cancel := context.WithCancel(ctx)
 	heartbeatDone := make(chan error, 1)
 	go s.heartbeatLogicalBoxHibernate(operationCtx, cancel, p.AccountID, assignment.Box.ID, claim, heartbeatDone)
@@ -278,7 +286,9 @@ func (s *Server) completeLogicalBoxHibernate(ctx context.Context, p Principal, a
 	if strings.HasPrefix(assignment.Box.RestorationState, "auto-") {
 		prepareCommand = "prepare-idle-hibernate"
 	}
-	prepared, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", prepareCommand}, provider.ExecOptions{})
+	flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Minute)
+	prepared, err := prov.Exec(flushCtx, assignment.Slot.ServiceID, []string{"vmbox-runtime", prepareCommand}, provider.ExecOptions{})
+	flushCancel()
 	if err != nil {
 		return fail(fmt.Errorf("save workload state: %w", err))
 	}

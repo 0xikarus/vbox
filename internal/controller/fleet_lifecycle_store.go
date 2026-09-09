@@ -354,7 +354,7 @@ func (s *Store) PendingLogicalBoxHibernates(ctx context.Context) ([]pendingLogic
 
 func (s *Store) ClaimLogicalBoxHibernate(ctx context.Context, accountID, boxID string) (string, bool, error) {
 	token := "hibernate_" + strings.ReplaceAll(uuid(), "-", "")
-	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET lease_owner=$3,lease_expires_at=now()+interval '45 seconds',restoration_state='saving-workspace',failure_reason=NULL,updated_at=now()
+	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET lease_owner=$3,lease_expires_at=now()+interval '45 seconds',restoration_state=CASE WHEN restoration_state LIKE 'auto-%' OR EXISTS (SELECT 1 FROM run_once_requests q JOIN process_tasks t ON t.id=q.id AND t.account_id=q.account_id WHERE q.account_id=$1 AND q.box_id=logical_boxes.id AND t.auto_checked) THEN 'auto-saving-workspace' ELSE 'saving-workspace' END,failure_reason=NULL,updated_at=now()
 		WHERE account_id=$1 AND id=$2 AND state='hibernating' AND (lease_owner IS NULL OR lease_expires_at IS NULL OR lease_expires_at < now())`, accountID, boxID, token)
 	if err != nil {
 		return "", false, err

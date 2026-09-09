@@ -24,6 +24,10 @@ func stageWorkspaceRuntime(ctx context.Context, prov provider.Provider, serviceI
 	if len(runtime) == 0 {
 		return nil
 	}
+	// A live SSH connection can stop making command progress without tripping
+	// keepalives. Never let an install hold a hibernate claim indefinitely.
+	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
 	digest := fmt.Sprintf("%x", sha256.Sum256(runtime))
 	uploaded, err := prov.Exec(ctx, serviceID, []string{"/usr/local/bin/vmbox-runtime", "put-file", stagedRuntimePath, "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(runtime)})
 	if err != nil {

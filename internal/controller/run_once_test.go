@@ -187,4 +187,32 @@ func TestRunOncePostgresQueueRecoveryAndCancellation(t *testing.T) {
 	if w.Code != 404 {
 		t.Fatal("cross-account run disclosure")
 	}
+	// A legacy claim lost its auto- prefix. Recovery must not escalate an
+	// automatic one-shot release into destructive explicit hibernation.
+	if _, err = store.DB.ExecContext(ctx, `UPDATE process_tasks SET auto_checked=true WHERE id=$1`, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernating',restoration_state='saving-workspace' WHERE id=$1`, box.ID); err != nil {
+		t.Fatal(err)
+	}
+	claim, claimed, err := store.ClaimLogicalBoxHibernate(ctx, p.AccountID, box.ID)
+	if err != nil || !claimed {
+		t.Fatalf("claim: %v", err)
+	}
+	if err = store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, box.ID, claim, "detaching-volume"); err != nil {
+		t.Fatal(err)
+	}
+	var phase string
+	if err = store.DB.QueryRowContext(ctx, `SELECT restoration_state FROM logical_boxes WHERE id=$1`, box.ID).Scan(&phase); err != nil || phase != "auto-detaching-volume" {
+		t.Fatalf("automatic intent lost: %s %v", phase, err)
+	}
+	if err = store.ReleaseLogicalBoxHibernateClaim(ctx, p.AccountID, box.ID, claim); err != nil {
+		t.Fatal(err)
+	}
+	if _, claimed, err = store.ClaimLogicalBoxHibernate(ctx, p.AccountID, box.ID); err != nil || !claimed {
+		t.Fatalf("retry: %v", err)
+	}
+	if err = store.DB.QueryRowContext(ctx, `SELECT restoration_state FROM logical_boxes WHERE id=$1`, box.ID).Scan(&phase); err != nil || phase != "auto-saving-workspace" {
+		t.Fatalf("retry lost automatic intent: %s %v", phase, err)
+	}
 }

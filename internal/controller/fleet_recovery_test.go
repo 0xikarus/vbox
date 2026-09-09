@@ -27,6 +27,37 @@ type recordingProvider struct {
 	startErr   error
 }
 
+type runtimeDeadlineProvider struct {
+	recordingProvider
+	blockInstall bool
+	sawDeadline  bool
+}
+
+func (p *runtimeDeadlineProvider) Exec(ctx context.Context, id string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok || time.Until(deadline) > 91*time.Second {
+		return provider.ExecResult{}, fmt.Errorf("runtime operation has no bounded deadline")
+	}
+	p.sawDeadline = true
+	if p.blockInstall && opts.Stdin == nil {
+		<-ctx.Done()
+		return provider.ExecResult{}, ctx.Err()
+	}
+	return p.recordingProvider.Exec(ctx, id, argv, opts)
+}
+func TestWorkspaceRuntimeInstallationIsBounded(t *testing.T) {
+	p := &runtimeDeadlineProvider{}
+	if err := stageWorkspaceRuntime(context.Background(), p, "service", []byte("runtime")); err != nil || !p.sawDeadline {
+		t.Fatalf("deadline: %v", err)
+	}
+	p.blockInstall = true
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := stageWorkspaceRuntime(ctx, p, "service", []byte("runtime")); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("stalled install: %v", err)
+	}
+}
+
 func (p *recordingProvider) Inspect(context.Context, string) (provider.Box, error) {
 	p.operations = append(p.operations, "inspect")
 	if p.inspectErr != nil {
