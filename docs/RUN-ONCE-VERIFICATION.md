@@ -27,8 +27,9 @@ Evidence so far:
 - Corrected in-box job ae0229b9-578d-4ee8-88ed-38c500000000 on 50fb8a3
   exited 0: controller PostgreSQL/race (8.400s), real runtime/tmux race (4.636s),
   full Go tests, vet/build, and all seven Chromium tests passed.
-- Added explicit New run control for intentional repetition of identical input;
-  its additional browser assertion still needs verification.
+- Added explicit New run control for intentional repetition of identical input.
+  In-box browser-only job 9022ac87-4799-49e1-8e11-77f400000000 on 8eaa1e7
+  exited 0; all seven tests, including the fresh-key assertion, passed.
 
 Remaining before completion:
 
