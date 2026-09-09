@@ -18,8 +18,12 @@ Evidence so far:
 
 - Go test ./... and go vet ./... passed after initial removal/implementation in
   a Go 1.26 container. PostgreSQL/real tmux checks require their test environment.
-- New PostgreSQL queue/recovery tests and in-box test script added; not yet run.
-- Not committed/deployed at this checkpoint. Production still runs the old UI.
+- Committed/pushed feature checkpoint c98fb12; production still runs the old UI.
+- In-box job ec7903c9-431e-46a8-8445-e1cb00000000: controller PostgreSQL/race
+  tests passed (10.650s). Runtime TestIdleHibernateRealTmux failed during sync
+  after its 10-second context expired, immediately after installing packages.
+  The test script now flushes package writes first and runs package race checks
+  sequentially. Remaining tests and the rerun are pending.
 
 Remaining before completion:
 
