@@ -43,6 +43,14 @@ function hasBlender(box){
  return Array.isArray(tools)&&tools.some(tool=>[typeof tool==='string'?tool:tool?.id,tool?.name,tool?.label].some(label=>typeof label==='string'&&label.trim().toLowerCase()==='blender'));
 }
 function desktopCurrent(version){return version===epoch&&!runID&&!$('#workspace').hidden&&!$('#desktop').hidden}
+async function startAndAttachDesktop(version){
+ $('#desktop-status').textContent='Starting desktop…';
+ // Runtime start is idempotent and reuses an already active desktop session.
+ await api(bp+'/desktop','POST',{});if(!desktopCurrent(version))return;
+ closeDesktop();desktopAttached=true;
+ const dispose=openWorkspaceDesktop(boxID,message=>{if(desktopCurrent(version))$('#desktop-status').textContent=message});
+ closeDesktop=()=>{desktopAttached=false;dispose()};
+}
 async function requestDesktop({enable=false,automatic=false}={}){
  if(desktopBusy)return;
  const version=epoch;desktopBusy=true;
@@ -50,20 +58,18 @@ async function requestDesktop({enable=false,automatic=false}={}){
  try{
   if(automatic){
    $('#desktop-status').textContent='Blender box detected, auto-opening desktop…';
-   const status=await api(bp+'/desktop');if(!desktopCurrent(version))return;
-   enable=!status.enabled;
+   try{const status=await api(bp+'/desktop');if(!desktopCurrent(version))return;enable=!status.enabled}
+   catch{
+    // Workers from before desktop-status can still start an already installed desktop.
+    try{await startAndAttachDesktop(version);return}catch{if(!desktopCurrent(version))return;enable=true}
+   }
   }
   if(enable){
    $('#desktop-status').textContent='Installing desktop packages (up to 3 minutes)…';
    await api(bp+'/desktop/enable','POST',{}, {},190000);if(!desktopCurrent(version))return;
    if(!automatic){$('#desktop-status').textContent='Desktop packages ready. Choose Start / reconnect desktop.';return}
   }
-  $('#desktop-status').textContent='Starting desktop…';
-  // Runtime start is idempotent and reuses an already active desktop session.
-  await api(bp+'/desktop','POST',{});if(!desktopCurrent(version))return;
-  closeDesktop();desktopAttached=true;
-  const dispose=openWorkspaceDesktop(boxID,message=>{if(desktopCurrent(version))$('#desktop-status').textContent=message});
-  closeDesktop=()=>{desktopAttached=false;dispose()};
+  await startAndAttachDesktop(version);
  }catch(e){
   if(desktopCurrent(version))$('#desktop-status').textContent=automatic?'Automatic desktop launch failed. Use the terminal or manual desktop controls. '+e.message:e.message;
  }finally{desktopBusy=false;$('#enable-desktop').disabled=false;$('#start-desktop').disabled=false}

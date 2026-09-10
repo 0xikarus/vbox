@@ -49,7 +49,11 @@ test('workspace desktop automation and manual fallback',async t=>{
    p.on('dialog',d=>d.accept());await p.click('#enable-desktop');await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('packages ready'));
    await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);await p.close();
   });
-  for(const failure of ['GET '+desktop,'POST '+desktop+'/enable','POST '+desktop])await t.test('failure falls back without loops: '+failure,async()=>{
+  await t.test('legacy worker without desktop status attaches through idempotent start',async()=>{
+   tools=['blender'];enabled=true;fail='GET '+desktop;const p=await page();await p.waitForFunction(()=>window.attaches===1);
+   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);await p.close();fail='';
+  });
+  for(const failure of ['POST '+desktop+'/enable','POST '+desktop])await t.test('failure falls back without loops: '+failure,async()=>{
    tools=['blender'];enabled=false;fail=failure;const p=await page();await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('Automatic desktop launch failed'));
    const count=requests.filter(r=>r.includes('/desktop')).length;await p.click('#connect');await p.waitForFunction(()=>window.terminals===2);
    assert.equal(requests.filter(r=>r.includes('/desktop')).length,count);assert.equal(await p.evaluate(()=>window.attaches),0);
