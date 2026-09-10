@@ -44,12 +44,25 @@ func installDesktopPackages(ctx context.Context, progress io.Writer, blender boo
 	if _, err := exec.LookPath("apt-get"); err != nil {
 		return fmt.Errorf("desktop enablement requires a Debian-compatible worker image")
 	}
-	for _, args := range [][]string{{"update"}, append([]string{"install", "-y", "--no-install-recommends"}, packages...)} {
+	run := func(args ...string) error {
 		cmd := exec.CommandContext(ctx, "sudo", append([]string{"-n", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", "DPkg::Lock::Timeout=30"}, args...)...)
 		cmd.Stdout, cmd.Stderr = progress, progress
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("desktop package installation failed; inspect worker package manager diagnostics")
+		return cmd.Run()
+	}
+	if err := run("update"); err != nil {
+		return fmt.Errorf("desktop package index update failed: %w", err)
+	}
+	// A timed-out or interrupted installation can leave dependencies unpacked.
+	// Repair only when apt reports a broken dependency graph, never by removing
+	// existing packages. The caller's deadline also bounds repair.
+	if err := run("check"); err != nil {
+		fmt.Fprintln(progress, "Repairing interrupted package dependencies (package removal forbidden)…")
+		if err := run("--fix-broken", "--no-remove", "install", "-y", "--no-install-recommends"); err != nil {
+			return fmt.Errorf("desktop dependency repair failed: %w; inspect worker package manager diagnostics", err)
 		}
+	}
+	if err := run(append([]string{"install", "--no-remove", "-y", "--no-install-recommends"}, packages...)...); err != nil {
+		return fmt.Errorf("desktop package installation failed: %w; inspect worker package manager diagnostics", err)
 	}
 	return nil
 }

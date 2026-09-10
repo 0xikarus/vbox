@@ -38,6 +38,16 @@ func TestBlenderInstallsDesktopAndRestoresWithoutCustomScript(t *testing.T) {
 			t.Fatalf("initial install and restore must include %s: %s", pkg, data)
 		}
 	}
+	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"$PACKAGE_LOG\"\ncase \"$*\" in *' check') exit 100;; esac\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := RestoreToolSetup(context.Background(), home, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	data, _ = os.ReadFile(log)
+	if !strings.Contains(string(data), "--fix-broken --no-remove install") {
+		t.Fatal("broken package dependencies were not repaired with removals forbidden")
+	}
 	if err := os.WriteFile(filepath.Join(bin, "sudo"), []byte("#!/bin/sh\nexit 17\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
