@@ -26,8 +26,8 @@ test('workspace clipboard controls move text through TMUX and Desktop',async()=>
     get cols(){return 80}get rows(){return 24}
    };
    window.NoVNC={default:class extends EventTarget{
-    constructor(){super();window.fakeRFB=this}
-    clipboardPasteFrom(value){this.pasted=value}focus(){}disconnect(){}sendKey(){}sendCtrlAltDel(){}
+    constructor(){super();this.keys=[];window.fakeRFB=this}
+    clipboardPasteFrom(value){this.pasted=value}focus(){}disconnect(){}sendKey(...args){this.keys.push(args)}sendCtrlAltDel(){}
    }};
   });
   await page.addScriptTag({content:terminalScript});
@@ -48,6 +48,21 @@ test('workspace clipboard controls move text through TMUX and Desktop',async()=>
   await page.evaluate(()=>{window.clipboardText='to desktop'});
   await page.click('#desktop-controls button:nth-child(2)');
   assert.deepEqual(await page.evaluate(()=>({writes:clipboardWrites,pasted:fakeRFB.pasted})),{writes:['from terminal','from desktop'],pasted:'to desktop'});
+  const click=label=>page.$$eval('#desktop-controls button',(buttons,label)=>buttons.find(b=>b.textContent===label).click(),label);
+  await click('Windows');await click('Next');await click('Previous');await click('Select window');
+  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys),[
+   [0xffe9,'AltLeft',true],[0xff09,'Tab'],[0xff09,'Tab'],
+   [0xffe1,'ShiftLeft',true],[0xff09,'Tab'],[0xffe1,'ShiftLeft',false],[0xffe9,'AltLeft',false]
+  ]);
+  assert.equal(await page.$eval('[aria-label="Switch desktop window"]',e=>e.hidden),true);
+  await page.evaluate(()=>{fakeRFB.keys=[]});await click('Windows');await click('Cancel');
+  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.slice(-2)),[[0xff1b,'Escape'],[0xffe9,'AltLeft',false]]);
+  await click('Windows');await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
+  assert.equal(await page.$eval('[aria-label="Switch desktop window"]',e=>e.hidden),true);
+  await click('Windows');await page.evaluate(()=>document.querySelector('#desktop-screen').dispatchEvent(new Event('pointerdown')));
+  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.at(-1)),[0xffe9,'AltLeft',false]);
+  await click('Windows');await page.evaluate(()=>closeDesk());
+  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.slice(-2)),[[0xff1b,'Escape'],[0xffe9,'AltLeft',false]]);
   assert.deepEqual(errors,[]);
  }finally{await browser.close()}
 });
