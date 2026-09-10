@@ -83,3 +83,52 @@ func TestUsageReportsProjectTokenBillingScopeWithoutFailing(t *testing.T) {
 		t.Fatalf("usage = %+v", usage)
 	}
 }
+
+func TestConfigureServiceBatchesSettings(t *testing.T) {
+	for _, region := range []string{"", "ams"} {
+		t.Run("region="+region, func(t *testing.T) {
+			runner := &procexec.FakeRunner{}
+			p := New(Config{EnvironmentID: "environment"}, runner)
+			if err := p.configureService(context.Background(), "service", "example/image:tag", region, "sleep infinity"); err != nil {
+				t.Fatal(err)
+			}
+			if len(runner.Calls) != 1 {
+				t.Fatalf("got %d calls, want one", len(runner.Calls))
+			}
+			var variables struct {
+				ServiceID     string `json:"serviceId"`
+				EnvironmentID string `json:"environmentId"`
+				Input         struct {
+					Source struct {
+						Image string `json:"image"`
+					} `json:"source"`
+					StartCommand string                     `json:"startCommand"`
+					Regions      map[string]json.RawMessage `json:"multiRegionConfig"`
+				} `json:"input"`
+			}
+			if err := json.Unmarshal([]byte(runner.Calls[0].Argv[4]), &variables); err != nil {
+				t.Fatal(err)
+			}
+			if variables.ServiceID != "service" || variables.EnvironmentID != "environment" || variables.Input.Source.Image != "example/image:tag" || variables.Input.StartCommand != "sleep infinity" {
+				t.Fatalf("unexpected settings: %+v", variables)
+			}
+			if region == "" && variables.Input.Regions != nil {
+				t.Fatal("empty region must preserve provider placement")
+			}
+			if region != "" && (string(variables.Input.Regions[region]) != `{"numReplicas":1}` || string(variables.Input.Regions["pdx"]) != "null") {
+				t.Fatalf("unexpected placement: %v", variables.Input.Regions)
+			}
+		})
+	}
+}
+
+func TestConfigureServiceDoesNotRetryFailedMutation(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{ExitCode: 1}}}
+	p := New(Config{EnvironmentID: "environment"}, runner)
+	if err := p.configureService(context.Background(), "service", "image", "ams", "sleep infinity"); err == nil {
+		t.Fatal("expected failure")
+	}
+	if len(runner.Calls) != 1 {
+		t.Fatal("unexpected mutation retry")
+	}
+}

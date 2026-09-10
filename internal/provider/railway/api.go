@@ -81,28 +81,36 @@ func (p *Provider) connectImage(ctx context.Context, serviceID, image string) er
 	return nil
 }
 
-func (p *Provider) setRegion(ctx context.Context, serviceID, region string) error {
-	if region == "" {
-		return nil
-	}
+func regionConfig(region string) map[string]any {
 	regions := map[string]any{"pdx": nil, "ams": nil, "sfo": nil, "iad": nil, "sin": nil}
 	for _, id := range []string{"us-west2", "us-east4-eqdc4a", "europe-west4-drams3a", "asia-southeast1-eqsg3a"} {
 		regions[id] = nil
 	}
 	regions[region] = map[string]any{"numReplicas": 1}
-	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID, "input": map[string]any{"multiRegionConfig": regions}}
-	result, err := p.api(ctx, serviceUpdateMutation, variables)
-	if err != nil || result.ExitCode != 0 {
-		return railwayError("set region", result, err)
-	}
-	return nil
+	return regions
 }
 
-func (p *Provider) setStartCommand(ctx context.Context, serviceID, command string) error {
-	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID, "input": map[string]any{"startCommand": command}}
+func (p *Provider) setRegion(ctx context.Context, serviceID, region string) error {
+	if region == "" {
+		return nil
+	}
+	return p.updateServiceSettings(ctx, serviceID, map[string]any{"multiRegionConfig": regionConfig(region)})
+}
+
+// Configure a new service in one mutation before submitting its deployment.
+func (p *Provider) configureService(ctx context.Context, serviceID, image, region, command string) error {
+	input := map[string]any{"source": map[string]any{"image": image}, "startCommand": command}
+	if region != "" {
+		input["multiRegionConfig"] = regionConfig(region)
+	}
+	return p.updateServiceSettings(ctx, serviceID, input)
+}
+
+func (p *Provider) updateServiceSettings(ctx context.Context, serviceID string, input map[string]any) error {
+	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID, "input": input}
 	result, err := p.api(ctx, serviceUpdateMutation, variables)
 	if err != nil || result.ExitCode != 0 {
-		return railwayError("set start command", result, err)
+		return railwayError("configure service", result, err)
 	}
 	return nil
 }

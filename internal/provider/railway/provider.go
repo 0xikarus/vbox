@@ -297,17 +297,10 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if image == "" {
 		image = p.cfg.DefaultImage
 	}
-	if err := p.connectImage(ctx, service.ID, image); err != nil {
-		return provider.Box{}, err
-	}
 	if err := p.setResources(ctx, service.ID, req.Resources); err != nil {
 		return provider.Box{}, err
 	}
-	if err := p.setRegion(ctx, service.ID, req.Region); err != nil {
-		return provider.Box{}, err
-	}
-	startCommand := railwayStartCommand(req.Detached)
-	if err := p.setStartCommand(ctx, service.ID, startCommand); err != nil {
+	if err := p.configureService(ctx, service.ID, image, req.Region, railwayStartCommand(req.Detached)); err != nil {
 		return provider.Box{}, err
 	}
 	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
@@ -1018,6 +1011,7 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 		}
 	}
 	visibilityDeadline.Stop()
+	poll := deploymentPoll{base: p.cfg.PollInterval}
 	deadline := time.NewTimer(p.cfg.ReadyTimeout)
 	defer deadline.Stop()
 	for {
@@ -1025,11 +1019,13 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 		if listErr != nil {
 			return listErr
 		}
+		status := "NOT_VISIBLE"
 		for _, item := range items {
 			if item.ID != id {
 				continue
 			}
-			switch strings.ToUpper(item.Status) {
+			status = strings.ToUpper(item.Status)
+			switch status {
 			case "SUCCESS", "READY":
 				return nil
 			case "FAILED", "CRASHED", "CANCELLED", "REMOVED", "SKIPPED":
@@ -1041,7 +1037,7 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 			return ctx.Err()
 		case <-deadline.C:
 			return fmt.Errorf("Railway deployment %s did not reach terminal readiness", id)
-		case <-time.After(p.cfg.PollInterval):
+		case <-time.After(poll.next(status)):
 		}
 	}
 }

@@ -502,7 +502,6 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		{Stdout: []byte(`{"volumes":[{"id":"volume-id","serviceName":"vmbox-box","mountPath":"/data","status":"READY"}]}`)},
 		{},
 		{},
-		{},
 		{Stdout: []byte(`[]`)},
 		{Stdout: []byte(`{"id":"deployment-new"}`)},
 		{Stdout: []byte(`[{"id":"deployment-new","status":"SUCCESS"},{"id":"deployment-other","status":"FAILED"}]`)},
@@ -790,5 +789,21 @@ func TestDeleteStorageRejectsUnrelatedNameForExactID(t *testing.T) {
 	}
 	if len(runner.Calls) != 1 {
 		t.Fatalf("mismatched volume reached deletion: %#v", runner.Calls)
+	}
+}
+
+func TestDeploymentPollingDeadlineInterruptsLongInterval(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`[]`)},
+		{Stdout: []byte(`{"id":"deployment-new"}`)},
+		{Stdout: []byte(`[{"id":"deployment-new","status":"BUILDING"}]`)},
+	}}
+	p := New(Config{PollInterval: time.Hour, ReadyTimeout: time.Millisecond}, runner)
+	err := p.submitAndWaitDeployment(context.Background(), "vmbox-disposable-test")
+	if err == nil || !strings.Contains(err.Error(), "did not reach terminal readiness") {
+		t.Fatalf("expected readiness deadline, got %v", err)
+	}
+	if len(runner.Calls) != 3 {
+		t.Fatalf("unexpected calls after timeout: %d", len(runner.Calls))
 	}
 }
