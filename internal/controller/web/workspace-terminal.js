@@ -11,7 +11,7 @@ window.openWorkspaceTerminal=function(boxID,session,onStatus,options={}){
  const observer=new ResizeObserver(()=>{if(!closed)fit.fit()});observer.observe(root);
  socket.onopen=()=>{if(closed)return;fit.fit();send({cols:terminal.cols,rows:terminal.rows});onStatus('Connected · '+session);if(options.autoFocus!==false)terminal.focus()};
  socket.onmessage=e=>{if(!closed&&e.data instanceof ArrayBuffer)terminal.write(new Uint8Array(e.data))};
- socket.onclose=e=>{if(!closed)onStatus('Disconnected · '+(e.reason||'use Reconnect')+'. Input is not replayed.')};
+ socket.onclose=e=>{if(!closed){onStatus('Disconnected · '+(e.reason||'use Reconnect')+'. Input is not replayed.');options.onDisconnect?.()}};
  socket.onerror=()=>{if(!closed)onStatus('Terminal connection failed. Check login and worker runtime, then reconnect.')};
  const keys=options.keys||document.querySelector('.terminal-keys');keys.replaceChildren();
  const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.onclick=async()=>{const value=terminal.getSelection();if(!value){onStatus('Select terminal text before copying.');terminal.focus();return}try{await navigator.clipboard.writeText(value);onStatus('Terminal selection copied.')}catch{onStatus('Clipboard copy was blocked by the browser. Use Ctrl/Cmd+C on the selection.')}};keys.append(copy);

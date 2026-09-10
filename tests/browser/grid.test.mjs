@@ -40,7 +40,7 @@ after(async()=>{await browser?.close();for(const c of children){try{process.kill
 async function pageReady(){const p=await browser.newPage();await p.evaluateOnNewDocument(()=>{let cls;window.testTerminals=[];Object.defineProperty(window,'Terminal',{configurable:true,get:()=>cls,set:value=>{cls=class extends value{constructor(...args){super(...args);window.testTerminals.push(this)}}}})});await p.setViewport({width:1500,height:1100});await p.goto(base+'/grid');await p.waitForSelector('.tile select option[value=box4]');return p;}
 test('four real tmux terminals, isolated input, layouts and viewer-only disconnect',async()=>{
  const p=await pageReady(),errors=[];p.on('pageerror',e=>errors.push(e.message));assert.equal(await p.$$('.tile').then(x=>x.length),4);
- for(let i=0;i<4;i++)await p.select(`.tile:nth-child(${i+1}) header label:first-child select`,'box'+(i+1));
+ assert.deepEqual(await p.$$eval('.tile header label:first-child select',xs=>xs.map(x=>x.value)),['box1','box2','box3','box4']);
  await p.waitForFunction(()=>[...document.querySelectorAll('.tile p')].every(n=>n.textContent.includes('Connected')));
  for(let i=1;i<=4;i++){
   const a=Math.floor(Math.random()*100000)+10000,answer=a+37,marker='GRID_'+i+'_'+answer;
@@ -56,14 +56,14 @@ test('four real tmux terminals, isolated input, layouts and viewer-only disconne
  const pid=tmux('display-message','-p','-t','box1','#{pane_pid}');
  await p.$eval('.tile:first-child header button',b=>b.click());await p.waitForFunction(()=>document.querySelector('.tile p').textContent.includes('Connected'));assert.equal(tmux('display-message','-p','-t','box1','#{pane_pid}'),pid);
  await p.screenshot({path:'/tmp/vmbox-grid-desktop.png',fullPage:true});
- await p.select('#layout select[name=columns]','3');await p.$eval('#layout',f=>f.requestSubmit());assert.equal(await p.$$('.tile').then(x=>x.length),6);
+ await p.select('#layout select[name=rows]','2');await p.select('#layout select[name=columns]','3');await p.$eval('#layout',f=>f.requestSubmit());assert.equal(await p.$$('.tile').then(x=>x.length),6);
  await p.select('#layout select[name=columns]','1');await p.select('#layout select[name=rows]','1');await p.$eval('#layout',f=>f.requestSubmit());assert.equal(await p.$$('.tile').then(x=>x.length),1);
  assert.equal(tmux('list-sessions','-F','#{session_name}').trim().split('\n').length,4);
  await p.$eval('.tile header button:last-child',b=>b.click());assert.equal(tmux('list-sessions','-F','#{session_name}').trim().split('\n').length,4);
  assert.equal(calls.filter(c=>c.method!=='GET').length,0);assert.deepEqual(errors,[]);await p.close();
 });
 test('delayed selection cannot attach stale box; sleeping boxes never resume; mobile stacks',async()=>{
- const p=await pageReady();delayFirst=true;const first=connections.length;
+ const p=await pageReady();await p.waitForFunction(()=>[...document.querySelectorAll('.tile p')].every(n=>n.textContent.includes('Connected')));await p.select('#layout select[name=columns]','1');await p.select('#layout select[name=rows]','1');await p.$eval('#layout',f=>f.requestSubmit());delayFirst=true;const first=connections.length;
  const selector='.tile:first-child header label:first-child select';await p.select(selector,'box1');await p.select(selector,'box2');
  await p.waitForFunction(()=>document.querySelector('.tile p').textContent.includes('Connected'));await new Promise(r=>setTimeout(r,600));
  assert.deepEqual(connections.slice(first),['box2']);

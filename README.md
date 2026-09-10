@@ -592,7 +592,7 @@ and install the third-party Blender MCP bridge and add-on.
 Opening an interactive box in the web workspace automatically starts and attaches
 its desktop; manual desktop controls remain available for recovery. Launch `blender`
 from its terminal and start a new Codex or Claude session to use the registered MCP
-tools. Run once and Grid retain their terminal views. Blender uses the worker
+tools. Run once retains its terminal view; Grid prefers enabled desktops. Blender uses the worker
 distribution's package version; Blender MCP is pinned to 1.9.1. The preset is
 restored after hibernation and adds download, disk and RAM usage. MCP telemetry is
 disabled, safe mode is enabled, and its Blender socket listens only on loopback.
@@ -617,16 +617,18 @@ its RPC port; start and forward it explicitly when needed.
 
 ## Grid view
 
-Open **Grid** in the controller to attach to several existing interactive boxes
-at once. The default is 2×2; choose 1–4 columns and 1–2 rows for other layouts.
-Select a running box in each tile. Its remembered primary tmux session is selected
-when available, or choose another existing interactive session. Click a terminal
-to type: input is never broadcast. Expand **Keys / fullscreen** for terminal controls.
+Open **Grid** to view all running interactive boxes automatically. The default
+uses two columns and enough rows for every box. Choose a fixed layout to limit
+visible tiles; unavailable boxes are replaced by the next available box. Inventory
+refreshes every 15 seconds, and failed connections have a 30-second retry cooldown.
 
-One-shot boxes and boxes with unfinished one-shot tasks are excluded. Grid never
-starts or resumes a box, or creates sessions. Resume separately with `vmbox BOX`,
-then refresh and reconnect. Clear, reducing the layout, logout, or closing the page
-only disconnects viewers; remote work keeps running. Mobile screens stack tiles.
+Each tile prefers an enabled desktop and offers a Desktop/TMUX selector. TMUX
+reuses the primary interactive session, or creates a persistent shell if none
+exists. Input and clipboard controls belong to the selected tile.
+
+One-shot boxes and boxes with unfinished one-shot tasks are excluded. Sleeping
+boxes stay asleep. Next box, reducing the layout, logout, and closing the page
+only disconnect viewers; remote work keeps running. Mobile screens stack tiles.
 
 ## Custom tooling
 

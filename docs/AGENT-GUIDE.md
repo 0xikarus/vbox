@@ -54,37 +54,17 @@ provider-neutral.
 
 ## Grid implementation and invariants
 
-Open `/grid` from the controller's **Grid** link. Layout defaults to 2 columns ×
-2 rows; controls support 1–4 columns and 1–2 rows. On desktop the tiles share the
-available viewport height. At 700px or narrower they stack and scroll vertically.
+Grid automatically fills tiles from the authorized interactive box inventory.
+The default layout grows to display all running boxes; fixed layouts fill their
+available tiles and replace lost boxes from the remaining inventory. Each tile
+prefers enabled Desktop and offers TMUX; a running box without an interactive
+session gets a persistent shell. Sleeping boxes are never allocated or resumed.
+Inventory refreshes every 15 seconds; failed connections cool down for 30 seconds.
 
-1. `GET /v1/grid-boxes` is owner-authorized. It starts from the account-scoped box
-   list, excludes all boxes recorded in `run_once_requests`, and excludes boxes
-   with unfinished `process_tasks`. It does not use name prefixes or the paginated
-   Run once history to decide box eligibility. No provisioning occurs here.
-2. Choosing a running box reads `/sessions` and `/sessions/primary`. It selects
-   the remembered primary when still live, otherwise an existing interactive
-   session. Incomplete inventories fail visibly. `task-*` sessions are not offered.
-3. Each tile calls `openWorkspaceTerminal(boxID, session, onStatus, options)`.
-   `options.root` and `options.keys` scope its DOM; `autoFocus:false` prevents a
-   later connection stealing focus from the user's active tile. The original
-   single-workspace caller retains its defaults.
-4. Every tile owns its xterm instance, WebSocket, resize observer and disposer.
-   Focus determines keyboard input; there is no broadcast handler. Resize frames
-   go to that tile's connection. Existing sessions may also have other attached
-   clients; normal tmux multi-client sizing behavior still applies.
-5. Per-tile version counters reject delayed session lookups and status callbacks
-   after selection changes. Disposal closes only the viewer and suppresses late
-   output/status events. Clear, layout reduction and logout dispose affected
-   connections without stopping remote shells.
-6. The box list refreshes every 15 seconds. Removed, non-interactive or no-longer-
-   running boxes are disconnected. Reconnect is explicit: there is no automatic
-   allocation, wake-up, new session, replay of typed input, or persisted selection.
-
-The existing backend stream limits also apply: 32 simultaneous web workspace
-streams per controller process, shared with desktop, and an eight-hour stream
-timeout. Grid layouts are bounded to eight tiles. This is not a new transport or
-a bypass for stream authorization, origin checks, assignment fences, or deadlines.
+Preserve account and one-shot exclusions in `GET /v1/grid-boxes`, per-tile version
+fences for asynchronous requests, isolated input and clipboard controls, and
+viewer-only disposal. Runtime assignment fences and stream authorization still
+apply. Shared desktop/terminal helpers accept tile roots and disconnect callbacks.
 
 ## Other recently established behavior
 
@@ -93,8 +73,7 @@ a bypass for stream authorization, origin checks, assignment fences, or deadline
   `~/.config/vmbox/`, separate from custom Bash. `RestoreToolSetup` restores the
   preset even without a custom script. The single-box workspace probes desktop
   enablement before creating a shell, opens enabled desktops first, and creates
-  the persistent shell only when TMUX is selected. Run once and Grid retain their
-  terminal flows. The preset also installs pinned Blender MCP, enables its add-on,
+  the persistent shell only when TMUX is selected. Run once retains its terminal flow; Grid also prefers enabled desktops. The preset also installs pinned Blender MCP, enables its add-on,
   and registers its local stdio bridge for Codex and Claude unless the user already
   has a `blender` MCP entry. Telemetry is disabled, bridge safe mode is enabled,
   and its Blender-side TCP listener stays on loopback. Both workspace viewers
