@@ -12,7 +12,7 @@ provider-agnostic. A logical box is **not** a fleet service: its workspace volum
 can outlive, and later attach to, a different compute slot.
 
 - `vmbox BOX`: persistent interactive shell/tmux workspace; launch agents yourself.
-- Web box workspace: attach to that box's tmux terminal, with optional desktop.
+- Web box workspace: prefer an enabled desktop, with Desktop and lazy TMUX tabs.
 - **Run once**: disposable agent/shell run, not a multi-agent task orchestrator.
   Actual process exit records completion. An idle completed one-shot box and its
   volume are deleted; saved output and exit code remain in the controller.
@@ -42,11 +42,15 @@ delete a shared fleet service when asked to delete a logical box.
 | Single-box UI | `internal/controller/web/workspace*` |
 | Grid | `internal/controller/grid.go`, `web/grid.html`, `web/grid.js`, `web/grid.css` |
 
-Provider APIs manage infrastructure. The terminal carries real terminal bytes over
-WebSocket → controller → provider SSH stream → fenced native tmux attachment.
-The controller resolves the current deployment; don't reuse stale instance IDs.
-Session identity includes the assignment and tmux server incarnation, not just a
-reusable session name. Preserve those checks when changing transport code.
+The plan to remove Railway from worker control and data paths while retaining it
+as controller hosting is in [Railway independence](RAILWAY-INDEPENDENCE.md).
+
+Provider APIs manage infrastructure. The current production terminal carries real
+terminal bytes over WebSocket → controller → Railway SSH stream → fenced native
+tmux attachment. The controller resolves the current deployment; don't reuse stale
+instance IDs. Session identity includes the assignment and tmux server incarnation,
+not just a reusable session name. Preserve those checks while making the transport
+provider-neutral.
 
 ## Grid implementation and invariants
 
@@ -87,12 +91,14 @@ a bypass for stream authorization, origin checks, assignment fences, or deadline
 - Blender is an optional distribution-package preset, including desktop packages.
   `internal/boxruntime/blender.go` retains a `blender-enabled` marker under
   `~/.config/vmbox/`, separate from custom Bash. `RestoreToolSetup` restores the
-  preset even without a custom script. The single-box web workspace automatically
-  requests the existing fenced desktop flow for interactive Blender boxes after
-  shell setup; Run once and Grid do not. The preset also installs pinned Blender MCP,
-  enables its add-on, and registers its local stdio bridge for Codex and Claude unless
-  the user already has a `blender` MCP entry. Telemetry is disabled, bridge safe mode
-  is enabled, and its Blender-side TCP listener stays on loopback.
+  preset even without a custom script. The single-box workspace probes desktop
+  enablement before creating a shell, opens enabled desktops first, and creates
+  the persistent shell only when TMUX is selected. Run once and Grid retain their
+  terminal flows. The preset also installs pinned Blender MCP, enables its add-on,
+  and registers its local stdio bridge for Codex and Claude unless the user already
+  has a `blender` MCP entry. Telemetry is disabled, bridge safe mode is enabled,
+  and its Blender-side TCP listener stays on loopback. Both workspace viewers
+  provide browser clipboard buttons.
 
 - Run once supports documented Codex model IDs and Claude aliases in a dropdown,
   plus saved-profile defaults and custom IDs. These are common choices, not an
