@@ -13,6 +13,7 @@ test('Grid fills every running box, prefers desktop, switches viewers and replac
   if(req.url==='/v1/browser-session'){res.statusCode=204;return res.end()}
   if(req.url==='/v1/whoami')return res.end('{}');
   if(req.url==='/v1/grid-boxes')return res.end(JSON.stringify(boxes));
+  if(req.url==='/v1/logical-boxes/b0/desktop'&&req.method==='GET'){res.statusCode=409;return res.end('{}')}
   if(req.url.endsWith('/desktop'))return res.end(JSON.stringify({enabled:!req.url.includes('/b1/')}));
   if(req.url.endsWith('/sessions/interactive'))return res.end('{"session":"shell"}');
   if(req.url==='/v1/logical-boxes/b1/sessions')return res.end('{"state":"live","sessions":[]}');

@@ -18,6 +18,7 @@ before(async()=>{
   if(path.startsWith('/v1/')){
    res.setHeader('Content-Type','application/json');
    if(path==='/v1/whoami')return res.end('{}');if(path==='/v1/grid-boxes')return res.end(JSON.stringify(boxes));
+   if(path.endsWith('/desktop'))return res.end('{"enabled":false}');
    if(path==='/v1/browser-session'){res.statusCode=204;return res.end();}
    const match=path.match(/^\/v1\/logical-boxes\/(box[1-4])\/sessions(\/primary)?$/);
    if(match){if(delayFirst&&match[1]==='box1'&&!match[2])await new Promise(r=>setTimeout(r,500));return res.end(JSON.stringify(match[2]?{session:match[1]}:{state:'live',partial:false,sessions:[{id:'$0',name:match[1]}]}));}
