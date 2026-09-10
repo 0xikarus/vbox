@@ -2,7 +2,7 @@
 window.openWorkspaceDesktop=function(boxID,onStatus){
  const root=document.querySelector('#desktop-screen');root.replaceChildren();
  const url=new URL('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/desktop/stream',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
- const rfb=new NoVNC.default(root,url.href);rfb.scaleViewport=true;rfb.resizeSession=false;let closed=false;
+ const rfb=new NoVNC.default(root,url.href);rfb.scaleViewport=true;rfb.resizeSession=false;rfb.showDotCursor=true;let closed=false;
  rfb.addEventListener('connect',()=>onStatus('Desktop connected'));
  rfb.addEventListener('disconnect',e=>{if(!closed)onStatus(e.detail.clean?'Desktop disconnected. Reconnect to return.':'Desktop connection failed; check runtime and authentication.')});
  rfb.addEventListener('credentialsrequired',()=>{rfb.disconnect();onStatus('Unexpected desktop authentication request; check the private VNC configuration.')});
