@@ -92,7 +92,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		noProfiles := fs.Bool("no-profiles", false, "skip agent credential provisioning")
 		var tools []string
 		setupScript := fs.String("setup-script", "", "trusted Bash install commands; rerun on resume, so keep idempotent")
-		fs.Func("tool", "install an optional tool preset (foundry); repeat for additional tools", func(value string) error { tools = append(tools, value); return v1.ValidateTools(tools) })
+		fs.Func("tool", "install an optional tool preset (foundry, blender); repeat for additional tools", func(value string) error { tools = append(tools, value); return v1.ValidateTools(tools) })
 		noDialog := fs.Bool("no-dialog", false, "use explicit arguments without the creation dialog")
 		hibernated := fs.Bool("hibernate", false, "create the workspace without leaving compute running")
 		startCLI := fs.String("start-cli", "", "run an explicit command once in the new persistent shell")

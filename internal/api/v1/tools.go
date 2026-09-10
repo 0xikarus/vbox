@@ -21,13 +21,16 @@ type ToolPreset struct {
 }
 
 func ToolPresets() []ToolPreset {
-	return []ToolPreset{{ID: "foundry", Name: "Foundry", Version: "v1.8.1", Description: "forge, cast, anvil and chisel · about 500 MiB installed"}}
+	return []ToolPreset{
+		{ID: "foundry", Name: "Foundry", Version: "v1.8.1", Description: "forge, cast, anvil and chisel · about 500 MiB installed"},
+		{ID: "blender", Name: "Blender", Version: "distribution package", Description: "3D editor + desktop automatically enabled · extra download/disk/RAM; MCP not included"},
+	}
 }
 func ValidateTools(tools []string) error {
 	seen := map[string]bool{}
 	for _, tool := range tools {
-		if tool != "foundry" || seen[tool] {
-			return fmt.Errorf("select each supported tool preset at most once (foundry)")
+		if (tool != "foundry" && tool != "blender") || seen[tool] {
+			return fmt.Errorf("select each supported tool preset at most once (foundry, blender)")
 		}
 		seen[tool] = true
 	}

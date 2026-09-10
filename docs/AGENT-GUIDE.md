@@ -84,6 +84,12 @@ a bypass for stream authorization, origin checks, assignment fences, or deadline
 
 ## Other recently established behavior
 
+- Blender is an optional distribution-package preset, including desktop packages.
+  `internal/boxruntime/blender.go` retains a `blender-enabled` marker under
+  `~/.config/vmbox/`, separate from custom Bash. `RestoreToolSetup` restores the
+  preset even without a custom script. Desktop starts only when requested through
+  the existing fenced desktop flow. No MCP add-on/server is installed or exposed.
+
 - Run once supports documented Codex model IDs and Claude aliases in a dropdown,
   plus saved-profile defaults and custom IDs. These are common choices, not an
   account-entitlement API. Extra arguments are literal argv entries, not shell text.

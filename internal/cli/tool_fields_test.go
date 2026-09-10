@@ -9,7 +9,7 @@ import (
 
 func TestToolCheckboxUsesSpaceAndEnter(t *testing.T) {
 	a := New()
-	a.In = strings.NewReader(" \r \t\r")
+	a.In = strings.NewReader(" \r \t\t\r")
 	a.Out = &bytes.Buffer{}
 	a.Err = &bytes.Buffer{}
 	a.IsTerminal = func() bool { return true }

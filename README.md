@@ -583,6 +583,14 @@ Historical coworker data is retained only for safe cleanup; credentials are revo
 
 ## Optional tools
 
+Select **Blender** in the controller's box creation or Run once tool list (CLI:
+`--tool blender`) to install Blender **and automatically enable desktop components**.
+Open the box's Desktop viewer to start the graphical session, then launch `blender`
+from its terminal. Blender uses the worker distribution's package version, not a
+pinned upstream release. The preset is restored after hibernation; it adds download,
+disk and RAM usage. It does not install Blender MCP, open a public port, or configure
+Claude/Codex integrations. MCP compatibility and GPU rendering are not yet verified.
+
 Select **Foundry** when creating a box or starting a Run once task. In the CLI
 form, use Space or Enter to toggle its checkbox. It includes `forge`, `cast`,
 `anvil`, and `chisel`; no separate selections are necessary.

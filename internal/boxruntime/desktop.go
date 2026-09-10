@@ -21,8 +21,19 @@ func EnableDesktop(ctx context.Context, assignment string) error {
 	if _, err := NativeSessions(ctx, assignment); err != nil {
 		return err
 	}
+	return installDesktopPackages(ctx, os.Stdout, false)
+}
+
+// Package installation is also used before a new box has a tmux assignment.
+func installDesktopPackages(ctx context.Context, progress io.Writer, blender bool) error {
+	bins := []string{"Xtigervnc", "openbox", "firefox-esr"}
+	packages := []string{"tigervnc-standalone-server", "openbox", "firefox-esr", "xterm", "dbus-x11", "fonts-dejavu-core"}
+	if blender {
+		bins = append(bins, "blender")
+		packages = append(packages, "blender")
+	}
 	installed := true
-	for _, bin := range []string{"Xtigervnc", "openbox", "firefox-esr"} {
+	for _, bin := range bins {
 		if _, err := exec.LookPath(bin); err != nil {
 			installed = false
 		}
@@ -33,9 +44,9 @@ func EnableDesktop(ctx context.Context, assignment string) error {
 	if _, err := exec.LookPath("apt-get"); err != nil {
 		return fmt.Errorf("desktop enablement requires a Debian-compatible worker image")
 	}
-	for _, args := range [][]string{{"update"}, {"install", "-y", "--no-install-recommends", "tigervnc-standalone-server", "openbox", "firefox-esr", "xterm", "dbus-x11", "fonts-dejavu-core"}} {
+	for _, args := range [][]string{{"update"}, append([]string{"install", "-y", "--no-install-recommends"}, packages...)} {
 		cmd := exec.CommandContext(ctx, "sudo", append([]string{"-n", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", "DPkg::Lock::Timeout=30"}, args...)...)
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		cmd.Stdout, cmd.Stderr = progress, progress
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("desktop package installation failed; inspect worker package manager diagnostics")
 		}

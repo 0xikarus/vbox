@@ -28,9 +28,22 @@ func InstallTools(ctx context.Context, home string, tools []string, progress io.
 	if err := v1.ValidateTools(tools); err != nil {
 		return err
 	}
-	if len(tools) == 0 {
-		return nil
+	for _, tool := range tools {
+		var err error
+		switch tool {
+		case "foundry":
+			err = installFoundry(ctx, home, progress)
+		case "blender":
+			err = configureBlender(ctx, home, progress)
+		}
+		if err != nil {
+			return err
+		}
 	}
+	return nil
+}
+
+func installFoundry(ctx context.Context, home string, progress io.Writer) error {
 	if runtime.GOOS != "linux" || foundrySHA[runtime.GOARCH] == "" {
 		return fmt.Errorf("Foundry preset supports Linux amd64/arm64 workers")
 	}
