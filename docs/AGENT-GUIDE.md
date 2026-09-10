@@ -87,8 +87,12 @@ a bypass for stream authorization, origin checks, assignment fences, or deadline
 - Blender is an optional distribution-package preset, including desktop packages.
   `internal/boxruntime/blender.go` retains a `blender-enabled` marker under
   `~/.config/vmbox/`, separate from custom Bash. `RestoreToolSetup` restores the
-  preset even without a custom script. Desktop starts only when requested through
-  the existing fenced desktop flow. No MCP add-on/server is installed or exposed.
+  preset even without a custom script. The single-box web workspace automatically
+  requests the existing fenced desktop flow for interactive Blender boxes after
+  shell setup; Run once and Grid do not. The preset also installs pinned Blender MCP,
+  enables its add-on, and registers its local stdio bridge for Codex and Claude unless
+  the user already has a `blender` MCP entry. Telemetry is disabled, bridge safe mode
+  is enabled, and its Blender-side TCP listener stays on loopback.
 
 - Run once supports documented Codex model IDs and Claude aliases in a dropdown,
   plus saved-profile defaults and custom IDs. These are common choices, not an

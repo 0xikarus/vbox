@@ -15,6 +15,19 @@ func desktopSocket(assignment string) string {
 	return filepath.Join(os.TempDir(), fmt.Sprintf("vmbox-desktop-%d", os.Getuid()), assignment, "vnc.sock")
 }
 
+// DesktopEnabled is a read-only probe; it never installs or launches software.
+func DesktopEnabled(ctx context.Context, assignment string) (bool, error) {
+	if _, err := NativeSessions(ctx, assignment); err != nil {
+		return false, err
+	}
+	for _, bin := range []string{"Xtigervnc", "openbox"} {
+		if _, err := exec.LookPath(bin); err != nil {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
 // EnableDesktop changes only system packages on the current worker. It neither
 // restarts compute nor modifies workspace credentials or persistent files.
 func EnableDesktop(ctx context.Context, assignment string) error {
@@ -29,8 +42,8 @@ func installDesktopPackages(ctx context.Context, progress io.Writer, blender boo
 	bins := []string{"Xtigervnc", "openbox", "firefox-esr"}
 	packages := []string{"tigervnc-standalone-server", "openbox", "firefox-esr", "xterm", "dbus-x11", "fonts-dejavu-core"}
 	if blender {
-		bins = append(bins, "blender")
-		packages = append(packages, "blender")
+		bins = append(bins, "blender", "pipx")
+		packages = append(packages, "blender", "pipx", "python3-venv")
 	}
 	installed := true
 	for _, bin := range bins {

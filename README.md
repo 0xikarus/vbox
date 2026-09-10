@@ -584,12 +584,16 @@ Historical coworker data is retained only for safe cleanup; credentials are revo
 ## Optional tools
 
 Select **Blender** in the controller's box creation or Run once tool list (CLI:
-`--tool blender`) to install Blender **and automatically enable desktop components**.
-Open the box's Desktop viewer to start the graphical session, then launch `blender`
-from its terminal. Blender uses the worker distribution's package version, not a
-pinned upstream release. The preset is restored after hibernation; it adds download,
-disk and RAM usage. It does not install Blender MCP, open a public port, or configure
-Claude/Codex integrations. MCP compatibility and GPU rendering are not yet verified.
+`--tool blender`) to install Blender, automatically enable desktop components,
+and install the third-party Blender MCP bridge and add-on.
+Opening an interactive box in the web workspace automatically starts and attaches
+its desktop; manual desktop controls remain available for recovery. Launch `blender`
+from its terminal and start a new Codex or Claude session to use the registered MCP
+tools. Run once and Grid retain their terminal views. Blender uses the worker
+distribution's package version; Blender MCP is pinned to 1.9.1. The preset is
+restored after hibernation and adds download, disk and RAM usage. MCP telemetry is
+disabled, safe mode is enabled, and its Blender socket listens only on loopback.
+Existing `blender` MCP client entries are preserved. GPU rendering remains unverified.
 
 Select **Foundry** when creating a box or starting a Run once task. In the CLI
 form, use Space or Enter to toggle its checkbox. It includes `forge`, `cast`,

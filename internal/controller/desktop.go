@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -10,17 +11,18 @@ import (
 )
 
 func (s *Server) startDesktop(w http.ResponseWriter, r *http.Request, p Principal) {
-	s.desktopAction(w, r, p, false)
+	s.desktopAction(w, r, p, "desktop-start")
 }
 func (s *Server) enableDesktop(w http.ResponseWriter, r *http.Request, p Principal) {
-	s.desktopAction(w, r, p, true)
+	s.desktopAction(w, r, p, "desktop-enable")
 }
-func (s *Server) desktopAction(w http.ResponseWriter, r *http.Request, p Principal, enable bool) {
+func (s *Server) desktopStatus(w http.ResponseWriter, r *http.Request, p Principal) {
+	s.desktopAction(w, r, p, "desktop-status")
+}
+func (s *Server) desktopAction(w http.ResponseWriter, r *http.Request, p Principal, command string) {
 	duration := 25 * time.Second
-	command := "desktop-start"
-	if enable {
+	if command == "desktop-enable" {
 		duration = 3 * time.Minute
-		command = "desktop-enable"
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), duration)
 	defer cancel()
@@ -47,6 +49,14 @@ func (s *Server) desktopAction(w http.ResponseWriter, r *http.Request, p Princip
 	current, err := s.Store.assignment(ctx, p.AccountID, box.ID)
 	if err != nil || nativeFence(current) != nativeFence(a) {
 		writeError(w, 409, fmt.Errorf("assignment changed"))
+		return
+	}
+	if command == "desktop-status" {
+		var status struct { Enabled bool `json:"enabled"` }
+		if err := json.Unmarshal([]byte(result.Stdout), &status); err != nil {
+			writeError(w, 502, fmt.Errorf("invalid desktop status from worker")); return
+		}
+		writeJSON(w, 200, status)
 		return
 	}
 	w.WriteHeader(204)

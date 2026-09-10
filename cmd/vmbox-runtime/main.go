@@ -43,13 +43,18 @@ func run() error {
 		return err
 	}
 	switch args[0] {
-	case "desktop-enable", "desktop-start", "desktop-run", "desktop-stream":
+	case "desktop-enable", "desktop-start", "desktop-run", "desktop-stream", "desktop-status":
 		if len(args) != 2 {
 			return fmt.Errorf("desktop command requires ASSIGNMENT")
 		}
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		defer cancel()
 		switch args[0] {
+		case "desktop-status":
+			enabled, err := boxruntime.DesktopEnabled(ctx, args[1])
+			if err != nil { return err }
+			fmt.Printf("{\"enabled\":%t}\n", enabled)
+			return nil
 		case "desktop-enable":
 			return boxruntime.EnableDesktop(ctx, args[1])
 		case "desktop-start":

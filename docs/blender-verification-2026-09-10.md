@@ -44,5 +44,6 @@ Local evidence: `/tmp/vmbox-blender-live.json` (initial timeout),
 `/tmp/vmbox-blender-desktop-final.png` (loaded editor).
 These temporary artifacts are not committed and may disappear.
 
-MCP/add-on integration, GPU rendering and upstream Blender-version compatibility
+The later Blender MCP and automatic web attachment additions were not part of this
+historical production run. GPU rendering and upstream Blender-version compatibility
 remain untested. The distribution package is not a promise of the latest Blender.

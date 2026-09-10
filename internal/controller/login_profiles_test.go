@@ -133,6 +133,14 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if creation.Request.Region != "test-region" {
 		t.Fatal("implicit creation location was not pinned")
 	}
+	box, err := fresh.LogicalBox(ctx, p, creation.Assignment.Box.ID)
+	if err != nil || len(box.Tools) != 1 || box.Tools[0] != "foundry" {
+		t.Fatalf("box API lost selected tools: %v", err)
+	}
+	boxJSON, err := json.Marshal(box)
+	if err != nil || strings.Contains(string(boxJSON), "setupScript") || strings.Contains(string(boxJSON), "loginProfiles") {
+		t.Fatal("box API exposed private creation metadata")
+	}
 	recovered, err := fresh.RecoverableLogicalBoxCreations(ctx)
 	if err != nil || len(recovered) != 1 || len(recovered[0].Request.LoginProfiles) != 1 || recovered[0].Request.LoginProfiles[0].Name != "work" {
 		t.Fatalf("selection recovery failed: %v", err)

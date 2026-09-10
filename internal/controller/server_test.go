@@ -300,8 +300,8 @@ func TestAuthorizationValueRequiresExactScheme(t *testing.T) {
 func TestInventoryHidesEveryFleetSlotServiceAndSanitizesExternalBoxes(t *testing.T) {
 	store, mock := testStore(t)
 	now := time.Now().UTC()
-	logicalColumns := []string{"id", "account_id", "owner_user_id", "name", "provider", "provider_credential", "default_agent", "state", "volume_id", "volume_name", "slot_id", "assignment_generation", "lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at"}
-	mock.ExpectQuery(`FROM logical_boxes WHERE account_id=\$1 AND provider=\$2 AND provider_credential=\$3`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows(logicalColumns).AddRow("logical-1", "account-a", "user-a", "occupied-workspace", "fake", "primary", "claude", "running", "volume-1", "workspace-data", "slot-2", int64(1), "", nil, "", "", now, now))
+	logicalColumns := []string{"id", "account_id", "owner_user_id", "name", "provider", "provider_credential", "default_agent", "state", "volume_id", "volume_name", "slot_id", "assignment_generation", "lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at", "tools"}
+	mock.ExpectQuery(`FROM logical_boxes WHERE account_id=\$1 AND provider=\$2 AND provider_credential=\$3`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows(logicalColumns).AddRow("logical-1", "account-a", "user-a", "occupied-workspace", "fake", "primary", "claude", "running", "volume-1", "workspace-data", "slot-2", int64(1), "", nil, "", "", now, now, "[]"))
 	mock.ExpectQuery(`SELECT service_id FROM compute_slots`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows([]string{"service_id"}).AddRow("service-free").AddRow("service-occupied"))
 	providerFake := &fakeProvider{boxes: []provider.Box{
 		{ID: "service-free", Name: "fleet-slot-1", State: provider.StateRunning},

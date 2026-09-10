@@ -314,9 +314,9 @@ func logicalBoxRowWithSlot(state v1.LogicalBoxState, agent, slotID string) *sqlm
 		"id", "account_id", "owner_user_id", "name", "provider", "provider_credential",
 		"default_agent", "state", "volume_id", "volume_name", "slot_id", "assignment_generation",
 		"lease_owner", "lease_expires_at", "restoration_state", "failure_reason",
-		"created_at", "updated_at",
+		"created_at", "updated_at", "tools",
 	}).AddRow("box-1", "account-a", "user-a", "research", "railway", "primary", agent,
-		string(state), "volume-1", "volume-name", slotID, int64(3), "", nil, "", "", now, now)
+		string(state), "volume-1", "volume-name", slotID, int64(3), "", nil, "", "", now, now, "[]")
 }
 
 func TestDetachedDeletingBoxResumesFromSavedVolumeIdentity(t *testing.T) {

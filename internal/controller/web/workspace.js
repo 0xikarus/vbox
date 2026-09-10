@@ -35,8 +35,46 @@ async function inspectRun(version){
   runTimer=setTimeout(()=>inspectRun(version),2000);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}
 }
-$('#enable-desktop').onclick=async()=>{if(!confirm('Install desktop packages on this worker? This uses additional disk space and downloading may take a few minutes.'))return;$('#enable-desktop').disabled=true;$('#desktop-status').textContent='Installing desktop packages (up to 3 minutes)…';try{await api(bp+'/desktop/enable','POST',{}, {},190000);$('#desktop-status').textContent='Desktop packages ready. Choose Start / reconnect desktop.'}catch(e){$('#desktop-status').textContent=e.message}finally{$('#enable-desktop').disabled=false}};
-$('#start-desktop').onclick=async()=>{const version=epoch;$('#start-desktop').disabled=true;$('#desktop-status').textContent='Starting desktop…';try{await api(bp+'/desktop','POST',{});if(version!==epoch)return;closeDesktop();closeDesktop=openWorkspaceDesktop(boxID,message=>{if(version===epoch)$('#desktop-status').textContent=message})}catch(e){if(version===epoch)$('#desktop-status').textContent=e.message}finally{$('#start-desktop').disabled=false}};
+// Keep attempts for this page's lifetime: reconnect/flicker must not retry installs.
+const autoDesktopRequestedForBoxIds=new Set();
+let desktopBusy=false,desktopAttached=false,workspaceRole='';
+function hasBlender(box){
+ const tools=box.tools??box.tooling??box.metadata?.tools??[];
+ return Array.isArray(tools)&&tools.some(tool=>[typeof tool==='string'?tool:tool?.id,tool?.name,tool?.label].some(label=>typeof label==='string'&&label.trim().toLowerCase()==='blender'));
+}
+function desktopCurrent(version){return version===epoch&&!runID&&!$('#workspace').hidden&&!$('#desktop').hidden}
+async function requestDesktop({enable=false,automatic=false}={}){
+ if(desktopBusy)return;
+ const version=epoch;desktopBusy=true;
+ $('#enable-desktop').disabled=true;$('#start-desktop').disabled=true;
+ try{
+  if(automatic){
+   $('#desktop-status').textContent='Blender box detected, auto-opening desktop…';
+   const status=await api(bp+'/desktop');if(!desktopCurrent(version))return;
+   enable=!status.enabled;
+  }
+  if(enable){
+   $('#desktop-status').textContent='Installing desktop packages (up to 3 minutes)…';
+   await api(bp+'/desktop/enable','POST',{}, {},190000);if(!desktopCurrent(version))return;
+   if(!automatic){$('#desktop-status').textContent='Desktop packages ready. Choose Start / reconnect desktop.';return}
+  }
+  $('#desktop-status').textContent='Starting desktop…';
+  // Runtime start is idempotent and reuses an already active desktop session.
+  await api(bp+'/desktop','POST',{});if(!desktopCurrent(version))return;
+  closeDesktop();desktopAttached=true;
+  const dispose=openWorkspaceDesktop(boxID,message=>{if(desktopCurrent(version))$('#desktop-status').textContent=message});
+  closeDesktop=()=>{desktopAttached=false;dispose()};
+ }catch(e){
+  if(desktopCurrent(version))$('#desktop-status').textContent=automatic?'Automatic desktop launch failed. Use the terminal or manual desktop controls. '+e.message:e.message;
+ }finally{desktopBusy=false;$('#enable-desktop').disabled=false;$('#start-desktop').disabled=false}
+}
+function maybeAutoDesktop(box,version){
+ if(!desktopCurrent(version)||workspaceRole!=='owner'||box.state!=='running'||box.failureReason||desktopBusy||desktopAttached||autoDesktopRequestedForBoxIds.has(boxID)||!hasBlender(box))return;
+ autoDesktopRequestedForBoxIds.add(boxID);
+ void requestDesktop({automatic:true});
+}
+$('#enable-desktop').onclick=()=>{if(confirm('Install desktop packages on this worker? This uses additional disk space and downloading may take a few minutes.'))void requestDesktop({enable:true})};
+$('#start-desktop').onclick=()=>requestDesktop();
 async function api(path,method='GET',body,headers={},timeout=60000){
  let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running. Reload or use Resume / reconnect to check its state. Terminal input is not replayed.')}
  if(r.status===401){$('#login').hidden=false;throw Error('Please log in to the controller.')}
@@ -66,11 +104,12 @@ async function connect(){
   const session=await api(bp+'/sessions/interactive','POST',{agent:'shell',reuseShell:true});if(version!==epoch)return;
   $('#session').textContent='Persistent shell: '+session.session;
   closeTerminal();closeTerminal=openWorkspaceTerminal(boxID,session.session,message=>{if(version===epoch)$('#status').textContent=message});
+  maybeAutoDesktop(box,version);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}finally{busy=false;$('#connect').disabled=false}
 }
 $('#connect').onclick=connect;
-$('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}};
+$('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}};
 $('#logout').onclick=async()=>{epoch++;closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#login').hidden=false;$('#status').textContent='Logged out. The box was not stopped.'}catch(e){$('#error').textContent=e.message}};
 $('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();$('#session').textContent='';$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
 window.addEventListener('pagehide',()=>{epoch++;clearTimeout(runTimer);closeTerminal();closeDesktop()});
-(async()=>{try{await api('/v1/whoami');$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}})();
+(async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}})();

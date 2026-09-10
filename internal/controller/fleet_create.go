@@ -167,7 +167,7 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-installing-tools"); err != nil {
 				return fail(err)
 			}
-			toolCtx, cancel := context.WithTimeout(ctx, 6*time.Minute)
+			toolCtx, cancel := context.WithTimeout(ctx, 9*time.Minute)
 			installed, err := prov.Exec(toolCtx, serviceID, append([]string{"vmbox-runtime", "install-tools"}, creation.Request.Tools...), provider.ExecOptions{})
 			cancel()
 			if err != nil {

@@ -94,6 +94,7 @@ func (s *Server) Handler() http.Handler {
 	}
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal/stream", s.owner(s.webTerminal))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop", s.owner(s.startDesktop))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop", s.owner(s.desktopStatus))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop/enable", s.owner(s.enableDesktop))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/stream", s.owner(s.webDesktop))
 	mux.HandleFunc("POST /v1/browser-session", s.auth(s.browserLogin))

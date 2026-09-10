@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -119,19 +120,24 @@ const computeSlotSelect = `SELECT s.id::text,s.account_id::text,s.provider,s.pro
 func scanLogicalBox(scanner interface{ Scan(...any) error }) (v1.LogicalBox, error) {
 	var box v1.LogicalBox
 	var lease sql.NullTime
+	var tools []byte
 	err := scanner.Scan(
 		&box.ID, &box.AccountID, &box.OwnerUserID, &box.Name, &box.Provider,
 		&box.ProviderCredential, &box.DefaultAgent, &box.State, &box.VolumeID, &box.VolumeName,
 		&box.SlotID, &box.AssignmentGeneration, &box.LeaseOwner, &lease,
 		&box.RestorationState, &box.FailureReason, &box.CreatedAt, &box.UpdatedAt,
+		&tools,
 	)
+	if err == nil {
+		err = json.Unmarshal(tools, &box.Tools)
+	}
 	if lease.Valid {
 		box.LeaseExpiresAt = &lease.Time
 	}
 	return box, err
 }
 
-const logicalBoxSelect = `SELECT id::text,account_id::text,owner_user_id::text,name,provider,provider_credential,default_agent,state,volume_id,volume_name,COALESCE(slot_id::text,''),assignment_generation,COALESCE(lease_owner,''),lease_expires_at,COALESCE(restoration_state,''),COALESCE(failure_reason,''),created_at,updated_at FROM logical_boxes`
+const logicalBoxSelect = `SELECT id::text,account_id::text,owner_user_id::text,name,provider,provider_credential,default_agent,state,volume_id,volume_name,COALESCE(slot_id::text,''),assignment_generation,COALESCE(lease_owner,''),lease_expires_at,COALESCE(restoration_state,''),COALESCE(failure_reason,''),created_at,updated_at,COALESCE(metadata->'tools','[]'::jsonb) FROM logical_boxes`
 
 func (s *Store) FleetStatus(ctx context.Context, accountID, providerName, credential string) (v1.FleetStatus, error) {
 	config, err := s.FleetConfig(ctx, accountID, providerName, credential)

@@ -85,6 +85,7 @@ type ComputeSlot struct {
 }
 
 type LogicalBox struct {
+	Tools                []string        `json:"tools,omitempty"`
 	ID                   string          `json:"id"`
 	AccountID            string          `json:"accountId,omitempty"`
 	Name                 string          `json:"name"`
