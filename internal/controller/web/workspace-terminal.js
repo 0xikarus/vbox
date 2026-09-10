@@ -14,6 +14,8 @@ window.openWorkspaceTerminal=function(boxID,session,onStatus,options={}){
  socket.onclose=e=>{if(!closed)onStatus('Disconnected · '+(e.reason||'use Reconnect')+'. Input is not replayed.')};
  socket.onerror=()=>{if(!closed)onStatus('Terminal connection failed. Check login and worker runtime, then reconnect.')};
  const keys=options.keys||document.querySelector('.terminal-keys');keys.replaceChildren();
+ const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.onclick=async()=>{const value=terminal.getSelection();if(!value){onStatus('Select terminal text before copying.');terminal.focus();return}try{await navigator.clipboard.writeText(value);onStatus('Terminal selection copied.')}catch{onStatus('Clipboard copy was blocked by the browser. Use Ctrl/Cmd+C on the selection.')}};keys.append(copy);
+ const paste=document.createElement('button');paste.type='button';paste.textContent='Paste';paste.onclick=async()=>{try{const value=await navigator.clipboard.readText();if(value)terminal.paste(value);terminal.focus()}catch{onStatus('Clipboard paste was blocked by the browser. Use Ctrl/Cmd+V in the terminal.')}};keys.append(paste);
  for(const [label,value] of [['Esc','\x1b'],['Tab','\t'],['Ctrl-C','\x03'],['Ctrl-D','\x04'],['↑','\x1b[A'],['↓','\x1b[B'],['←','\x1b[D'],['→','\x1b[C']]){
   const b=document.createElement('button');b.type='button';b.textContent=label;b.onclick=()=>{input(value);terminal.focus()};keys.append(b);
  }

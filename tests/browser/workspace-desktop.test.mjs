@@ -6,7 +6,7 @@ import puppeteer from 'puppeteer-core';
 
 const html=await readFile('internal/controller/web/workspace.html','utf8');
 const script=await readFile('internal/controller/web/workspace.js','utf8');
-test('workspace desktop automation and manual fallback',async t=>{
+test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',run=null,state='running';
  let requests=[];
  const server=http.createServer(async(req,res)=>{
@@ -31,47 +31,65 @@ test('workspace desktop automation and manual fallback',async t=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox']});
  const desktop='/v1/logical-boxes/test/desktop';
- async function page(){requests=[];const p=await browser.newPage();await p.goto('http://127.0.0.1:'+server.address().port+'/boxes/test');return p}
- async function settled(p){await p.waitForFunction(()=>window.terminals===1&&!document.querySelector('#connect').disabled)}
+ async function page(){requests=[];release=undefined;const p=await browser.newPage();await p.goto('http://127.0.0.1:'+server.address().port+'/boxes/test');return p}
+ async function terminalReady(p){await p.waitForFunction(()=>window.terminals===1&&!document.querySelector('#connect').disabled)}
+ async function selected(p,id){return p.$eval(id,e=>({selected:e.getAttribute('aria-selected'),panel:document.getElementById(e.getAttribute('aria-controls')).hidden}))}
  try{
-  await t.test('Blender opens once, reconnect preserves terminal, reload attaches again',async()=>{
-   tools=['BlEnDeR'];const p=await page();await p.waitForFunction(()=>window.attaches===1);
+  await t.test('enabled Blender opens Desktop first and TMUX attaches lazily',async()=>{
+   tools=['BlEnDeR'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
+   assert.equal(await p.evaluate(()=>window.terminals),0);
+   assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});
    assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);
-   await p.click('#connect');await p.waitForFunction(()=>window.terminals===2);assert.equal(await p.evaluate(()=>window.attaches),1);
-   await p.reload();await p.waitForFunction(()=>window.attaches===1);await p.close();
+   await p.click('#terminal-tab');await terminalReady(p);
+   assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});
+   await p.click('#desktop-tab');assert.equal(await p.evaluate(()=>window.attaches),1);
+   await p.click('#terminal-tab');assert.equal(await p.evaluate(()=>window.terminals),1);
+   await p.reload();await p.waitForFunction(()=>window.attaches===1);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();
   });
-  await t.test('missing packages enable before start',async()=>{
-   enabled=false;const p=await page();await p.waitForFunction(()=>window.attaches===1);
-   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop+'/enable','POST '+desktop]);await p.close();enabled=true;
+  await t.test('enabled non-Blender desktop also opens automatically',async()=>{
+   tools=['foundry'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1);
+   assert.equal(await p.evaluate(()=>window.terminals),0);assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);await p.close();
   });
-  await t.test('non-Blender has no automation; both manual controls work',async()=>{
-   tools=['foundry'];const p=await page();await settled(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);
-   p.on('dialog',d=>d.accept());await p.click('#enable-desktop');await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('packages ready'));
-   await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);await p.close();
+  await t.test('missing Blender desktop enables before start',async()=>{
+   tools=['blender'];enabled=false;const p=await page();await p.waitForFunction(()=>window.attaches===1);
+   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop+'/enable','POST '+desktop]);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();enabled=true;
   });
-  await t.test('legacy worker without desktop status attaches through idempotent start',async()=>{
+  await t.test('disabled non-Blender defaults to TMUX and manual controls work',async()=>{
+   tools=['foundry'];enabled=false;const p=await page();await terminalReady(p);
+   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop]);
+   assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});
+   await p.click('#desktop-tab');p.on('dialog',d=>d.accept());await p.click('#enable-desktop');await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('packages ready'));
+   await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});await p.close();enabled=true;
+  });
+  await t.test('legacy Blender worker attaches through idempotent start',async()=>{
    tools=['blender'];enabled=true;fail='GET '+desktop;const p=await page();await p.waitForFunction(()=>window.attaches===1);
-   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);await p.close();fail='';
+   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();fail='';
   });
-  for(const failure of ['POST '+desktop+'/enable','POST '+desktop])await t.test('failure falls back without loops: '+failure,async()=>{
-   tools=['blender'];enabled=false;fail=failure;const p=await page();await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('Automatic desktop launch failed'));
-   const count=requests.filter(r=>r.includes('/desktop')).length;await p.click('#connect');await p.waitForFunction(()=>window.terminals===2);
-   assert.equal(requests.filter(r=>r.includes('/desktop')).length,count);assert.equal(await p.evaluate(()=>window.attaches),0);
-   fail='';await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);await p.close();enabled=true;
+  for(const failure of ['POST '+desktop+'/enable','POST '+desktop])await t.test('failure falls back to TMUX without loops: '+failure,async()=>{
+   tools=['blender'];enabled=false;fail=failure;const p=await page();await terminalReady(p);
+   assert.match(await p.$eval('#desktop-status',e=>e.textContent),/Automatic desktop launch failed/);
+   const count=requests.filter(r=>r.includes('/desktop')).length;await p.click('#connect');await p.waitForFunction(()=>!document.querySelector('#connect').disabled);
+   assert.equal(requests.filter(r=>r.includes('/desktop')).length,count);assert.equal(await p.evaluate(()=>window.terminals),1);
+   fail='';await p.click('#desktop-tab');await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);await p.close();enabled=true;
+  });
+  await t.test('a tab choice made during probing is not overwritten',async()=>{
+   tools=['foundry'];enabled=true;hold='GET '+desktop;const p=await page();while(!release)await new Promise(r=>setTimeout(r,10));
+   await p.click('#terminal-tab');await p.waitForFunction(()=>window.terminals===1);release();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
+   assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();hold='';
   });
   await t.test('stale enable cannot start or attach after logout',async()=>{
-   enabled=false;hold='POST '+desktop+'/enable';const p=await page();await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('Installing'));
+   tools=['blender'];enabled=false;hold='POST '+desktop+'/enable';const p=await page();await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('Installing'));
    while(!release)await new Promise(r=>setTimeout(r,10));await p.click('#logout');await p.waitForFunction(()=>document.querySelector('#workspace').hidden);
    release();await p.waitForFunction(()=>!document.querySelector('#start-desktop').disabled);
    assert.equal(requests.includes('POST '+desktop),false);assert.equal(await p.evaluate(()=>window.attaches),0);await p.close();hold='';enabled=true;
   });
-  await t.test('Run once and restricted roles do not auto-open',async()=>{
-   run={id:'run'};let p=await page();await settled(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);await p.close();run=null;
-   role='member';p=await page();await settled(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);await p.close();role='owner';
+  await t.test('run once and restricted roles remain on TMUX',async()=>{
+   run={id:'run'};let p=await page();await terminalReady(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.equal(await p.$eval('#workspace-tabs',e=>e.hidden),true);await p.close();run=null;
+   role='member';p=await page();await terminalReady(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});await p.close();role='owner';
   });
-  await t.test('failed allocation never launches desktop',async()=>{
+  await t.test('failed allocation never probes or launches desktop',async()=>{
    state='failed';const p=await page();await p.waitForFunction(()=>document.querySelector('#error').textContent.includes('Fixture stopped box'));
-   assert.equal(requests.some(r=>r.includes('/desktop')),false);await p.close();state='running';
+   assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();state='running';
   });
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

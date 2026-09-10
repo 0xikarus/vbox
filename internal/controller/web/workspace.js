@@ -1,10 +1,40 @@
 'use strict';
 const $=s=>document.querySelector(s),boxID=decodeURIComponent(location.pathname.split('/')[2]||''),bp='/v1/logical-boxes/'+encodeURIComponent(boxID);
 let epoch=0,busy=false,allocation=null,allocationKey=crypto.randomUUID();
-let closeTerminal=()=>{};
-let closeDesktop=()=>{};
+let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
+let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
+let selectedWorkspaceView='',workspaceRole='';
 let runID=new URLSearchParams(location.search).get('run');
 let runTimer,attachedRunSession='';
+
+function workspaceCurrent(version){return version===epoch&&!runID&&!$('#workspace').hidden}
+function showWorkspaceView(view){
+ selectedWorkspaceView=view;
+ const desktop=view==='desktop';
+ $('#desktop').hidden=!desktop;$('#terminal').hidden=desktop;
+ $('#desktop-tab').setAttribute('aria-selected',String(desktop));
+ $('#terminal-tab').setAttribute('aria-selected',String(!desktop));
+}
+function showInteractiveWorkspace(){$('#workspace').hidden=false;$('#workspace-tabs').hidden=false;$('#hibernate').hidden=false}
+async function ensureTerminal(version=epoch){
+ if(!workspaceCurrent(version)||terminalAttached)return terminalAttached;
+ if(terminalBusy)return terminalBusy;
+ $('#session').textContent='Connecting persistent shell…';
+ const pending=(async()=>{
+  try{
+   const session=await api(bp+'/sessions/interactive','POST',{agent:'shell',reuseShell:true});if(!workspaceCurrent(version))return false;
+   $('#session').textContent='Persistent shell: '+session.session;
+   closeTerminal();terminalAttached=true;
+   const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message});
+   closeTerminal=()=>{terminalAttached=false;dispose()};
+   return true;
+  }catch(e){if(workspaceCurrent(version))$('#error').textContent=e.message;return false}
+ })();
+ terminalBusy=pending;
+ try{return await pending}finally{if(terminalBusy===pending)terminalBusy=null}
+}
+function selectTerminal(version=epoch){showWorkspaceView('terminal');return ensureTerminal(version)}
+
 async function inspectRun(version){
  if(version!==epoch)return;
  try{
@@ -12,7 +42,7 @@ async function inspectRun(version){
   if(run.boxId!==boxID)throw Error('Run does not belong to this box.');
   if(run.task?.finishedAt){
    const task=run.task;closeTerminal();attachedRunSession='';
-   $('#workspace').hidden=false;$('#desktop').hidden=true;$('#hibernate').hidden=true;
+   $('#workspace').hidden=false;$('#workspace-tabs').hidden=true;$('#terminal').hidden=false;$('#desktop').hidden=true;$('#hibernate').hidden=true;
    $('#name').textContent=task.boxName||'Run once results';
    $('#session').textContent='One-shot '+task.agent+' · '+task.state;
    $('#status').textContent=[task.exitCode!=null?'Exit code '+task.exitCode:task.signal?'Signal '+task.signal:task.state,run.boxDeleted?'Box deleted; saved results retained.':'Finished; box cleanup pending.'].join(' · ');
@@ -24,7 +54,7 @@ async function inspectRun(version){
    return;
   }
   const box=await api(bp);if(version!==epoch)return;state(box);$('#workspace').hidden=false;
-  $('#desktop').hidden=true;$('#hibernate').hidden=true;$('#connect').textContent='Reconnect / check results';
+  $('#workspace-tabs').hidden=true;$('#terminal').hidden=false;$('#desktop').hidden=true;$('#hibernate').hidden=true;$('#connect').textContent='Reconnect / check results';
   const task=run.task;
   $('#session').textContent=task?'One-shot '+task.agent+' · '+task.session:'Waiting for the task';
   $('#status').textContent=[box.state,box.restorationState,task?.state,task?.exitCode!=null?'exit '+task.exitCode:'',run.failure,box.failureReason].filter(Boolean).join(' · ');
@@ -35,52 +65,68 @@ async function inspectRun(version){
   runTimer=setTimeout(()=>inspectRun(version),2000);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}
 }
-// Keep attempts for this page's lifetime: reconnect/flicker must not retry installs.
+
+// Keep automatic attempts for this page's lifetime so reconnects cannot loop.
 const autoDesktopRequestedForBoxIds=new Set();
-let desktopBusy=false,desktopAttached=false,workspaceRole='';
 function hasBlender(box){
  const tools=box.tools??box.tooling??box.metadata?.tools??[];
  return Array.isArray(tools)&&tools.some(tool=>[typeof tool==='string'?tool:tool?.id,tool?.name,tool?.label].some(label=>typeof label==='string'&&label.trim().toLowerCase()==='blender'));
 }
-function desktopCurrent(version){return version===epoch&&!runID&&!$('#workspace').hidden&&!$('#desktop').hidden}
 async function startAndAttachDesktop(version){
  $('#desktop-status').textContent='Starting desktop…';
- // Runtime start is idempotent and reuses an already active desktop session.
- await api(bp+'/desktop','POST',{});if(!desktopCurrent(version))return;
+ await api(bp+'/desktop','POST',{});if(!workspaceCurrent(version))return false;
  closeDesktop();desktopAttached=true;
- const dispose=openWorkspaceDesktop(boxID,message=>{if(desktopCurrent(version))$('#desktop-status').textContent=message});
+ const dispose=openWorkspaceDesktop(boxID,message=>{if(workspaceCurrent(version))$('#desktop-status').textContent=message});
  closeDesktop=()=>{desktopAttached=false;dispose()};
+ return true;
 }
-async function requestDesktop({enable=false,automatic=false}={}){
- if(desktopBusy)return;
+async function requestDesktop({enable=false,automatic=false,tryStartBeforeEnable=false}={}){
+ if(desktopBusy)return false;
  const version=epoch;desktopBusy=true;
  $('#enable-desktop').disabled=true;$('#start-desktop').disabled=true;
  try{
-  if(automatic){
-   $('#desktop-status').textContent='Blender box detected, auto-opening desktop…';
-   try{const status=await api(bp+'/desktop');if(!desktopCurrent(version))return;enable=!status.enabled}
-   catch{
-    // Workers from before desktop-status can still start an already installed desktop.
-    try{await startAndAttachDesktop(version);return}catch{if(!desktopCurrent(version))return;enable=true}
-   }
+  if(automatic)$('#desktop-status').textContent=enable?'Blender box detected, enabling and opening desktop…':'Desktop enabled, connecting…';
+  if(tryStartBeforeEnable){
+   try{return await startAndAttachDesktop(version)}catch{if(!workspaceCurrent(version))return false;enable=true}
   }
   if(enable){
    $('#desktop-status').textContent='Installing desktop packages (up to 3 minutes)…';
-   await api(bp+'/desktop/enable','POST',{}, {},190000);if(!desktopCurrent(version))return;
-   if(!automatic){$('#desktop-status').textContent='Desktop packages ready. Choose Start / reconnect desktop.';return}
+   await api(bp+'/desktop/enable','POST',{}, {},190000);if(!workspaceCurrent(version))return false;
+   if(!automatic){$('#desktop-status').textContent='Desktop packages ready. Choose Start / reconnect desktop.';return true}
   }
-  await startAndAttachDesktop(version);
+  return await startAndAttachDesktop(version);
  }catch(e){
-  if(desktopCurrent(version))$('#desktop-status').textContent=automatic?'Automatic desktop launch failed. Use the terminal or manual desktop controls. '+e.message:e.message;
+  if(workspaceCurrent(version))$('#desktop-status').textContent=automatic?'Automatic desktop launch failed. Use the TMUX tab or manual desktop controls. '+e.message:e.message;
+  return false;
  }finally{desktopBusy=false;$('#enable-desktop').disabled=false;$('#start-desktop').disabled=false}
 }
-function maybeAutoDesktop(box,version){
- if(!desktopCurrent(version)||workspaceRole!=='owner'||box.state!=='running'||box.failureReason||desktopBusy||desktopAttached||autoDesktopRequestedForBoxIds.has(boxID)||!hasBlender(box))return;
- autoDesktopRequestedForBoxIds.add(boxID);
- void requestDesktop({automatic:true});
+async function openPreferredView(box,version){
+ showInteractiveWorkspace();
+ if(workspaceRole!=='owner'){await selectTerminal(version);return}
+ if(desktopAttached){showWorkspaceView('desktop');return}
+ if(terminalAttached&&selectedWorkspaceView==='terminal'){showWorkspaceView('terminal');return}
+ if(autoDesktopRequestedForBoxIds.has(boxID)){await selectTerminal(version);return}
+ showWorkspaceView('desktop');$('#desktop-status').textContent='Checking desktop availability…';
+ let status;
+ try{status=await api(bp+'/desktop');if(!workspaceCurrent(version))return}
+ catch{
+  if(hasBlender(box)){
+   autoDesktopRequestedForBoxIds.add(boxID);
+   if(await requestDesktop({automatic:true,tryStartBeforeEnable:true}))return;
+  }
+  await selectTerminal(version);return;
+ }
+ if(status.enabled||hasBlender(box)){
+  autoDesktopRequestedForBoxIds.add(boxID);
+  if(await requestDesktop({automatic:true,enable:!status.enabled}))return;
+ }
+ await selectTerminal(version);
 }
+
+$('#terminal-tab').onclick=()=>void selectTerminal();
+$('#desktop-tab').onclick=()=>showWorkspaceView('desktop');
 $('#enable-desktop').onclick=()=>{if(confirm('Install desktop packages on this worker? This uses additional disk space and downloading may take a few minutes.'))void requestDesktop({enable:true})};
-$('#start-desktop').onclick=()=>requestDesktop();
+$('#start-desktop').onclick=()=>{showWorkspaceView('desktop');void requestDesktop()};
 async function api(path,method='GET',body,headers={},timeout=60000){
  let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running. Reload or use Resume / reconnect to check its state. Terminal input is not replayed.')}
  if(r.status===401){$('#login').hidden=false;throw Error('Please log in to the controller.')}
@@ -93,7 +139,7 @@ async function connect(){
  try{
   const run=await api(bp+'/run-once');if(version!==epoch)return;
   if(run?.id){runID=run.id;history.replaceState(null,'','?run='+encodeURIComponent(runID));await inspectRun(version);return}
-  let box=await api(bp);if(version!==epoch)return;state(box);$('#workspace').hidden=false;
+  let box=await api(bp);if(version!==epoch)return;state(box);showInteractiveWorkspace();
   if(box.state!=='running'){
    if(!allocation)allocation=await api(bp+'/allocate','POST',{leaseOwner:'web'},{'Idempotency-Key':allocationKey});
    const deadline=Date.now()+180000;
@@ -107,15 +153,12 @@ async function connect(){
    }
    box=await api(bp);if(version!==epoch)return;state(box);
   }
-  const session=await api(bp+'/sessions/interactive','POST',{agent:'shell',reuseShell:true});if(version!==epoch)return;
-  $('#session').textContent='Persistent shell: '+session.session;
-  closeTerminal();closeTerminal=openWorkspaceTerminal(boxID,session.session,message=>{if(version===epoch)$('#status').textContent=message});
-  maybeAutoDesktop(box,version);
+  await openPreferredView(box,version);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}finally{busy=false;$('#connect').disabled=false}
 }
 $('#connect').onclick=connect;
 $('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}};
 $('#logout').onclick=async()=>{epoch++;closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#login').hidden=false;$('#status').textContent='Logged out. The box was not stopped.'}catch(e){$('#error').textContent=e.message}};
-$('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();$('#session').textContent='';$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
+$('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#workspace-tabs').hidden=true;$('#session').textContent='';$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
 window.addEventListener('pagehide',()=>{epoch++;clearTimeout(runTimer);closeTerminal();closeDesktop()});
 (async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}})();

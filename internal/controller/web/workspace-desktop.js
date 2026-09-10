@@ -6,7 +6,11 @@ window.openWorkspaceDesktop=function(boxID,onStatus){
  rfb.addEventListener('connect',()=>onStatus('Desktop connected'));
  rfb.addEventListener('disconnect',e=>{if(!closed)onStatus(e.detail.clean?'Desktop disconnected. Reconnect to return.':'Desktop connection failed; check runtime and authentication.')});
  rfb.addEventListener('credentialsrequired',()=>{rfb.disconnect();onStatus('Unexpected desktop authentication request; check the private VNC configuration.')});
+ let remoteClipboard='';
+ rfb.addEventListener('clipboard',e=>{remoteClipboard=e.detail.text||'';onStatus('Remote clipboard ready. Choose Copy to save it to this device.')});
  const controls=document.querySelector('#desktop-controls');controls.replaceChildren();
+ const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.onclick=async()=>{if(!remoteClipboard){onStatus('Copy or select text in the desktop first.');return}try{await navigator.clipboard.writeText(remoteClipboard);onStatus('Desktop clipboard copied to this device.')}catch{onStatus('Clipboard copy was blocked by the browser.')}};controls.append(copy);
+ const paste=document.createElement('button');paste.type='button';paste.textContent='Paste';paste.onclick=async()=>{try{const value=await navigator.clipboard.readText();rfb.clipboardPasteFrom(value);rfb.focus();onStatus('Clipboard pasted into the desktop.')}catch{onStatus('Clipboard paste was blocked by the browser.')}};controls.append(paste);
  const address=document.createElement('button');address.type='button';address.textContent='Address bar';address.onclick=()=>{rfb.sendKey(0xffe3,'ControlLeft',true);rfb.sendKey(0x6c,'KeyL');rfb.sendKey(0xffe3,'ControlLeft',false);rfb.focus()};controls.append(address);
  const text=document.createElement('textarea');text.rows=1;text.placeholder='Type into desktop';text.setAttribute('aria-label','Desktop keyboard input');
  const type=()=>{for(const char of text.value){const code=char.codePointAt(0);rfb.sendKey(code===10?0xff0d:code>255?0x01000000+code:code)}text.value=''};

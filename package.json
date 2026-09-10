@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "test:browser": "node --test tests/browser/controller-ui.test.mjs tests/browser/grid.test.mjs tests/browser/desktop-cursor.test.mjs tests/browser/workspace-desktop.test.mjs"
+    "test:browser": "node --test tests/browser/controller-ui.test.mjs tests/browser/grid.test.mjs tests/browser/desktop-cursor.test.mjs tests/browser/workspace-desktop.test.mjs tests/browser/workspace-clipboard.test.mjs"
   },
   "devDependencies": {
     "esbuild": "0.25.9",

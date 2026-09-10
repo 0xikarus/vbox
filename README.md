@@ -325,14 +325,17 @@ an error rather than an automatic package installation.
 ### Web workspace
 
 Click a box name in the controller to open `/boxes/BOX_ID`. The page wakes the box
-through the allocation queue and reconnects to the same persistent shell used by
-`vmbox BOX`. The separate workspace page loads its own terminal and desktop assets;
-the configuration panel remains lightweight.
+through the allocation queue and opens an enabled desktop automatically. Otherwise
+it reconnects to the same persistent shell used by `vmbox BOX`. Desktop and TMUX
+tabs switch between both views; the shell is created only when the TMUX tab is
+opened. The separate workspace page loads its own terminal and desktop assets; the
+configuration panel remains lightweight.
 
 Terminal input is streamed to a real tmux PTY. Mobile controls provide Esc, Tab,
 arrows and common Ctrl keys. Closing/reloading the page disconnects the viewer,
 not the session; reconnect does not replay input. Hibernate explicitly stops
-processes and releases compute while retaining workspace files.
+processes and releases compute while retaining workspace files. Copy and Paste
+buttons move text between the browser clipboard and either viewer.
 
 For a graphical browser, choose **Enable desktop packages**, then **Start /
 reconnect desktop**. Enablement installs TigerVNC, Openbox and Firefox on the
