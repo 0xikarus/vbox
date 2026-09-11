@@ -25,6 +25,8 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   else if(path.endsWith('/sessions/interactive'))data={session:'shell-test'};
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
   else if(path==='/v1/logical-boxes/test')data={id:'test',name:'Test',state,tools};
+  else if(path.endsWith('/resources'))data={slotId:'slot-test',assignmentGeneration:7,resources:{cpu:2,memoryMiB:12288},message:'Limits submitted. No restart requested.'};
+  else if(path.endsWith('/connection'))data={connection:{transport:'openssh',endpoint:'instance@ssh.railway.com',metadata:{vmboxRegion:'europe-west4'}}};
   else if(path.endsWith('/allocate'))data={state:'failed',failureReason:'Fixture stopped box'};
   res.end(JSON.stringify(data));
  });
@@ -35,6 +37,18 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
  async function terminalReady(p){await p.waitForFunction(()=>window.terminals===1&&!document.querySelector('#connect').disabled)}
  async function selected(p,id){return p.$eval(id,e=>({selected:e.getAttribute('aria-selected'),panel:document.getElementById(e.getAttribute('aria-controls')).hidden}))}
  try{
+  await t.test('resource and connection controls load on demand without restarting viewers',async()=>{
+   const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
+   assert.equal(requests.some(r=>/resources|connection$/.test(r)),false);
+   await p.click('#box-settings summary');await p.click('#load-resources');await p.waitForFunction(()=>!document.querySelector('#resource-form').hidden);
+   assert.equal(await p.$eval('#resource-form input[name=cpu]',e=>e.value),'2');
+   p.on('dialog',d=>d.accept());await p.click('#resource-form button');await p.waitForFunction(()=>document.querySelector('#resource-status').textContent.includes('Limits submitted'));
+   assert.equal(requests.filter(r=>r==='PUT /v1/logical-boxes/test/resources').length,1);
+   await p.click('#load-connection');await p.waitForFunction(()=>!document.querySelector('#connection-details').hidden);
+   assert.match(await p.$eval('#forward-command',e=>e.textContent),/-L 127.0.0.1:3000:127.0.0.1:3000 instance@ssh.railway.com/);
+   await p.$eval('#forward-port',e=>{e.value='65536';e.dispatchEvent(new Event('input'))});assert.equal(await p.$eval('#forward-command',e=>e.textContent),'');
+   assert.equal(await p.evaluate(()=>window.attaches),1);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();
+  });
   await t.test('enabled Blender opens Desktop first and TMUX attaches lazily',async()=>{
    tools=['BlEnDeR'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
    assert.equal(await p.evaluate(()=>window.terminals),0);

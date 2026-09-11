@@ -342,6 +342,17 @@ A connection row above the Desktop/TMUX tabs shows viewer state, VNC round-trip
 latency to the box, and separate HTTP latency to the controller. Measurements use
 the existing VNC stream and controller health endpoint, without Railway API polling.
 Desktop ping is unavailable until a supporting desktop is connected.
+
+On the box page, expand **CPU, RAM & connection** to load and edit the current
+slot's CPU/RAM limits or resolve its SSH address. These owner-only reads run on
+demand. Saving limits does not request a worker restart; configured limits may
+need a later restart to take effect. Limits stay with the compute slot when a
+workspace moves elsewhere. Lowering RAM can terminate applications.
+The connection section generates a loopback-only SSH port-forward command for a
+chosen application port. Railway's SSH gateway is not a public worker IP; public
+HTTP domains/TCP proxies must be configured separately. Use your registered SSH
+key and refresh the address after a worker replacement.
+
 Desktop enablement installs the panel; reconnecting starts it alongside existing
 applications without restarting VNC or the box.
 

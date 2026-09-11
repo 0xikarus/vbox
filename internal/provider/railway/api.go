@@ -141,6 +141,14 @@ func (p *Provider) setResources(ctx context.Context, serviceID string, resources
 	return nil
 }
 
+func (p *Provider) ResourceLimits(ctx context.Context, serviceID string) (provider.Resources, error) {
+	return p.resources(ctx, serviceID)
+}
+
+func (p *Provider) SetResourceLimits(ctx context.Context, serviceID string, resources provider.Resources) error {
+	return p.setResources(ctx, serviceID, resources)
+}
+
 func (p *Provider) resources(ctx context.Context, serviceID string) (provider.Resources, error) {
 	variables := map[string]any{"serviceId": serviceID, "environmentId": p.cfg.EnvironmentID}
 	result, err := p.api(ctx, limitsQuery, variables)

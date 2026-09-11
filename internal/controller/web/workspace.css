@@ -3,3 +3,4 @@
 #desktop-screen:not(:empty){height:65vh;background:#222;overflow:auto}#desktop-screen:fullscreen{height:100vh;width:100vw}
 
 .connection-stats{display:flex;flex-wrap:wrap;gap:8px 20px;margin:16px 0 0;font-size:.9rem;color:var(--muted,#888)}.connection-stats[hidden]{display:none}.connection-stats span{white-space:nowrap}
+#box-settings{margin:12px 0}#box-settings input{max-width:130px}#forward-command{white-space:pre-wrap;overflow-wrap:anywhere}#connection-address{overflow-wrap:anywhere}

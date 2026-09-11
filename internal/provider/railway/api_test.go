@@ -132,3 +132,14 @@ func TestConfigureServiceDoesNotRetryFailedMutation(t *testing.T) {
 		t.Fatal("unexpected mutation retry")
 	}
 }
+
+func TestSetResourceLimitsDoesNotDeployOrRestart(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{}}}
+	p := New(Config{EnvironmentID: "environment"}, runner)
+	if err := p.SetResourceLimits(context.Background(), "service", provider.Resources{CPU: 4, MemoryMiB: 12288}); err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Calls) != 1 || !strings.Contains(runner.Calls[0].Argv[2], "serviceInstanceLimitsUpdate") {
+		t.Fatalf("unexpected commands: %+v", runner.Calls)
+	}
+}

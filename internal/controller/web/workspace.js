@@ -157,10 +157,50 @@ async function api(path,method='GET',body,headers={},timeout=60000){
  if(r.status===401){$('#login').hidden=false;throw Error('Please log in to the controller.')}
  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
 }
-function state(b){boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ')}
+let resourceSnapshot=null,connectionEndpoint='';
+function resetBoxSettings(){resourceSnapshot=null;connectionEndpoint='';$('#resource-form').hidden=true;$('#connection-details').hidden=true;$('#resource-status').textContent='';$('#connection-status').textContent=''}
+function renderForward(){
+ const port=Number($('#forward-port').value);
+ const valid=Number.isInteger(port)&&port>0&&port<=65535&&/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*@[a-zA-Z0-9][a-zA-Z0-9.-]*$/.test(connectionEndpoint);
+ $('#forward-command').textContent=valid?'ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:'+port+':127.0.0.1:'+port+' '+connectionEndpoint:'';
+ $('#forward-address').textContent=valid?'Local address: http://127.0.0.1:'+port+' (for HTTP applications)':'Enter a port from 1 to 65535. SSH forwarding requires an OpenSSH endpoint.';
+}
+$('#forward-port').oninput=renderForward;
+$('#load-connection').onclick=async()=>{
+ const version=epoch;$('#load-connection').disabled=true;$('#connection-details').hidden=true;$('#connection-status').textContent='Resolving current connection…';
+ try{
+  const result=await api(bp+'/connection');if(!workspaceCurrent(version))return;
+  const conn=result.connection;if(!conn?.endpoint)throw Error('No connection address available.');
+  connectionEndpoint=conn.transport==='openssh'?conn.endpoint:'';$('#connection-address').textContent='SSH address: '+conn.endpoint;
+  $('#connection-location').textContent='Region: '+(conn.metadata?.vmboxRegion||'Unknown');
+  $('#connection-details').hidden=false;$('#connection-status').textContent='Address resolved for the current worker. Reload after the box moves or resumes.';renderForward();
+ }catch(e){if(workspaceCurrent(version))$('#connection-status').textContent=e.message}
+ finally{$('#load-connection').disabled=false}
+};
+$('#load-resources').onclick=async()=>{
+ const version=epoch;resourceSnapshot=null;$('#resource-form').hidden=true;$('#load-resources').disabled=true;$('#resource-status').textContent='Loading configured limits…';
+ try{
+  const data=await api(bp+'/resources');if(!workspaceCurrent(version))return;
+  resourceSnapshot={...data,version};const f=$('#resource-form');f.elements.cpu.value=data.resources.cpu||'';f.elements.memoryMiB.value=data.resources.memoryMiB||'';f.hidden=false;
+  $('#resource-status').textContent='Configured slot limits. Live container limits may differ until a later restart.';
+ }catch(e){if(workspaceCurrent(version))$('#resource-status').textContent=e.message}
+ finally{$('#load-resources').disabled=false}
+};
+$('#resource-form').onsubmit=async event=>{
+ event.preventDefault();const snapshot=resourceSnapshot;if(!snapshot||!workspaceCurrent(snapshot.version)){$('#resource-status').textContent='Reload limits before saving.';return}
+ const form=event.target, cpu=Number(form.elements.cpu.value),memoryMiB=Number(form.elements.memoryMiB.value);
+ if(!confirm('Set this slot to '+cpu+' vCPU and '+memoryMiB+' MiB RAM? This can change cost. Reducing RAM can terminate applications. No worker restart will be requested.'))return;
+ resourceSnapshot=null;form.querySelector('button').disabled=true;$('#load-resources').disabled=true;
+ try{
+  const result=await api(bp+'/resources','PUT',{slotId:snapshot.slotId,assignmentGeneration:snapshot.assignmentGeneration,cpu,memoryMiB});
+  if(workspaceCurrent(snapshot.version))$('#resource-status').textContent=result.message;
+ }catch(e){if(workspaceCurrent(snapshot.version))$('#resource-status').textContent=e.message+' Reload limits before retrying.'}
+ finally{form.querySelector('button').disabled=false;$('#load-resources').disabled=false}
+};
+function state(b){$('#box-settings').hidden=!!runID||workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ')}
 async function connect(){
  if(runID){clearTimeout(runTimer);closeTerminal();attachedRunSession='';$('#error').textContent='';await inspectRun(++epoch);return}
- if(busy)return;busy=true;const version=++epoch;$('#connect').disabled=true;$('#error').textContent='';
+ if(busy)return;resetBoxSettings();busy=true;const version=++epoch;$('#connect').disabled=true;$('#error').textContent='';
  try{
   const run=await api(bp+'/run-once');if(version!==epoch)return;
   if(run?.id){runID=run.id;history.replaceState(null,'','?run='+encodeURIComponent(runID));await inspectRun(version);return}

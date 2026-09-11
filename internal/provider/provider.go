@@ -36,6 +36,13 @@ type Resources struct {
 	PIDs      int64   `json:"pids,omitempty"`
 }
 
+// ResourceLimitsProvider changes provider limits without deploying or restarting
+// a service. Configured limits are not proof of the live container's limits.
+type ResourceLimitsProvider interface {
+	ResourceLimits(context.Context, string) (Resources, error)
+	SetResourceLimits(context.Context, string, Resources) error
+}
+
 type Owner struct {
 	AccountID string `json:"accountId"`
 	BoxID     string `json:"boxId"`
