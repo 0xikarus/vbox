@@ -285,3 +285,25 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#app').hidden);assert.equal(await page.$eval('#provider textarea[name=secret]',n=>n.value),'');
  assert.deepEqual(errors,[]);await page.close();
 });
+
+test('fleet locations load on demand and preserve occupied fleets on rejection',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.locationWrites=[];
+  window.fetch=async(path,options={})=>{
+   if(path.startsWith('/v1/fleet/regions?'))return new Response(JSON.stringify([{id:'eu',name:'Europe'},{id:'us',name:'America'}]));
+   if(path.startsWith('/v1/fleet/slots?'))return new Response(JSON.stringify({region:'eu'}));
+   if(path==='/v1/fleet/location'){locationWrites.push(JSON.parse(options.body));return new Response(JSON.stringify({error:'Location changes require an empty fleet; existing boxes cannot be migrated.'}),{status:409})}
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#capacity table');
+ assert.equal(await page.$eval('#location-form',e=>e.hidden),true);
+ await page.click('#fleet-location summary');await page.click('#load-locations');await page.waitForSelector('#location-form:not([hidden])');
+ assert.equal(await page.$eval('#location-form select',e=>e.value),'eu');
+ await page.select('#location-form select','us');await page.click('#location-form button');
+ await page.waitForFunction(()=>document.querySelector('#location-status').textContent.includes('empty fleet'));
+ assert.deepEqual(await page.evaluate(()=>locationWrites),[{provider:'railway',providerCredential:'primary',region:'us'}]);
+ assert.match(await page.$eval('#capacity',e=>e.textContent),/helper ü/);
+ await page.close();
+});

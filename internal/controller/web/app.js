@@ -16,6 +16,34 @@ async function restoreLogin(){try{await api('/v1/browser-session');await refresh
 window.addEventListener('DOMContentLoaded',restoreLogin);
 function dataTable(headers,rows){const table=document.createElement('table'),head=document.createElement('tr');for(const h of headers)head.append(node('th',h));table.append(head);for(const values of rows){const row=document.createElement('tr');for(const value of values){const cell=node('td');cell.append(tableText(value));row.append(cell)}table.append(row)}return table}
 function rawDetails(value){const d=document.createElement('details');d.append(node('summary','Technical details · JSON'),node('pre',JSON.stringify(value,null,2)));return d}
+let locationTarget=null,locationLoading=false,locationSaving=false;
+function resetLocation(){locationTarget=null;$('#location-form').hidden=true;$('#location-status').textContent='';}
+$('#load-locations').addEventListener('click',action(async()=>{
+ if(locationLoading||locationSaving)return;if(!defaults)throw Error('Configure controller default first');
+ const target={provider:defaults.provider,providerCredential:defaults.providerCredential},version=epoch;locationLoading=true;$('#load-locations').disabled=true;resetLocation();$('#location-status').textContent='Loading locations…';
+ try{
+  const q=new URLSearchParams({provider:target.provider,providerCredential:target.providerCredential});
+  const [regions,config]=await Promise.all([api('/v1/fleet/regions?'+q),api('/v1/fleet/slots?'+q)]);
+  if(version!==epoch||defaults?.provider!==target.provider||defaults?.providerCredential!==target.providerCredential)return;
+  if(!Array.isArray(regions)||!regions.length)throw Error('This provider returned no available locations.');
+  const select=$('#location-form select');select.replaceChildren();
+  const placeholder=node('option','Choose a location');placeholder.value='';select.append(placeholder);
+  for(const region of regions){const option=node('option',region.name?region.name+' ('+region.id+')':region.id);option.value=region.id;select.append(option)}
+  select.value=config.region||'';locationTarget=target;$('#location-form').hidden=false;
+  $('#location-status').textContent='Current fleet location: '+(config.region||'Provider default')+'. Applies to '+target.provider+' / '+target.providerCredential+'.';
+ }catch(err){if(version===epoch)$('#location-status').textContent=err.message}
+ finally{locationLoading=false;$('#load-locations').disabled=false}
+}));
+$('#location-form').addEventListener('submit',action(async e=>{
+ if(locationSaving)return;
+ if(!locationTarget||defaults?.provider!==locationTarget.provider||defaults?.providerCredential!==locationTarget.providerCredential)throw Error('Load locations for the current provider first.');
+ const target={...locationTarget},region=e.target.elements.region.value,version=epoch;
+ if(!region)throw Error('Choose a location.');
+ locationSaving=true;e.target.querySelector('button').disabled=true;
+ try{await api('/v1/fleet/location','PUT',{...target,region});if(version!==epoch)return;$('#location-status').textContent='Fleet location saved: '+region+'.';await refresh()}
+ catch(err){if(version===epoch)$('#location-status').textContent=err.message}
+ finally{locationSaving=false;e.target.querySelector('button').disabled=false}
+}));
 function renderCapacity(fleet){
  const root=$('#capacity');root.replaceChildren(node('p',`Desired: ${fleet.desiredSlots??'—'} · Total: ${fleet.actualSlots??'—'} · Free: ${fleet.freeSlots??'—'} · Occupied: ${fleet.occupiedSlots??'—'} · Unhealthy: ${fleet.unhealthySlots??'—'}`));
  const slots=fleet.slots||[];
@@ -70,10 +98,10 @@ async function refresh(){
  if(!providers.length)$('#provider-list').append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));
  for(const p of providers){const line=node('p',p.provider+' / '+p.name+' ');line.append(button('Edit',()=>{const f=$('#provider').elements;f.provider.value=p.provider;f.alias.value=p.name;f.config.value=JSON.stringify(p.config||{},null,2);f.secret.value='';f.revision.value=p.updatedAt;$('#provider-editor').open=true;f.config.focus()}),button('Validate',async()=>{const result=await api(pp(p.provider,p.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}),button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:p.provider,providerCredential:p.name});await refresh()}));const details=document.createElement('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(p.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));$('#provider-list').append(line,details)}
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
- try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
+ try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;clearTimeout(boxRefreshTimer);token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value;await api('/v1/logical-boxes','POST',{name:f.name.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));

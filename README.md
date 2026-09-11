@@ -498,7 +498,10 @@ new regional fleet capacity. The selected region is retained for direct and queu
 restores; a box waits for matching capacity instead of moving regions. Regional
 latency probing is not currently available.
 
-Fleet placement is controller-managed. `vmbox fleet location` opens a region
+Fleet placement is controller-managed. In the web UI, open **Capacity → Slot
+location → Load available locations** to choose and save a fleet region. This
+requires an empty fleet and does not migrate existing slots or workspaces.
+`vmbox fleet location` opens a region
 picker populated from the provider API; scripts can use
 `vmbox fleet location set REGION`. Railway discovery is project-scoped and
 requires permission to query `regions`; authorization failures are shown, not
