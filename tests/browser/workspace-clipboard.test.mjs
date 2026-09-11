@@ -49,20 +49,17 @@ test('workspace clipboard controls move text through TMUX and Desktop',async()=>
   await page.click('#desktop-controls button:nth-child(2)');
   assert.deepEqual(await page.evaluate(()=>({writes:clipboardWrites,pasted:fakeRFB.pasted})),{writes:['from terminal','from desktop'],pasted:'to desktop'});
   const click=label=>page.$$eval('#desktop-controls button',(buttons,label)=>buttons.find(b=>b.textContent===label).click(),label);
-  await click('Windows');await click('Next');await click('Previous');await click('Select window');
-  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys),[
-   [0xffe9,'AltLeft',true],[0xff09,'Tab'],[0xff09,'Tab'],
-   [0xffe1,'ShiftLeft',true],[0xff09,'Tab'],[0xffe1,'ShiftLeft',false],[0xffe9,'AltLeft',false]
-  ]);
-  assert.equal(await page.$eval('[aria-label="Switch desktop window"]',e=>e.hidden),true);
-  await page.evaluate(()=>{fakeRFB.keys=[]});await click('Windows');await click('Cancel');
-  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.slice(-2)),[[0xff1b,'Escape'],[0xffe9,'AltLeft',false]]);
-  await click('Windows');await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
-  assert.equal(await page.$eval('[aria-label="Switch desktop window"]',e=>e.hidden),true);
-  await click('Windows');await page.evaluate(()=>document.querySelector('#desktop-screen').dispatchEvent(new Event('pointerdown')));
-  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.at(-1)),[0xffe9,'AltLeft',false]);
-  await click('Windows');await page.evaluate(()=>closeDesk());
-  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.slice(-2)),[[0xff1b,'Escape'],[0xffe9,'AltLeft',false]]);
+  for(const [label,key,code,reverse] of [['Next window',0xff09,'Tab',false],['Previous window',0xff09,'Tab',true],['Window actions',0x20,'Space',false]]){
+   await page.evaluate(()=>{fakeRFB.keys=[]});await click(label);
+   assert.deepEqual(await page.evaluate(()=>fakeRFB.keys),[
+    [0xffe9,'AltLeft',true],...(reverse?[[0xffe1,'ShiftLeft',true]]:[]),
+    [key,code,true],[key,code,false],...(reverse?[[0xffe1,'ShiftLeft',false]]:[]),[0xffe9,'AltLeft',false]
+   ]);
+   // Normal clicks after every action send no new modifier events.
+   await page.evaluate(()=>document.querySelector('#desktop-screen').dispatchEvent(new Event('pointerdown')));
+   assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.at(-1)),[0xffe9,'AltLeft',false]);
+  }
+  await page.evaluate(()=>closeDesk());
   assert.deepEqual(errors,[]);
  }finally{await browser.close()}
 });

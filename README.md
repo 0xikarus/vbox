@@ -336,8 +336,8 @@ arrows and common Ctrl keys. Closing/reloading the page disconnects the viewer,
 not the session; reconnect does not replay input. Hibernate explicitly stops
 processes and releases compute while retaining workspace files. Copy and Paste
 buttons move text between the browser clipboard and either viewer. In the desktop
-toolbar, **Windows** opens the window picker: use **Previous** / **Next**, then
-**Select window** or **Cancel**. In Grid, expand **Keys / fullscreen** to find it.
+toolbar, **Previous window** / **Next window** switch applications immediately.
+**Window actions** opens the active window’s menu for stacking, moving and resizing. In Grid, expand **Keys / fullscreen** to find it.
 
 For a graphical browser, choose **Enable desktop packages**, then **Start /
 reconnect desktop**. Enablement installs TigerVNC, Openbox and Firefox on the
