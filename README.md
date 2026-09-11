@@ -335,9 +335,11 @@ Terminal input is streamed to a real tmux PTY. Mobile controls provide Esc, Tab,
 arrows and common Ctrl keys. Closing/reloading the page disconnects the viewer,
 not the session; reconnect does not replay input. Hibernate explicitly stops
 processes and releases compute while retaining workspace files. Copy and Paste
-buttons move text between the browser clipboard and either viewer. In the desktop
-toolbar, **Previous window** / **Next window** switch applications immediately.
-**Window actions** opens the active window’s menu for stacking, moving and resizing. In Grid, expand **Keys / fullscreen** to find it.
+buttons move text between the browser clipboard and either viewer. A taskbar
+inside the remote desktop lists open windows: click to raise/restore or minimize,
+and scroll to switch windows. It appears in every VNC viewer, including Grid.
+Desktop enablement installs the panel; reconnecting starts it alongside existing
+applications without restarting VNC or the box.
 
 For a graphical browser, choose **Enable desktop packages**, then **Start /
 reconnect desktop**. Enablement installs TigerVNC, Openbox and Firefox on the

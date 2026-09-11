@@ -39,8 +39,8 @@ func EnableDesktop(ctx context.Context, assignment string) error {
 
 // Package installation is also used before a new box has a tmux assignment.
 func installDesktopPackages(ctx context.Context, progress io.Writer, blender bool) error {
-	bins := []string{"Xtigervnc", "openbox", "firefox-esr"}
-	packages := []string{"tigervnc-standalone-server", "openbox", "firefox-esr", "xterm", "dbus-x11", "fonts-dejavu-core"}
+	bins := []string{"Xtigervnc", "openbox", "firefox-esr", "tint2"}
+	packages := []string{"tigervnc-standalone-server", "openbox", "firefox-esr", "xterm", "dbus-x11", "fonts-dejavu-core", "tint2"}
 	if blender {
 		bins = append(bins, "blender", "pipx")
 		packages = append(packages, "blender", "pipx", "python3-venv")
@@ -117,7 +117,7 @@ func StartDesktop(ctx context.Context, assignment string) error {
 			conn, err := net.DialTimeout("unix", desktopSocket(assignment), time.Second)
 			if err == nil {
 				conn.Close()
-				return nil
+				return ensureDesktopPanel(ctx, assignment)
 			}
 		}
 	}

@@ -50,7 +50,7 @@ RUN groupadd --gid 10001 vmbox \
 ARG VMBOX_DESKTOP=false
 RUN if [ "$VMBOX_DESKTOP" = true ]; then \
       apt-get update && apt-get install -y --no-install-recommends \
-        tigervnc-standalone-server openbox firefox-esr xterm dbus-x11 fonts-dejavu-core \
+        tigervnc-standalone-server openbox firefox-esr xterm dbus-x11 fonts-dejavu-core tint2 \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 
