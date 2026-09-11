@@ -3,8 +3,17 @@ window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  const root=options.root||document.querySelector('#desktop-screen');root.replaceChildren();
  const url=new URL('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/desktop/stream',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
  const rfb=new NoVNC.default(root,url.href);rfb.scaleViewport=true;rfb.resizeSession=false;rfb.showDotCursor=true;let closed=false;
- rfb.addEventListener('connect',()=>onStatus('Desktop connected'));
- rfb.addEventListener('disconnect',e=>{if(!closed){onStatus(e.detail.clean?'Desktop disconnected. Reconnect to return.':'Desktop connection failed; check runtime and authentication.');options.onDisconnect?.()}});
+ let latencyTimer,pendingProbe=null,probeSequence=0;
+ const metrics=value=>options.onMetrics?.(value);
+ function probe(){
+  if(closed||document.hidden)return;
+  if(pendingProbe){if(performance.now()-pendingProbe.started<10000)return;pendingProbe=null;metrics({ping:null})}
+  const payload='vmbox:'+String(++probeSequence),started=performance.now();
+  if(rfb.requestLatencyProbe?.(payload))pendingProbe={payload,started};
+ }
+ rfb.addEventListener('fenceresponse',e=>{if(!closed&&pendingProbe?.payload===e.detail.payload){metrics({ping:Math.round(performance.now()-pendingProbe.started)});pendingProbe=null}});
+ rfb.addEventListener('connect',()=>{if(closed)return;onStatus('Desktop connected');metrics({state:'connected',ping:null});if(options.onMetrics){probe();latencyTimer=setInterval(probe,5000)}});
+ rfb.addEventListener('disconnect',e=>{clearInterval(latencyTimer);pendingProbe=null;if(!closed){metrics({state:'disconnected',ping:null});onStatus(e.detail.clean?'Desktop disconnected. Reconnect to return.':'Desktop connection failed; check runtime and authentication.');options.onDisconnect?.()}});
  rfb.addEventListener('credentialsrequired',()=>{rfb.disconnect();onStatus('Unexpected desktop authentication request; check the private VNC configuration.')});
  let remoteClipboard='';
  rfb.addEventListener('clipboard',e=>{remoteClipboard=e.detail.text||'';onStatus('Remote clipboard ready. Choose Copy to save it to this device.')});
@@ -16,5 +25,5 @@ window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  const type=()=>{for(const char of text.value){const code=char.codePointAt(0);rfb.sendKey(code===10?0xff0d:code>255?0x01000000+code:code)}text.value=''};
  text.addEventListener('input',e=>{if(!e.isComposing)type()});text.addEventListener('compositionend',type);text.addEventListener('keydown',e=>{if(e.key==='Backspace'&&!text.value){e.preventDefault();rfb.sendKey(0xff08)}});controls.append(text);
  for(const [label,fn] of [['Fit',()=>{rfb.scaleViewport=!rfb.scaleViewport}],['Fullscreen',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await root.requestFullscreen()}catch{onStatus('Fullscreen unavailable')}}],['Ctrl-Alt-Del',()=>rfb.sendCtrlAltDel()]]){const b=document.createElement('button');b.textContent=label;b.type='button';b.onclick=fn;controls.append(b)}
- return()=>{closed=true;rfb.disconnect();controls.replaceChildren()};
+ return()=>{closed=true;clearInterval(latencyTimer);pendingProbe=null;rfb.disconnect();controls.replaceChildren()};
 };

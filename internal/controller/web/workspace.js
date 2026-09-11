@@ -7,9 +7,34 @@ let selectedWorkspaceView='',workspaceRole='';
 let runID=new URLSearchParams(location.search).get('run');
 let runTimer,attachedRunSession='';
 
+let boxSummary=null,controllerPing=null,statsTimer,statsGeneration=0;
+const viewerStats={desktop:{state:'disconnected',ping:null},terminal:{state:'disconnected'}};
+function renderStats(){
+ const row=$('#connection-stats');if(!row)return;
+ row.hidden=!!runID||!boxSummary;
+ const current=viewerStats[selectedWorkspaceView]||{state:'connecting'};
+ const fields=[['Box',boxSummary?.state||'—'],['Provider',boxSummary?.provider||'—'],['Viewer',(selectedWorkspaceView==='desktop'?'Desktop':'TMUX')+' · '+current.state],['Desktop ping',viewerStats.desktop.ping==null?'—':viewerStats.desktop.ping+' ms'],['Controller',controllerPing==null?'—':controllerPing+' ms']];
+ row.replaceChildren(...fields.map(([label,value])=>{const item=document.createElement('span');item.textContent=label+': '+value;if(label==='Desktop ping')item.title='Round trip to the box over the live VNC connection. Includes transport and server response time.';if(label==='Controller')item.title='HTTP round trip to the controller; this does not measure the worker.';return item}));
+}
+function recordViewer(view,value){Object.assign(viewerStats[view],value);renderStats()}
+function stopStats(){statsGeneration++;clearTimeout(statsTimer);controllerPing=null;renderStats()}
+function startStats(){
+ stopStats();const generation=statsGeneration;
+ async function sample(){
+  if(generation!==statsGeneration)return;
+  if(!document.hidden){
+   const started=performance.now();let ping=null;
+   try{const response=await fetch('/healthz',{cache:'no-store',credentials:'same-origin',signal:AbortSignal.timeout(5000)});await response.text();if(response.ok)ping=Math.round(performance.now()-started)}catch{}
+   if(generation!==statsGeneration)return;controllerPing=ping;renderStats();
+  }
+  statsTimer=setTimeout(sample,5000);
+ }
+ void sample();
+}
+
 function workspaceCurrent(version){return version===epoch&&!runID&&!$('#workspace').hidden}
 function showWorkspaceView(view){
- selectedWorkspaceView=view;
+ selectedWorkspaceView=view;renderStats();
  const desktop=view==='desktop';
  $('#desktop').hidden=!desktop;$('#terminal').hidden=desktop;
  $('#desktop-tab').setAttribute('aria-selected',String(desktop));
@@ -24,9 +49,9 @@ async function ensureTerminal(version=epoch){
   try{
    const session=await api(bp+'/sessions/interactive','POST',{agent:'shell',reuseShell:true});if(!workspaceCurrent(version))return false;
    $('#session').textContent='Persistent shell: '+session.session;
-   closeTerminal();terminalAttached=true;
-   const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message});
-   closeTerminal=()=>{terminalAttached=false;dispose()};
+   closeTerminal();terminalAttached=true;recordViewer('terminal',{state:'connecting'});
+   const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('terminal',value)}});
+   closeTerminal=()=>{terminalAttached=false;recordViewer('terminal',{state:'disconnected'});dispose()};
    return true;
   }catch(e){if(workspaceCurrent(version))$('#error').textContent=e.message;return false}
  })();
@@ -75,9 +100,9 @@ function hasBlender(box){
 async function startAndAttachDesktop(version){
  $('#desktop-status').textContent='Starting desktop…';
  await api(bp+'/desktop','POST',{});if(!workspaceCurrent(version))return false;
- closeDesktop();desktopAttached=true;
- const dispose=openWorkspaceDesktop(boxID,message=>{if(workspaceCurrent(version))$('#desktop-status').textContent=message});
- closeDesktop=()=>{desktopAttached=false;dispose()};
+ closeDesktop();desktopAttached=true;recordViewer('desktop',{state:'connecting',ping:null});
+ const dispose=openWorkspaceDesktop(boxID,message=>{if(workspaceCurrent(version))$('#desktop-status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('desktop',value)}});
+ closeDesktop=()=>{desktopAttached=false;recordViewer('desktop',{state:'disconnected',ping:null});dispose()};
  return true;
 }
 async function requestDesktop({enable=false,automatic=false,tryStartBeforeEnable=false}={}){
@@ -132,7 +157,7 @@ async function api(path,method='GET',body,headers={},timeout=60000){
  if(r.status===401){$('#login').hidden=false;throw Error('Please log in to the controller.')}
  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
 }
-function state(b){$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ')}
+function state(b){boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ')}
 async function connect(){
  if(runID){clearTimeout(runTimer);closeTerminal();attachedRunSession='';$('#error').textContent='';await inspectRun(++epoch);return}
  if(busy)return;busy=true;const version=++epoch;$('#connect').disabled=true;$('#error').textContent='';
@@ -153,12 +178,12 @@ async function connect(){
    }
    box=await api(bp);if(version!==epoch)return;state(box);
   }
-  await openPreferredView(box,version);
+  startStats();await openPreferredView(box,version);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}finally{busy=false;$('#connect').disabled=false}
 }
 $('#connect').onclick=connect;
 $('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}};
-$('#logout').onclick=async()=>{epoch++;closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#login').hidden=false;$('#status').textContent='Logged out. The box was not stopped.'}catch(e){$('#error').textContent=e.message}};
-$('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#workspace-tabs').hidden=true;$('#session').textContent='';$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
-window.addEventListener('pagehide',()=>{epoch++;clearTimeout(runTimer);closeTerminal();closeDesktop()});
+$('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#login').hidden=false;$('#status').textContent='Logged out. The box was not stopped.'}catch(e){$('#error').textContent=e.message}};
+$('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;stopStats();closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#workspace-tabs').hidden=true;$('#session').textContent='';$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
+window.addEventListener('pagehide',()=>{epoch++;stopStats();clearTimeout(runTimer);closeTerminal();closeDesktop()});
 (async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}})();

@@ -11,7 +11,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let requests=[];
  const server=http.createServer(async(req,res)=>{
   const path=req.url,method=req.method;
-  if(path==='/boxes/test')return res.end(html.replace(/<script[\s\S]*$/,`<script>window.attaches=0;window.terminals=0;window.openWorkspaceTerminal=()=>{window.terminals++;return()=>{}};window.openWorkspaceDesktop=()=>{window.attaches++;return()=>{}};</script><script src="/workspace.js"></script>`));
+  if(path==='/boxes/test')return res.end(html.replace(/<script[\s\S]*$/,`<script>window.attaches=0;window.terminals=0;window.openWorkspaceTerminal=()=>{window.terminals++;return()=>{}};window.openWorkspaceDesktop=(box,status,options)=>{window.attaches++;window.desktopMetrics=options.onMetrics;return()=>{}};</script><script src="/workspace.js"></script>`));
   if(path==='/workspace.js'){res.setHeader('Content-Type','text/javascript');return res.end(script)}
   if(!path.startsWith('/v1/'))return res.end();
   requests.push(method+' '+path);
@@ -38,6 +38,10 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   await t.test('enabled Blender opens Desktop first and TMUX attaches lazily',async()=>{
    tools=['BlEnDeR'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
    assert.equal(await p.evaluate(()=>window.terminals),0);
+   await p.evaluate(()=>desktopMetrics({state:'connected',ping:73}));
+   assert.match(await p.$eval('#connection-stats',e=>e.textContent),/Desktop ping: 73 ms/);
+   assert.equal(await p.$eval('#connection-stats',e=>e.nextElementSibling.id),'workspace-tabs');
+
    assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});
    assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);
    await p.click('#terminal-tab');await terminalReady(p);

@@ -1,3 +1,5 @@
 #terminal-screen{height:65vh;min-height:240px;background:#000;padding:4px}#terminal-screen:fullscreen{height:100vh;width:100vw;box-sizing:border-box}.terminal-keys{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.terminal-keys button{min-width:38px;min-height:38px}#terminal-screen .xterm{height:100%}#desktop-screen{min-height:200px}
 .workspace-tabs{display:flex;gap:6px;margin:18px 0 10px;border-bottom:1px solid #888}.workspace-tabs[hidden]{display:none}.workspace-tabs button{border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:-1px}.workspace-tabs button[aria-selected="true"]{font-weight:700;border-bottom-color:var(--background,#fff)}
 #desktop-screen:not(:empty){height:65vh;background:#222;overflow:auto}#desktop-screen:fullscreen{height:100vh;width:100vw}
+
+.connection-stats{display:flex;flex-wrap:wrap;gap:8px 20px;margin:16px 0 0;font-size:.9rem;color:var(--muted,#888)}.connection-stats[hidden]{display:none}.connection-stats span{white-space:nowrap}

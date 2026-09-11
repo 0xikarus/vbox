@@ -338,6 +338,10 @@ processes and releases compute while retaining workspace files. Copy and Paste
 buttons move text between the browser clipboard and either viewer. A taskbar
 inside the remote desktop lists open windows: click to raise/restore or minimize,
 and scroll to switch windows. It appears in every VNC viewer, including Grid.
+A connection row above the Desktop/TMUX tabs shows viewer state, VNC round-trip
+latency to the box, and separate HTTP latency to the controller. Measurements use
+the existing VNC stream and controller health endpoint, without Railway API polling.
+Desktop ping is unavailable until a supporting desktop is connected.
 Desktop enablement installs the panel; reconnecting starts it alongside existing
 applications without restarting VNC or the box.
 

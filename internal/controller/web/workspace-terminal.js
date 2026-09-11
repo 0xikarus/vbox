@@ -9,9 +9,9 @@ window.openWorkspaceTerminal=function(boxID,session,onStatus,options={}){
  function input(data){const bytes=new TextEncoder().encode(data);for(let i=0;i<bytes.length;i+=16384){const chunk=bytes.subarray(i,i+16384);send({data:btoa(String.fromCharCode(...chunk))})}}
  const data=terminal.onData(input),binary=terminal.onBinary(data=>send({data:btoa(data)})),resize=terminal.onResize(size=>send({cols:size.cols,rows:size.rows}));
  const observer=new ResizeObserver(()=>{if(!closed)fit.fit()});observer.observe(root);
- socket.onopen=()=>{if(closed)return;fit.fit();send({cols:terminal.cols,rows:terminal.rows});onStatus('Connected · '+session);if(options.autoFocus!==false)terminal.focus()};
+ socket.onopen=()=>{if(closed)return;fit.fit();send({cols:terminal.cols,rows:terminal.rows});onStatus('Connected · '+session);options.onMetrics?.({state:'connected'});if(options.autoFocus!==false)terminal.focus()};
  socket.onmessage=e=>{if(!closed&&e.data instanceof ArrayBuffer)terminal.write(new Uint8Array(e.data))};
- socket.onclose=e=>{if(!closed){onStatus('Disconnected · '+(e.reason||'use Reconnect')+'. Input is not replayed.');options.onDisconnect?.()}};
+ socket.onclose=e=>{if(!closed){options.onMetrics?.({state:'disconnected'});onStatus('Disconnected · '+(e.reason||'use Reconnect')+'. Input is not replayed.');options.onDisconnect?.()}};
  socket.onerror=()=>{if(!closed)onStatus('Terminal connection failed. Check login and worker runtime, then reconnect.')};
  const keys=options.keys||document.querySelector('.terminal-keys');keys.replaceChildren();
  const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.onclick=async()=>{const value=terminal.getSelection();if(!value){onStatus('Select terminal text before copying.');terminal.focus();return}try{await navigator.clipboard.writeText(value);onStatus('Terminal selection copied.')}catch{onStatus('Clipboard copy was blocked by the browser. Use Ctrl/Cmd+C on the selection.')}};keys.append(copy);

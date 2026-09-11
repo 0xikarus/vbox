@@ -10,7 +10,20 @@ const fullscreenCursor={name:'fullscreen-cursor',setup(builder){builder.onLoad({
  }
  return {contents:source,loader:'js'};
 })}};
-await build({stdin:{contents:"export {default} from '@novnc/novnc/lib/rfb.js';",resolveDir:process.cwd(),loader:'js'},plugins:[fullscreenCursor],bundle:true,format:'iife',globalName:'NoVNC',minify:true,outfile:'internal/controller/web/novnc.js',legalComments:'eof'});
+// Fence echoes measure the complete browser → controller → worker VNC path.
+const fenceLatency={name:'fence-latency',setup(builder){builder.onLoad({filter:/[\\/]lib[\\/]rfb\.js$/},async({path})=>{
+ let source=await readFile(path,'utf8');
+ const from='return this._fail("Unexpected fence response");';
+ if(!source.includes(from))throw Error('noVNC fence handler changed; review latency patch');
+ source=source.replace(from,`this.dispatchEvent(new CustomEvent("fenceresponse", {detail: {payload: payload}})); return true;`);
+ return {contents:source,loader:'js'};
+})}};
+await build({stdin:{contents:`import RFB from '@novnc/novnc/lib/rfb.js';
+RFB.prototype.requestLatencyProbe=function(payload){
+ if(this._rfbConnectionState!=='connected'||!this._supportsFence)return false;
+ if(typeof payload!=='string'||payload.length>64)throw Error('Invalid fence payload');
+ RFB.messages.clientFence(this._sock,0x80000000,payload);return true;
+};export default RFB;`,resolveDir:process.cwd(),loader:'js'},plugins:[fullscreenCursor,fenceLatency],bundle:true,format:'iife',globalName:'NoVNC',minify:true,outfile:'internal/controller/web/novnc.js',legalComments:'eof'});
 for(const [source,target] of [
  ['@novnc/novnc/LICENSE.txt','novnc-LICENSE.txt'],
  ['@novnc/novnc/AUTHORS','novnc-AUTHORS.txt'],
