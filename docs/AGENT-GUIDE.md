@@ -68,6 +68,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 
 ## Other recently established behavior
 
+- Default worker builds include desktop packages (`VMBOX_DESKTOP=true`). The web
+  workspace starts the desktop on attachment; TMUX and Run once retain their flows.
+  PCManFM supplies desktop launch icons alongside the tint2 taskbar. Icon files
+  are created only when absent; owner edits survive reconnects. New interactive
+  shells default `DISPLAY` to `:99`; screenshot/input agent tools remain separate.
+
 - Blender is an optional distribution-package preset, including desktop packages.
   `internal/boxruntime/blender.go` retains a `blender-enabled` marker under
   `~/.config/vmbox/`, separate from custom Bash. `RestoreToolSetup` restores the

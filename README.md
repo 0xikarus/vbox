@@ -356,11 +356,17 @@ key and refresh the address after a worker replacement.
 Desktop enablement installs the panel; reconnecting starts it alongside existing
 applications without restarting VNC or the box.
 
-For a graphical browser, choose **Enable desktop packages**, then **Start /
+New default worker images include a desktop, which opens automatically in the
+interactive web workspace. TMUX remains available in its tab and through the CLI.
+The desktop has Firefox, Terminal and Files launch icons, plus Blender when installed.
+Applications launch when you select them. New interactive shells use `DISPLAY=:99`
+for this shared screen; this does not itself give agents screenshot or mouse tools.
+Operators can build a shell-only image with `VMBOX_DESKTOP=false`.
+
+On older workers, choose **Enable desktop packages**, then **Start /
 reconnect desktop**. Enablement installs TigerVNC, Openbox and Firefox on the
-current Debian-compatible worker without restarting it. A replacement worker may
-need enablement again. Operators can instead build the worker image with
-`--build-arg VMBOX_DESKTOP=true`. VNC is available only through a private Unix
+current Debian-compatible worker without restarting it. Older or custom shell-only
+replacement images may need enablement again. VNC is available only through a private Unix
 socket and the owner-authenticated controller stream, never a public VNC port.
 Firefox may report reduced sandbox protection when the provider restricts user
 namespaces; no sandbox-disabling browser flags are configured.

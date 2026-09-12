@@ -130,6 +130,10 @@ sed -i \
   echo 'export PATH=/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:$PATH'
   echo 'export BUN_INSTALL=/opt/bun'
   echo 'export FOUNDRY_DIR=/opt/foundry'
+  # GUI commands from new interactive shells share the VNC display.
+  if command -v Xtigervnc >/dev/null 2>&1 && ! grep -q '^export DISPLAY=' "$profile"; then
+    echo 'export DISPLAY=${DISPLAY:-:99}'
+  fi
   echo '# end vmbox-service environment'
 } >> "$profile"
 if ! grep -q '/data/home/.profile' "$bashrc"; then

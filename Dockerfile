@@ -46,11 +46,11 @@ RUN groupadd --gid 10001 vmbox \
     && chmod 0700 /data/home \
     && chown -R vmbox:vmbox /data
 
-# Optional graphical workspace. The default shell image stays lightweight.
-ARG VMBOX_DESKTOP=false
+# Desktop is included by default; operators can still build a shell-only image.
+ARG VMBOX_DESKTOP=true
 RUN if [ "$VMBOX_DESKTOP" = true ]; then \
       apt-get update && apt-get install -y --no-install-recommends \
-        tigervnc-standalone-server openbox firefox-esr xterm dbus-x11 fonts-dejavu-core tint2 \
+        tigervnc-standalone-server openbox firefox-esr xterm dbus-x11 fonts-dejavu-core tint2 pcmanfm xdg-user-dirs adwaita-icon-theme \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 

@@ -84,7 +84,7 @@ func TestBlenderAlreadyInstalledDoesNotInvokePackageManager(t *testing.T) {
 	t.Setenv("PATH", bin)
 	t.Setenv("PACKAGE_LOG", log)
 	t.Setenv("AGENT_GET_EXIT", "0")
-	for _, name := range []string{"Xtigervnc", "openbox", "firefox-esr", "tint2"} {
+	for _, name := range []string{"Xtigervnc", "openbox", "firefox-esr", "tint2", "pcmanfm", "xdg-user-dir"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 			t.Fatal(err)
 		}
