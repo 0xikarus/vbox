@@ -1,7 +1,7 @@
 # vmbox: guide for future agents
 
 Current architecture and behavior, checked against the source on 2026-09-10.
-Start with the [setup guide](../README.md). This document explains where to work
+Start with the [setup guide](../README.md). The [desktop MVP guide](AGENT-DESKTOP-IMPLEMENTATION.md) records the newer desktop/secret/idle implementation and verification. This document explains where to work
 and the distinctions that must survive future changes.
 
 ## What the product is
@@ -12,7 +12,7 @@ provider-agnostic. A logical box is **not** a fleet service: its workspace volum
 can outlive, and later attach to, a different compute slot.
 
 - `vmbox BOX`: persistent interactive shell/tmux workspace; launch agents yourself.
-- Web box workspace: prefer an enabled desktop, with Desktop and lazy TMUX tabs.
+- Web box workspace: start the selected managed agent and prefer its enabled desktop, with Desktop and TMUX views of the same session.
 - **Run once**: disposable agent/shell run, not a multi-agent task orchestrator.
   Actual process exit records completion. An idle completed one-shot box and its
   volume are deleted; saved output and exit code remain in the controller.
@@ -77,9 +77,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Blender is an optional distribution-package preset, including desktop packages.
   `internal/boxruntime/blender.go` retains a `blender-enabled` marker under
   `~/.config/vmbox/`, separate from custom Bash. `RestoreToolSetup` restores the
-  preset even without a custom script. The single-box workspace probes desktop
-  enablement before creating a shell, opens enabled desktops first, and creates
-  the persistent shell only when TMUX is selected. Run once retains its terminal flow; Grid also prefers enabled desktops. The preset also installs pinned Blender MCP, enables its add-on,
+  preset even without a custom script. The single-box workspace creates/reuses the selected managed session before
+  presenting its preferred desktop view. Run once retains its terminal flow; Grid also prefers enabled desktops. The preset also installs pinned Blender MCP, enables its add-on,
   and registers its local stdio bridge for Codex and Claude unless the user already
   has a `blender` MCP entry. Telemetry is disabled, bridge safe mode is enabled,
   and its Blender-side TCP listener stays on loopback. Both workspace viewers

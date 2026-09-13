@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS login_profiles (
   PRIMARY KEY(account_id, application, name)
 );
 ALTER TABLE login_profiles DROP CONSTRAINT IF EXISTS login_profiles_application_check;
-ALTER TABLE login_profiles ADD CONSTRAINT login_profiles_application_check CHECK (application IN ('claude','codex','github'));
+ALTER TABLE login_profiles ADD CONSTRAINT login_profiles_application_check CHECK (application IN ('claude','codex','opencode','github'));
 CREATE TABLE IF NOT EXISTS notification_destinations (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),
@@ -422,3 +422,61 @@ CREATE TABLE IF NOT EXISTS session_acknowledgements (
  sequence bigint NOT NULL,
  PRIMARY KEY(account_id,user_id,box_id,incarnation)
 );
+
+-- Per-agent browser credentials. Metadata is returned separately from ciphertext.
+CREATE TABLE IF NOT EXISTS desktop_secrets (
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  secret_key text NOT NULL,
+  origin text NOT NULL,
+  encrypted_value text NOT NULL,
+  creator_id uuid NOT NULL REFERENCES users(id),
+  status text NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,box_id,secret_key)
+);
+
+-- One scoped desktop MCP credential per box; old assignments cannot reuse it.
+CREATE TABLE IF NOT EXISTS desktop_agent_tokens (
+  box_id uuid PRIMARY KEY REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES accounts(id),
+  user_id uuid NOT NULL REFERENCES users(id),
+  fencing_token text NOT NULL,
+  token_hash bytea NOT NULL UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS browser_state_imports (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id),
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ encrypted_value text NOT NULL,
+ origins jsonb NOT NULL,
+ status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','applied')),
+ created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS box_notes (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id),
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES users(id),
+ body text NOT NULL,
+ idempotency_key text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id,idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS desktop_secret_requests (
+ account_id uuid NOT NULL REFERENCES accounts(id),
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ secret_key text NOT NULL,
+ origin text NOT NULL,
+ status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','fulfilled','cancelled')),
+ created_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(account_id,box_id,secret_key)
+);
+
+-- Existing boxes retain their stop policy; new boxes default to four hours.
+ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS idle_timeout_seconds integer NOT NULL DEFAULT 0 CHECK (idle_timeout_seconds BETWEEN 0 AND 604800);
+ALTER TABLE logical_boxes ALTER COLUMN idle_timeout_seconds SET DEFAULT 14400;

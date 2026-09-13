@@ -359,6 +359,7 @@ func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) 
 
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
+	mock.ExpectQuery("FROM box_notes").WithArgs("account-a", "box-1", "key").WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "body", "created_at"}))
 	mock.ExpectQuery("FROM box_messages m JOIN box_tasks").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}))
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
@@ -369,6 +370,7 @@ func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) 
 			"id", "logical_box_id", "name", "user_id", "requested_role", "agent",
 			"session_name", "prompt", "state", "failure_reason", "created_at", "updated_at",
 		}))
+	mock.ExpectQuery("SELECT COALESCE\\(metadata").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"session", "agent"}).AddRow("", ""))
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
 	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").

@@ -15,7 +15,7 @@ func (a *App) discoverCreationLogins(saved []v1.LoginProfile, refs []v1.LoginPro
 		return nil, fmt.Errorf("could not discover local login profiles: %w", err)
 	}
 	var result []creationProfileFields
-	for _, app := range []string{"claude", "codex", "github"} {
+	for _, app := range []string{"claude", "codex", "opencode", "github"} {
 		selection := &formField{Value: "Skip", Choices: []string{"Skip", "Custom local path…"}}
 		paths := map[string]string{}
 		usedNames := map[string]bool{}

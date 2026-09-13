@@ -21,7 +21,7 @@ func (a *App) pickCreationProfiles(ctx context.Context, c config.Context, token 
 		return nil, err
 	}
 	var selected []v1.LoginProfileRef
-	for _, app := range []string{"claude", "codex"} {
+	for _, app := range []string{"claude", "codex", "opencode"} {
 		labels := []string{"Skip", "Upload a local profile"}
 		var choices []v1.LoginProfile
 		for _, profile := range saved {
@@ -100,7 +100,7 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 			return json.NewEncoder(a.Out).Encode(profiles)
 		}
 		if len(profiles) == 0 {
-			fmt.Fprintln(a.Out, "No saved login profiles. Use: vmbox profiles save claude|codex NAME --from PATH, or profiles save github NAME --from HOST:USER")
+			fmt.Fprintln(a.Out, "No saved login profiles. Use: vmbox profiles save claude|codex|opencode NAME --from PATH, or profiles save github NAME --from HOST:USER")
 		}
 		for _, profile := range profiles {
 			fmt.Fprintf(a.Out, "%s · %s\n", tuiLabel(profile.Application, 30), tuiLabel(profile.Name, 64))
@@ -108,7 +108,7 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 		return nil
 	}
 	if len(args) != 5 || args[0] != "save" || args[3] != "--from" {
-		return fmt.Errorf("usage: vmbox profiles [list] [--json] | profiles save claude|codex NAME --from PATH | profiles save github NAME --from HOST:USER [--json]")
+		return fmt.Errorf("usage: vmbox profiles [list] [--json] | profiles save claude|codex|opencode NAME --from PATH | profiles save github NAME --from HOST:USER [--json]")
 	}
 	profile, err := a.saveLocalLoginProfile(ctx, c, token, args[1], args[2], args[4])
 	if err != nil {
@@ -126,8 +126,8 @@ func (a *App) saveLocalLoginProfile(ctx context.Context, c config.Context, token
 	if application == "github" {
 		return a.saveGitHubLoginProfile(ctx, c, token, name, path)
 	}
-	if application != "claude" && application != "codex" {
-		return result, fmt.Errorf("saved profiles support claude or codex")
+	if application != "claude" && application != "codex" && application != "opencode" {
+		return result, fmt.Errorf("saved profiles support claude, codex or opencode")
 	}
 	profile, err := components.ProfileAt(application, path)
 	if err != nil {

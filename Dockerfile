@@ -19,6 +19,9 @@ ENV PATH=/opt/bun/bin:/opt/foundry/bin:${PATH}
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV COLORTERM=truecolor
+# Each worker is a dedicated agent box. Hosts allowing Chromium namespaces can
+# set this to false to enable Chromium's additional process sandbox.
+ENV VMBOX_CHROMIUM_NO_SANDBOX=true
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -50,7 +53,7 @@ RUN groupadd --gid 10001 vmbox \
 ARG VMBOX_DESKTOP=true
 RUN if [ "$VMBOX_DESKTOP" = true ]; then \
       apt-get update && apt-get install -y --no-install-recommends \
-        tigervnc-standalone-server openbox firefox-esr xterm dbus-x11 fonts-dejavu-core tint2 pcmanfm xdg-user-dirs adwaita-icon-theme \
+        tigervnc-standalone-server openbox chromium chromium-sandbox xdotool xprintidle xterm dbus-x11 fonts-dejavu-core tint2 pcmanfm xdg-user-dirs adwaita-icon-theme \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 

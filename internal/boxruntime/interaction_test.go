@@ -301,3 +301,37 @@ func TestCaptureTmuxScreenRejectsMissingOrWrongSessionMetadata(t *testing.T) {
 		}
 	}
 }
+
+func TestSteerInterruptsBeforePasteAndDoesNotReplay(t *testing.T) {
+	originalCommand, originalPause := tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() { tmuxCommand = originalCommand; tmuxSubmitPause = originalPause })
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	var calls []string
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if args[0] == "show-environment" {
+			return []byte(taskAgentEnvironment + "=codex"), nil
+		}
+		return nil, nil
+	}
+	root := t.TempDir()
+	if err := DeliverTmuxInput(context.Background(), root, "agent", "steer_1", "change direction", false, true); err != nil {
+		t.Fatal(err)
+	}
+	interrupt, paste := -1, -1
+	for i, call := range calls {
+		if strings.HasPrefix(call, "send-keys") {
+			interrupt = i
+		}
+		if strings.HasPrefix(call, "paste-buffer") {
+			paste = i
+		}
+	}
+	if interrupt < 0 || paste < interrupt {
+		t.Fatal("steer did not interrupt before pasting")
+	}
+	n := len(calls)
+	if err := DeliverTmuxInput(context.Background(), root, "agent", "steer_1", "change direction", false, true); err != nil || len(calls) != n {
+		t.Fatal("idempotent steer replayed")
+	}
+}

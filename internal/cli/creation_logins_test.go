@@ -12,7 +12,7 @@ import (
 func TestCreationDiscoversAllSupportedLoginsWithoutReadingSecrets(t *testing.T) {
 	home := t.TempDir()
 	custom := filepath.Join(t.TempDir(), "selected-codex")
-	for _, p := range []struct{ dir, file string }{{filepath.Join(home, ".claude"), ".credentials.json"}, {filepath.Join(home, ".claude-work"), ".credentials.json"}, {filepath.Join(home, ".codex"), "auth.json"}, {custom, "auth.json"}, {filepath.Join(home, ".codex-config-only"), "config.toml"}} {
+	for _, p := range []struct{ dir, file string }{{filepath.Join(home, ".claude"), ".credentials.json"}, {filepath.Join(home, ".claude-work"), ".credentials.json"}, {filepath.Join(home, ".codex"), "auth.json"}, {custom, "auth.json"}, {filepath.Join(home, ".local", "share", "opencode"), "auth.json"}, {filepath.Join(home, ".config", "opencode-work"), "auth.json"}, {filepath.Join(home, ".codex-config-only"), "config.toml"}} {
 		if err := os.MkdirAll(p.dir, 0700); err != nil {
 			t.Fatal(err)
 		}

@@ -86,6 +86,14 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	if idempotency == "" {
 		return response, fmt.Errorf("Idempotency-Key is required")
 	}
+	note, noted, err := s.Store.boxNote(ctx, p, box.ID, idempotency)
+	if err != nil {
+		return response, err
+	}
+	if noted {
+		response.Message = note
+		return response, nil
+	}
 	previousTask, previousMessage, found, err := s.Store.DirectBoxMessageByKey(ctx, p, box.ID, idempotency)
 	if err != nil {
 		return response, err
@@ -93,6 +101,17 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	if found {
 		response.Task, response.Message = previousTask, previousMessage
 		return response, nil
+	}
+	if text, silent := silentMessage(request.Text); silent {
+		if text == "" {
+			return response, fmt.Errorf("silent note must contain text")
+		}
+		_, err = s.Store.DB.ExecContext(ctx, `INSERT INTO box_notes(id,account_id,box_id,user_id,body,idempotency_key) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(account_id,idempotency_key) DO NOTHING`, uuid(), p.AccountID, box.ID, p.UserID, text, idempotency)
+		if err != nil {
+			return response, fmt.Errorf("could not save silent note")
+		}
+		response.Message, _, err = s.Store.boxNote(ctx, p, box.ID, idempotency)
+		return response, err
 	}
 	if request.Agent == "" {
 		request.Agent = box.DefaultAgent
@@ -110,6 +129,15 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	}
 	selected := reusableBoxTask(tasks, box.State, request.Agent, request.Session)
 	if selected == nil {
+		if request.Session == "" && box.State == v1.LogicalBoxRunning {
+			var name, agent string
+			if err = s.Store.DB.QueryRowContext(ctx, `SELECT COALESCE(metadata->>'primarySession',''),COALESCE(metadata->>'primaryAgent','') FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&name, &agent); err != nil {
+				return response, err
+			}
+			if agent == request.Agent && validSessionName(name) {
+				request.Session = name
+			}
+		}
 		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text})
 		if err != nil {
 			return response, err

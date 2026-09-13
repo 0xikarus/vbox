@@ -25,7 +25,7 @@ func TestCreationProfilePickerSelectsOnlyChosenApplication(t *testing.T) {
 	}))
 	defer server.Close()
 	a := New()
-	a.In = strings.NewReader("\r\x1b[B\x1b[B\r")
+	a.In = strings.NewReader("\r\x1b[B\x1b[B\r\r")
 	a.Out, a.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	a.IsTerminal = func() bool { return true }
 	got, err := a.pickCreationProfiles(context.Background(), config.Context{Controller: server.URL}, "test")

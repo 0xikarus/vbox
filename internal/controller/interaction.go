@@ -87,7 +87,7 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "failed", err.Error())
 		return err
 	}
-	result, execErr := s.startBoxTaskRuntime(ctx, prov, assignment.Slot.ServiceID, task, message)
+	result, execErr := s.startAssignedBoxTaskRuntime(ctx, p, prov, assignment, task, message)
 	if execErr != nil {
 		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "ambiguous", execErr.Error())
 		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", "initial prompt delivery is ambiguous; inspect the terminal before retrying")
@@ -110,6 +110,38 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 	}
 	s.watchAgentReply(accountID, task, message)
 	return nil
+}
+
+func (s *Server) startAssignedBoxTaskRuntime(ctx context.Context, p Principal, prov provider.Provider, a fleetAssignment, task v1.BoxTask, message v1.BoxMessage) (provider.ExecResult, error) {
+	tx, err := s.Store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return provider.ExecResult{}, fmt.Errorf("task assignment lock unavailable")
+	}
+	defer tx.Rollback()
+	var id string
+	err = tx.QueryRowContext(ctx, `SELECT id::text FROM logical_boxes WHERE id=$1 AND account_id=$2 AND state='running' AND fencing_token=$3 AND assignment_generation=$4 FOR UPDATE`, a.Box.ID, p.AccountID, a.FencingToken, a.Box.AssignmentGeneration).Scan(&id)
+	if err != nil {
+		return provider.ExecResult{}, fmt.Errorf("task assignment changed")
+	}
+	if err = stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime); err != nil {
+		return provider.ExecResult{}, err
+	}
+	if err = s.provisionDesktopAgent(ctx, tx, p, a, prov); err != nil {
+		return provider.ExecResult{}, err
+	}
+	result, err := s.startBoxTaskRuntime(ctx, prov, a.Slot.ServiceID, task, message)
+	if err != nil {
+		return result, err
+	}
+	if result.ExitCode == 0 {
+		if _, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(jsonb_set(metadata,'{primarySession}',to_jsonb($3::text)),'{primaryAgent}',to_jsonb($4::text)),updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID, task.Session, task.Agent); err != nil {
+			return result, fmt.Errorf("task startup outcome uncertain; inspect its terminal")
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return result, fmt.Errorf("task startup outcome uncertain; inspect its terminal")
+	}
+	return result, nil
 }
 
 func (s *Server) startBoxTaskRuntime(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask, message v1.BoxMessage) (provider.ExecResult, error) {
@@ -145,7 +177,7 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		return err
 	}
 	encoded := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
-	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit)}, provider.ExecOptions{})
+	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit), "true"}, provider.ExecOptions{})
 	if execErr != nil {
 		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "ambiguous", execErr.Error())
 		return fmt.Errorf("message delivery is ambiguous; inspect the terminal before retrying: %w", execErr)

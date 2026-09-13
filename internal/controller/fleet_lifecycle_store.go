@@ -26,7 +26,7 @@ func (s *Store) LogicalBox(ctx context.Context, p Principal, id string) (v1.Logi
 	if err != nil {
 		return box, err
 	}
-	if box.OwnerUserID != p.UserID && p.Role != "owner" {
+	if box.OwnerUserID != p.UserID && p.Role != "owner" && !(p.Role == "desktop-agent" && p.Subject == "desktop-box:"+box.ID) {
 		return box, fmt.Errorf("logical box belongs to another user")
 	}
 	return box, nil
@@ -299,6 +299,11 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 		return assignment, fmt.Errorf("logical box assignment is missing a valid fence")
 	}
 	assignment.Slot = slot
+	if check, ok := ctx.Value(idleReleaseCheckKey{}).(idleReleaseCheck); ok {
+		if err := check(ctx, tx, assignment); err != nil {
+			return assignment, err
+		}
+	}
 	if target == v1.LogicalBoxHibernating && box.State == v1.LogicalBoxHibernating {
 		return assignment, tx.Commit()
 	}

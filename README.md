@@ -7,6 +7,9 @@ your CLI connects to the controller, not directly to provider APIs.
 Developing or continuing this repository? Read the [agent architecture and testing
 guide](docs/AGENT-GUIDE.md) for implementation entry points and lifecycle rules.
 
+Agent desktop startup, MCP tools, private browser imports, secrets and inactivity
+configuration are documented in [the desktop MVP guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md).
+
 ## Quick setup
 
 ### Run once from the web

@@ -59,6 +59,12 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 			if ref.Application == "claude" && name == ".claude.json" {
 				path = "/data/home/.claude.json"
 			}
+			if ref.Application == "opencode" {
+				path = "/data/home/.config/opencode/" + name
+				if name == "auth.json" {
+					path = "/data/home/.local/share/opencode/auth.json"
+				}
+			}
 			request.Files = append(request.Files, boxruntime.SyncFile{Path: path, Mode: "0600", Data: profile.Files[name]})
 		}
 	}

@@ -16,7 +16,7 @@ func TestDesktopIconsPreserveCustomLaunchers(t *testing.T) {
 	for name, body := range map[string]string{
 		"xdg-user-dir":         "printf '%s/Custom Desktop\\n' \"$HOME\"",
 		"xdg-user-dirs-update": "exit 0",
-		"firefox-esr":          "exit 0", "xterm": "exit 0", "pcmanfm": "exit 0", "blender": "exit 0",
+		"chromium":             "exit 0", "xterm": "exit 0", "pcmanfm": "exit 0", "blender": "exit 0",
 		"dbus-run-session": "printf '%s\\n' \"$DISPLAY\" \"$*\" >\"$HOME/started\"",
 	} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0700); err != nil {
@@ -32,14 +32,18 @@ func TestDesktopIconsPreserveCustomLaunchers(t *testing.T) {
 		}
 	}
 	run()
-	for _, app := range []string{"firefox-esr", "xterm", "pcmanfm", "blender"} {
+	for _, app := range []string{"chromium", "xterm", "pcmanfm", "blender"} {
 		path := filepath.Join(home, "Custom Desktop", "vmbox-"+app+".desktop")
 		data, err := os.ReadFile(path)
-		if err != nil || !strings.Contains(string(data), "Exec="+app+"\n") {
+		command := app
+		if app == "chromium" {
+			command = "vmbox-runtime desktop-browser"
+		}
+		if err != nil || !strings.Contains(string(data), "Exec="+command+"\n") {
 			t.Fatalf("launcher %s: %s, %v", app, data, err)
 		}
 	}
-	custom := filepath.Join(home, "Custom Desktop", "vmbox-firefox-esr.desktop")
+	custom := filepath.Join(home, "Custom Desktop", "vmbox-chromium.desktop")
 	if err := os.WriteFile(custom, []byte("owner customization\n"), 0600); err != nil {
 		t.Fatal(err)
 	}

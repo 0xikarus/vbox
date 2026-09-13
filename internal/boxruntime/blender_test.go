@@ -44,7 +44,7 @@ func TestBlenderInstallsDesktopAndRestoresWithoutCustomScript(t *testing.T) {
 	if len(installLines) != 2 {
 		t.Fatalf("expected initial and restored package installs: %s", data)
 	}
-	for _, pkg := range []string{"blender", "pipx", "python3-venv", "tigervnc-standalone-server", "openbox", "firefox-esr"} {
+	for _, pkg := range []string{"blender", "pipx", "python3-venv", "tigervnc-standalone-server", "openbox", "chromium"} {
 		for _, line := range installLines {
 			if !strings.Contains(line, pkg) {
 				t.Fatalf("initial install and restore must include %s: %s", pkg, data)
@@ -84,7 +84,7 @@ func TestBlenderAlreadyInstalledDoesNotInvokePackageManager(t *testing.T) {
 	t.Setenv("PATH", bin)
 	t.Setenv("PACKAGE_LOG", log)
 	t.Setenv("AGENT_GET_EXIT", "0")
-	for _, name := range []string{"Xtigervnc", "openbox", "firefox-esr", "tint2", "pcmanfm", "xdg-user-dir"} {
+	for _, name := range []string{"Xtigervnc", "openbox", "chromium", "tint2", "pcmanfm", "xdg-user-dir", "xdotool", "xprintidle"} {
 		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
 			t.Fatal(err)
 		}

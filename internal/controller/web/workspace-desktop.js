@@ -18,8 +18,20 @@ window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  let remoteClipboard='';
  rfb.addEventListener('clipboard',e=>{remoteClipboard=e.detail.text||'';onStatus('Remote clipboard ready. Choose Copy to save it to this device.')});
  const controls=options.controls||document.querySelector('#desktop-controls');controls.replaceChildren();
- const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.onclick=async()=>{if(!remoteClipboard){onStatus('Copy or select text in the desktop first.');return}try{await navigator.clipboard.writeText(remoteClipboard);onStatus('Desktop clipboard copied to this device.')}catch{onStatus('Clipboard copy was blocked by the browser.')}};controls.append(copy);
- const paste=document.createElement('button');paste.type='button';paste.textContent='Paste';paste.onclick=async()=>{try{const value=await navigator.clipboard.readText();rfb.clipboardPasteFrom(value);rfb.focus();onStatus('Clipboard pasted into the desktop.')}catch{onStatus('Clipboard paste was blocked by the browser.')}};controls.append(paste);
+ const takeover=document.createElement('button');takeover.type='button';takeover.textContent='Take over';takeover.dataset.action='takeover';
+ const resume=document.createElement('button');resume.type='button';resume.textContent='Resume agent input';resume.dataset.action='resume';
+ async function control(action){
+  takeover.disabled=resume.disabled=true;
+  try{
+   const response=await fetch('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/desktop/control',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action}),signal:AbortSignal.timeout(40000)});
+   if(!response.ok)throw Error('Control request failed ('+response.status+').');
+   if(closed)return;
+   onStatus(action==='pause'?'Agent desktop input paused. You can control the desktop.':'Agent desktop input resumed.');
+  }catch(e){if(!closed)onStatus(e.message)}finally{if(!closed)takeover.disabled=resume.disabled=false}
+ }
+ takeover.onclick=()=>void control('pause');resume.onclick=()=>void control('resume');controls.append(takeover,resume);
+ const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.dataset.action='copy';copy.onclick=async()=>{if(!remoteClipboard){onStatus('Copy or select text in the desktop first.');return}try{await navigator.clipboard.writeText(remoteClipboard);onStatus('Desktop clipboard copied to this device.')}catch{onStatus('Clipboard copy was blocked by the browser.')}};controls.append(copy);
+ const paste=document.createElement('button');paste.type='button';paste.textContent='Paste';paste.dataset.action='paste';paste.onclick=async()=>{try{const value=await navigator.clipboard.readText();rfb.clipboardPasteFrom(value);rfb.focus();onStatus('Clipboard pasted into the desktop.')}catch{onStatus('Clipboard paste was blocked by the browser.')}};controls.append(paste);
  const address=document.createElement('button');address.type='button';address.textContent='Address bar';address.onclick=()=>{rfb.sendKey(0xffe3,'ControlLeft',true);rfb.sendKey(0x6c,'KeyL');rfb.sendKey(0xffe3,'ControlLeft',false);rfb.focus()};controls.append(address);
  const text=document.createElement('textarea');text.rows=1;text.placeholder='Type into desktop';text.setAttribute('aria-label','Desktop keyboard input');
  const type=()=>{for(const char of text.value){const code=char.codePointAt(0);rfb.sendKey(code===10?0xff0d:code>255?0x01000000+code:code)}text.value=''};

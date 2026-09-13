@@ -39,8 +39,8 @@ func EnableDesktop(ctx context.Context, assignment string) error {
 
 // Package installation is also used before a new box has a tmux assignment.
 func installDesktopPackages(ctx context.Context, progress io.Writer, blender bool) error {
-	bins := []string{"Xtigervnc", "openbox", "firefox-esr", "tint2", "pcmanfm", "xdg-user-dir"}
-	packages := []string{"tigervnc-standalone-server", "openbox", "firefox-esr", "xterm", "dbus-x11", "fonts-dejavu-core", "tint2", "pcmanfm", "xdg-user-dirs", "adwaita-icon-theme"}
+	bins := []string{"Xtigervnc", "openbox", "chromium", "tint2", "pcmanfm", "xdg-user-dir", "xdotool", "xprintidle"}
+	packages := []string{"tigervnc-standalone-server", "openbox", "chromium", "chromium-sandbox", "xterm", "dbus-x11", "fonts-dejavu-core", "tint2", "pcmanfm", "xdg-user-dirs", "adwaita-icon-theme", "xdotool", "xprintidle"}
 	if blender {
 		bins = append(bins, "blender", "pipx")
 		packages = append(packages, "blender", "pipx", "python3-venv")
@@ -85,7 +85,7 @@ func StartDesktop(ctx context.Context, assignment string) error {
 	if err != nil {
 		return err
 	}
-	for _, bin := range []string{"Xtigervnc", "openbox", "firefox-esr"} {
+	for _, bin := range []string{"Xtigervnc", "openbox", "chromium"} {
 		if _, err := exec.LookPath(bin); err != nil {
 			return fmt.Errorf("desktop components unavailable; enable the desktop worker image first")
 		}
@@ -120,7 +120,10 @@ func StartDesktop(ctx context.Context, assignment string) error {
 				if err := ensureDesktopPanel(ctx, assignment); err != nil {
 					return err
 				}
-				return ensureDesktopIcons(ctx, assignment)
+				if err := ensureDesktopIcons(ctx, assignment); err != nil {
+					return err
+				}
+				return EnsureDesktopTerminals(ctx, assignment)
 			}
 		}
 	}

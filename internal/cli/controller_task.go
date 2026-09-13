@@ -55,8 +55,8 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 			opts.agent = "codex"
 		}
 	}
-	if opts.agent != "codex" && opts.agent != "claude" && opts.agent != "shell" {
-		return fmt.Errorf("one-shot agent must be codex, claude, or shell")
+	if opts.agent != "codex" && opts.agent != "claude" && opts.agent != "opencode" && opts.agent != "shell" {
+		return fmt.Errorf("one-shot agent must be codex, claude, opencode, or shell")
 	}
 	if opts.prompt == "" {
 		if !interactive {
@@ -116,7 +116,7 @@ func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token st
 	} else {
 		box.Choices = []string{opts.box}
 	}
-	agent := &formField{Label: "Agent", Value: opts.agent, Choices: []string{"codex", "claude", "shell"}, List: true, ChoiceNoun: "agents"}
+	agent := &formField{Label: "Agent", Value: opts.agent, Choices: []string{"codex", "claude", "opencode", "shell"}, List: true, ChoiceNoun: "agents"}
 	if agent.Value == "" {
 		agent.Value = "codex"
 	}
@@ -264,7 +264,7 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 			} else if opts.agent == "" {
 				opts.agent = arg
 			} else {
-				return opts, fmt.Errorf("usage: task BOX codex|claude|shell --prompt TEXT")
+				return opts, fmt.Errorf("usage: task BOX codex|claude|opencode|shell --prompt TEXT")
 			}
 		}
 		if err != nil {
@@ -294,8 +294,8 @@ func (a *App) promptTaskBox(ctx context.Context, c config.Context, token string)
 }
 
 func (a *App) promptTaskAgent(ctx context.Context) (string, error) {
-	agents := []string{"codex", "claude", "shell"}
-	choice, err := a.selectTUI(ctx, "Choose an agent", []string{"Codex", "Claude", "Shell command"}, 0)
+	agents := []string{"codex", "claude", "opencode", "shell"}
+	choice, err := a.selectTUI(ctx, "Choose an agent", []string{"Codex", "Claude", "OpenCode", "Shell command"}, 0)
 	if err != nil {
 		return "", err
 	}

@@ -71,7 +71,7 @@ func (s *Server) validateRunOnce(ctx context.Context, p Principal, req runOnceRe
 	if err := v1.ValidateProcessOptions(req.Agent, req.Model, req.Args); err != nil {
 		return err
 	}
-	if (req.Agent != "claude" && req.Agent != "codex" && req.Agent != "shell") || strings.TrimSpace(req.Prompt) == "" || len(req.Prompt) > 100000 || req.Provider == "" || req.ProviderCredential == "" {
+	if (req.Agent != "claude" && req.Agent != "codex" && req.Agent != "opencode" && req.Agent != "shell") || strings.TrimSpace(req.Prompt) == "" || len(req.Prompt) > 100000 || req.Provider == "" || req.ProviderCredential == "" {
 		return fmt.Errorf("select a provider, agent and a prompt or shell command (up to 100000 bytes)")
 	}
 	seen := map[string]bool{}
