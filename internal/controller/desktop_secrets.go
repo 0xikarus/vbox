@@ -59,7 +59,25 @@ func (s *Server) deleteDesktopSecret(w http.ResponseWriter, r *http.Request, p P
 		return
 	}
 	box = resolved.ID
-	result, err := s.Store.DB.ExecContext(r.Context(), `DELETE FROM desktop_secrets WHERE account_id=$1 AND box_id=$2 AND secret_key=$3`, p.AccountID, box, key)
+	// Match the box/request/secret lock order used by private submissions.
+	tx, err := s.Store.DB.BeginTx(r.Context(), nil)
+	if err != nil {
+		writeError(w, 503, fmt.Errorf("could not remove secret"))
+		return
+	}
+	defer tx.Rollback()
+	var locked string
+	if err := tx.QueryRowContext(r.Context(), `SELECT id::text FROM logical_boxes WHERE id=$1 AND account_id=$2 FOR UPDATE`, box, p.AccountID).Scan(&locked); err != nil {
+		writeError(w, 404, fmt.Errorf("box unavailable"))
+		return
+	}
+	// A fulfilled request must not outlive the credential it promises. Removing
+	// it allows the agent to request this reference again after deletion.
+	if _, err := tx.ExecContext(r.Context(), `DELETE FROM desktop_secret_requests WHERE account_id=$1 AND box_id=$2 AND secret_key=$3 AND status='fulfilled'`, p.AccountID, box, key); err != nil {
+		writeError(w, 500, fmt.Errorf("could not remove secret"))
+		return
+	}
+	result, err := tx.ExecContext(r.Context(), `DELETE FROM desktop_secrets WHERE account_id=$1 AND box_id=$2 AND secret_key=$3`, p.AccountID, box, key)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("could not remove secret"))
 		return
@@ -67,6 +85,10 @@ func (s *Server) deleteDesktopSecret(w http.ResponseWriter, r *http.Request, p P
 	n, err := result.RowsAffected()
 	if err != nil || n == 0 {
 		writeError(w, 404, fmt.Errorf("secret unavailable"))
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, 409, fmt.Errorf("secret deletion outcome uncertain; reload secrets"))
 		return
 	}
 	w.WriteHeader(204)

@@ -369,7 +369,8 @@ if(privateRequests){
      const send=async cancelled=>{submit.disabled=true;cancel.disabled=true;const payload=cancelled?{cancel:true}:{value:input.value};input.value='';try{await api(bp+'/secret-requests/'+encodeURIComponent(request.key),'POST',payload);signature='';await refresh()}catch(e){status.textContent=e.message}finally{payload.value='';submit.disabled=false;cancel.disabled=false}};
      form.onsubmit=e=>{e.preventDefault();void send(false)};cancel.onclick=()=>void send(true);privateRequests.append(form);
     }
-    if(requests.length)document.querySelector('#agent-secrets').open=true;
+    const summary=document.querySelector('#agent-secrets > summary');
+    if(summary)summary.textContent=requests.length?'Agent secrets · '+requests.length+' pending request'+(requests.length===1?'':'s'):'Agent secrets';
    }
   }catch{}
   timer=setTimeout(refresh,3000);
@@ -393,4 +394,20 @@ if(idlePolicyForm){
  const status=document.querySelector('#idle-policy-status');
  document.querySelector('#load-idle-policy').onclick=async()=>{try{const policy=await api(bp+'/idle-policy');idlePolicyForm.elements.hours.value=policy.seconds/3600;idlePolicyForm.hidden=false;status.textContent=policy.seconds?'Automatic hibernation after '+policy.seconds/3600+' idle hours, when no managed task or handoff is active.':'Automatic hibernation is disabled.'}catch(e){status.textContent=e.message}};
  idlePolicyForm.onsubmit=async event=>{event.preventDefault();const button=idlePolicyForm.querySelector('button');button.disabled=true;try{await api(bp+'/idle-policy','PUT',{seconds:Math.round(Number(idlePolicyForm.elements.hours.value)*3600)});status.textContent='Idle policy saved. Hibernate remains available at any time.'}catch(e){status.textContent=e.message}finally{button.disabled=false}};
+}
+
+const importedCredentials=document.querySelector('#imported-credentials');
+if(importedCredentials){
+ const list=document.querySelector('#imported-credential-list'),status=document.querySelector('#imported-credential-status');
+ importedCredentials.addEventListener('toggle',async()=>{
+  if(!importedCredentials.open)return;
+  const version=epoch;list.replaceChildren();status.textContent='Loading…';
+  try{
+   const result=await api(bp+'/imported-credentials');
+   if(version!==epoch||!importedCredentials.open)return;
+   for(const ref of result.profiles){const row=document.createElement('li');row.textContent=ref.application+' · '+ref.name;list.append(row)}
+   status.textContent=result.profiles.length?(result.verified?'Imported during provisioning. Current login validity is not checked.':'Selected at creation; import completion was not recorded for this box.'):'No imported login profiles recorded. Manually added logins are not listed.';
+  }catch(e){if(version===epoch)status.textContent=e.message}
+ });
+ document.querySelector('#logout').addEventListener('click',()=>{importedCredentials.open=false;list.replaceChildren();status.textContent=''});
 }

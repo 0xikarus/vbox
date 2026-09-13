@@ -102,6 +102,13 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	if err != nil || result.ExitCode != 0 {
 		return fmt.Errorf("could not flush provisioned workspace")
 	}
+	refs, err := json.Marshal(creation.Request.LoginProfiles)
+	if err != nil {
+		return fmt.Errorf("could not record imported credential references")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb) WHERE account_id=$1 AND id=$2`, creation.AccountID, a.Box.ID, refs); err != nil {
+		return fmt.Errorf("could not record imported credential references")
+	}
 	return tx.Commit()
 }
 

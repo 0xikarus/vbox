@@ -104,6 +104,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/type", s.desktopAgentAuth(s.typeDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/ensure", s.desktopAgentAuth(s.ensureAgentDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/request", s.desktopAgentAuth(s.requestDesktopSecret))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/imported-credentials", s.owner(s.importedCredentials))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/secret-requests", s.owner(s.desktopSecretRequests))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secret-requests/{key}", s.owner(s.desktopSecretRequests))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/browser/imports", s.owner(s.browserStateImports))

@@ -21,6 +21,16 @@ func testDesktopPrivateDataRoutes(t *testing.T, store *Store, owner, other Princ
 		handler(response, request, p)
 		return response
 	}
+	if _, err := store.DB.Exec(`UPDATE logical_boxes SET metadata=metadata || '{"importedLoginProfiles":[{"application":"codex","name":"work"}],"setupScript":"private-setup-fixture"}'::jsonb WHERE id=$1`, box); err != nil {
+		t.Fatal(err)
+	}
+	refs := invoke(server.importedCredentials, "GET", "", "", owner)
+	if refs.Code != 200 || !strings.Contains(refs.Body.String(), `"name":"work"`) || !strings.Contains(refs.Body.String(), `"verified":true`) || strings.Contains(refs.Body.String(), "private-setup-fixture") {
+		t.Fatal("credential reference projection failed")
+	}
+	if refs = invoke(server.importedCredentials, "GET", "", "", other); refs.Code != 404 {
+		t.Fatal("cross-account credential references exposed")
+	}
 	for _, key := range []string{"private-login", "cancel-login"} {
 		if _, err := store.DB.Exec(`INSERT INTO desktop_secret_requests(account_id,box_id,secret_key,origin) VALUES($1,$2,$3,'https://example.com')`, owner.AccountID, box, key); err != nil {
 			t.Fatal(err)
@@ -63,6 +73,28 @@ func testDesktopPrivateDataRoutes(t *testing.T, store *Store, owner, other Princ
 	response = invoke(server.boxMessageHistory, "GET", "", "", owner)
 	if response.Code != 200 || strings.Contains(response.Body.String(), value) {
 		t.Fatal("private password in history or history query failed")
+	}
+	response = invoke(server.deleteDesktopSecret, "DELETE", "", "private-login", other)
+	if response.Code != 404 {
+		t.Fatal("cross-account secret deletion accepted")
+	}
+	var remaining int
+	if err := store.DB.QueryRow(`SELECT count(*) FROM desktop_secrets WHERE box_id=$1 AND secret_key='private-login'`, box).Scan(&remaining); err != nil || remaining != 1 {
+		t.Fatal("foreign deletion changed the credential")
+	}
+	response = invoke(server.deleteDesktopSecret, "DELETE", "", "private-login", owner)
+	if response.Code != 204 {
+		t.Fatalf("secret deletion failed: %d", response.Code)
+	}
+	if err := store.DB.QueryRow(`SELECT count(*) FROM desktop_secret_requests WHERE box_id=$1 AND secret_key='private-login'`, box).Scan(&remaining); err != nil || remaining != 0 {
+		t.Fatal("deleted credential still has a fulfilled request")
+	}
+	if _, err := store.DB.Exec(`INSERT INTO desktop_secret_requests(account_id,box_id,secret_key,origin) VALUES($1,$2,'private-login','https://example.com')`, owner.AccountID, box); err != nil {
+		t.Fatal("cannot request deleted reference again", err)
+	}
+	response = invoke(server.desktopSecretRequests, "POST", `{"value":"replacement-fixture-only"}`, "private-login", owner)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), "fulfilled") {
+		t.Fatal("cannot fulfill replacement request")
 	}
 	response = invoke(server.desktopScreenshot, "GET", "", "", owner)
 	if response.Code != 409 {

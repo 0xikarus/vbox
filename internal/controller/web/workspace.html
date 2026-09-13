@@ -12,6 +12,7 @@
 <section id="agent-chat"><h2>Agent chat</h2><ol id="agent-messages" aria-live="polite"></ol>
 <form id="agent-message-form"><label>Message <textarea name="text" rows="3" maxlength="100000" required placeholder="Send a steer, or /silent to save a note without waking the agent"></textarea></label><button>Send</button></form><button id="interrupt-agent" type="button">Interrupt agent</button><p id="agent-message-status" role="status"></p></section>
 <details id="desktop-preview"><summary>Desktop preview</summary><img id="desktop-thumbnail" alt="Last desktop capture from this box" width="320" height="200" hidden><p id="thumbnail-status">Open to capture a preview. Sleeping boxes stay asleep.</p></details>
+<details id="imported-credentials"><summary>Imported credentials</summary><ul id="imported-credential-list"></ul><p id="imported-credential-status">Open to load profile names. Secret values are never displayed.</p></details>
 <details id="agent-secrets"><summary>Agent secrets</summary>
 <p>Passwords are stored for this agent and website. Values are never returned in chat.</p>
 <div id="private-secret-requests" aria-live="polite"></div>

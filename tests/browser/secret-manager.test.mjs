@@ -40,7 +40,7 @@ test('private request card sends the password only to its private endpoint and c
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox']});
  try{
   const page=await browser.newPage();
-  await page.setContent('<main id="workspace"><details id="agent-secrets"><div id="private-secret-requests"></div></details></main><button id="logout">Logout</button>');
+  await page.setContent('<main id="workspace"><details id="agent-secrets"><summary>Agent secrets</summary><div id="private-secret-requests"></div></details></main><button id="logout">Logout</button>');
   await page.evaluate(()=>{
    window.bp='/v1/logical-boxes/fixture';window.runID=null;window.requests=[];window.pending=true;
    window.api=async(path,method='GET',body)=>{
@@ -51,6 +51,9 @@ test('private request card sends the password only to its private endpoint and c
   });
   await page.addScriptTag({content:privateScript});
   await page.waitForSelector('#private-secret-requests input');
+  assert.equal(await page.$eval('#agent-secrets',e=>e.open),false);
+  assert.match(await page.$eval('#agent-secrets > summary',e=>e.textContent),/1 pending request/);
+  await page.click('#agent-secrets > summary');
   await page.type('#private-secret-requests input','synthetic-user-value');
   await page.click('#private-secret-requests button');
   await page.waitForFunction(()=>!document.querySelector('#private-secret-requests input'));
