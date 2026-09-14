@@ -350,13 +350,12 @@ func (a *App) controllerLogicalBoxAuth(ctx context.Context, c config.Context, to
 	if _, err := a.request(ctx, c, token, http.MethodGet, path, nil, &resolved, nil); err != nil {
 		return err
 	}
-	executor := a.nativeTransport()
 	setup, err := a.selectAuthentication(ctx, args[1:])
 	if err != nil {
 		return err
 	}
 	return a.uploadSelectedAuthentication(ctx, box.Name, setup, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
-		return executor.ExecConnection(ctx, resolved.Connection, provider.AsWorkloadUser(argv), opts)
+		return a.resolvedExec(ctx, c, token, resolved.Connection, argv, opts, false)
 	})
 }
 

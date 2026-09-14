@@ -2,11 +2,13 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
 // boxInventoryHandler returns logical boxes plus provider services that are not
@@ -34,12 +36,25 @@ func (s *Server) boxInventoryHandler(w http.ResponseWriter, r *http.Request, p P
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	boxes, err := prov.List(r.Context())
-	if err != nil {
-		writeError(w, http.StatusBadGateway, err)
-		return
-	}
 	inventory := v1.BoxInventory{LogicalBoxes: logical, ConnectedBoxes: []v1.ConnectedBox{}}
+	var boxes []provider.Box
+	if observer, ok := prov.(provider.InventoryObserver); ok {
+		observation, observeErr := observer.ObserveInventory(r.Context())
+		if observeErr == nil {
+			inventory.Infrastructure = &observation
+			boxes = observation.Boxes
+		} else if !errors.Is(observeErr, provider.ErrUnsupported) {
+			writeError(w, http.StatusBadGateway, observeErr)
+			return
+		}
+	}
+	if inventory.Infrastructure == nil {
+		boxes, err = prov.List(r.Context())
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+	}
 	for _, box := range boxes {
 		if slotServices[box.ID] {
 			continue

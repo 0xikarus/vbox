@@ -153,6 +153,29 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 		return fail(fmt.Errorf("reserved slot contains unrelated volume %s instead of %s", attached.ID, storage.ID))
 	}
 	if attached != nil {
+		if s.DirectWorkersEnabled && creation.Assignment.Box.Provider == "railway" {
+			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-enrolling-worker"); err != nil {
+				return fail(err)
+			}
+			creation.Assignment.Box.RestorationState = "creation-enrolling-worker"
+			if err := ensureInitializationSlotRunning(ctx, prov, serviceID); err != nil {
+				return fail(err)
+			}
+			assignment, err := s.Store.assignment(ctx, creation.AccountID, creation.Assignment.Box.ID)
+			if err != nil {
+				return fail(fmt.Errorf("reload worker assignment: %w", err))
+			}
+			if err := s.ensureReplacementWorkerTransport(ctx, creation.AccountID, assignment, prov); err != nil {
+				return fail(fmt.Errorf("reconcile worker agent: %w", err))
+			}
+			bootstrapConnection, err := prov.Connection(ctx, serviceID)
+			if err != nil {
+				return fail(fmt.Errorf("resolve worker bootstrap: %w", err))
+			}
+			if err := s.ensureAutomaticWorkerTransport(ctx, creation.AccountID, assignment, prov, bootstrapConnection); err != nil {
+				return fail(fmt.Errorf("enroll worker agent: %w", err))
+			}
+		}
 		if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-initializing"); err != nil {
 			return fail(err)
 		}

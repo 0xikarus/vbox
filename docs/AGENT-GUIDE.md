@@ -42,8 +42,11 @@ delete a shared fleet service when asked to delete a logical box.
 | Single-box UI | `internal/controller/web/workspace*` |
 | Grid | `internal/controller/grid.go`, `web/grid.html`, `web/grid.js`, `web/grid.css` |
 
-The plan to remove Railway from worker control and data paths while retaining it
-as controller hosting is in [Railway independence](RAILWAY-INDEPENDENCE.md).
+The selected Railway-only plan is [Direct connections to Railway workers](RAILWAY-DIRECT-WORKERS.md):
+keep worker hosting on Railway and use authenticated worker agents for running-box
+connections. It requires no measurement phase and preserves existing worker
+processes during migration. [Railway independence](RAILWAY-INDEPENDENCE.md) is a
+separate external-host proposal, not a dependency of the selected plan.
 
 Provider APIs manage infrastructure. The current production terminal carries real
 terminal bytes over WebSocket → controller → Railway SSH stream → fenced native

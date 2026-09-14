@@ -12,12 +12,60 @@ import (
 )
 
 const (
-	serviceCreateMutation = `mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { id name } }`
-	serviceUpdateMutation = `mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }`
-	limitsUpdateMutation  = `mutation($input: ServiceInstanceLimitsUpdateInput!) { serviceInstanceLimitsUpdate(input: $input) }`
-	limitsQuery           = `query($serviceId: String!, $environmentId: String!) { serviceInstanceLimits(serviceId: $serviceId, environmentId: $environmentId) }`
-	serviceInstanceQuery  = `query($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { latestDeployment { deploymentStopped instances { id status } } } }`
+	deploymentRemoveMutation = `mutation($id: String!) { deploymentRemove(id: $id) }`
+	serviceDeleteMutation    = `mutation($id: String!) { serviceDelete(id: $id) }`
+	deploymentsQuery         = `query($input: DeploymentListInput!, $first: Int!) { deployments(input: $input, first: $first) { edges { node { id status createdAt } } } }`
+	deploymentStatusQuery    = `query($id: String!) { deployment(id: $id) { id status createdAt } }`
+	serviceDeployMutation    = `mutation($serviceId: String!, $environmentId: String!) { serviceInstanceDeployV2(serviceId: $serviceId, environmentId: $environmentId) }`
+	variablesQuery           = `query($projectId: String!, $environmentId: String!, $serviceId: String!) { variables(projectId: $projectId, environmentId: $environmentId, serviceId: $serviceId) }`
+	variablesUpsertMutation  = `mutation($input: VariableCollectionUpsertInput!) { variableCollectionUpsert(input: $input) }`
+	serviceCreateMutation    = `mutation($input: ServiceCreateInput!) { serviceCreate(input: $input) { id name } }`
+	serviceUpdateMutation    = `mutation($serviceId: String!, $environmentId: String!, $input: ServiceInstanceUpdateInput!) { serviceInstanceUpdate(serviceId: $serviceId, environmentId: $environmentId, input: $input) }`
+	limitsUpdateMutation     = `mutation($input: ServiceInstanceLimitsUpdateInput!) { serviceInstanceLimitsUpdate(input: $input) }`
+	limitsQuery              = `query($serviceId: String!, $environmentId: String!) { serviceInstanceLimits(serviceId: $serviceId, environmentId: $environmentId) }`
+	serviceInstanceQuery     = `query($serviceId: String!, $environmentId: String!) { serviceInstance(serviceId: $serviceId, environmentId: $environmentId) { latestDeployment { deploymentStopped instances { id status } } } }`
 )
+
+func (p *Provider) deploymentStatus(ctx context.Context, id string) (string, error) {
+	result, err := p.api(ctx, deploymentStatusQuery, map[string]any{"id": id})
+	if err != nil {
+		return "", err
+	}
+	var response struct {
+		Data struct {
+			Deployment *railwayDeployment `json:"deployment"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(result.Stdout, &response) != nil {
+		return "", fmt.Errorf("invalid Railway deployment response")
+	}
+	if response.Data.Deployment == nil {
+		return "NOT_VISIBLE", nil
+	}
+	if response.Data.Deployment.ID != id || response.Data.Deployment.Status == "" {
+		return "", fmt.Errorf("Railway deployment identity mismatch")
+	}
+	return strings.ToUpper(response.Data.Deployment.Status), nil
+}
+
+func (p *Provider) upsertVariables(ctx context.Context, serviceID string, values map[string]string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	result, err := p.api(ctx, variablesUpsertMutation, map[string]any{"input": map[string]any{"projectId": p.cfg.ProjectID, "environmentId": p.cfg.EnvironmentID, "serviceId": serviceID, "variables": values, "replace": false, "skipDeploys": true}})
+	if err != nil {
+		return err
+	}
+	var response struct {
+		Data struct {
+			Updated bool `json:"variableCollectionUpsert"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(result.Stdout, &response) != nil || !response.Data.Updated {
+		return &APIError{Status: 200, Ambiguous: true}
+	}
+	return nil
+}
 
 func (p *Provider) createService(ctx context.Context, name string) (procexec.Result, error) {
 	input := map[string]any{"projectId": p.cfg.ProjectID, "environmentId": p.cfg.EnvironmentID, "name": name}
@@ -25,11 +73,14 @@ func (p *Provider) createService(ctx context.Context, name string) (procexec.Res
 }
 
 func (p *Provider) api(ctx context.Context, document string, variables any) (procexec.Result, error) {
-	encoded, err := json.Marshal(variables)
-	if err != nil {
-		return procexec.Result{}, err
+	if p.cfg.Inventory != nil && strings.HasPrefix(strings.TrimSpace(document), "mutation") {
+		key := p.inventoryKey()
+		p.cfg.Inventory.invalidate(key)
+		// Even an ambiguous mutation may have changed infrastructure.
+		defer p.cfg.Inventory.invalidate(key)
 	}
-	return p.runner.Run(ctx, []string{"railway", "api", document, "--variables", string(encoded), "--compact"}, nil, nil, nil)
+	data, err := p.cfg.API.Do(ctx, document, variables)
+	return procexec.Result{Stdout: data}, err
 }
 
 func (p *Provider) serviceInstanceID(ctx context.Context, serviceID string) (string, error) {
@@ -233,4 +284,41 @@ func decodeRailwayCost(data []byte, serviceName string) provider.Cost {
 		return provider.Cost{Available: false, Currency: "USD", Detail: "Railway returned no service-level cost for " + serviceName}
 	}
 	return provider.Cost{Available: true, Currency: "USD", Accrued: total, Detail: fmt.Sprintf("aggregated %d current/deleted Railway service entrie(s)", found)}
+}
+
+// removeLatestSuccessfulDeployment preserves Railway down semantics: remove the
+// newest successful deployment, even if a newer deployment is still building.
+func (p *Provider) removeLatestSuccessfulDeployment(ctx context.Context, serviceID string) error {
+	items, err := p.deployments(ctx, serviceID)
+	if err != nil {
+		return err
+	}
+	var selected *railwayDeployment
+	for i := range items {
+		item := &items[i]
+		if item.Status == "SUCCESS" && (selected == nil || item.CreatedAt.After(selected.CreatedAt)) {
+			selected = item
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("Railway stop: no successful deployment found")
+	}
+	return p.confirmBooleanMutation(ctx, deploymentRemoveMutation, "deploymentRemove", selected.ID)
+}
+
+// A missing confirmation is ambiguous, never permission to replay a mutation.
+func (p *Provider) confirmBooleanMutation(ctx context.Context, query, field, id string) error {
+	result, err := p.api(ctx, query, map[string]any{"id": id})
+	if err != nil {
+		return err
+	}
+	var response struct {
+		Data map[string]json.RawMessage `json:"data"`
+	}
+	var confirmed bool
+	if json.Unmarshal(result.Stdout, &response) != nil ||
+		json.Unmarshal(response.Data[field], &confirmed) != nil || !confirmed {
+		return &APIError{Status: 200, Ambiguous: true}
+	}
+	return nil
 }

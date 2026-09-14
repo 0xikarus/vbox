@@ -13,7 +13,7 @@ import (
 
 func TestResourceLimitsUseCurrentRailwayAPI(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{}, {Stdout: []byte(`{"data":{"serviceInstanceLimits":{"containers":{"cpu":2,"memoryBytes":4000000000,"pidLimit":1000}}}}`)}}}
-	p := New(Config{EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{EnvironmentID: "environment"}, runner)
 	if err := p.setResources(context.Background(), "service", provider.Resources{CPU: 2, MemoryMiB: 4096}); err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestResourceLimitsUseCurrentRailwayAPI(t *testing.T) {
 
 func TestServiceInstanceIDSelectsRunningDeploymentReplica(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`{"data":{"serviceInstance":{"latestDeployment":{"deploymentStopped":false,"instances":[{"id":"initializing","status":"INITIALIZING"},{"id":"running-replica","status":"RUNNING"}]}}}}`)}}}
-	p := New(Config{EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{EnvironmentID: "environment"}, runner)
 	instance, err := p.serviceInstanceID(context.Background(), "service")
 	if err != nil || instance != "running-replica" {
 		t.Fatalf("instance=%q err=%v", instance, err)
@@ -54,7 +54,7 @@ func TestServiceInstanceIDRejectsStoppedOrNonRunningDeployment(t *testing.T) {
 		`{"data":{"serviceInstance":{"latestDeployment":{"deploymentStopped":false,"instances":[{"id":"pending","status":"INITIALIZING"}]}}}}`,
 	} {
 		runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(response)}}}
-		p := New(Config{EnvironmentID: "environment"}, runner)
+		p := newTestProvider(Config{EnvironmentID: "environment"}, runner)
 		if instance, err := p.serviceInstanceID(context.Background(), "service"); err == nil || instance != "" {
 			t.Fatalf("accepted inactive deployment instance=%q err=%v", instance, err)
 		}
@@ -74,7 +74,7 @@ func TestUsageReportsProjectTokenBillingScopeWithoutFailing(t *testing.T) {
 		{Stdout: []byte(`[{"id":"service","name":"vmbox-worker","status":"SUCCESS"}]`)},
 		{ExitCode: 1, Stderr: []byte("Unauthorized")},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	usage, err := p.Usage(context.Background(), "worker")
 	if err != nil {
 		t.Fatal(err)
@@ -88,7 +88,7 @@ func TestConfigureServiceBatchesSettings(t *testing.T) {
 	for _, region := range []string{"", "ams"} {
 		t.Run("region="+region, func(t *testing.T) {
 			runner := &procexec.FakeRunner{}
-			p := New(Config{EnvironmentID: "environment"}, runner)
+			p := newTestProvider(Config{EnvironmentID: "environment"}, runner)
 			if err := p.configureService(context.Background(), "service", "example/image:tag", region, "sleep infinity"); err != nil {
 				t.Fatal(err)
 			}
@@ -124,7 +124,7 @@ func TestConfigureServiceBatchesSettings(t *testing.T) {
 
 func TestConfigureServiceDoesNotRetryFailedMutation(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{ExitCode: 1}}}
-	p := New(Config{EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{EnvironmentID: "environment"}, runner)
 	if err := p.configureService(context.Background(), "service", "image", "ams", "sleep infinity"); err == nil {
 		t.Fatal("expected failure")
 	}
@@ -135,7 +135,7 @@ func TestConfigureServiceDoesNotRetryFailedMutation(t *testing.T) {
 
 func TestSetResourceLimitsDoesNotDeployOrRestart(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{}}}
-	p := New(Config{EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{EnvironmentID: "environment"}, runner)
 	if err := p.SetResourceLimits(context.Background(), "service", provider.Resources{CPU: 4, MemoryMiB: 12288}); err != nil {
 		t.Fatal(err)
 	}

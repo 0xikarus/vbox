@@ -217,7 +217,71 @@ func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
 			failures = append(failures, fmt.Errorf("message %s: %w", value.Message.ID, err))
 		}
 	}
+	if err := s.reconcileActiveTasks(ctx); err != nil {
+		failures = append(failures, err)
+	}
 	return errors.Join(failures...)
+}
+
+func (s *Server) reconcileActiveTasks(ctx context.Context) error {
+	tasks, err := s.Store.activeBoxTasks(ctx)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, value := range tasks {
+		if err := s.reconcileActiveTask(ctx, value.AccountID, value.Task); err != nil {
+			failures = append(failures, fmt.Errorf("check task %s: %w", value.Task.ID, err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func (s *Server) reconcileActiveTask(ctx context.Context, accountID string, task v1.BoxTask) error {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	box, err := s.Store.LogicalBox(ctx, taskPrincipal(accountID, task), task.LogicalBoxID)
+	if err != nil || box.State != v1.LogicalBoxRunning {
+		return err
+	}
+	assignment, err := s.Store.assignment(ctx, accountID, box.ID)
+	if err != nil {
+		return err
+	}
+	prov, err := s.provider(ctx, accountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		return err
+	}
+	missing, err := taskSessionMissing(ctx, prov, assignment.Slot.ServiceID, task.Session)
+	if err != nil || !missing {
+		return err
+	}
+	return s.Store.failMissingTask(ctx, accountID, task, box)
+}
+
+func taskSessionMissing(ctx context.Context, prov provider.Provider, serviceID, session string) (bool, error) {
+	if !validSessionName(session) {
+		return false, fmt.Errorf("invalid task session")
+	}
+	// '=' requests an exact name, never tmux's prefix match. Provider Exec runs
+	// this as the workload user, using that user's tmux socket and HOME.
+	result, err := prov.Exec(ctx, serviceID, []string{"tmux", "has-session", "-t", "=" + session}, provider.ExecOptions{})
+	if err != nil {
+		return false, err
+	}
+	switch result.ExitCode {
+	case 0:
+		return false, nil
+	case 1:
+		// Require a tmux absence diagnostic; permission and transport failures
+		// are not evidence that a task exited.
+		missing := strings.Contains(result.Stderr, "can't find session") || strings.Contains(result.Stderr, "no server running") ||
+			(strings.Contains(result.Stderr, "error connecting to") && strings.Contains(result.Stderr, "No such file or directory"))
+		if missing {
+			return true, nil
+		}
+	}
+	return false, fmt.Errorf("tmux session probe failed with status %d", result.ExitCode)
 }
 
 func (s *Server) createBoxTaskHandler(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -341,11 +405,11 @@ func (s *Server) logicalBoxConnectionHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	deploymentID := connection.Metadata["deploymentInstanceId"]
-	if deploymentID == "" || assignment.Slot.DeploymentInstanceID == "" || deploymentID != assignment.Slot.DeploymentInstanceID {
+	if !connectionMatchesAssignment(connection,assignment) {
 		writeError(w, http.StatusConflict, fmt.Errorf("resolved SSH deployment does not match the fenced assignment; retry after reconciliation"))
 		return
 	}
-	if box.Provider == "railway" && (connection.Transport != "openssh" || connection.Endpoint != deploymentID+"@ssh.railway.com") {
+	if box.Provider == "railway" && connection.Transport != directWorkerTransport && (connection.Transport != "openssh" || connection.Endpoint != deploymentID+"@ssh.railway.com") {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("provider returned an invalid Railway SSH endpoint"))
 		return
 	}
@@ -363,7 +427,7 @@ func (s *Server) logicalBoxConnectionHandler(w http.ResponseWriter, r *http.Requ
 	// Inspecting here is read-only and uses the already selected provider. It
 	// enriches the SSH handoff without exposing provider credentials or making
 	// the client query Railway's control plane.
-	if actual, inspectErr := prov.Inspect(r.Context(), assignment.Slot.ServiceID); inspectErr == nil {
+	if actual, inspectErr := connectionDisplayInfo(r.Context(), prov, connection, assignment); inspectErr == nil {
 		if actual.Region != "" {
 			connection.Metadata["vmboxRegion"] = actual.Region
 		}

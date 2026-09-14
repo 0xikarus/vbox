@@ -22,8 +22,9 @@ type ConnectedBox struct {
 }
 
 type BoxInventory struct {
-	LogicalBoxes   []LogicalBox   `json:"logicalBoxes"`
-	ConnectedBoxes []ConnectedBox `json:"connectedBoxes"`
+	LogicalBoxes   []LogicalBox                   `json:"logicalBoxes"`
+	ConnectedBoxes []ConnectedBox                 `json:"connectedBoxes"`
+	Infrastructure *provider.InventoryObservation `json:"infrastructure,omitempty"`
 }
 
 type DirectBoxMessageRequest struct {

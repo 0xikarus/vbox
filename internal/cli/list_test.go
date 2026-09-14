@@ -137,3 +137,24 @@ func TestControllerWelcomeUploadUsesPrivateHomeFileMode(t *testing.T) {
 		t.Fatalf("welcome argv=%q", argv)
 	}
 }
+
+func TestInventoryListDistinguishesUnobservedAndStaleState(t *testing.T) {
+	var output bytes.Buffer
+	if err := writeInventoryList(&output, v1.BoxInventory{Infrastructure: &provider.InventoryObservation{Stale: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "not been observed") || strings.Contains(output.String(), "No controller-visible boxes") {
+		t.Fatalf("unobserved inventory reported empty: %s", output.String())
+	}
+	output.Reset()
+	inventory := v1.BoxInventory{
+		Infrastructure: &provider.InventoryObservation{Available: true, Stale: true, RefreshFailed: true},
+		LogicalBoxes:   []v1.LogicalBox{{Name: "still-running", State: v1.LogicalBoxRunning}},
+	}
+	if err := writeInventoryList(&output, inventory); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "last refresh failed") || !strings.Contains(output.String(), "still-running") {
+		t.Fatalf("failed provider refresh hid logical boxes: %s", output.String())
+	}
+}

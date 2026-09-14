@@ -24,22 +24,27 @@ type ProviderResolver func(context.Context, string, string, string) (provider.Pr
 type NotificationSink func(context.Context, v1.Run, string, v1.JobState, string, string)
 
 type Server struct {
-	Store           *Store
-	Providers       *provider.Registry
-	Logger          *slog.Logger
-	MaxConcurrent   int
-	mu              sync.Mutex
-	browserSessions map[[32]byte]browserSession
-	webStreams      int
-	replyWatches    map[string]struct{}
-	PublicURL       string
-	DefaultImage    string
-	WorkerRuntime   []byte
-	Resolve         ProviderResolver
-	Bootstrap       func(context.Context, provider.Provider, provider.Box, []string) error
-	HTTP            *http.Client
-	ReconcileEvery  time.Duration
-	Deliver         NotificationSink
+	RailwayWebhooks      *RailwayWebhookReceiver
+	DirectWorkersEnabled bool
+	directWorkerOwner    string
+	directWorkers        map[string]*directWorkerConnection
+	Store                *Store
+	Providers            *provider.Registry
+	Logger               *slog.Logger
+	MaxConcurrent        int
+	mu                   sync.Mutex
+	browserSessions      map[[32]byte]browserSession
+	webStreams           int
+	replyWatches         map[string]struct{}
+	PublicURL            string
+	DefaultImage         string
+	WorkerRuntime        []byte
+	WorkerAgent          []byte
+	Resolve              ProviderResolver
+	Bootstrap            func(context.Context, provider.Provider, provider.Box, []string) error
+	HTTP                 *http.Client
+	ReconcileEvery       time.Duration
+	Deliver              NotificationSink
 	// StartTask hands a freshly created task to its agent. It is a field so
 	// that tests can observe the hand-off instead of racing a detached
 	// goroutine against their fixtures.
@@ -68,6 +73,14 @@ func NewServer(store *Store, providers *provider.Registry) *Server {
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	if s.RailwayWebhooks != nil {
+		mux.Handle("POST /v1/railway-webhooks/{secret}", s.RailwayWebhooks)
+	}
+	mux.HandleFunc("POST /v1/worker-slots/{slot}/enrollment", s.owner(s.installWorkerAgent))
+	mux.HandleFunc("POST /v1/worker-slots/{slot}/activate", s.owner(s.activateWorkerAgent))
+	mux.HandleFunc("POST /v1/worker-slots/{slot}/recover", s.owner(s.recoverWorkerAgent))
+	mux.HandleFunc("POST /v1/workers/enroll", s.exchangeWorkerEnrollment)
+	mux.HandleFunc("GET /v1/workers/connect", s.connectDirectWorker)
 	mux.HandleFunc("GET /v1/tool-presets", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) { writeJSON(w, 200, v1.ToolPresets()) }))
 	mux.HandleFunc("GET /run-once.js", uiHandler("run-once.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("POST /v1/run-once", s.owner(s.createRunOnce))
@@ -93,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/css; charset=utf-8", false))
 	}
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal/stream", s.owner(s.webTerminal))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/worker/stream", s.owner(s.directWorkerClient))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop", s.owner(s.startDesktop))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop", s.owner(s.desktopStatus))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop/enable", s.owner(s.enableDesktop))
@@ -355,11 +369,27 @@ func (s *Server) fail(ctx context.Context, p Principal, run v1.Run, err error) {
 }
 
 func (s *Server) provider(ctx context.Context, accountID, name, credential string) (provider.Provider, error) {
+	var prov provider.Provider
+	var err error
 	if s.Resolve != nil {
-		return s.Resolve(ctx, accountID, name, credential)
+		prov, err = s.Resolve(ctx, accountID, name, credential)
+	} else {
+		prov, err = s.Providers.Get(name)
 	}
-	return s.Providers.Get(name)
+	if err != nil {
+		return nil, err
+	}
+	// Always consult enrolled-worker state for Railway operations. The feature
+	// flag gates installation and activation, but it must not turn an already
+	// migrated slot back into an implicit Railway SSH fallback. Legacy slots are
+	// still passed through by directWorkerProvider when no enabled enrollment
+	// exists.
+	if name == "railway" {
+		return &directWorkerProvider{Provider: prov, server: s, accountID: accountID, credential: credential}, nil
+	}
+	return prov, nil
 }
+
 func (s *Server) getRun(w http.ResponseWriter, r *http.Request, p Principal) {
 	run, err := s.Store.GetRun(r.Context(), p.AccountID, r.PathValue("id"))
 	if err != nil {

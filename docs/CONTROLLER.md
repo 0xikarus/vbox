@@ -5,7 +5,8 @@ and [OpenAPI v1alpha2](openapi.yaml) for the current CLI/API contract.
 
 The controller uses PostgreSQL for accounts, owner/user roles, hashed tokens,
 encrypted provider aliases, fleet allocation, tasks and per-user update checkpoints.
-The web application is configuration-only. Agent interaction uses the CLI.
+The web application includes per-box desktop and terminal views; the CLI uses
+the same controller for box access.
 
 Required operator configuration:
 
@@ -28,6 +29,17 @@ The latter is a project token and uses the project-access header. Configure
 `RAILWAY_PROJECT_ID` and `RAILWAY_ENVIRONMENT_ID` explicitly. Existing owner-managed
 credentials are not overwritten by environment seeding. Some account capabilities
 cannot be proven by a read-only validation probe.
+
+HTTP Railway management requests share a PostgreSQL budget keyed by credential
+digest, including across aliases and controller restarts. Defaults are 80 requests
+per rolling hour and at least one second between requests. Operators can set
+`VMBOX_RAILWAY_API_HOURLY_LIMIT` (1–100000) and
+`VMBOX_RAILWAY_API_INTERVAL` (20ms–1m) to fit their Railway quota. Provider response
+headers can lower the allowance and impose a shared cooldown; database failures
+deny requests. Foreground and background requests share the total limit, with
+reservations for each class when the effective allowance exceeds one request.
+Inventory refreshes are coalesced and cached. Legacy logs and billing CLI paths
+are outside this HTTP budget; they are not used for direct box runtime access.
 
 Controller-initiated Railway SSH needs a dedicated registered key. Supply
 `VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64` securely; startup materializes it privately,
@@ -67,3 +79,36 @@ Fresh allocations bind the native assignment automatically.
 Controller restart should not affect remote tmux. Hibernation is different:
 it saves/restores workspace state but cannot preserve live process identities.
 Never use a worker restart as evidence of controller-only recovery.
+
+## Direct worker transport rollout
+
+Set `VMBOX_DIRECT_WORKERS=1` on the controller and use one controller replica.
+The controller image must contain its matching `/usr/local/bin/vmbox-worker-agent`
+and `/usr/local/bin/vmbox-runtime`; `VMBOX_CONTROLLER_URL` must be the externally
+reachable HTTPS address. Workers establish outbound authenticated WebSockets to
+that address. No per-worker public port is required.
+
+The flag enables enrollment, activation and recovery. Disabling it does not
+switch an already enabled worker back to Railway: disconnected workers fail
+closed. Ordinary screenshots, input, files and terminals use the worker channel.
+Infrastructure allocation and a fenced, one-time agent installation still need
+Railway access, so a Railway cooldown can delay creation or migration.
+
+For an existing running box, an owner can POST to
+`/v1/worker-slots/{slot}/enrollment`, then POST to
+`/v1/worker-slots/{slot}/activate` after the agent connects. Installation captures
+native session identities and activation verifies they survived. Neither operation
+restarts the worker. An ambiguous installation is retained for inspection;
+`/v1/worker-slots/{slot}/recover` probes the pinned deployment before recovery.
+Do not blindly repeat bootstrap or restart compute to repair a disconnected agent.
+See [delivery evidence](DIRECT-WORKER-ACCEPTANCE.md) for verification and rollout
+steps that remain outstanding.
+
+Optional `VMBOX_RAILWAY_WEBHOOK_SECRET` is a base64url-encoded 32-byte random secret.
+Configure the Railway project webhook URL as
+`https://CONTROLLER/v1/railway-webhooks/SECRET`, selecting deployment events.
+Treat the full URL as a credential and redact it from proxy/access logs.
+The receiver validates project, environment and service scope, persists deduplicated
+refresh hints and refreshes inventory through the shared background request budget.
+Events never directly change allocation readiness or authorize destructive actions.
+Registration in Railway is separate from enabling the receiver.

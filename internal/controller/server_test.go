@@ -298,39 +298,50 @@ func TestAuthorizationValueRequiresExactScheme(t *testing.T) {
 }
 
 func TestInventoryHidesEveryFleetSlotServiceAndSanitizesExternalBoxes(t *testing.T) {
-	store, mock := testStore(t)
-	now := time.Now().UTC()
-	logicalColumns := []string{"id", "account_id", "owner_user_id", "name", "provider", "provider_credential", "default_agent", "state", "volume_id", "volume_name", "slot_id", "assignment_generation", "lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at", "tools"}
-	mock.ExpectQuery(`FROM logical_boxes WHERE account_id=\$1 AND provider=\$2 AND provider_credential=\$3`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows(logicalColumns).AddRow("logical-1", "account-a", "user-a", "occupied-workspace", "fake", "primary", "claude", "running", "volume-1", "workspace-data", "slot-2", int64(1), "", nil, "", "", now, now, "[]"))
-	mock.ExpectQuery(`SELECT service_id FROM compute_slots`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows([]string{"service_id"}).AddRow("service-free").AddRow("service-occupied"))
-	providerFake := &fakeProvider{boxes: []provider.Box{
-		{ID: "service-free", Name: "fleet-slot-1", State: provider.StateRunning},
-		{ID: "service-occupied", Name: "fleet-slot-2", State: provider.StateRunning},
-		{ID: "manual-1", Name: "manual-box", State: provider.StateRunning, Owner: provider.Owner{Lease: "must-not-leak"}, Connection: provider.Connection{Endpoint: "must-not-leak"}},
-	}}
-	server := NewServer(store, provider.NewRegistry())
-	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return providerFake, nil }
-	request := httptest.NewRequest(http.MethodGet, "/v1/inventory?provider=fake&providerCredential=primary", nil)
-	response := httptest.NewRecorder()
-	server.boxInventoryHandler(response, request, Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"})
-	if response.Code != http.StatusOK {
-		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
-	}
-	var inventory v1.BoxInventory
-	if err := json.Unmarshal(response.Body.Bytes(), &inventory); err != nil {
-		t.Fatal(err)
-	}
-	if len(inventory.LogicalBoxes) != 1 || inventory.LogicalBoxes[0].Name != "occupied-workspace" {
-		t.Fatalf("logical boxes=%+v", inventory.LogicalBoxes)
-	}
-	if len(inventory.ConnectedBoxes) != 1 || inventory.ConnectedBoxes[0].Name != "manual-box" || inventory.ConnectedBoxes[0].Management != "external" {
-		t.Fatalf("external boxes=%+v", inventory.ConnectedBoxes)
-	}
-	if strings.Contains(response.Body.String(), "fleet-slot") || strings.Contains(response.Body.String(), "must-not-leak") {
-		t.Fatalf("inventory leaked a fleet slot or provider secret: %s", response.Body.String())
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
+	for _, cached := range []bool{false, true} {
+		t.Run(fmt.Sprint(cached), func(t *testing.T) {
+			store, mock := testStore(t)
+			now := time.Now().UTC()
+			logicalColumns := []string{"id", "account_id", "owner_user_id", "name", "provider", "provider_credential", "default_agent", "state", "volume_id", "volume_name", "slot_id", "assignment_generation", "lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at", "tools"}
+			mock.ExpectQuery(`FROM logical_boxes WHERE account_id=\$1 AND provider=\$2 AND provider_credential=\$3`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows(logicalColumns).AddRow("logical-1", "account-a", "user-a", "occupied-workspace", "fake", "primary", "claude", "running", "volume-1", "workspace-data", "slot-2", int64(1), "", nil, "", "", now, now, "[]"))
+			mock.ExpectQuery(`SELECT service_id FROM compute_slots`).WithArgs("account-a", "fake", "primary").WillReturnRows(sqlmock.NewRows([]string{"service_id"}).AddRow("service-free").AddRow("service-occupied"))
+			providerFake := &fakeProvider{boxes: []provider.Box{
+				{ID: "service-free", Name: "fleet-slot-1", State: provider.StateRunning},
+				{ID: "service-occupied", Name: "fleet-slot-2", State: provider.StateRunning},
+				{ID: "manual-1", Name: "manual-box", State: provider.StateRunning, Owner: provider.Owner{Lease: "must-not-leak"}, Connection: provider.Connection{Endpoint: "must-not-leak"}},
+			}}
+			var resolved provider.Provider = providerFake
+			if cached {
+				resolved = &inventoryObservationFixture{fakeProvider: providerFake, observed: now}
+			}
+			server := NewServer(store, provider.NewRegistry())
+			server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return resolved, nil }
+			request := httptest.NewRequest(http.MethodGet, "/v1/inventory?provider=fake&providerCredential=primary", nil)
+			response := httptest.NewRecorder()
+			server.boxInventoryHandler(response, request, Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"})
+			if response.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			var inventory v1.BoxInventory
+			if err := json.Unmarshal(response.Body.Bytes(), &inventory); err != nil {
+				t.Fatal(err)
+			}
+			if cached && (inventory.Infrastructure == nil || !inventory.Infrastructure.Stale || !inventory.Infrastructure.Available) {
+				t.Fatal("observation status omitted")
+			}
+			if len(inventory.LogicalBoxes) != 1 || inventory.LogicalBoxes[0].Name != "occupied-workspace" {
+				t.Fatalf("logical boxes=%+v", inventory.LogicalBoxes)
+			}
+			if len(inventory.ConnectedBoxes) != 1 || inventory.ConnectedBoxes[0].Name != "manual-box" || inventory.ConnectedBoxes[0].Management != "external" {
+				t.Fatalf("external boxes=%+v", inventory.ConnectedBoxes)
+			}
+			if strings.Contains(response.Body.String(), "fleet-slot") || strings.Contains(response.Body.String(), "must-not-leak") {
+				t.Fatalf("inventory leaked a fleet slot or provider secret: %s", response.Body.String())
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 
@@ -377,4 +388,16 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("unknown route status=%d", response.Code)
 	}
+}
+
+type inventoryObservationFixture struct {
+	*fakeProvider
+	observed time.Time
+}
+
+func (p *inventoryObservationFixture) List(context.Context) ([]provider.Box, error) {
+	panic("inventory status invoked provider List")
+}
+func (p *inventoryObservationFixture) ObserveInventory(context.Context) (provider.InventoryObservation, error) {
+	return provider.InventoryObservation{Boxes: p.boxes, Available: true, ObservedAt: p.observed, Stale: true, RefreshFailed: true}, nil
 }

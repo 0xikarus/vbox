@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,6 +28,9 @@ type Config struct {
 	SSHIdentityFile   string
 	SSHBinary         string
 	SSHControlDir     string
+	API               *HTTPAPI
+	APIBudget         RequestBudget
+	Inventory         *InventoryCache
 	PollInterval      time.Duration
 	ReadyTimeout      time.Duration
 }
@@ -49,6 +51,16 @@ func New(cfg Config, runner procexec.Runner) *Provider {
 	}
 	if cfg.TokenEnvironment == "" {
 		cfg.TokenEnvironment = "RAILWAY_API_TOKEN"
+	}
+	if cfg.API == nil {
+		cfg.API = &HTTPAPI{Token: cfg.Token, TokenEnvironment: cfg.TokenEnvironment, Budget: cfg.APIBudget}
+	} else if cfg.API.Budget == nil && cfg.APIBudget != nil {
+		// A caller-supplied transport must not bypass the controller's persistent
+		// credential-scoped gate. Copy before wiring it so aliases can safely use
+		// the same client configuration with different budget implementations.
+		api := *cfg.API
+		api.Budget = cfg.APIBudget
+		cfg.API = &api
 	}
 	if cfg.SSHBinary == "" {
 		cfg.SSHBinary = "ssh"
@@ -104,13 +116,6 @@ func (p *Provider) target() []string {
 func (p *Provider) command(args ...string) []string {
 	return append(append([]string{"railway"}, args...), p.target()...)
 }
-func (p *Provider) run(ctx context.Context, args ...string) (procexec.Result, error) {
-	return p.runInput(ctx, nil, args...)
-}
-func (p *Provider) runInput(ctx context.Context, stdin io.Reader, args ...string) (procexec.Result, error) {
-	return p.runner.Run(ctx, p.command(args...), stdin, nil, nil)
-}
-
 func (p *Provider) Validate(ctx context.Context) (provider.Capabilities, error) {
 	cap := provider.Capabilities{Provider: p.Name(), Architectures: []string{"linux/amd64"}, Interactive: true, Detached: true, ExactArgv: true, PersistentStorage: true, AutomatedStorage: true, Resize: true, Metrics: true, Cost: true, ControllerCompatible: true}
 	if p.cfg.TokenEnvironment != "RAILWAY_API_TOKEN" && p.cfg.TokenEnvironment != "RAILWAY_TOKEN" {
@@ -119,27 +124,27 @@ func (p *Provider) Validate(ctx context.Context) (provider.Capabilities, error) 
 	if p.cfg.ProjectID == "" || p.cfg.EnvironmentID == "" {
 		return cap, fmt.Errorf("Railway project and environment IDs are required")
 	}
-	result, err := p.run(ctx, "service", "list", "--json")
-	if err != nil || result.ExitCode != 0 {
-		return cap, railwayError("validate", result, err)
+	if _, err := p.services(ctx); err != nil {
+		return cap, err
 	}
 	return cap, nil
 }
 
+type serviceReplicas struct {
+	Configured int `json:"configured"`
+	Running    int `json:"running"`
+	Crashed    int `json:"crashed"`
+	Exited     int `json:"exited"`
+	Total      int `json:"total"`
+}
 type service struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
-	Replicas  *struct {
-		Configured int `json:"configured"`
-		Running    int `json:"running"`
-		Crashed    int `json:"crashed"`
-		Exited     int `json:"exited"`
-		Total      int `json:"total"`
-	} `json:"replicas,omitempty"`
-	Regions []struct {
+	ID        string           `json:"id"`
+	Name      string           `json:"name"`
+	Status    string           `json:"status"`
+	CreatedAt time.Time        `json:"createdAt"`
+	UpdatedAt time.Time        `json:"updatedAt"`
+	Replicas  *serviceReplicas `json:"replicas,omitempty"`
+	Regions   []struct {
 		Name string `json:"name"`
 	} `json:"regions"`
 	Source struct {
@@ -148,15 +153,12 @@ type service struct {
 }
 
 func (p *Provider) services(ctx context.Context) ([]service, error) {
-	result, err := p.run(ctx, "service", "list", "--json")
-	if err != nil || result.ExitCode != 0 {
-		return nil, railwayError("list services", result, err)
-	}
-	var services []service
-	if err := json.Unmarshal(result.Stdout, &services); err != nil {
-		return nil, fmt.Errorf("decode Railway services: %w", err)
+	services, err := p.fetchServices(ctx)
+	if err != nil {
+		return nil, err
 	}
 	p.cacheMu.Lock()
+	p.servicesByKey = make(map[string]service, len(services)*3)
 	for _, item := range services {
 		p.servicesByKey[item.ID] = item
 		p.servicesByKey[item.Name] = item
@@ -270,22 +272,22 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if req.Detached {
 		metadata["VMBOX_COMPUTE_SLOT"] = "true"
 	}
-	keys := make([]string, 0, len(metadata))
+	updates := make(map[string]string, len(metadata))
 	for key, value := range metadata {
 		if value != "" {
-			keys = append(keys, key)
+			updates[key] = value
 		}
 	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		value := metadata[key]
-		result, err = p.runInput(ctx, strings.NewReader(value), "variable", "set", key, "--stdin", "--service", service.Name, "--skip-deploys")
-		if err == nil && result.ExitCode == 0 {
-			continue
+	if err = p.upsertVariables(ctx, service.ID, updates); err != nil {
+		// Reconcile a possibly applied batch; never submit it a second time here.
+		values, reconcileErr := p.variables(ctx, service.ID)
+		if reconcileErr != nil {
+			return provider.Box{}, fmt.Errorf("set Railway variables: %w", err)
 		}
-		values, reconcileErr := p.variables(ctx, service.Name)
-		if reconcileErr != nil || values[key] != value {
-			return provider.Box{}, railwayError("set variable "+key, result, err)
+		for key, value := range updates {
+			if values[key] != value {
+				return provider.Box{}, fmt.Errorf("set Railway variables: %w", err)
+			}
 		}
 	}
 	if !req.Detached {
@@ -303,7 +305,7 @@ func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (prov
 	if err := p.configureService(ctx, service.ID, image, req.Region, railwayStartCommand(req.Detached)); err != nil {
 		return provider.Box{}, err
 	}
-	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
+	if err := p.submitAndWaitDeployment(ctx, service.ID); err != nil {
 		return provider.Box{}, err
 	}
 	return p.Inspect(ctx, service.ID)
@@ -356,20 +358,24 @@ func serviceState(value service) provider.State {
 	return provider.StateStopped
 }
 
-func (p *Provider) variables(ctx context.Context, service string) (map[string]string, error) {
-	result, err := p.run(ctx, "variables", "--service", service, "--json")
+func (p *Provider) variables(ctx context.Context, serviceID string) (map[string]string, error) {
+	result, err := p.api(ctx, variablesQuery, map[string]any{"projectId": p.cfg.ProjectID, "environmentId": p.cfg.EnvironmentID, "serviceId": serviceID})
 	if err != nil || result.ExitCode != 0 {
 		return nil, railwayError("read variables", result, err)
 	}
-	values := make(map[string]string)
-	if err := json.Unmarshal(result.Stdout, &values); err != nil {
-		return nil, err
+	var response struct {
+		Data struct {
+			Variables map[string]string `json:"variables"`
+		} `json:"data"`
 	}
-	return values, nil
+	if err := json.Unmarshal(result.Stdout, &response); err != nil || response.Data.Variables == nil {
+		return nil, fmt.Errorf("invalid Railway variable response")
+	}
+	return response.Data.Variables, nil
 }
 
 func (p *Provider) inspectService(ctx context.Context, service service, includeResources bool) (provider.Box, error) {
-	values, err := p.variables(ctx, service.Name)
+	values, err := p.variables(ctx, service.ID)
 	if err != nil {
 		return provider.Box{}, err
 	}
@@ -409,6 +415,13 @@ func (p *Provider) Inspect(ctx context.Context, id string) (provider.Box, error)
 	return p.inspectService(ctx, service, true)
 }
 func (p *Provider) List(ctx context.Context) ([]provider.Box, error) {
+	if p.cfg.Inventory != nil {
+		return p.cfg.Inventory.list(ctx, p.inventoryKey(), p.listFresh)
+	}
+	return p.listFresh(ctx)
+}
+
+func (p *Provider) listFresh(ctx context.Context) ([]provider.Box, error) {
 	services, err := p.services(ctx)
 	if err != nil {
 		return nil, err
@@ -432,11 +445,18 @@ func (p *Provider) List(ctx context.Context) ([]provider.Box, error) {
 		}(item)
 	}
 	boxes := make([]provider.Box, 0, len(candidates))
+	var inspectionError error
 	for range candidates {
 		result := <-results
+		if result.err != nil && inspectionError == nil {
+			inspectionError = result.err
+		}
 		if result.err == nil && result.box.Owner.BoxID != "" {
 			boxes = append(boxes, result.box)
 		}
+	}
+	if inspectionError != nil {
+		return nil, fmt.Errorf("Railway box inventory incomplete: %w", inspectionError)
 	}
 	return boxes, nil
 }
@@ -445,14 +465,15 @@ func (p *Provider) Start(ctx context.Context, id string) (provider.Box, error) {
 	return p.Deploy(ctx, id, "")
 }
 func (p *Provider) Stop(ctx context.Context, id string) (provider.Box, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.ReadyTimeout)
+	defer cancel()
 	service, err := p.resolve(ctx, id)
 	if err != nil {
 		return provider.Box{}, err
 	}
 	p.invalidateServiceSSH(service)
-	result, err := p.run(ctx, "down", "--service", service.Name, "--yes")
-	if err != nil || result.ExitCode != 0 {
-		return provider.Box{}, railwayError("stop", result, err)
+	if err := p.removeLatestSuccessfulDeployment(ctx, service.ID); err != nil {
+		return provider.Box{}, err
 	}
 	return p.Inspect(ctx, service.ID)
 }
@@ -523,6 +544,8 @@ func verifyRailwayOwner(box provider.Box, requested provider.Owner) error {
 }
 
 func (p *Provider) Delete(ctx context.Context, id string, requested provider.Owner) error {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.ReadyTimeout)
+	defer cancel()
 	box, err := p.Inspect(ctx, id)
 	if errors.Is(err, provider.ErrNotFound) {
 		return nil
@@ -533,7 +556,7 @@ func (p *Provider) Delete(ctx context.Context, id string, requested provider.Own
 	if err := verifyRailwayOwner(box, requested); err != nil {
 		return err
 	}
-	volumeIDs, err := p.volumeIDs(ctx, serviceName(box.Name))
+	volumeIDs, err := p.volumeIDs(ctx, box.ID)
 	if err != nil {
 		return err
 	}
@@ -542,14 +565,13 @@ func (p *Provider) Delete(ctx context.Context, id string, requested provider.Own
 			return err
 		}
 	}
-	result, err := p.run(ctx, "service", "delete", "--service", box.ID, "--yes", "--json")
-	if err != nil || result.ExitCode != 0 {
-		return railwayError("delete service", result, err)
-	}
-	return nil
+	return p.confirmBooleanMutation(ctx, serviceDeleteMutation, "serviceDelete", box.ID)
 }
 
 type railwayVolume struct {
+	ServiceID         string `json:"serviceId"`
+	InstanceID        string `json:"instanceId"`
+	OtherEnvironments bool   `json:"otherEnvironments"`
 	Name              string `json:"name"`
 	ID                string `json:"id"`
 	ServiceName       string `json:"serviceName"`
@@ -559,24 +581,7 @@ type railwayVolume struct {
 }
 
 func (p *Provider) volumes(ctx context.Context) ([]railwayVolume, error) {
-	result, err := p.runVolume(ctx, "", nil, "list", "--json")
-	if err != nil || result.ExitCode != 0 {
-		return nil, railwayError("list volumes", result, err)
-	}
-	var payload struct {
-		Volumes []railwayVolume `json:"volumes"`
-	}
-	if err := json.Unmarshal(result.Stdout, &payload); err != nil || payload.Volumes == nil {
-		var direct []railwayVolume
-		if directErr := json.Unmarshal(result.Stdout, &direct); directErr != nil {
-			if err != nil {
-				return nil, err
-			}
-			return nil, directErr
-		}
-		payload.Volumes = direct
-	}
-	return payload.Volumes, nil
+	return p.fetchVolumes(ctx)
 }
 
 func (p *Provider) AttachedStorage(ctx context.Context, id string) (*provider.Storage, error) {
@@ -590,7 +595,7 @@ func (p *Provider) AttachedStorage(ctx context.Context, id string) (*provider.St
 	}
 	var attached *provider.Storage
 	for _, volume := range volumes {
-		if volume.ServiceName != service.Name || volume.MountPath != "/data" {
+		if volume.ServiceID != service.ID || volume.MountPath != "/data" {
 			continue
 		}
 		if attached != nil {
@@ -612,7 +617,10 @@ func (p *Provider) volumeIDs(ctx context.Context, service string) ([]string, err
 	}
 	var ids []string
 	for _, volume := range volumes {
-		if volume.ServiceName == service && volume.MountPath == "/data" {
+		if volume.ServiceID == service && volume.MountPath == "/data" {
+			if volume.OtherEnvironments {
+				return nil, fmt.Errorf("refusing to delete Railway volume with other environment instances")
+			}
 			ids = append(ids, volume.ID)
 		}
 	}
@@ -620,13 +628,15 @@ func (p *Provider) volumeIDs(ctx context.Context, service string) ([]string, err
 }
 
 func (p *Provider) CreateStorage(ctx context.Context, id string, resources provider.Resources) (provider.Storage, error) {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.ReadyTimeout)
+	defer cancel()
 	service, err := p.resolve(ctx, id)
 	if err != nil {
 		return provider.Storage{}, err
 	}
 	find := func(values []railwayVolume) (railwayVolume, bool) {
 		for _, volume := range values {
-			if volume.ServiceName == service.Name && volume.MountPath == "/data" {
+			if volume.ServiceID == service.ID && volume.MountPath == "/data" {
 				return volume, true
 			}
 		}
@@ -673,6 +683,8 @@ func (p *Provider) CreateStorage(ctx context.Context, id string, resources provi
 	}
 }
 func (p *Provider) AttachStorage(ctx context.Context, id string, storage provider.Storage) error {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.ReadyTimeout)
+	defer cancel()
 	if storage.ID == "" {
 		return fmt.Errorf("Railway volume ID is required")
 	}
@@ -685,19 +697,27 @@ func (p *Provider) AttachStorage(ctx context.Context, id string, storage provide
 		if listErr != nil {
 			return false, listErr
 		}
+		found := false
 		for _, volume := range volumes {
 			if volume.ID == storage.ID {
-				if volume.ServiceName == service.Name && volume.MountPath == "/data" {
+				found = true
+				if volume.InstanceID == "" || volume.IsPendingDeletion {
+					return false, fmt.Errorf("Railway volume has no usable instance in this environment")
+				}
+				if volume.ServiceID == service.ID && volume.MountPath == "/data" {
 					return true, nil
 				}
-				if volume.ServiceName != "" {
+				if volume.ServiceID != "" {
 					return false, fmt.Errorf("Railway volume %s is already attached to %s", storage.ID, volume.ServiceName)
 				}
 				continue
 			}
-			if volume.ServiceName == service.Name && volume.MountPath == "/data" {
+			if volume.ServiceID == service.ID && volume.MountPath == "/data" {
 				return false, fmt.Errorf("compute slot %s already has Railway volume %s attached", service.Name, volume.ID)
 			}
+		}
+		if !found {
+			return false, fmt.Errorf("Railway volume %s does not exist in the verified inventory", storage.ID)
 		}
 		return false, nil
 	}
@@ -729,10 +749,12 @@ func (p *Provider) AttachStorage(ctx context.Context, id string, storage provide
 		}
 	}
 	p.invalidateServiceSSH(service)
-	return p.submitAndWaitDeployment(ctx, service.Name)
+	return p.submitAndWaitDeployment(ctx, service.ID)
 }
 
 func (p *Provider) DetachStorage(ctx context.Context, id string, storage provider.Storage) error {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.ReadyTimeout)
+	defer cancel()
 	if storage.ID == "" {
 		return fmt.Errorf("Railway volume ID is required")
 	}
@@ -749,10 +771,13 @@ func (p *Provider) DetachStorage(ctx context.Context, id string, storage provide
 			if volume.ID != storage.ID {
 				continue
 			}
-			if volume.ServiceName == "" {
+			if volume.InstanceID == "" {
+				return false, fmt.Errorf("Railway volume has no instance in this environment")
+			}
+			if volume.ServiceID == "" {
 				return true, nil
 			}
-			if volume.ServiceName != service.Name {
+			if volume.ServiceID != service.ID {
 				return false, fmt.Errorf("Railway volume %s is attached to unexpected service %s", storage.ID, volume.ServiceName)
 			}
 			return false, nil
@@ -787,7 +812,7 @@ func (p *Provider) DetachStorage(ctx context.Context, id string, storage provide
 		}
 	}
 	p.invalidateServiceSSH(service)
-	return p.submitAndWaitDeployment(ctx, service.Name)
+	return p.submitAndWaitDeployment(ctx, service.ID)
 }
 
 func (p *Provider) SanitizeSlot(ctx context.Context, id string) error {
@@ -800,7 +825,7 @@ func (p *Provider) SanitizeSlot(ctx context.Context, id string) error {
 		return err
 	}
 	for _, volume := range volumes {
-		if volume.ServiceName == service.Name {
+		if volume.ServiceID == service.ID {
 			return fmt.Errorf("refusing to sanitize compute slot %s while volume %s remains attached", service.Name, volume.ID)
 		}
 	}
@@ -828,6 +853,8 @@ func matchingVolumeName(expected, actual string) bool {
 }
 
 func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, requested provider.Owner) error {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.ReadyTimeout)
+	defer cancel()
 	if storage.ID == "" || requested.AccountID == "" || requested.BoxID == "" {
 		return fmt.Errorf("exact volume ID and logical-box ownership are required")
 	}
@@ -841,7 +868,10 @@ func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, 
 			continue
 		}
 		found = true
-		if volume.ServiceName != "" {
+		if volume.OtherEnvironments || volume.InstanceID == "" {
+			return fmt.Errorf("refusing to delete Railway volume outside the exclusively owned environment")
+		}
+		if volume.ServiceID != "" {
 			return fmt.Errorf("refusing to delete attached Railway volume %s from %s", storage.ID, volume.ServiceName)
 		}
 		if !matchingVolumeName(storage.Name, volume.Name) {
@@ -891,7 +921,7 @@ func (p *Provider) Deploy(ctx context.Context, id, image string) (provider.Box, 
 			return provider.Box{}, err
 		}
 	}
-	if err := p.submitAndWaitDeployment(ctx, service.Name); err != nil {
+	if err := p.submitAndWaitDeployment(ctx, service.ID); err != nil {
 		return provider.Box{}, err
 	}
 	return p.Inspect(ctx, service.ID)
@@ -904,21 +934,30 @@ type railwayDeployment struct {
 }
 
 func (p *Provider) deployments(ctx context.Context, service string) ([]railwayDeployment, error) {
-	result, err := p.run(ctx, "deployment", "list", "--service", service, "--limit", "100", "--json")
+	result, err := p.api(ctx, deploymentsQuery, map[string]any{"input": map[string]any{"projectId": p.cfg.ProjectID, "environmentId": p.cfg.EnvironmentID, "serviceId": service}, "first": 100})
 	if err != nil || result.ExitCode != 0 {
 		return nil, railwayError("list deployments", result, err)
 	}
-	var direct []railwayDeployment
-	if err := json.Unmarshal(result.Stdout, &direct); err == nil {
-		return direct, nil
+	var response struct {
+		Data struct {
+			Deployments *struct {
+				Edges []struct {
+					Node railwayDeployment `json:"node"`
+				} `json:"edges"`
+			} `json:"deployments"`
+		} `json:"data"`
 	}
-	var wrapped struct {
-		Deployments []railwayDeployment `json:"deployments"`
+	if json.Unmarshal(result.Stdout, &response) != nil || response.Data.Deployments == nil || response.Data.Deployments.Edges == nil {
+		return nil, fmt.Errorf("invalid Railway deployment inventory")
 	}
-	if err := json.Unmarshal(result.Stdout, &wrapped); err != nil {
-		return nil, fmt.Errorf("decode Railway deployments: %w", err)
+	items := make([]railwayDeployment, 0, len(response.Data.Deployments.Edges))
+	for _, edge := range response.Data.Deployments.Edges {
+		if edge.Node.ID == "" || edge.Node.Status == "" {
+			return nil, fmt.Errorf("incomplete Railway deployment inventory")
+		}
+		items = append(items, edge.Node)
 	}
-	return wrapped.Deployments, nil
+	return items, nil
 }
 
 func deploymentID(data []byte) string {
@@ -964,6 +1003,8 @@ func deploymentID(data []byte) string {
 }
 
 func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) error {
+	ctx, cancel := context.WithTimeout(ctx, p.cfg.ReadyTimeout)
+	defer cancel()
 	p.invalidateSSHForServiceKey(service)
 	before, err := p.deployments(ctx, service)
 	if err != nil {
@@ -973,16 +1014,26 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 	for _, item := range before {
 		known[item.ID] = true
 	}
-	result, submitErr := p.run(ctx, "redeploy", "--service", service, "--yes", "--json", "--from-source")
-	id := deploymentID(result.Stdout)
+	result, submitErr := p.api(ctx, serviceDeployMutation, map[string]any{"serviceId": service, "environmentId": p.cfg.EnvironmentID})
+	var submission struct {
+		Data struct {
+			ID string `json:"serviceInstanceDeployV2"`
+		} `json:"data"`
+	}
+	id := ""
+	if submitErr == nil && json.Unmarshal(result.Stdout, &submission) == nil {
+		id = submission.Data.ID
+	}
 	visibilityTimeout := 30 * time.Second
 	if p.cfg.ReadyTimeout < visibilityTimeout {
 		visibilityTimeout = p.cfg.ReadyTimeout
 	}
 	visibilityDeadline := time.NewTimer(visibilityTimeout)
 	defer visibilityDeadline.Stop()
+	visibilityCtx, stopVisibility := context.WithTimeout(ctx, visibilityTimeout)
+	defer stopVisibility()
 	for id == "" {
-		after, reconcileErr := p.deployments(ctx, service)
+		after, reconcileErr := p.deployments(visibilityCtx, service)
 		if reconcileErr == nil {
 			var candidates []string
 			for _, item := range after {
@@ -1015,22 +1066,15 @@ func (p *Provider) submitAndWaitDeployment(ctx context.Context, service string) 
 	deadline := time.NewTimer(p.cfg.ReadyTimeout)
 	defer deadline.Stop()
 	for {
-		items, listErr := p.deployments(ctx, service)
+		status, listErr := p.deploymentStatus(ctx, id)
 		if listErr != nil {
 			return listErr
 		}
-		status := "NOT_VISIBLE"
-		for _, item := range items {
-			if item.ID != id {
-				continue
-			}
-			status = strings.ToUpper(item.Status)
-			switch status {
-			case "SUCCESS", "READY":
-				return nil
-			case "FAILED", "CRASHED", "CANCELLED", "REMOVED", "SKIPPED":
-				return fmt.Errorf("Railway deployment %s ended with %s", id, item.Status)
-			}
+		switch status {
+		case "SUCCESS", "READY":
+			return nil
+		case "FAILED", "CRASHED", "CANCELLED", "REMOVED", "SKIPPED":
+			return fmt.Errorf("Railway deployment %s ended with %s", id, status)
 		}
 		select {
 		case <-ctx.Done():

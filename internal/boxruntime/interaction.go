@@ -332,7 +332,11 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 	}
 	var argv []string
 	switch agent {
-	case "codex", "opencode":
+	case "codex":
+		// Managed images own upgrades. A startup update menu can consume the
+		// initial prompt before the interactive agent is ready to receive it.
+		argv = []string{agent, "-c", "check_for_update_on_startup=false"}
+	case "opencode":
 		argv = []string{agent}
 	case "claude":
 		// Claude can update and restart itself moments after presenting its first
@@ -412,7 +416,7 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 func agentInputReady(agent, content string) bool {
 	switch agent {
 	case "codex":
-		return strings.Contains(content, "OpenAI Codex") && strings.Contains(content, "›")
+		return !terminalBlocksSubmit(content) && strings.Contains(content, "OpenAI Codex") && strings.Contains(content, "›")
 	case "claude":
 		if !strings.Contains(content, "Claude Code v") {
 			return false

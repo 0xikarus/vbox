@@ -83,7 +83,7 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 		writeError(w, 502, fmt.Errorf("connection resolution failed"))
 		return
 	}
-	if conn.Metadata["deploymentInstanceId"] == "" || conn.Metadata["deploymentInstanceId"] != a.Slot.DeploymentInstanceID {
+	if !connectionMatchesAssignment(conn, a) {
 		writeError(w, 409, fmt.Errorf("deployment changed"))
 		return
 	}

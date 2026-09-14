@@ -423,6 +423,58 @@ CREATE TABLE IF NOT EXISTS session_acknowledgements (
  PRIMARY KEY(account_id,user_id,box_id,incarnation)
 );
 
+-- Direct worker enrollment is independent of controller/user access tokens.
+-- The agent credential identifies exactly one pre-authorized compute slot.
+CREATE TABLE IF NOT EXISTS direct_workers (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  slot_id uuid NOT NULL UNIQUE REFERENCES compute_slots(id) ON DELETE CASCADE,
+  enrollment_hash bytea UNIQUE,
+  enrollment_expires_at timestamptz,
+  credential_hash bytea UNIQUE,
+  enrolled_at timestamptz,
+  revoked_at timestamptz,
+  incarnation text NOT NULL DEFAULT '',
+  connection_owner text NOT NULL DEFAULT '',
+  connection_epoch bigint NOT NULL DEFAULT 0,
+  connection_expires_at timestamptz,
+  transport_enabled boolean NOT NULL DEFAULT false,
+  observation jsonb NOT NULL DEFAULT '{}',
+  observed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (enrollment_hash IS NULL OR octet_length(enrollment_hash)=32),
+  CHECK (credential_hash IS NULL OR octet_length(credential_hash)=32)
+);
+CREATE INDEX IF NOT EXISTS direct_workers_account_idx ON direct_workers(account_id);
+ALTER TABLE direct_workers ADD COLUMN IF NOT EXISTS migration_sessions jsonb;
+ALTER TABLE direct_workers ADD COLUMN IF NOT EXISTS bootstrap_deployment_id text;
+ALTER TABLE direct_workers ADD COLUMN IF NOT EXISTS replacement_deployment_instance_id text;
+ALTER TABLE direct_workers ADD COLUMN IF NOT EXISTS replacement_started_at timestamptz;
+
+-- Credential digests, never Railway tokens. Quota survives process restarts.
+CREATE TABLE IF NOT EXISTS railway_api_budgets (
+ quota_scope text PRIMARY KEY CHECK (quota_scope ~ '^[a-f0-9]{64}$'),
+ next_request_at timestamptz NOT NULL DEFAULT '1970-01-01T00:00:00Z',
+ cooldown_until timestamptz NOT NULL DEFAULT '1970-01-01T00:00:00Z',
+ remote_hourly_limit integer CHECK (remote_hourly_limit > 0)
+);
+CREATE TABLE IF NOT EXISTS railway_api_requests (
+ quota_scope text NOT NULL REFERENCES railway_api_budgets(quota_scope) ON DELETE CASCADE,
+ requested_at timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS railway_api_requests_scope_time ON railway_api_requests(quota_scope,requested_at);
+ALTER TABLE railway_api_requests ADD COLUMN IF NOT EXISTS background boolean NOT NULL DEFAULT false;
+-- A single active connection owner is required until cross-controller routing is
+-- implemented. A second process cannot silently host an unreachable worker hub.
+CREATE TABLE IF NOT EXISTS direct_worker_controller_lease (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  owner text NOT NULL,
+  expires_at timestamptz NOT NULL
+);
+
+ALTER TABLE direct_workers ADD COLUMN IF NOT EXISTS observation_epoch bigint NOT NULL DEFAULT 0;
+ALTER TABLE direct_workers ADD COLUMN IF NOT EXISTS observation_sequence bigint NOT NULL DEFAULT 0;
+
 -- Per-agent browser credentials. Metadata is returned separately from ciphertext.
 CREATE TABLE IF NOT EXISTS desktop_secrets (
   account_id uuid NOT NULL REFERENCES accounts(id),
@@ -480,3 +532,22 @@ CREATE TABLE IF NOT EXISTS desktop_secret_requests (
 -- Existing boxes retain their stop policy; new boxes default to four hours.
 ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS idle_timeout_seconds integer NOT NULL DEFAULT 0 CHECK (idle_timeout_seconds BETWEEN 0 AND 604800);
 ALTER TABLE logical_boxes ALTER COLUMN idle_timeout_seconds SET DEFAULT 14400;
+
+-- Webhooks only queue metadata refresh hints; lifecycle authority remains with
+-- fenced database state and fresh provider evidence.
+CREATE TABLE IF NOT EXISTS railway_refresh_hints (
+ event_hash text PRIMARY KEY CHECK(event_hash ~ '^[a-f0-9]{64}$'),
+ delivery_hash text NOT NULL CHECK(delivery_hash ~ '^[a-f0-9]{64}$'),
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ slot_id uuid NOT NULL REFERENCES compute_slots(id) ON DELETE CASCADE,
+ provider_credential text NOT NULL,
+ project_id text NOT NULL, environment_id text NOT NULL, service_id text NOT NULL,
+ deployment_id text NOT NULL, event_type text NOT NULL, event_timestamp timestamptz NOT NULL,
+ state text NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','claimed','done')),
+ claim_owner text, claim_expires_at timestamptz,
+ attempts integer NOT NULL DEFAULT 0 CHECK(attempts>=0),
+ next_attempt_at timestamptz NOT NULL DEFAULT now(),
+ received_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS railway_refresh_hints_pending_idx ON railway_refresh_hints(state,next_attempt_at,received_at);
+CREATE INDEX IF NOT EXISTS railway_refresh_hints_scope_idx ON railway_refresh_hints(account_id,provider_credential,project_id,environment_id,service_id,state);

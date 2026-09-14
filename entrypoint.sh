@@ -141,6 +141,12 @@ if ! grep -q '/data/home/.profile' "$bashrc"; then
 fi
 own_as_workload "$HOME" "$HOME/bin" /data/workspace "$profile" "$bashrc" "$HOME/.tmux.conf"
 
+# Enrollment is provisioned privately outside the workspace. Starting the agent
+# is additive; its supervisor only manages its own child and never restarts tmux.
+if [[ -f /var/lib/vmbox-worker/config.json && -x /usr/local/bin/vmbox-worker-agent ]]; then
+  /usr/local/bin/vmbox-worker-agent --supervise --config /var/lib/vmbox-worker/config.json </dev/null &
+fi
+
 if [[ $# -gt 0 ]]; then
 	exec sudo -n -H -u vmbox -- env HOME=/data/home USER=vmbox LOGNAME=vmbox SHELL=/bin/bash PATH="/data/home/bin:/data/home/.local/bin:/opt/bun/bin:/opt/foundry/bin:$PATH" "$@"
 fi

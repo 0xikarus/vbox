@@ -22,7 +22,7 @@ func (r *streamTestRunner) RunAttached(ctx context.Context, argv []string, in io
 
 func TestWorkspaceStreamDoesNotCaptureOrRetry(t *testing.T) {
 	runner := &streamTestRunner{FakeRunner: procexec.FakeRunner{Results: []procexec.Result{{ExitCode: 255, Stdout: []byte("must not return captured data")}}}}
-	p := New(Config{}, runner)
+	p := newTestProvider(Config{}, runner)
 	conn := provider.Connection{Transport: "openssh", Endpoint: "deployment-test@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "deployment-test"}}
 	result, _ := p.StreamConnection(context.Background(), conn, []string{"vmbox-runtime", "desktop-stream", "fence"}, provider.ExecOptions{Stdin: strings.NewReader("test")})
 	if runner.attached != 1 || len(runner.Calls) != 1 || result.Stdout != "" {

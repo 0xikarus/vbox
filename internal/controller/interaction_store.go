@@ -140,7 +140,15 @@ type runnableBoxTask struct {
 }
 
 func (s *Store) RunnableBoxTasks(ctx context.Context) ([]runnableBoxTask, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT account_id::text,id::text FROM box_tasks WHERE state IN ('queued','waiting_capacity','starting') ORDER BY created_at,id")
+	return s.boxTasksForReconciliation(ctx, "SELECT account_id::text,id::text FROM box_tasks WHERE state IN ('queued','waiting_capacity','starting') ORDER BY created_at,id")
+}
+
+func (s *Store) activeBoxTasks(ctx context.Context) ([]runnableBoxTask, error) {
+	return s.boxTasksForReconciliation(ctx, "SELECT t.account_id::text,t.id::text FROM box_tasks t JOIN logical_boxes b ON b.id=t.logical_box_id WHERE t.state='active' AND b.state='running' ORDER BY t.updated_at,t.id")
+}
+
+func (s *Store) boxTasksForReconciliation(ctx context.Context, query string) ([]runnableBoxTask, error) {
+	rows, err := s.DB.QueryContext(ctx, query)
 	if err != nil {
 		return nil, err
 	}
@@ -166,6 +174,15 @@ func (s *Store) RunnableBoxTasks(ctx context.Context) ([]runnableBoxTask, error)
 		values = append(values, runnableBoxTask{AccountID: value.accountID, Task: task})
 	}
 	return values, nil
+}
+
+// Fence the observed absence against a concurrent hibernate/restore or slot move.
+// Only the observed task may change; other sessions and prompts are untouched.
+func (s *Store) failMissingTask(ctx context.Context, accountID string, task v1.BoxTask, box v1.LogicalBox) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE box_tasks t SET state='failed',failure_reason='tmux session exited; start a new session to continue',updated_at=now()
+FROM logical_boxes b WHERE t.account_id=$1 AND t.id=$2 AND t.state='active'
+AND b.id=t.logical_box_id AND b.state='running' AND b.slot_id=$3 AND b.assignment_generation=$4`, accountID, task.ID, box.SlotID, box.AssignmentGeneration)
+	return err
 }
 
 func (s *Store) SetBoxTaskState(ctx context.Context, accountID, id, state, failure string) error {

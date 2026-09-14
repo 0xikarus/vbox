@@ -120,12 +120,12 @@ func (a *App) controllerDesktop(ctx context.Context, c config.Context, token str
 		}
 	}
 	return transport.DesktopTunnel(ctx, func(ctx context.Context, file *os.File) error {
-		result, err := a.nativeTransport().StreamConnection(ctx, conn.Connection, provider.AsWorkloadUser([]string{"vmbox-runtime", "desktop-stream", conn.Assignment}), provider.ExecOptions{Stdin: file, Stdout: file, Stderr: a.Err})
+		result, err := a.resolvedExec(ctx, c, token, conn.Connection, []string{"vmbox-runtime", "desktop-stream", conn.Assignment}, provider.ExecOptions{Stdin: file, Stdout: file, Stderr: a.Err}, true)
 		if err != nil {
 			return err
 		}
 		if result.ExitCode != 0 {
-			return fmt.Errorf("desktop SSH exited %d; reconnect with vmbox desktop %s", result.ExitCode, tuiLabel(box.Name, 100))
+			return fmt.Errorf("desktop connection exited %d; reconnect with vmbox desktop %s", result.ExitCode, tuiLabel(box.Name, 100))
 		}
 		return nil
 	}, view, func(address string) {

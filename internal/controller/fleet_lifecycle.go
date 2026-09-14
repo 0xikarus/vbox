@@ -58,6 +58,20 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 			return fail("attaching-volume", err)
 		}
 	}
+	if s.DirectWorkersEnabled && assignment.Box.Provider == "railway" {
+		_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "reconciling-worker-agent", "", false)
+		if err := s.ensureReplacementWorkerTransport(ctx, accountID, assignment, prov); err != nil {
+			return fail("reconciling-worker-agent", err)
+		}
+		bootstrapConnection, err := prov.Connection(ctx, assignment.Slot.ServiceID)
+		if err != nil {
+			return fail("resolving-worker-bootstrap", err)
+		}
+		_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "enrolling-worker-agent", "", false)
+		if err := s.ensureAutomaticWorkerTransport(ctx, accountID, assignment, prov, bootstrapConnection); err != nil {
+			return fail("enrolling-worker-agent", err)
+		}
+	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "waiting-for-runtime", "", false)
 	if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
 		return fail("waiting-for-runtime", err)
@@ -102,6 +116,14 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	if err != nil {
 		return fail("resolving-ssh", err)
 	}
+	deploymentID := connection.Metadata["deploymentInstanceId"]
+	if connection.Transport == directWorkerTransport {
+		workerState, stateErr := s.Store.workerEnrollmentForSlot(ctx, accountID, assignment.Slot.ID)
+		if stateErr != nil || !workerState.Worker.Enabled || !workerState.Live || workerState.BootstrapDeployment == "" {
+			return fail("resolving-ssh", errors.New("direct worker deployment identity unavailable"))
+		}
+		deploymentID = workerState.BootstrapDeployment
+	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "restoring-tmux", "", false)
 	restored, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-restore"}, provider.ExecOptions{})
 	if err != nil {
@@ -117,7 +139,6 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	if guide.ExitCode != 0 {
 		return fail("restoring-tmux-guide", fmt.Errorf("tmux guide update exited with status %d: %s", guide.ExitCode, strings.TrimSpace(guide.Stderr)))
 	}
-	deploymentID := connection.Metadata["deploymentInstanceId"]
 	bound, bindErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "native-bind", nativeFence(assignment)}, provider.ExecOptions{})
 	if bindErr != nil || bound.ExitCode != 0 {
 		return fail("binding-native-sessions", fmt.Errorf("worker could not bind native session assignment"))

@@ -95,17 +95,51 @@ func run() error {
 	registry := provider.NewRegistry()
 	server := controller.NewServer(store, registry)
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
+	server.DirectWorkersEnabled = os.Getenv("VMBOX_DIRECT_WORKERS") == "1"
+	if server.DirectWorkersEnabled {
+		server.WorkerAgent, err = os.ReadFile("/usr/local/bin/vmbox-worker-agent")
+		if err != nil {
+			return fmt.Errorf("load matching worker agent: %w", err)
+		}
+	}
 	server.DefaultImage = os.Getenv("VMBOX_IMAGE")
 	server.WorkerRuntime, err = os.ReadFile("/usr/local/bin/vmbox-runtime")
 	if err != nil {
 		return fmt.Errorf("load matching worker runtime: %w", err)
 	}
+	apiHourly, apiInterval := 80, time.Second
+	if value := os.Getenv("VMBOX_RAILWAY_API_HOURLY_LIMIT"); value != "" {
+		apiHourly, err = strconv.Atoi(value)
+		if err != nil || apiHourly < 1 || apiHourly > 100000 {
+			return fmt.Errorf("VMBOX_RAILWAY_API_HOURLY_LIMIT must be between 1 and 100000")
+		}
+	}
+	if value := os.Getenv("VMBOX_RAILWAY_API_INTERVAL"); value != "" {
+		apiInterval, err = time.ParseDuration(value)
+		if err != nil || apiInterval < 20*time.Millisecond || apiInterval > time.Minute {
+			return fmt.Errorf("VMBOX_RAILWAY_API_INTERVAL must be between 20ms and 1m")
+		}
+	}
+	railwayInventory := railwayprovider.NewInventoryCache(ctx)
+	go railwayInventory.Run()
+	railwayBudget := &railwayprovider.PostgresRequestBudget{DB: store.DB, Hourly: apiHourly, Interval: apiInterval}
 	server.Resolve = func(resolveCtx context.Context, accountID, providerName, credentialName string) (provider.Provider, error) {
 		credential, err := store.ProviderCredential(resolveCtx, accountID, providerName, credentialName)
 		if err != nil {
 			return nil, err
 		}
-		return providerForCredential(providerName, credential, railwaySSHIdentity)
+		resolved, err := providerForCredential(providerName, credential, railwaySSHIdentity, railwayBudget)
+		if railway, ok := resolved.(*railwayprovider.Provider); ok {
+			railway.SetInventoryCache(railwayInventory)
+		}
+		return resolved, err
+	}
+	if webhookSecret := os.Getenv("VMBOX_RAILWAY_WEBHOOK_SECRET"); webhookSecret != "" {
+		server.RailwayWebhooks, err = controller.NewRailwayWebhookReceiver(store, webhookSecret)
+		if err != nil {
+			return err
+		}
+		go server.RailwayWebhooks.Run(ctx, server.RefreshRailwayHint)
 	}
 	server.Bootstrap = bootstrapWorkload
 	// Provider recovery can take minutes (including Railway/SSH timeouts).
@@ -236,7 +270,11 @@ func seedInitialFleetFromEnvironment(ctx context.Context, store *controller.Stor
 	return nil
 }
 
-func providerForCredential(name string, credential controller.DecryptedProviderCredential, railwaySSHIdentity string) (provider.Provider, error) {
+func providerForCredential(name string, credential controller.DecryptedProviderCredential, railwaySSHIdentity string, budgets ...railwayprovider.RequestBudget) (provider.Provider, error) {
+	var apiBudget railwayprovider.RequestBudget
+	if len(budgets) > 0 {
+		apiBudget = budgets[0]
+	}
 	var secret, config map[string]any
 	if err := json.Unmarshal(credential.Secret, &secret); err != nil {
 		return nil, fmt.Errorf("decode %s credential secret: %w", name, err)
@@ -271,7 +309,7 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 		if err != nil {
 			return nil, err
 		}
-		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image"), SSHKnownHostsFile: knownHosts, SSHIdentityFile: railwaySSHIdentity, SSHBinary: runner.Env["VMBOX_REAL_SSH"], SSHControlDir: runner.Env["VMBOX_RAILWAY_CONTROL_DIR"]}, runner), nil
+		return railwayprovider.New(railwayprovider.Config{ProjectID: stringValue(config, "projectId"), EnvironmentID: stringValue(config, "environmentId"), Token: token, TokenEnvironment: tokenEnvironment, DefaultImage: stringValue(config, "image"), SSHKnownHostsFile: knownHosts, SSHIdentityFile: railwaySSHIdentity, SSHBinary: runner.Env["VMBOX_REAL_SSH"], SSHControlDir: runner.Env["VMBOX_RAILWAY_CONTROL_DIR"], APIBudget: apiBudget}, runner), nil
 	case "docker":
 		return dockerprovider.New(dockerprovider.Config{Context: stringValue(config, "context"), Host: stringValue(config, "host"), TLSVerify: boolValue(config, "tlsVerify"), CertPath: stringValue(config, "certPath"), DefaultImage: stringValue(config, "image")}, procexec.OSRunner{}), nil
 	case "incus":

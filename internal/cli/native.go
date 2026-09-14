@@ -133,13 +133,13 @@ func (a *App) attachRemembered(ctx context.Context, c config.Context, token stri
 	if err != nil {
 		return err
 	}
-	result, err := a.nativeTransport().ExecConnection(ctx, conn.Connection, provider.AsWorkloadUser([]string{"vmbox-runtime", "native-attach", conn.Assignment, conn.SessionID, conn.Incarnation}), provider.ExecOptions{Interactive: true, Stdin: a.In, Stdout: a.Out, Stderr: a.Err})
+	result, err := a.resolvedExec(ctx, c, token, conn.Connection, []string{"vmbox-runtime", "native-attach", conn.Assignment, conn.SessionID, conn.Incarnation}, provider.ExecOptions{Interactive: true, Stdin: a.In, Stdout: a.Out, Stderr: a.Err}, false)
 	restore()
 	if err != nil {
 		return err
 	}
 	if result.ExitCode != 0 {
-		return fmt.Errorf("SSH exited %d; input was not replayed; inspect/reconnect with vmbox %s --session %s", result.ExitCode, shellQuote(box.Name), shellQuote(selected.Name))
+		return fmt.Errorf("terminal exited %d; input was not replayed; inspect/reconnect with vmbox %s --session %s", result.ExitCode, shellQuote(box.Name), shellQuote(selected.Name))
 	}
 	return a.postControllerInteractiveExit(ctx, c, token, box)
 }

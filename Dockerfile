@@ -7,6 +7,7 @@ COPY cmd ./cmd
 COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-runtime ./cmd/vmbox-runtime
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-controller ./cmd/vmbox-controller
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-worker-agent ./cmd/vmbox-worker-agent
 
 FROM node:22-bookworm-slim
 
@@ -89,6 +90,7 @@ COPY tmux.conf /etc/vmbox/tmux.conf
 COPY entrypoint.sh /usr/local/bin/vmbox-entrypoint
 COPY --from=build /out/vmbox-runtime /usr/local/bin/vmbox-runtime
 COPY --from=build /out/vmbox-controller /usr/local/bin/vmbox-controller
+COPY --from=build /out/vmbox-worker-agent /usr/local/bin/vmbox-worker-agent
 RUN set -eux; \
     normalized_components="$(printf '%s' "$VMBOX_COMPONENTS" | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)"; \
     printf '%s\n' "$normalized_components" >/usr/local/lib/vmbox-bootstrap-components; \
@@ -97,7 +99,7 @@ RUN set -eux; \
       printf 'image-version=%s\ncomponents=%s\n' "$VMBOX_IMAGE_VERSION" "$normalized_components"; \
       git --version; gh --version | sed -n '1p'; railway --version; tmux -V; node --version; \
       bun --version; codex --version; claude --version; opencode --version; forge --version | sed -n '1p'; \
-      sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-entrypoint /etc/vmbox/tmux.conf; \
+      sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-worker-agent /usr/local/bin/vmbox-entrypoint /etc/vmbox/tmux.conf; \
     } >/usr/local/lib/vmbox-image-manifest; \
     sha256sum /usr/local/lib/vmbox-image-manifest | sed 's/[[:space:]].*$//' >/usr/local/lib/vmbox-component-fingerprint; \
     mkdir -p /etc/vmbox; \

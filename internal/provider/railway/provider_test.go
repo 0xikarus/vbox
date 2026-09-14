@@ -28,7 +28,7 @@ func TestExecUsesDirectSSHAndEncodesExactArgv(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)}, {Stdout: []byte(instance)}, {},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	argv := []string{"printf", "%s", `$HOME; $(touch nope)`, "two words"}
 	_, err := p.Exec(context.Background(), "box", argv, provider.ExecOptions{})
 	if err != nil {
@@ -60,7 +60,7 @@ func TestAttachSessionUsesDirectInteractiveSSH(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(services)}, {Stdout: []byte(instance)}, {Stdout: []byte("created\n")}, {},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	result, err := p.AttachSession(context.Background(), "box", "vmbox", []string{"claude", "task with spaces"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		t.Fatalf("result=%+v error=%v", result, err)
@@ -85,7 +85,7 @@ func TestAttachSessionUsesDirectInteractiveSSH(t *testing.T) {
 
 func TestAttachConnectionUsesValidatedTargetWithoutRailwayLookup(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("created\n")}, {}}}
-	p := New(Config{}, runner)
+	p := newTestProvider(Config{}, runner)
 	connection := provider.Connection{Transport: "openssh", Endpoint: "deployment-controller@ssh.railway.com", Metadata: map[string]string{
 		"deploymentInstanceId": "deployment-controller", "vmboxBoxName": "research", "vmboxComputeSlot": "fleet-slot-2",
 		"vmboxAssignmentState": "running", "vmboxConnectionHealth": "connected",
@@ -118,7 +118,7 @@ func TestAttachConnectionUsesValidatedTargetWithoutRailwayLookup(t *testing.T) {
 
 func TestExecConnectionUsesOnlyFencedDirectSSH(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("ok\n")}}}
-	p := New(Config{}, runner)
+	p := newTestProvider(Config{}, runner)
 	connection := provider.Connection{Transport: "openssh", Endpoint: "deployment-controller@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "deployment-controller"}}
 	result, err := p.ExecConnection(context.Background(), connection, []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 || result.Stdout != "ok\n" {
@@ -142,7 +142,7 @@ func TestAttachConnectionRejectsUntrustedEndpointBeforeExecution(t *testing.T) {
 		{Transport: "openssh", Endpoint: "bad/instance@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "bad/instance"}},
 	} {
 		runner := &procexec.FakeRunner{}
-		p := New(Config{}, runner)
+		p := newTestProvider(Config{}, runner)
 		if _, err := p.AttachConnection(context.Background(), connection, "vmbox", []string{"bash"}, provider.ExecOptions{}); err == nil {
 			t.Fatalf("accepted connection=%+v", connection)
 		}
@@ -160,7 +160,7 @@ func TestIdleSessionRecognizesOnlyShellPanes(t *testing.T) {
 
 func TestExecRejectsChangedHostKeyWithoutRepair(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`[{"id":"service-id","name":"vmbox-box","status":"SUCCESS"}]`)}, {Stdout: []byte(runningDeploymentInstance("deployment-instance"))}, {ExitCode: 255, Stderr: []byte("REMOTE HOST IDENTIFICATION HAS CHANGED")}}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHKnownHostsFile: filepath.Join(t.TempDir(), "known_hosts"), SSHControlDir: t.TempDir()}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", SSHKnownHostsFile: filepath.Join(t.TempDir(), "known_hosts"), SSHControlDir: t.TempDir()}, runner)
 	if _, err := p.Exec(context.Background(), "box", []string{"true"}, provider.ExecOptions{}); err == nil {
 		t.Fatal("changed host key accepted")
 	}
@@ -178,7 +178,7 @@ func TestSSHMasterAcceptsWaitDelayOnlyAfterControlCheck(t *testing.T) {
 		},
 		Errors: []error{nil, exec.ErrWaitDelay, nil},
 	}
-	p := New(Config{SSHControlDir: t.TempDir()}, runner)
+	p := newTestProvider(Config{SSHControlDir: t.TempDir()}, runner)
 	target := "deployment-instance@ssh.railway.com"
 	if err := p.ensureSSHMaster(context.Background(), target); err != nil {
 		t.Fatal(err)
@@ -203,7 +203,7 @@ func TestSSHMasterRejectsWaitDelayWhenControlCheckFails(t *testing.T) {
 		},
 		Errors: []error{nil, exec.ErrWaitDelay, nil},
 	}
-	p := New(Config{SSHControlDir: t.TempDir()}, runner)
+	p := newTestProvider(Config{SSHControlDir: t.TempDir()}, runner)
 	target := "deployment-instance@ssh.railway.com"
 	err := p.ensureSSHMaster(context.Background(), target)
 	if err == nil || !strings.Contains(err.Error(), "verify Railway SSH control connection exited with status 255") {
@@ -226,7 +226,7 @@ func TestDirectSSHReusesDeploymentLookupAndControlMaster(t *testing.T) {
 		{Stdout: []byte("one")},
 		{Stdout: []byte("two")},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHControlDir: filepath.Join(dir, "control")}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", SSHControlDir: filepath.Join(dir, "control")}, runner)
 	if _, err := p.Exec(context.Background(), "box", []string{"printf", "one"}, provider.ExecOptions{}); err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +236,7 @@ func TestDirectSSHReusesDeploymentLookupAndControlMaster(t *testing.T) {
 	apiCalls, masterStarts, dataCalls := 0, 0, 0
 	for _, call := range runner.Calls {
 		joined := strings.Join(call.Argv, " ")
-		if len(call.Argv) > 1 && call.Argv[0] == "railway" && call.Argv[1] == "api" && strings.Contains(joined, "serviceInstance") {
+		if len(call.Argv) > 2 && call.Argv[0] == "railway" && call.Argv[1] == "api" && call.Argv[2] == serviceInstanceQuery {
 			apiCalls++
 		}
 		if strings.Contains(joined, "ControlMaster=yes") {
@@ -262,7 +262,7 @@ func TestDirectSSHInvalidatesDeploymentAndRetriesTransportFailure(t *testing.T) 
 		{Stdout: []byte(newInstance)},
 		{Stdout: []byte("ok\n")},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	result, err := p.Exec(context.Background(), "box", []string{"vmbox-runtime", "health"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 || result.Stdout != "ok\n" {
 		t.Fatalf("result=%+v err=%v calls=%#v", result, err, runner.Calls)
@@ -288,7 +288,7 @@ func TestDirectSSHRemovesPoisonedControlSocketOnTransportFailure(t *testing.T) {
 		{},
 		{ExitCode: 255, Stderr: []byte("exec request failed")},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", SSHControlDir: controlDir}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", SSHControlDir: controlDir}, runner)
 	controlPath, err := p.controlPath("deployment-instance@ssh.railway.com")
 	if err != nil {
 		t.Fatal(err)
@@ -311,7 +311,7 @@ func TestDirectSSHRemovesPoisonedControlSocketOnTransportFailure(t *testing.T) {
 }
 
 func TestConfiguredTokenIsOnlyInProcessEnvironment(t *testing.T) {
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", Token: "configured-secret"}, procexec.OSRunner{})
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", Token: "configured-secret"}, procexec.OSRunner{})
 	runner, ok := p.runner.(procexec.OSRunner)
 	if !ok || runner.Env["RAILWAY_API_TOKEN"] != "configured-secret" {
 		t.Fatalf("runner=%T env=%v", p.runner, runner.Env)
@@ -324,7 +324,7 @@ func TestConfiguredTokenIsOnlyInProcessEnvironment(t *testing.T) {
 }
 
 func TestSSHOptionsUseOnlyConfiguredIdentity(t *testing.T) {
-	p := New(Config{SSHIdentityFile: "/run/secrets/controller-ssh"}, &procexec.FakeRunner{})
+	p := newTestProvider(Config{SSHIdentityFile: "/run/secrets/controller-ssh"}, &procexec.FakeRunner{})
 	got := strings.Join(p.sshOptions(""), " ")
 	if !strings.Contains(got, "-o IdentitiesOnly=yes -i /run/secrets/controller-ssh") {
 		t.Fatalf("SSH options do not pin the configured identity: %s", got)
@@ -333,7 +333,7 @@ func TestSSHOptionsUseOnlyConfiguredIdentity(t *testing.T) {
 
 func TestControlPathFallsBackToShortRuntimeDirectory(t *testing.T) {
 	longDirectory := filepath.Join(t.TempDir(), strings.Repeat("nested-directory-", 8))
-	p := New(Config{SSHControlDir: longDirectory}, &procexec.FakeRunner{})
+	p := newTestProvider(Config{SSHControlDir: longDirectory}, &procexec.FakeRunner{})
 	path, err := p.controlPath("deployment-instance@ssh.railway.com")
 	if err != nil {
 		t.Fatal(err)
@@ -370,7 +370,7 @@ func TestDeploymentSubmissionPollsUntilRecordBecomesVisible(t *testing.T) {
 		{Stdout: []byte(`[{"id":"deployment-new","status":"BUILDING"}]`)},
 		{Stdout: []byte(`[{"id":"deployment-new","status":"SUCCESS"}]`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	if err := p.submitAndWaitDeployment(context.Background(), "vmbox-box"); err != nil {
 		t.Fatal(err)
 	}
@@ -412,7 +412,7 @@ func TestSuccessfulDeploymentWithCrashedReplicaIsFailed(t *testing.T) {
 
 func TestSetRegionUsesMultiRegionConfigAndClearsDefaults(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte(`{"data":{"serviceInstanceUpdate":true}}`)}}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	if err := p.setRegion(context.Background(), "service", "ams"); err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +430,7 @@ func TestSetRegionUsesMultiRegionConfigAndClearsDefaults(t *testing.T) {
 
 func TestConnectImageUsesServiceInstanceUpdateForScopedTokens(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("{\"data\":{\"serviceInstanceUpdate\":true}}")}}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	image := "ghcr.io/acme/worker@sha256:abc"
 	if err := p.connectImage(context.Background(), "service-id", image); err != nil {
 		t.Fatal(err)
@@ -475,7 +475,7 @@ func TestInspectPrefersProviderObservedImageSource(t *testing.T) {
 		{Stdout: []byte(`{"VMBOX_ACCOUNT_ID":"account","VMBOX_BOX_ID":"compute-slot:slot-1","VMBOX_IMAGE":"ghcr.io/acme/worker@sha256:stale"}`)},
 		{Stdout: []byte(`{"data":{"serviceInstanceLimits":{}}}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
 	box, err := p.Inspect(context.Background(), "service-id")
 	if err != nil {
 		t.Fatal(err)
@@ -492,11 +492,6 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		{Stdout: []byte(`{"id":"service-id"}`)},
 		{Stdout: []byte(services)},
 		{},
-		{},
-		{},
-		{},
-		{},
-		{},
 		{Stdout: []byte(`{"volumes":[]}`)},
 		{Stdout: []byte(`{"id":"volume-id"}`)},
 		{Stdout: []byte(`{"volumes":[{"id":"volume-id","serviceName":"vmbox-box","mountPath":"/data","status":"READY"}]}`)},
@@ -508,7 +503,7 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 		{Stdout: []byte(services)},
 		{Stdout: []byte(`{"VMBOX_ACCOUNT_ID":"standalone","VMBOX_BOX_ID":"box","VMBOX_CPU":"2","VMBOX_MEMORY_MIB":"4096","VMBOX_DISK_GIB":"10"}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	box, err := p.Create(context.Background(), provider.CreateRequest{Name: "box", Owner: provider.Owner{AccountID: "standalone", BoxID: "box"}, Resources: provider.Resources{CPU: 2, MemoryMiB: 4096, DiskGiB: 10}})
 	if err != nil {
 		t.Fatalf("create: %v calls=%#v", err, runner.Calls)
@@ -521,28 +516,24 @@ func TestCreateWaitsForVolumeThenExactDeployment(t *testing.T) {
 	}
 	volume, deploy := -1, -1
 	for i, call := range runner.Calls {
-		joined := strings.Join(call.Argv, " ")
-		if strings.Contains(joined, " volume ") && strings.Contains(joined, " add ") {
+		if len(call.Argv) > 2 && call.Argv[2] == volumeCreateMutation {
 			volume = i
 		}
-		if strings.Contains(joined, " redeploy ") {
+		if len(call.Argv) > 2 && call.Argv[2] == serviceDeployMutation {
 			deploy = i
-			if !strings.Contains(joined, " --from-source") {
-				t.Fatalf("Railway deployment must be restartable after down: %#v", call.Argv)
-			}
 		}
 	}
+	batches := 0
 	for _, call := range runner.Calls {
-		if strings.Contains(strings.Join(call.Argv, " "), " variable set ") {
-			if call.Stdin == "" {
-				t.Fatal("Railway variable write did not use stdin")
-			}
-			for _, arg := range call.Argv {
-				if arg == call.Stdin {
-					t.Fatalf("variable value leaked into argv: %#v", call)
-				}
-			}
+		if len(call.Argv) > 2 && call.Argv[2] == variablesUpsertMutation {
+			batches++
 		}
+		if strings.Contains(strings.Join(call.Argv, " "), " variable set ") {
+			t.Fatal("per-variable CLI write used")
+		}
+	}
+	if batches != 1 {
+		t.Fatalf("variable batches=%d", batches)
 	}
 	if volume < 0 || deploy < 0 || volume >= deploy {
 		t.Fatalf("volume=%d deploy=%d calls=%#v", volume, deploy, runner.Calls)
@@ -555,6 +546,7 @@ func TestStopPowersDownDeploymentAndStartRedeploysService(t *testing.T) {
 	variables := `{"VMBOX_ACCOUNT_ID":"standalone","VMBOX_BOX_ID":"box","VMBOX_CPU":"2","VMBOX_MEMORY_MIB":"4096","VMBOX_DISK_GIB":"10"}`
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(running)},
+		{Stdout: []byte(`[{"id":"deployment-old","status":"SUCCESS"}]`)},
 		{},
 		{Stdout: []byte(stopped)},
 		{Stdout: []byte(variables)},
@@ -566,7 +558,7 @@ func TestStopPowersDownDeploymentAndStartRedeploysService(t *testing.T) {
 		{Stdout: []byte(variables)},
 		{},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 
 	box, err := p.Stop(context.Background(), "box")
 	if err != nil {
@@ -588,15 +580,15 @@ func TestStopPowersDownDeploymentAndStartRedeploysService(t *testing.T) {
 	for _, call := range runner.Calls {
 		command := strings.Join(call.Argv, " ")
 		commands = append(commands, command)
-		if strings.Contains(command, " service delete ") || strings.Contains(command, " volume delete ") {
+		if strings.Contains(command, " service delete ") || strings.Contains(command, " volume delete ") || strings.Contains(command, volumeDeleteMutation) || strings.Contains(command, serviceDeleteMutation) {
 			t.Fatalf("power lifecycle deleted persistent resources: %s", command)
 		}
 	}
 	joined := strings.Join(commands, "\n")
-	if !strings.Contains(joined, "railway down --service vmbox-box --yes") {
+	if !strings.Contains(joined, deploymentRemoveMutation) {
 		t.Fatalf("stop did not remove the active deployment:\n%s", joined)
 	}
-	if !strings.Contains(joined, "railway redeploy --service vmbox-box --yes --json --from-source") {
+	if !strings.Contains(joined, serviceDeployMutation) {
 		t.Fatalf("start did not redeploy the preserved service:\n%s", joined)
 	}
 }
@@ -615,7 +607,7 @@ func TestInterruptedSubmissionReconcilesExactNewDeployment(t *testing.T) {
 		},
 		Errors: []error{nil, nil, errors.New("transport interrupted")},
 	}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	if _, err := p.Deploy(context.Background(), "box", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -656,11 +648,12 @@ func TestSanitizeSlotUndeploysComputeAndRetainsTheService(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(running)},
 		{Stdout: []byte(`{"volumes":[{"id":"volume-1","serviceName":"other-slot","mountPath":"/data"}]}`)},
+		{Stdout: []byte(`[{"id":"deployment-old","status":"SUCCESS"}]`)},
 		{},
 		{Stdout: []byte(`[{"id":"service-id","name":"slot-a-01","status":"NO_DEPLOYMENT"}]`)},
 		{Stdout: []byte(`{"VMBOX_ACCOUNT_ID":"standalone","VMBOX_BOX_ID":"slot-a-01"}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	if err := p.SanitizeSlot(context.Background(), "slot-a-01"); err != nil {
 		t.Fatal(err)
 	}
@@ -668,14 +661,14 @@ func TestSanitizeSlotUndeploysComputeAndRetainsTheService(t *testing.T) {
 	for _, call := range runner.Calls {
 		command := strings.Join(call.Argv, " ")
 		commands = append(commands, command)
-		for _, destructive := range []string{" service delete ", " volume delete ", " redeploy "} {
+		for _, destructive := range []string{" service delete ", " volume delete ", " redeploy ", serviceDeployMutation, serviceDeleteMutation, volumeDeleteMutation, volumeUpdateMutation} {
 			if strings.Contains(command, destructive) {
 				t.Fatalf("sanitation ran a destructive or redeploying command: %s", command)
 			}
 		}
 	}
 	joined := strings.Join(commands, "\n")
-	if !strings.Contains(joined, "railway down --service slot-a-01 --yes") {
+	if !strings.Contains(joined, deploymentRemoveMutation) {
 		t.Fatalf("sanitation did not undeploy the slot:\n%s", joined)
 	}
 }
@@ -685,12 +678,12 @@ func TestSanitizeSlotLeavesAnAlreadyStoppedSlotAlone(t *testing.T) {
 		{Stdout: []byte(`[{"id":"service-id","name":"slot-a-01","status":"NO_DEPLOYMENT"}]`)},
 		{Stdout: []byte(`{"volumes":[]}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	if err := p.SanitizeSlot(context.Background(), "slot-a-01"); err != nil {
 		t.Fatal(err)
 	}
 	for _, call := range runner.Calls {
-		if strings.Contains(strings.Join(call.Argv, " "), " down ") {
+		if strings.Contains(strings.Join(call.Argv, " "), deploymentRemoveMutation) {
 			t.Fatalf("a stopped slot was powered down again: %v", call.Argv)
 		}
 	}
@@ -701,7 +694,7 @@ func TestSanitizeSlotRefusesWhileAWorkspaceIsStillAttached(t *testing.T) {
 		{Stdout: []byte(`[{"id":"service-id","name":"slot-a-01","status":"SUCCESS"}]`)},
 		{Stdout: []byte(`{"volumes":[{"id":"volume-1","serviceName":"slot-a-01","mountPath":"/data"}]}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	err := p.SanitizeSlot(context.Background(), "slot-a-01")
 	if err == nil || !strings.Contains(err.Error(), "remains attached") {
 		t.Fatalf("err=%v", err)
@@ -719,7 +712,7 @@ func TestDeleteStorageAcceptsExactLegacyDataVolumeName(t *testing.T) {
 		{},
 		{Stdout: []byte(`{"volumes":[]}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	err := p.DeleteStorage(context.Background(), provider.Storage{ID: "volume-1", Name: "slot-a-01-data"}, provider.Owner{AccountID: "account", BoxID: "box"})
 	if err != nil {
 		t.Fatal(err)
@@ -728,7 +721,7 @@ func TestDeleteStorageAcceptsExactLegacyDataVolumeName(t *testing.T) {
 		t.Fatalf("delete calls=%#v", runner.Calls)
 	}
 	deleteArgv := strings.Join(runner.Calls[1].Argv, " ")
-	for _, required := range []string{"railway volume", "--project project", "--environment environment", "delete --volume volume-1 --yes --json"} {
+	for _, required := range []string{volumeDeleteMutation, `"volumeId":"volume-1"`} {
 		if !strings.Contains(deleteArgv, required) {
 			t.Fatalf("exact volume deletion omitted %q: %s", required, deleteArgv)
 		}
@@ -741,7 +734,7 @@ func TestDeleteStorageAcceptsRailwayGeneratedVolumeSuffix(t *testing.T) {
 		{},
 		{Stdout: []byte(`{"volumes":[]}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	if err := p.DeleteStorage(context.Background(), provider.Storage{ID: "volume-1", Name: "slot-a-01-data"}, provider.Owner{AccountID: "account", BoxID: "box"}); err != nil {
 		t.Fatal(err)
 	}
@@ -756,7 +749,7 @@ func TestDeleteStorageAcceptsRailwayPendingDeletion(t *testing.T) {
 		{},
 		{Stdout: []byte(`{"volumes":[{"id":"volume-1","name":"slot-a-01-volume","serviceName":"","mountPath":"/data","isPendingDeletion":true}]}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	if err := p.DeleteStorage(context.Background(), provider.Storage{ID: "volume-1", Name: "slot-a-01-data"}, provider.Owner{AccountID: "account", BoxID: "box"}); err != nil {
 		t.Fatal(err)
 	}
@@ -769,7 +762,7 @@ func TestDeleteStorageResumesAlreadyPendingDeletion(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(`{"volumes":[{"id":"volume-1","name":"slot-a-01-volume","serviceName":"","mountPath":"/data","isPendingDeletion":true}]}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	if err := p.DeleteStorage(context.Background(), provider.Storage{ID: "volume-1", Name: "slot-a-01-data"}, provider.Owner{AccountID: "account", BoxID: "box"}); err != nil {
 		t.Fatal(err)
 	}
@@ -782,7 +775,7 @@ func TestDeleteStorageRejectsUnrelatedNameForExactID(t *testing.T) {
 	runner := &procexec.FakeRunner{Results: []procexec.Result{
 		{Stdout: []byte(`{"volumes":[{"id":"volume-1","name":"another-box-volume","serviceName":"","mountPath":"/data"}]}`)},
 	}}
-	p := New(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment", PollInterval: time.Millisecond, ReadyTimeout: time.Second}, runner)
 	err := p.DeleteStorage(context.Background(), provider.Storage{ID: "volume-1", Name: "slot-a-01-data"}, provider.Owner{AccountID: "account", BoxID: "box"})
 	if err == nil || !strings.Contains(err.Error(), "name mismatch") {
 		t.Fatalf("err=%v", err)
@@ -798,9 +791,9 @@ func TestDeploymentPollingDeadlineInterruptsLongInterval(t *testing.T) {
 		{Stdout: []byte(`{"id":"deployment-new"}`)},
 		{Stdout: []byte(`[{"id":"deployment-new","status":"BUILDING"}]`)},
 	}}
-	p := New(Config{PollInterval: time.Hour, ReadyTimeout: time.Millisecond}, runner)
+	p := newTestProvider(Config{PollInterval: time.Hour, ReadyTimeout: 20 * time.Millisecond}, runner)
 	err := p.submitAndWaitDeployment(context.Background(), "vmbox-disposable-test")
-	if err == nil || !strings.Contains(err.Error(), "did not reach terminal readiness") {
+	if err == nil || (!strings.Contains(err.Error(), "did not reach terminal readiness") && !errors.Is(err, context.DeadlineExceeded)) {
 		t.Fatalf("expected readiness deadline, got %v", err)
 	}
 	if len(runner.Calls) != 3 {

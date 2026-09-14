@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"text/tabwriter"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -77,6 +78,28 @@ func writeRunList(output io.Writer, runs []v1.Run) error {
 }
 
 func writeInventoryList(output io.Writer, inventory v1.BoxInventory) error {
+	if observation := inventory.Infrastructure; observation != nil {
+		if !observation.Available {
+			if _, err := fmt.Fprintln(output, "Provider inventory has not been observed yet; background refresh is pending."); err != nil {
+				return err
+			}
+			if len(inventory.LogicalBoxes) == 0 && len(inventory.ConnectedBoxes) == 0 {
+				return nil
+			}
+		} else {
+			state := "current"
+			if observation.Stale {
+				state = "stale; refresh pending"
+			}
+			if observation.RefreshFailed {
+				state = "stale; last refresh failed"
+			}
+			if _, err := fmt.Fprintf(output, "Provider inventory observed %s (%s).\n", observation.ObservedAt.UTC().Format(time.RFC3339), state); err != nil {
+				return err
+			}
+		}
+	}
+
 	if len(inventory.LogicalBoxes) == 0 && len(inventory.ConnectedBoxes) == 0 {
 		_, err := fmt.Fprintln(output, "No controller-visible boxes found.")
 		return err

@@ -230,6 +230,16 @@ func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
 	if captures < 2 {
 		t.Fatalf("prompt was delivered before readiness: %v", calls)
 	}
+	if !strings.Contains(strings.Join(calls, "\n"), "-- codex -c check_for_update_on_startup=false") {
+		t.Fatalf("managed Codex session may intercept the initial prompt with an update menu: %v", calls)
+	}
+}
+
+func TestCodexUpdateMenuIsNotInputReady(t *testing.T) {
+	content := "OpenAI Codex\n› Ask Codex to do anything\nUpdate available!\nSkip until next version\nPress enter to continue"
+	if agentInputReady("codex", content) {
+		t.Fatal("update menu was treated as ready for a task prompt")
+	}
 }
 
 func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
