@@ -18,5 +18,8 @@ func TestTerminalPagesAllowGeneratedStylesNotInlineScripts(t *testing.T) {
 		if !strings.Contains(csp, "script-src 'self';") {
 			t.Fatalf("inline scripts allowed for %s", path)
 		}
+		if strings.Contains(csp, "img-src 'self' data: blob:;") != (path != "/") {
+			t.Fatalf("incorrect desktop image policy for %s: %s", path, csp)
+		}
 	}
 }
