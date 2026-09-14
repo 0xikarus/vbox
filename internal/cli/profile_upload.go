@@ -61,7 +61,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	}
 	add := &formField{Label: "[ Add entry ]"}
 	add.AddFields = func() []*formField {
-		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "github"}}, path: &formField{Label: "Path / HOST:USER"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
+		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "opencode", "github"}}, path: &formField{Label: "Path / HOST:USER"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
 		entry.choice.Checkbox = true
 		entries = append(entries, entry)
 		return []*formField{entry.application, entry.path, entry.choice}

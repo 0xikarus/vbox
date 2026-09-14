@@ -84,7 +84,7 @@ func runTmuxCommand(ctx context.Context, stdin string, args ...string) ([]byte, 
 	return output, nil
 }
 
-func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string, submit bool) error {
+func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string, submit bool, steer ...bool) error {
 	if err := validateTmuxToken("session", session); err != nil {
 		return err
 	}
@@ -122,6 +122,21 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 	}
 	if err := file.Close(); err != nil {
 		return err
+	}
+	if len(steer) > 0 && steer[0] {
+		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", session, taskAgentEnvironment)
+		if err != nil {
+			return ErrAmbiguousMessage
+		}
+		agent := strings.TrimPrefix(strings.TrimSpace(string(marker)), taskAgentEnvironment+"=")
+		if agent == "codex" || agent == "claude" || agent == "opencode" {
+			if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Escape"); err != nil {
+				return ErrAmbiguousMessage
+			}
+			if err := tmuxSubmitPause(ctx); err != nil {
+				return ErrAmbiguousMessage
+			}
+		}
 	}
 	buffer := "vmbox_" + messageID
 	defer func() { _, _ = tmuxCommand(context.Background(), "", "delete-buffer", "-b", buffer) }()
@@ -331,6 +346,10 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 		return fmt.Errorf("unsupported task agent %q", agent)
 	}
 	if _, err := tmuxCommand(ctx, "", "has-session", "-t", session); err != nil {
+		assignment, err := prepareManagedDesktop(ctx, agent)
+		if err != nil {
+			return err
+		}
 		args := []string{"new-session", "-d", "-s", session, "-c", "/data/workspace", "--"}
 		args = append(args, argv...)
 		if _, err := tmuxCommand(ctx, "", args...); err != nil {
@@ -343,6 +362,11 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 			return fmt.Errorf("apply %s task session context: %w", agent, err)
 		}
 		_, _ = tmuxCommand(ctx, "", "source-file", "/etc/vmbox/tmux.conf")
+		if assignment != "" {
+			if err := EnsureDesktopTerminals(ctx, assignment); err != nil {
+				return err
+			}
+		}
 	} else {
 		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", session, taskAgentEnvironment)
 		if err != nil || strings.TrimSpace(string(marker)) != taskAgentEnvironment+"="+agent {

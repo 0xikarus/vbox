@@ -208,21 +208,9 @@ func cleanWorkingDirectory(value string) string {
 
 func agentResume(command string, argv []string) ([]string, string) {
 	switch strings.ToLower(filepath.Base(command)) {
-	case "codex":
-		if id := flagValue(argv, "resume", ""); id != "" {
-			return []string{"codex", "resume", id}, "codex-session-id"
-		}
-		return []string{"codex", "resume", "--last"}, "codex-latest-in-directory"
-	case "claude":
-		if id := flagValue(argv, "--resume", "-r"); id != "" {
-			return []string{"claude", "--resume", id}, "claude-session-id"
-		}
-		return []string{"claude", "--continue"}, "claude-latest-in-directory"
-	case "opencode":
-		if id := flagValue(argv, "--session", "-s"); id != "" {
-			return []string{"opencode", "--session", id}, "opencode-session-id"
-		}
-		return []string{"opencode", "--continue"}, "opencode-latest-in-directory"
+	case "codex", "claude", "opencode":
+		agent := strings.ToLower(filepath.Base(command))
+		return []string{agent}, agent + "-fresh-conversation"
 	case "bash":
 		return []string{"vmbox-runtime", "welcome"}, "shell"
 	case "sh":
@@ -368,7 +356,11 @@ func restoredPaneCommand(snapshot TmuxSnapshot, pane TmuxPane) string {
 		return strings.Join(parts, "; ")
 	}
 	if len(pane.ResumeArgv) > 0 {
-		parts = append(parts, "exec "+shellJoin(pane.ResumeArgv))
+		argv := pane.ResumeArgv
+		if fresh, _ := agentResume(pane.CurrentCommand, nil); len(fresh) == 1 {
+			argv = fresh
+		}
+		parts = append(parts, "exec "+shellJoin(argv))
 		return strings.Join(parts, "; ")
 	}
 	interrupted := struct {

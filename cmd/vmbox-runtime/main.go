@@ -43,16 +43,120 @@ func run() error {
 		return err
 	}
 	switch args[0] {
-	case "desktop-enable", "desktop-start", "desktop-run", "desktop-stream", "desktop-status":
+	case "desktop-register":
+		if len(args) != 2 {
+			return fmt.Errorf("desktop-register requires AGENT")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+		defer cancel()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return boxruntime.RegisterDesktopMCP(ctx, home, args[1])
+	case "desktop-idle":
+		if len(args) != 2 {
+			return fmt.Errorf("desktop-idle requires ASSIGNMENT")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		seconds, err := boxruntime.DesktopIdleSeconds(ctx, args[1])
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]int64{"seconds": seconds})
+	case "desktop-import-state":
+		if len(args) != 2 {
+			return fmt.Errorf("desktop-import-state requires ASSIGNMENT")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, (1<<20)+1))
+		if err != nil {
+			return fmt.Errorf("private browser state unavailable")
+		}
+		defer clear(data)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		return boxruntime.ImportDesktopBrowserState(ctx, args[1], data)
+	case "desktop-password-origin":
+		if len(args) != 2 {
+			return fmt.Errorf("desktop-password-origin requires ASSIGNMENT")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		return boxruntime.DesktopPasswordOrigin(ctx, args[1], os.Stdout)
+	case "desktop-type-secret":
+		if len(args) != 2 {
+			return fmt.Errorf("desktop-type-secret requires ASSIGNMENT")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 32769))
+		if err != nil {
+			return fmt.Errorf("private password input unavailable")
+		}
+		defer clear(data)
+		request, err := boxruntime.DecodeDesktopPassword(data)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		return boxruntime.TypeDesktopPassword(ctx, args[1], request)
+	case "desktop-terminal", "desktop-terminal-attach":
+		if len(args) != 4 {
+			return fmt.Errorf("desktop terminal requires assignment, session ID and incarnation")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+		defer cancel()
+		if args[0] == "desktop-terminal-attach" {
+			return boxruntime.NativeAttach(ctx, runtime.Root, args[1], args[2], args[3])
+		}
+		return boxruntime.RunDesktopTerminal(ctx, runtime.Root, args[1], args[2], args[3])
+	case "desktop-browser":
+		if len(args) != 1 {
+			return fmt.Errorf("desktop-browser accepts no arguments")
+		}
+		return boxruntime.RunDesktopBrowser(context.Background())
+	case "desktop-mcp":
+		if len(args) != 1 {
+			return fmt.Errorf("desktop-mcp accepts no arguments")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		fence, err := exec.CommandContext(ctx, "tmux", "show-option", "-gv", "@vmbox_assignment").Output()
+		if err != nil {
+			return fmt.Errorf("worker assignment unavailable")
+		}
+		return boxruntime.ServeDesktopMCP(ctx, strings.TrimSpace(string(fence)), os.Stdin, os.Stdout)
+	case "desktop-input":
+		if len(args) != 2 {
+			return fmt.Errorf("desktop-input requires ASSIGNMENT")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 32769))
+		if err != nil {
+			return err
+		}
+		action, err := boxruntime.DecodeDesktopAction(data)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		return boxruntime.DesktopInput(ctx, args[1], action)
+	case "desktop-enable", "desktop-start", "desktop-run", "desktop-stream", "desktop-status", "desktop-screenshot", "desktop-thumbnail":
 		if len(args) != 2 {
 			return fmt.Errorf("desktop command requires ASSIGNMENT")
 		}
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 		defer cancel()
 		switch args[0] {
+		case "desktop-thumbnail":
+			return boxruntime.CaptureDesktopThumbnail(ctx, args[1], os.Stdout)
+		case "desktop-screenshot":
+			return boxruntime.CaptureDesktop(ctx, args[1], os.Stdout)
 		case "desktop-status":
 			enabled, err := boxruntime.DesktopEnabled(ctx, args[1])
-			if err != nil { return err }
+			if err != nil {
+				return err
+			}
 			fmt.Printf("{\"enabled\":%t}\n", enabled)
 			return nil
 		case "desktop-enable":

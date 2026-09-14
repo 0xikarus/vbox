@@ -3,7 +3,7 @@ const $=s=>document.querySelector(s),boxID=decodeURIComponent(location.pathname.
 let epoch=0,busy=false,allocation=null,allocationKey=crypto.randomUUID();
 let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
 let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
-let selectedWorkspaceView='',workspaceRole='';
+let selectedWorkspaceView='',workspaceRole='',managedSession='';
 let runID=new URLSearchParams(location.search).get('run');
 let runTimer,attachedRunSession='';
 
@@ -44,11 +44,13 @@ function showInteractiveWorkspace(){$('#workspace').hidden=false;$('#workspace-t
 async function ensureTerminal(version=epoch){
  if(!workspaceCurrent(version)||terminalAttached)return terminalAttached;
  if(terminalBusy)return terminalBusy;
- $('#session').textContent='Connecting persistent shell…';
+ const agent=boxSummary?.defaultAgent||'shell';
+ $('#session').textContent='Connecting '+agent+'…';
  const pending=(async()=>{
   try{
-   const session=await api(bp+'/sessions/interactive','POST',{agent:'shell',reuseShell:true});if(!workspaceCurrent(version))return false;
-   $('#session').textContent='Persistent shell: '+session.session;
+   const session=await api(bp+'/sessions/interactive','POST',agent==='shell'?{agent,reuseShell:true}:{agent,reuseAgent:true});if(!workspaceCurrent(version))return false;
+   managedSession=session.session;
+   $('#session').textContent=agent+': '+session.session;
    closeTerminal();terminalAttached=true;recordViewer('terminal',{state:'connecting'});
    const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('terminal',value)}});
    closeTerminal=()=>{terminalAttached=false;recordViewer('terminal',{state:'disconnected'});dispose()};
@@ -127,6 +129,8 @@ async function requestDesktop({enable=false,automatic=false,tryStartBeforeEnable
 }
 async function openPreferredView(box,version){
  showInteractiveWorkspace();
+ await ensureTerminal(version);
+ if(!workspaceCurrent(version))return;
  if(workspaceRole!=='owner'){await selectTerminal(version);return}
  if(desktopAttached){showWorkspaceView('desktop');return}
  if(terminalAttached&&selectedWorkspaceView==='terminal'){showWorkspaceView('terminal');return}
@@ -227,3 +231,183 @@ $('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop(
 $('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;stopStats();closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#workspace-tabs').hidden=true;$('#session').textContent='';$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
 window.addEventListener('pagehide',()=>{epoch++;stopStats();clearTimeout(runTimer);closeTerminal();closeDesktop()});
 (async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}})();
+
+// Secret values are sent directly to the private manager, never through chat.
+const secretForm=document.querySelector('#secret-form');
+if(secretForm){
+ const secretStatus=document.querySelector('#secret-status');
+ async function loadSecrets(){
+  try{
+   const values=await api(bp+'/secrets');
+   const list=document.querySelector('#secret-list');list.replaceChildren();
+   for(const value of values){
+    const row=document.createElement('li');row.textContent=value.key+' · '+value.origin+' · '+value.status+' ';
+    const fill=document.createElement('button');fill.type='button';fill.textContent='Fill focused password';
+    fill.onclick=async()=>{fill.disabled=true;try{await api(bp+'/secrets/'+encodeURIComponent(value.key)+'/type','POST');secretStatus.textContent='Password filled. The form has not been submitted.'}catch(e){secretStatus.textContent=e.message}finally{fill.disabled=false}};
+    row.append(fill);
+    if(value.status==='pending'){
+     const accepted=document.createElement('button');accepted.type='button';accepted.textContent='Mark accepted by site';
+     accepted.onclick=async()=>{accepted.disabled=true;try{await api(bp+'/secrets/'+encodeURIComponent(value.key)+'/confirm','POST');await loadSecrets();secretStatus.textContent='Secret marked confirmed.'}catch(e){secretStatus.textContent=e.message;accepted.disabled=false}};
+     row.append(accepted);
+    }
+    const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';
+    remove.onclick=async()=>{if(!confirm('Remove this saved secret? Existing website sessions remain active.'))return;try{await api(bp+'/secrets/'+encodeURIComponent(value.key),'DELETE');await loadSecrets()}catch(e){secretStatus.textContent=e.message}};
+    row.append(remove);list.append(row);
+   }
+  }catch(e){secretStatus.textContent=e.message}
+ }
+ document.querySelector('#load-secrets').onclick=()=>void loadSecrets();
+ secretForm.elements.generate.onchange=()=>{secretForm.elements.value.disabled=secretForm.elements.generate.checked;if(secretForm.elements.generate.checked)secretForm.elements.value.value=''};
+ secretForm.onsubmit=async event=>{
+  event.preventDefault();const submit=secretForm.querySelector('button');submit.disabled=true;
+  const request={key:secretForm.elements.key.value,origin:secretForm.elements.origin.value,generate:secretForm.elements.generate.checked,value:secretForm.elements.value.value};
+  secretForm.elements.value.value='';
+  try{const result=await api(bp+'/secrets','POST',request);secretStatus.textContent=result.created?'Secret saved.':'Existing secret retained.';await loadSecrets()}
+  catch(e){secretStatus.textContent=e.message}finally{request.value='';submit.disabled=false}
+ };
+}
+
+// Preview pixels always come from worker capture, never the VNC canvas.
+const preview=document.querySelector('#desktop-preview');
+if(preview){
+ let timer,url='',pending=false,captured='';
+ const image=document.querySelector('#desktop-thumbnail'),label=document.querySelector('#thumbnail-status');
+ async function refreshPreview(){
+  clearTimeout(timer);
+  if(!preview.open || document.hidden || document.querySelector('#workspace').hidden || pending)return;
+  pending=true;
+  try{
+   const response=await fetch(bp+'/desktop/screenshot?thumbnail=true',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(20000)});
+   if(!response.ok)throw Error('Preview unavailable or box asleep.');
+   const blob=await response.blob();
+   if(!preview.open || document.querySelector('#workspace').hidden)return;
+   if(url)URL.revokeObjectURL(url);
+   url=URL.createObjectURL(blob);image.src=url;image.hidden=false;
+   captured=response.headers.get('X-Captured-At')||new Date().toISOString();
+   label.textContent='Captured '+new Date(captured).toLocaleTimeString();
+  }catch{label.textContent=captured?'Last capture '+new Date(captured).toLocaleTimeString()+' · stale / offline':'Preview unavailable. Sleeping boxes stay asleep.'}
+  finally{pending=false;if(preview.open)timer=setTimeout(refreshPreview,10000)}
+ }
+ preview.addEventListener('toggle',()=>{clearTimeout(timer);if(preview.open)void refreshPreview()});
+ document.addEventListener('visibilitychange',()=>{clearTimeout(timer);if(!document.hidden)void refreshPreview()});
+ window.addEventListener('pagehide',()=>{clearTimeout(timer);if(url)URL.revokeObjectURL(url)});
+ document.querySelector('#logout').addEventListener('click',()=>{preview.open=false;clearTimeout(timer);if(url)URL.revokeObjectURL(url);url='';image.removeAttribute('src');image.hidden=true;captured=''});
+}
+
+const importForm=document.querySelector('#browser-import-form');
+if(importForm){
+ const message=document.querySelector('#browser-import-status');
+ const load=async()=>{
+  try{
+   const values=await api(bp+'/browser/imports');const list=document.querySelector('#browser-import-list');list.replaceChildren();
+   for(const value of values){
+    const row=document.createElement('li');row.textContent=value.origins.join(', ')+' · '+value.status+' ';
+    for(const [label,method,suffix]of [['Apply','POST','/apply'],['Remove saved import','DELETE','']]){
+     const button=document.createElement('button');button.type='button';button.textContent=label;
+     button.onclick=async()=>{button.disabled=true;try{await api(bp+'/browser/imports/'+encodeURIComponent(value.id)+suffix,method,undefined,{},75000);await load();message.textContent=method==='DELETE'?'Saved import removed.':'Browser state applied.'}catch(e){message.textContent=e.message;button.disabled=false}};row.append(button);
+    }
+    list.append(row);
+   }
+  }catch(e){message.textContent=e.message}
+ };
+ document.querySelector('#load-browser-imports').onclick=()=>void load();
+ importForm.onsubmit=async event=>{
+  event.preventDefault();const file=importForm.elements.state.files[0];if(!file)return;
+  if(file.size>1048576){message.textContent='State file must be at most 1 MiB.';return}
+  const button=importForm.querySelector('button');button.disabled=true;
+  try{const data=JSON.parse(await file.text());await api(bp+'/browser/imports','POST',data);importForm.reset();await load();message.textContent='Private browser import saved.'}
+  catch(e){message.textContent=e instanceof SyntaxError?'Invalid JSON state file.':e.message}
+  finally{button.disabled=false}
+ };
+}
+
+const messageForm=document.querySelector('#agent-message-form');
+if(messageForm){
+ let timer,pendingKey='',pendingText='';const status=document.querySelector('#agent-message-status');
+ const refresh=async()=>{
+  clearTimeout(timer);
+  document.querySelector('#agent-chat').hidden=!!runID;
+  if(document.querySelector('#workspace').hidden||document.hidden||runID){timer=setTimeout(refresh,3000);return}
+  try{
+   const messages=await api(bp+'/messages');
+   if(document.querySelector('#workspace').hidden)return;
+   const list=document.querySelector('#agent-messages');list.replaceChildren();
+   for(const message of messages){const row=document.createElement('li');const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);list.append(row)}
+  }catch(e){status.textContent=e.message}
+  timer=setTimeout(refresh,3000);
+ };
+ messageForm.onsubmit=async event=>{
+  event.preventDefault();const text=messageForm.elements.text.value;
+  if(text!==pendingText||!pendingKey){pendingKey=crypto.randomUUID();pendingText=text}
+  const button=messageForm.querySelector('button');button.disabled=true;
+  try{const result=await api(bp+'/messages','POST',{text},{'Idempotency-Key':pendingKey});messageForm.elements.text.value='';pendingKey='';pendingText='';status.textContent=result.message?.state==='silent'?'Note saved without waking the agent.':'Message sent.';await refresh()}
+  catch(e){status.textContent=e.message}finally{button.disabled=false}
+ };
+ window.addEventListener('pagehide',()=>clearTimeout(timer));
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh()});
+ document.querySelector('#logout').addEventListener('click',()=>{clearTimeout(timer);document.querySelector('#agent-messages').replaceChildren();messageForm.reset();pendingKey='';pendingText=''});
+ void refresh();
+}
+
+const privateRequests=document.querySelector('#private-secret-requests');
+if(privateRequests){
+ let timer,signature='';
+ const refresh=async()=>{
+  clearTimeout(timer);
+  if(document.querySelector('#workspace').hidden||document.hidden||runID){timer=setTimeout(refresh,3000);return}
+  try{
+   const requests=(await api(bp+'/secret-requests')).filter(r=>r.status==='pending');
+   const next=JSON.stringify(requests.map(r=>[r.key,r.origin]));
+   if(document.querySelector('#workspace').hidden)return;
+   if(next!==signature){
+    signature=next;privateRequests.replaceChildren();
+    for(const request of requests){
+     const form=document.createElement('form'),label=document.createElement('label');label.textContent='Private password requested: '+request.key+' for '+request.origin+' ';
+     const input=document.createElement('input');input.type='password';input.autocomplete='current-password';input.required=true;input.maxLength=4096;label.append(input);form.append(label);
+     const submit=document.createElement('button');submit.textContent='Provide privately';const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel request';form.append(submit,cancel);
+     const status=document.createElement('p');status.setAttribute('role','status');form.append(status);
+     const send=async cancelled=>{submit.disabled=true;cancel.disabled=true;const payload=cancelled?{cancel:true}:{value:input.value};input.value='';try{await api(bp+'/secret-requests/'+encodeURIComponent(request.key),'POST',payload);signature='';await refresh()}catch(e){status.textContent=e.message}finally{payload.value='';submit.disabled=false;cancel.disabled=false}};
+     form.onsubmit=e=>{e.preventDefault();void send(false)};cancel.onclick=()=>void send(true);privateRequests.append(form);
+    }
+    const summary=document.querySelector('#agent-secrets > summary');
+    if(summary)summary.textContent=requests.length?'Agent secrets · '+requests.length+' pending request'+(requests.length===1?'':'s'):'Agent secrets';
+   }
+  }catch{}
+  timer=setTimeout(refresh,3000);
+ };
+ window.addEventListener('pagehide',()=>clearTimeout(timer));
+ document.querySelector('#logout').addEventListener('click',()=>{clearTimeout(timer);signature='';privateRequests.replaceChildren()});
+ void refresh();
+}
+
+const interruptAgent=document.querySelector('#interrupt-agent');
+if(interruptAgent)interruptAgent.onclick=async()=>{
+ const status=document.querySelector('#agent-message-status');
+ if(!managedSession||boxSummary?.state!=='running'){status.textContent='Connect to the running agent first.';return}
+ interruptAgent.disabled=true;
+ try{await api(bp+'/terminal/input?session='+encodeURIComponent(managedSession),'POST',{keys:[boxSummary.defaultAgent==='shell'?'C-c':'Escape']},{'Idempotency-Key':crypto.randomUUID()});status.textContent='Interrupt sent to the managed session.'}
+ catch(e){status.textContent=e.message}finally{interruptAgent.disabled=false}
+};
+
+const idlePolicyForm=document.querySelector('#idle-policy-form');
+if(idlePolicyForm){
+ const status=document.querySelector('#idle-policy-status');
+ document.querySelector('#load-idle-policy').onclick=async()=>{try{const policy=await api(bp+'/idle-policy');idlePolicyForm.elements.hours.value=policy.seconds/3600;idlePolicyForm.hidden=false;status.textContent=policy.seconds?'Automatic hibernation after '+policy.seconds/3600+' idle hours, when no managed task or handoff is active.':'Automatic hibernation is disabled.'}catch(e){status.textContent=e.message}};
+ idlePolicyForm.onsubmit=async event=>{event.preventDefault();const button=idlePolicyForm.querySelector('button');button.disabled=true;try{await api(bp+'/idle-policy','PUT',{seconds:Math.round(Number(idlePolicyForm.elements.hours.value)*3600)});status.textContent='Idle policy saved. Hibernate remains available at any time.'}catch(e){status.textContent=e.message}finally{button.disabled=false}};
+}
+
+const importedCredentials=document.querySelector('#imported-credentials');
+if(importedCredentials){
+ const list=document.querySelector('#imported-credential-list'),status=document.querySelector('#imported-credential-status');
+ importedCredentials.addEventListener('toggle',async()=>{
+  if(!importedCredentials.open)return;
+  const version=epoch;list.replaceChildren();status.textContent='Loading…';
+  try{
+   const result=await api(bp+'/imported-credentials');
+   if(version!==epoch||!importedCredentials.open)return;
+   for(const ref of result.profiles){const row=document.createElement('li');row.textContent=ref.application+' · '+ref.name;list.append(row)}
+   status.textContent=result.profiles.length?(result.verified?'Imported during provisioning. Current login validity is not checked.':'Selected at creation; import completion was not recorded for this box.'):'No imported login profiles recorded. Manually added logins are not listed.';
+  }catch(e){if(version===epoch)status.textContent=e.message}
+ });
+ document.querySelector('#logout').addEventListener('click',()=>{importedCredentials.open=false;list.replaceChildren();status.textContent=''});
+}

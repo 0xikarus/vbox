@@ -7,7 +7,7 @@
  const option=(s,label,value)=>{const o=node('option',label);o.value=value;s.append(o)};
  const status=node('p');status.setAttribute('role','status');const error=node('p');error.setAttribute('role','alert');
  const form=node('form'),provider=field(form,'Provider','select','provider'),agent=field(form,'Agent','select','agent');
- ['shell','claude','codex'].forEach(a=>option(agent,a,a));
+ ['shell','claude','codex','opencode'].forEach(a=>option(agent,a,a));
  const options=node('div');form.append(options);
  const modelMode=field(options,'Model','select','model-mode');
  const models={codex:[['gpt-6-astra','GPT-6 Astra'],['gpt-5.6-sol','GPT-5.6 Sol'],['gpt-5.6-terra','GPT-5.6 Terra'],['gpt-5.6-luna','GPT-5.6 Luna'],['gpt-5.5','GPT-5.5'],['gpt-5.3-codex-spark','GPT-5.3 Codex Spark (Pro preview)']],claude:[['sonnet','Sonnet'],['opus','Opus'],['haiku','Haiku']]};
@@ -30,7 +30,7 @@
  const imageList=node('div');imageArea.append(imageList);
  async function uploadImages(files){
   if(uploading||busy){error.textContent='Wait for the current upload or submission, then add your images again.';return;}
-  if(agent.value==='shell'){error.textContent='Choose Claude or Codex before adding images.';return;}
+  if(agent.value==='shell'){error.textContent='Choose Claude, Codex, or OpenCode before adding images.';return;}
   uploading=true;imageInput.disabled=true;submit.disabled=true;error.textContent='';
   try{for(const file of files){
    if(!['image/png','image/jpeg','image/gif'].includes(file.type))throw Error('Choose PNG, JPEG or GIF images.');
@@ -84,7 +84,7 @@
    for(const preset of presets){const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=selectedTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));tools.append(label)}
    const old=provider.value;provider.replaceChildren();for(const p of ps)option(provider,p.provider+' / '+p.name,JSON.stringify([p.provider,p.name]));if([...provider.options].some(o=>o.value===old))provider.value=old;
    const previous=Object.fromEntries([...profiles.querySelectorAll('select')].map(s=>[s.name,s.value]));profiles.replaceChildren();
-   for(const app of ['claude','codex','github']){const s=field(profiles,app+' login','select',app);option(s,'None','');for(const p of logins.filter(p=>p.application===app))option(s,p.name,p.name);if([...s.options].some(o=>o.value===previous[app]))s.value=previous[app]}
+   for(const app of ['claude','codex','opencode','github']){const s=field(profiles,app+' login','select',app);option(s,'None','');for(const p of logins.filter(p=>p.application===app))option(s,p.name,p.name);if([...s.options].some(o=>o.value===previous[app]))s.value=previous[app]}
    guide();
    status.textContent='Saved logins are uploaded using vmbox profiles upload. Agent runs require the corresponding login.';
    history.replaceChildren(node('h3','Recent runs'));const table=node('table');const head=node('tr');['Command / prompt','State','Exit code','Box'].forEach(h=>head.append(node('th',h)));table.append(head);

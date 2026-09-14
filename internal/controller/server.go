@@ -96,6 +96,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop", s.owner(s.startDesktop))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop", s.owner(s.desktopStatus))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop/enable", s.owner(s.enableDesktop))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/secrets", s.owner(s.desktopSecrets))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets", s.owner(s.desktopSecrets))
+	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/secrets/{key}", s.owner(s.deleteDesktopSecret))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets/{key}/type", s.owner(s.typeDesktopSecret))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets/{key}/confirm", s.owner(s.confirmDesktopSecret))
+	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/type", s.desktopAgentAuth(s.typeDesktopSecret))
+	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/ensure", s.desktopAgentAuth(s.ensureAgentDesktopSecret))
+	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/request", s.desktopAgentAuth(s.requestDesktopSecret))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/imported-credentials", s.owner(s.importedCredentials))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/secret-requests", s.owner(s.desktopSecretRequests))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/secret-requests/{key}", s.owner(s.desktopSecretRequests))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/browser/imports", s.owner(s.browserStateImports))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/browser/imports", s.owner(s.browserStateImports))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/browser/imports/{import}/apply", s.owner(s.applyBrowserState))
+	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/browser/imports/{import}", s.owner(s.deleteBrowserState))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop/control", s.owner(s.desktopControl))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/screenshot", s.owner(s.desktopScreenshot))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/stream", s.owner(s.webDesktop))
 	mux.HandleFunc("POST /v1/browser-session", s.auth(s.browserLogin))
 	mux.HandleFunc("GET /v1/browser-session", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -120,6 +137,8 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]any{"nativeSessions": true, "nativeAttach": p.Role == "owner", "snapshotUpdates": true, "providerEdits": p.Role == "owner", "oneShotTasks": true, "interactiveLaunch": p.Role == "owner"})
 	}))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/sessions", s.auth(s.sessionsHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/idle-policy", s.owner(s.desktopIdlePolicy))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/idle-policy", s.owner(s.desktopIdlePolicy))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/sessions/primary", s.owner(s.primarySessionHandler))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/sessions/primary", s.owner(s.primarySessionHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/updates", s.auth(s.updatesHandler))
@@ -147,6 +166,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal", s.auth(s.terminalSnapshotHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/terminal/input", s.auth(s.terminalInputHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages", s.auth(s.directBoxMessageHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/messages", s.auth(s.boxMessageHistory))
 	mux.HandleFunc("GET /v1/tasks/{id}", s.auth(s.getBoxTaskHandler))
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.auth(s.listBoxMessagesHandler))
 	mux.HandleFunc("POST /v1/tasks/{id}/messages", s.auth(s.sendBoxMessageHandler))
@@ -574,6 +594,9 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileAllocationsNow(ctx); err != nil {
 					s.Logger.Error("logical box allocation reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileDesktopIdleNow(ctx); err != nil {
+					s.Logger.Error("desktop inactivity reconciliation failed", "error", err)
 				}
 				if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
 					s.Logger.Error("logical box hibernate reconciliation failed", "error", err)

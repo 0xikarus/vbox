@@ -20,7 +20,7 @@ type Component struct {
 var Registry = map[string]Component{
 	"codex":    {ID: "codex", Executables: []string{"codex"}, AuthFiles: []string{"auth.json"}, ConfigFiles: []string{"config.toml"}, Defaults: map[string]any{"approval_policy": "never", "sandbox_mode": "danger-full-access"}, Warning: "disposable-box full access"},
 	"claude":   {ID: "claude", Executables: []string{"claude"}, AuthFiles: []string{".credentials.json"}, ConfigFiles: []string{"settings.json"}, Defaults: map[string]any{"defaultMode": "bypassPermissions"}, Warning: "disposable-box permission bypass"},
-	"opencode": {ID: "opencode", Executables: []string{"opencode"}, AuthFiles: []string{"auth.json"}, ConfigFiles: []string{"opencode.json"}, Warning: "review full-access configuration before upload"},
+	"opencode": {ID: "opencode", Executables: []string{"opencode"}, AuthFiles: []string{"auth.json"}, ConfigFiles: []string{"opencode.json", "opencode.jsonc"}, Warning: "review full-access configuration before upload"},
 	"bun":      {ID: "bun", Executables: []string{"bun"}},
 	"foundry":  {ID: "foundry", Executables: []string{"forge", "cast", "anvil", "chisel"}},
 }
@@ -63,7 +63,11 @@ func DiscoverConfigured(home string, environ map[string]string) ([]Profile, erro
 		active["claude"] = filepath.Join(home, ".claude")
 	}
 	if active["opencode"] == "" {
-		active["opencode"] = filepath.Join(home, ".config", "opencode")
+		dataRoot := value("XDG_DATA_HOME")
+		if dataRoot == "" {
+			dataRoot = filepath.Join(home, ".local", "share")
+		}
+		active["opencode"] = filepath.Join(dataRoot, "opencode")
 	}
 	patterns := map[string][]string{
 		"codex":    {active["codex"], filepath.Join(home, ".codex*"), filepath.Join(home, ".config", "codex*")},

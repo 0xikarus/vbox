@@ -17,13 +17,14 @@ var loginProfileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
 // Only portable profile files are accepted, never arbitrary paths or archives.
 func validateLoginProfile(application, name string, req v1.SaveLoginProfileRequest) error {
 	allowed := map[string]map[string]bool{
-		"claude": {".credentials.json": true, "settings.json": true, ".claude.json": true},
-		"codex":  {"auth.json": true, "config.toml": true},
-		"github": {"credential.json": true},
+		"claude":   {".credentials.json": true, "settings.json": true, ".claude.json": true},
+		"codex":    {"auth.json": true, "config.toml": true},
+		"github":   {"credential.json": true},
+		"opencode": {"auth.json": true, "opencode.json": true, "opencode.jsonc": true},
 	}
 	files, ok := allowed[application]
 	if !ok || !loginProfileName.MatchString(name) {
-		return fmt.Errorf("use claude, codex or github and a profile name of 1–64 letters, digits, dots, underscores or hyphens")
+		return fmt.Errorf("use claude, codex, opencode or github and a profile name of 1–64 letters, digits, dots, underscores or hyphens")
 	}
 	if len(req.Files) == 0 {
 		return fmt.Errorf("profile contains no files")

@@ -59,6 +59,12 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 			if ref.Application == "claude" && name == ".claude.json" {
 				path = "/data/home/.claude.json"
 			}
+			if ref.Application == "opencode" {
+				path = "/data/home/.config/opencode/" + name
+				if name == "auth.json" {
+					path = "/data/home/.local/share/opencode/auth.json"
+				}
+			}
 			request.Files = append(request.Files, boxruntime.SyncFile{Path: path, Mode: "0600", Data: profile.Files[name]})
 		}
 	}
@@ -95,6 +101,13 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	result, err = prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		return fmt.Errorf("could not flush provisioned workspace")
+	}
+	refs, err := json.Marshal(creation.Request.LoginProfiles)
+	if err != nil {
+		return fmt.Errorf("could not record imported credential references")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb) WHERE account_id=$1 AND id=$2`, creation.AccountID, a.Box.ID, refs); err != nil {
+		return fmt.Errorf("could not record imported credential references")
 	}
 	return tx.Commit()
 }

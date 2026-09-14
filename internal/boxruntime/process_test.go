@@ -44,19 +44,19 @@ func TestIdleHibernateRealTmux(t *testing.T) {
 
 func TestProcessArgv(t *testing.T) {
 	prompt := "-dangerous ' $HOME; ä\nsecond line"
-	for agent, want := range map[string][]string{"codex": {"codex", "exec", "--skip-git-repo-check", "--", prompt}, "claude": {"claude", "-p", "--", prompt}, "shell": {"/bin/bash", "-lc", prompt}} {
+	for agent, want := range map[string][]string{"codex": {"codex", "exec", "--skip-git-repo-check", "--", prompt}, "claude": {"claude", "-p", "--", prompt}, "opencode": {"opencode", "run", "--", prompt}, "shell": {"/bin/bash", "-lc", prompt}} {
 		got, err := processArgv(agent, prompt)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: %q %v", agent, got, err)
 		}
 	}
-	if _, err := processArgv("opencode", prompt); err == nil {
+	if _, err := processArgv("unknown", prompt); err == nil {
 		t.Fatal("unsupported agent accepted")
 	}
 }
 
 func TestProcessOptionsAreLiteralArguments(t *testing.T) {
-	for _, agent := range []string{"codex", "claude"} {
+	for _, agent := range []string{"codex", "claude", "opencode"} {
 		task := v1.ProcessTask{Agent: agent, Prompt: "prompt; $(false)", Model: "custom-model", Args: []string{"--option", "literal value; $(false)"}}
 		got, err := processTaskArgv(task)
 		if err != nil {
@@ -124,5 +124,61 @@ func TestProcessOutputBounded(t *testing.T) {
 	st, _ := f.Stat()
 	if st.Size() != ProcessOutputLimit {
 		t.Fatal(st.Size())
+	}
+}
+
+func TestProcessDesktopPreparationFailureRemainsRetryable(t *testing.T) {
+	bin := t.TempDir()
+	for _, name := range []string{"Xtigervnc", "tmux"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
+	root := filepath.Join(t.TempDir(), ".vmbox")
+	task := v1.ProcessTask{ID: "prepare-test", Session: "prepare-test", Agent: "shell", Prompt: "true"}
+	if err := StartProcess(context.Background(), root, task); err == nil {
+		t.Fatal("missing desktop assignment accepted")
+	}
+	dir, _ := processDir(root, task.ID)
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatal("preparation failure claimed the execution journal")
+	}
+	// Retry with the legacy shell-only image. It must be able to claim the same ID.
+	if err := os.Remove(filepath.Join(bin, "Xtigervnc")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "tmux"), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := StartProcess(context.Background(), root, task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "task.json")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProcessExistingJournalDoesNotReopenDesktop(t *testing.T) {
+	bin := t.TempDir()
+	marker := filepath.Join(bin, "desktop-was-probed")
+	for _, name := range []string{"Xtigervnc", "tmux"} {
+		script := "#!/bin/sh\nprintf touched > " + shellQuote(marker) + "\nexit 1\n"
+		if err := os.WriteFile(filepath.Join(bin, name), []byte(script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
+	root := filepath.Join(t.TempDir(), ".vmbox")
+	task := v1.ProcessTask{ID: "existing-test", Session: "existing-test", Agent: "shell", Prompt: "true"}
+	dir, _ := processDir(root, task.ID)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := StartProcess(context.Background(), root, task); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("existing execution caused desktop/process side effects")
 	}
 }

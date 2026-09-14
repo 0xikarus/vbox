@@ -10,6 +10,12 @@ func TestValidatePortableCredentials(t *testing.T) {
 		app, file, data string
 		valid           bool
 	}{
+		{"opencode", "auth.json", `{"provider":{"type":"api","key":"synthetic"}}`, true},
+		{"opencode", "auth.json", `{"provider":{"type":"oauth","access":"synthetic","refresh":"synthetic","expires":4102444800000}}`, true},
+		{"opencode", "auth.json", `{"provider":{"type":"oauth","access":"synthetic","refresh":"synthetic","expires":1}}`, false},
+		{"opencode", "auth.json", `{"provider":{"type":"api","key":""}}`, false},
+		{"opencode", "auth.json", `{}`, false},
+		{"opencode", "auth.json", `null`, false},
 		{"claude", ".credentials.json", `{"claudeAiOauth":{"accessToken":"test","expiresAt":4102444800000}}`, true},
 		{"claude", ".credentials.json", `{"claudeAiOauth":{"expiresAt":1}}`, false},
 		{"claude", ".credentials.json", `{"claudeAiOauth":{"accessToken":"test","expiresAt":1}}`, false},

@@ -25,6 +25,9 @@ func TestLoginProfileValidation(t *testing.T) {
 		valid           bool
 	}{
 		{"codex", "work", "auth.json", true},
+		{"opencode", "work", "auth.json", true},
+		{"opencode", "work", "opencode.json", true},
+		{"opencode", "work", "../auth.json", false},
 		{"claude", "personal", ".credentials.json", true},
 		{"shell", "work", "auth.json", false},
 		{"codex", "../work", "auth.json", false},
@@ -188,6 +191,35 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		t.Fatal("stale assignment sent credentials")
 	}
 
+	creation.Assignment.Box.AssignmentGeneration--
+	openReq := v1.SaveLoginProfileRequest{Files: map[string][]byte{
+		"auth.json":     []byte(`{"provider":{"type":"api","key":"synthetic-opencode-only"}}`),
+		"opencode.json": []byte(`{"model":"provider/test-model"}`),
+	}}
+	if _, err = s.SaveLoginProfile(ctx, p, "opencode", "open-work", openReq); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := fresh.LoadLoginProfile(ctx, p, "opencode", "open-work")
+	if err != nil || !bytes.Equal(restored.Files["auth.json"], openReq.Files["auth.json"]) {
+		t.Fatal("OpenCode encrypted profile roundtrip failed")
+	}
+	if _, err = fresh.LoadLoginProfile(ctx, q, "opencode", "open-work"); err == nil {
+		t.Fatal("cross-account OpenCode read")
+	}
+	creation.Request.LoginProfiles = []v1.LoginProfileRef{{Application: "opencode", Name: "open-work"}}
+	openTransport := &profileTestTransport{volume: storage.ID}
+	if err = server.provisionCreationProfiles(ctx, openTransport, creation); err != nil {
+		t.Fatal(err)
+	}
+	if len(openTransport.files) != 2 {
+		t.Fatal("OpenCode files missing")
+	}
+	for i, want := range []string{"/data/home/.local/share/opencode/auth.json", "/data/home/.config/opencode/opencode.json"} {
+		if openTransport.files[i].Path != want || openTransport.files[i].Mode != "0600" {
+			t.Fatal("OpenCode destination or mode incorrect")
+		}
+	}
+
 }
 
 // Real PostgreSQL above; worker transport here is a controlled test double.
@@ -223,7 +255,7 @@ func (p *profileTestTransport) AttachedStorage(context.Context, string) (*provid
 	return &provider.Storage{ID: p.volume}, nil
 }
 func (p *profileTestTransport) Exec(ctx context.Context, _ string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
-	if strings.Join(argv, " ") == "codex login status" || (len(argv) > 1 && argv[0] == "codex" && argv[1] == "exec") {
+	if strings.Join(argv, " ") == "opencode auth list" || (len(argv) > 1 && argv[0] == "opencode" && argv[1] == "run") || strings.Join(argv, " ") == "codex login status" || (len(argv) > 1 && argv[0] == "codex" && argv[1] == "exec") {
 		return provider.ExecResult{}, nil
 	}
 	if len(argv) == 2 && argv[1] == "prepare-hibernate" {

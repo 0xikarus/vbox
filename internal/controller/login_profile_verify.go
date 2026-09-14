@@ -20,6 +20,8 @@ func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, a
 		argv = []string{"claude", "auth", "status", "--json"}
 	case "codex":
 		argv = []string{"codex", "login", "status"}
+	case "opencode":
+		argv = []string{"opencode", "auth", "list"}
 	case "github":
 		argv = []string{"gh", "api", "--hostname", host, "user", "--jq", ".login"}
 	default:
@@ -42,11 +44,14 @@ func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, a
 	// Login status alone can accept revoked credentials. A bounded, read-only
 	// one-shot verifies actual provider access; output is never logged or parsed
 	// for a canned answer. This may consume a small amount of agent usage.
-	if app == "claude" || app == "codex" {
+	if app == "claude" || app == "codex" || app == "opencode" {
 		prompt := "Reply briefly to confirm this connection. Do not use tools, read files, or make changes."
 		command := []string{"claude", "-p", prompt}
 		if app == "codex" {
 			command = []string{"codex", "exec", "--skip-git-repo-check", prompt}
+		}
+		if app == "opencode" {
+			command = []string{"opencode", "run", "--", prompt}
 		}
 		r, err = p.Exec(ctx, service, command, provider.ExecOptions{})
 		if err != nil || r.ExitCode != 0 {

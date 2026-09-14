@@ -22,6 +22,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   if(path==='/v1/whoami')data={role};
   else if(path.endsWith('/run-once'))data=run;
   else if(path==='/v1/run-once/run')data={id:'run',boxId:'test',task:{state:'running',agent:'shell',session:'task-test'}};
+  else if(path.endsWith('/messages')||path.endsWith('/secret-requests'))data=[];
   else if(path.endsWith('/sessions/interactive'))data={session:'shell-test'};
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
   else if(path==='/v1/logical-boxes/test')data={id:'test',name:'Test',state,tools};
@@ -47,11 +48,11 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    await p.click('#load-connection');await p.waitForFunction(()=>!document.querySelector('#connection-details').hidden);
    assert.match(await p.$eval('#forward-command',e=>e.textContent),/-L 127.0.0.1:3000:127.0.0.1:3000 instance@ssh.railway.com/);
    await p.$eval('#forward-port',e=>{e.value='65536';e.dispatchEvent(new Event('input'))});assert.equal(await p.$eval('#forward-command',e=>e.textContent),'');
-   assert.equal(await p.evaluate(()=>window.attaches),1);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();
+   assert.equal(await p.evaluate(()=>window.attaches),1);assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();
   });
-  await t.test('enabled Blender opens Desktop first and TMUX attaches lazily',async()=>{
+  await t.test('enabled Blender opens Desktop with its managed terminal already attached',async()=>{
    tools=['BlEnDeR'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
-   assert.equal(await p.evaluate(()=>window.terminals),0);
+   assert.equal(await p.evaluate(()=>window.terminals),1);
    await p.evaluate(()=>desktopMetrics({state:'connected',ping:73}));
    assert.match(await p.$eval('#connection-stats',e=>e.textContent),/Desktop ping: 73 ms/);
    assert.equal(await p.$eval('#connection-stats',e=>e.nextElementSibling.id),'workspace-tabs');
@@ -62,15 +63,15 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});
    await p.click('#desktop-tab');assert.equal(await p.evaluate(()=>window.attaches),1);
    await p.click('#terminal-tab');assert.equal(await p.evaluate(()=>window.terminals),1);
-   await p.reload();await p.waitForFunction(()=>window.attaches===1);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();
+   await p.reload();await p.waitForFunction(()=>window.attaches===1);assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();
   });
   await t.test('enabled non-Blender desktop also opens automatically',async()=>{
    tools=['foundry'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1);
-   assert.equal(await p.evaluate(()=>window.terminals),0);assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);await p.close();
+   assert.equal(await p.evaluate(()=>window.terminals),1);assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);await p.close();
   });
   await t.test('missing Blender desktop enables before start',async()=>{
    tools=['blender'];enabled=false;const p=await page();await p.waitForFunction(()=>window.attaches===1);
-   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop+'/enable','POST '+desktop]);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();enabled=true;
+   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop+'/enable','POST '+desktop]);assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();enabled=true;
   });
   await t.test('disabled non-Blender defaults to TMUX and manual controls work',async()=>{
    tools=['foundry'];enabled=false;const p=await page();await terminalReady(p);
@@ -81,7 +82,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   });
   await t.test('legacy Blender worker attaches through idempotent start',async()=>{
    tools=['blender'];enabled=true;fail='GET '+desktop;const p=await page();await p.waitForFunction(()=>window.attaches===1);
-   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();fail='';
+   assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();fail='';
   });
   for(const failure of ['POST '+desktop+'/enable','POST '+desktop])await t.test('failure falls back to TMUX without loops: '+failure,async()=>{
    tools=['blender'];enabled=false;fail=failure;const p=await page();await terminalReady(p);

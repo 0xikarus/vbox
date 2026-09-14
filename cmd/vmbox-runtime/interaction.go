@@ -89,7 +89,7 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		}
 		return true, boxruntime.StartTmuxTask(context.Background(), runtime.Root, args[1], args[2], args[3], string(prompt))
 	case "tmux-message":
-		if len(args) != 5 {
+		if len(args) != 5 && len(args) != 6 {
 			return true, fmt.Errorf("tmux-message requires SESSION MESSAGE_ID BASE64_TEXT SUBMIT")
 		}
 		text, err := base64.RawURLEncoding.DecodeString(args[3])
@@ -100,7 +100,14 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		if err != nil {
 			return true, fmt.Errorf("decode tmux message submit flag: %w", err)
 		}
-		return true, boxruntime.DeliverTmuxInput(context.Background(), runtime.Root, args[1], args[2], string(text), submit)
+		steer := false
+		if len(args) == 6 {
+			steer, err = strconv.ParseBool(args[5])
+			if err != nil {
+				return true, fmt.Errorf("invalid steer flag")
+			}
+		}
+		return true, boxruntime.DeliverTmuxInput(context.Background(), runtime.Root, args[1], args[2], string(text), submit, steer)
 	case "tmux-keys":
 		if len(args) != 4 {
 			return true, fmt.Errorf("tmux-keys requires SESSION MESSAGE_ID BASE64_KEYS")

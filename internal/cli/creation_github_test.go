@@ -26,7 +26,7 @@ func TestCreationGitHubDiscoveryAndSelectedExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.addCreationGitHubAccounts(context.Background(), profiles)
-	p := profiles[2]
+	p := profiles[3]
 	if len(p.localPaths) != 2 || p.selection.Value != "Skip" || len(runner.Calls) != 1 {
 		t.Fatal("discovery exported or selected a credential")
 	}

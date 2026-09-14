@@ -18,6 +18,40 @@ type GitHub struct {
 
 func Validate(app string, files map[string][]byte, now time.Time) error {
 	switch app {
+	case "opencode":
+		var providers map[string]struct {
+			Type    string `json:"type"`
+			Key     string `json:"key"`
+			Token   string `json:"token"`
+			Access  string `json:"access"`
+			Refresh string `json:"refresh"`
+			Expires int64  `json:"expires"`
+		}
+		invalid := fmt.Errorf("OpenCode profile has no usable credentials; run opencode auth login locally and upload again")
+		if json.Unmarshal(files["auth.json"], &providers) != nil || len(providers) == 0 {
+			return invalid
+		}
+		for name, credential := range providers {
+			if strings.TrimSpace(name) == "" {
+				return invalid
+			}
+			switch credential.Type {
+			case "api":
+				if strings.TrimSpace(credential.Key) == "" {
+					return invalid
+				}
+			case "oauth":
+				if credential.Access == "" || credential.Refresh == "" || credential.Expires <= now.UnixMilli() {
+					return invalid
+				}
+			case "wellknown":
+				if credential.Key == "" || credential.Token == "" {
+					return invalid
+				}
+			default:
+				return invalid
+			}
+		}
 	case "github":
 		var c GitHub
 		if json.Unmarshal(files["credential.json"], &c) != nil || !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9.-]*$`).MatchString(c.Host) || !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9-]*$`).MatchString(c.User) || strings.TrimSpace(c.Token) == "" {

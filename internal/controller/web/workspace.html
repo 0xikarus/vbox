@@ -8,6 +8,25 @@
 <main id="workspace" hidden>
 <p><button id="connect">Resume / reconnect</button> <button id="hibernate">Hibernate</button></p>
 <p>Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.</p>
+<details id="idle-settings"><summary>Automatic hibernation</summary><button id="load-idle-policy" type="button">Load policy</button><form id="idle-policy-form" hidden><label>Idle hours (0 disables) <input name="hours" type="number" min="0" max="168" step="0.25" value="4" required></label><button>Save</button></form><p id="idle-policy-status">New boxes default to four hours. Managed tasks and pending private requests prevent automatic hibernation. Human takeover pauses it; screenshots do not count as activity.</p></details>
+<section id="agent-chat"><h2>Agent chat</h2><ol id="agent-messages" aria-live="polite"></ol>
+<form id="agent-message-form"><label>Message <textarea name="text" rows="3" maxlength="100000" required placeholder="Send a steer, or /silent to save a note without waking the agent"></textarea></label><button>Send</button></form><button id="interrupt-agent" type="button">Interrupt agent</button><p id="agent-message-status" role="status"></p></section>
+<details id="desktop-preview"><summary>Desktop preview</summary><img id="desktop-thumbnail" alt="Last desktop capture from this box" width="320" height="200" hidden><p id="thumbnail-status">Open to capture a preview. Sleeping boxes stay asleep.</p></details>
+<details id="imported-credentials"><summary>Imported credentials</summary><ul id="imported-credential-list"></ul><p id="imported-credential-status">Open to load profile names. Secret values are never displayed.</p></details>
+<details id="agent-secrets"><summary>Agent secrets</summary>
+<p>Passwords are stored for this agent and website. Values are never returned in chat.</p>
+<div id="private-secret-requests" aria-live="polite"></div>
+<button id="load-secrets" type="button">Load secrets</button><ul id="secret-list"></ul>
+<form id="secret-form"><label>Reference <input name="key" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}" placeholder="secretForPageN"></label>
+<label>Website origin <input name="origin" type="url" placeholder="https://example.com" required></label>
+<label><input name="generate" type="checkbox" checked> Generate a password</label>
+<label>Existing password <input name="value" type="password" autocomplete="new-password" disabled></label>
+<button>Save secret</button></form><p id="secret-status" role="status"></p></details>
+<details id="browser-imports"><summary>Browser sessions</summary>
+<p>Upload a private version 1 JSON file containing HTTPS origins, exact-host cookies and localStorage. IndexedDB and sessionStorage imports are not supported. Chromium retains its profile with this box.</p>
+<form id="browser-import-form"><label>Browser state JSON <input name="state" type="file" accept="application/json,.json" required></label><button>Save private import</button></form>
+<button id="load-browser-imports" type="button">Load saved imports</button><ul id="browser-import-list"></ul><p id="browser-import-status" role="status"></p>
+<p>Apply requires a running Chromium browser and resumed agent input. Removing an import does not sign out existing browser sessions.</p></details>
 <details id="box-settings" hidden><summary>CPU, RAM &amp; connection</summary>
 <p>Limits belong to the assigned compute slot. They do not follow the workspace to another slot. Changing limits can affect cost; reducing RAM can terminate applications.</p>
 <button id="load-resources">Load CPU / RAM limits</button>

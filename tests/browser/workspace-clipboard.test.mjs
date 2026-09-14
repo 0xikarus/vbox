@@ -44,10 +44,19 @@ test('workspace clipboard controls move text through TMUX and Desktop',async()=>
    window.closeDesk=openWorkspaceDesktop('test',message=>document.querySelector('#status').textContent=message);
    fakeRFB.dispatchEvent(new CustomEvent('clipboard',{detail:{text:'from desktop'}}));
   });
-  await page.click('#desktop-controls button:nth-child(1)');
+  await page.click('#desktop-controls [data-action="copy"]');
   await page.evaluate(()=>{window.clipboardText='to desktop'});
-  await page.click('#desktop-controls button:nth-child(2)');
+  await page.click('#desktop-controls [data-action="paste"]');
   assert.deepEqual(await page.evaluate(()=>({writes:clipboardWrites,pasted:fakeRFB.pasted})),{writes:['from terminal','from desktop'],pasted:'to desktop'});
+  await page.evaluate(()=>{window.controlCalls=[];window.fetch=async(url,options)=>{controlCalls.push({url,action:JSON.parse(options.body).action});return {ok:true}}});
+  await page.click('#desktop-controls [data-action="takeover"]');
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('paused'));
+  await page.click('#desktop-controls [data-action="resume"]');
+  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('resumed'));
+  assert.deepEqual(await page.evaluate(()=>controlCalls),[
+   {url:'/v1/logical-boxes/test/desktop/control',action:'pause'},
+   {url:'/v1/logical-boxes/test/desktop/control',action:'resume'}
+  ]);
   assert.deepEqual(errors,[]);
  }finally{await browser.close()}
 });

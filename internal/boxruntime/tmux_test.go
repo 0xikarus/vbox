@@ -31,20 +31,20 @@ func TestParseTmuxPanesPreservesUnicodeAndNativeAgentResume(t *testing.T) {
 	if pane.Title != "Grüße – äöü ÄÖÜ ß €" || pane.WorkingDirectory != "/data/workspace/über" {
 		t.Fatalf("unicode changed: %+v", pane)
 	}
-	if !reflect.DeepEqual(pane.ResumeArgv, []string{"codex", "resume", "--last"}) || pane.ResumeStrategy != "codex-latest-in-directory" {
+	if !reflect.DeepEqual(pane.ResumeArgv, []string{"codex"}) || pane.ResumeStrategy != "codex-fresh-conversation" {
 		t.Fatalf("resume=%q strategy=%q", pane.ResumeArgv, pane.ResumeStrategy)
 	}
 }
 
-func TestAgentResumeUsesExplicitSessionIdentifiers(t *testing.T) {
+func TestAgentRestartStartsFreshDespitePreviousSessionIdentifiers(t *testing.T) {
 	tests := []struct {
 		command string
 		argv    []string
 		want    []string
 	}{
-		{"codex", []string{"codex", "resume", "0199-id"}, []string{"codex", "resume", "0199-id"}},
-		{"claude", []string{"claude", "--resume=session-id"}, []string{"claude", "--resume", "session-id"}},
-		{"opencode", []string{"opencode", "--session", "session-id"}, []string{"opencode", "--session", "session-id"}},
+		{"codex", []string{"codex", "resume", "0199-id"}, []string{"codex"}},
+		{"claude", []string{"claude", "--resume=session-id"}, []string{"claude"}},
+		{"opencode", []string{"opencode", "--session", "session-id"}, []string{"opencode"}},
 	}
 	for _, test := range tests {
 		got, _ := agentResume(test.command, test.argv)

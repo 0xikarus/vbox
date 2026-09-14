@@ -21,7 +21,7 @@ launcher() {
 [Desktop Entry]
 Type=Application
 Name=$1
-Exec=$2
+Exec=${4:-$2}
 Icon=$3
 Terminal=false
 StartupNotify=true
@@ -30,7 +30,7 @@ EOF
     chmod 700 "$target"
   fi
 }
-launcher Firefox firefox-esr firefox-esr
+launcher Chromium chromium chromium "vmbox-runtime desktop-browser"
 launcher Terminal xterm utilities-terminal
 launcher Files pcmanfm system-file-manager
 launcher Blender blender blender

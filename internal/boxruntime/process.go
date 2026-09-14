@@ -54,10 +54,12 @@ func processTaskArgv(task v1.ProcessTask) ([]string, error) {
 		return append(append([]string{"codex", "exec", "--skip-git-repo-check"}, options...), "--", prompt), nil
 	case "claude":
 		return append(append([]string{"claude", "-p"}, options...), "--", prompt), nil
+	case "opencode":
+		return append(append([]string{"opencode", "run"}, options...), "--", prompt), nil
 	case "shell":
 		return []string{"/bin/bash", "-lc", prompt}, nil
 	default:
-		return nil, fmt.Errorf("one-shot agent must be codex, claude, or shell")
+		return nil, fmt.Errorf("one-shot agent must be codex, claude, opencode, or shell")
 	}
 }
 
@@ -105,6 +107,18 @@ func StartProcess(ctx context.Context, root string, task v1.ProcessTask) error {
 	if !processID.MatchString(task.Session) {
 		return fmt.Errorf("invalid process session")
 	}
+	// Inspect the journal before desktop preparation: a retry must neither launch
+	// another process nor reopen a completed run's desktop. Preparation failures
+	// before claiming the journal remain retryable.
+	if _, err := os.Stat(dir); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	assignment, err := prepareManagedDesktop(ctx, task.Agent)
+	if err != nil {
+		return err
+	}
 	if err = os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
 		return err
 	}
@@ -124,6 +138,9 @@ func StartProcess(ctx context.Context, root string, task v1.ProcessTask) error {
 	_, err = tmuxOutput(ctx, "new-session", "-d", "-s", task.Session, "-c", filepath.Join(filepath.Dir(root), "workspace"), "--", exe, "process-run", root, task.ID)
 	if err == nil {
 		err = ApplyTmuxContext(ctx, root, task.Session)
+	}
+	if err == nil && assignment != "" {
+		err = EnsureDesktopTerminals(ctx, assignment)
 	}
 	return err
 }
