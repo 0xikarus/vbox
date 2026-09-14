@@ -75,7 +75,8 @@ session listing, creation of the `vmbox` shell session, and native connection
 lookup returned `controller-worker`. Two unique terminal-input requests returned
 409 ambiguous, but later terminal snapshots contained both command output
 markers and prompts. They were not replayed. The shell-input acknowledgement
-fix has a regression test; production confirmation remains pending.
+fix has a regression test; a later live disposable submission returned 204, as
+recorded below.
 
 Desktop packages were enabled successfully on this disposable, but the user
 started deleting it before desktop launch or a live screenshot. Its asynchronous
@@ -108,14 +109,44 @@ Volume-operation polling now backs off to 20 seconds in production; its effect o
 the hourly total is not yet measured. An attempted controller cap increase was
 rejected by automatic approval review, so the production cap remains 400.
 
+An isolated `direct-replacement-disposable-20593876` box reached `running` on a
+new EU worker service. A live Bash terminal input returned 204 and its unique
+marker appeared in the native tmux screen. Restarting only that worker's agent
+changed the authenticated connection incarnation while preserving the same
+tmux session ID, session incarnation, marker and assignment generation. A
+deliberate production controller redeploy for a separate restart check was
+rejected by automatic approval review and was not attempted.
+
+Redeploying only the disposable compute service changed its deployment ID.
+PR #80 added periodic recovery for an offline running direct worker and deployed
+as `64a51bbcc9b5c9f6eb1b14dfa5cf417c4de571d5`. The new agent connected
+automatically and the box stayed `running`, but session observation returned 502:
+the new compute had not restored the retained workspace runtime and tmux state.
+PR #81 merged the restoration fix as
+`e79830c884a10ff482b66968c71ac8ff9c0e4018` and deployed successfully.
+It retries restoration until complete using the slot's prior deployment ID as a
+durable marker. The full Go suite, vet and disposable PostgreSQL replacement
+tests passed. After an initial agent-reconnect retry, the live session inventory
+returned 200 automatically. A fresh shell read the retained marker through
+`controller-worker` and acknowledged terminal input with 204. Assignment
+generation remained 83; the new shell had a new incarnation, as expected after
+compute replacement. This proves retained workspace data and restored session
+functionality, not survival of old compute processes or replay of old operations.
+
+Real Chromium then enabled desktop packages on this replacement compute and
+connected the full desktop. Two initial thumbnail requests returned 409 during
+startup, followed by five consecutive 200 captures and a visibly decoded 320×200
+preview. The inspected screenshot is `/tmp/vmbox-replacement-thumbnail-ui.png`.
+Exact-name deletion completed after testing: the box returns 404, and its shared
+slot remains free with the original service intact. No test login credentials
+were uploaded.
+
 ## Required remaining evidence
 
-- Verify subsequent allocation and recovery after a live compute replacement;
-  initial enrollment and allocation reached running on the isolated thumbnail box.
-- Verify actual Railway compute replacement and retained journal storage. Local
-  credential/epoch tests do not substitute for a live provider replacement.
-- Controller restart, independent agent restart and compute replacement tested as
-  different events, with honest process-loss behavior.
+- Controller restart remains a separate unverified event. Independent agent
+  restart preserved session identity; compute replacement preserved box
+  assignment and volume and recovered working sessions. Completed-operation
+  journal reconciliation across replacement is verified locally, not live.
 - Complete isolated Railway validation and the remaining additive rollout checks.
   Existing worker processes and volumes must not be restarted or reassigned just
   to validate migration. Verify exact surviving session identities before switch.
