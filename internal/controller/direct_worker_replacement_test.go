@@ -213,6 +213,9 @@ func TestWorkerReplacementPostgres(t *testing.T) {
 	if _, err = store.DB.ExecContext(ctx, `UPDATE direct_workers SET transport_enabled=true,bootstrap_deployment_id='old-deployment' WHERE id=$1`, worker.ID); err != nil {
 		t.Fatal(err)
 	}
+	if targets, listErr := store.offlineRunningWorkers(ctx); listErr != nil || len(targets) != 0 {
+		t.Fatalf("healthy connected worker selected for replacement: %v targets=%v", listErr, targets)
+	}
 	a, err := store.assignment(ctx, principal.AccountID, boxID)
 	if err != nil {
 		t.Fatal(err)
@@ -220,6 +223,9 @@ func TestWorkerReplacementPostgres(t *testing.T) {
 	state, replacementEnrollment, started, err := store.beginWorkerReplacement(ctx, principal.AccountID, a, "new-deployment")
 	if err != nil || !started || state.Worker.Epoch != oldWorker.Epoch+1 {
 		t.Fatalf("begin replacement: %+v started=%v err=%v", state, started, err)
+	}
+	if targets, listErr := store.offlineRunningWorkers(ctx); listErr != nil || len(targets) != 1 || targets[0].accountID != principal.AccountID || targets[0].boxID != boxID {
+		t.Fatalf("offline running worker missing from replacement scan: %v targets=%v", listErr, targets)
 	}
 	if _, err = store.AuthenticateWorker(ctx, oldCredential); !errors.Is(err, errWorkerIdentity) {
 		t.Fatal("old replacement credential retained authority", err)
@@ -239,6 +245,9 @@ func TestWorkerReplacementPostgres(t *testing.T) {
 	newWorker, err := store.ClaimWorkerConnection(ctx, newCredential, newIncarnation, connectionOwner)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if targets, listErr := store.offlineRunningWorkers(ctx); listErr != nil || len(targets) != 0 {
+		t.Fatalf("reconnected worker still selected for replacement: %v targets=%v", listErr, targets)
 	}
 	wrong := a
 	wrong.FencingToken = "wrong-fence"

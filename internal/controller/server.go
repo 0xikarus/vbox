@@ -574,6 +574,9 @@ func (s *Server) applyLifecycle(ctx context.Context, p Principal, runID string, 
 }
 
 func (s *Server) StartReconciler(ctx context.Context) error {
+	// This independent loop must keep running when infrastructure reconciliation
+	// waits behind the shared Railway request budget.
+	s.startRunningWorkerReplacementReconciler(ctx)
 	if err := s.ReconcileNow(ctx); err != nil {
 		s.Logger.Error("initial controller reconciliation failed", "error", err)
 	}
