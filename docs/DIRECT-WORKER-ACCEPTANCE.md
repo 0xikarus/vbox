@@ -79,23 +79,35 @@ fix has a regression test; production confirmation remains pending.
 
 Desktop packages were enabled successfully on this disposable, but the user
 started deleting it before desktop launch or a live screenshot. Its asynchronous
-delete was still in `delete-detaching-volume` at the last check; the controller
-recorded a Railway detach timeout. A second isolated box,
-`thumbnail-ui-disposable-29c8b5e9`, was created without login profiles for the
-live browser thumbnail test. It was still attaching at the last check. Neither
-box is yet a completed desktop or cleanup acceptance result.
+delete stalled in `delete-detaching-volume` after a Railway detach timeout, then
+completed; the controller now returns 404 for that box. A second isolated box,
+`thumbnail-ui-disposable-29c8b5e9`, was created without login profiles and
+automatically reached `running` after enrollment and allocation. Its old base
+required explicit desktop package enablement, which succeeded without a worker
+restart. Direct HTTP captured a valid 320×200 PNG from its live desktop.
+
+Real Chromium exposed a separate display failure: the thumbnail request returned
+200, but the workspace Content Security Policy blocked the `blob:` image URL, so
+the visible image remained broken. PR #77 added `blob:` to the interactive-page
+image policy and deployed as `100ffd97499b553e08321b69445a570ee351f4fa`.
+After that rollout, five consecutive Chromium refreshes displayed fully decoded
+320×200 worker thumbnails. Five initial 409 capture responses during desktop
+startup recovered to a visible image when the worker became ready. The controller
+restart briefly reported the agent reconnecting; session survival across that
+restart was not explicitly asserted. Deletion of this second disposable and its
+volume was accepted with exact-name confirmation and remains asynchronous.
 
 The shared Railway management budget reached its configured 400 requests per
 rolling hour during this work. Aggregate diagnostics showed 400 local requests,
 92 background, a learned remote allowance of 8,000, and no remote cooldown.
-Volume-operation polling now backs off to 20 seconds in the release candidate;
-the production effect is unverified. An attempted controller cap increase was
+Volume-operation polling now backs off to 20 seconds in production; its effect on
+the hourly total is not yet measured. An attempted controller cap increase was
 rejected by automatic approval review, so the production cap remains 400.
 
 ## Required remaining evidence
 
-- Verify automatic first enrollment and recovery on a disposable Railway
-  allocation, beyond the observed first running box and local tests.
+- Verify subsequent allocation and recovery after a live compute replacement;
+  initial enrollment and allocation reached running on the isolated thumbnail box.
 - Verify actual Railway compute replacement and retained journal storage. Local
   credential/epoch tests do not substitute for a live provider replacement.
 - Controller restart, independent agent restart and compute replacement tested as
