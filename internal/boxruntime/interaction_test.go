@@ -110,6 +110,35 @@ func TestDeliverTmuxInputWaitsAfterPasteBeforeSubmit(t *testing.T) {
 	}
 }
 
+func TestDeliverTmuxInputAcceptsBashCarriageReturnWithoutTUIPrompt(t *testing.T) {
+	originalCommand, originalPause := tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalPause })
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	carriageReturns := 0
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if args[0] == "display-message" {
+			return []byte("bash\n"), nil
+		}
+		if args[0] == "capture-pane" {
+			return []byte("worker$ printf hello\nhello\nworker$ "), nil
+		}
+		if args[0] == "load-buffer" && stdin == "\r" {
+			carriageReturns++
+		}
+		return nil, nil
+	}
+	root := t.TempDir()
+	if err := DeliverTmuxInput(context.Background(), root, "vmbox", "shell_message", "printf hello", true); err != nil {
+		t.Fatal(err)
+	}
+	if carriageReturns != 1 {
+		t.Fatalf("carriage returns=%d, want exactly one", carriageReturns)
+	}
+	if _, err := os.Stat(filepath.Join(root, "messages", "shell_message.delivered")); err != nil {
+		t.Fatalf("shell command not recorded as delivered: %v", err)
+	}
+}
+
 func TestDeliverTmuxInputRetriesOnlySubmitWhileClaudeInputIsStaged(t *testing.T) {
 	originalCommand, originalPause, originalConfirm := tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause
 	t.Cleanup(func() {

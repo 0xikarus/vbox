@@ -138,6 +138,14 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 			}
 		}
 	}
+	// Bash consumes a pasted carriage return as a terminal byte. The prompt
+	// heuristic below is for agent TUIs; it cannot recognize a shell prompt and
+	// would report an already executed shell command as ambiguous.
+	plainShell := false
+	if submit {
+		command, commandErr := tmuxCommand(ctx, "", "display-message", "-p", "-t", session, "#{pane_current_command}")
+		plainShell = commandErr == nil && strings.TrimSpace(string(command)) == "bash"
+	}
 	buffer := "vmbox_" + messageID
 	defer func() { _, _ = tmuxCommand(context.Background(), "", "delete-buffer", "-b", buffer) }()
 	if _, err := tmuxCommand(ctx, text, "load-buffer", "-b", buffer, "-"); err != nil {
@@ -167,8 +175,10 @@ func DeliverTmuxInput(ctx context.Context, root, session, messageID, text string
 		if err := pasteTmuxCarriageReturn(ctx, buffer, session); err != nil {
 			return ErrAmbiguousMessage
 		}
-		if err := confirmTmuxSubmit(ctx, buffer, session, text); err != nil {
-			return ErrAmbiguousMessage
+		if !plainShell {
+			if err := confirmTmuxSubmit(ctx, buffer, session, text); err != nil {
+				return ErrAmbiguousMessage
+			}
 		}
 	}
 	if err := os.Rename(pending, delivered); err != nil {

@@ -79,8 +79,9 @@ vmbox whoami
 When asked, paste the token into the hidden prompt. The CLI verifies and saves it
 locally for future commands. `vmbox logout` removes this saved login.
 An exported `VMBOX_CONTROLLER_TOKEN` overrides the saved token; unset it if stale.
-Your controller token is separate from SSH authentication: load your registered
-SSH key into an SSH agent, or set `VMBOX_SSH_IDENTITY_FILE` to its path.
+Enrolled workers use your controller token for terminal and desktop access.
+A registered SSH key is still needed for legacy workers and optional Railway
+port forwarding; load it into an SSH agent or set `VMBOX_SSH_IDENTITY_FILE`.
 Native shell access requires the account owner role.
 
 ### 3. Configure capacity (controller owner, first time only)
@@ -171,11 +172,12 @@ second controller or Railway fleet.
    ```
 
    Enter your controller token at the hidden prompt. It is verified and saved
-   inside Ubuntu for reuse. **SSH authentication is separate:** your registered
-   private key must also be available inside Ubuntu, through an SSH agent or
+   inside Ubuntu for reuse. Enrolled workers use this token for terminal and
+   desktop access. Legacy SSH access and port forwarding require a registered
+   private key inside Ubuntu, through an SSH agent or
    `VMBOX_SSH_IDENTITY_FILE`. Do not upload or share your private key.
 
-4. Once SSH is configured:
+4. Once the controller is connected:
 
    ```bash
    vmbox                 # list boxes and useful commands
@@ -195,8 +197,8 @@ second controller or Railway fleet.
   `VMBOX_CONTROLLER_TOKEN`, then run `vmbox whoami` to log in again.
 - **No healthy free compute slot:** inspect `vmbox fleet status`. Hibernate an
   unneeded box or have the owner add capacity. Check that the region matches.
-- **SSH permission denied:** check your SSH agent/key; controller login alone
-  does not authenticate SSH.
+- **SSH permission denied on a legacy worker or port forward:** check your SSH
+  agent/key; controller login does not authenticate Railway SSH.
 - **Agent login expired:** refresh the login locally, then run
   `vmbox profiles upload` again. Saved profiles are snapshots, not live sync.
 
@@ -248,7 +250,8 @@ Deletion is permanent and may interrupt pending creations referencing that profi
 
 ## Install and connect
 
-Go 1.26 or Docker builds the CLI. OpenSSH is required for native attachment.
+Go 1.26 or Docker builds the CLI. OpenSSH is required for legacy worker
+attachment and Railway port forwarding.
 No Railway, Docker or Incus client/token is needed for ordinary CLI operations.
 
 In a terminal, missing controller configuration starts a connection guide. Missing
@@ -273,7 +276,8 @@ vmbox ls --json
 vmbox helper1
 ```
 
-Controller login does not provision SSH credentials. Configure an SSH agent or
+Enrolled workers carry native attachment through the authenticated controller
+connection. For a legacy worker, configure an SSH agent or
 `VMBOX_SSH_IDENTITY_FILE`; native attachment requires the account owner role.
 For an existing worker that has not enabled native sessions, run
 `vmbox sessions helper1 --enable` once. This stages the matching runtime without
@@ -311,15 +315,15 @@ desktop terminal. Windows users run the CLI and Linux viewer inside WSL with GUI
 support, rather than using a native Windows CLI installer.
 
 The controller manages wake-up and desktop startup. The CLI then opens a
-single-viewer, loopback-only VNC connection carried over direct SSH, using the
-same SSH identity as `vmbox BOX`. It requires no local provider token or SDK.
+single-viewer, loopback-only VNC connection through the enrolled worker agent.
+Legacy workers use SSH. Neither path requires a local provider token or SDK.
 Closing the viewer closes this local connection, **not** the remote desktop or
 box. Use `vmbox hibernate helper1` when you want to release compute.
 
 For a different viewer, use `vmbox desktop helper1 --no-viewer` and open the
 printed `vnc://127.0.0.1:PORT` address locally. Ctrl-C closes the tunnel. Only the
 first viewer connection is accepted; rerun the command to reconnect. As with
-an ordinary localhost SSH tunnel, use this only on a trusted local machine.
+an ordinary localhost tunnel, use this only on a trusted local machine.
 
 `--enable` is explicit consent to install optional packages on that worker; a
 replacement worker may need it again. Without it, missing components produce
@@ -330,8 +334,8 @@ an error rather than an automatic package installation.
 Click a box name in the controller to open `/boxes/BOX_ID`. The page wakes the box
 through the allocation queue and opens an enabled desktop automatically. Otherwise
 it reconnects to the same persistent shell used by `vmbox BOX`. Desktop and TMUX
-tabs switch between both views; the shell is created only when the TMUX tab is
-opened. The separate workspace page loads its own terminal and desktop assets; the
+tabs switch between both views; the managed shell is prepared before either
+viewer attaches. The separate workspace page loads its own terminal and desktop assets; the
 configuration panel remains lightweight.
 
 Terminal input is streamed to a real tmux PTY. Mobile controls provide Esc, Tab,
@@ -361,23 +365,23 @@ applications without restarting VNC or the box.
 
 New default worker images include a desktop, which opens automatically in the
 interactive web workspace. TMUX remains available in its tab and through the CLI.
-The desktop has Firefox, Terminal and Files launch icons, plus Blender when installed.
+The desktop has Chromium, Terminal and Files launch icons, plus Blender when installed.
 Applications launch when you select them. New interactive shells use `DISPLAY=:99`
 for this shared screen; this does not itself give agents screenshot or mouse tools.
 Operators can build a shell-only image with `VMBOX_DESKTOP=false`.
 
 On older workers, choose **Enable desktop packages**, then **Start /
-reconnect desktop**. Enablement installs TigerVNC, Openbox and Firefox on the
+reconnect desktop**. Enablement installs TigerVNC, Openbox and Chromium on the
 current Debian-compatible worker without restarting it. Older or custom shell-only
 replacement images may need enablement again. VNC is available only through a private Unix
 socket and the owner-authenticated controller stream, never a public VNC port.
-Firefox may report reduced sandbox protection when the provider restricts user
-namespaces; no sandbox-disabling browser flags are configured.
+Chromium may require reduced sandbox protection when the provider restricts user
+namespaces; the worker image controls that setting.
 
 Browser login uses an eight-hour, HttpOnly, same-site cookie backed by controller
 memory. Logout invalidates it; controller restart requires login again without
-stopping worker processes. Browser streams currently require the Railway provider's
-fenced streaming transport. Other providers return an explicit unsupported error.
+stopping worker processes. Enrolled worker streams use the authenticated agent;
+legacy provider streaming remains available until those workers migrate.
 
 Rebuild bundled assets with `npm ci && node scripts/build-web.mjs`. noVNC and
 xterm licenses are retained alongside the bundles. The feature is deployed, but

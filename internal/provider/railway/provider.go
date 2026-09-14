@@ -660,6 +660,7 @@ func (p *Provider) CreateStorage(ctx context.Context, id string, resources provi
 	}
 	deadline := time.NewTimer(p.cfg.ReadyTimeout)
 	defer deadline.Stop()
+	poll := volumePoll{base: p.cfg.PollInterval}
 	for {
 		values, err = p.volumes(ctx)
 		if err != nil {
@@ -678,7 +679,7 @@ func (p *Provider) CreateStorage(ctx context.Context, id string, resources provi
 			return provider.Storage{}, ctx.Err()
 		case <-deadline.C:
 			return provider.Storage{}, fmt.Errorf("Railway volume for %s did not become ready", service.Name)
-		case <-time.After(p.cfg.PollInterval):
+		case <-time.After(poll.next()):
 		}
 	}
 }
@@ -732,6 +733,7 @@ func (p *Provider) AttachStorage(ctx context.Context, id string, storage provide
 	}
 	deadline := time.NewTimer(p.cfg.ReadyTimeout)
 	defer deadline.Stop()
+	poll := volumePoll{base: p.cfg.PollInterval}
 	for {
 		ready, checkErr := attached()
 		if checkErr != nil {
@@ -745,7 +747,7 @@ func (p *Provider) AttachStorage(ctx context.Context, id string, storage provide
 			return ctx.Err()
 		case <-deadline.C:
 			return fmt.Errorf("Railway volume %s did not attach to %s", storage.ID, service.Name)
-		case <-time.After(p.cfg.PollInterval):
+		case <-time.After(poll.next()):
 		}
 	}
 	p.invalidateServiceSSH(service)
@@ -795,6 +797,7 @@ func (p *Provider) DetachStorage(ctx context.Context, id string, storage provide
 	}
 	deadline := time.NewTimer(p.cfg.ReadyTimeout)
 	defer deadline.Stop()
+	poll := volumePoll{base: p.cfg.PollInterval}
 	for {
 		ready, checkErr := detached()
 		if checkErr != nil {
@@ -808,7 +811,7 @@ func (p *Provider) DetachStorage(ctx context.Context, id string, storage provide
 			return ctx.Err()
 		case <-deadline.C:
 			return fmt.Errorf("Railway volume %s did not detach from %s", storage.ID, service.Name)
-		case <-time.After(p.cfg.PollInterval):
+		case <-time.After(poll.next()):
 		}
 	}
 	p.invalidateServiceSSH(service)
@@ -889,6 +892,7 @@ func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, 
 	}
 	deadline := time.NewTimer(p.cfg.ReadyTimeout)
 	defer deadline.Stop()
+	poll := volumePoll{base: p.cfg.PollInterval}
 	for {
 		volumes, err = p.volumes(ctx)
 		if err != nil {
@@ -906,7 +910,7 @@ func (p *Provider) DeleteStorage(ctx context.Context, storage provider.Storage, 
 			return ctx.Err()
 		case <-deadline.C:
 			return fmt.Errorf("Railway volume %s remained visible after deletion", storage.ID)
-		case <-time.After(p.cfg.PollInterval):
+		case <-time.After(poll.next()):
 		}
 	}
 }

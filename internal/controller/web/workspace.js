@@ -3,6 +3,7 @@ const $=s=>document.querySelector(s),boxID=decodeURIComponent(location.pathname.
 let epoch=0,busy=false,allocation=null,allocationKey=crypto.randomUUID();
 let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
 let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
+let refreshDesktopPreview=()=>{};
 let selectedWorkspaceView='',workspaceRole='',managedSession='';
 let runID=new URLSearchParams(location.search).get('run');
 let runTimer,attachedRunSession='';
@@ -105,6 +106,7 @@ async function startAndAttachDesktop(version){
  closeDesktop();desktopAttached=true;recordViewer('desktop',{state:'connecting',ping:null});
  const dispose=openWorkspaceDesktop(boxID,message=>{if(workspaceCurrent(version))$('#desktop-status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('desktop',value)}});
  closeDesktop=()=>{desktopAttached=false;recordViewer('desktop',{state:'disconnected',ping:null});dispose()};
+ refreshDesktopPreview();
  return true;
 }
 async function requestDesktop({enable=false,automatic=false,tryStartBeforeEnable=false}={}){
@@ -175,9 +177,11 @@ $('#load-connection').onclick=async()=>{
  try{
   const result=await api(bp+'/connection');if(!workspaceCurrent(version))return;
   const conn=result.connection;if(!conn?.endpoint)throw Error('No connection address available.');
-  connectionEndpoint=conn.transport==='openssh'?conn.endpoint:'';$('#connection-address').textContent='SSH address: '+conn.endpoint;
+  const ssh=conn.transport==='openssh';
+  connectionEndpoint=ssh?conn.endpoint:'';$('#connection-address').textContent=ssh?'SSH address: '+conn.endpoint:'Worker connection: '+(conn.transport||'unknown')+' through the controller';
   $('#connection-location').textContent='Region: '+(conn.metadata?.vmboxRegion||'Unknown');
-  $('#connection-details').hidden=false;$('#connection-status').textContent='Address resolved for the current worker. Reload after the box moves or resumes.';renderForward();
+  $('#ssh-forwarding').hidden=!ssh;$('#connection-details').hidden=false;
+  $('#connection-status').textContent=ssh?'Address resolved for the current worker. Reload after the box moves or resumes.':'Direct worker connection resolved. This endpoint does not provide SSH port forwarding.';renderForward();
  }catch(e){if(workspaceCurrent(version))$('#connection-status').textContent=e.message}
  finally{$('#load-connection').disabled=false}
 };
@@ -270,11 +274,12 @@ if(secretForm){
 // Preview pixels always come from worker capture, never the VNC canvas.
 const preview=document.querySelector('#desktop-preview');
 if(preview){
- let timer,url='',pending=false,captured='';
+ let timer,url='',pending=false,rerun=false,captured='';
  const image=document.querySelector('#desktop-thumbnail'),label=document.querySelector('#thumbnail-status');
  async function refreshPreview(){
   clearTimeout(timer);
-  if(!preview.open || document.hidden || document.querySelector('#workspace').hidden || pending)return;
+  if(!preview.open || document.hidden || document.querySelector('#workspace').hidden)return;
+  if(pending){rerun=true;return}
   pending=true;
   try{
    const response=await fetch(bp+'/desktop/screenshot?thumbnail=true',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(20000)});
@@ -286,8 +291,9 @@ if(preview){
    captured=response.headers.get('X-Captured-At')||new Date().toISOString();
    label.textContent='Captured '+new Date(captured).toLocaleTimeString();
   }catch{label.textContent=captured?'Last capture '+new Date(captured).toLocaleTimeString()+' · stale / offline':'Preview unavailable. Sleeping boxes stay asleep.'}
-  finally{pending=false;if(preview.open)timer=setTimeout(refreshPreview,10000)}
+  finally{pending=false;if(preview.open){timer=setTimeout(refreshPreview,rerun?0:10000);rerun=false}}
  }
+ refreshDesktopPreview=()=>{if(preview.open)void refreshPreview()};
  preview.addEventListener('toggle',()=>{clearTimeout(timer);if(preview.open)void refreshPreview()});
  document.addEventListener('visibilitychange',()=>{clearTimeout(timer);if(!document.hidden)void refreshPreview()});
  window.addEventListener('pagehide',()=>{clearTimeout(timer);if(url)URL.revokeObjectURL(url)});

@@ -43,8 +43,9 @@ are outside this HTTP budget; they are not used for direct box runtime access.
 
 Controller-initiated Railway SSH needs a dedicated registered key. Supply
 `VMBOX_RAILWAY_SSH_PRIVATE_KEY_B64` securely; startup materializes it privately,
-never in the worker image or volume. Native CLI clients separately need SSH
-authentication; their controller token is not an SSH credential.
+never in the worker image or volume. Native CLI connections to enrolled workers
+use controller authentication. Legacy worker access and Railway port forwarding
+still need a separate registered SSH key; a controller token is not an SSH key.
 
 `VMBOX_INITIAL_COMPUTE_BOX_SLOTS` optionally seeds initial capacity. Once explicitly
 configured, environment changes do not overwrite it. Capacity edits can create
