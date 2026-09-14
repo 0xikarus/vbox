@@ -14,12 +14,17 @@ import (
 
 type pendingRecoveryProvider struct {
 	fakeProvider
-	mode  string
-	calls int
+	mode       string
+	deployment string
+	calls      int
 }
 
 func (p *pendingRecoveryProvider) Connection(context.Context, string) (provider.Connection, error) {
-	return provider.Connection{Transport: "openssh", Endpoint: "bootstrap-deployment@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": "bootstrap-deployment"}}, nil
+	deployment := p.deployment
+	if deployment == "" {
+		deployment = "bootstrap-deployment"
+	}
+	return provider.Connection{Transport: "openssh", Endpoint: deployment + "@ssh.railway.com", Metadata: map[string]string{"deploymentInstanceId": deployment}}, nil
 }
 
 func (p *pendingRecoveryProvider) ExecConnection(_ context.Context, _ provider.Connection, _ []string, options provider.ExecOptions) (provider.ExecResult, error) {
@@ -38,7 +43,7 @@ func (p *pendingRecoveryProvider) ExecConnection(_ context.Context, _ provider.C
 			return provider.ExecResult{ExitCode: 66, Stdout: "worker-agent-installation-absent\n"}, nil
 		}
 	}
-	if p.mode == "absent" && bytes.Contains(payload.Bytes(), []byte("VMBOX_WORKER_PAYLOAD")) {
+	if (p.mode == "absent" || p.mode == "changed") && bytes.Contains(payload.Bytes(), []byte("VMBOX_WORKER_PAYLOAD")) {
 		return provider.ExecResult{Stdout: "worker-agent-installed\n"}, nil
 	}
 	return provider.ExecResult{}, errors.New("unexpected recovery operation")
@@ -63,8 +68,8 @@ func TestPendingWorkerRecoveryIsPinnedAndReissuesOnlyAfterProvenAbsence(t *testi
 			}
 			mock.ExpectQuery(`SELECT w.id::text,w.account_id::text,w.slot_id::text`).
 				WithArgs("account", "slot").
-				WillReturnRows(sqlmock.NewRows([]string{"id", "account_id", "slot_id", "service_id", "incarnation", "connection_epoch", "transport_enabled", "migration_sessions", "bootstrap_deployment_id", "enrollment", "credential"}).
-					AddRow("worker", "account", "slot", "service", "", int64(5), false, baseline, "bootstrap-deployment", enrollment, credential))
+				WillReturnRows(sqlmock.NewRows([]string{"id", "account_id", "slot_id", "service_id", "incarnation", "connection_epoch", "transport_enabled", "migration_sessions", "bootstrap_deployment_id", "enrollment", "credential", "live"}).
+					AddRow("worker", "account", "slot", "service", "", int64(5), false, baseline, "bootstrap-deployment", enrollment, credential, false))
 			if enrollment {
 				mock.ExpectExec(`UPDATE direct_workers SET enrollment_expires_at`).
 					WithArgs("worker", "account", "slot", int64(5)).
@@ -99,6 +104,62 @@ func TestPendingWorkerRecoveryIsPinnedAndReissuesOnlyAfterProvenAbsence(t *testi
 				t.Fatal(err)
 			} else if want := map[string]int{"partial": 1, "absent": 2}[mode]; prov.calls != want {
 				t.Fatalf("recovery calls=%d want=%d", prov.calls, want)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestPendingInitialEnrollmentRotatesOnlyForChangedDeployment(t *testing.T) {
+	for _, mode := range []string{"changed", "credentialed", "concurrent-credential", "concurrent-connect", "invalid-config", "live", "nonempty", "running"} {
+		t.Run(mode, func(t *testing.T) {
+			store, mock := testStore(t)
+			server := NewServer(store, nil)
+			server.PublicURL = "https://controller.example"
+			server.WorkerAgent = []byte("agent-fixture")
+			if mode == "invalid-config" {
+				server.WorkerAgent = nil
+			}
+			a := fleetAssignment{Box: v1.LogicalBox{ID: "box", AccountID: "account", Provider: "railway", State: "attaching", AssignmentGeneration: 3}, Slot: v1.ComputeSlot{ID: "slot", ServiceID: "service"}, FencingToken: "fence"}
+			if mode == "running" {
+				a.Box.State = "running"
+			}
+			baseline, _ := json.Marshal(v1.SessionInventory{Assignment: nativeFence(a), State: "live", Sessions: []v1.Session{}})
+			if mode == "nonempty" {
+				baseline, _ = json.Marshal(v1.SessionInventory{Assignment: nativeFence(a), State: "live", Sessions: []v1.Session{{ID: "$0", Name: "work", Incarnation: nativeFence(a) + ":0123456789abcdef01234567:$0"}}})
+			}
+			credential := mode == "credentialed" || mode == "concurrent-connect"
+			enrollment, live := !credential, mode == "live"
+			mock.ExpectQuery(`SELECT w.id::text,w.account_id::text,w.slot_id::text`).WithArgs("account", "slot").WillReturnRows(
+				sqlmock.NewRows([]string{"id", "account_id", "slot_id", "service_id", "incarnation", "connection_epoch", "transport_enabled", "migration_sessions", "bootstrap_deployment_id", "enrollment", "credential", "live"}).
+					AddRow("worker", "account", "slot", "service", "", int64(5), false, baseline, "old-deployment", enrollment, credential, live))
+			if !live && mode != "invalid-config" && mode != "nonempty" && mode != "running" {
+				mock.ExpectBegin()
+				mock.ExpectQuery(`SELECT b.assignment_generation`).WithArgs("box", "account", "slot", int64(3), "fence").WillReturnRows(sqlmock.NewRows([]string{"assignment_generation"}).AddRow(int64(3)))
+				rows := int64(1)
+				if mode == "concurrent-credential" || mode == "concurrent-connect" {
+					rows = 0
+				}
+				mock.ExpectExec(`UPDATE direct_workers SET enrollment_hash`).WithArgs(sqlmock.AnyArg(), "worker", "account", "slot", int64(5), baseline, "old-deployment", "fresh-deployment", enrollment, credential).WillReturnResult(sqlmock.NewResult(0, rows))
+				if rows == 1 {
+					mock.ExpectCommit()
+					mock.ExpectBegin()
+					mock.ExpectQuery(`SELECT b.assignment_generation`).WithArgs("box", "account", "slot", int64(3), "fence", v1.LogicalBoxState("attaching")).WillReturnRows(sqlmock.NewRows([]string{"assignment_generation"}).AddRow(int64(3)))
+					mock.ExpectRollback()
+				} else {
+					mock.ExpectRollback()
+				}
+			}
+			prov := &pendingRecoveryProvider{mode: "changed", deployment: "fresh-deployment"}
+			_, err := server.recoverWorkerForAssignment(context.Background(), "account", a, prov)
+			if mode == "changed" || mode == "credentialed" {
+				if err != nil || prov.calls != 1 {
+					t.Fatalf("changed deployment was not installed once: calls=%d err=%v", prov.calls, err)
+				}
+			} else if err == nil || prov.calls != 0 {
+				t.Fatalf("unsafe rotation reached install: calls=%d err=%v", prov.calls, err)
 			}
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Fatal(err)

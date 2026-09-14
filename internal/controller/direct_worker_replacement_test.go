@@ -3,12 +3,14 @@ package controller
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/DATA-DOG/go-sqlmock"
 )
@@ -251,6 +253,69 @@ func TestWorkerReplacementPostgres(t *testing.T) {
 	var enabled bool
 	if err = store.DB.QueryRowContext(ctx, `SELECT bootstrap_deployment_id,replacement_deployment_instance_id,transport_enabled FROM direct_workers WHERE id=$1`, worker.ID).Scan(&bootstrap, &target, &enabled); err != nil || bootstrap != "new-deployment" || target.Valid || !enabled {
 		t.Fatalf("replacement final state bootstrap=%q target=%v enabled=%v err=%v", bootstrap, target, enabled, err)
+	}
+	for index, credentialed := range []bool{false, true} {
+		name := "enrollment"
+		if credentialed {
+			name = "credential"
+		}
+		t.Run("pending-initial-"+name, func(t *testing.T) {
+			pendingSlot, pendingBox := uuid(), uuid()
+			service := "pending-" + name + "-service"
+			fence := "pending-" + name + "-fence"
+			if _, err = store.DB.ExecContext(ctx, `INSERT INTO compute_slots(id,account_id,provider,ordinal,state,service_id,assignment_generation,fencing_token) VALUES($1,$2,'railway',$3,'occupied',$4,1,$5)`, pendingSlot, principal.AccountID, index+2, service, fence); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = store.DB.ExecContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,state,volume_id,volume_name,slot_id,assignment_generation,fencing_token) VALUES($1,$2,$3,$4,'railway','attaching',$5,$5,$6,1,$7)`, pendingBox, principal.AccountID, principal.UserID, "pending-"+name+"-box", "pending-"+name+"-volume", pendingSlot, fence); err != nil {
+				t.Fatal(err)
+			}
+			pendingWorker, oldEnrollment, err := store.IssueWorkerEnrollment(ctx, principal.AccountID, pendingSlot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldCredential := ""
+			if credentialed {
+				oldCredential, _ = secretToken()
+				if _, err = store.ExchangeWorkerEnrollment(ctx, oldEnrollment, oldCredential); err != nil {
+					t.Fatal(err)
+				}
+			}
+			pendingAssignment, err := store.assignment(ctx, principal.AccountID, pendingBox)
+			if err != nil {
+				t.Fatal(err)
+			}
+			baseline, _ := json.Marshal(v1.SessionInventory{Assignment: nativeFence(pendingAssignment), State: "live", Sessions: []v1.Session{}})
+			if _, err = store.DB.ExecContext(ctx, `UPDATE direct_workers SET migration_sessions=$1::jsonb,bootstrap_deployment_id='old-pending-deployment' WHERE id=$2`, baseline, pendingWorker.ID); err != nil {
+				t.Fatal(err)
+			}
+			pending := pendingWorkerRecovery{Worker: pendingWorker, Baseline: baseline, BootstrapDeployment: "old-pending-deployment", Enrollment: !credentialed, Credential: credentialed}
+			freshEnrollment, err := store.rotatePendingInitialEnrollment(ctx, principal.AccountID, pendingAssignment, pending, "fresh-pending-deployment")
+			if err != nil || !validWorkerSecret(freshEnrollment) {
+				t.Fatal("rotate pending initial authority", err)
+			}
+			if _, err = store.rotatePendingInitialEnrollment(ctx, principal.AccountID, pendingAssignment, pending, "another-deployment"); !errors.Is(err, errWorkerIdentity) {
+				t.Fatal("stale pending epoch rotated authority", err)
+			}
+			if credentialed {
+				if _, err = store.AuthenticateWorker(ctx, oldCredential); !errors.Is(err, errWorkerIdentity) {
+					t.Fatal("old pending credential retained authority", err)
+				}
+			} else {
+				candidate, _ := secretToken()
+				if _, err = store.ExchangeWorkerEnrollment(ctx, oldEnrollment, candidate); !errors.Is(err, errWorkerIdentity) {
+					t.Fatal("old pending enrollment retained authority", err)
+				}
+			}
+			freshCredential, _ := secretToken()
+			if _, err = store.ExchangeWorkerEnrollment(ctx, freshEnrollment, freshCredential); err != nil {
+				t.Fatal("fresh pending enrollment did not exchange", err)
+			}
+			var deployment string
+			var epoch int64
+			if err = store.DB.QueryRowContext(ctx, `SELECT bootstrap_deployment_id,connection_epoch FROM direct_workers WHERE id=$1`, pendingWorker.ID).Scan(&deployment, &epoch); err != nil || deployment != "fresh-pending-deployment" || epoch != pendingWorker.Epoch+1 {
+				t.Fatalf("pending rotation state deployment=%q epoch=%d err=%v", deployment, epoch, err)
+			}
+		})
 	}
 	if _, err = store.DB.ExecContext(ctx, `UPDATE direct_workers SET bootstrap_deployment_id=NULL WHERE id=$1`, worker.ID); err != nil {
 		t.Fatal(err)

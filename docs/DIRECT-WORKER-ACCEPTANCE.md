@@ -47,6 +47,27 @@ claim or a substitute for the implementation plan.
   rotation, previous credential/epoch rejection and assignment fencing. Isolated
   shell tests preserve journal storage across replacement installations.
 
+## Live rollout on 2026-09-14
+
+PR #73 merged as `48f92eac043a24aef71bd8aeafca513d1cbffed5` and the
+controller deployed successfully. `VMBOX_DIRECT_WORKERS=1` is enabled with one
+controller replica. The initial local management cap of 80 requests/hour was
+exhausted during rollout; the operator raised it to 400, below the learned remote
+allowance of 8,000. No remote cooldown was active at diagnosis.
+
+The existing `testbox` migrated by sidecar installation and verified activation,
+without a worker restart. Live checks returned two existing sessions, a
+`controller-worker` terminal connection, and a 1280×800 PNG captured inside the
+box. The user subsequently deleted `testbox`; it must not be recreated for
+verification. Further lifecycle checks use the disposable box only.
+
+The disposable box `direct-smoke-disposable-cefff417` exposed a separate startup
+problem: its reserved slot used deprecated `europe-west4`. Only that test slot was
+changed to the replacement EU region. The resulting compute replacement exposed
+an initial-enrollment recovery gap: a credentialed but not yet enabled worker
+remained pinned to the old deployment. Recovery and disposable cleanup remain
+pending; this is not a complete new-allocation acceptance claim.
+
 ## Required remaining evidence
 
 - Verify automatic first enrollment, activation and recovery on a disposable
@@ -55,12 +76,12 @@ claim or a substitute for the implementation plan.
   credential/epoch tests do not substitute for a live provider replacement.
 - Controller restart, independent agent restart and compute replacement tested as
   different events, with honest process-loss behavior.
-- New image/controller build, isolated Railway validation and additive rollout.
+- Complete isolated Railway validation and the remaining additive rollout checks.
   Existing worker processes and volumes must not be restarted or reassigned just
   to validate migration. Verify exact surviving session identities before switch.
 - Every intended production worker selected for direct transport; confirm live
-  ordinary usage while Railway management is unavailable. No production migration
-  or release of this direct-worker implementation has been performed yet.
+  ordinary usage while Railway management is unavailable. The live `testbox`
+  migration above is verified; forced management-outage evidence is local only.
 - Configure and validate the optional webhook receiver against the intended
   Railway project. Local PostgreSQL tests verify durable deduplication, claim
   recovery and bounded refresh hints. Shared quota tests cover foreground and

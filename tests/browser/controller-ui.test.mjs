@@ -262,10 +262,13 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles/s);
  await page.select('#profile-choices select[name=claude]','personal');
  await page.type('#create input[name=name]','profile-box');
+ assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
+ const selectedAgent=mobile?'shell':'opencode';await page.select('#create select[name=defaultAgent]',selectedAgent);
  await page.click('#create-tools input[value=blender]');
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'}]);
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['blender']);
+ assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,selectedAgent);
  await page.waitForNetworkIdle();
  assert.equal(await page.$('#profile-upload'),null);
  const beforeDelete=requests.filter(r=>r.method==='DELETE').length;

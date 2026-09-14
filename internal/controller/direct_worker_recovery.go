@@ -59,6 +59,7 @@ type pendingWorkerRecovery struct {
 	BootstrapDeployment string
 	Enrollment          bool
 	Credential          bool
+	Live                bool
 }
 
 type workerRecoveryConflict struct{ err error }
@@ -71,14 +72,15 @@ func recoveryConflict(message string) error {
 }
 
 // recoverWorkerForAssignment probes one pinned bootstrap deployment. Existing
-// configuration is identity-verified and restarted. A token is rotated and the
-// durable installation submitted once only after that target explicitly reports
-// the configuration absent; transport errors preserve the prior identity.
+// configuration is identity-verified and restarted. A same-deployment token is
+// rotated only after an exact absent result. An attaching empty-baseline worker
+// may rotate once onto a proven different deployment because the old compute is
+// gone; transport errors preserve the prior identity.
 func (s *Server) recoverWorkerForAssignment(ctx context.Context, accountID string, a fleetAssignment, prov provider.Provider) (DirectWorker, error) {
 	var pending pendingWorkerRecovery
-	err := s.Store.DB.QueryRowContext(ctx, `SELECT w.id::text,w.account_id::text,w.slot_id::text,c.service_id,w.incarnation,w.connection_epoch,w.transport_enabled,w.migration_sessions,COALESCE(w.bootstrap_deployment_id,''),w.enrollment_hash IS NOT NULL,w.credential_hash IS NOT NULL
+	err := s.Store.DB.QueryRowContext(ctx, `SELECT w.id::text,w.account_id::text,w.slot_id::text,c.service_id,w.incarnation,w.connection_epoch,w.transport_enabled,w.migration_sessions,COALESCE(w.bootstrap_deployment_id,''),w.enrollment_hash IS NOT NULL,w.credential_hash IS NOT NULL,(w.connection_expires_at>now()) IS TRUE
  FROM direct_workers w JOIN compute_slots c ON c.id=w.slot_id AND c.account_id=w.account_id
- WHERE w.account_id=$1 AND w.slot_id=$2 AND w.revoked_at IS NULL AND NOT w.transport_enabled`, accountID, a.Slot.ID).Scan(&pending.Worker.ID, &pending.Worker.AccountID, &pending.Worker.SlotID, &pending.ServiceID, &pending.Worker.Incarnation, &pending.Worker.Epoch, &pending.Worker.Enabled, &pending.Baseline, &pending.BootstrapDeployment, &pending.Enrollment, &pending.Credential)
+ WHERE w.account_id=$1 AND w.slot_id=$2 AND w.revoked_at IS NULL AND NOT w.transport_enabled`, accountID, a.Slot.ID).Scan(&pending.Worker.ID, &pending.Worker.AccountID, &pending.Worker.SlotID, &pending.ServiceID, &pending.Worker.Incarnation, &pending.Worker.Epoch, &pending.Worker.Enabled, &pending.Baseline, &pending.BootstrapDeployment, &pending.Enrollment, &pending.Credential, &pending.Live)
 	if err != nil || pending.BootstrapDeployment == "" || (!pending.Enrollment && !pending.Credential) {
 		return pending.Worker, recoveryConflict("pending configured worker required for recovery")
 	}
@@ -97,9 +99,24 @@ func (s *Server) recoverWorkerForAssignment(ctx context.Context, accountID strin
 		return pending.Worker, errors.New("worker recovery connection executor unavailable")
 	}
 	connection, err := backing.Connection(ctx, pending.ServiceID)
-	deploymentID := connection.Metadata["deploymentInstanceId"]
-	if err != nil || deploymentID != pending.BootstrapDeployment || connection.Transport != "openssh" || connection.Endpoint != deploymentID+"@ssh.railway.com" {
-		return pending.Worker, recoveryConflict("worker recovery bootstrap deployment changed")
+	deploymentID, validTarget := replacementDeploymentTarget(connection)
+	if err != nil || !validTarget {
+		return pending.Worker, recoveryConflict("worker recovery bootstrap deployment unavailable")
+	}
+	if deploymentID != pending.BootstrapDeployment {
+		baseline, baselineErr := migrationInventory(pending.Baseline, nativeFence(a))
+		validAuthority := pending.Enrollment != pending.Credential
+		if a.Box.State != "attaching" || baselineErr != nil || len(baseline.Sessions) != 0 || !validAuthority || pending.Live || s.workerConnectionIsActive(pending.Worker.ID) {
+			return pending.Worker, recoveryConflict("pending worker authority is not safely replaceable on the changed deployment")
+		}
+		if err := workeragent.ValidateReplacementInstallation(s.PublicURL, s.WorkerAgent, runtime.GOARCH); err != nil {
+			return pending.Worker, errors.New("worker replacement configuration unavailable")
+		}
+		token, rotateErr := s.Store.rotatePendingInitialEnrollment(ctx, accountID, a, pending, deploymentID)
+		if rotateErr != nil {
+			return pending.Worker, rotateErr
+		}
+		return pending.Worker, s.installPendingWorkerEnrollment(ctx, accountID, a, pending.Worker, token, executor, connection, "replacement")
 	}
 	identity := workeragent.InstallationIdentity{ControllerURL: s.PublicURL, AccountID: accountID, SlotID: pending.Worker.SlotID, WorkerID: pending.Worker.ID}
 	recovery, err := workeragent.InstallationRecoveryPayload(identity)
@@ -138,24 +155,43 @@ func (s *Server) recoverWorkerForAssignment(ctx context.Context, accountID strin
 	if err != nil {
 		return pending.Worker, err
 	}
+	return pending.Worker, s.installPendingWorkerEnrollment(ctx, accountID, a, pending.Worker, token, executor, connection, "reinstallation")
+}
+
+func (s *Server) workerConnectionIsActive(workerID string) bool {
+	s.mu.Lock()
+	connection := s.directWorkers[workerID]
+	s.mu.Unlock()
+	if connection == nil {
+		return false
+	}
+	select {
+	case <-connection.Peer.Done():
+		return false
+	default:
+		return true
+	}
+}
+
+func (s *Server) installPendingWorkerEnrollment(ctx context.Context, accountID string, a fleetAssignment, worker DirectWorker, token string, executor provider.ConnectionExecutor, connection provider.Connection, operation string) error {
 	binding := workerprotocol.Binding{AccountID: accountID, SlotID: a.Slot.ID, BoxID: a.Box.ID, Assignment: nativeFence(a)}
-	install, err := workeragent.DurableInstallationPayload(workeragent.Config{ControllerURL: s.PublicURL, AccountID: accountID, SlotID: a.Slot.ID, WorkerID: pending.Worker.ID, EnrollmentToken: token}, binding, s.WorkerAgent, runtime.GOARCH)
+	install, err := workeragent.DurableInstallationPayload(workeragent.Config{ControllerURL: s.PublicURL, AccountID: accountID, SlotID: a.Slot.ID, WorkerID: worker.ID, EnrollmentToken: token}, binding, s.WorkerAgent, runtime.GOARCH)
 	if err != nil {
-		return pending.Worker, errors.New("worker reinstallation configuration unavailable")
+		return errors.New("worker " + operation + " configuration unavailable")
 	}
 	installLock, err := s.Store.lockPendingWorkerAssignment(ctx, accountID, a)
 	if err != nil {
-		return pending.Worker, err
+		return err
 	}
 	installed, installErr := executor.ExecConnection(ctx, connection, []string{"sudo", "-n", "sh", "-s"}, provider.ExecOptions{Stdin: bytes.NewReader(install)})
 	_ = installLock.Rollback()
 	if installErr != nil {
-		return pending.Worker, errors.New("worker reinstallation outcome is ambiguous; rotated identity was preserved")
+		return errors.New("worker " + operation + " outcome is ambiguous; rotated identity was preserved")
 	}
 	if installed.ExitCode != 0 || strings.TrimSpace(installed.Stdout) != "worker-agent-installed" {
-		return pending.Worker, errors.New("worker reinstallation was rejected; rotated identity was preserved")
+		return errors.New("worker " + operation + " was rejected; rotated identity was preserved")
 	}
-	return pending.Worker, nil
+	return nil
 }
 
 func (s *Store) lockPendingWorkerAssignment(ctx context.Context, accountID string, a fleetAssignment) (*sql.Tx, error) {
@@ -188,6 +224,34 @@ func (s *Store) resetAbsentWorkerEnrollment(ctx context.Context, accountID strin
 		return "", errWorkerIdentity
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE direct_workers SET enrollment_hash=$1,enrollment_expires_at=now()+interval '15 minutes',connection_epoch=connection_epoch+1,incarnation='',connection_owner='',connection_expires_at=NULL,observation='{}'::jsonb,observed_at=NULL WHERE id=$2 AND account_id=$3 AND slot_id=$4 AND connection_epoch=$5 AND credential_hash IS NULL AND enrollment_hash IS NOT NULL AND revoked_at IS NULL AND NOT transport_enabled AND migration_sessions=$6::jsonb AND bootstrap_deployment_id=$7`, secrets.TokenHash(token), pending.Worker.ID, accountID, a.Slot.ID, pending.Worker.Epoch, pending.Baseline, deploymentID)
+	if err != nil {
+		return "", err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return "", errWorkerIdentity
+	}
+	return token, tx.Commit()
+}
+
+// rotatePendingInitialEnrollment replaces authority that could only have
+// targeted a vanished deployment. Credential exchange/connection and liveness
+// are CAS fences: any racing event makes rotation fail without installation.
+func (s *Store) rotatePendingInitialEnrollment(ctx context.Context, accountID string, a fleetAssignment, pending pendingWorkerRecovery, deploymentID string) (string, error) {
+	token, err := secretToken()
+	if err != nil {
+		return "", err
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	var generation int64
+	err = tx.QueryRowContext(ctx, `SELECT b.assignment_generation FROM logical_boxes b JOIN compute_slots c ON c.id=b.slot_id AND c.account_id=b.account_id WHERE b.id=$1 AND b.account_id=$2 AND b.slot_id=$3 AND b.state='attaching' AND b.assignment_generation=$4 AND b.fencing_token=$5 AND c.assignment_generation=b.assignment_generation AND c.fencing_token=b.fencing_token FOR UPDATE OF b,c`, a.Box.ID, accountID, a.Slot.ID, a.Box.AssignmentGeneration, a.FencingToken).Scan(&generation)
+	if err != nil || generation != a.Box.AssignmentGeneration {
+		return "", errWorkerIdentity
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE direct_workers SET enrollment_hash=$1,enrollment_expires_at=now()+interval '15 minutes',credential_hash=NULL,enrolled_at=NULL,connection_epoch=connection_epoch+1,incarnation='',connection_owner='',connection_expires_at=NULL,observation='{}'::jsonb,observed_at=NULL,bootstrap_deployment_id=$8 WHERE id=$2 AND account_id=$3 AND slot_id=$4 AND connection_epoch=$5 AND (enrollment_hash IS NOT NULL)=$9 AND (credential_hash IS NOT NULL)=$10 AND ((credential_hash IS NULL AND enrollment_hash IS NOT NULL) OR (credential_hash IS NOT NULL AND enrollment_hash IS NULL)) AND (connection_expires_at IS NULL OR connection_expires_at<=now()) AND revoked_at IS NULL AND NOT transport_enabled AND migration_sessions=$6::jsonb AND bootstrap_deployment_id=$7 AND bootstrap_deployment_id<>$8`, secrets.TokenHash(token), pending.Worker.ID, accountID, a.Slot.ID, pending.Worker.Epoch, pending.Baseline, pending.BootstrapDeployment, deploymentID, pending.Enrollment, pending.Credential)
 	if err != nil {
 		return "", err
 	}
