@@ -95,7 +95,11 @@ After that rollout, five consecutive Chromium refreshes displayed fully decoded
 startup recovered to a visible image when the worker became ready. The controller
 restart briefly reported the agent reconnecting; session survival across that
 restart was not explicitly asserted. Deletion of this second disposable and its
-volume was accepted with exact-name confirmation and remains asynchronous.
+volume was accepted with exact-name confirmation. The first two 10-minute
+attempts timed out behind the full local Railway request window; the next retry
+deleted the volume and sanitized the slot after quota capacity opened. Both
+disposable box IDs now return 404, and their two shared compute slots remain
+present, free, and associated with services.
 
 The shared Railway management budget reached its configured 400 requests per
 rolling hour during this work. Aggregate diagnostics showed 400 local requests,
