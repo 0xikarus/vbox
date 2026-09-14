@@ -190,7 +190,7 @@ func TestWorkerReplacementPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	slotID, boxID := uuid(), uuid()
-	if _, err = store.DB.ExecContext(ctx, `INSERT INTO compute_slots(id,account_id,provider,ordinal,state,service_id,assignment_generation,fencing_token) VALUES($1,$2,'railway',1,'occupied','replacement-service',1,'replacement-fence')`, slotID, principal.AccountID); err != nil {
+	if _, err = store.DB.ExecContext(ctx, `INSERT INTO compute_slots(id,account_id,provider,ordinal,state,service_id,deployment_instance_id,assignment_generation,fencing_token) VALUES($1,$2,'railway',1,'occupied','replacement-service','old-deployment',1,'replacement-fence')`, slotID, principal.AccountID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = store.DB.ExecContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,state,volume_id,volume_name,slot_id,assignment_generation,fencing_token) VALUES($1,$2,$3,'replacement-box','railway','running','replacement-volume','replacement-volume',$4,1,'replacement-fence')`, boxID, principal.AccountID, principal.UserID, slotID); err != nil {
@@ -246,8 +246,8 @@ func TestWorkerReplacementPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if targets, listErr := store.offlineRunningWorkers(ctx); listErr != nil || len(targets) != 0 {
-		t.Fatalf("reconnected worker still selected for replacement: %v targets=%v", listErr, targets)
+	if targets, listErr := store.offlineRunningWorkers(ctx); listErr != nil || len(targets) != 1 {
+		t.Fatalf("reconnected worker with pending replacement not selected: %v targets=%v", listErr, targets)
 	}
 	wrong := a
 	wrong.FencingToken = "wrong-fence"
@@ -256,6 +256,26 @@ func TestWorkerReplacementPostgres(t *testing.T) {
 	}
 	if err = store.finishWorkerReplacement(ctx, newWorker, a, "new-deployment"); err != nil {
 		t.Fatal(err)
+	}
+	if targets, listErr := store.offlineRunningWorkers(ctx); listErr != nil || len(targets) != 1 {
+		t.Fatalf("reconnected worker awaiting runtime restoration not selected: %v targets=%v", listErr, targets)
+	}
+	if deployment, recoveryErr := store.runningWorkerRuntimeRecoveryDeployment(ctx, a); recoveryErr != nil || deployment != "new-deployment" {
+		t.Fatalf("wrong durable recovery target: %q err=%v", deployment, recoveryErr)
+	}
+	wrongCompletion := a
+	wrongCompletion.FencingToken = "wrong-fence"
+	if err = store.completeRunningWorkerRuntimeRecovery(ctx, wrongCompletion, "new-deployment"); !errors.Is(err, errWorkerIdentity) {
+		t.Fatal("runtime recovery completed across assignment fence", err)
+	}
+	if err = store.completeRunningWorkerRuntimeRecovery(ctx, a, "new-deployment"); err != nil {
+		t.Fatal(err)
+	}
+	if targets, listErr := store.offlineRunningWorkers(ctx); listErr != nil || len(targets) != 0 {
+		t.Fatalf("restored running worker selected again: %v targets=%v", listErr, targets)
+	}
+	if deployment, recoveryErr := store.runningWorkerRuntimeRecoveryDeployment(ctx, a); recoveryErr != nil || deployment != "" {
+		t.Fatalf("completed runtime recovery still pending: %q err=%v", deployment, recoveryErr)
 	}
 	var bootstrap string
 	var target sql.NullString
