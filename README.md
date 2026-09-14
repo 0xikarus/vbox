@@ -439,6 +439,8 @@ Use ↑/↓ or Tab to move, ←/→ to change options, and Enter to edit text.
 Profile uploads happen only after **Create**. Errors retain your entered values.
 By default creation finishes by connecting, exactly like `vmbox NAME`.
 The form also offers **Leave running** and **Leave hibernated**.
+New boxes created in the web controller or through the API also start automatically;
+API callers can send `"allocateWhenReady": false` to leave one hibernated.
 
 ```bash
 vmbox new research

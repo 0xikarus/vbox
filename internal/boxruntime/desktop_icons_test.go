@@ -32,12 +32,19 @@ func TestDesktopIconsPreserveCustomLaunchers(t *testing.T) {
 		}
 	}
 	run()
+	config := filepath.Join(home, ".config", "libfm", "libfm.conf")
+	configData, err := os.ReadFile(config)
+	if err != nil || string(configData) != "[config]\nquick_exec=1\n" {
+		t.Fatalf("libfm launcher behavior: %q, %v", configData, err)
+	}
 	for _, app := range []string{"chromium", "xterm", "pcmanfm", "blender"} {
 		path := filepath.Join(home, "Custom Desktop", "vmbox-"+app+".desktop")
 		data, err := os.ReadFile(path)
 		command := app
 		if app == "chromium" {
 			command = "vmbox-runtime desktop-browser"
+		} else if app == "xterm" {
+			command = `xterm -fa "DejaVu Sans Mono" -fs 13 -bg "#300a24" -fg "#eeeeec" -cr "#f07746"`
 		}
 		if err != nil || !strings.Contains(string(data), "Exec="+command+"\n") {
 			t.Fatalf("launcher %s: %s, %v", app, data, err)
@@ -47,7 +54,22 @@ func TestDesktopIconsPreserveCustomLaunchers(t *testing.T) {
 	if err := os.WriteFile(custom, []byte("owner customization\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	legacyTerminal := filepath.Join(home, "Custom Desktop", "vmbox-xterm.desktop")
+	if err := os.WriteFile(legacyTerminal, []byte("[Desktop Entry]\nType=Application\nName=Terminal\nExec=xterm\nIcon=utilities-terminal\nTerminal=false\nStartupNotify=true\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, []byte("[config]\nthumbnail_max=4096\nquick_exec=0\n[ui]\nbig_icon_size=64\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	run()
+	terminalData, err := os.ReadFile(legacyTerminal)
+	if err != nil || !strings.Contains(string(terminalData), `Exec=xterm -fa "DejaVu Sans Mono" -fs 13 -bg "#300a24"`) {
+		t.Fatalf("legacy terminal launcher was not upgraded: %q, %v", terminalData, err)
+	}
+	configData, err = os.ReadFile(config)
+	if err != nil || string(configData) != "[config]\nthumbnail_max=4096\nquick_exec=1\n[ui]\nbig_icon_size=64\n" {
+		t.Fatalf("libfm preferences were not preserved: %q, %v", configData, err)
+	}
 	data, _ := os.ReadFile(custom)
 	if string(data) != "owner customization\n" {
 		t.Fatal("overwrote owner launcher")

@@ -238,7 +238,8 @@ func (s *Server) reconcileRunOnce(ctx context.Context) error {
 			}
 			return tx.Commit()
 		}
-		c, e := s.Store.BeginLogicalBoxCreation(ctx, p, v1.CreateLogicalBoxRequest{Name: name, Provider: req.Provider, ProviderCredential: req.ProviderCredential, DiskGiB: 10, DefaultAgent: "shell", LoginProfiles: req.LoginProfiles, AllocateWhenReady: true, AllocationRequestKey: "once-allocate:" + id})
+		allocate := true
+		c, e := s.Store.BeginLogicalBoxCreation(ctx, p, v1.CreateLogicalBoxRequest{Name: name, Provider: req.Provider, ProviderCredential: req.ProviderCredential, DiskGiB: 10, DefaultAgent: "shell", LoginProfiles: req.LoginProfiles, AllocateWhenReady: &allocate, AllocationRequestKey: "once-allocate:" + id})
 		if errors.Is(e, errNoCreationSlot) {
 			return nil
 		}

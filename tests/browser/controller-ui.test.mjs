@@ -246,6 +246,32 @@ test('configuration UI stays tiny and has no terminal code',async()=>{
  assert(Buffer.byteLength(css)<2048);assert(!/@import|url\(/.test(css));
  for(const removed of ['/terminal','/tasks','chat-groups','setInterval'])assert(!js.includes(removed),removed);
 });
+test('new box starts automatically and its row follows startup through the temporary saved state',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.createState='';window.boxReads=0;
+  window.fetch=async(path,options={})=>{
+   if(path==='/v1/logical-boxes'&&options.method==='POST'){
+    const body=JSON.parse(options.body);if(body.allocateWhenReady!==true)throw Error('new box did not request startup');
+    window.createState='attaching';return new Response(JSON.stringify({id:'created-new',state:'attaching'}),{status:202});
+   }
+   if(path==='/v1/logical-boxes'&&(!options.method||options.method==='GET')){
+    window.boxReads++;
+    return new Response(JSON.stringify([{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude'},
+     ...(window.createState?[{id:'created-new',name:'automatic',state:window.createState,defaultAgent:'shell'}]:[])]));
+   }
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#app:not([hidden])');await page.type('#create input[name=name]','automatic');
+ await page.click('#create button');await page.waitForSelector('[data-box-id="created-new"]');
+ await page.evaluate(()=>window.createState='hibernated');
+ await page.waitForFunction(()=>document.querySelector('[data-box-id="created-new"] td:nth-child(2)').textContent.includes('starting'),{timeout:12000});
+ await page.evaluate(()=>window.createState='running');
+ await page.waitForFunction(()=>document.querySelector('[data-box-id="created-new"] td:nth-child(2)').textContent.includes('running'),{timeout:12000});
+ assert.ok(await page.evaluate(()=>window.boxReads>=3));await page.close();
+});
 for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'desktop configuration edits',async()=>{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  // Initialize mobile before navigation; this does not prove a real phone keyboard.
@@ -269,6 +295,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'}]);
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['blender']);
  assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,selectedAgent);
+ assert.equal(requests.findLast(r=>r.method==='POST').body.allocateWhenReady,true);
  await page.waitForNetworkIdle();
  assert.equal(await page.$('#profile-upload'),null);
  const beforeDelete=requests.filter(r=>r.method==='DELETE').length;

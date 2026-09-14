@@ -45,7 +45,7 @@ func TestCreationDialogDefersUploadsAndRetainsThemOnRetry(t *testing.T) {
 					creates++
 					var req v1.CreateLogicalBoxRequest
 					json.NewDecoder(r.Body).Decode(&req)
-					if req.DefaultAgent != "shell" || len(req.LoginProfiles) != 1 || req.LoginProfiles[0].Application != "claude" {
+					if req.DefaultAgent != "shell" || req.AllocateWhenReady == nil || *req.AllocateWhenReady || len(req.LoginProfiles) != 1 || req.LoginProfiles[0].Application != "claude" {
 						t.Error("wrong selected profile or default")
 					}
 					if creates == 1 {

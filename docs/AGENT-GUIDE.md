@@ -72,7 +72,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Default worker builds include desktop packages (`VMBOX_DESKTOP=true`). The web
   workspace starts the desktop on attachment; TMUX and Run once retain their flows.
   PCManFM supplies desktop launch icons alongside the tint2 taskbar. Icon files
-  are created only when absent; owner edits survive reconnects. New interactive
+  are created only when absent; an exact legacy vmbox Terminal icon is refreshed,
+  while owner edits survive reconnects. libfm's quick-execute preference allows
+  desktop launchers to open without an executable-file prompt; it also applies
+  to other executable files opened through PCManFM. New interactive
   shells default `DISPLAY` to `:99`; screenshot/input agent tools remain separate.
 
 - Blender is an optional distribution-package preset, including desktop packages.
