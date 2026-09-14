@@ -2,8 +2,11 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +16,52 @@ import (
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/boxruntime"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
+
+func TestPendingAgentStagesRuntimeBeforeAttachingBind(t *testing.T) {
+	runtime := []byte("current-runtime-fixture")
+	digest := fmt.Sprintf("%x", sha256.Sum256(runtime))
+	var commands [][]string
+	execute := func(_ context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+		commands = append(commands, append([]string(nil), argv...))
+		switch len(commands) {
+		case 1:
+			if argv[0] != "/usr/local/bin/vmbox-runtime" || argv[1] != "put-file" || options.Stdin == nil {
+				t.Fatalf("first command was not pending-agent upload: %v", argv)
+			}
+			uploaded, _ := io.ReadAll(options.Stdin)
+			if string(uploaded) != string(runtime) {
+				t.Fatal("runtime upload bytes changed")
+			}
+			return provider.ExecResult{Stdout: digest + "\n"}, nil
+		case 2:
+			if argv[0] != "sh" || argv[len(argv)-1] != digest {
+				t.Fatalf("second command was not verified runtime install: %v", argv)
+			}
+			return provider.ExecResult{Stdout: "ok\n"}, nil
+		case 3:
+			if argv[0] != "sh" || !strings.Contains(argv[2], emptyNativeSessionMarker) {
+				t.Fatalf("empty-session proof ran out of order: %v", argv)
+			}
+			return provider.ExecResult{Stdout: emptyNativeSessionMarker + "\n"}, nil
+		case 4:
+			if argv[0] != "vmbox-runtime" || argv[1] != "native-bind" {
+				t.Fatalf("bind ran before staged runtime: %v", argv)
+			}
+			return provider.ExecResult{}, nil
+		default:
+			t.Fatalf("unexpected backing/runtime call: %v", argv)
+			return provider.ExecResult{}, errors.New("unexpected call")
+		}
+	}
+	if err := prepareAttachingWorkerRuntime(context.Background(), runtime, strings.Repeat("a", 64), execute); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 4 {
+		t.Fatalf("commands=%v", commands)
+	}
+}
 
 func TestEmptyNativeSessionProbeHandlesAbsentSocketAndRejectsPermissionError(t *testing.T) {
 	if _, err := exec.LookPath("tmux"); err != nil {

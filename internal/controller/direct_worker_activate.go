@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -117,8 +118,11 @@ func (s *Server) activateWorkerForSlot(ctx context.Context, accountID, slotID st
 		if len(before.Sessions) != 0 {
 			return worker, errors.New("attaching worker requires an empty session baseline")
 		}
-		if err := prepareAttachingWorker(ctx, binding.Assignment, func(ctx context.Context, argv []string) ([]byte, error) {
-			return executeWorkerVerification(ctx, connection, binding, argv)
+		if len(s.WorkerRuntime) == 0 {
+			return worker, errors.New("matching workspace runtime is unavailable")
+		}
+		if err := prepareAttachingWorkerRuntime(ctx, s.WorkerRuntime, binding.Assignment, func(ctx context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+			return executePendingWorker(ctx, connection, binding, argv, options)
 		}); err != nil {
 			return worker, errors.New("worker assignment binding failed")
 		}
@@ -138,6 +142,19 @@ func (s *Server) activateWorkerForSlot(ctx context.Context, accountID, slotID st
 	return worker, nil
 }
 
+func prepareAttachingWorkerRuntime(ctx context.Context, runtime []byte, assignment string, execute func(context.Context, []string, provider.ExecOptions) (provider.ExecResult, error)) error {
+	if err := stageWorkspaceRuntimeWithExec(ctx, runtime, execute); err != nil {
+		return err
+	}
+	return prepareAttachingWorker(ctx, assignment, func(ctx context.Context, argv []string) ([]byte, error) {
+		result, err := execute(ctx, argv, provider.ExecOptions{})
+		if err != nil || result.ExitCode != 0 {
+			return nil, errors.New("worker preparation command failed")
+		}
+		return []byte(result.Stdout), nil
+	})
+}
+
 func prepareAttachingWorker(ctx context.Context, assignment string, run func(context.Context, []string) ([]byte, error)) error {
 	output, err := run(ctx, []string{"sh", "-c", verifyEmptyNativeSessions})
 	if err != nil || strings.TrimSpace(string(output)) != emptyNativeSessionMarker {
@@ -148,11 +165,22 @@ func prepareAttachingWorker(ctx context.Context, assignment string, run func(con
 }
 
 func executeWorkerVerification(ctx context.Context, connection *directWorkerConnection, binding workerprotocol.Binding, argv []string) ([]byte, error) {
+	result, err := executePendingWorker(ctx, connection, binding, argv, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 {
+		return nil, errors.New("worker verification command failed")
+	}
+	return []byte(result.Stdout), nil
+}
+
+func executePendingWorker(ctx context.Context, connection *directWorkerConnection, binding workerprotocol.Binding, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+	result := provider.ExecResult{StartedAt: time.Now().UTC()}
 	stream, err := connection.Peer.Open(ctx, workerprotocol.Request{Binding: binding, OperationID: uuid(), Argv: provider.AsWorkloadUser(argv)})
 	if err != nil {
-		return nil, err
+		return result, err
 	}
 	defer stream.Close()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	go func() {
 		select {
 		case <-ctx.Done():
@@ -160,15 +188,34 @@ func executeWorkerVerification(ctx context.Context, connection *directWorkerConn
 		case <-stream.Done():
 		}
 	}()
-	if err = stream.CloseWrite(); err != nil {
-		return nil, err
+	writeDone := make(chan error, 1)
+	if options.Stdin == nil {
+		writeDone <- stream.CloseWrite()
+	} else {
+		go func() {
+			_, copyErr := io.Copy(stream, options.Stdin)
+			closeErr := stream.CloseWrite()
+			if copyErr != nil {
+				writeDone <- copyErr
+			} else {
+				writeDone <- closeErr
+			}
+		}()
 	}
-	var output workerCapture
-	code, err := workerprotocol.ReadOutput(stream, &output, nil)
-	if err != nil || code != 0 {
-		return nil, errors.New("worker verification command failed")
+	var stdout, stderr workerCapture
+	result.ExitCode, err = workerprotocol.ReadOutput(stream, &stdout, &stderr)
+	if err != nil {
+		cancel()
 	}
-	return output.Bytes(), nil
+	// An exit frame ends the operation. Close before joining the upload writer
+	// so a peer that replied without consuming stdin cannot strand activation.
+	_ = stream.Close()
+	result.FinishedAt = time.Now().UTC()
+	result.Stdout, result.Stderr = stdout.String(), stderr.String()
+	if writeErr := <-writeDone; writeErr != nil && err == nil {
+		err = writeErr
+	}
+	return result, err
 }
 
 func (s *Store) ActivateVerifiedWorker(ctx context.Context, worker DirectWorker, a fleetAssignment, baseline []byte) error {

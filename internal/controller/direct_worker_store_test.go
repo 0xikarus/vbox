@@ -12,6 +12,8 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/transport"
 	"github.com/0xikarus/vmbox-service/internal/workeragent"
 	"github.com/0xikarus/vmbox-service/internal/workerprotocol"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,20 +31,27 @@ func TestDirectWorkerEnrollmentAndConnectionPostgres(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	s, err := Open(ctx, dsn)
+	admin, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
-	s.DB.SetMaxOpenConns(1)
+	defer admin.Close()
 	name := "direct_worker_test_" + strings.ReplaceAll(uuid(), "-", "")
-	if _, err = s.DB.ExecContext(ctx, "CREATE SCHEMA "+name); err != nil {
+	if _, err = admin.DB.ExecContext(ctx, "CREATE SCHEMA "+name); err != nil {
 		t.Fatal(err)
 	}
-	defer s.DB.ExecContext(context.Background(), "DROP SCHEMA "+name+" CASCADE")
-	if _, err = s.DB.ExecContext(ctx, "SET search_path TO "+name); err != nil {
+	defer admin.DB.ExecContext(context.Background(), "DROP SCHEMA "+name+" CASCADE")
+	dbConfig, err := pgx.ParseConfig(dsn)
+	if err != nil {
 		t.Fatal(err)
 	}
+	dbConfig.RuntimeParams["search_path"] = name
+	s := &Store{DB: stdlib.OpenDB(*dbConfig)}
+	defer s.Close()
+	if err = s.DB.PingContext(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s.DB.SetMaxOpenConns(4)
 	if err = s.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -546,6 +555,7 @@ printf 'vmbox-bootstrap-ready:%s\n' "$fingerprint"
 	installer := &workerInstallFixture{}
 	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return installer, nil }
 	server.WorkerAgent = []byte("disposable-binary-fixture")
+	server.WorkerRuntime = []byte("disposable-runtime-fixture")
 	server.PublicURL = tls.URL
 	installRequest := func() (int, []byte) {
 		request, err := http.NewRequestWithContext(ctx, http.MethodPost, tls.URL+"/v1/worker-slots/"+installSlot+"/enrollment", nil)
@@ -650,7 +660,7 @@ printf 'vmbox-bootstrap-ready:%s\n' "$fingerprint"
 	if err = os.WriteFile(autoBindingPath, installedBinding, 0600); err != nil {
 		t.Fatal(err)
 	}
-	autoSudoFixture := "#!/bin/sh\ncase \"$*\" in\n  *worker-agent-native-sessions-empty*) printf '" + emptyNativeSessionMarker + "\\n'; exit 0 ;;\nesac\ncat <<'INVENTORY'\n" + string(preservedBaseline) + "\nINVENTORY\n"
+	autoSudoFixture := "#!/bin/sh\ncase \"$*\" in\n  *'/usr/local/bin/vmbox-runtime put-file'*) sha256sum | cut -d ' ' -f 1; exit 0 ;;\n  *vmbox-install-runtime*) printf 'ok\\n'; exit 0 ;;\n  *worker-agent-native-sessions-empty*) printf '" + emptyNativeSessionMarker + "\\n'; exit 0 ;;\nesac\ncat <<'INVENTORY'\n" + string(preservedBaseline) + "\nINVENTORY\n"
 	if err = os.WriteFile(sudo, []byte(autoSudoFixture), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -685,8 +695,12 @@ printf 'vmbox-bootstrap-ready:%s\n' "$fingerprint"
 	if err != nil {
 		t.Fatal(err)
 	}
+	bootstrapCalls := installer.calls
 	if err = server.ensureAutomaticWorkerTransport(ctx, p.AccountID, installAssignment, wrappedInstall, installConnection); err != nil {
 		t.Fatal("automatic first-time activation failed", err)
+	}
+	if installer.calls != bootstrapCalls {
+		t.Fatalf("attaching activation used backing Railway after installation: calls=%d before=%d", installer.calls, bootstrapCalls)
 	}
 	var automaticallyEnabled bool
 	var bootstrapDeployment string

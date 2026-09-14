@@ -18,9 +18,15 @@ const workspaceRuntimePath = "/data/home/bin/vmbox-runtime"
 
 // stageWorkspaceRuntime keeps a retained volume on the same runtime revision
 // as its controller. The audited base image remains immutable; the current,
-// credential-free binary is streamed over SSH with mode 0600, verified, then
+// credential-free binary is streamed with mode 0600 over the selected transport, then verified and
 // atomically installed by the unprivileged workload owner with mode 0700.
 func stageWorkspaceRuntime(ctx context.Context, prov provider.Provider, serviceID string, runtime []byte) error {
+	return stageWorkspaceRuntimeWithExec(ctx, runtime, func(ctx context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+		return prov.Exec(ctx, serviceID, argv, options)
+	})
+}
+
+func stageWorkspaceRuntimeWithExec(ctx context.Context, runtime []byte, execute func(context.Context, []string, provider.ExecOptions) (provider.ExecResult, error)) error {
 	if len(runtime) == 0 {
 		return nil
 	}
@@ -29,7 +35,7 @@ func stageWorkspaceRuntime(ctx context.Context, prov provider.Provider, serviceI
 	ctx, cancel := context.WithTimeout(ctx, 90*time.Second)
 	defer cancel()
 	digest := fmt.Sprintf("%x", sha256.Sum256(runtime))
-	uploaded, err := prov.Exec(ctx, serviceID, []string{"/usr/local/bin/vmbox-runtime", "put-file", stagedRuntimePath, "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(runtime)})
+	uploaded, err := execute(ctx, []string{"/usr/local/bin/vmbox-runtime", "put-file", stagedRuntimePath, "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(runtime)})
 	if err != nil {
 		return fmt.Errorf("stream matching workspace runtime: %w", err)
 	}
@@ -44,7 +50,7 @@ test "$(sha256sum "$staged" | cut -d " " -f 1)" = "$expected"
 chmod 0700 "$staged"
 mv -f -- "$staged" "$installed"
 exec "$installed" health`
-	installed, err := prov.Exec(ctx, serviceID, []string{"sh", "-c", install, "vmbox-install-runtime", stagedRuntimePath, workspaceRuntimePath, digest}, provider.ExecOptions{})
+	installed, err := execute(ctx, []string{"sh", "-c", install, "vmbox-install-runtime", stagedRuntimePath, workspaceRuntimePath, digest}, provider.ExecOptions{})
 	if err != nil {
 		return fmt.Errorf("install matching workspace runtime: %w", err)
 	}
