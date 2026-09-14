@@ -431,7 +431,7 @@ func TestControllerCreateUsesLogicalBoxesWithoutSubmittingRun(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 				t.Fatal(err)
 			}
-			if request.Name != "worker" || request.AllocateWhenReady || request.DefaultAgent != "shell" {
+			if request.Name != "worker" || request.AllocateWhenReady == nil || *request.AllocateWhenReady || request.DefaultAgent != "shell" {
 				t.Fatalf("logical box request=%+v", request)
 			}
 			w.WriteHeader(http.StatusAccepted)

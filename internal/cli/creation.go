@@ -172,6 +172,10 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			return fmt.Errorf("box already created; restore the submitted settings to continue, or cancel and open %s", box.Name)
 		}
 		if box.ID == "" {
+			// CLI creation already performs its own wait and explicit allocation.
+			// Keep that flow single-shot, including explicit --hibernate.
+			allocate := false
+			request.AllocateWhenReady = &allocate
 			if dialog && !noProfiles {
 				request.LoginProfiles = nil
 				for _, p := range profiles {

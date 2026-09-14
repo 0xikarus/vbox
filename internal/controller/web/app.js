@@ -3,6 +3,7 @@ const $=s=>document.querySelector(s);
 let token='',defaults=null,epoch=0;
 let boxRefreshTimer;
 const deletingBoxes=new Set();
+const startingBoxes=new Set();
 async function api(path,method='GET',body,headers={}){
  const r=await fetch(path,{method,credentials:'same-origin',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
@@ -56,13 +57,14 @@ function renderNotifications(values){const root=$('#destinations');root.replaceC
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
 function renderBoxes(boxes){
  clearTimeout(boxRefreshTimer);
+ for(const id of startingBoxes){const box=boxes.find(b=>b.id===id);if(!box||box.state==='running'||box.state==='failed'||box.state==='deleting'||box.state==='hibernated'&&box.failureReason)startingBoxes.delete(id)}
  const table=document.createElement('table'),head=document.createElement('tr');['Name','State','Default agent','CLI','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
  for(const b of boxes){
   const row=document.createElement('tr'),cell=document.createElement('td'),select=document.createElement('select'),status=node('td',b.state),actions=document.createElement('td');row.dataset.boxId=b.id;
   for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;select.disabled=b.state==='deleting'||deletingBoxes.has(b.id);
   select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);
   const name=node('td',''),link=node(b.state==='deleting'?'span':'a',b.name);link.className='table-text';link.title=b.name;if(b.state!=='deleting')link.href='/boxes/'+encodeURIComponent(b.id);name.append(link);
-  status.replaceChildren(tableText(b.state));if(b.restorationState)status.append(tableText(b.restorationState));if(b.failureReason){const details=node('details'),summary=node('summary','Error details');details.append(summary,node('pre',b.failureReason));status.append(details)}
+  status.replaceChildren(tableText(startingBoxes.has(b.id)&&b.state==='hibernated'?'starting':b.state));if(b.restorationState)status.append(tableText(b.restorationState));if(b.failureReason){const details=node('details'),summary=node('summary','Error details');details.append(summary,node('pre',b.failureReason));status.append(details)}
   const remove=button(b.state==='deleting'?'Deleting…':'Delete',async()=>{
    if(deletingBoxes.has(b.id)||!confirm('Delete box "'+b.name+'" and its workspace volume? Running processes will stop and all files in the volume will be permanently deleted. This cannot be undone. Shared fleet services and other boxes are kept.'))return;
    const version=epoch;deletingBoxes.add(b.id);remove.disabled=true;remove.textContent='Requesting deletion…';
@@ -72,7 +74,7 @@ function renderBoxes(boxes){
   });remove.setAttribute('aria-label','Delete box '+b.name);remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.append(remove);
   const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,cell,cli,actions);table.append(row);
  }$('#box-list').replaceChildren(table);
- if(boxes.some(b=>b.state==='deleting')){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check deletion progress. Use Refresh to retry. '+err.message}},5000)}
+ if(startingBoxes.size||boxes.some(b=>['attaching','reserved','hibernating','deleting'].includes(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
 }
 function renderProfiles(identity,profiles){
  const tree=document.createElement('details');tree.open=true;tree.append(node('summary',identity.accountName+' ('+identity.accountId+')'));
@@ -101,9 +103,9 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value;await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});await refresh()}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value;const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{if(!defaults)throw Error('Configure controller default first');await api('/v1/fleet/slots','PUT',{provider:defaults.provider,providerCredential:defaults.providerCredential,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));

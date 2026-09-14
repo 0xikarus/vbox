@@ -93,7 +93,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.AllocateWhenReady, "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript})
 	if err != nil {
 		return creation, err
 	}
@@ -222,10 +222,42 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 		if err := json.Unmarshal(raw, &stored); err != nil {
 			return nil, err
 		}
-		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: value.allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
+		allocate := value.allocate
+		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
 		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
 		result[len(result)-1].Request.Tools = stored.Tools
 		result[len(result)-1].Request.SetupScript = stored.SetupScript
 	}
 	return result, nil
+}
+
+type pendingAutoStart struct {
+	accountID, userID, boxID, allocationKey string
+}
+
+// Creation commits the retained volume before reserving compute. If the
+// controller exits between those steps, this saved intent starts only boxes
+// that have never had an allocation request. Previously hibernated boxes are
+// not resumed by a controller restart.
+func (s *Store) PendingAutoStarts(ctx context.Context) ([]pendingAutoStart, error) {
+	rows, err := s.DB.QueryContext(ctx, `SELECT b.account_id::text,b.owner_user_id::text,b.id::text,
+ COALESCE(b.metadata->>'allocationIdempotencyKey','')
+ FROM logical_boxes b WHERE b.state='hibernated' AND b.slot_id IS NULL
+ AND b.restoration_state='saved' AND b.volume_id NOT LIKE 'pending:%'
+ AND b.metadata->>'allocateWhenReady'='true'
+ AND NOT EXISTS (SELECT 1 FROM allocation_requests r WHERE r.account_id=b.account_id AND r.logical_box_id=b.id)
+ ORDER BY b.created_at,b.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var pending []pendingAutoStart
+	for rows.Next() {
+		var item pendingAutoStart
+		if err := rows.Scan(&item.accountID, &item.userID, &item.boxID, &item.allocationKey); err != nil {
+			return nil, err
+		}
+		pending = append(pending, item)
+	}
+	return pending, rows.Err()
 }

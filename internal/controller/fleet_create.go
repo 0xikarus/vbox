@@ -246,7 +246,7 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 		return fail(err)
 	}
 	s.Logger.Info("logical box volume created and detached", "box", creation.Request.Name, "volume", storage.ID, "elapsed", time.Since(started))
-	if creation.Request.AllocateWhenReady {
+	if creation.Request.ShouldAllocateWhenReady() {
 		key := creation.Request.AllocationRequestKey
 		if key == "" {
 			key = "create-and-allocate:" + creation.Assignment.Box.ID
@@ -274,6 +274,21 @@ func (s *Server) ReconcileLogicalBoxCreationsNow(ctx context.Context) error {
 	for _, creation := range creations {
 		if err := s.finishLogicalBoxCreation(ctx, creation); err != nil {
 			failures = append(failures, fmt.Errorf("logical box %s: %w", creation.Request.Name, err))
+		}
+	}
+	pending, err := s.Store.PendingAutoStarts(ctx)
+	if err != nil {
+		failures = append(failures, err)
+	} else {
+		for _, item := range pending {
+			key := item.allocationKey
+			if key == "" {
+				key = "create-and-allocate:" + item.boxID
+			}
+			principal := Principal{AccountID: item.accountID, UserID: item.userID, Role: "user", Subject: "logical-box-creator"}
+			if _, err := s.Store.ReserveAllocation(ctx, principal, item.boxID, key, "user:"+item.userID, 2*time.Minute); err != nil {
+				failures = append(failures, fmt.Errorf("auto-start box %s: %w", item.boxID, err))
+			}
 		}
 	}
 	return errorsJoin(failures)
