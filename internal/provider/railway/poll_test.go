@@ -28,3 +28,18 @@ func TestDeploymentPollingPreservesLongConfiguredInterval(t *testing.T) {
 		}
 	}
 }
+
+func TestVolumePollingBacksOffAndPreservesLongConfiguredInterval(t *testing.T) {
+	poll := volumePoll{base: 2 * time.Second}
+	for _, want := range []time.Duration{2, 4, 8, 16, 20, 20} {
+		if got := poll.next(); got != want*time.Second {
+			t.Fatalf("delay %s, want %s", got, want*time.Second)
+		}
+	}
+	poll = volumePoll{base: 30 * time.Second}
+	for range 3 {
+		if got := poll.next(); got != 30*time.Second {
+			t.Fatalf("configured interval shortened to %s", got)
+		}
+	}
+}

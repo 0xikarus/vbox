@@ -38,7 +38,7 @@ func TestDirectWorkerDesktopRuntimePostgres(t *testing.T) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		t.Skip("requires Docker")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
 	defer cancel()
 	if err := exec.CommandContext(ctx, "docker", "image", "inspect", image).Run(); err != nil {
 		t.Skip("desktop image is not available locally")
@@ -184,6 +184,9 @@ exec docker exec --interactive --user 10001:10001 --env HOME=/data/home %q "$@"
 		t.Fatalf("invalid desktop PNG bounds=%v", frame.Bounds())
 	}
 	assertDirectWorkerScreenshotHTTP(t, ctx, tls, ownerToken, binding.BoxID)
+	for range 5 {
+		assertDirectWorkerThumbnailHTTP(t, ctx, tls, ownerToken, binding.BoxID)
+	}
 	otherToken := uuid()
 	if _, err := store.Bootstrap(ctx, "direct-desktop-other-account", "owner", otherToken); err != nil {
 		t.Fatal(err)
@@ -346,6 +349,28 @@ func assertDirectWorkerScreenshotHTTP(t *testing.T, ctx context.Context, tls *ht
 	}
 	if frame.Bounds().Dx() != 1280 || frame.Bounds().Dy() != 800 {
 		t.Fatalf("owner screenshot bounds=%v", frame.Bounds())
+	}
+}
+
+func assertDirectWorkerThumbnailHTTP(t *testing.T, ctx context.Context, tls *httptest.Server, token, boxID string) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, tls.URL+"/v1/logical-boxes/"+boxID+"/desktop/screenshot?thumbnail=true", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := tls.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(response.Body, desktopCaptureLimit+1))
+	if err != nil || response.StatusCode != http.StatusOK || response.Header.Get("Content-Type") != "image/png" || response.Header.Get("X-Captured-At") == "" {
+		t.Fatalf("owner thumbnail status=%d type=%q captured=%q bytes=%d err=%v", response.StatusCode, response.Header.Get("Content-Type"), response.Header.Get("X-Captured-At"), len(data), err)
+	}
+	frame, err := png.Decode(bytes.NewReader(data))
+	if err != nil || frame.Bounds().Dx() != 320 || frame.Bounds().Dy() != 200 {
+		t.Fatalf("owner thumbnail dimensions or PNG invalid: %v", err)
 	}
 }
 

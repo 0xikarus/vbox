@@ -29,6 +29,10 @@ claim or a substitute for the implementation plan.
   object behind a stable TLS listener. Sessions survive these events; the
   controller fixture explicitly expires its isolated lease rather than waiting
   for a real process crash and lease timeout.
+- The same isolated controller → TLS agent → desktop fixture passes five owner
+  thumbnail HTTP captures with PNG dimensions 320×200 and capture timestamps.
+  Chromium workspace tests cover immediate preview refresh after desktop start,
+  including a failed capture still in flight, and direct-worker connection text.
 - A caller-supplied HTTP transport inherits the configured persistent request
   budget instead of silently using a process-local gate.
 - Disposable PostgreSQL verifies shared quota usage/cooldowns and preservation of
@@ -65,13 +69,33 @@ The disposable box `direct-smoke-disposable-cefff417` exposed a separate startup
 problem: its reserved slot used deprecated `europe-west4`. Only that test slot was
 changed to the replacement EU region. The resulting compute replacement exposed
 an initial-enrollment recovery gap: a credentialed but not yet enabled worker
-remained pinned to the old deployment. Recovery and disposable cleanup remain
-pending; this is not a complete new-allocation acceptance claim.
+remained pinned to the old deployment. PR #75 fixed runtime staging before
+assignment binding; after its deployment this box reached `running`. A live
+session listing, creation of the `vmbox` shell session, and native connection
+lookup returned `controller-worker`. Two unique terminal-input requests returned
+409 ambiguous, but later terminal snapshots contained both command output
+markers and prompts. They were not replayed. The shell-input acknowledgement
+fix has a regression test; production confirmation remains pending.
+
+Desktop packages were enabled successfully on this disposable, but the user
+started deleting it before desktop launch or a live screenshot. Its asynchronous
+delete was still in `delete-detaching-volume` at the last check; the controller
+recorded a Railway detach timeout. A second isolated box,
+`thumbnail-ui-disposable-29c8b5e9`, was created without login profiles for the
+live browser thumbnail test. It was still attaching at the last check. Neither
+box is yet a completed desktop or cleanup acceptance result.
+
+The shared Railway management budget reached its configured 400 requests per
+rolling hour during this work. Aggregate diagnostics showed 400 local requests,
+92 background, a learned remote allowance of 8,000, and no remote cooldown.
+Volume-operation polling now backs off to 20 seconds in the release candidate;
+the production effect is unverified. An attempted controller cap increase was
+rejected by automatic approval review, so the production cap remains 400.
 
 ## Required remaining evidence
 
-- Verify automatic first enrollment, activation and recovery on a disposable
-  Railway allocation, beyond the local database/transport tests.
+- Verify automatic first enrollment and recovery on a disposable Railway
+  allocation, beyond the observed first running box and local tests.
 - Verify actual Railway compute replacement and retained journal storage. Local
   credential/epoch tests do not substitute for a live provider replacement.
 - Controller restart, independent agent restart and compute replacement tested as

@@ -7,14 +7,22 @@ import puppeteer from 'puppeteer-core';
 const html=await readFile('internal/controller/web/workspace.html','utf8');
 const script=await readFile('internal/controller/web/workspace.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
- let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',run=null,state='running';
+ let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',run=null,state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
  let requests=[];
+ const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url,method=req.method;
   if(path==='/boxes/test')return res.end(html.replace(/<script[\s\S]*$/,`<script>window.attaches=0;window.terminals=0;window.openWorkspaceTerminal=()=>{window.terminals++;return()=>{}};window.openWorkspaceDesktop=(box,status,options)=>{window.attaches++;window.desktopMetrics=options.onMetrics;return()=>{}};</script><script src="/workspace.js"></script>`));
   if(path==='/workspace.js'){res.setHeader('Content-Type','text/javascript');return res.end(script)}
   if(!path.startsWith('/v1/'))return res.end();
   requests.push(method+' '+path);
+  if(path==='/v1/logical-boxes/test/desktop/screenshot?thumbnail=true'){
+   thumbnailRequests++;
+   const available=thumbnailAvailable;
+   if(holdThumbnail){await new Promise(r=>{releaseThumbnail=r});holdThumbnail=false}
+   if(!available){res.statusCode=409;return res.end(JSON.stringify({error:'desktop offline'}))}
+   res.setHeader('Content-Type','image/png');res.setHeader('X-Captured-At',new Date().toISOString());return res.end(thumbnail);
+  }
   if(hold===method+' '+path)await new Promise(r=>{release=r});
   res.setHeader('Content-Type','application/json');
   if(fail===method+' '+path){res.statusCode=409;return res.end(JSON.stringify({error:'Fixture failure'}))}
@@ -27,7 +35,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
   else if(path==='/v1/logical-boxes/test')data={id:'test',name:'Test',state,tools};
   else if(path.endsWith('/resources'))data={slotId:'slot-test',assignmentGeneration:7,resources:{cpu:2,memoryMiB:12288},message:'Limits submitted. No restart requested.'};
-  else if(path.endsWith('/connection'))data={connection:{transport:'openssh',endpoint:'instance@ssh.railway.com',metadata:{vmboxRegion:'europe-west4'}}};
+  else if(path.endsWith('/connection'))data={connection:{transport:connectionTransport,endpoint:connectionTransport==='openssh'?'instance@ssh.railway.com':'service-id',metadata:{vmboxRegion:'europe-west4'}}};
   else if(path.endsWith('/allocate'))data={state:'failed',failureReason:'Fixture stopped box'};
   res.end(JSON.stringify(data));
  });
@@ -49,6 +57,15 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    assert.match(await p.$eval('#forward-command',e=>e.textContent),/-L 127.0.0.1:3000:127.0.0.1:3000 instance@ssh.railway.com/);
    await p.$eval('#forward-port',e=>{e.value='65536';e.dispatchEvent(new Event('input'))});assert.equal(await p.$eval('#forward-command',e=>e.textContent),'');
    assert.equal(await p.evaluate(()=>window.attaches),1);assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();
+  });
+  await t.test('direct worker connection does not show an unusable SSH command',async()=>{
+   connectionTransport='controller-worker';
+   const p=await page();await p.waitForFunction(()=>!document.querySelector('#connect').disabled);
+   await p.click('#box-settings summary');await p.click('#load-connection');await p.waitForFunction(()=>!document.querySelector('#connection-details').hidden);
+   assert.equal(await p.$eval('#ssh-forwarding',e=>e.hidden),true);
+   assert.match(await p.$eval('#connection-address',e=>e.textContent),/controller-worker through the controller/);
+   assert.match(await p.$eval('#connection-status',e=>e.textContent),/does not provide SSH port forwarding/);
+   await p.close();connectionTransport='openssh';
   });
   await t.test('enabled Blender opens Desktop with its managed terminal already attached',async()=>{
    tools=['BlEnDeR'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
@@ -79,6 +96,33 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});
    await p.click('#desktop-tab');p.on('dialog',d=>d.accept());await p.click('#enable-desktop');await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('packages ready'));
    await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});await p.close();enabled=true;
+  });
+  await t.test('open preview refreshes immediately after starting desktop',async()=>{
+   tools=['foundry'];enabled=false;thumbnailAvailable=false;thumbnailRequests=0;
+   const p=await page();await terminalReady(p);await p.click('#desktop-preview summary');
+   await p.waitForFunction(()=>document.querySelector('#thumbnail-status').textContent.includes('Preview unavailable'));
+   assert.equal(thumbnailRequests,1);
+   thumbnailAvailable=true;
+   await p.click('#desktop-tab');p.on('dialog',d=>d.accept());await p.click('#enable-desktop');
+   await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('packages ready'));
+   await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);
+   await p.waitForFunction(()=>!document.querySelector('#desktop-thumbnail').hidden&&document.querySelector('#desktop-thumbnail').naturalWidth===1,{timeout:3000});
+   assert.ok(thumbnailRequests>=2);
+   assert.match(await p.$eval('#thumbnail-status',e=>e.textContent),/^Captured /);
+   await p.close();enabled=true;
+  });
+  await t.test('desktop startup queues a fresh preview behind an in-flight capture',async()=>{
+   tools=['foundry'];enabled=false;thumbnailAvailable=false;thumbnailRequests=0;holdThumbnail=true;releaseThumbnail=undefined;
+   const p=await page();await terminalReady(p);await p.click('#desktop-preview summary');
+   while(!releaseThumbnail)await new Promise(r=>setTimeout(r,10));
+   thumbnailAvailable=true;
+   await p.click('#desktop-tab');p.on('dialog',d=>d.accept());await p.click('#enable-desktop');
+   await p.waitForFunction(()=>document.querySelector('#desktop-status').textContent.includes('packages ready'));
+   await p.click('#start-desktop');await p.waitForFunction(()=>window.attaches===1);
+   releaseThumbnail();
+   await p.waitForFunction(()=>!document.querySelector('#desktop-thumbnail').hidden&&document.querySelector('#desktop-thumbnail').naturalWidth===1,{timeout:3000});
+   assert.equal(thumbnailRequests,2);
+   await p.close();enabled=true;
   });
   await t.test('legacy Blender worker attaches through idempotent start',async()=>{
    tools=['blender'];enabled=true;fail='GET '+desktop;const p=await page();await p.waitForFunction(()=>window.attaches===1);

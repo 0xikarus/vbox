@@ -1,6 +1,6 @@
 # vmbox: guide for future agents
 
-Current architecture and behavior, checked against the source on 2026-09-10.
+Current architecture and behavior, checked against the source on 2026-09-14.
 Start with the [setup guide](../README.md). The [desktop MVP guide](AGENT-DESKTOP-IMPLEMENTATION.md) records the newer desktop/secret/idle implementation and verification. This document explains where to work
 and the distinctions that must survive future changes.
 
@@ -28,7 +28,7 @@ delete a shared fleet service when asked to delete a logical box.
 
 | Area | Entry points |
 | --- | --- |
-| Executables | `cmd/vmbox`, `cmd/vmbox-controller`, `cmd/vmbox-runtime` |
+| Executables | `cmd/vmbox`, `cmd/vmbox-controller`, `cmd/vmbox-runtime`, `cmd/vmbox-worker-agent` |
 | CLI forms and tasks | `internal/cli/creation.go`, `controller_task.go`, `logical_boxes.go` |
 | Routes and background reconciliation | `internal/controller/server.go` |
 | Fleet creation, allocation, hibernation, deletion | `internal/controller/fleet_*.go` |
@@ -42,18 +42,16 @@ delete a shared fleet service when asked to delete a logical box.
 | Single-box UI | `internal/controller/web/workspace*` |
 | Grid | `internal/controller/grid.go`, `web/grid.html`, `web/grid.js`, `web/grid.css` |
 
-The selected Railway-only plan is [Direct connections to Railway workers](RAILWAY-DIRECT-WORKERS.md):
-keep worker hosting on Railway and use authenticated worker agents for running-box
-connections. It requires no measurement phase and preserves existing worker
-processes during migration. [Railway independence](RAILWAY-INDEPENDENCE.md) is a
-separate external-host proposal, not a dependency of the selected plan.
-
-Provider APIs manage infrastructure. The current production terminal carries real
-terminal bytes over WebSocket → controller → Railway SSH stream → fenced native
-tmux attachment. The controller resolves the current deployment; don't reuse stale
-instance IDs. Session identity includes the assignment and tmux server incarnation,
-not just a reusable session name. Preserve those checks while making the transport
-provider-neutral.
+The [direct-worker rollout](RAILWAY-DIRECT-WORKERS.md) keeps worker hosting on
+Railway. Each enrolled box has an authenticated worker agent; the controller sends
+terminal, desktop, file and runtime traffic through that agent. Railway APIs and
+SSH remain infrastructure/bootstrap paths, including initial installation and
+compute replacement. An enrolled worker that is offline does not fall back to
+Railway SSH for ordinary box traffic. The controller validates assignment,
+connection epoch and tmux server incarnation on the direct path. The
+[acceptance audit](DIRECT-WORKER-ACCEPTANCE.md) separates local coverage from
+unfinished live verification. [Railway independence](RAILWAY-INDEPENDENCE.md) is
+a separate external-host proposal, not a dependency of this rollout.
 
 ## Grid implementation and invariants
 
