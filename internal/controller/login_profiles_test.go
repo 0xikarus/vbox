@@ -244,15 +244,46 @@ func TestCredentialVolumeVerification(t *testing.T) {
 	}
 }
 
+func TestCredentialVolumeVerificationWaitsForUnavailableAttachment(t *testing.T) {
+	transport := &profileTestTransport{volumes: []string{"", "volume"}}
+	if err := waitForCredentialVolume(context.Background(), transport, "service", "volume", time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if transport.volumeChecks != 2 {
+		t.Fatalf("volume checks=%d, want 2", transport.volumeChecks)
+	}
+}
+
+func TestCredentialVolumeVerificationRejectsObservedMismatchImmediately(t *testing.T) {
+	transport := &profileTestTransport{volumes: []string{"other", "volume"}}
+	if err := waitForCredentialVolume(context.Background(), transport, "service", "volume", time.Second); err == nil {
+		t.Fatal("observed different volume was accepted")
+	}
+	if transport.volumeChecks != 1 {
+		t.Fatalf("volume checks=%d, want 1", transport.volumeChecks)
+	}
+}
+
 type profileTestTransport struct {
 	provider.Provider
-	volume string
-	writes int
-	files  []boxruntime.SyncFile
+	volume       string
+	volumes      []string
+	volumeChecks int
+	writes       int
+	files        []boxruntime.SyncFile
 }
 
 func (p *profileTestTransport) AttachedStorage(context.Context, string) (*provider.Storage, error) {
-	return &provider.Storage{ID: p.volume}, nil
+	p.volumeChecks++
+	volume := p.volume
+	if len(p.volumes) > 0 {
+		volume = p.volumes[0]
+		p.volumes = p.volumes[1:]
+	}
+	if volume == "" {
+		return nil, nil
+	}
+	return &provider.Storage{ID: volume}, nil
 }
 func (p *profileTestTransport) Exec(ctx context.Context, _ string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
 	if strings.Join(argv, " ") == "opencode auth list" || (len(argv) > 1 && argv[0] == "opencode" && argv[1] == "run") || strings.Join(argv, " ") == "codex login status" || (len(argv) > 1 && argv[0] == "codex" && argv[1] == "exec") {

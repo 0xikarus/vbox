@@ -155,8 +155,14 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 		creation.Assignment.Box.VolumeID, creation.Assignment.Box.VolumeName = storage.ID, storage.Name
 		creation.Assignment.Box.RestorationState = "creation-volume-attached"
 		attached = &storage
-	} else if attached != nil && attached.ID != storage.ID {
-		return fail(fmt.Errorf("reserved slot contains unrelated volume %s instead of %s", attached.ID, storage.ID))
+	} else {
+		if attached == nil {
+			if creation.Assignment.Box.RestorationState != "creation-detaching" && creation.Assignment.Box.RestorationState != "creation-sanitizing" {
+				return fail(fmt.Errorf("reserved slot is missing workspace volume %s", storage.ID))
+			}
+		} else if attached.ID != storage.ID {
+			return fail(fmt.Errorf("reserved slot contains unrelated volume %s instead of %s", attached.ID, storage.ID))
+		}
 	}
 	if attached != nil {
 		if s.DirectWorkersEnabled && creation.Assignment.Box.Provider == "railway" {
