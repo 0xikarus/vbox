@@ -71,6 +71,12 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			continue
 		}
 		if len(request.ID) == 0 {
+			if request.Method == "notifications/initialized" {
+				// The client only registers notification handlers after the
+				// initialize response. Waiting for its initialized notification
+				// prevents a queued first message from being emitted too early.
+				channelOnce.Do(func() { go serveClaudeChannel(ctx, encode) })
+			}
 			continue
 		}
 		response := map[string]any{"jsonrpc": "2.0", "id": request.ID}
@@ -110,12 +116,6 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		}
 		if err := encode(response); err != nil {
 			return err
-		}
-		if request.Method == "initialize" {
-			// A queued first message can already exist when Claude spawns this
-			// server. Do not emit it until Claude has received the initialize
-			// response and registered its channel notification listener.
-			channelOnce.Do(func() { go serveClaudeChannel(ctx, encode) })
 		}
 	}
 	return scanner.Err()
