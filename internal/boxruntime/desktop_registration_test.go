@@ -119,6 +119,29 @@ printf '%s\n' "$@" > "$HOME/registration-args"
 	}
 }
 
+func TestPrepareManagedDesktopRegistersChatMCPWithoutDesktopPackages(t *testing.T) {
+	home := t.TempDir()
+	bin := t.TempDir()
+	script := `#!/bin/sh
+if [ "$1 $2 $3" = "mcp get vmbox-desktop" ]; then
+ echo 'No MCP server named vmbox-desktop found'
+ exit 1
+fi
+printf '%s\n' "$@" > "$HOME/registration-args"
+`
+	if err := os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", bin)
+	if assignment, err := prepareManagedDesktop(context.Background(), "codex"); err != nil || assignment != "" {
+		t.Fatalf("assignment=%q err=%v", assignment, err)
+	}
+	if _, err := os.Stat(filepath.Join(home, "registration-args")); err != nil {
+		t.Fatal("chat MCP was not registered on a shell-only image:", err)
+	}
+}
+
 func TestDesktopRegistrationLockWaitIsCancelable(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, ".config", "vmbox")
