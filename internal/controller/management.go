@@ -141,21 +141,21 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	if request.Session != "" && !validSessionName(request.Session) {
 		return response, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore")
 	}
+	if request.Session == "" && box.State == v1.LogicalBoxRunning {
+		var name, agent string
+		if err = s.Store.DB.QueryRowContext(ctx, `SELECT COALESCE(metadata->>'primarySession',''),COALESCE(metadata->>'primaryAgent','') FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&name, &agent); err != nil {
+			return response, err
+		}
+		if agent == request.Agent && validSessionName(name) {
+			request.Session = name
+		}
+	}
 	tasks, err := s.Store.ListBoxTasks(ctx, p, box.ID)
 	if err != nil {
 		return response, err
 	}
 	selected := reusableBoxTask(tasks, box.State, request.Agent, request.Session)
 	if selected == nil {
-		if request.Session == "" && box.State == v1.LogicalBoxRunning {
-			var name, agent string
-			if err = s.Store.DB.QueryRowContext(ctx, `SELECT COALESCE(metadata->>'primarySession',''),COALESCE(metadata->>'primaryAgent','') FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&name, &agent); err != nil {
-				return response, err
-			}
-			if agent == request.Agent && validSessionName(name) {
-				request.Session = name
-			}
-		}
 		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images})
 		if err != nil {
 			return response, err
