@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -81,7 +82,7 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	if err != nil {
 		return fmt.Errorf("credential destination assignment changed")
 	}
-	if err := verifyCredentialVolume(ctx, prov, a.Slot.ServiceID, a.Box.VolumeID); err != nil {
+	if err := waitForCredentialVolume(ctx, prov, a.Slot.ServiceID, a.Box.VolumeID, 30*time.Second); err != nil {
 		return err
 	}
 	payload, err := json.Marshal(request)
@@ -112,6 +113,8 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	return tx.Commit()
 }
 
+var errCredentialVolumeUnavailable = errors.New("credential destination volume unavailable")
+
 // Call only while holding the logical-box assignment lock, before any secret
 // transport. A valid SSH endpoint alone does not prove workspace ownership.
 func verifyCredentialVolume(ctx context.Context, prov provider.Provider, serviceID, volumeID string) error {
@@ -123,8 +126,35 @@ func verifyCredentialVolume(ctx context.Context, prov provider.Provider, service
 		return fmt.Errorf("provider cannot verify credential destination")
 	}
 	storage, err := inspector.AttachedStorage(ctx, serviceID)
-	if err != nil || storage == nil || storage.ID != volumeID {
+	if err != nil || storage == nil {
+		return errCredentialVolumeUnavailable
+	}
+	if storage.ID != volumeID {
 		return fmt.Errorf("credential destination volume mismatch")
 	}
 	return nil
+}
+
+// Railway can briefly omit a volume's service attachment while replacing a
+// deployment. Wait only when attachment evidence is unavailable. An observed
+// different volume is a definitive mismatch and must never be retried into a
+// credential write.
+func waitForCredentialVolume(ctx context.Context, prov provider.Provider, serviceID, volumeID string, timeout time.Duration) error {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		err := verifyCredentialVolume(ctx, prov, serviceID, volumeID)
+		if err == nil || !errors.Is(err, errCredentialVolumeUnavailable) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-timer.C:
+			return err
+		case <-ticker.C:
+		}
+	}
 }
