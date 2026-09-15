@@ -361,6 +361,33 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 	}
 }
 
+func TestStartTmuxTaskCanStartAgentWithoutTerminalPrompt(t *testing.T) {
+	stubRegisteredAgent(t, "claude")
+	originalCommand, originalSettle := tmuxCommand, agentReadySettlePause
+	t.Cleanup(func() { tmuxCommand, agentReadySettlePause = originalCommand, originalSettle })
+	agentReadySettlePause = func(context.Context) error { return nil }
+	var calls []string
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if stdin != "" || len(args) > 0 && (args[0] == "load-buffer" || args[0] == "paste-buffer") {
+			t.Fatal("agent startup attempted terminal prompt delivery")
+		}
+		if len(args) > 0 && args[0] == "has-session" {
+			return nil, errors.New("missing")
+		}
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("Claude Code v2\n❯\u00a0Try \"write a test\""), nil
+		}
+		return nil, nil
+	}
+	if err := StartTmuxTask(context.Background(), t.TempDir(), "claude-native", "claude", "message-native", ""); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(calls, "\n"), "new-session -d -s claude-native") {
+		t.Fatalf("agent session was not started: %v", calls)
+	}
+}
+
 func stubRegisteredAgent(t *testing.T, agent string) {
 	t.Helper()
 	home, bin := t.TempDir(), t.TempDir()

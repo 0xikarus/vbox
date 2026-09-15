@@ -401,6 +401,9 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 			return err
 		}
 	}
+	if prompt == "" {
+		return nil
+	}
 	return DeliverTmuxInput(ctx, root, session, messageID, prompt, true)
 }
 
