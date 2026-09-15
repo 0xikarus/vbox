@@ -228,6 +228,7 @@ func TestStartTmuxTaskRejectsAnExistingSessionForAnotherAgent(t *testing.T) {
 }
 
 func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
+	stubRegisteredAgent(t, "codex")
 	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
 	t.Cleanup(func() {
 		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause = originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm
@@ -272,6 +273,7 @@ func TestCodexUpdateMenuIsNotInputReady(t *testing.T) {
 }
 
 func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
+	stubRegisteredAgent(t, "claude")
 	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
 	t.Cleanup(func() {
 		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause = originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm
@@ -309,6 +311,16 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 	if trust < 0 || delivery < 0 || trust >= delivery {
 		t.Fatalf("trust was not accepted before prompt delivery: %v", calls)
 	}
+}
+
+func stubRegisteredAgent(t *testing.T, agent string) {
+	t.Helper()
+	home, bin := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, agent), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", bin)
 }
 
 func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {

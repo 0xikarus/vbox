@@ -11,10 +11,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// prepareManagedDesktop preserves shell-only images while making desktop-enabled
-// worker sessions visible from their first launch. The existing assignment is
-// authoritative; this helper never allocates compute or installs packages.
+// prepareManagedDesktop registers agent chat on every worker image, then makes
+// desktop-enabled sessions visible from their first launch. The existing
+// assignment is authoritative; this helper never allocates compute or installs
+// packages.
 func prepareManagedDesktop(ctx context.Context, agent string) (string, error) {
+	if err := RegisterDesktopMCP(ctx, os.Getenv("HOME"), agent); err != nil {
+		return "", err
+	}
 	if _, err := exec.LookPath("Xtigervnc"); err != nil {
 		return "", nil
 	}
@@ -24,9 +28,6 @@ func prepareManagedDesktop(ctx context.Context, agent string) (string, error) {
 	}
 	assignment := strings.TrimSpace(string(fence))
 	if _, err := NativeSessions(ctx, assignment); err != nil {
-		return "", err
-	}
-	if err := RegisterDesktopMCP(ctx, os.Getenv("HOME"), agent); err != nil {
 		return "", err
 	}
 	if err := StartDesktop(ctx, assignment); err != nil {
