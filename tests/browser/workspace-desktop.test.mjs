@@ -152,7 +152,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   });
   await t.test('opening a sleeping box stays read-only until explicit resume',async()=>{
    state='hibernated';const p=await page();await p.waitForFunction(()=>document.querySelector('#connect').textContent==='Resume box'&&!document.querySelector('#connect').disabled);
-   assert.equal(requests.some(r=>r.startsWith('POST ')||r.includes('/desktop')),false);assert.equal(await p.evaluate(()=>window.terminals),0);
+   assert.equal(requests.some(r=>r.startsWith('POST ')||r.includes('/desktop')),false);assert.equal(await p.evaluate(()=>window.terminals),0);assert.equal(await p.$eval('#connection-stats',e=>e.hidden),true);assert.match(await p.$eval('#lifecycle-note',e=>e.textContent),/does not start the box/);
    await p.click('#connect');await p.waitForFunction(()=>document.querySelector('#error').textContent.includes('Fixture stopped box'));
    assert.equal(requests.filter(r=>r.endsWith('/allocate')).length,1);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();state='running';
   });

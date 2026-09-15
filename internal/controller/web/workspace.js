@@ -12,7 +12,7 @@ let boxSummary=null,controllerPing=null,statsTimer,statsGeneration=0;
 const viewerStats={desktop:{state:'disconnected',ping:null},terminal:{state:'disconnected'}};
 function renderStats(){
  const row=$('#connection-stats');if(!row)return;
- row.hidden=!!runID||!boxSummary;
+ row.hidden=!!runID||!boxSummary||boxSummary.state!=='running';
  const current=viewerStats[selectedWorkspaceView]||{state:'connecting'};
  const fields=[['Box',boxSummary?.state||'—'],['Provider',boxSummary?.provider||'—'],['Viewer',(selectedWorkspaceView==='desktop'?'Desktop':'TMUX')+' · '+current.state],['Desktop ping',viewerStats.desktop.ping==null?'—':viewerStats.desktop.ping+' ms'],['Controller',controllerPing==null?'—':controllerPing+' ms']];
  row.replaceChildren(...fields.map(([label,value])=>{const item=document.createElement('span');item.textContent=label+': '+value;if(label==='Desktop ping')item.title='Round trip to the box over the live VNC connection. Includes transport and server response time.';if(label==='Controller')item.title='HTTP round trip to the controller; this does not measure the worker.';return item}));
@@ -205,7 +205,7 @@ $('#resource-form').onsubmit=async event=>{
  }catch(e){if(workspaceCurrent(snapshot.version))$('#resource-status').textContent=e.message+' Reload limits before retrying.'}
  finally{form.querySelector('button').disabled=false;$('#load-resources').disabled=false}
 };
-function state(b){$('#box-settings').hidden=!!runID||workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ');$('#connect').textContent=b.state==='running'?'Reconnect viewers':'Resume box'}
+function state(b){$('#box-settings').hidden=!!runID||workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ');$('#connect').textContent=b.state==='running'?'Reconnect viewers':'Resume box';$('#lifecycle-note').textContent=b.state==='running'?'Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.':'This page does not start the box. Resume box explicitly requests compute; workspace files remain saved.'}
 function showSleepingWorkspace(){
  stopStats();$('#workspace').hidden=false;$('#workspace-tabs').hidden=true;$('#terminal').hidden=true;$('#desktop').hidden=true;$('#hibernate').hidden=true;$('#session').textContent='Saved workspace. Resume the box to connect.';
 }
