@@ -335,12 +335,15 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 		if strings.HasPrefix(call, "capture-pane") {
 			captures++
 			if captures == 1 {
-				return []byte("Quick safety check:\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm"), nil
+				return []byte("WARNING: Loading development channels\n❯ 1. I am using this for local development\n  2. Exit\nEnter to confirm · Esc to cancel"), nil
 			}
 			if captures == 2 {
-				return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
+				return []byte("Quick safety check:\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm"), nil
 			}
 			if captures == 3 {
+				return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
+			}
+			if captures == 4 {
 				return []byte("Claude Code v2\n❯\u00a0hello"), nil
 			}
 			return []byte("Claude Code v2\n❯\u00a0"), nil
@@ -351,13 +354,14 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
-	if !strings.Contains(joined, "new-session -d -s claude-ready -c /data/workspace -- env DISABLE_AUTOUPDATER=1 claude") {
+	if !strings.Contains(joined, "new-session -d -s claude-ready -c /data/workspace -- env DISABLE_AUTOUPDATER=1 claude --dangerously-load-development-channels server:vmbox-desktop") {
 		t.Fatalf("managed Claude task did not disable background self-update: %v", calls)
 	}
+	channel := strings.Index(joined, "send-keys -t claude-ready Enter")
 	trust := strings.Index(joined, "send-keys -t claude-ready Down Enter")
 	delivery := strings.Index(joined, "load-buffer")
-	if trust < 0 || delivery < 0 || trust >= delivery {
-		t.Fatalf("trust was not accepted before prompt delivery: %v", calls)
+	if channel < 0 || trust < channel || delivery < 0 || trust >= delivery {
+		t.Fatalf("channel and workspace confirmations were not accepted before prompt delivery: %v", calls)
 	}
 }
 
