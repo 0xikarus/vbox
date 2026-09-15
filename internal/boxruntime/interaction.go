@@ -348,22 +348,14 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 	}
 	var argv []string
 	switch agent {
-	case "codex":
-		// Managed images own upgrades. A startup update menu can consume the
-		// initial prompt before the interactive agent is ready to receive it.
-		argv = []string{agent, "-c", "check_for_update_on_startup=false"}
-	case "opencode":
-		argv = []string{agent, "--hostname", "127.0.0.1", "--port", strconv.Itoa(OpenCodeChatPort(session))}
-	case "claude":
-		// Claude can update and restart itself moments after presenting its first
-		// input prompt, which discards an initial task message that was already
-		// confirmed and recorded as delivered. The audited worker image owns
-		// upgrades; managed sessions therefore disable background self-updates.
-		argv = []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--dangerously-load-development-channels", "server:vmbox-desktop"}
 	case "shell":
 		argv = []string{"/bin/bash", "-l"}
 	default:
-		return fmt.Errorf("unsupported task agent %q", agent)
+		var err error
+		argv, err = persistentAgentArgv(session, agent)
+		if err != nil {
+			return fmt.Errorf("unsupported task agent %q", agent)
+		}
 	}
 	if _, err := tmuxCommand(ctx, "", "has-session", "-t", session); err != nil {
 		assignment, err := prepareManagedDesktop(ctx, agent)

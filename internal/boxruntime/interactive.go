@@ -14,7 +14,7 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if !processID.MatchString(session) {
 		return fmt.Errorf("invalid session name")
 	}
-	argv, err := interactiveArgv(agent)
+	argv, err := interactiveArgv(session, agent)
 	if err != nil {
 		return err
 	}
@@ -43,16 +43,35 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if err == nil && assignment != "" {
 		err = EnsureDesktopTerminals(ctx, assignment)
 	}
+	if err == nil && agent != "shell" {
+		err = waitForAgentReady(ctx, session, agent)
+		if err == nil {
+			err = agentReadySettlePause(ctx)
+		}
+	}
 	return err
 }
 
-func interactiveArgv(agent string) ([]string, error) {
+func interactiveArgv(session, agent string) ([]string, error) {
 	switch agent {
 	case "codex", "claude", "opencode":
-		return []string{agent}, nil
+		return persistentAgentArgv(session, agent)
 	case "shell":
 		return []string{"vmbox-runtime", "welcome"}, nil
 	default:
 		return nil, fmt.Errorf("interactive agent must be codex, claude, opencode, or shell")
+	}
+}
+
+func persistentAgentArgv(session, agent string) ([]string, error) {
+	switch agent {
+	case "codex":
+		return []string{agent, "-c", "check_for_update_on_startup=false"}, nil
+	case "opencode":
+		return []string{agent, "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
+	case "claude":
+		return []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--dangerously-load-development-channels", "server:vmbox-desktop"}, nil
+	default:
+		return nil, fmt.Errorf("unsupported persistent agent %q", agent)
 	}
 }

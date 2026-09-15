@@ -2,6 +2,7 @@ package boxruntime
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,17 +12,19 @@ import (
 )
 
 func TestInteractiveShellUsesSpecsWelcome(t *testing.T) {
-	for _, agent := range []string{"shell", "codex", "claude"} {
-		want := []string{agent}
-		if agent == "shell" {
-			want = []string{"vmbox-runtime", "welcome"}
-		}
-		got, err := interactiveArgv(agent)
+	port := fmt.Sprintf("%d", OpenCodeChatPort("managed-session"))
+	for agent, want := range map[string][]string{
+		"shell":    {"vmbox-runtime", "welcome"},
+		"codex":    {"codex", "-c", "check_for_update_on_startup=false"},
+		"claude":   {"env", "DISABLE_AUTOUPDATER=1", "claude", "--dangerously-load-development-channels", "server:vmbox-desktop"},
+		"opencode": {"opencode", "--hostname", "127.0.0.1", "--port", port},
+	} {
+		got, err := interactiveArgv("managed-session", agent)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: %v %v", agent, got, err)
 		}
 	}
-	if _, err := interactiveArgv("invalid"); err == nil {
+	if _, err := interactiveArgv("managed-session", "invalid"); err == nil {
 		t.Fatal("invalid agent accepted")
 	}
 }
