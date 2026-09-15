@@ -148,12 +148,24 @@ func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov
 	if err := stageWorkspaceRuntime(ctx, prov, serviceID, s.WorkerRuntime); err != nil {
 		return provider.ExecResult{}, fmt.Errorf("stage matching task runtime: %w", err)
 	}
-	text, err := s.boxMessagePrompt(ctx, accountID, task.Agent, message)
-	if err != nil {
-		return provider.ExecResult{}, fmt.Errorf("prepare message images: %w", err)
+	text := ""
+	if task.Agent == "shell" {
+		var err error
+		text, err = s.boxMessagePrompt(ctx, accountID, task.Agent, message)
+		if err != nil {
+			return provider.ExecResult{}, fmt.Errorf("prepare message images: %w", err)
+		}
 	}
 	prompt := base64.RawURLEncoding.EncodeToString([]byte(text))
-	return prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
+	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 || task.Agent == "shell" {
+		return result, err
+	}
+	command := map[string]string{"claude": "chat-deliver", "codex": "chat-codex", "opencode": "chat-opencode"}[task.Agent]
+	if command == "" {
+		return provider.ExecResult{}, fmt.Errorf("unsupported task agent %q", task.Agent)
+	}
+	return s.deliverNativeAgentChat(ctx, prov, serviceID, accountID, command, task, message)
 }
 
 func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.BoxTask, message v1.BoxMessage, submit bool) error {

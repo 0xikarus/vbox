@@ -20,6 +20,9 @@ func (s *Server) chatInboundPayload(ctx context.Context, accountID string, task 
 		return nil, err
 	}
 	inbound := boxruntime.ChatInbound{ID: message.ID, Text: text}
+	if s.Store == nil || s.Store.DB == nil {
+		return json.Marshal(inbound)
+	}
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.media_type,i.data
 		FROM box_message_images j JOIN run_once_images i ON i.id=j.image_id AND i.account_id=j.account_id
 		WHERE j.account_id=$1 AND j.message_id=$2 ORDER BY j.ordinal`, accountID, message.ID)
