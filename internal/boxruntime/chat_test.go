@@ -59,3 +59,22 @@ func TestChatAskPersistsMultipleChoiceQuestion(t *testing.T) {
 		t.Fatalf("unexpected question: found=%t err=%v event=%+v", found, err, event)
 	}
 }
+
+func TestChatSessionFindsSanitizedMCPThroughProcessTree(t *testing.T) {
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "list-panes" {
+			return []byte("220\tmanaged-codex\n410\tother\n"), nil
+		}
+		t.Fatalf("unexpected tmux command: %v", args)
+		return nil, nil
+	}
+	parents := map[int]int{500: 400, 400: 220, 220: 1}
+	session, err := chatSessionFromProcessTree(context.Background(), 500, func(pid int) (int, error) {
+		return parents[pid], nil
+	})
+	if err != nil || session != "managed-codex" {
+		t.Fatalf("session=%q err=%v", session, err)
+	}
+}
