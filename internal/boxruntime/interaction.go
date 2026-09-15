@@ -447,7 +447,8 @@ func agentInputReady(agent, content string) bool {
 		}
 		return false
 	case "opencode":
-		return strings.Contains(strings.ToLower(content), "opencode")
+		return strings.Contains(strings.ToLower(content), "opencode") ||
+			strings.Contains(content, "Ask anything...") && strings.Contains(content, "/status")
 	default:
 		return false
 	}
