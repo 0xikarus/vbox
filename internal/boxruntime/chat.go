@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -71,18 +72,60 @@ func chatSession(ctx context.Context) (string, error) {
 		return value, nil
 	}
 	pane := os.Getenv("TMUX_PANE")
-	if pane == "" {
-		return "", fmt.Errorf("managed chat session unavailable")
+	if pane != "" {
+		value, err := tmuxCommand(ctx, "", "display-message", "-p", "-t", pane, "#{session_name}")
+		if err == nil {
+			session := strings.TrimSpace(string(value))
+			if validateTmuxToken("session", session) == nil {
+				return session, nil
+			}
+		}
 	}
-	value, err := tmuxCommand(ctx, "", "display-message", "-p", "-t", pane, "#{session_name}")
+	return chatSessionFromProcessTree(ctx, os.Getpid(), parentProcessID)
+}
+
+func chatSessionFromProcessTree(ctx context.Context, start int, parent func(int) (int, error)) (string, error) {
+	value, err := tmuxCommand(ctx, "", "list-panes", "-a", "-F", "#{pane_pid}\t#{session_name}")
 	if err != nil {
 		return "", fmt.Errorf("managed chat session unavailable")
 	}
-	session := strings.TrimSpace(string(value))
-	if err := validateTmuxToken("session", session); err != nil {
-		return "", err
+	sessions := map[int]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(value)), "\n") {
+		fields := strings.SplitN(line, "\t", 2)
+		if len(fields) != 2 {
+			continue
+		}
+		pid, parseErr := strconv.Atoi(fields[0])
+		session := strings.TrimSpace(fields[1])
+		if parseErr == nil && validateTmuxToken("session", session) == nil {
+			sessions[pid] = session
+		}
 	}
-	return session, nil
+	pid := start
+	for depth := 0; pid > 1 && depth < 128; depth++ {
+		if session := sessions[pid]; session != "" {
+			return session, nil
+		}
+		next, err := parent(pid)
+		if err != nil || next <= 0 || next == pid {
+			break
+		}
+		pid = next
+	}
+	return "", fmt.Errorf("managed chat session unavailable")
+}
+
+func parentProcessID(pid int) (int, error) {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0, err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "PPid:") {
+			return strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(line, "PPid:")))
+		}
+	}
+	return 0, fmt.Errorf("parent process unavailable")
 }
 
 func loadChatImages(paths []string) ([]ChatEventImage, error) {
