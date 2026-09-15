@@ -321,6 +321,12 @@ func tmuxInputSubmissionState(content, text string) tmuxInputState {
 			if input == "" {
 				return tmuxInputCleared
 			}
+			// Claude renders its rotating suggestion inside the empty input row.
+			// It is not evidence that a pasted message was submitted; treating it
+			// as cleared can acknowledge a delivery before Claude consumes paste.
+			if marker == "❯" && strings.HasPrefix(input, `Try "`) {
+				return tmuxInputUnknown
+			}
 			if input == needle || len(input) >= 8 && strings.HasPrefix(needle, input) {
 				return tmuxInputStaged
 			}

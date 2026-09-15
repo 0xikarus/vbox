@@ -175,6 +175,40 @@ func TestDeliverTmuxInputRetriesOnlySubmitWhileClaudeInputIsStaged(t *testing.T)
 	}
 }
 
+func TestDeliverTmuxInputWaitsPastClaudeSuggestionForPastedText(t *testing.T) {
+	originalCommand, originalPause, originalConfirm := tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		tmuxCommand, tmuxSubmitPause, tmuxSubmitConfirmPause = originalCommand, originalPause, originalConfirm
+	})
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
+	carriageReturns, captures := 0, 0
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if stdin == "\r" {
+			carriageReturns++
+			return nil, nil
+		}
+		if len(args) > 0 && args[0] == "capture-pane" {
+			captures++
+			switch {
+			case captures < 3:
+				return []byte("Claude Code v2\n❯\u00a0Try \"write a test\""), nil
+			case captures == 3:
+				return []byte("Claude Code v2\n❯\u00a0hello"), nil
+			default:
+				return []byte("Claude Code v2\n❯\u00a0"), nil
+			}
+		}
+		return nil, nil
+	}
+	if err := DeliverTmuxInput(context.Background(), t.TempDir(), "claude", "message_delayed_paste", "hello", true); err != nil {
+		t.Fatal(err)
+	}
+	if carriageReturns != 2 || captures < 7 {
+		t.Fatalf("carriage returns=%d captures=%d; suggestion was mistaken for a completed delivery", carriageReturns, captures)
+	}
+}
+
 func TestDeliverTmuxInputLeavesStagedTextBehindCodexUpdatePrompt(t *testing.T) {
 	originalCommand, originalPause := tmuxCommand, tmuxSubmitPause
 	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalPause })
@@ -303,7 +337,13 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 			if captures == 1 {
 				return []byte("Quick safety check:\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm"), nil
 			}
-			return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
+			if captures == 2 {
+				return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
+			}
+			if captures == 3 {
+				return []byte("Claude Code v2\n❯\u00a0hello"), nil
+			}
+			return []byte("Claude Code v2\n❯\u00a0"), nil
 		}
 		return nil, nil
 	}
