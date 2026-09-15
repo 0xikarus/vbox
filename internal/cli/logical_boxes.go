@@ -78,8 +78,8 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		var selectedProfiles []v1.LoginProfileRef
 		fs.Func("profile", "saved login profile APP=NAME (repeat for each app)", func(value string) error {
 			app, name, ok := strings.Cut(value, "=")
-			if !ok || name == "" || (app != "claude" && app != "codex" && app != "github") {
-				return fmt.Errorf("--profile requires claude=NAME, codex=NAME or github=NAME")
+			if !ok || name == "" || (app != "claude" && app != "codex" && app != "opencode" && app != "github") {
+				return fmt.Errorf("--profile requires claude=NAME, codex=NAME, opencode=NAME or github=NAME")
 			}
 			for _, ref := range selectedProfiles {
 				if ref.Application == app {
