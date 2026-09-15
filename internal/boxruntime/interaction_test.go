@@ -250,6 +250,9 @@ func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
 			if captures == 1 {
 				return []byte("starting"), nil
 			}
+			if captures == 2 {
+				return []byte("OpenAI Codex\nApproaching rate limits\n› 1. Switch model\nPress enter to confirm or esc to go back"), nil
+			}
 			return []byte("OpenAI Codex\n› Ask Codex to do anything"), nil
 		}
 		return nil, nil
@@ -262,6 +265,11 @@ func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
 	}
 	if !strings.Contains(strings.Join(calls, "\n"), "-- codex -c check_for_update_on_startup=false") {
 		t.Fatalf("managed Codex session may intercept the initial prompt with an update menu: %v", calls)
+	}
+	joined := strings.Join(calls, "\n")
+	dismissed, delivery := strings.Index(joined, "send-keys -t codex-ready Escape"), strings.Index(joined, "load-buffer")
+	if dismissed < 0 || delivery < 0 || dismissed >= delivery {
+		t.Fatalf("rate limit reminder was not dismissed before delivery: %v", calls)
 	}
 }
 

@@ -405,7 +405,11 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
 		if err == nil {
 			text := string(content)
-			if agent == "claude" && strings.Contains(text, "Quick safety check:") && strings.Contains(text, "Yes, I trust this folder") && strings.Contains(text, "Enter to confirm") {
+			if agent == "codex" && strings.Contains(text, "Approaching rate limits") && strings.Contains(text, "Press enter to confirm or esc to go back") {
+				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Escape"); err != nil {
+					return fmt.Errorf("dismiss rate limit reminder in %s session: %w", agent, err)
+				}
+			} else if agent == "claude" && strings.Contains(text, "Quick safety check:") && strings.Contains(text, "Yes, I trust this folder") && strings.Contains(text, "Enter to confirm") {
 				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Down", "Enter"); err != nil {
 					return fmt.Errorf("accept trusted workspace in %s session: %w", agent, err)
 				}
@@ -426,7 +430,7 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 func agentInputReady(agent, content string) bool {
 	switch agent {
 	case "codex":
-		return !terminalBlocksSubmit(content) && strings.Contains(content, "OpenAI Codex") && strings.Contains(content, "›")
+		return !terminalBlocksSubmit(content) && !strings.Contains(content, "Approaching rate limits") && strings.Contains(content, "OpenAI Codex") && strings.Contains(content, "›")
 	case "claude":
 		if !strings.Contains(content, "Claude Code v") {
 			return false
