@@ -44,6 +44,16 @@ func TestOpenCodeDesktopRegistrationPreservesSettings(t *testing.T) {
 	if got.Model != "custom/model" || len(got.MCP) != 2 || got.MCP["existing"] == nil || got.MCP["vmbox-desktop"] == nil {
 		t.Fatal("configuration not preserved")
 	}
+	if err = os.WriteFile(path, []byte(`{"mcp":{"vmbox-desktop":{"type":"local","command":["vmbox-runtime","desktop-mcp"]}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = RegisterDesktopMCP(context.Background(), home, "opencode"); err != nil {
+		t.Fatal(err)
+	}
+	migrated, _ := os.ReadFile(path)
+	if !strings.Contains(string(migrated), managedDesktopRuntimePath) {
+		t.Fatal("legacy OpenCode runtime path was not migrated")
+	}
 	if err = os.WriteFile(path, []byte(`{"mcp":{"vmbox-desktop":{"disabled":true}}}`), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +82,7 @@ func TestDesktopRegistrationCancellationDoesNotModifyConfig(t *testing.T) {
 
 func TestDesktopRegistrationCLIPreservesExistingAndRejectsUnexpectedFailure(t *testing.T) {
 	for _, agent := range []string{"codex", "claude"} {
-		for _, mode := range []string{"exists", "missing", "failure"} {
+		for _, mode := range []string{"exists", "missing", "legacy", "failure"} {
 			t.Run(agent+"/"+mode, func(t *testing.T) {
 				home := t.TempDir()
 				bin := t.TempDir()
@@ -81,10 +91,11 @@ if [ "$1 $2 $3" = "mcp get vmbox-desktop" ]; then
  case "$REGISTRATION_TEST_MODE" in
  exists) exit 0;;
  missing) echo 'No MCP server named vmbox-desktop found'; exit 1;;
+ legacy) printf 'Command: vmbox-runtime\nArgs: desktop-mcp\n'; exit 0;;
  failure) echo 'synthetic-private-value'; exit 1;;
  esac
 fi
-printf '%s\n' "$@" > "$HOME/registration-args"
+printf '%s\n' "$@" >> "$HOME/registration-args"
 `
 				if err := os.WriteFile(filepath.Join(bin, agent), []byte(script), 0700); err != nil {
 					t.Fatal(err)
@@ -100,17 +111,24 @@ printf '%s\n' "$@" > "$HOME/registration-args"
 					t.Fatal(err)
 				}
 				args, readErr := os.ReadFile(filepath.Join(home, "registration-args"))
-				if mode != "missing" {
+				if mode != "missing" && mode != "legacy" {
 					if !os.IsNotExist(readErr) {
 						t.Fatal("registration changed after existing entry or inspection failure")
 					}
 					return
 				}
-				want := "mcp\nadd\nvmbox-desktop\n"
+				want := ""
+				if mode == "legacy" {
+					want = "mcp\nremove\nvmbox-desktop\n"
+					if agent == "claude" {
+						want += "--scope\nuser\n"
+					}
+				}
+				want += "mcp\nadd\nvmbox-desktop\n"
 				if agent == "claude" {
 					want += "--scope\nuser\n"
 				}
-				want += "--\nvmbox-runtime\ndesktop-mcp\n"
+				want += "--\n" + managedDesktopRuntimePath + "\ndesktop-mcp\n"
 				if readErr != nil || string(args) != want {
 					t.Fatalf("registration argv: %q, %v", args, readErr)
 				}

@@ -13,6 +13,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const managedDesktopRuntimePath = "/data/home/bin/vmbox-runtime"
+
 // RegisterDesktopMCP registers only the selected client, before starting it.
 // Existing entries are never overwritten. Diagnostics omit configuration output
 // because unrelated MCP entries may contain credentials.
@@ -61,16 +63,29 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	probe.Env = append(os.Environ(), "HOME="+home)
 	output, err := probe.CombinedOutput()
 	if err == nil {
-		return nil
+		lower := strings.ToLower(string(output))
+		legacy := strings.Contains(lower, "command: vmbox-runtime") && strings.Contains(lower, "args: desktop-mcp") && !strings.Contains(lower, managedDesktopRuntimePath)
+		if !legacy {
+			return nil
+		}
+		removeArgs := []string{"mcp", "remove", "vmbox-desktop"}
+		if agent == "claude" {
+			removeArgs = append(removeArgs, "--scope", "user")
+		}
+		remove := exec.CommandContext(ctx, path, removeArgs...)
+		remove.Env = probe.Env
+		if err := remove.Run(); err != nil {
+			return fmt.Errorf("could not migrate %s desktop MCP", agent)
+		}
 	}
-	if !strings.Contains(strings.ToLower(string(output)), "no mcp server named") {
+	if err != nil && !strings.Contains(strings.ToLower(string(output)), "no mcp server named") {
 		return fmt.Errorf("could not inspect %s desktop MCP configuration", agent)
 	}
 	args := []string{"mcp", "add", "vmbox-desktop"}
 	if agent == "claude" {
 		args = append(args, "--scope", "user")
 	}
-	args = append(args, "--", "vmbox-runtime", "desktop-mcp")
+	args = append(args, "--", managedDesktopRuntimePath, "desktop-mcp")
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Env = probe.Env
 	if err = cmd.Run(); err != nil {
@@ -109,10 +124,16 @@ func registerOpenCodeDesktop(home string) error {
 			return fmt.Errorf("invalid OpenCode MCP configuration; preserved unchanged")
 		}
 	}
-	if _, exists := entries["vmbox-desktop"]; exists {
-		return nil
+	if existing, exists := entries["vmbox-desktop"]; exists {
+		var registered struct {
+			Type    string   `json:"type"`
+			Command []string `json:"command"`
+		}
+		if json.Unmarshal(existing, &registered) != nil || registered.Type != "local" || len(registered.Command) != 2 || registered.Command[0] != "vmbox-runtime" || registered.Command[1] != "desktop-mcp" {
+			return nil
+		}
 	}
-	entries["vmbox-desktop"] = json.RawMessage(`{"type":"local","command":["vmbox-runtime","desktop-mcp"]}`)
+	entries["vmbox-desktop"] = json.RawMessage(`{"type":"local","command":["/data/home/bin/vmbox-runtime","desktop-mcp"]}`)
 	config["mcp"], _ = json.Marshal(entries)
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
