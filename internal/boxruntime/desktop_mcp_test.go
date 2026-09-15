@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
@@ -45,6 +48,41 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		if i >= 2 && response.Result["isError"] != true {
 			t.Fatal("invalid call accepted")
 		}
+	}
+}
+
+func TestDesktopDoubleClickHasInterClickDelay(t *testing.T) {
+	var events []string
+	var clicks []time.Time
+	err := desktopClicks(context.Background(), 2, 1, func() error {
+		events = append(events, "check")
+		return nil
+	}, func(args ...string) error {
+		events = append(events, strings.Join(args, " "))
+		clicks = append(clicks, time.Now())
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(events, []string{"check", "click 1", "check", "click 1"}) {
+		t.Fatalf("events=%v", events)
+	}
+	if gap := clicks[1].Sub(clicks[0]); gap < desktopDoubleClickDelay {
+		t.Fatalf("inter-click gap=%s, want at least %s", gap, desktopDoubleClickDelay)
+	}
+}
+
+func TestDesktopDoubleClickCanBeInterruptedBetweenClicks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	clicks := 0
+	err := desktopClicks(ctx, 2, 1, func() error { return nil }, func(...string) error {
+		clicks++
+		cancel()
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) || clicks != 1 {
+		t.Fatalf("err=%v clicks=%d", err, clicks)
 	}
 }
 
