@@ -61,7 +61,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		defer outputMu.Unlock()
 		return encoder.Encode(value)
 	}
-	go serveClaudeChannel(ctx, encode)
+	var channelOnce sync.Once
 	for scanner.Scan() {
 		var request desktopMCPRequest
 		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
@@ -110,6 +110,12 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		}
 		if err := encode(response); err != nil {
 			return err
+		}
+		if request.Method == "initialize" {
+			// A queued first message can already exist when Claude spawns this
+			// server. Do not emit it until Claude has received the initialize
+			// response and registered its channel notification listener.
+			channelOnce.Do(func() { go serveClaudeChannel(ctx, encode) })
 		}
 	}
 	return scanner.Err()
