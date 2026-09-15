@@ -140,6 +140,7 @@ func (s *Server) Handler() http.Handler {
 		writeJSON(w, 200, map[string]string{"status": "ok", "compatibility": v1.CompatibilityVersion})
 	})
 	mux.HandleFunc("GET /v1/fleet/status", s.auth(s.fleetStatus))
+	mux.HandleFunc("GET /v1/fleet/costs", s.owner(s.fleetCosts))
 	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
 	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
 	mux.HandleFunc("GET /v1/fleet/regions", s.auth(s.fleetRegions))

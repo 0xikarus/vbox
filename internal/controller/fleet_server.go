@@ -8,6 +8,7 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
 func fleetTarget(r *http.Request) (string, string, error) {
@@ -31,6 +32,91 @@ func (s *Server) fleetStatus(w http.ResponseWriter, r *http.Request, p Principal
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) fleetCosts(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
+	providerName, credential, err := fleetTarget(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	status, err := s.Store.FleetStatus(r.Context(), p.AccountID, providerName, credential)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	prov, err := s.provider(r.Context(), p.AccountID, providerName, credential)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	ids := make([]string, 0, len(status.Slots))
+	for _, slot := range status.Slots {
+		if slot.ServiceID != "" {
+			ids = append(ids, slot.ServiceID)
+		}
+	}
+	usageByID := make(map[string]provider.Usage, len(ids))
+	if batch, ok := prov.(provider.BatchUsageProvider); ok {
+		usageByID, err = batch.UsageBatch(r.Context(), ids)
+	} else {
+		for _, id := range ids {
+			usageByID[id], err = prov.Usage(r.Context(), id)
+			if err != nil {
+				break
+			}
+		}
+	}
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("read provider costs: %w", err))
+		return
+	}
+	overview := v1.FleetCostOverview{
+		Provider: providerName, ProviderCredential: credential, Period: "current provider billing period",
+		Slots: make([]v1.FleetSlotCost, 0, len(status.Slots)),
+		Total: v1.FleetCost{Detail: "Sum of available fleet service costs."},
+	}
+	currencyConflict := false
+	for _, slot := range status.Slots {
+		item := v1.FleetSlotCost{Ordinal: slot.Ordinal, State: slot.State, ServiceID: slot.ServiceID, ServiceName: slot.ServiceName, LogicalBoxName: slot.LogicalBoxName}
+		if slot.ServiceID == "" {
+			item.Cost.Detail = "No provider service has been created for this slot."
+			overview.UnavailableSlotCount++
+		} else {
+			usage := usageByID[slot.ServiceID]
+			item.ObservedAt = usage.ObservedAt
+			item.Cost = v1.FleetCost{Currency: usage.Cost.Currency, Accrued: usage.Cost.Accrued, Estimated: usage.Cost.Estimated, Available: usage.Cost.Available, Detail: usage.Cost.Detail}
+			if usage.ObservedAt.After(overview.ObservedAt) {
+				overview.ObservedAt = usage.ObservedAt
+			}
+			if item.Cost.Available {
+				overview.AvailableSlotCount++
+				if overview.Total.Currency == "" {
+					overview.Total.Currency = item.Cost.Currency
+				}
+				if overview.Total.Currency == item.Cost.Currency {
+					overview.Total.Accrued += item.Cost.Accrued
+					overview.Total.Available = true
+					overview.Total.Estimated = overview.Total.Estimated || item.Cost.Estimated
+				} else {
+					currencyConflict = true
+				}
+			} else {
+				overview.UnavailableSlotCount++
+			}
+		}
+		overview.Slots = append(overview.Slots, item)
+	}
+	if currencyConflict {
+		overview.Total.Available = false
+		overview.Total.Accrued = 0
+		overview.Total.Detail = "Available service costs use multiple currencies and cannot be summed."
+	}
+	if len(status.Slots) == 0 {
+		overview.Total.Detail = "No compute slots are configured."
+	}
+	writeJSON(w, http.StatusOK, overview)
 }
 
 func (s *Server) fleetSlots(w http.ResponseWriter, r *http.Request, p Principal) {

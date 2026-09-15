@@ -21,6 +21,21 @@ type directWorkerProvider struct {
 	accountID, credential string
 }
 
+func (p *directWorkerProvider) UsageBatch(ctx context.Context, ids []string) (map[string]provider.Usage, error) {
+	if batch, ok := p.Provider.(provider.BatchUsageProvider); ok {
+		return batch.UsageBatch(ctx, ids)
+	}
+	result := make(map[string]provider.Usage, len(ids))
+	for _, id := range ids {
+		usage, err := p.Provider.Usage(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		result[id] = usage
+	}
+	return result, nil
+}
+
 func (p *directWorkerProvider) resolve(ctx context.Context, serviceID string) (*directWorkerConnection, workerprotocol.Binding, bool, error) {
 	w, enrolled, err := p.server.Store.DirectWorkerForService(ctx, p.accountID, p.Name(), p.credential, serviceID)
 	if err != nil || !enrolled {

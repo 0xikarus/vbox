@@ -110,6 +110,12 @@ type Usage struct {
 	Cost         Cost      `json:"cost"`
 }
 
+// BatchUsageProvider avoids repeating provider-wide billing queries when a
+// caller needs usage for several services. Results are keyed by requested ID.
+type BatchUsageProvider interface {
+	UsageBatch(context.Context, []string) (map[string]Usage, error)
+}
+
 type LogOptions struct {
 	Follow bool
 	Tail   int

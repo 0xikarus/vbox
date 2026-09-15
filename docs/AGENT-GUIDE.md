@@ -69,7 +69,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 
 ## Other recently established behavior
 
-- Default worker builds include desktop packages (`VMBOX_DESKTOP=true`). The web
+- Default worker builds include desktop packages (`VMBOX_DESKTOP=true`). Opening
+  a sleeping web workspace is read-only until **Resume box** is clicked. A running
   workspace starts the desktop on attachment; TMUX and Run once retain their flows.
   PCManFM supplies desktop launch icons alongside the tint2 taskbar. Icon files
   are created only when absent; an exact legacy vmbox Terminal icon is refreshed,
@@ -97,6 +98,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Foundry is a pinned preset. Custom tooling is trusted user-supplied Bash run
   **inside the worker**, with a five-minute deadline, before the task. Persistent
   boxes retain and rerun the recipe on resume: installation must be idempotent.
+- The owner controller UI loads current-period fleet service costs only when the
+  owner asks. Cost reads do not start or contact boxes. Railway batches all slot
+  lookups into one billing command; credentials without billing scope return an
+  unavailable explanation instead of a fabricated estimate.
 - `process_tasks` cascade when a box is deleted. Run once must first archive the
   completed result into `run_once_requests.result`. The results page must work
   when the logical box no longer exists. Never infer task success from SSH errors.
