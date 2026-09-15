@@ -333,7 +333,16 @@ if(importForm){
 
 const messageForm=document.querySelector('#agent-message-form');
 if(messageForm){
- let timer,pendingKey='',pendingText='';const status=document.querySelector('#agent-message-status');
+ let timer,pendingKey='',pendingText='',draftImages=[],messageURLs=[];const status=document.querySelector('#agent-message-status'),imageInput=messageForm.elements.images,imageDraft=document.querySelector('#agent-image-draft');
+ const clearMessageURLs=()=>{for(const value of messageURLs)URL.revokeObjectURL(value);messageURLs=[]};
+ const renderDraft=()=>{imageDraft.replaceChildren();for(const entry of draftImages){const row=document.createElement('p'),image=document.createElement('img'),remove=document.createElement('button');image.src=entry.url;image.alt='Image '+entry.number;remove.type='button';remove.textContent='Remove';remove.onclick=()=>{draftImages=draftImages.filter(value=>value!==entry);URL.revokeObjectURL(entry.url);draftImages.forEach((value,index)=>value.number=index+1);renderDraft()};row.append(image,remove);imageDraft.append(row)}};
+ const uploadImages=async files=>{if(!files.length)return;const button=messageForm.querySelector('button');button.disabled=true;try{for(const file of files){if(draftImages.length>=8)throw Error('Attach at most 8 images.');if(!['image/png','image/jpeg','image/gif'].includes(file.type))throw Error('Choose PNG, JPEG, or GIF images.');if(file.size>8*1024*1024)throw Error('Each image must be at most 8 MiB.');const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(60000)});let result;try{result=await response.json()}catch{}if(!response.ok)throw Error(result?.error||'Image upload failed.');draftImages.push({id:result.id,number:draftImages.length+1,url:URL.createObjectURL(file)});renderDraft()}}catch(e){status.textContent=e.message}finally{button.disabled=false;imageInput.value=''}};
+ imageInput.onchange=()=>void uploadImages([...imageInput.files]);
+ messageForm.addEventListener('paste',event=>{const files=[...(event.clipboardData?.items||[])].filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);if(files.length){event.preventDefault();void uploadImages(files)}});
+ messageForm.addEventListener('dragover',event=>{if([...(event.dataTransfer?.types||[])].includes('Files'))event.preventDefault()});
+ messageForm.addEventListener('drop',event=>{const files=[...(event.dataTransfer?.files||[])];if(files.length){event.preventDefault();void uploadImages(files)}});
+ const answeredQuestions=new Set();
+ const appendQuestion=(row,message)=>{if(!message.question)return;const form=document.createElement('form'),group='question-'+message.id;message.question.choices.forEach((choice,index)=>{const label=document.createElement('label'),input=document.createElement('input');input.type=message.question.multiple?'checkbox':'radio';input.name=group;input.value=choice;if(!message.question.multiple&&index===0)input.required=true;label.append(input,document.createTextNode(' '+choice));form.append(label,document.createElement('br'))});const send=document.createElement('button');send.textContent='Send selection';send.disabled=answeredQuestions.has(message.id);form.append(send);form.onsubmit=async event=>{event.preventDefault();const selected=[...form.querySelectorAll('input:checked')].map(input=>input.value);if(!selected.length){status.textContent='Choose at least one option.';return}send.disabled=true;try{await api(bp+'/messages','POST',{text:'Answer to "'+message.question.text+'": '+selected.join(', ')},{'Idempotency-Key':crypto.randomUUID()});answeredQuestions.add(message.id);status.textContent='Selection sent.';await refresh()}catch(e){status.textContent=e.message;send.disabled=false}};row.append(form)};
  const refresh=async()=>{
   clearTimeout(timer);
   document.querySelector('#agent-chat').hidden=!!runID;
@@ -341,21 +350,21 @@ if(messageForm){
   try{
    const messages=await api(bp+'/messages');
    if(document.querySelector('#workspace').hidden)return;
-   const list=document.querySelector('#agent-messages');list.replaceChildren();
-   for(const message of messages){const row=document.createElement('li');const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);list.append(row)}
+   const list=document.querySelector('#agent-messages');list.replaceChildren();clearMessageURLs();
+   for(const message of messages){const row=document.createElement('li');const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);for(const attachment of message.images||[]){const response=await fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(attachment.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)});if(response.ok){const imageURL=URL.createObjectURL(await response.blob()),image=document.createElement('img');messageURLs.push(imageURL);image.src=imageURL;image.alt='Image '+attachment.number+' from '+message.direction;row.append(image)}}appendQuestion(row,message);list.append(row)}
   }catch(e){status.textContent=e.message}
   timer=setTimeout(refresh,3000);
  };
  messageForm.onsubmit=async event=>{
-  event.preventDefault();const text=messageForm.elements.text.value;
-  if(text!==pendingText||!pendingKey){pendingKey=crypto.randomUUID();pendingText=text}
+  event.preventDefault();const text=messageForm.elements.text.value,images=draftImages.map(({id,number})=>({id,number})),fingerprint=text+'\n'+images.map(image=>image.id).join(',');
+  if(fingerprint!==pendingText||!pendingKey){pendingKey=crypto.randomUUID();pendingText=fingerprint}
   const button=messageForm.querySelector('button');button.disabled=true;
-  try{const result=await api(bp+'/messages','POST',{text},{'Idempotency-Key':pendingKey});messageForm.elements.text.value='';pendingKey='';pendingText='';status.textContent=result.message?.state==='silent'?'Note saved without waking the agent.':'Message sent.';await refresh()}
+  try{const result=await api(bp+'/messages','POST',{text,images},{'Idempotency-Key':pendingKey});messageForm.elements.text.value='';for(const entry of draftImages)URL.revokeObjectURL(entry.url);draftImages=[];renderDraft();pendingKey='';pendingText='';status.textContent=result.message?.state==='silent'?'Note saved without waking the agent.':'Message sent.';await refresh()}
   catch(e){status.textContent=e.message}finally{button.disabled=false}
  };
- window.addEventListener('pagehide',()=>clearTimeout(timer));
+ window.addEventListener('pagehide',()=>{clearTimeout(timer);clearMessageURLs();for(const entry of draftImages)URL.revokeObjectURL(entry.url)});
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh()});
- document.querySelector('#logout').addEventListener('click',()=>{clearTimeout(timer);document.querySelector('#agent-messages').replaceChildren();messageForm.reset();pendingKey='';pendingText=''});
+ document.querySelector('#logout').addEventListener('click',()=>{clearTimeout(timer);clearMessageURLs();for(const entry of draftImages)URL.revokeObjectURL(entry.url);draftImages=[];imageDraft.replaceChildren();document.querySelector('#agent-messages').replaceChildren();messageForm.reset();pendingKey='';pendingText=''});
  void refresh();
 }
 

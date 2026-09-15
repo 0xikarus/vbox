@@ -64,6 +64,10 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 	for i, j := 0, len(values)-1; i < j; i, j = i+1, j-1 {
 		values[i], values[j] = values[j], values[i]
 	}
+	if err := s.Store.loadBoxMessageImages(r.Context(), p.AccountID, values); err != nil {
+		writeError(w, 500, fmt.Errorf("message images unavailable"))
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, values)
 }

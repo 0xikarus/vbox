@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"time"
@@ -139,6 +140,87 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		}
 		snapshot.BoxName = os.Getenv("VMBOX_NAME")
 		return true, json.NewEncoder(os.Stdout).Encode(snapshot)
+	case "chat-pull":
+		if len(args) != 2 {
+			return true, fmt.Errorf("chat-pull requires SESSION")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true, err
+		}
+		event, found, err := boxruntime.PullChatEvent(home, args[1])
+		if err != nil {
+			return true, err
+		}
+		if !found {
+			return true, nil
+		}
+		return true, json.NewEncoder(os.Stdout).Encode(event)
+	case "chat-ack":
+		if len(args) != 3 {
+			return true, fmt.Errorf("chat-ack requires SESSION EVENT_ID")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true, err
+		}
+		return true, boxruntime.AckChatEvent(home, args[1], args[2])
+	case "chat-deliver":
+		if len(args) != 2 {
+			return true, fmt.Errorf("chat-deliver requires SESSION")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 100<<20))
+		if err != nil {
+			return true, err
+		}
+		var inbound boxruntime.ChatInbound
+		if err := json.Unmarshal(data, &inbound); err != nil {
+			return true, fmt.Errorf("invalid inbound chat envelope")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true, err
+		}
+		return true, boxruntime.StoreChatInbound(home, args[1], inbound)
+	case "chat-codex":
+		if len(args) != 2 {
+			return true, fmt.Errorf("chat-codex requires SESSION")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 100<<20))
+		if err != nil {
+			return true, err
+		}
+		var inbound boxruntime.ChatInbound
+		if err := json.Unmarshal(data, &inbound); err != nil {
+			return true, fmt.Errorf("invalid inbound chat envelope")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true, err
+		}
+		return true, boxruntime.DeliverCodexChat(context.Background(), home, args[1], inbound)
+	case "chat-codex-name":
+		if len(args) != 2 {
+			return true, fmt.Errorf("chat-codex-name requires SESSION")
+		}
+		return true, boxruntime.NameCodexChatThread(context.Background(), runtime.Root, args[1])
+	case "chat-opencode":
+		if len(args) != 2 {
+			return true, fmt.Errorf("chat-opencode requires SESSION")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 100<<20))
+		if err != nil {
+			return true, err
+		}
+		var inbound boxruntime.ChatInbound
+		if err := json.Unmarshal(data, &inbound); err != nil {
+			return true, fmt.Errorf("invalid inbound chat envelope")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true, err
+		}
+		return true, boxruntime.DeliverOpenCodeChat(context.Background(), home, args[1], inbound)
 	default:
 		return false, nil
 	}

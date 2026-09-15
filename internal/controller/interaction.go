@@ -129,7 +129,7 @@ func (s *Server) startAssignedBoxTaskRuntime(ctx context.Context, p Principal, p
 	if err = s.provisionDesktopAgent(ctx, tx, p, a, prov); err != nil {
 		return provider.ExecResult{}, err
 	}
-	result, err := s.startBoxTaskRuntime(ctx, prov, a.Slot.ServiceID, task, message)
+	result, err := s.startBoxTaskRuntime(ctx, p.AccountID, prov, a.Slot.ServiceID, task, message)
 	if err != nil {
 		return result, err
 	}
@@ -144,11 +144,15 @@ func (s *Server) startAssignedBoxTaskRuntime(ctx context.Context, p Principal, p
 	return result, nil
 }
 
-func (s *Server) startBoxTaskRuntime(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask, message v1.BoxMessage) (provider.ExecResult, error) {
+func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov provider.Provider, serviceID string, task v1.BoxTask, message v1.BoxMessage) (provider.ExecResult, error) {
 	if err := stageWorkspaceRuntime(ctx, prov, serviceID, s.WorkerRuntime); err != nil {
 		return provider.ExecResult{}, fmt.Errorf("stage matching task runtime: %w", err)
 	}
-	prompt := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
+	text, err := s.boxMessagePrompt(ctx, accountID, task.Agent, message)
+	if err != nil {
+		return provider.ExecResult{}, fmt.Errorf("prepare message images: %w", err)
+	}
+	prompt := base64.RawURLEncoding.EncodeToString([]byte(text))
 	return prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
 }
 
@@ -176,8 +180,23 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
 		return err
 	}
-	encoded := base64.RawURLEncoding.EncodeToString([]byte(message.Text))
-	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit), "true"}, provider.ExecOptions{})
+	var result provider.ExecResult
+	var execErr error
+	if task.Agent == "claude" && submit {
+		result, execErr = s.deliverNativeAgentChat(ctx, prov, assignment.Slot.ServiceID, p.AccountID, "chat-deliver", task, message)
+	} else if task.Agent == "codex" && submit {
+		result, execErr = s.deliverNativeAgentChat(ctx, prov, assignment.Slot.ServiceID, p.AccountID, "chat-codex", task, message)
+	} else if task.Agent == "opencode" && submit {
+		result, execErr = s.deliverNativeAgentChat(ctx, prov, assignment.Slot.ServiceID, p.AccountID, "chat-opencode", task, message)
+	} else {
+		text, err := s.boxMessagePrompt(ctx, p.AccountID, task.Agent, message)
+		if err != nil {
+			_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
+			return err
+		}
+		encoded := base64.RawURLEncoding.EncodeToString([]byte(text))
+		result, execErr = prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit), "true"}, provider.ExecOptions{})
+	}
 	if execErr != nil {
 		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "ambiguous", execErr.Error())
 		return fmt.Errorf("message delivery is ambiguous; inspect the terminal before retrying: %w", execErr)
@@ -405,7 +424,7 @@ func (s *Server) logicalBoxConnectionHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	deploymentID := connection.Metadata["deploymentInstanceId"]
-	if !connectionMatchesAssignment(connection,assignment) {
+	if !connectionMatchesAssignment(connection, assignment) {
 		writeError(w, http.StatusConflict, fmt.Errorf("resolved SSH deployment does not match the fenced assignment; retry after reconciliation"))
 		return
 	}

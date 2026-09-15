@@ -101,7 +101,7 @@ func TestBoxTaskStagesMatchingRuntimeBeforeStartingAgent(t *testing.T) {
 	server.WorkerRuntime = runtime
 	task := v1.BoxTask{Session: "fresh-claude", Agent: "claude"}
 	message := v1.BoxMessage{ID: "message-1", Text: "hello"}
-	if _, err := server.startBoxTaskRuntime(context.Background(), p, "service-1", task, message); err != nil {
+	if _, err := server.startBoxTaskRuntime(context.Background(), "account-1", p, "service-1", task, message); err != nil {
 		t.Fatal(err)
 	}
 	if len(p.calls) != 3 {

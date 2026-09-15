@@ -300,6 +300,16 @@ CREATE INDEX IF NOT EXISTS box_messages_task_time_idx
   ON box_messages(account_id,task_id,created_at,id);
 CREATE INDEX IF NOT EXISTS box_messages_delivery_idx
   ON box_messages(account_id,state,created_at,id);
+CREATE TABLE IF NOT EXISTS box_message_images (
+  message_id uuid NOT NULL REFERENCES box_messages(id) ON DELETE CASCADE,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  image_id uuid NOT NULL REFERENCES run_once_images(id) ON DELETE RESTRICT,
+  ordinal integer NOT NULL CHECK (ordinal BETWEEN 1 AND 1000),
+  PRIMARY KEY(message_id,image_id),
+  UNIQUE(message_id,ordinal)
+);
+CREATE INDEX IF NOT EXISTS box_message_images_account_idx
+  ON box_message_images(account_id,message_id,ordinal);
 
 CREATE TABLE IF NOT EXISTS chat_groups (
   id uuid PRIMARY KEY,

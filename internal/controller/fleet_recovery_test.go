@@ -387,6 +387,8 @@ func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) 
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
 			AddRow("message-1", "task-1", "user-a", "user", "hello", "queued", now, now))
+	mock.ExpectQuery("FROM box_message_images").WithArgs("account-a", "message-1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "ordinal", "media_type"}))
 
 	var started []string
 	server := NewServer(store, nil)

@@ -95,6 +95,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Images can be selected, dropped, or pasted. Uploads use the same bounded image
   API, numbered references and appended download URLs. Normal text paste is not
   intercepted. URLs expire; never expose their access capability in logs.
+- Persistent-box Agent chat links images to individual messages and displays them
+  through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
+  experimental `claude/channel`, or OpenCode's loopback session API. The managed
+  `vmbox-desktop` MCP exposes `chat_reply` and `chat_ask`; controller acknowledgement
+  happens after reply text, validated images, or a choice prompt is stored. Terminal
+  capture remains a compatibility fallback for clients that do not call the tool.
 - Foundry is a pinned preset. Custom tooling is trusted user-supplied Bash run
   **inside the worker**, with a five-minute deadline, before the task. Persistent
   boxes retain and rerun the recipe on resume: installation must be idempotent.

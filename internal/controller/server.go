@@ -182,6 +182,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/terminal/input", s.auth(s.terminalInputHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages", s.auth(s.directBoxMessageHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/messages", s.auth(s.boxMessageHistory))
+	mux.HandleFunc("GET /v1/messages/{message}/images/{image}", s.auth(s.downloadBoxMessageImage))
 	mux.HandleFunc("GET /v1/tasks/{id}", s.auth(s.getBoxTaskHandler))
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.auth(s.listBoxMessagesHandler))
 	mux.HandleFunc("POST /v1/tasks/{id}/messages", s.auth(s.sendBoxMessageHandler))
