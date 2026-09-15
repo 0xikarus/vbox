@@ -70,7 +70,7 @@ func persistentAgentArgv(session, agent string) ([]string, error) {
 	case "opencode":
 		return []string{agent, "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
 	case "claude":
-		return []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--dangerously-load-development-channels", "server:vmbox-desktop"}, nil
+		return []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", "/data/home/.local/share/vmbox/chat", "--dangerously-load-development-channels", "server:vmbox-desktop"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported persistent agent %q", agent)
 	}
