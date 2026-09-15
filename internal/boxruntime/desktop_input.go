@@ -29,6 +29,8 @@ type DesktopAction struct {
 	Keys   []string `json:"keys,omitempty"`
 }
 
+const desktopDoubleClickDelay = 120 * time.Millisecond
+
 func desktopInputCommand(ctx context.Context, stdin string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "xdotool", args...)
 	cmd.Env = append(os.Environ(), "DISPLAY=:99")
@@ -75,6 +77,27 @@ func validateDesktopAction(a DesktopAction) error {
 		}
 	default:
 		return fmt.Errorf("unsupported desktop action")
+	}
+	return nil
+}
+
+func desktopClicks(ctx context.Context, count, button int, check func() error, run func(...string) error) error {
+	for i := 0; i < count; i++ {
+		if i > 0 {
+			timer := time.NewTimer(desktopDoubleClickDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		if err := check(); err != nil {
+			return err
+		}
+		if err := run("click", strconv.Itoa(button)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -225,14 +248,7 @@ func DesktopInput(ctx context.Context, assignment string, a DesktopAction) error
 		}
 		switch a.Action {
 		case "click":
-			for i := 0; i < count; i++ {
-				if err = check(); err != nil {
-					return err
-				}
-				if err = run("click", strconv.Itoa(button)); err != nil {
-					return err
-				}
-			}
+			return desktopClicks(ctx, count, button, check, run)
 		case "scroll":
 			wheel := map[string]int{"up": 4, "down": 5, "left": 6, "right": 7}[a.Text]
 			for i := 0; i < count; i++ {
