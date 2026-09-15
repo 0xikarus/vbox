@@ -64,7 +64,7 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	default:
 	}
 
-	if _, err := io.WriteString(write, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`+"\n"); err != nil {
+	if _, err := io.WriteString(write, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"claude-code","version":"2.1.259"}}}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	first := <-output.lines
@@ -94,6 +94,52 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 		t.Fatal("channel notification was not emitted after initialize")
 	}
 
+	cancel()
+	_ = write.Close()
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("MCP server did not stop")
+	}
+}
+
+func TestDesktopMCPDoesNotConsumeClaudeChannelInboxForOtherClients(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "opencode-session")
+	if err := StoreChatInbound(home, "opencode-session", ChatInbound{ID: "message-1", Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	input, write := io.Pipe()
+	output := &lineCapture{lines: make(chan []byte, 4)}
+	done := make(chan error, 1)
+	go func() { done <- ServeDesktopMCP(ctx, "invalid", input, output) }()
+	if _, err := io.WriteString(write, strings.Join([]string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","clientInfo":{"name":"opencode","version":"1.18.27"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+	}, "\n")+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	<-output.lines
+	time.Sleep(100 * time.Millisecond)
+	ready := filepath.Join(home, ".local", "share", "vmbox", "chat", "channel-ready", "opencode-session")
+	if _, err := os.Stat(ready); !os.IsNotExist(err) {
+		t.Fatalf("non-Claude client advertised channel readiness: %v", err)
+	}
+	inbox := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "opencode-session", "message-1.json")
+	if _, err := os.Stat(inbox); err != nil {
+		t.Fatalf("non-Claude client consumed Agent chat inbox: %v", err)
+	}
+	select {
+	case line := <-output.lines:
+		t.Fatalf("non-Claude client received channel notification: %s", line)
+	default:
+	}
 	cancel()
 	_ = write.Close()
 	select {

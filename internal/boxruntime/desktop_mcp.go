@@ -62,6 +62,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		return encoder.Encode(value)
 	}
 	var channelOnce sync.Once
+	var claudeChannelClient bool
 	for scanner.Scan() {
 		var request desktopMCPRequest
 		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
@@ -71,7 +72,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			continue
 		}
 		if len(request.ID) == 0 {
-			if request.Method == "notifications/initialized" {
+			if request.Method == "notifications/initialized" && claudeChannelClient {
 				// The client only registers notification handlers after the
 				// initialize response. Waiting for its initialized notification
 				// prevents a queued first message from being emitted too early.
@@ -84,8 +85,12 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		case "initialize":
 			var params struct {
 				ProtocolVersion string `json:"protocolVersion"`
+				ClientInfo      struct {
+					Name string `json:"name"`
+				} `json:"clientInfo"`
 			}
 			_ = json.Unmarshal(request.Params, &params)
+			claudeChannelClient = strings.Contains(strings.ToLower(params.ClientInfo.Name), "claude")
 			version := params.ProtocolVersion
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
