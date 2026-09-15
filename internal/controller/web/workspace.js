@@ -53,7 +53,7 @@ async function ensureTerminal(version=epoch){
    managedSession=session.session;
    $('#session').textContent=agent+': '+session.session;
    closeTerminal();terminalAttached=true;recordViewer('terminal',{state:'connecting'});
-   const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('terminal',value)}});
+   const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{autoFocus:false,onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('terminal',value)}});
    closeTerminal=()=>{terminalAttached=false;recordViewer('terminal',{state:'disconnected'});dispose()};
    return true;
   }catch(e){if(workspaceCurrent(version))$('#error').textContent=e.message;return false}
