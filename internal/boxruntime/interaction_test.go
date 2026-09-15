@@ -411,16 +411,26 @@ func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {
 	}
 }
 
-func TestOpenCodeInputReadinessRecognizesCurrentTUI(t *testing.T) {
-	content := `
-   ┃  Ask anything... "Fix broken tests"
-   ┃  Build · DeepSeek V4.1 Flash OpenRouter
-  /data/workspace  ⊙ 1 MCP /status`
-	if !agentInputReady("opencode", content) {
-		t.Fatal("current OpenCode input prompt was not recognized")
+func TestWaitForAgentReadyUsesOpenCodeSessionAPI(t *testing.T) {
+	originalProbe, originalInterval, originalTimeout := openCodeReadyProbe, agentReadyPollInterval, agentReadyTimeout
+	t.Cleanup(func() {
+		openCodeReadyProbe, agentReadyPollInterval, agentReadyTimeout = originalProbe, originalInterval, originalTimeout
+	})
+	agentReadyPollInterval = 0
+	agentReadyTimeout = time.Second
+	attempts := 0
+	openCodeReadyProbe = func(_ context.Context, session string) (bool, error) {
+		if session != "opencode-api" {
+			t.Fatalf("session=%q", session)
+		}
+		attempts++
+		return attempts == 2, nil
 	}
-	if agentInputReady("opencode", "Ask anything...") {
-		t.Fatal("partial OpenCode startup output was accepted")
+	if err := waitForAgentReady(context.Background(), "opencode-api", "opencode"); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts=%d", attempts)
 	}
 }
 

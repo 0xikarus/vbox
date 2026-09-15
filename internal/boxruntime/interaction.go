@@ -400,6 +400,26 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 }
 
 func waitForAgentReady(ctx context.Context, session, agent string) error {
+	if agent == "opencode" {
+		deadline := time.NewTimer(agentReadyTimeout)
+		defer deadline.Stop()
+		for {
+			ready, err := openCodeReadyProbe(ctx, session)
+			if err != nil {
+				return err
+			}
+			if ready {
+				return nil
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-deadline.C:
+				return fmt.Errorf("%s task session API did not become ready", agent)
+			case <-time.After(agentReadyPollInterval):
+			}
+		}
+	}
 	deadline := time.NewTimer(agentReadyTimeout)
 	defer deadline.Stop()
 	for {
@@ -446,9 +466,6 @@ func agentInputReady(agent, content string) bool {
 			}
 		}
 		return false
-	case "opencode":
-		return strings.Contains(strings.ToLower(content), "opencode") ||
-			strings.Contains(content, "Ask anything...") && strings.Contains(content, "/status")
 	default:
 		return false
 	}
