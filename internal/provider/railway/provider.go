@@ -1121,10 +1121,24 @@ func (p *Provider) Logs(ctx context.Context, id string, opts provider.LogOptions
 	return nil
 }
 func (p *Provider) Usage(ctx context.Context, id string) (provider.Usage, error) {
-	service, err := p.resolve(ctx, id)
-	if err != nil {
-		return provider.Usage{}, err
+	usage, err := p.UsageBatch(ctx, []string{id})
+	return usage[id], err
+}
+
+func (p *Provider) UsageBatch(ctx context.Context, ids []string) (map[string]provider.Usage, error) {
+	services := make(map[string]service, len(ids))
+	for _, id := range ids {
+		service, err := p.resolve(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		services[id] = service
 	}
+	usage := make(map[string]provider.Usage, len(ids))
+	if len(ids) == 0 {
+		return usage, nil
+	}
+	observedAt := time.Now().UTC()
 	result, err := p.runner.Run(ctx, []string{"railway", "usage", "projects", "--project", p.cfg.ProjectID, "--period", "current", "--json"}, nil, nil, nil)
 	if err != nil || result.ExitCode != 0 {
 		detail := "Railway billing usage is unavailable for this credential"
@@ -1133,9 +1147,15 @@ func (p *Provider) Usage(ctx context.Context, id string) (provider.Usage, error)
 		} else if err != nil {
 			detail = "Railway billing usage unavailable: " + err.Error()
 		}
-		return provider.Usage{ObservedAt: time.Now().UTC(), Cost: provider.Cost{Available: false, Currency: "USD", Detail: detail}}, nil
+		for _, id := range ids {
+			usage[id] = provider.Usage{ObservedAt: observedAt, Cost: provider.Cost{Available: false, Currency: "USD", Detail: detail}}
+		}
+		return usage, nil
 	}
-	return provider.Usage{ObservedAt: time.Now().UTC(), Cost: decodeRailwayCost(result.Stdout, service.Name)}, nil
+	for _, id := range ids {
+		usage[id] = provider.Usage{ObservedAt: observedAt, Cost: decodeRailwayCost(result.Stdout, services[id].Name)}
+	}
+	return usage, nil
 }
 
 func (p *Provider) Exec(ctx context.Context, id string, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {

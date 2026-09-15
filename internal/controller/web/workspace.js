@@ -205,15 +205,19 @@ $('#resource-form').onsubmit=async event=>{
  }catch(e){if(workspaceCurrent(snapshot.version))$('#resource-status').textContent=e.message+' Reload limits before retrying.'}
  finally{form.querySelector('button').disabled=false;$('#load-resources').disabled=false}
 };
-function state(b){$('#box-settings').hidden=!!runID||workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ')}
-async function connect(){
+function state(b){$('#box-settings').hidden=!!runID||workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ');$('#connect').textContent=b.state==='running'?'Reconnect viewers':'Resume box'}
+function showSleepingWorkspace(){
+ stopStats();$('#workspace').hidden=false;$('#workspace-tabs').hidden=true;$('#terminal').hidden=true;$('#desktop').hidden=true;$('#hibernate').hidden=true;$('#session').textContent='Saved workspace. Resume the box to connect.';
+}
+async function connect(resume=false){
  if(runID){clearTimeout(runTimer);closeTerminal();attachedRunSession='';$('#error').textContent='';await inspectRun(++epoch);return}
  if(busy)return;resetBoxSettings();busy=true;const version=++epoch;$('#connect').disabled=true;$('#error').textContent='';
  try{
   const run=await api(bp+'/run-once');if(version!==epoch)return;
   if(run?.id){runID=run.id;history.replaceState(null,'','?run='+encodeURIComponent(runID));await inspectRun(version);return}
-  let box=await api(bp);if(version!==epoch)return;state(box);showInteractiveWorkspace();
+  let box=await api(bp);if(version!==epoch)return;state(box);
   if(box.state!=='running'){
+   if(!resume){showSleepingWorkspace();return}
    if(!allocation)allocation=await api(bp+'/allocate','POST',{leaseOwner:'web'},{'Idempotency-Key':allocationKey});
    const deadline=Date.now()+180000;
    while(allocation.state!=='ready'){
@@ -229,12 +233,12 @@ async function connect(){
   startStats();await openPreferredView(box,version);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}finally{busy=false;$('#connect').disabled=false}
 }
-$('#connect').onclick=connect;
-$('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}};
+$('#connect').onclick=()=>void connect(true);
+$('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){$('#error').textContent=e.message}};
 $('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#login').hidden=false;$('#status').textContent='Logged out. The box was not stopped.'}catch(e){$('#error').textContent=e.message}};
-$('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;stopStats();closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#workspace-tabs').hidden=true;$('#session').textContent='';$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
+$('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;stopStats();closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';showSleepingWorkspace();$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
 window.addEventListener('pagehide',()=>{epoch++;stopStats();clearTimeout(runTimer);closeTerminal();closeDesktop()});
-(async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect()}catch(e){$('#error').textContent=e.message}})();
+(async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){$('#error').textContent=e.message}})();
 
 // Secret values are sent directly to the private manager, never through chat.
 const secretForm=document.querySelector('#secret-form');

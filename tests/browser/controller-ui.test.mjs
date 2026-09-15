@@ -32,6 +32,7 @@ before(async()=>{
    '/v1/provider-schemas':{providers:{railway:{image:'string'}}},
    '/v1/controller-defaults':{provider:'railway',providerCredential:'primary'},
    '/v1/fleet/status':{desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,unhealthySlots:0,slots:[{ordinal:1,state:'occupied',health:'healthy',region:'europe-west4',logicalBoxName:'helper ü'},{ordinal:2,state:'free',health:'healthy',region:'europe-west4'}]},
+   '/v1/fleet/costs':{provider:'railway',providerCredential:'primary',period:'current provider billing period',observedAt:revision,total:{currency:'USD',accrued:1.23,available:true,detail:'Sum of available fleet service costs.'},availableSlotCount:1,unavailableSlotCount:1,slots:[{ordinal:1,state:'occupied',logicalBoxName:'helper ü',cost:{currency:'USD',accrued:1.23,available:true,detail:'Railway service entries'}},{ordinal:2,state:'free',cost:{currency:'USD',available:false,detail:'Project token cannot read billing'}}]},
    '/v1/notifications':[],
    '/v1/whoami':{accountId:'account-1',accountName:'Team'},
    '/v1/login-profiles':[{application:'claude',name:'personal',createdAt:revision}],
@@ -120,6 +121,14 @@ test('table previews stay fixed size and tool choices stay compact',async()=>{
   });
   assert.deepEqual(result.after,result.before);assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
  }
+});
+test('cost overview loads on demand and reports partial provider coverage',async()=>{
+ const page=await browser.newPage();const before=requests.filter(r=>r.path==='/v1/fleet/costs').length;
+ await page.goto(base+'/#costs');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#costs:not([hidden])');
+ assert.equal(requests.filter(r=>r.path==='/v1/fleet/costs').length,before);assert.match(await page.$eval('#cost-overview',n=>n.textContent),/not been loaded/);
+ await page.click('#load-costs');await page.waitForFunction(()=>document.querySelector('#cost-overview').textContent.includes('1 of 2 slots reported'));
+ const text=await page.$eval('#cost-overview',n=>n.textContent);assert.match(text,/1\.23/);assert.match(text,/helper ü/);assert.match(text,/Project token cannot read billing/);
+ assert.equal(requests.filter(r=>r.path==='/v1/fleet/costs').length,before+1);await page.screenshot({path:'/tmp/vmbox-cost-overview.png',fullPage:true});await page.close();
 });
 test('agent model choices are prefilled, kept separate and submitted with custom installation',async()=>{
  const page=await browser.newPage();await page.evaluateOnNewDocument(()=>{const original=window.fetch;window.sentRuns=[];window.fetch=async(path,options={})=>{if(path==='/v1/run-once'&&options.method==='POST'){window.sentRuns.push(JSON.parse(options.body));return new Response(JSON.stringify({id:'chosen-model',state:'blocked'}))}if(path==='/v1/run-once/chosen-model')return new Response(JSON.stringify({id:'chosen-model',state:'blocked'}));return original(path,options)}});

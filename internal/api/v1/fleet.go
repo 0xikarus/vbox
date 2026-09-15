@@ -141,3 +141,32 @@ type FleetStatus struct {
 	Slots                []ComputeSlot `json:"slots"`
 	DetachedLogicalBoxes []LogicalBox  `json:"detachedLogicalBoxes"`
 }
+
+type FleetCost struct {
+	Currency  string  `json:"currency,omitempty"`
+	Accrued   float64 `json:"accrued,omitempty"`
+	Estimated bool    `json:"estimated,omitempty"`
+	Available bool    `json:"available"`
+	Detail    string  `json:"detail,omitempty"`
+}
+
+type FleetSlotCost struct {
+	Ordinal        int            `json:"ordinal"`
+	State          FleetSlotState `json:"state"`
+	ServiceID      string         `json:"serviceId,omitempty"`
+	ServiceName    string         `json:"serviceName,omitempty"`
+	LogicalBoxName string         `json:"logicalBoxName,omitempty"`
+	ObservedAt     time.Time      `json:"observedAt,omitempty"`
+	Cost           FleetCost      `json:"cost"`
+}
+
+type FleetCostOverview struct {
+	Provider             string          `json:"provider"`
+	ProviderCredential   string          `json:"providerCredential,omitempty"`
+	Period               string          `json:"period"`
+	ObservedAt           time.Time       `json:"observedAt,omitempty"`
+	Total                FleetCost       `json:"total"`
+	AvailableSlotCount   int             `json:"availableSlotCount"`
+	UnavailableSlotCount int             `json:"unavailableSlotCount"`
+	Slots                []FleetSlotCost `json:"slots"`
+}

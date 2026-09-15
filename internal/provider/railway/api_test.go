@@ -84,6 +84,24 @@ func TestUsageReportsProjectTokenBillingScopeWithoutFailing(t *testing.T) {
 	}
 }
 
+func TestUsageBatchReadsBillingOnceForSeveralServices(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{
+		{Stdout: []byte(`[{"id":"service-a","name":"vmbox-slot-a","status":"SUCCESS"},{"id":"service-b","name":"vmbox-slot-b","status":"SUCCESS"}]`)},
+		{Stdout: []byte(`{"services":[{"name":"vmbox-slot-a","totalDollars":1.25},{"name":"vmbox-slot-b","totalDollars":2.5}]}`)},
+	}}
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	usage, err := p.UsageBatch(context.Background(), []string{"service-a", "service-b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runner.Calls) != 2 || runner.Calls[1].Argv[1] != "usage" {
+		t.Fatalf("provider calls = %#v", runner.Calls)
+	}
+	if usage["service-a"].Cost.Accrued != 1.25 || usage["service-b"].Cost.Accrued != 2.5 {
+		t.Fatalf("usage = %+v", usage)
+	}
+}
+
 func TestConfigureServiceBatchesSettings(t *testing.T) {
 	for _, region := range []string{"", "ams"} {
 		t.Run("region="+region, func(t *testing.T) {

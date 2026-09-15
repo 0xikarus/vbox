@@ -19,6 +19,28 @@ function dataTable(headers,rows){const table=document.createElement('table'),hea
 function rawDetails(value){const d=document.createElement('details');d.append(node('summary','Technical details · JSON'),node('pre',JSON.stringify(value,null,2)));return d}
 let locationTarget=null,locationLoading=false,locationSaving=false;
 function resetLocation(){locationTarget=null;$('#location-form').hidden=true;$('#location-status').textContent='';}
+let costTarget=null,costLoading=false;
+function resetCosts(){costTarget=null;$('#cost-overview').replaceChildren(node('p','Costs have not been loaded.'))}
+function formatCost(cost){
+ if(!cost?.available)return 'Unavailable';
+ try{return new Intl.NumberFormat(undefined,{style:'currency',currency:cost.currency||'USD'}).format(cost.accrued||0)+(cost.estimated?' estimated':'')}
+ catch{return (cost.currency||'')+' '+Number(cost.accrued||0).toFixed(2)+(cost.estimated?' estimated':'')}
+}
+function renderCosts(value){
+ const root=$('#cost-overview'),coverage=value.availableSlotCount+' of '+value.slots.length+' slots reported';
+ root.replaceChildren(node('p',(value.total.available?'Available slot total: '+formatCost(value.total):'Total unavailable')+' · '+coverage));
+ root.append(value.slots.length?dataTable(['Slot','State','Box','Current period','Provider detail'],value.slots.map(s=>[s.ordinal,s.state,s.logicalBoxName||'—',formatCost(s.cost),s.cost.detail||'—'])):node('p','No compute slots configured.'));
+ if(value.unavailableSlotCount)root.append(node('p','Some service costs are unavailable. The provider detail above explains each missing amount.'));
+ if(value.observedAt)root.append(node('p','Observed '+new Date(value.observedAt).toLocaleString()+'.'));
+ root.append(rawDetails(value));
+}
+$('#load-costs').addEventListener('click',action(async()=>{
+ if(costLoading)return;if(!defaults)throw Error('Configure controller default first.');
+ const target={provider:defaults.provider,providerCredential:defaults.providerCredential},version=epoch;costLoading=true;$('#load-costs').disabled=true;$('#cost-overview').replaceChildren(node('p','Loading provider billing…'));
+ try{const q=new URLSearchParams(target),value=await api('/v1/fleet/costs?'+q);if(version!==epoch||defaults?.provider!==target.provider||defaults?.providerCredential!==target.providerCredential)return;costTarget=target;renderCosts(value)}
+ catch(err){if(version===epoch)$('#cost-overview').replaceChildren(node('p',err.message))}
+ finally{costLoading=false;$('#load-costs').disabled=false}
+}));
 $('#load-locations').addEventListener('click',action(async()=>{
  if(locationLoading||locationSaving)return;if(!defaults)throw Error('Configure controller default first');
  const target={provider:defaults.provider,providerCredential:defaults.providerCredential},version=epoch;locationLoading=true;$('#load-locations').disabled=true;resetLocation();$('#location-status').textContent='Loading locations…';
@@ -100,10 +122,10 @@ async function refresh(){
  if(!providers.length)$('#provider-list').append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));
  for(const p of providers){const line=node('p',p.provider+' / '+p.name+' ');line.append(button('Edit',()=>{const f=$('#provider').elements;f.provider.value=p.provider;f.alias.value=p.name;f.config.value=JSON.stringify(p.config||{},null,2);f.secret.value='';f.revision.value=p.updatedAt;$('#provider-editor').open=true;f.config.focus()}),button('Validate',async()=>{const result=await api(pp(p.provider,p.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}),button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:p.provider,providerCredential:p.name});await refresh()}));const details=document.createElement('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(p.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));$('#provider-list').append(line,details)}
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
- try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
+ try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();if(costTarget&&(costTarget.provider!==d.provider||costTarget.providerCredential!==d.providerCredential))resetCosts();defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value;const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
