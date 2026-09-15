@@ -346,6 +346,34 @@ func OpenCodeChatPort(session string) int {
 	return 20_000 + int(hash.Sum32()%10_000)
 }
 
+var openCodeReadyProbe = func(ctx context.Context, session string) (bool, error) {
+	base := fmt.Sprintf("http://127.0.0.1:%d", OpenCodeChatPort(session))
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/session", nil)
+	if err != nil {
+		return false, err
+	}
+	response, err := (&http.Client{Timeout: time.Second}).Do(request)
+	if err != nil {
+		return false, nil
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return false, nil
+	}
+	var sessions []struct {
+		Directory string `json:"directory"`
+	}
+	if json.NewDecoder(response.Body).Decode(&sessions) != nil {
+		return false, nil
+	}
+	for _, candidate := range sessions {
+		if candidate.Directory == "/data/workspace" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound ChatInbound) error {
 	if err := StoreChatInbound(home, session, inbound); err != nil {
 		return err
