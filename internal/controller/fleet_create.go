@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -277,9 +278,9 @@ func (s *Server) ReconcileLogicalBoxCreationsNow(ctx context.Context) error {
 		return err
 	}
 	var failures []error
-	for _, creation := range creations {
-		if err := s.finishLogicalBoxCreation(ctx, creation); err != nil {
-			failures = append(failures, fmt.Errorf("logical box %s: %w", creation.Request.Name, err))
+	for index, err := range finishLogicalBoxCreationRecoveries(ctx, creations, s.finishLogicalBoxCreation) {
+		if err != nil {
+			failures = append(failures, fmt.Errorf("logical box %s: %w", creations[index].Request.Name, err))
 		}
 	}
 	pending, err := s.Store.PendingAutoStarts(ctx)
@@ -298,6 +299,30 @@ func (s *Server) ReconcileLogicalBoxCreationsNow(ctx context.Context) error {
 		}
 	}
 	return errorsJoin(failures)
+}
+
+// Recovery shares a bounded controller deadline, but independent provider
+// operations must start within that window. Otherwise one slow volume blocks
+// every newer creation and repeatedly consumes the whole reconciliation pass.
+func finishLogicalBoxCreationRecoveries(ctx context.Context, creations []logicalBoxCreation, finish func(context.Context, logicalBoxCreation) error) []error {
+	errorsByIndex := make([]error, len(creations))
+	semaphore := make(chan struct{}, 4)
+	var workers sync.WaitGroup
+	for index, creation := range creations {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+				errorsByIndex[index] = finish(ctx, creation)
+			case <-ctx.Done():
+				errorsByIndex[index] = ctx.Err()
+			}
+		}()
+	}
+	workers.Wait()
+	return errorsByIndex
 }
 
 func errorsJoin(values []error) error {
