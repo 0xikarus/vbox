@@ -128,6 +128,13 @@ Run `claude`, `codex`, or any shell command inside it.
 Disconnect with **Ctrl-a, then d**. Leave the box running to preserve its processes.
 Reconnect with `vmbox work`; hibernation preserves files, not running programs.
 
+The web workspace's **Agent chat** starts the selected managed agent when no
+reusable session exists. Later messages enter the running client through Codex
+queue, Claude channel, or OpenCode's loopback API. Chat messages accept pasted,
+dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
+Agent choice requests render as radio buttons or checkboxes. The managed
+`vmbox-desktop` MCP supplies the structured `chat_reply` and `chat_ask` tools.
+
 ## Windows setup (WSL)
 
 Use Ubuntu inside Windows through WSL. The current installer supports Linux and

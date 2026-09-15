@@ -65,6 +65,11 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 		progress.lastReply = existing.Text
 	}
 	for {
+		if done, err := s.pullStructuredAgentReply(ctx, prov, assignment.Slot.ServiceID, accountID, task, message); err != nil {
+			s.Logger.Warn("structured agent reply unavailable", "task", task.ID, "message", message.ID, "error", err)
+		} else if done {
+			return nil
+		}
 		result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-screen", task.Session, "2000"}, provider.ExecOptions{})
 		if execErr == nil && result.ExitCode == 0 {
 			var snapshot v1.TerminalSnapshot

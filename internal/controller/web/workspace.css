@@ -4,3 +4,4 @@
 
 .connection-stats{display:flex;flex-wrap:wrap;gap:8px 20px;margin:16px 0 0;font-size:.9rem;color:var(--muted,#888)}.connection-stats[hidden]{display:none}.connection-stats span{white-space:nowrap}
 #box-settings{margin:12px 0}#box-settings input{max-width:130px}#forward-command{white-space:pre-wrap;overflow-wrap:anywhere}#connection-address{overflow-wrap:anywhere}
+#agent-messages img,#agent-image-draft img{display:block;max-width:min(420px,100%);max-height:320px;margin:6px 0;border-radius:4px}#agent-image-draft{display:flex;flex-wrap:wrap;gap:8px}#agent-image-draft p{margin:4px}

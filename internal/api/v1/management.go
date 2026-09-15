@@ -28,9 +28,10 @@ type BoxInventory struct {
 }
 
 type DirectBoxMessageRequest struct {
-	Text    string `json:"text"`
-	Agent   string `json:"agent,omitempty"`
-	Session string `json:"session,omitempty"`
+	Text    string               `json:"text"`
+	Agent   string               `json:"agent,omitempty"`
+	Session string               `json:"session,omitempty"`
+	Images  []BoxMessageImageRef `json:"images,omitempty"`
 }
 
 type DirectBoxMessageResponse struct {

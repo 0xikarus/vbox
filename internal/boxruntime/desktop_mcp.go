@@ -7,10 +7,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/0xikarus/vmbox-service/internal/secrets"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/0xikarus/vmbox-service/internal/secrets"
 )
 
 type desktopMCPRequest struct {
@@ -30,6 +34,8 @@ func desktopMCPTools() []map[string]any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	return []map[string]any{
+		makeTool("chat_reply", "Send your response to the vmbox Agent chat. Call this once for each completed response, including any image files the user should receive.", map[string]any{"replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "replyTo", "text"),
+		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required.", map[string]any{"replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}}, "replyTo", "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("typeSecret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
@@ -49,10 +55,17 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), 65536)
 	encoder := json.NewEncoder(output)
+	var outputMu sync.Mutex
+	encode := func(value any) error {
+		outputMu.Lock()
+		defer outputMu.Unlock()
+		return encoder.Encode(value)
+	}
+	go serveClaudeChannel(ctx, encode)
 	for scanner.Scan() {
 		var request desktopMCPRequest
 		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
-			if err = encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": nil, "error": map[string]any{"code": -32700, "message": "Invalid JSON"}}); err != nil {
+			if err = encode(map[string]any{"jsonrpc": "2.0", "id": nil, "error": map[string]any{"code": -32700, "message": "Invalid JSON"}}); err != nil {
 				return err
 			}
 			continue
@@ -71,7 +84,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.1.0"}}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_reply for every response the user should receive, and chat_ask when the user must choose."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
@@ -95,11 +108,51 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		default:
 			response["error"] = map[string]any{"code": -32601, "message": "Method not found"}
 		}
-		if err := encoder.Encode(response); err != nil {
+		if err := encode(response); err != nil {
 			return err
 		}
 	}
 	return scanner.Err()
+}
+
+func serveClaudeChannel(ctx context.Context, encode func(any) error) {
+	session, err := chatSession(ctx)
+	if err != nil {
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	readyDir := filepath.Join(home, ".local", "share", "vmbox", "chat", "channel-ready")
+	if os.MkdirAll(readyDir, 0700) != nil {
+		return
+	}
+	ready := filepath.Join(readyDir, session)
+	defer os.Remove(ready)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		_ = os.WriteFile(ready, []byte(time.Now().UTC().Format(time.RFC3339Nano)), 0600)
+		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
+			content := event.Text
+			if len(event.Paths) > 0 {
+				content += "\n\nAttached image files:\n" + strings.Join(event.Paths, "\n")
+			}
+			meta := map[string]any{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
+			if len(event.Paths) > 0 {
+				meta["file_path"] = event.Paths[0]
+			}
+			if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": content, "meta": meta}}) == nil {
+				_ = os.Remove(path)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
 }
 
 func callDesktopTool(ctx context.Context, assignment, name string, args json.RawMessage) (map[string]any, error) {
@@ -146,6 +199,51 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			text = "Private credential is ready. Use typeSecret with the same reference."
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}, nil
+	}
+	if name == "chat_reply" {
+		var request struct {
+			ReplyTo string   `json:"replyTo"`
+			Text    string   `json:"text"`
+			Files   []string `json:"files"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Text) == "" || len(request.Text) > 100_000 {
+			return nil, fmt.Errorf("provide replyTo and response text")
+		}
+		if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
+			return nil, err
+		}
+		images, err := loadChatImages(request.Files)
+		if err != nil {
+			return nil, err
+		}
+		if err := writeChatEvent(ctx, ChatEvent{Kind: "reply", ReplyTo: request.ReplyTo, Text: request.Text, Images: images}); err != nil {
+			return nil, err
+		}
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Response delivered to vmbox Agent chat."}}}, nil
+	}
+	if name == "chat_ask" {
+		var request struct {
+			ReplyTo  string   `json:"replyTo"`
+			Question string   `json:"question"`
+			Choices  []string `json:"choices"`
+			Multiple bool     `json:"multiple"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Question) == "" || len(request.Choices) < 1 || len(request.Choices) > 20 {
+			return nil, fmt.Errorf("provide replyTo, question, and choices")
+		}
+		if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
+			return nil, err
+		}
+		for _, choice := range request.Choices {
+			if strings.TrimSpace(choice) == "" || len(choice) > 500 {
+				return nil, fmt.Errorf("invalid choice")
+			}
+		}
+		event := ChatEvent{Kind: "question", ReplyTo: request.ReplyTo, Text: request.Question, Question: &ChatQuestion{Text: request.Question, Choices: request.Choices, Multiple: request.Multiple}}
+		if err := writeChatEvent(ctx, event); err != nil {
+			return nil, err
+		}
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to vmbox Agent chat."}}}, nil
 	}
 	if name == "typeSecret" {
 		var key string

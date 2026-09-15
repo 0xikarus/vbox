@@ -96,6 +96,9 @@ func (s *Store) CreateBoxTask(ctx context.Context, p Principal, logicalBoxID, id
 	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,$4,'user',$5,true,'queued',$6)", messageID, p.AccountID, task.ID, p.UserID, request.Prompt, idempotency+":initial"); err != nil {
 		return v1.BoxTask{}, false, err
 	}
+	if err := attachBoxMessageImages(ctx, tx, p.AccountID, messageID, request.Images); err != nil {
+		return v1.BoxTask{}, false, err
+	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.task.create','box_task',$3,jsonb_build_object('logical_box_id',$4::text,'agent',$5::text))", p.AccountID, p.UserID, task.ID, box.ID, task.Agent); err != nil {
 		return v1.BoxTask{}, false, err
 	}
@@ -201,6 +204,7 @@ const boxMessageSelect = "SELECT id::text,task_id::text,COALESCE(user_id::text,'
 func scanBoxMessage(scanner interface{ Scan(...any) error }) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
 	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt)
+	decodeBoxMessageQuestion(&message)
 	return message, err
 }
 
@@ -218,13 +222,37 @@ func (s *Store) CreateBoxMessage(ctx context.Context, p Principal, taskID, idemp
 	if request.Submit != nil {
 		submit = *request.Submit
 	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return v1.BoxMessage{}, false, err
+	}
+	defer tx.Rollback()
 	messageID := uuid()
-	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,$4,'user',$5,$6,'queued',$7) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING id::text,task_id::text,user_id::text,direction,body,state,created_at,updated_at", messageID, p.AccountID, taskID, p.UserID, request.Text, submit, idempotency))
+	message, err := scanBoxMessage(tx.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,$4,'user',$5,$6,'queued',$7) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING id::text,task_id::text,user_id::text,direction,body,state,created_at,updated_at", messageID, p.AccountID, taskID, p.UserID, request.Text, submit, idempotency))
 	if errors.Is(err, sql.ErrNoRows) {
+		if err := tx.Rollback(); err != nil {
+			return v1.BoxMessage{}, false, err
+		}
 		message, err = scanBoxMessage(s.DB.QueryRowContext(ctx, boxMessageSelect+" WHERE account_id=$1 AND idempotency_key=$2", p.AccountID, idempotency))
+		if err == nil {
+			values := []v1.BoxMessage{message}
+			err = s.loadBoxMessageImages(ctx, p.AccountID, values)
+			message = values[0]
+		}
 		return message, true, err
 	}
-	return message, false, err
+	if err != nil {
+		return message, false, err
+	}
+	if err = attachBoxMessageImages(ctx, tx, p.AccountID, message.ID, request.Images); err != nil {
+		return message, false, err
+	}
+	if err = tx.Commit(); err != nil {
+		return message, false, err
+	}
+	values := []v1.BoxMessage{message}
+	err = s.loadBoxMessageImages(ctx, p.AccountID, values)
+	return values[0], false, err
 }
 
 func (s *Store) ListBoxMessages(ctx context.Context, p Principal, taskID string) ([]v1.BoxMessage, error) {
@@ -244,7 +272,10 @@ func (s *Store) ListBoxMessages(ctx context.Context, p Principal, taskID string)
 		}
 		values = append(values, message)
 	}
-	return values, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return values, s.loadBoxMessageImages(ctx, p.AccountID, values)
 }
 
 func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID string) ([]v1.BoxMessage, error) {
@@ -335,6 +366,7 @@ func (s *Store) FirstQueuedTaskMessage(ctx context.Context, accountID, taskID st
 func scanBoxMessageWithSubmit(scanner interface{ Scan(...any) error }, submit *bool) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
 	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, submit)
+	decodeBoxMessageQuestion(&message)
 	return message, err
 }
 

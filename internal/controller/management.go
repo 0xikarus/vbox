@@ -118,6 +118,9 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, nil
 	}
 	if text, silent := silentMessage(request.Text); silent {
+		if len(request.Images) > 0 {
+			return response, fmt.Errorf("silent notes do not support image attachments")
+		}
 		if text == "" {
 			return response, fmt.Errorf("silent note must contain text")
 		}
@@ -153,7 +156,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 				request.Session = name
 			}
 		}
-		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text})
+		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images})
 		if err != nil {
 			return response, err
 		}
@@ -170,7 +173,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		}
 		return response, nil
 	}
-	message, _, err := s.Store.CreateBoxMessage(ctx, p, selected.ID, idempotency+":message", v1.SendBoxMessageRequest{Text: request.Text})
+	message, _, err := s.Store.CreateBoxMessage(ctx, p, selected.ID, idempotency+":message", v1.SendBoxMessageRequest{Text: request.Text, Images: request.Images})
 	if err != nil {
 		return response, err
 	}

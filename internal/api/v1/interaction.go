@@ -7,13 +7,14 @@ import (
 )
 
 type CreateBoxTaskRequest struct {
-	SetupScript string   `json:"setupScript,omitempty"`
-	Tools       []string `json:"tools,omitempty"`
-	Agent       string   `json:"agent"`
-	Prompt      string   `json:"prompt"`
-	Model       string   `json:"model,omitempty"`
-	Args        []string `json:"args,omitempty"`
-	Session     string   `json:"session,omitempty"`
+	SetupScript string               `json:"setupScript,omitempty"`
+	Tools       []string             `json:"tools,omitempty"`
+	Agent       string               `json:"agent"`
+	Prompt      string               `json:"prompt"`
+	Model       string               `json:"model,omitempty"`
+	Args        []string             `json:"args,omitempty"`
+	Session     string               `json:"session,omitempty"`
+	Images      []BoxMessageImageRef `json:"images,omitempty"`
 }
 
 type BoxTask struct {
@@ -32,8 +33,26 @@ type BoxTask struct {
 }
 
 type SendBoxMessageRequest struct {
-	Text   string `json:"text"`
-	Submit *bool  `json:"submit,omitempty"`
+	Text   string               `json:"text"`
+	Submit *bool                `json:"submit,omitempty"`
+	Images []BoxMessageImageRef `json:"images,omitempty"`
+}
+
+type BoxMessageImageRef struct {
+	ID     string `json:"id"`
+	Number int    `json:"number"`
+}
+
+type BoxMessageImage struct {
+	ID        string `json:"id"`
+	Number    int    `json:"number"`
+	MediaType string `json:"mediaType"`
+}
+
+type BoxMessageQuestion struct {
+	Text     string   `json:"text"`
+	Choices  []string `json:"choices"`
+	Multiple bool     `json:"multiple,omitempty"`
 }
 
 type TerminalInputRequest struct {
@@ -43,14 +62,16 @@ type TerminalInputRequest struct {
 }
 
 type BoxMessage struct {
-	ID        string    `json:"id"`
-	TaskID    string    `json:"taskId"`
-	UserID    string    `json:"userId,omitempty"`
-	Direction string    `json:"direction"`
-	Text      string    `json:"text"`
-	State     string    `json:"state"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID        string              `json:"id"`
+	TaskID    string              `json:"taskId"`
+	UserID    string              `json:"userId,omitempty"`
+	Direction string              `json:"direction"`
+	Text      string              `json:"text"`
+	State     string              `json:"state"`
+	CreatedAt time.Time           `json:"createdAt"`
+	UpdatedAt time.Time           `json:"updatedAt"`
+	Images    []BoxMessageImage   `json:"images,omitempty"`
+	Question  *BoxMessageQuestion `json:"question,omitempty"`
 }
 
 type TerminalSnapshot struct {
