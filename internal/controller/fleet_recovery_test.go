@@ -341,18 +341,21 @@ func TestDetachedDeletingBoxResumesFromSavedVolumeIdentity(t *testing.T) {
 }
 
 func boxTaskRow(id, state string) *sqlmock.Rows {
+	return boxTaskRowWithSession(id, state, "vmbox")
+}
+
+func boxTaskRowWithSession(id, state, session string) *sqlmock.Rows {
 	now := time.Now().UTC()
 	return sqlmock.NewRows([]string{
 		"id", "logical_box_id", "name", "user_id", "requested_role", "agent",
 		"session_name", "prompt", "state", "failure_reason", "created_at", "updated_at",
-	}).AddRow(id, "box-1", "research", "user-a", "user", "claude", "vmbox", "hello", state, "", now, now)
+	}).AddRow(id, "box-1", "research", "user-a", "user", "claude", session, "hello", state, "", now, now)
 }
 
-// TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking pins the second
-// half of 108e6a4: a box with no reusable task used to leave the selection nil
-// and then dereference it, so the very first message to a fresh box crashed the
-// controller instead of starting an agent.
-func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) {
+// TestDirectMessageIgnoresActiveTaskFromReplacedSession ensures a fresh task
+// binds to the session the workspace just opened instead of routing later
+// messages into the channel of a dead, previously active session.
+func TestDirectMessageIgnoresActiveTaskFromReplacedSession(t *testing.T) {
 	store, mock := testStore(t)
 	now := time.Now().UTC()
 	principal := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
@@ -362,28 +365,25 @@ func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) 
 	mock.ExpectQuery("FROM box_notes").WithArgs("account-a", "box-1", "key").WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "body", "created_at"}))
 	mock.ExpectQuery("FROM box_messages m JOIN box_tasks").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}))
+	mock.ExpectQuery("SELECT COALESCE\\(metadata").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"session", "agent"}).AddRow("current-claude", "claude"))
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
 	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
 		WithArgs("account-a", "box-1").
-		WillReturnRows(sqlmock.NewRows([]string{
-			"id", "logical_box_id", "name", "user_id", "requested_role", "agent",
-			"session_name", "prompt", "state", "failure_reason", "created_at", "updated_at",
-		}))
-	mock.ExpectQuery("SELECT COALESCE\\(metadata").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"session", "agent"}).AddRow("", ""))
+		WillReturnRows(boxTaskRowWithSession("stale-task", "active", "dead-claude"))
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
 	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
 		WithArgs("account-a", "key:task").
 		WillReturnError(errNoRowsForTest)
 	mock.ExpectBegin()
-	mock.ExpectQuery("INSERT INTO box_tasks").WillReturnRows(boxTaskRow("task-1", "queued"))
+	mock.ExpectQuery("INSERT INTO box_tasks").WillReturnRows(boxTaskRowWithSession("task-1", "queued", "current-claude"))
 	mock.ExpectExec("INSERT INTO box_messages").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`jsonb_build_object\('logical_box_id',\$4::text,'agent',\$5::text\)`).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
 		WithArgs("account-a", "task-1", "user-a", "user").
-		WillReturnRows(boxTaskRow("task-1", "queued"))
+		WillReturnRows(boxTaskRowWithSession("task-1", "queued", "current-claude"))
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
 			AddRow("message-1", "task-1", "user-a", "user", "hello", "queued", now, now))
@@ -401,7 +401,7 @@ func TestDirectMessageToATasklessBoxCreatesWorkInsteadOfPanicking(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	if response.Task.ID != "task-1" || response.Message.ID != "message-1" || !response.Started {
+	if response.Task.ID != "task-1" || response.Task.Session != "current-claude" || response.Message.ID != "message-1" || !response.Started {
 		t.Fatalf("response=%+v", response)
 	}
 	if len(started) != 1 || started[0] != "account-a/task-1" {
