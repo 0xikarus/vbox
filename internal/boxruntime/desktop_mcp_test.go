@@ -5,11 +5,94 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
+
+type lineCapture struct {
+	mu    sync.Mutex
+	data  []byte
+	lines chan []byte
+}
+
+func (c *lineCapture) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.data = append(c.data, p...)
+	for {
+		index := bytes.IndexByte(c.data, '\n')
+		if index < 0 {
+			break
+		}
+		line := append([]byte(nil), c.data[:index]...)
+		c.data = c.data[index+1:]
+		c.lines <- line
+	}
+	return len(p), nil
+}
+
+func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "claude-order")
+	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-1", Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	input, write := io.Pipe()
+	defer write.Close()
+	output := &lineCapture{lines: make(chan []byte, 4)}
+	done := make(chan error, 1)
+	go func() { done <- ServeDesktopMCP(ctx, "invalid", input, output) }()
+
+	ready := filepath.Join(home, ".local", "share", "vmbox", "chat", "channel-ready", "claude-order")
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(ready); !os.IsNotExist(err) {
+		t.Fatalf("channel advertised readiness before initialize: %v", err)
+	}
+	select {
+	case line := <-output.lines:
+		t.Fatalf("MCP emitted before initialize: %s", line)
+	default:
+	}
+
+	if _, err := io.WriteString(write, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
+	first := <-output.lines
+	var response desktopMCPRequest
+	if json.Unmarshal(first, &response) != nil || string(response.ID) != "1" || response.Method != "" {
+		t.Fatalf("first output was not initialize response: %s", first)
+	}
+	select {
+	case second := <-output.lines:
+		var notification desktopMCPRequest
+		if json.Unmarshal(second, &notification) != nil || notification.Method != "notifications/claude/channel" {
+			t.Fatalf("second output was not channel notification: %s", second)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("channel notification was not emitted after initialize")
+	}
+
+	cancel()
+	_ = write.Close()
+	select {
+	case err := <-done:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("MCP server did not stop")
+	}
+}
 
 func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 	input := strings.Join([]string{
