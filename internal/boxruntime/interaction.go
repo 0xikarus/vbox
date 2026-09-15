@@ -359,7 +359,7 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 		// input prompt, which discards an initial task message that was already
 		// confirmed and recorded as delivered. The audited worker image owns
 		// upgrades; managed sessions therefore disable background self-updates.
-		argv = []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--dangerously-load-development-channels", "vmbox-desktop:vmbox-chat"}
+		argv = []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--dangerously-load-development-channels", "server:vmbox-desktop"}
 	case "shell":
 		argv = []string{"/bin/bash", "-l"}
 	default:
@@ -414,7 +414,11 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
 		if err == nil {
 			text := string(content)
-			if agent == "codex" && strings.Contains(text, "Approaching rate limits") && strings.Contains(text, "Press enter to confirm or esc to go back") {
+			if agent == "claude" && strings.Contains(text, "WARNING: Loading development channels") && strings.Contains(text, "I am using this for local development") && strings.Contains(text, "Enter to confirm") {
+				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Enter"); err != nil {
+					return fmt.Errorf("accept development channel in %s session: %w", agent, err)
+				}
+			} else if agent == "codex" && strings.Contains(text, "Approaching rate limits") && strings.Contains(text, "Press enter to confirm or esc to go back") {
 				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Escape"); err != nil {
 					return fmt.Errorf("dismiss rate limit reminder in %s session: %w", agent, err)
 				}
