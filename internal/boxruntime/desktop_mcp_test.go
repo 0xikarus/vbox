@@ -72,6 +72,18 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	if json.Unmarshal(first, &response) != nil || string(response.ID) != "1" || response.Method != "" {
 		t.Fatalf("first output was not initialize response: %s", first)
 	}
+	time.Sleep(50 * time.Millisecond)
+	if _, err := os.Stat(ready); !os.IsNotExist(err) {
+		t.Fatalf("channel advertised readiness before initialized notification: %v", err)
+	}
+	select {
+	case line := <-output.lines:
+		t.Fatalf("channel emitted before initialized notification: %s", line)
+	default:
+	}
+	if _, err := io.WriteString(write, `{"jsonrpc":"2.0","method":"notifications/initialized"}`+"\n"); err != nil {
+		t.Fatal(err)
+	}
 	select {
 	case second := <-output.lines:
 		var notification desktopMCPRequest
