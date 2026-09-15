@@ -411,6 +411,19 @@ func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {
 	}
 }
 
+func TestOpenCodeInputReadinessRecognizesCurrentTUI(t *testing.T) {
+	content := `
+   ┃  Ask anything... "Fix broken tests"
+   ┃  Build · DeepSeek V4.1 Flash OpenRouter
+  /data/workspace  ⊙ 1 MCP /status`
+	if !agentInputReady("opencode", content) {
+		t.Fatal("current OpenCode input prompt was not recognized")
+	}
+	if agentInputReady("opencode", "Ask anything...") {
+		t.Fatal("partial OpenCode startup output was accepted")
+	}
+}
+
 func TestCaptureTmuxScreenRejectsMissingOrWrongSessionMetadata(t *testing.T) {
 	original := captureTmuxCommand
 	t.Cleanup(func() { captureTmuxCommand = original })
