@@ -148,3 +148,23 @@ func TestStartCodexChatPassesInitialMessageAndImagesAsArguments(t *testing.T) {
 		t.Fatalf("initial inbox envelope was retained: %v", err)
 	}
 }
+
+func TestNameCodexChatThreadReturnsAfterItWasNamed(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "messages")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(directory, "rename-codex-chat.delivered"), []byte("named\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	tmuxCommand = func(context.Context, string, ...string) ([]byte, error) {
+		t.Fatal("already named Codex thread inspected its terminal")
+		return nil, nil
+	}
+	if err := NameCodexChatThread(context.Background(), root, "codex-chat"); err != nil {
+		t.Fatal(err)
+	}
+}

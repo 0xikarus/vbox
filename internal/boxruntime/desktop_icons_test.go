@@ -8,6 +8,23 @@ import (
 	"testing"
 )
 
+func TestChromiumNoSandboxUsesContainerBoundaryAsDefault(t *testing.T) {
+	for _, test := range []struct {
+		setting   string
+		container bool
+		want      bool
+	}{
+		{setting: "true", want: true},
+		{setting: "false", container: true, want: false},
+		{container: true, want: true},
+		{want: false},
+	} {
+		if got := chromiumNoSandbox(test.setting, test.container); got != test.want {
+			t.Fatalf("setting=%q container=%t: got %t, want %t", test.setting, test.container, got, test.want)
+		}
+	}
+}
+
 func TestDesktopIconsPreserveCustomLaunchers(t *testing.T) {
 	if _, err := exec.LookPath("flock"); err != nil {
 		t.Skip("flock required")

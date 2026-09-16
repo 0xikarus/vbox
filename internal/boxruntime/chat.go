@@ -379,6 +379,12 @@ var runCodexQueue = func(ctx context.Context, home, eventPath string, args []str
 }
 
 func NameCodexChatThread(ctx context.Context, root, session string) error {
+	marker := filepath.Join(root, "messages", "rename-"+session+".delivered")
+	if _, err := os.Stat(marker); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err
 	}
