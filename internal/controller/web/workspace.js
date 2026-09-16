@@ -240,6 +240,22 @@ $('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running
 window.addEventListener('pagehide',()=>{epoch++;stopStats();clearTimeout(runTimer);closeTerminal();closeDesktop()});
 (async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){$('#error').textContent=e.message}})();
 
+{
+ const logs=$('#worker-logs'),button=$('#load-worker-logs'),status=$('#worker-log-status'),output=$('#worker-log-output');
+ const load=async()=>{
+  button.disabled=true;status.textContent='Loading recent logs…';
+  try{
+   const response=await fetch(bp+'/logs?tail=200',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(60000)});
+   const text=await response.text();
+   if(!response.ok){let message;try{message=JSON.parse(text).error}catch{}throw Error(message||'Logs request failed: '+response.status)}
+   output.textContent=text||'No worker log lines returned.';status.textContent='Latest 200 lines loaded.';
+  }catch(e){status.textContent=e.message}
+  finally{button.disabled=false}
+ };
+ button.onclick=()=>void load();
+ logs.addEventListener('toggle',()=>{if(logs.open&&!output.textContent)void load()});
+}
+
 // Secret values are sent directly to the private manager, never through chat.
 const secretForm=document.querySelector('#secret-form');
 if(secretForm){

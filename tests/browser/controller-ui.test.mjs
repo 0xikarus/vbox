@@ -35,7 +35,7 @@ before(async()=>{
    '/v1/fleet/costs':{provider:'railway',providerCredential:'primary',period:'current provider billing period',observedAt:revision,total:{currency:'USD',accrued:1.23,available:true,detail:'Sum of available fleet service costs.'},availableSlotCount:1,unavailableSlotCount:1,slots:[{ordinal:1,state:'occupied',logicalBoxName:'helper ü',cost:{currency:'USD',accrued:1.23,available:true,detail:'Railway service entries'}},{ordinal:2,state:'free',cost:{currency:'USD',available:false,detail:'Project token cannot read billing'}}]},
    '/v1/notifications':[],
    '/v1/whoami':{accountId:'account-1',accountName:'Team'},
-   '/v1/login-profiles':[{application:'claude',name:'personal',createdAt:revision}],
+   '/v1/login-profiles':[{application:'claude',name:'personal',createdAt:revision},{application:'opencode',name:'openrouter',createdAt:revision}],
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
@@ -294,14 +294,15 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.click('#provider button');await saved;
  const edit=requests.findLast(r=>r.method==='PATCH'&&r.path.endsWith('/primary'));assert.equal(edit.revision,revision);assert.deepEqual(edit.body,{config:{image:'new'}});
  await page.waitForNetworkIdle();
- assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles/s);
+ assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles.*opencode.*openrouter/s);
  await page.select('#profile-choices select[name=claude]','personal');
+ await page.select('#profile-choices select[name=opencode]','openrouter');
  await page.type('#create input[name=name]','profile-box');
  assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
  const selectedAgent=mobile?'shell':'opencode';await page.select('#create select[name=defaultAgent]',selectedAgent);
  await page.click('#create-tools input[value=blender]');
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
- assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'}]);
+ assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'},{application:'opencode',name:'openrouter'}]);
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['blender']);
  assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,selectedAgent);
  assert.equal(requests.findLast(r=>r.method==='POST').body.allocateWhenReady,true);

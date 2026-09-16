@@ -170,6 +170,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/allocate", s.auth(s.reserveLogicalBox))
 	mux.HandleFunc("GET /v1/logical-boxes", s.auth(s.listLogicalBoxes))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}", s.auth(s.getLogicalBox))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/logs", s.auth(s.logicalBoxLogs))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/status", s.auth(s.boxStatusHandler))
 	mux.HandleFunc("PATCH /v1/logical-boxes/{id}", s.auth(s.updateLogicalBoxHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/hibernate", s.auth(s.hibernateLogicalBoxHandler))

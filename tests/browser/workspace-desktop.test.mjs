@@ -23,6 +23,9 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
 	if(path==='/v1/messages/agent-reply/images/reply-image'){
 		res.setHeader('Content-Type','image/png');return res.end(thumbnail);
 	}
+	if(path==='/v1/logical-boxes/test/logs?tail=200'){
+		res.setHeader('Content-Type','text/plain');return res.end('worker ready\nagent enrolled\n');
+	}
 	if(path==='/v1/logical-boxes/test/messages'){
 		res.setHeader('Content-Type','application/json');
 		if(method==='GET')return res.end(JSON.stringify(messageHistory));
@@ -86,6 +89,13 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    await p.$eval('#forward-port',e=>{e.value='65536';e.dispatchEvent(new Event('input'))});assert.equal(await p.$eval('#forward-command',e=>e.textContent),'');
    assert.equal(await p.evaluate(()=>window.attaches),1);assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();
   });
+	await t.test('worker logs load lazily without reconnecting viewers',async()=>{
+	 const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
+	 assert.equal(requests.some(r=>r.includes('/logs')),false);
+	 await p.click('#worker-logs summary');await p.waitForFunction(()=>document.querySelector('#worker-log-output').textContent.includes('agent enrolled'));
+	 assert.equal(requests.filter(r=>r==='GET /v1/logical-boxes/test/logs?tail=200').length,1);
+	 assert.equal(await p.evaluate(()=>window.attaches),1);assert.equal(await p.evaluate(()=>window.terminals),1);await p.close();
+	});
   await t.test('direct worker connection does not show an unusable SSH command',async()=>{
    connectionTransport='controller-worker';
    const p=await page();await p.waitForFunction(()=>!document.querySelector('#connect').disabled);
