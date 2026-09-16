@@ -363,10 +363,11 @@ func (s *Server) hibernateAfterProcess(ctx context.Context, p Principal, a fleet
 
 func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	var req struct {
-		Agent      string `json:"agent"`
-		StartCLI   string `json:"startCli,omitempty"`
-		ReuseShell bool   `json:"reuseShell,omitempty"`
-		ReuseAgent bool   `json:"reuseAgent,omitempty"`
+		Agent         string `json:"agent"`
+		StartCLI      string `json:"startCli,omitempty"`
+		ReuseShell    bool   `json:"reuseShell,omitempty"`
+		ReuseAgent    bool   `json:"reuseAgent,omitempty"`
+		ReuseExisting bool   `json:"reuseExisting,omitempty"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, 400, err)
@@ -376,7 +377,7 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 400, fmt.Errorf("choose codex, claude, opencode, or shell"))
 		return
 	}
-	if len(req.StartCLI) > 16384 || strings.ContainsRune(req.StartCLI, 0) || ((req.StartCLI != "" || req.ReuseShell) && req.Agent != "shell") || ((req.ReuseShell || req.ReuseAgent) && req.StartCLI != "") {
+	if len(req.StartCLI) > 16384 || strings.ContainsRune(req.StartCLI, 0) || ((req.StartCLI != "" || req.ReuseShell) && req.Agent != "shell") || ((req.ReuseShell || req.ReuseAgent || req.ReuseExisting) && req.StartCLI != "") {
 		writeError(w, 400, fmt.Errorf("startCli requires a new shell; reuseShell cannot replay a startup command"))
 		return
 	}
@@ -412,11 +413,13 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 502, err)
 		return
 	}
-	if err = s.provisionDesktopAgent(ctx, tx, p, a, prov); err != nil {
-		writeError(w, 502, err)
-		return
+	if !req.ReuseExisting {
+		if err = s.provisionDesktopAgent(ctx, tx, p, a, prov); err != nil {
+			writeError(w, 502, err)
+			return
+		}
 	}
-	if req.ReuseAgent {
+	if req.ReuseAgent || req.ReuseExisting {
 		var remembered, agent string
 		if err = tx.QueryRowContext(ctx, `SELECT COALESCE(metadata->>'primarySession',''),COALESCE(metadata->>'primaryAgent','') FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&remembered, &agent); err != nil {
 			writeError(w, 500, fmt.Errorf("managed session unavailable"))
@@ -428,8 +431,18 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 			writeError(w, 409, fmt.Errorf("managed session inventory unavailable"))
 			return
 		}
+		if req.ReuseExisting {
+			if name := reusableInteractiveSession(inv.Sessions, remembered); name != "" {
+				if tx.Commit() != nil {
+					writeError(w, 409, fmt.Errorf("session observation changed"))
+					return
+				}
+				writeJSON(w, 200, map[string]string{"session": name})
+				return
+			}
+		}
 		for _, existing := range inv.Sessions {
-			if existing.Name == remembered && agent == req.Agent {
+			if !req.ReuseExisting && existing.Name == remembered && agent == req.Agent {
 				if tx.Commit() != nil {
 					writeError(w, 409, fmt.Errorf("session observation changed"))
 					return
@@ -460,6 +473,12 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 				writeJSON(w, 200, map[string]string{"session": remembered})
 				return
 			}
+		}
+	}
+	if req.ReuseExisting {
+		if err = s.provisionDesktopAgent(ctx, tx, p, a, prov); err != nil {
+			writeError(w, 502, err)
+			return
 		}
 	}
 	session := generatedTaskSession(req.Agent)

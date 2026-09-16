@@ -40,6 +40,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("typeSecret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("desktop_screenshot", "Capture this box's current desktop as a PNG image. Does not start or wake the desktop.", map[string]any{}),
+		makeTool("capture_window", "Capture the visible screen area of an X11 window as PNG. Defaults to the active window; optionally supply window_id (decimal or 0x hexadecimal). Does not focus or raise windows. Overlapping windows appear in the capture; minimized windows are not supported. Returned x/y offsets map image coordinates to desktop coordinates.", map[string]any{"window_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 10}}),
 		makeTool("desktop_move", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
 		makeTool("desktop_click", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
 		makeTool("desktop_drag", "Drag directly from x/y to toX/toY while holding the left button.", map[string]any{"x": integer, "y": integer, "toX": integer, "toY": integer}, "x", "y", "toX", "toY"),
@@ -287,6 +288,26 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			status = "New password reference saved; pending use."
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use typeSecret with the same key to fill it."}}}, nil
+	}
+	if name == "capture_window" {
+		var identifier string
+		if value, ok := values["window_id"]; ok {
+			if string(value) == "null" || json.Unmarshal(value, &identifier) != nil {
+				return nil, fmt.Errorf("window_id must be a string")
+			}
+			if _, err := windowID(identifier); err != nil {
+				return nil, err
+			}
+		}
+		var captured bytes.Buffer
+		bounds, err := CaptureWindow(ctx, assignment, identifier, &captured)
+		if err != nil {
+			return nil, fmt.Errorf("window capture unavailable: %w", err)
+		}
+		return map[string]any{"content": []map[string]any{
+			{"type": "text", "text": fmt.Sprintf("Desktop coordinates: x=%d, y=%d, width=%d, height=%d. Capture includes any overlapping windows.", bounds.Min.X, bounds.Min.Y, bounds.Dx(), bounds.Dy())},
+			{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(captured.Bytes())},
+		}}, nil
 	}
 	if name == "desktop_screenshot" {
 		var png bytes.Buffer

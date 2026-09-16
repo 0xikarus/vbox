@@ -24,6 +24,8 @@ func (p *shellReuseProvider) Exec(_ context.Context, _ string, argv []string, _ 
 		return provider.ExecResult{}, errors.New("SSH permission denied")
 	}
 	switch argv[1] {
+	case "desktop-status":
+		return provider.ExecResult{Stdout: `{"enabled":false}`}, nil
 	case "native-sessions":
 		inv := v1.SessionInventory{State: "live", Assignment: argv[2]}
 		for _, name := range p.names {
@@ -60,6 +62,15 @@ func testInteractiveShellReuse(t *testing.T, s *Server, p Principal, box string)
 		_ = json.Unmarshal(w.Body.Bytes(), &result)
 		return result.Session
 	}
+	for _, agent := range []string{"codex", "claude", "opencode", "shell"} {
+		if reused := call(`{"agent":"`+agent+`","reuseExisting":true}`, 200); reused != "claude-existing" || len(prov.starts) != 0 {
+			t.Fatal("workspace connection launched an agent despite an existing terminal")
+		}
+	}
+	prov.fail = true
+	call(`{"agent":"codex","reuseExisting":true}`, 409)
+	prov.fail = false
+	call(`{"agent":"shell","reuseExisting":true,"startCli":"claude"}`, 400)
 	first := call(`{"agent":"shell","reuseShell":true}`, 201)
 	if first == "" || len(prov.starts) != 1 || prov.names[0] != "claude-existing" {
 		t.Fatal("missing shell or replaced legacy session")

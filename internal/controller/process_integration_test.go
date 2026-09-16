@@ -7,6 +7,8 @@ import (
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/0xikarus/vmbox-service/internal/secrets"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -37,20 +39,18 @@ func TestProcessPostgres(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	s, err := Open(ctx, dsn)
+	config, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s.Close()
-	s.DB.SetMaxOpenConns(1)
 	schema := "process_test_" + strings.ReplaceAll(uuid(), "-", "")
+	config.RuntimeParams["search_path"] = schema
+	s := &Store{DB: stdlib.OpenDB(*config)}
+	defer s.Close()
 	if _, err = s.DB.ExecContext(ctx, "CREATE SCHEMA "+schema); err != nil {
 		t.Fatal(err)
 	}
 	defer s.DB.ExecContext(context.Background(), "DROP SCHEMA "+schema+" CASCADE")
-	if _, err = s.DB.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatal(err)
-	}
 	if err = s.Migrate(ctx); err != nil {
 		t.Fatal(err)
 	}

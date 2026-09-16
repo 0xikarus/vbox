@@ -63,6 +63,32 @@ test('four real tmux terminals, isolated input, layouts and viewer-only disconne
  await p.$eval('.tile header button:last-child',b=>b.click());assert.equal(tmux('list-sessions','-F','#{session_name}').trim().split('\n').length,4);
  assert.equal(calls.filter(c=>c.method!=='GET').length,0);assert.deepEqual(errors,[]);await p.close();
 });
+test('clipboard buttons use the real browser clipboard and a real tmux shell',async()=>{
+ await browser.defaultBrowserContext().overridePermissions(base,['clipboard-read','clipboard-write','clipboard-sanitized-write']);
+ const page=await pageReady();
+ try{
+  await page.waitForFunction(()=>document.querySelector('.tile p').textContent.includes('Connected'));
+  const marker='clipboard-'+Date.now();
+  await page.evaluate(value=>navigator.clipboard.writeText("printf '%s\\n' '"+value+"'\n"),marker);
+  await page.$eval('.tile:first-child summary',element=>{if(!element.parentElement.open)element.click()});
+  await page.$$eval('.tile:first-child .terminal-keys button',buttons=>buttons.find(button=>button.textContent==='Paste').click());
+  await page.waitForFunction(value=>window.testTerminals.some(terminal=>{
+   for(let row=0;row<terminal.buffer.active.length;row++)if(terminal.buffer.active.getLine(row)?.translateToString(true).includes(value))return true;
+   return false;
+  }),{},marker);
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(value=>window.testTerminals.some(terminal=>{
+   for(let row=0;row<terminal.buffer.active.length;row++)if(terminal.buffer.active.getLine(row)?.translateToString(true)===value)return true;
+   return false;
+  }),{},marker);
+  assert(tmux('capture-pane','-p','-t','box1').split('\n').includes(marker));
+  for(const name of ['box2','box3','box4'])assert(!tmux('capture-pane','-p','-t',name).includes(marker));
+  await page.evaluate(()=>window.testTerminals.find(terminal=>terminal.element?.isConnected).selectAll());
+  await page.$$eval('.tile:first-child .terminal-keys button',buttons=>buttons.find(button=>button.textContent==='Copy').click());
+  await page.waitForFunction(()=>document.querySelector('.tile p').textContent.includes('Terminal selection copied.'));
+  assert((await page.evaluate(()=>navigator.clipboard.readText())).includes(marker));
+ }finally{await page.close();await browser.defaultBrowserContext().clearPermissionOverrides()}
+});
 test('delayed selection cannot attach stale box; sleeping boxes never resume; mobile stacks',async()=>{
  const p=await pageReady();await p.waitForFunction(()=>[...document.querySelectorAll('.tile p')].every(n=>n.textContent.includes('Connected')));await p.select('#layout select[name=columns]','1');await p.select('#layout select[name=rows]','1');await p.$eval('#layout',f=>f.requestSubmit());delayFirst=true;const first=connections.length;
  const selector='.tile:first-child header label:first-child select';await p.select(selector,'box1');await p.select(selector,'box2');

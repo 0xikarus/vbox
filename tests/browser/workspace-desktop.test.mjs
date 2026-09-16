@@ -8,7 +8,7 @@ const html=await readFile('internal/controller/web/workspace.html','utf8');
 const script=await readFile('internal/controller/web/workspace.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',run=null,state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
- let requests=[],messageHistory=[],messagePayloads=[];
+ let requests=[],messageHistory=[],messagePayloads=[],interactiveRequests=[],defaultAgent='shell';
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url,method=req.method;
@@ -48,9 +48,9 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   else if(path.endsWith('/run-once'))data=run;
   else if(path==='/v1/run-once/run')data={id:'run',boxId:'test',task:{state:'running',agent:'shell',session:'task-test'}};
   else if(path.endsWith('/secret-requests'))data=[];
-  else if(path.endsWith('/sessions/interactive'))data={session:'shell-test'};
+  else if(path.endsWith('/sessions/interactive')){let body='';for await(const chunk of req)body+=chunk;interactiveRequests.push(JSON.parse(body));data={session:'shell-test'}}
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
-  else if(path==='/v1/logical-boxes/test')data={id:'test',name:'Test',state,tools};
+  else if(path==='/v1/logical-boxes/test')data={id:'test',name:'Test',state,tools,defaultAgent};
   else if(path.endsWith('/resources'))data={slotId:'slot-test',assignmentGeneration:7,resources:{cpu:2,memoryMiB:12288},message:'Limits submitted. No restart requested.'};
   else if(path.endsWith('/connection'))data={connection:{transport:connectionTransport,endpoint:connectionTransport==='openssh'?'instance@ssh.railway.com':'service-id',metadata:{vmboxRegion:'europe-west4'}}};
   else if(path.endsWith('/allocate'))data={state:'failed',failureReason:'Fixture stopped box'};
@@ -59,7 +59,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox']});
  const desktop='/v1/logical-boxes/test/desktop';
- async function page(){requests=[];release=undefined;const p=await browser.newPage();await p.goto('http://127.0.0.1:'+server.address().port+'/boxes/test');return p}
+ async function page(){requests=[];interactiveRequests=[];release=undefined;const p=await browser.newPage();await p.goto('http://127.0.0.1:'+server.address().port+'/boxes/test');return p}
  async function terminalReady(p){await p.waitForFunction(()=>window.terminals===1&&!document.querySelector('#connect').disabled)}
  async function selected(p,id){return p.$eval(id,e=>({selected:e.getAttribute('aria-selected'),panel:document.getElementById(e.getAttribute('aria-controls')).hidden}))}
  try{
@@ -76,6 +76,17 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    await p.click('#agent-messages input[value=Purple]');await p.click('#agent-messages form button');
    await p.waitForFunction(()=>document.querySelector('#agent-message-status').textContent==='Selection sent.');
    assert.match(messagePayloads[1].text,/Purple/);await p.close();enabled=true;
+  });
+  await t.test('desktop reconnect requests reuse regardless of default agent',async()=>{
+   for(const agent of ['codex','claude','opencode']){
+    defaultAgent=agent;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
+    assert.deepEqual(interactiveRequests,[{agent,reuseExisting:true}]);
+    assert.equal(await p.$eval('#session',element=>element.textContent),'Terminal: shell-test');
+    await p.reload();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
+    assert.deepEqual(interactiveRequests,[{agent,reuseExisting:true},{agent,reuseExisting:true}]);
+    await p.close();
+   }
+   defaultAgent='shell';
   });
   await t.test('resource and connection controls load on demand without restarting viewers',async()=>{
    const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);

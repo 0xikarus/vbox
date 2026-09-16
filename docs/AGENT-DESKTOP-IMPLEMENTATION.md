@@ -28,6 +28,11 @@ Reconnecting refreshes this configuration, including after reassignment.
 `vmbox-runtime desktop-mcp` provides:
 
 - `desktop_screenshot`: PNG image content captured inside the worker.
+- `capture_window`: PNG of the active window's visible screen area, or a supplied
+  `window_id` string (decimal or `0x` hexadecimal X11 ID). Returns desktop x/y
+  offsets for subsequent clicks. Does not raise/focus windows or wake the desktop;
+  overlapping windows remain visible, off-screen portions are clipped, and minimized
+  windows are unsupported. Use `{}` for the active window.
 - `desktop_move`, `desktop_click`, `desktop_drag`, `desktop_scroll`,
   `desktop_type`, `desktop_key`: bounded coordinates and literal input.
 - `secret_ensure`, `secret_request`, `typeSecret`: opaque references and status.

@@ -229,7 +229,7 @@ test('box link opens separate mobile workspace and reuses shell',async()=>{
  await Promise.all([page.waitForNavigation(),page.click('#box-list a')]);
  await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
  assert.equal(new URL(page.url()).pathname,'/boxes/box-1');
- assert(requests.some(r=>r.path.endsWith('/sessions/interactive')&&r.body.agent==='shell'&&r.body.reuseShell===true));
+ assert(requests.some(r=>r.path.endsWith('/sessions/interactive')&&r.body.agent==='shell'&&r.body.reuseExisting===true));
  assert.deepEqual(errors,[]);await page.close();
 });
 test('workspace network failure explains safe recovery',async()=>{

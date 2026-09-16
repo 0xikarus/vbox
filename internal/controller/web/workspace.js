@@ -49,9 +49,9 @@ async function ensureTerminal(version=epoch){
  $('#session').textContent='Connecting '+agent+'…';
  const pending=(async()=>{
   try{
-   const session=await api(bp+'/sessions/interactive','POST',agent==='shell'?{agent,reuseShell:true}:{agent,reuseAgent:true});if(!workspaceCurrent(version))return false;
+   const session=await api(bp+'/sessions/interactive','POST',{agent,reuseExisting:true});if(!workspaceCurrent(version))return false;
    managedSession=session.session;
-   $('#session').textContent=agent+': '+session.session;
+   $('#session').textContent='Terminal: '+session.session;
    closeTerminal();terminalAttached=true;recordViewer('terminal',{state:'connecting'});
    const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{autoFocus:false,onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('terminal',value)}});
    closeTerminal=()=>{terminalAttached=false;recordViewer('terminal',{state:'disconnected'});dispose()};

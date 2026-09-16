@@ -48,15 +48,13 @@ test('workspace clipboard controls move text through TMUX and Desktop',async()=>
   await page.evaluate(()=>{window.clipboardText='to desktop'});
   await page.click('#desktop-controls [data-action="paste"]');
   assert.deepEqual(await page.evaluate(()=>({writes:clipboardWrites,pasted:fakeRFB.pasted})),{writes:['from terminal','from desktop'],pasted:'to desktop'});
-  await page.evaluate(()=>{window.controlCalls=[];window.fetch=async(url,options)=>{controlCalls.push({url,action:JSON.parse(options.body).action});return {ok:true}}});
-  await page.click('#desktop-controls [data-action="takeover"]');
-  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('paused'));
-  await page.click('#desktop-controls [data-action="resume"]');
-  await page.waitForFunction(()=>document.querySelector('#status').textContent.includes('resumed'));
-  assert.deepEqual(await page.evaluate(()=>controlCalls),[
-   {url:'/v1/logical-boxes/test/desktop/control',action:'pause'},
-   {url:'/v1/logical-boxes/test/desktop/control',action:'resume'}
-  ]);
+  assert.equal(await page.$$eval('#desktop-controls [data-action="takeover"], #desktop-controls [data-action="resume"]',buttons=>buttons.length),0);
+  assert.match(await page.$eval('#status',element=>element.textContent),/Use Ctrl\+V/);
+  await page.evaluate(()=>{navigator.clipboard.readText=async()=>{throw Error('denied')};navigator.clipboard.writeText=async()=>{throw Error('denied')}});
+  for(const selector of ['#desktop-controls [data-action="copy"]','#desktop-controls [data-action="paste"]','.terminal-keys button:nth-child(1)','.terminal-keys button:nth-child(2)']){
+   await page.click(selector);
+   assert.match(await page.$eval('#status',element=>element.textContent),/blocked by the browser/);
+  }
   assert.deepEqual(errors,[]);
  }finally{await browser.close()}
 });
