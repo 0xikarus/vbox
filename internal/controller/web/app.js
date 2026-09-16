@@ -2,6 +2,28 @@
 const $=s=>document.querySelector(s);
 let token='',defaults=null,epoch=0;
 let boxRefreshTimer;
+let fleetSnapshots=[];
+const poolKey=(provider,providerCredential)=>JSON.stringify({provider,providerCredential:providerCredential||''});
+const poolLabel=(provider,alias)=>(provider==='shared-worker'?'Shared worker':'Dedicated · '+provider)+' / '+(alias||'default');
+function boxPlacement(box){
+ if(!box.slotId)return 'Unassigned';
+ const fleet=fleetSnapshots.find(f=>f.provider===box.provider&&f.providerCredential===(box.providerCredential||''));
+ const slot=fleet?.slots?.find(s=>s.id===box.slotId);
+ const worker=box.provider==='shared-worker'?(box.providerCredential||'shared worker'):(slot?.serviceName||slot?.serviceId||box.slotId);
+ return (box.provider==='shared-worker'?'Shared':'Dedicated')+' · '+worker+' · slot '+(slot?.ordinal??box.slotId);
+}
+function updateBoxPlacements(boxes){
+ const byID=new Map(boxes.map(box=>[box.id,box]));
+ for(const row of document.querySelectorAll('#box-list [data-box-id]')){const box=byID.get(row.dataset.boxId);if(box)row.querySelector('.box-placement').textContent=boxPlacement(box)}
+}
+function renderPoolChoices(providers){
+ for(const selector of ['#create-pool','#capacity-pool']){
+  const select=$(selector),previous=select.value;select.replaceChildren();
+  const fallback=node('option','Controller default');fallback.value='';select.append(fallback);
+  for(const provider of providers){const option=node('option',poolLabel(provider.provider,provider.name));option.value=poolKey(provider.provider,provider.name);select.append(option)}
+  if([...select.options].some(option=>option.value===previous))select.value=previous;
+ }
+}
 const deletingBoxes=new Set();
 const startingBoxes=new Set();
 async function api(path,method='GET',body,headers={}){
@@ -67,20 +89,30 @@ $('#location-form').addEventListener('submit',action(async e=>{
  catch(err){if(version===epoch)$('#location-status').textContent=err.message}
  finally{locationSaving=false;e.target.querySelector('button').disabled=false}
 }));
-function renderCapacity(fleet){
- const root=$('#capacity');root.replaceChildren(node('p',`Desired: ${fleet.desiredSlots??'—'} · Total: ${fleet.actualSlots??'—'} · Free: ${fleet.freeSlots??'—'} · Occupied: ${fleet.occupiedSlots??'—'} · Unhealthy: ${fleet.unhealthySlots??'—'}`));
- const slots=fleet.slots||[];
- root.append(slots.length?dataTable(['Slot','State','Health','Location','Box'],slots.map(s=>[s.ordinal,s.state,s.health,s.region,s.logicalBoxName||'—'])):node('p','No compute slots configured. Set capacity below to provision compute.'));
- const detached=fleet.detachedLogicalBoxes||[];if(detached.length)root.append(node('h3','Detached workspaces'),dataTable(['Box','State'],detached.map(b=>[b.name,b.state])));
- if(fleet.unhealthySlots)root.append(node('p','Some slots are unhealthy. Check provider deployments and controller diagnostics before increasing capacity.'));
- root.append(rawDetails(fleet));const input=$('#slots input');if(document.activeElement!==input)input.value=fleet.desiredSlots??'';
+function renderWorkerCapacity(){
+ const root=$('#capacity');root.replaceChildren();
+ const workers=fleetSnapshots.reduce((total,fleet)=>total+(fleet.error?0:fleet.provider==='shared-worker'?(fleet.slots?.length?1:0):(fleet.slots?.length||0)),0);
+ const slots=fleetSnapshots.reduce((total,fleet)=>total+(fleet.actualSlots||0),0);
+ root.append(node('p',`Loaded capacity: ${workers} workers · ${slots} compute slots. Shared slots compete for their host’s CPU and memory.`));
+ for(const fleet of fleetSnapshots){
+  root.append(node('h3',poolLabel(fleet.provider,fleet.providerCredential)));
+  if(fleet.error){root.append(node('p','Capacity unavailable: '+fleet.error));continue}
+  root.append(node('p',`Desired: ${fleet.desiredSlots} · Free: ${fleet.freeSlots} · Occupied: ${fleet.occupiedSlots} · Unhealthy: ${fleet.unhealthySlots}`));
+  root.append(dataTable(['Worker','Slot','State','Health','Location','Box'],(fleet.slots||[]).map(slot=>[fleet.provider==='shared-worker'?fleet.providerCredential:(slot.serviceName||slot.serviceId||slot.id||'—'),slot.ordinal,slot.state,slot.health,slot.region,slot.logicalBoxName||'—'])));
+  const detached=fleet.detachedLogicalBoxes||[];if(detached.length)root.append(node('h3','Detached workspaces'),dataTable(['Box','State'],detached.map(box=>[box.name,box.state])));
+ }
+ const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;
+ const selected=target&&fleetSnapshots.find(fleet=>fleet.provider===target.provider&&fleet.providerCredential===(target.providerCredential||''));
+ const input=$('#slots input');if(document.activeElement!==input)input.value=selected?.desiredSlots??'';
+ root.append(rawDetails(fleetSnapshots));
 }
+$('#capacity-pool').addEventListener('change',renderWorkerCapacity);
 function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){root.append(node('p','No notification destinations configured. Notifications are optional.'));return}root.append(dataTable(['Name','Type','Status','Allowed users','Allowed chats'],values.map(n=>[n.name,n.kind,n.enabled?'Enabled':'Disabled',(n.allowedUsers||[]).join(', ')||'Not specified',(n.allowedChats||[]).join(', ')||'Not specified'])),rawDetails(values))}
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
 function renderBoxes(boxes){
  clearTimeout(boxRefreshTimer);
  for(const id of startingBoxes){const box=boxes.find(b=>b.id===id);if(!box||box.state==='running'||box.state==='failed'||box.state==='deleting'||box.state==='hibernated'&&box.failureReason)startingBoxes.delete(id)}
- const table=document.createElement('table'),head=document.createElement('tr');['Name','State','Default agent','CLI','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
+ const table=document.createElement('table'),head=document.createElement('tr');['Name','State','Worker / slot','Default agent','CLI','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
  for(const b of boxes){
   const row=document.createElement('tr'),cell=document.createElement('td'),select=document.createElement('select'),status=node('td',b.state),actions=document.createElement('td');row.dataset.boxId=b.id;
   for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;select.disabled=b.state==='deleting'||deletingBoxes.has(b.id);
@@ -94,7 +126,7 @@ function renderBoxes(boxes){
    catch(err){if(version===epoch){remove.disabled=false;remove.textContent='Delete';throw err}}
    finally{deletingBoxes.delete(b.id)}
   });remove.setAttribute('aria-label','Delete box '+b.name);remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.append(remove);
-  const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,cell,cli,actions);table.append(row);
+  const placement=node('td',boxPlacement(b));placement.className='box-placement';const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,placement,cell,cli,actions);table.append(row);
  }$('#box-list').replaceChildren(table);
  if(startingBoxes.size||boxes.some(b=>['attaching','reserved','hibernating','deleting'].includes(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
 }
@@ -115,6 +147,8 @@ async function refresh(){
  renderBoxes(boxes);
  if(!caps.providerEdits)return;
  const [providers,schema,notifications,identity,profiles,toolPresets]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications'),api('/v1/whoami'),api('/v1/login-profiles'),api('/v1/tool-presets')]);if(version!==epoch)return;
+ renderPoolChoices(providers);
+ const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{return {...await api('/v1/fleet/status?'+new URLSearchParams(target)),...target}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
  renderProfiles(identity,profiles);
@@ -122,12 +156,12 @@ async function refresh(){
  if(!providers.length)$('#provider-list').append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));
  for(const p of providers){const line=node('p',p.provider+' / '+p.name+' ');line.append(button('Edit',()=>{const f=$('#provider').elements;f.provider.value=p.provider;f.alias.value=p.name;f.config.value=JSON.stringify(p.config||{},null,2);f.secret.value='';f.revision.value=p.updatedAt;$('#provider-editor').open=true;f.config.focus()}),button('Validate',async()=>{const result=await api(pp(p.provider,p.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}),button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:p.provider,providerCredential:p.name});await refresh()}));const details=document.createElement('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(p.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));$('#provider-list').append(line,details)}
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
- try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;const q=new URLSearchParams({provider:d.provider,providerCredential:d.providerCredential}),fleet=await api('/v1/fleet/status?'+q);if(version!==epoch)return;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();if(costTarget&&(costTarget.provider!==d.provider||costTarget.providerCredential!==d.providerCredential))resetCosts();defaults=d;renderCapacity(fleet)}catch(err){if(version===epoch){$('#capacity').textContent=err.message;if(!defaults)$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
+ try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();if(costTarget&&(costTarget.provider!==d.provider||costTarget.providerCredential!==d.providerCredential))resetCosts();defaults=d;renderWorkerCapacity()}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value;const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=f.pool.value?JSON.parse(f.pool.value):await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value;if(d.provider==='shared-worker'&&tools.includes('blender'))throw Error('Blender MCP currently requires a dedicated worker; select the Railway pool.');const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
-$('#slots').addEventListener('submit',action(async e=>{if(!defaults)throw Error('Configure controller default first');await api('/v1/fleet/slots','PUT',{provider:defaults.provider,providerCredential:defaults.providerCredential,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
+$('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));

@@ -178,7 +178,7 @@ func (s *Server) ensureFleetSlot(ctx context.Context, accountID string, slot v1.
 		return slot, err
 	}
 	box, err := prov.Create(ctx, provider.CreateRequest{
-		Name: fleetSlotName(accountID, slot.Ordinal), Image: s.DefaultImage, Region: slot.Region,
+		Name: fleetProviderSlotName(accountID, slot), Image: s.DefaultImage, Region: slot.Region,
 		Resources: provider.Resources{CPU: 2, MemoryMiB: 4096},
 		Owner:     provider.Owner{AccountID: accountID, BoxID: "compute-slot:" + slot.ID},
 		Detached:  true,
@@ -199,6 +199,15 @@ func (s *Server) ensureFleetSlot(ctx context.Context, accountID string, slot v1.
 	}
 	slot, err = s.Store.UpsertComputeSlot(ctx, accountID, slot)
 	return slot, err
+}
+func fleetProviderSlotName(accountID string, slot v1.ComputeSlot) string {
+	if slot.Provider == "shared-worker" {
+		if slot.ServiceID != "" {
+			return slot.ServiceID
+		}
+		return "slot-" + slot.ID
+	}
+	return fleetSlotName(accountID, slot.Ordinal)
 }
 func remainingScaleDown(actual, desired int, slots []v1.ComputeSlot) int {
 	excess := actual - desired

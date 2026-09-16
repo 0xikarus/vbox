@@ -50,6 +50,43 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
+test('worker placement distinguishes shared hosts and creation targets the selected pool',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.poolCreates=[];window.poolCapacity=[];
+  window.fetch=async(path,options={})=>{
+   const url=new URL(path,location.origin),method=options.method||'GET';
+   if(method==='GET'&&url.pathname==='/v1/provider-credentials')return new Response(JSON.stringify([{provider:'railway',name:'primary',config:{}},{provider:'shared-worker',name:'shared-01',config:{}},{provider:'shared-worker',name:'shared-02',config:{}}]));
+   if(method==='GET'&&url.pathname==='/v1/logical-boxes')return new Response(JSON.stringify([
+    {id:'dedicated',name:'dedicated-box',provider:'railway',providerCredential:'primary',slotId:'dedicated-slot',state:'running',defaultAgent:'shell'},
+    {id:'shared-a',name:'shared-a',provider:'shared-worker',providerCredential:'shared-01',slotId:'shared-slot',state:'running',defaultAgent:'shell'},
+    {id:'shared-b',name:'shared-b',provider:'shared-worker',providerCredential:'shared-02',slotId:'shared-slot',state:'running',defaultAgent:'shell'}
+   ]));
+   if(method==='GET'&&url.pathname==='/v1/fleet/status'){
+    const shared=url.searchParams.get('provider')==='shared-worker',alias=url.searchParams.get('providerCredential');
+    return new Response(JSON.stringify({desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,unhealthySlots:0,slots:[{id:shared?'shared-slot':'dedicated-slot',ordinal:1,state:'occupied',health:'healthy',serviceName:shared?'logical-slot-1':'railway-worker-01',logicalBoxName:shared?(alias==='shared-01'?'shared-a':'shared-b'):'dedicated-box'},{id:'free-slot',ordinal:2,state:'free',health:'healthy',serviceName:shared?'logical-slot-2':'railway-worker-02'}]}));
+   }
+   if(method==='POST'&&url.pathname==='/v1/logical-boxes'){window.poolCreates.push(JSON.parse(options.body));return new Response(JSON.stringify({id:'created'}))}
+   if(method==='PUT'&&url.pathname==='/v1/fleet/slots'){window.poolCapacity.push(JSON.parse(options.body));return new Response(options.body)}
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('4 workers · 6 compute slots'));
+ assert.match(await page.$eval('[data-box-id="dedicated"] .box-placement',e=>e.textContent),/Dedicated · railway-worker-01 · slot 1/);
+ assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · shared-01 · slot 1/);
+ assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · shared-02 · slot 1/);
+ const selected=JSON.stringify({provider:'shared-worker',providerCredential:'shared-02'});
+ await page.select('#create-pool',selected);await page.type('#create input[name=name]','comparison-box');await page.click('#create button');
+ await page.waitForFunction(()=>window.poolCreates.length===1);
+ const created=await page.evaluate(()=>window.poolCreates[0]);assert.equal(created.provider,'shared-worker');assert.equal(created.providerCredential,'shared-02');
+ await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('4 workers · 6 compute slots'));
+ assert.equal(await page.$eval('#create-pool',e=>e.value),selected);
+ await page.select('#capacity-pool',JSON.stringify({provider:'shared-worker',providerCredential:'shared-01'}));await page.click('#slots button');
+ await page.waitForFunction(()=>window.poolCapacity.length===1);
+ assert.deepEqual(await page.evaluate(()=>window.poolCapacity[0]),{provider:'shared-worker',providerCredential:'shared-01',compute_box_slots:2});
+ await page.close();
+});
 test('box deletion confirms exact identity, prevents repeats and shows asynchronous progress',async()=>{
  const page=await browser.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.evaluateOnNewDocument(()=>{
@@ -124,7 +161,7 @@ test('table previews stay fixed size and tool choices stay compact',async()=>{
 });
 test('cost overview loads on demand and reports partial provider coverage',async()=>{
  const page=await browser.newPage();const before=requests.filter(r=>r.path==='/v1/fleet/costs').length;
- await page.goto(base+'/#costs');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#costs:not([hidden])');
+ await page.goto(base+'/#costs');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#costs:not([hidden])',{visible:true});
  assert.equal(requests.filter(r=>r.path==='/v1/fleet/costs').length,before);assert.match(await page.$eval('#cost-overview',n=>n.textContent),/not been loaded/);
  await page.click('#load-costs');await page.waitForFunction(()=>document.querySelector('#cost-overview').textContent.includes('1 of 2 slots reported'));
  const text=await page.$eval('#cost-overview',n=>n.textContent);assert.match(text,/1\.23/);assert.match(text,/helper ü/);assert.match(text,/Project token cannot read billing/);
@@ -225,7 +262,7 @@ test('deleted one-shot box still opens archived results without fetching its box
 test('box link opens separate mobile workspace and reuses shell',async()=>{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
- await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#box-list a');
+ await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#box-list a',{visible:true});
  await Promise.all([page.waitForNavigation(),page.click('#box-list a')]);
  await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
  assert.equal(new URL(page.url()).pathname,'/boxes/box-1');

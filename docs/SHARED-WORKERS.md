@@ -29,6 +29,18 @@ deletes only its directory, not the worker or permanent volume. Creating boxes,
 hibernating, resuming and changing desired slots within configured capacity do
 not redeploy the physical worker. Additional physical workers currently require
 separate provisioning and aliases; automatic host scale-out is not implemented.
+New shared slot names include the controller slot UUID so the same ordinal on
+different hosts cannot collide. Existing shared slot identities are preserved.
+
+The controller's Boxes table identifies each assigned worker and slot. Capacity
+shows all configured pools, groups slots by host/pool, and distinguishes physical
+worker count from logical slot count. Select a Worker pool when creating a box
+to compare dedicated capacity with a particular shared host without changing the
+account default. Capacity edits apply to the selected pool only. For example,
+two dedicated slots plus two shared aliases with two slots each are four physical
+workers and six logical compute slots. Shared slots compete for host resources;
+compare the same workload and check host limits, region and image versions before
+drawing performance conclusions. Do not benchmark an existing live user box.
 
 ## Isolation and lifecycle
 
