@@ -248,7 +248,7 @@ window.addEventListener('pagehide',()=>{epoch++;stopStats();clearTimeout(runTime
    const response=await fetch(bp+'/logs?tail=200',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(60000)});
    const text=await response.text();
    if(!response.ok){let message;try{message=JSON.parse(text).error}catch{}throw Error(message||'Logs request failed: '+response.status)}
-   output.textContent=text||'No worker log lines returned.';status.textContent='Latest 200 lines loaded.';
+   output.textContent=text||'No worker log lines returned.';status.textContent=response.headers.get('X-Vmbox-Logs-Partial')==='true'?'Available lines loaded; the provider read reached its 15-second limit.':'Latest 200 lines loaded.';
   }catch(e){status.textContent=e.message}
   finally{button.disabled=false}
  };

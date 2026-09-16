@@ -2,10 +2,12 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
@@ -35,11 +37,17 @@ func (s *Server) logicalBoxLogs(w http.ResponseWriter, r *http.Request, p Princi
 		return
 	}
 	var output bytes.Buffer
-	if err = prov.Logs(r.Context(), assignment.Slot.ServiceID, provider.LogOptions{Tail: tail}, &output); err != nil {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	err = prov.Logs(ctx, assignment.Slot.ServiceID, provider.LogOptions{Tail: tail}, &output)
+	if err != nil && output.Len() == 0 {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("worker logs unavailable: %w", err))
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	if err != nil {
+		w.Header().Set("X-Vmbox-Logs-Partial", "true")
+	}
 	_, _ = w.Write(output.Bytes())
 }
