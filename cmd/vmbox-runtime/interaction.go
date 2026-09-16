@@ -199,6 +199,23 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 			return true, err
 		}
 		return true, boxruntime.DeliverCodexChat(context.Background(), home, args[1], inbound)
+	case "chat-codex-start":
+		if len(args) != 2 {
+			return true, fmt.Errorf("chat-codex-start requires SESSION")
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 100<<20))
+		if err != nil {
+			return true, err
+		}
+		var inbound boxruntime.ChatInbound
+		if err := json.Unmarshal(data, &inbound); err != nil {
+			return true, fmt.Errorf("invalid inbound chat envelope")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true, err
+		}
+		return true, boxruntime.StartCodexChat(context.Background(), runtime.Root, home, args[1], inbound)
 	case "chat-codex-name":
 		if len(args) != 2 {
 			return true, fmt.Errorf("chat-codex-name requires SESSION")

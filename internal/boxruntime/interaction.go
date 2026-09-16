@@ -357,33 +357,9 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 			return fmt.Errorf("unsupported task agent %q", agent)
 		}
 	}
-	if _, err := tmuxCommand(ctx, "", "has-session", "-t", session); err != nil {
-		assignment, err := prepareManagedDesktop(ctx, agent)
-		if err != nil {
-			return err
-		}
-		args := []string{"new-session", "-d", "-s", session, "-c", "/data/workspace", "--"}
-		args = append(args, argv...)
-		if _, err := tmuxCommand(ctx, "", args...); err != nil {
-			return fmt.Errorf("start %s task session: %w", agent, err)
-		}
-		if _, err := tmuxCommand(ctx, "", "set-environment", "-t", session, taskAgentEnvironment, agent); err != nil {
-			return fmt.Errorf("mark %s task session: %w", agent, err)
-		}
-		if err := ApplyTmuxContext(ctx, root, session); err != nil {
-			return fmt.Errorf("apply %s task session context: %w", agent, err)
-		}
-		_, _ = tmuxCommand(ctx, "", "source-file", "/etc/vmbox/tmux.conf")
-		if assignment != "" {
-			if err := EnsureDesktopTerminals(ctx, assignment); err != nil {
-				return err
-			}
-		}
-	} else {
-		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", session, taskAgentEnvironment)
-		if err != nil || strings.TrimSpace(string(marker)) != taskAgentEnvironment+"="+agent {
-			return fmt.Errorf("tmux session %q already exists and is not a %s task session; choose a different session name", session, agent)
-		}
+	created, err := startTmuxTaskSession(ctx, root, session, agent, argv)
+	if err != nil {
+		return err
 	}
 	if agent != "shell" {
 		if err := waitForAgentReady(ctx, session, agent); err != nil {
@@ -396,7 +372,45 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 	if prompt == "" {
 		return nil
 	}
+	if !created && agent != "shell" {
+		// Existing native agent sessions receive messages through their native
+		// conversation transport, never through terminal input.
+		return fmt.Errorf("tmux session %q already exists", session)
+	}
 	return DeliverTmuxInput(ctx, root, session, messageID, prompt, true)
+}
+
+func startTmuxTaskSession(ctx context.Context, root, session, agent string, argv []string) (bool, error) {
+	if _, err := tmuxCommand(ctx, "", "has-session", "-t", session); err != nil {
+		assignment, err := prepareManagedDesktop(ctx, agent)
+		if err != nil {
+			return false, err
+		}
+		args := []string{"new-session", "-d", "-s", session, "-c", "/data/workspace", "--"}
+		args = append(args, argv...)
+		if _, err := tmuxCommand(ctx, "", args...); err != nil {
+			return false, fmt.Errorf("start %s task session: %w", agent, err)
+		}
+		if _, err := tmuxCommand(ctx, "", "set-environment", "-t", session, taskAgentEnvironment, agent); err != nil {
+			return false, fmt.Errorf("mark %s task session: %w", agent, err)
+		}
+		if err := ApplyTmuxContext(ctx, root, session); err != nil {
+			return false, fmt.Errorf("apply %s task session context: %w", agent, err)
+		}
+		_, _ = tmuxCommand(ctx, "", "source-file", "/etc/vmbox/tmux.conf")
+		if assignment != "" {
+			if err := EnsureDesktopTerminals(ctx, assignment); err != nil {
+				return false, err
+			}
+		}
+		return true, nil
+	} else {
+		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", session, taskAgentEnvironment)
+		if err != nil || strings.TrimSpace(string(marker)) != taskAgentEnvironment+"="+agent {
+			return false, fmt.Errorf("tmux session %q already exists and is not a %s task session; choose a different session name", session, agent)
+		}
+	}
+	return false, nil
 }
 
 func waitForAgentReady(ctx context.Context, session, agent string) error {

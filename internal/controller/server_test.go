@@ -96,7 +96,7 @@ func (*fakeProvider) Reconcile(_ context.Context, box provider.Box) (provider.Bo
 
 func TestBoxTaskStagesMatchingRuntimeBeforeStartingAgent(t *testing.T) {
 	runtime := []byte("current controller runtime")
-	for agent, command := range map[string]string{"claude": "chat-deliver", "codex": "chat-codex", "opencode": "chat-opencode"} {
+	for agent, command := range map[string]string{"claude": "chat-deliver", "codex": "chat-codex-start", "opencode": "chat-opencode"} {
 		t.Run(agent, func(t *testing.T) {
 			p := &taskRuntimeProvider{digest: fmt.Sprintf("%x", sha256.Sum256(runtime))}
 			server := NewServer(nil, nil)
@@ -106,11 +106,21 @@ func TestBoxTaskStagesMatchingRuntimeBeforeStartingAgent(t *testing.T) {
 			if _, err := server.startBoxTaskRuntime(context.Background(), "account-1", p, "service-1", task, message); err != nil {
 				t.Fatal(err)
 			}
-			if len(p.calls) != 4 {
+			wantCalls := 4
+			if agent == "codex" {
+				wantCalls = 3
+			}
+			if len(p.calls) != wantCalls {
 				t.Fatalf("calls=%v", p.calls)
 			}
 			if got := p.calls[0]; len(got) < 2 || got[0] != "/usr/local/bin/vmbox-runtime" || got[1] != "put-file" {
 				t.Fatalf("first call did not stage the runtime: %v", got)
+			}
+			if agent == "codex" {
+				if got := p.calls[2]; len(got) != 3 || got[0] != "vmbox-runtime" || got[1] != command || got[2] != task.Session {
+					t.Fatalf("Codex initial message did not use process startup: %v", got)
+				}
+				return
 			}
 			if got := p.calls[2]; len(got) != 6 || got[0] != "vmbox-runtime" || got[1] != "tmux-task" || got[2] != task.Session || got[3] != task.Agent || got[4] != message.ID || got[5] != "" {
 				t.Fatalf("task started before matching runtime was installed: %v", got)

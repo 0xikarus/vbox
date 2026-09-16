@@ -330,6 +330,45 @@ func DeliverCodexChat(ctx context.Context, home, session string, inbound ChatInb
 	return runCodexQueue(ctx, home, path, args)
 }
 
+// StartCodexChat starts a new interactive Codex session with the first Agent
+// chat message in Codex's supported process arguments. Later messages use
+// DeliverCodexChat after the thread has been named for the tmux session.
+func StartCodexChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
+	if err := StoreChatInbound(home, session, inbound); err != nil {
+		return err
+	}
+	eventPath := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, inbound.ID+".json")
+	data, err := os.ReadFile(eventPath)
+	if err != nil {
+		return err
+	}
+	var event chatInboundFile
+	if json.Unmarshal(data, &event) != nil {
+		return fmt.Errorf("invalid inbound chat event")
+	}
+	argv, err := persistentAgentArgv(session, "codex")
+	if err != nil {
+		return err
+	}
+	for _, path := range event.Paths {
+		argv = append(argv, "-i", path)
+	}
+	argv = append(argv, event.Text)
+	// The initial message is already in argv. Removing its inbox envelope before
+	// launch prevents any native message consumer from seeing it a second time.
+	if err := os.Remove(eventPath); err != nil {
+		return err
+	}
+	created, err := startTmuxTaskSession(ctx, root, session, "codex", argv)
+	if err != nil {
+		return err
+	}
+	if !created {
+		return fmt.Errorf("codex chat session %q already exists", session)
+	}
+	return nil
+}
+
 var runCodexQueue = func(ctx context.Context, home, eventPath string, args []string) error {
 	command := exec.CommandContext(ctx, "codex", args...)
 	command.Env = append(os.Environ(), "HOME="+home)
