@@ -393,7 +393,7 @@ func startTmuxTaskSession(ctx context.Context, root, session, agent string, argv
 		if err != nil {
 			return false, err
 		}
-		args := []string{"new-session", "-d", "-s", session, "-c", "/data/workspace", "--"}
+		args := []string{"new-session", "-d", "-s", session, "-c", WorkspaceDirectory(), "--"}
 		args = append(args, argv...)
 		if _, err := tmuxCommand(ctx, "", args...); err != nil {
 			return false, fmt.Errorf("start %s task session: %w", agent, err)

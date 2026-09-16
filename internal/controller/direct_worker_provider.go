@@ -279,10 +279,22 @@ func (p *directWorkerProvider) Regions(ctx context.Context) ([]provider.Region, 
 // Connection assignment validation is independent of provider deployment IDs for
 // enrolled workers. Legacy connections keep their existing deployment fence.
 func connectionMatchesAssignment(conn provider.Connection, a fleetAssignment) bool {
+	if conn.Transport == "shared-worker" {
+		return conn.Endpoint == a.Slot.ServiceID && conn.Metadata["accountId"] == a.Box.AccountID && conn.Metadata["boxId"] == a.Box.Name && conn.Metadata["workspaceId"] == a.Box.VolumeID && conn.Metadata["deploymentInstanceId"] != "" && conn.Metadata["deploymentInstanceId"] == a.Slot.DeploymentInstanceID
+	}
 	if conn.Transport == directWorkerTransport {
 		return conn.Metadata["accountId"] == a.Box.AccountID && conn.Endpoint == a.Slot.ServiceID && conn.Metadata["boxId"] == a.Box.ID && conn.Metadata["slotId"] == a.Slot.ID && conn.Metadata["assignment"] == nativeFence(a) && conn.Metadata["connectionRevision"] != ""
 	}
 	return conn.Metadata["deploymentInstanceId"] != "" && conn.Metadata["deploymentInstanceId"] == a.Slot.DeploymentInstanceID
+}
+
+func clientWorkerConnection(conn provider.Connection, a fleetAssignment) provider.Connection {
+	if conn.Transport != "shared-worker" {
+		return conn
+	}
+	return provider.Connection{Transport: directWorkerTransport, Endpoint: a.Slot.ServiceID, Metadata: map[string]string{
+		"accountId": a.Box.AccountID, "boxId": a.Box.ID, "slotId": a.Slot.ID, "assignment": nativeFence(a), "connectionRevision": conn.Metadata["deploymentInstanceId"],
+	}}
 }
 
 // Agent-mode handoff uses already stored metadata, never a management read for

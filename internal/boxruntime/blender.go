@@ -16,6 +16,9 @@ import (
 const blenderMCPVersion = "1.9.1"
 
 func configureBlender(ctx context.Context, home string, progress io.Writer) error {
+	if WorkspaceRoot() != "/data" {
+		return errors.New("Blender MCP is not supported on shared workers; use a dedicated worker")
+	}
 	path, err := toolSetupPath(home)
 	if err != nil {
 		return err

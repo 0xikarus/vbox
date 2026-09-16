@@ -48,6 +48,12 @@ func (w outputWriter) Write(data []byte) (int, error) {
 // binding against authoritative local state; there is deliberately no default
 // accepting validator. The handler never retries a command.
 func Execute(ctx context.Context, s *Stream, journal Journal, validate func(context.Context, Binding) error) error {
+	return ExecuteWithCommand(ctx, s, journal, validate, func(ctx context.Context, argv []string) (*exec.Cmd, error) {
+		return exec.CommandContext(ctx, argv[0], argv[1:]...), nil
+	}, func(command *exec.Cmd) error { return command.Start() })
+}
+
+func ExecuteWithCommand(ctx context.Context, s *Stream, journal Journal, validate func(context.Context, Binding) error, build func(context.Context, []string) (*exec.Cmd, error), start func(*exec.Cmd) error) error {
 	encoder := json.NewEncoder(s)
 	reject := func(reason string) error {
 		err := encoder.Encode(Output{Kind: "error", Error: reason})
@@ -120,7 +126,13 @@ func Execute(ctx context.Context, s *Stream, journal Journal, validate func(cont
 			}
 		}
 	}()
-	command := exec.CommandContext(runCtx, s.Request.Argv[0], s.Request.Argv[1:]...)
+	if build == nil || start == nil {
+		return reject("worker command launcher unavailable")
+	}
+	command, err := build(runCtx, s.Request.Argv)
+	if err != nil || command == nil {
+		return reject("worker command preparation failed")
+	}
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	command.Cancel = func() error {
 		if command.Process == nil {
@@ -138,7 +150,7 @@ func Execute(ctx context.Context, s *Stream, journal Journal, validate func(cont
 	if err != nil {
 		return reject("worker command input unavailable")
 	}
-	if err = command.Start(); err != nil {
+	if err = start(command); err != nil {
 		stdin.Close()
 		// A launch failure is distinct from a process exit; leave the claim unknown.
 		return reject("worker command could not start")

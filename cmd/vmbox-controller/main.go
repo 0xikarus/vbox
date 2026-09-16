@@ -25,6 +25,7 @@ import (
 	dockerprovider "github.com/0xikarus/vmbox-service/internal/provider/docker"
 	incusprovider "github.com/0xikarus/vmbox-service/internal/provider/incus"
 	railwayprovider "github.com/0xikarus/vmbox-service/internal/provider/railway"
+	sharedprovider "github.com/0xikarus/vmbox-service/internal/provider/shared"
 	"github.com/0xikarus/vmbox-service/internal/secrets"
 )
 
@@ -293,6 +294,8 @@ func providerForCredential(name string, credential controller.DecryptedProviderC
 		return value
 	}
 	switch name {
+	case "shared-worker":
+		return sharedprovider.New(stringValue(config, "endpoint"), stringValue(secret, "token"))
 	case "railway":
 		token := stringValue(secret, "token")
 		if token == "" {

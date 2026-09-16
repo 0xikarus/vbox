@@ -26,6 +26,9 @@ func main() {
 	}
 }
 func run() error {
+	if err := boxruntime.ValidateWorkspaceEnvironment(); err != nil {
+		return err
+	}
 	runtime := boxruntime.New("")
 	args := os.Args[1:]
 	switch filepath.Base(os.Args[0]) {
@@ -260,7 +263,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		digest, err := writeSyncedFile("/data", args[1], args[2], io.LimitReader(os.Stdin, 16<<20), owner, nil)
+		digest, err := writeSyncedFile(boxruntime.WorkspaceRoot(), boxruntime.WorkspacePath(args[1]), args[2], io.LimitReader(os.Stdin, 16<<20), owner, nil)
 		if err != nil {
 			return err
 		}
@@ -274,7 +277,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		digest, err := receiveFiles(os.Stdin, "/data", owner, nil)
+		digest, err := receiveFiles(os.Stdin, boxruntime.WorkspaceRoot(), owner, nil)
 		if err != nil {
 			return err
 		}
@@ -588,7 +591,7 @@ func receiveFiles(reader io.Reader, root string, owner *boxruntime.Ownership, ch
 	}
 	seen := make(map[string]bool, len(request.Files))
 	for _, file := range request.Files {
-		path := filepath.Clean(file.Path)
+		path := filepath.Clean(boxruntime.WorkspacePath(file.Path))
 		if seen[path] {
 			return "", fmt.Errorf("duplicate sync destination %s", path)
 		}
@@ -650,7 +653,7 @@ func performSetup(ctx context.Context, request boxruntime.SetupRequest, execute 
 	if request.Workspace == "" {
 		return boxruntime.SetupResult{}, fmt.Errorf("setup workspace is required")
 	}
-	if err := asWorkload(ctx, nil, io.Discard, os.Stderr, "vmbox-entrypoint", "--configure-agent-trust", request.Workspace); err != nil {
+	if err := asWorkload(ctx, nil, io.Discard, os.Stderr, "vmbox-entrypoint", "--configure-agent-trust", boxruntime.WorkspacePath(request.Workspace)); err != nil {
 		return boxruntime.SetupResult{}, fmt.Errorf("configure agent trust: %w", err)
 	}
 	result := boxruntime.SetupResult{Authentication: make(map[string]bool)}

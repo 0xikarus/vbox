@@ -47,5 +47,5 @@ mouse_scroll_up = prev_task
 mouse_scroll_down = next_task
 CONFIG
 fi
-export DISPLAY=:99
+export DISPLAY="${VMBOX_DESKTOP_DISPLAY:-:99}"
 exec tint2 -c "$panel_config"

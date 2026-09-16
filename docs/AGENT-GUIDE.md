@@ -26,6 +26,11 @@ delete a shared fleet service when asked to delete a logical box.
 
 ## Code map
 
+The opt-in [shared-worker provider](SHARED-WORKERS.md) supports several logical
+slots on one physical worker. Its supervisor is `internal/sharedworker`, provider
+adapter is `internal/provider/shared`, and entry point is `cmd/vmbox-shared-worker`.
+Do not apply dedicated-worker whole-volume cleanup to these boxes.
+
 | Area | Entry points |
 | --- | --- |
 | Executables | `cmd/vmbox`, `cmd/vmbox-controller`, `cmd/vmbox-runtime`, `cmd/vmbox-worker-agent` |

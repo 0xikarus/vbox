@@ -444,7 +444,7 @@ var openCodeReadyProbe = func(ctx context.Context, session string) (bool, error)
 		return false, nil
 	}
 	for _, candidate := range sessions {
-		if candidate.Directory == "/data/workspace" {
+		if candidate.Directory == WorkspaceDirectory() {
 			return true, nil
 		}
 	}
@@ -493,7 +493,7 @@ func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound Chat
 	}
 	sessionID := sessions[0].ID
 	for _, candidate := range sessions {
-		if candidate.Directory == "/data/workspace" {
+		if candidate.Directory == WorkspaceDirectory() {
 			sessionID = candidate.ID
 			break
 		}

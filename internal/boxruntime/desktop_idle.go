@@ -24,7 +24,7 @@ func DesktopIdleSeconds(ctx context.Context, assignment string) (int64, error) {
 		return 0, err
 	}
 	cmd := exec.CommandContext(ctx, "xprintidle")
-	cmd.Env = append(os.Environ(), "DISPLAY=:99")
+	cmd.Env = append(os.Environ(), "DISPLAY="+DesktopDisplay())
 	output, err := cmd.Output()
 	if err != nil {
 		return 0, fmt.Errorf("desktop idle observation unavailable")

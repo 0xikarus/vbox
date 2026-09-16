@@ -1,6 +1,7 @@
 # One worker, N compute slots
 
-Status: implementation plan, not deployed or implemented. Shared workers are
+Status: broader implementation roadmap. The initial opt-in provider is documented
+in [Shared workers](SHARED-WORKERS.md); not all phases below are implemented. Shared workers are
 explicitly trusted-account process hosting, not Docker or Railway Sandboxes.
 This supersedes the namespace-isolation requirement in SHARED-WORKER-PROVIDER.md
 for this opt-in mode only. Dedicated Railway boxes retain their existing contract.

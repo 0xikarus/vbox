@@ -158,6 +158,6 @@ func NativeWelcome(ctx context.Context, assignment string) error {
 	if len(inv.Sessions) != 0 {
 		return fmt.Errorf("sessions already exist; select one")
 	}
-	_, err = tmuxOutput(ctx, "if-shell", "-F", "#{==:#{@vmbox_assignment},"+assignment+"}", "new-session -d -s vmbox -c /data/workspace 'vmbox-runtime welcome'", "display-message 'assignment changed'")
+	_, err = tmuxOutput(ctx, "if-shell", "-F", "#{==:#{@vmbox_assignment},"+assignment+"}", "new-session -d -s vmbox -c "+shellQuote(WorkspaceDirectory())+" 'vmbox-runtime welcome'", "display-message 'assignment changed'")
 	return err
 }

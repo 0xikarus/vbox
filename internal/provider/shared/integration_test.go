@@ -1,0 +1,107 @@
+package shared
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/0xikarus/vmbox-service/internal/provider"
+)
+
+func TestDisposableTwoSlotWorker(t *testing.T) {
+	endpoint := os.Getenv("VMBOX_TEST_SHARED_DISPOSABLE_ENDPOINT")
+	if endpoint == "" {
+		t.Skip("requires explicitly disposable shared worker")
+	}
+	client, err := New(endpoint, os.Getenv("VMBOX_TEST_SHARED_TOKEN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	type fixture struct {
+		box     provider.Box
+		storage provider.Storage
+		owner   provider.Owner
+	}
+	var fixtures []fixture
+	defer func() {
+		cleanup, finish := context.WithTimeout(context.Background(), 30*time.Second)
+		defer finish()
+		for _, item := range fixtures {
+			if err := client.DetachStorage(cleanup, item.box.ID, item.storage); err != nil {
+				t.Error(err)
+				continue
+			}
+			if err := client.DeleteStorage(cleanup, item.storage, item.owner); err != nil {
+				t.Error(err)
+			}
+			if err := client.Delete(cleanup, item.box.ID, item.box.Owner); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	for index := range 2 {
+		name := fmt.Sprintf("disposable-%d-%d", time.Now().UnixNano(), index)
+		owner := provider.Owner{AccountID: "00000000-0000-4000-8000-000000000001", BoxID: name}
+		box, err := client.Create(ctx, provider.CreateRequest{Name: name, Owner: owner})
+		if err != nil {
+			t.Fatal(err)
+		}
+		storage, err := client.CreateWorkspaceStorage(ctx, box.ID, owner, provider.Resources{DiskGiB: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		box, err = client.Inspect(ctx, box.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixtures = append(fixtures, fixture{box, storage, owner})
+	}
+	execute := func(index int, argv ...string) provider.ExecResult {
+		t.Helper()
+		result, err := client.Exec(ctx, fixtures[index].box.ID, argv, provider.ExecOptions{})
+		if err != nil || result.ExitCode != 0 {
+			t.Fatalf("slot %d: %+v, %v", index, result, err)
+		}
+		return result
+	}
+	first := execute(0, "sh", "-c", `printf '%s\n' "$(id -u)" "$HOME" "$VMBOX_DESKTOP_DISPLAY"; test -z "${VMBOX_SHARED_TOKEN:-}"; printf first > "$HOME/marker"; tmux new-session -d -s persistent 'sleep 300'`)
+	second := execute(1, "sh", "-c", `printf '%s\n' "$(id -u)" "$HOME" "$VMBOX_DESKTOP_DISPLAY"; test -z "${VMBOX_SHARED_TOKEN:-}"; printf second > "$HOME/marker"; tmux new-session -d -s persistent 'sleep 300'`)
+	firstFields, secondFields := strings.Fields(first.Stdout), strings.Fields(second.Stdout)
+	if len(firstFields) != 3 || len(secondFields) != 3 {
+		t.Fatalf("unexpected identities: %q, %q", first.Stdout, second.Stdout)
+	}
+	for index := range firstFields {
+		if firstFields[index] == secondFields[index] {
+			t.Fatalf("shared identity: %q", firstFields[index])
+		}
+	}
+	execute(0, "sh", "-c", `test ! -r "$1/marker"; test "$(cat "$HOME/marker")" = first; test "$(tmux list-sessions -F '#{session_name}')" = persistent`, "isolation-test", secondFields[1])
+	execute(1, "sh", "-c", `test ! -r "$1/marker"; test "$(cat "$HOME/marker")" = second`, "isolation-test", firstFields[1])
+	for index := range 2 {
+		assignment := strings.Repeat(fmt.Sprintf("%x", index+1), 64)
+		execute(index, "tmux", "set-option", "-g", "@vmbox_assignment", assignment)
+		execute(index, "tmux", "set-option", "-g", "@vmbox_server_incarnation", strings.Repeat("b", 24))
+		execute(index, "vmbox-runtime", "desktop-start", assignment)
+		capture := execute(index, "vmbox-runtime", "desktop-screenshot", assignment)
+		if !strings.HasPrefix(capture.Stdout, "\x89PNG\r\n\x1a\n") {
+			t.Fatalf("slot %d desktop screenshot is not PNG", index)
+		}
+	}
+	if _, err := client.Stop(ctx, fixtures[0].box.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.ExecConnection(ctx, fixtures[0].box.Connection, []string{"true"}, provider.ExecOptions{}); err == nil {
+		t.Fatal("stale connection accepted")
+	}
+	execute(1, "tmux", "has-session", "-t", "persistent")
+	if _, err := client.Start(ctx, fixtures[0].box.ID); err != nil {
+		t.Fatal(err)
+	}
+	execute(0, "sh", "-c", `test "$(cat "$HOME/marker")" = first; if tmux has-session -t persistent 2>/dev/null; then exit 1; fi`)
+	execute(0, "/usr/local/bin/vmbox-runtime", "health")
+}

@@ -487,7 +487,7 @@ func (s *Server) logicalBoxConnectionHandler(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore"))
 		return
 	}
-	writeJSON(w, http.StatusOK, v1.LogicalBoxConnection{LogicalBoxID: box.ID, BoxName: box.Name, Session: session, Connection: connection})
+	writeJSON(w, http.StatusOK, v1.LogicalBoxConnection{LogicalBoxID: box.ID, BoxName: box.Name, Session: session, Connection: clientWorkerConnection(connection, assignment)})
 }
 
 func (s *Server) terminalSnapshotHandler(w http.ResponseWriter, r *http.Request, p Principal) {

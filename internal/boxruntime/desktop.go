@@ -2,6 +2,7 @@ package boxruntime
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,9 @@ import (
 )
 
 func desktopSocket(assignment string) string {
+	if WorkspaceRoot() != "/data" {
+		assignment = fmt.Sprintf("%x", sha256.Sum256([]byte(assignment)))[:16]
+	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("vmbox-desktop-%d", os.Getuid()), assignment, "vnc.sock")
 }
 
@@ -142,7 +146,7 @@ func RunDesktop(ctx context.Context, assignment string) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	vnc := exec.CommandContext(ctx, "Xtigervnc", ":99", "-geometry", "1280x800", "-depth", "24", "-rfbport", "-1", "-rfbunixpath", socket, "-rfbunixmode", "0600", "-SecurityTypes", "None", "-AlwaysShared", "-nolisten", "tcp")
+	vnc := exec.CommandContext(ctx, "Xtigervnc", DesktopDisplay(), "-geometry", "1280x800", "-depth", "24", "-rfbport", "-1", "-rfbunixpath", socket, "-rfbunixmode", "0600", "-SecurityTypes", "None", "-AlwaysShared", "-nolisten", "tcp")
 	vnc.Stdout, vnc.Stderr = os.Stdout, os.Stderr
 	if err := vnc.Start(); err != nil {
 		return err
@@ -166,7 +170,7 @@ func RunDesktop(ctx context.Context, assignment string) error {
 		return fmt.Errorf("VNC did not become ready")
 	}
 	wm := exec.CommandContext(ctx, "openbox")
-	wm.Env = append(os.Environ(), "DISPLAY=:99")
+	wm.Env = append(os.Environ(), "DISPLAY="+DesktopDisplay())
 	wm.Stderr = os.Stderr
 	if err := wm.Start(); err != nil {
 		return err

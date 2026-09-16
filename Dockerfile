@@ -8,6 +8,7 @@ COPY internal ./internal
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-runtime ./cmd/vmbox-runtime
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-controller ./cmd/vmbox-controller
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-worker-agent ./cmd/vmbox-worker-agent
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags='-s -w' -o /out/vmbox-shared-worker ./cmd/vmbox-shared-worker
 
 FROM node:22-bookworm-slim
 
@@ -91,6 +92,7 @@ COPY entrypoint.sh /usr/local/bin/vmbox-entrypoint
 COPY --from=build /out/vmbox-runtime /usr/local/bin/vmbox-runtime
 COPY --from=build /out/vmbox-controller /usr/local/bin/vmbox-controller
 COPY --from=build /out/vmbox-worker-agent /usr/local/bin/vmbox-worker-agent
+COPY --from=build /out/vmbox-shared-worker /usr/local/bin/vmbox-shared-worker
 RUN set -eux; \
     normalized_components="$(printf '%s' "$VMBOX_COMPONENTS" | tr ',' '\n' | sed '/^$/d' | sort -u | paste -sd, -)"; \
     printf '%s\n' "$normalized_components" >/usr/local/lib/vmbox-bootstrap-components; \

@@ -211,5 +211,5 @@ func (s *Server) nativeConnectionHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 409, fmt.Errorf("deployment changed"))
 		return
 	}
-	writeJSON(w, 200, v1.NativeConnection{LogicalBoxConnection: v1.LogicalBoxConnection{LogicalBoxID: a.Box.ID, BoxName: a.Box.Name, Session: selected.Name, Connection: conn}, Assignment: inv.Assignment, SessionID: selected.ID, Incarnation: selected.Incarnation})
+	writeJSON(w, 200, v1.NativeConnection{LogicalBoxConnection: v1.LogicalBoxConnection{LogicalBoxID: a.Box.ID, BoxName: a.Box.Name, Session: selected.Name, Connection: clientWorkerConnection(conn, a)}, Assignment: inv.Assignment, SessionID: selected.ID, Incarnation: selected.Incarnation})
 }

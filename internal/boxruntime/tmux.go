@@ -201,7 +201,7 @@ func parseTmuxPanes(data []byte, savedAt time.Time) (TmuxSnapshot, error) {
 
 func cleanWorkingDirectory(value string) string {
 	if value == "" || !filepath.IsAbs(value) || strings.ContainsAny(value, "\x00\r\n") {
-		return "/data/workspace"
+		return WorkspaceDirectory()
 	}
 	return filepath.Clean(value)
 }
@@ -399,7 +399,7 @@ func PrepareHibernate(ctx context.Context, root string) (HibernateResult, error)
 	if killErr != nil && !tmuxServerAbsent(killErr) {
 		return result, killErr
 	}
-	blockers, err := stopWorkspaceProcesses(ctx, "/data", 10*time.Second)
+	blockers, err := stopWorkspaceProcesses(ctx, WorkspaceRoot(), 10*time.Second)
 	if err != nil {
 		return result, err
 	}

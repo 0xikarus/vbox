@@ -77,5 +77,5 @@ launcher Terminal xterm utilities-terminal 'xterm -fa "DejaVu Sans Mono" -fs 13 
 launcher Files pcmanfm system-file-manager
 launcher Blender blender blender
 
-export DISPLAY=:99
+export DISPLAY="${VMBOX_DESKTOP_DISPLAY:-:99}"
 exec dbus-run-session -- pcmanfm --profile=vmbox --desktop

@@ -11,9 +11,10 @@ import (
 )
 
 var providerSchemas = map[string]map[string]string{
-	"railway": {"projectId": "string", "environmentId": "string", "tokenEnvironment": "string", "image": "string"},
-	"docker":  {"context": "string", "host": "string", "tlsVerify": "boolean", "certPath": "string", "image": "string"},
-	"incus":   {"remote": "string", "project": "string", "vm": "boolean", "image": "string"},
+	"shared-worker": {"endpoint": "string"},
+	"railway":       {"projectId": "string", "environmentId": "string", "tokenEnvironment": "string", "image": "string"},
+	"docker":        {"context": "string", "host": "string", "tlsVerify": "boolean", "certPath": "string", "image": "string"},
+	"incus":         {"remote": "string", "project": "string", "vm": "boolean", "image": "string"},
 }
 
 func publicProviderConfig(name string, raw json.RawMessage) json.RawMessage {

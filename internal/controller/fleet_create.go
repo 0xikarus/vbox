@@ -139,7 +139,11 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 				return fail(err)
 			}
 			creation.Assignment.Box.RestorationState = "creation-volume-requested"
-			storage, err = prov.CreateStorage(ctx, serviceID, provider.Resources{DiskGiB: creation.Request.DiskGiB})
+			if owned, ok := prov.(provider.WorkspaceStorageProvider); ok {
+				storage, err = owned.CreateWorkspaceStorage(ctx, serviceID, provider.Owner{AccountID: creation.AccountID, BoxID: creation.Assignment.Box.Name}, provider.Resources{DiskGiB: creation.Request.DiskGiB})
+			} else {
+				storage, err = prov.CreateStorage(ctx, serviceID, provider.Resources{DiskGiB: creation.Request.DiskGiB})
+			}
 			if err != nil {
 				return fail(fmt.Errorf("create workspace volume: %w", err))
 			}

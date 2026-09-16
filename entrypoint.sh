@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+if [ "${1:-}" = "/usr/local/bin/vmbox-shared-worker" ]; then
+  exec "$@"
+fi
+if [ "${VMBOX_WORKER_MODE:-}" = "shared" ]; then
+  exec /usr/local/bin/vmbox-shared-worker
+fi
+
 export HOME="${HOME:-/data/home}"
 # This script runs both as the container entrypoint (root) and, through
 # `--configure-agent-trust`, as the unprivileged vmbox user. Ownership fixes are

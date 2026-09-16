@@ -131,14 +131,14 @@ func WorkloadArgv(euid int, name string, args []string) (string, []string) {
 		full := provider.AsWorkloadUser(append([]string{name}, args...))
 		return full[0], full[1:]
 	}
-	full := append([]string{"env", "HOME=" + provider.WorkloadHome}, append([]string{name}, args...)...)
+	full := append([]string{"env", "HOME=" + WorkloadHome()}, append([]string{name}, args...)...)
 	return full[0], full[1:]
 }
 
 // RunsAsWorkloadUser reports whether argv was produced by WorkloadArgv, so that
 // tests and callers can assert a command never reaches the box as root.
 func RunsAsWorkloadUser(argv []string) bool {
-	home := "HOME=" + provider.WorkloadHome
+	home := "HOME=" + WorkloadHome()
 	switch {
 	case len(argv) == 0:
 		return false
@@ -176,7 +176,7 @@ func CheckSyncedFileMode(destination string, mode os.FileMode) error {
 
 func withinWorkloadHome(path string) bool {
 	path = filepath.Clean(path)
-	home := filepath.Clean(provider.WorkloadHome)
+	home := filepath.Clean(WorkloadHome())
 	return path == home || strings.HasPrefix(path, home+string(os.PathSeparator))
 }
 

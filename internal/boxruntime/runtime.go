@@ -36,7 +36,7 @@ func New(root string) *Runtime {
 		root = os.Getenv("VMBOX_RUNTIME_DIR")
 	}
 	if root == "" {
-		root = "/data/.vmbox"
+		root = filepath.Join(WorkspaceRoot(), ".vmbox")
 	}
 	return &Runtime{Root: root, Heartbeat: 10 * time.Second}
 }

@@ -32,13 +32,13 @@ func (s *Server) directWorkerClient(w http.ResponseWriter, r *http.Request, prin
 		writeError(w, 502, errors.New("worker provider unavailable"))
 		return
 	}
-	direct, ok := prov.(*directWorkerProvider)
+	direct, ok := prov.(provider.ConnectionStreamer)
 	if !ok {
 		writeError(w, 409, errors.New("direct worker transport unavailable"))
 		return
 	}
-	conn, err := direct.Connection(ctx, a.Slot.ServiceID)
-	if err != nil || conn.Transport != directWorkerTransport || !connectionMatchesAssignment(conn, a) {
+	conn, err := prov.Connection(ctx, a.Slot.ServiceID)
+	if err != nil || (conn.Transport != directWorkerTransport && conn.Transport != "shared-worker") || !connectionMatchesAssignment(conn, a) {
 		writeError(w, 409, errors.New("worker connection unavailable or changed"))
 		return
 	}
@@ -64,7 +64,7 @@ func (s *Server) directWorkerClient(w http.ResponseWriter, r *http.Request, prin
 		return
 	}
 	encoder := json.NewEncoder(stream)
-	if stream.Request.Rebind != nil || stream.Request.Binding != bindingForConnection(conn) {
+	if stream.Request.Rebind != nil || stream.Request.Binding != bindingForConnection(clientWorkerConnection(conn, a)) {
 		_ = encoder.Encode(workerprotocol.Output{Kind: "error", Error: "worker assignment changed"})
 		_ = stream.CloseWrite()
 		// Let the client consume the error before closing the connection.

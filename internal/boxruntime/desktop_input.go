@@ -33,7 +33,7 @@ const desktopDoubleClickDelay = 120 * time.Millisecond
 
 func desktopInputCommand(ctx context.Context, stdin string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "xdotool", args...)
-	cmd.Env = append(os.Environ(), "DISPLAY=:99")
+	cmd.Env = append(os.Environ(), "DISPLAY="+DesktopDisplay())
 	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.Output()
 	if err != nil {

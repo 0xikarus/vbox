@@ -64,7 +64,7 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	output, err := probe.CombinedOutput()
 	if err == nil {
 		lower := strings.ToLower(string(output))
-		legacy := strings.Contains(lower, "command: vmbox-runtime") && strings.Contains(lower, "args: desktop-mcp") && !strings.Contains(lower, managedDesktopRuntimePath)
+		legacy := strings.Contains(lower, "command: vmbox-runtime") && strings.Contains(lower, "args: desktop-mcp") && !strings.Contains(lower, desktopRuntimePath())
 		if !legacy {
 			return nil
 		}
@@ -85,7 +85,7 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	if agent == "claude" {
 		args = append(args, "--scope", "user")
 	}
-	args = append(args, "--", managedDesktopRuntimePath, "desktop-mcp")
+	args = append(args, "--", desktopRuntimePath(), "desktop-mcp")
 	cmd := exec.CommandContext(ctx, path, args...)
 	cmd.Env = probe.Env
 	if err = cmd.Run(); err != nil {
@@ -133,7 +133,7 @@ func registerOpenCodeDesktop(home string) error {
 			return nil
 		}
 	}
-	entries["vmbox-desktop"] = json.RawMessage(`{"type":"local","command":["/data/home/bin/vmbox-runtime","desktop-mcp"]}`)
+	entries["vmbox-desktop"], _ = json.Marshal(map[string]any{"type": "local", "command": []string{desktopRuntimePath(), "desktop-mcp"}})
 	config["mcp"], _ = json.Marshal(entries)
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {

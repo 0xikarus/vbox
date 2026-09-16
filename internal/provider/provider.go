@@ -224,6 +224,10 @@ type AttachedStorageProvider interface {
 	AttachedStorage(context.Context, string) (*Storage, error)
 }
 
+type WorkspaceStorageProvider interface {
+	CreateWorkspaceStorage(context.Context, string, Owner, Resources) (Storage, error)
+}
+
 type DetachableStorageProvider interface {
 	DetachStorage(context.Context, string, Storage) error
 	SanitizeSlot(context.Context, string) error

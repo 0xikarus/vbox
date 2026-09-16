@@ -31,7 +31,7 @@ func RunDesktopBrowser(ctx context.Context) error {
 		args = append(args, "--no-sandbox")
 	}
 	cmd := exec.CommandContext(ctx, "chromium", args...)
-	cmd.Env = append(os.Environ(), "DISPLAY=:99")
+	cmd.Env = append(os.Environ(), "DISPLAY="+DesktopDisplay())
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Run()
 }
