@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,22 @@ func TestExecUsesDirectSSHAndEncodesExactArgv(t *testing.T) {
 		if len(call.Argv) > 1 && call.Argv[0] == "railway" && call.Argv[1] == "ssh" {
 			t.Fatalf("runtime data path invoked railway ssh: %#v", call.Argv)
 		}
+	}
+}
+
+func TestLogsUseExactServiceIDWithoutInventoryLookup(t *testing.T) {
+	runner := &procexec.FakeRunner{Results: []procexec.Result{{Stdout: []byte("worker ready\n")}}}
+	p := newTestProvider(Config{ProjectID: "project", EnvironmentID: "environment"}, runner)
+	var output strings.Builder
+	if err := p.Logs(context.Background(), "service-id", provider.LogOptions{Tail: 200}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "worker ready\n" || len(runner.Calls) != 1 {
+		t.Fatalf("output=%q calls=%#v", output.String(), runner.Calls)
+	}
+	want := []string{"railway", "logs", "--service", "service-id", "--lines", "200", "--project", "project", "--environment", "environment"}
+	if got := runner.Calls[0].Argv; !slices.Equal(got, want) {
+		t.Fatalf("argv=%#v, want %#v", got, want)
 	}
 }
 
