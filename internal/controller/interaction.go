@@ -148,6 +148,9 @@ func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov
 	if err := stageWorkspaceRuntime(ctx, prov, serviceID, s.WorkerRuntime); err != nil {
 		return provider.ExecResult{}, fmt.Errorf("stage matching task runtime: %w", err)
 	}
+	if task.Agent == "codex" {
+		return s.deliverNativeAgentChat(ctx, prov, serviceID, accountID, "chat-codex-start", task, message)
+	}
 	text := ""
 	if task.Agent == "shell" {
 		var err error
@@ -161,7 +164,7 @@ func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov
 	if err != nil || result.ExitCode != 0 || task.Agent == "shell" {
 		return result, err
 	}
-	command := map[string]string{"claude": "chat-deliver", "codex": "chat-codex", "opencode": "chat-opencode"}[task.Agent]
+	command := map[string]string{"claude": "chat-deliver", "opencode": "chat-opencode"}[task.Agent]
 	if command == "" {
 		return provider.ExecResult{}, fmt.Errorf("unsupported task agent %q", task.Agent)
 	}

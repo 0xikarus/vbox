@@ -138,7 +138,8 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	if !validAgent(request.Agent) {
 		return response, fmt.Errorf("agent must be codex, claude, opencode, or shell")
 	}
-	if request.Session != "" && !validSessionName(request.Session) {
+	explicitSession := request.Session != ""
+	if explicitSession && !validSessionName(request.Session) {
 		return response, fmt.Errorf("session must contain only letters, digits, hyphen, or underscore")
 	}
 	if request.Session == "" && box.State == v1.LogicalBoxRunning {
@@ -156,6 +157,12 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	}
 	selected := reusableBoxTask(tasks, box.State, request.Agent, request.Session)
 	if selected == nil {
+		if request.Agent == "codex" && !explicitSession {
+			// A primary terminal can contain an empty, unaddressable Codex thread.
+			// New Agent chats get their own session so the first message can be
+			// passed to Codex at process start.
+			request.Session = ""
+		}
 		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images})
 		if err != nil {
 			return response, err
