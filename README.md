@@ -1,6 +1,6 @@
 # vmbox
 
-Persistent remote Linux boxes. Connect to a shell, run Claude/Codex yourself,
+Persistent remote Linux boxes. Connect to a shell, run Claude, Codex, or OpenCode,
 or submit a one-shot task. The controller manages providers, compute and storage;
 your CLI connects to the controller, not directly to provider APIs.
 
@@ -14,7 +14,7 @@ configuration are documented in [the desktop MVP guide](docs/AGENT-DESKTOP-IMPLE
 
 ### Run once from the web
 
-Open your controller and choose **Run once**. Select a provider, Claude/Codex/shell,
+Open your controller and choose **Run once**. Select a provider, Claude/Codex/OpenCode/shell,
 saved logins, and a prompt or shell command. Upload logins from your laptop with
 `vmbox profiles upload`; expired logins must be refreshed locally first.
 
@@ -22,7 +22,8 @@ The controller queues the request until a healthy slot is free, creates a new
 disposable box, and opens its web tmux terminal. You can cancel while waiting for
 capacity. Once claimed, inspect the box before interrupting it.
 
-Claude runs with `-p`, Codex with `exec`, and shell commands with Bash. Real output
+Claude runs with `-p`, Codex with `exec`, OpenCode with `run --auto`, and shell
+commands with Bash. Real output
 and the process exit code are saved. On completion, the otherwise idle box
 is deleted together with its workspace volume, releasing compute. Saved output
 and exit code remain under **Recent runs**, independently of the box. Push or upload
@@ -123,14 +124,17 @@ vmbox new work
 
 Choose provider, location, disk size and any saved/local logins. Leave the startup
 command blank for a shell. **Create and connect** opens the box when ready.
-Run `claude`, `codex`, or any shell command inside it.
+Run `claude`, `codex`, `opencode`, or any shell command inside it.
 
 Disconnect with **Ctrl-a, then d**. Leave the box running to preserve its processes.
 Reconnect with `vmbox work`; hibernation preserves files, not running programs.
 
 The web workspace's **Agent chat** starts the selected managed agent when no
-reusable session exists. Later messages enter the running client through Codex
-queue, Claude channel, or OpenCode's loopback API. Chat messages accept pasted,
+reusable session exists. OpenCode receives that first message through its native
+startup prompt so it appears in the visible TUI. Later messages enter the running
+client through Codex queue, Claude channel, or OpenCode's loopback API. OpenCode
+sessions auto-approve permission asks by default unless their configuration
+explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
 Agent choice requests render as radio buttons or checkboxes. The managed
 `vmbox-desktop` MCP supplies the structured `chat_reply` and `chat_ask` tools.
@@ -194,7 +198,7 @@ second controller or Railway fleet.
 
    Disconnect with **Ctrl-a, then d**, then choose **Leave unchanged** to keep
    programs running. Saved controller profiles are already available; Windows-local
-   Claude/Codex logins are not automatically discovered inside Ubuntu. Use local
+   Claude/Codex/OpenCode logins are not automatically discovered inside Ubuntu. Use local
    Linux logins or existing saved profiles. This WSL path has not been verified
    end-to-end on a Windows machine in this repository's current test run.
 
@@ -223,13 +227,13 @@ vmbox                         # show context and box states
 vmbox whoami                  # show authenticated account, user, and role
 vmbox new work                # configure, create, then connect
 vmbox work                    # return to its shell (wake if needed)
-vmbox task work               # pick Codex, Claude, or a shell one-shot
+vmbox task work               # pick Codex, Claude, OpenCode, or a shell one-shot
 vmbox hibernate work          # stop compute, retain files
 vmbox delete work             # permanently delete box and files; asks for confirmation
 vmbox help                    # short guide; help --all for full reference
 ```
 
-Inside the shell, start `codex`, `claude`, or your own command. To disconnect
+Inside the shell, start `codex`, `claude`, `opencode`, or your own command. To disconnect
 without stopping it, press **Ctrl-a, then d**, and choose **Leave unchanged**.
 Bare `vmbox` is read-only in both terminals and scripts; `vmbox help` works offline.
 Use `vmbox whoami --json` for machine-readable identity. This requires a controller
@@ -241,13 +245,13 @@ and select them when creating a box. Uploads happen only through the CLI. Saved 
 never exported, and immutable: upload refreshed credentials under a new name.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
-Run `vmbox profiles upload` to detect and upload local Claude/Codex/GitHub logins
+Run `vmbox profiles upload` to detect and upload local Claude/Codex/OpenCode/GitHub logins
 in a table without creating a box or allocating compute. Space or Enter toggles
 each profile's upload checkbox; **Add entry** adds a custom path or GitHub account. There is no
 name prompt: names use the account email/username/ID when available, otherwise
 the source directory, with a suffix for existing names. For scripts,
 use `vmbox profiles save APPLICATION NAME --from SOURCE` (`SOURCE` is a local
-directory for Claude/Codex, or `HOST:USER` for GitHub).
+directory for Claude/Codex/OpenCode, or `HOST:USER` for GitHub).
 In the creation dialog, press Enter on a login row to expand its profile list inline.
 Saved profiles reuse controller credentials; selecting a detected Local login uploads
 it when you create the box. Custom local path is only for an undetected location.
@@ -421,7 +425,7 @@ a usable shell when it exits. Ordinary reconnects never replay this command.
 Attachment validates the current session identity and box assignment.
 Agents are optional: a box can contain shells and multiple agent sessions at once.
 Normal `claude` and `codex` commands keep their interactive interfaces and menus.
-You can run other installed tools, including OpenCode, from a shell.
+You can also run any installed agent or tool directly from a shell.
 
 Detach with **Ctrl-a, then d**, and choose **Leave unchanged** at the CLI exit prompt.
 Disconnecting keeps the worker and tmux processes running. Persistent interactive
@@ -434,8 +438,8 @@ or replaying `--start-cli`.
 ## Creating a box
 
 `vmbox new NAME` opens one persistent form for provider, location, disk size,
-optional saved Claude/Codex login profiles, and an optional startup command.
-The form automatically discovers saved controller profiles and local Claude/Codex
+optional saved Claude/Codex/OpenCode login profiles, and an optional startup command.
+The form automatically discovers saved controller profiles and local Claude/Codex/OpenCode
 credential files in default and alternate profile directories, including
 `CODEX_HOME` and `CLAUDE_CONFIG_DIR`. Login rows show saved/local counts; use
 Enter to expand the inline profile list. Active local profiles are labeled.
@@ -468,6 +472,7 @@ Live lifecycle evidence and coverage limits: [shell-first verification](docs/SHE
 vmbox task helper1               # ↑/↓ agent selector, then task prompt
 vmbox task helper1 codex --prompt "Fix the failing tests and verify the change" --json
 vmbox task helper1 claude --prompt "Review the code and summarize your findings" --json
+vmbox task helper1 opencode --prompt "Implement the change and run its checks" --json
 vmbox task helper1 shell --prompt "make test" --json
 
 vmbox task-status helper1 TASK_ID
@@ -476,8 +481,8 @@ vmbox task-status helper1         # list one-shot tasks
 ```
 
 The controller queues the command, allocates/restores the box if necessary, and
-runs it in `/data/workspace`: `codex exec`, `claude -p`, or `bash -lc`. Existing
-agent authentication, model and permission settings are retained. Codex permits
+runs it in `/data/workspace`: `codex exec`, `claude -p`, `opencode run --auto`,
+or `bash -lc`. Existing agent authentication, model and permission settings are retained. Codex permits
 a workspace outside a Git repository using `--skip-git-repo-check`. There is no
 automatic update-menu handling or interactive screen parsing in this path.
 
@@ -510,8 +515,9 @@ For safe submission retries, supply the same `--idempotency-key KEY`; conflictin
 reuse is rejected. `--session NAME` optionally names the one-shot tmux session,
 which normally disappears when the process ends. Use task-output for retained
 output. `--agent AGENT` remains an alias for the positional agent argument.
-OpenCode one-shot execution is not implemented. Old API `/tasks` clients retain
-their interactive behavior; new CLI one-shot tasks use `/process-tasks`.
+OpenCode one-shot execution uses `opencode run --auto`; explicit OpenCode deny
+rules still take precedence. Old API `/tasks` clients retain their interactive
+behavior; new CLI one-shot tasks use `/process-tasks`.
 
 `vmbox updates helper1 --json` separately reports changes in **live tmux snapshots**,
 not task completion. It does not replace `task-status` or `task-output`.
@@ -576,21 +582,22 @@ Skip remains the default. To save one explicitly:
 `--profile github=work`. The controller encrypts this token per account/profile
 and provisions a private `~/.config/gh/hosts.yml` for the box user.
 
-Malformed or expired saved Claude/Codex profiles are rejected before a slot or
-volume is reserved. Refresh locally with `claude auth login` or `codex login`,
+Malformed or expired saved Claude/Codex/OpenCode profiles are rejected before a slot or
+volume is reserved. Refresh locally with the corresponding client's login command,
 save under a **new profile name**, then select that profile and retry creation.
 Existing saved profiles are immutable snapshots, not a live sync of local logins.
 
 After transfer, creation checks the selected logins as the unprivileged box user.
-Claude/Codex checks include a brief one-shot provider request (small agent usage
+Claude/Codex/OpenCode checks include a brief one-shot provider request (small agent usage
 charges may apply); GitHub checks the selected account with the API and configures
 its HTTPS git credential helper. Failures stop creation rather than claiming the
 box is authenticated. CLI output and credential contents are not included in errors.
 
 ```bash
-vmbox profiles                         # named Claude/Codex profiles, no secrets
+vmbox profiles                         # named Claude/Codex/OpenCode profiles, no secrets
 vmbox profiles save codex work --from /path/to/codex-profile
 vmbox profiles save claude personal --from /path/to/claude-profile
+vmbox profiles save opencode openrouter --from /path/to/opencode-profile
 vmbox new research --profile codex=work --profile claude=personal
 vmbox new clean-box --no-profiles
 ```

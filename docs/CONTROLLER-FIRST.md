@@ -67,7 +67,7 @@ running boxes require an explicit owner migration after controller deployment:
 existing server while holding the assignment lock; it does not restart workers,
 kill sessions or create a session. An unavailable runtime/fence fails closed.
 
-`vmbox BOX` requires a terminal before allocation. It offers a Codex/Claude/shell
+`vmbox BOX` requires a terminal before allocation. It offers a Codex/Claude/OpenCode/shell
 picker (defaulting to the configured box agent) and existing session names for
 reconnection. `vmbox BOX claude` or `vmbox BOX shell` bypasses the picker and creates
 a new interactive session. `--session NAME` selects an exact existing name, never
@@ -79,8 +79,8 @@ Manual names with spaces/Unicode are preserved; names are not shell-interpolated
 Reads (`ls`, `status`, `sessions`, `updates`) never allocate or wake compute.
 
 `vmbox task BOX AGENT --prompt TEXT --idempotency-key KEY --json` launches one-shot
-Codex (`exec`), Claude (`-p`), or shell (`bash -lc`) execution. `--agent` remains a
-compatibility alias; OpenCode one-shot support is not implemented. No interactive
+Codex (`exec`), Claude (`-p`), OpenCode (`run --auto`), or shell (`bash -lc`)
+execution. `--agent` remains a compatibility alias. No interactive
 screen parsing is used. `task-status BOX [TASK_ID]` reports execution state and
 nullable exit code; `task-output BOX TASK_ID` returns cached output JSON. An agent
 tracks the meaning/progress of its own prompt; vmbox does not assess that work.
