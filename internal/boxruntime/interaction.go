@@ -357,6 +357,10 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 			return fmt.Errorf("unsupported task agent %q", agent)
 		}
 	}
+	opencodeStartupPrompt := agent == "opencode" && prompt != ""
+	if opencodeStartupPrompt {
+		argv = append(argv, "--prompt", prompt)
+	}
 	created, err := startTmuxTaskSession(ctx, root, session, agent, argv)
 	if err != nil {
 		return err
@@ -376,6 +380,9 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 		// Existing native agent sessions receive messages through their native
 		// conversation transport, never through terminal input.
 		return fmt.Errorf("tmux session %q already exists", session)
+	}
+	if opencodeStartupPrompt {
+		return nil
 	}
 	return DeliverTmuxInput(ctx, root, session, messageID, prompt, true)
 }

@@ -392,6 +392,34 @@ func TestStartTmuxTaskCanStartAgentWithoutTerminalPrompt(t *testing.T) {
 	}
 }
 
+func TestStartTmuxTaskPassesOpenCodeInitialPromptAsArgument(t *testing.T) {
+	stubRegisteredAgent(t, "opencode")
+	originalCommand, originalProbe, originalSettle := tmuxCommand, openCodeReadyProbe, agentReadySettlePause
+	t.Cleanup(func() {
+		tmuxCommand, openCodeReadyProbe, agentReadySettlePause = originalCommand, originalProbe, originalSettle
+	})
+	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
+	agentReadySettlePause = func(context.Context) error { return nil }
+	var calls []string
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, "\n"))
+		if stdin != "" || len(args) > 0 && (args[0] == "load-buffer" || args[0] == "paste-buffer") {
+			t.Fatal("OpenCode startup used terminal input")
+		}
+		if len(args) > 0 && args[0] == "has-session" {
+			return nil, errors.New("missing")
+		}
+		return nil, nil
+	}
+	if err := StartTmuxTask(context.Background(), t.TempDir(), "opencode-start", "opencode", "message-start", "first message"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(calls, "\n")
+	if !strings.Contains(joined, "opencode\n--hostname\n127.0.0.1") || !strings.Contains(joined, "--prompt\nfirst message") {
+		t.Fatalf("OpenCode startup arguments were incomplete: %v", calls)
+	}
+}
+
 func stubRegisteredAgent(t *testing.T, agent string) {
 	t.Helper()
 	home, bin := t.TempDir(), t.TempDir()
