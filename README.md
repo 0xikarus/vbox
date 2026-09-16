@@ -642,9 +642,13 @@ Select **Blender** in the controller's box creation or Run once tool list (CLI:
 and install the third-party Blender MCP bridge and add-on.
 Opening an interactive box in the web workspace automatically starts and attaches
 its desktop; manual desktop controls remain available for recovery. Launch `blender`
-from its terminal and start a new Codex or Claude session to use the registered MCP
-tools. Run once retains its terminal view; Grid prefers enabled desktops. Blender uses the worker
-distribution's package version; Blender MCP is pinned to 1.9.1. The preset is
+from its terminal, start its MCP server from the Blender add-on panel, and start a
+new Codex, Claude or OpenCode session to use the registered MCP tools.
+Run once retains its terminal view; Grid prefers enabled desktops. Newly enabled
+Blender presets install the checksum-verified official Linux x64 Blender 5.1.2
+release; Blender MCP is pinned to 1.9.1. Existing legacy Blender presets keep their
+distribution version, including after hibernation; live boxes are not upgraded.
+The preset is
 restored after hibernation and adds download, disk and RAM usage. MCP telemetry is
 disabled, safe mode is enabled, and its Blender socket listens only on loopback.
 Existing `blender` MCP client entries are preserved. GPU rendering remains unverified.

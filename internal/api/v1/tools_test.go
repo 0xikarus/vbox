@@ -13,7 +13,7 @@ func TestBlenderPreset(t *testing.T) {
 	}
 	for _, preset := range ToolPresets() {
 		if preset.ID == "blender" {
-			if preset.Version != "distribution package + Blender MCP 1.9.1" {
+			if preset.Version != "5.1.2 + Blender MCP 1.9.1" {
 				t.Fatalf("Blender MCP version is not visible or pinned: %q", preset.Version)
 			}
 			return

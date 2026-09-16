@@ -84,12 +84,17 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   to other executable files opened through PCManFM. New interactive
   shells default `DISPLAY` to `:99`; screenshot/input agent tools remain separate.
 
-- Blender is an optional distribution-package preset, including desktop packages.
+- Blender is an optional preset, including desktop packages. New presets pin the
+  official Linux x64 Blender 5.1.2 archive and its SHA-256 in
+  `internal/boxruntime/blender_release.go`; the binary lives under the retained
+  home and is linked from `~/bin/blender`. Existing legacy presets are not upgraded.
   `internal/boxruntime/blender.go` retains a `blender-enabled` marker under
-  `~/.config/vmbox/`, separate from custom Bash. `RestoreToolSetup` restores the
+  `~/.config/vmbox/`, separate from custom Bash: `1` retains the legacy distribution
+  package, while `5.1.2` selects the pinned release. `RestoreToolSetup` restores the
   preset even without a custom script. The single-box workspace creates/reuses the selected managed session before
   presenting its preferred desktop view. Run once retains its terminal flow; Grid also prefers enabled desktops. The preset also installs pinned Blender MCP, enables its add-on,
-  and registers its local stdio bridge for Codex and Claude unless the user already
+  and registers its local stdio bridge for Codex and Claude (also OpenCode for new
+  pinned presets) unless the user already
   has a `blender` MCP entry. Telemetry is disabled, bridge safe mode is enabled,
   and its Blender-side TCP listener stays on loopback. Both workspace viewers
   provide browser clipboard buttons.

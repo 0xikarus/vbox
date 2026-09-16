@@ -15,6 +15,8 @@ import (
 
 const blenderMCPVersion = "1.9.1"
 
+var installBlenderRelease = installPinnedBlender
+
 func configureBlender(ctx context.Context, home string, progress io.Writer) error {
 	if WorkspaceRoot() != "/data" {
 		return errors.New("Blender MCP is not supported on shared workers; use a dedicated worker")
@@ -27,7 +29,12 @@ func configureBlender(ctx context.Context, home string, progress io.Writer) erro
 		return err
 	}
 	// Separate from custom Bash so configuring either never overwrites the other.
-	if err = os.WriteFile(filepath.Join(filepath.Dir(path), "blender-enabled"), []byte("1\n"), 0600); err != nil {
+	marker := filepath.Join(filepath.Dir(path), "blender-enabled")
+	if _, err := os.Stat(marker); errors.Is(err, os.ErrNotExist) {
+		if err = os.WriteFile(marker, []byte(blenderVersion+"\n"), 0600); err != nil {
+			return err
+		}
+	} else if err != nil {
 		return err
 	}
 	return restoreBlender(ctx, home, progress)
@@ -38,25 +45,44 @@ func restoreBlender(ctx context.Context, home string, progress io.Writer) error 
 	if err != nil {
 		return err
 	}
-	if _, err = os.Stat(filepath.Join(filepath.Dir(path), "blender-enabled")); errors.Is(err, os.ErrNotExist) {
+	configured, err := os.ReadFile(filepath.Join(filepath.Dir(path), "blender-enabled"))
+	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	} else if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Minute)
 	defer cancel()
-	fmt.Fprintln(progress, "Preparing Blender, desktop and Blender MCP (timeout 8 minutes)…")
-	if err = installDesktopPackages(ctx, progress, true); err != nil {
-		return fmt.Errorf("Blender/desktop installation failed: %w", err)
+	blender := "blender"
+	if strings.TrimSpace(string(configured)) == blenderVersion {
+		if err := installDesktopPackages(ctx, progress, false); err != nil {
+			return err
+		}
+		if err := installBlenderRelease(ctx, home, progress); err != nil {
+			return err
+		}
+		blender = filepath.Join(home, "bin", "blender")
+	} else if strings.TrimSpace(string(configured)) != "1" {
+		return fmt.Errorf("unsupported retained Blender version; configuration preserved")
 	}
-	if err = installBlenderMCP(ctx, home, progress); err != nil {
+	fmt.Fprintln(progress, "Preparing Blender, desktop and Blender MCP (timeout 8 minutes)…")
+	if strings.TrimSpace(string(configured)) == "1" {
+		if err = installDesktopPackages(ctx, progress, true); err != nil {
+			return fmt.Errorf("Blender/desktop installation failed: %w", err)
+		}
+	}
+	if err = installBlenderMCPBinary(ctx, home, blender, progress); err != nil {
 		return fmt.Errorf("Blender MCP installation failed: %w", err)
 	}
-	fmt.Fprintf(progress, "Blender ready; desktop enabled; Blender MCP %s installed and registered for Codex and Claude. Launch Blender and open a new agent session.\n", blenderMCPVersion)
+	fmt.Fprintf(progress, "Blender ready; desktop enabled; Blender MCP %s configured. Launch Blender and start its MCP server.\n", blenderMCPVersion)
 	return nil
 }
 
 func installBlenderMCP(ctx context.Context, home string, progress io.Writer) error {
+	return installBlenderMCPBinary(ctx, home, "blender", progress)
+}
+
+func installBlenderMCPBinary(ctx context.Context, home, blender string, progress io.Writer) error {
 	binDir := filepath.Join(home, ".local", "bin")
 	server := filepath.Join(binDir, "blender-mcp")
 	marker := filepath.Join(home, ".config", "vmbox", "blender-mcp-version")
@@ -81,7 +107,7 @@ func installBlenderMCP(ctx context.Context, home string, progress io.Writer) err
 		}
 	}
 
-	versionOutput, err := exec.CommandContext(ctx, "blender", "--version").Output()
+	versionOutput, err := exec.CommandContext(ctx, blender, "--version").Output()
 	if err != nil {
 		return fmt.Errorf("detect Blender version: %w", err)
 	}
@@ -96,7 +122,7 @@ func installBlenderMCP(ctx context.Context, home string, progress io.Writer) err
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("install Blender add-on: %w", err)
 	}
-	cmd = exec.CommandContext(ctx, "blender", "--background", "--python-expr", "import bpy; bpy.ops.preferences.addon_enable(module='blender_mcp'); bpy.ops.wm.save_userpref()")
+	cmd = exec.CommandContext(ctx, blender, "--background", "--python-expr", "import bpy; bpy.ops.preferences.addon_enable(module='blender_mcp'); bpy.ops.wm.save_userpref()")
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	cmd.Stdout, cmd.Stderr = progress, progress
 	if err := cmd.Run(); err != nil {
@@ -107,7 +133,13 @@ func installBlenderMCP(ctx context.Context, home string, progress io.Writer) err
 	if err := registerBlenderMCP(ctx, home, "codex", append([]string{"mcp", "add", "blender", "--env", env[0], "--env", env[1], "--env", env[2], "--env", env[3], "--"}, server), progress); err != nil {
 		return err
 	}
-	return registerBlenderMCP(ctx, home, "claude", append([]string{"mcp", "add", "blender", "--scope", "user", "--env", env[0], "--env", env[1], "--env", env[2], "--env", env[3], "--"}, server), progress)
+	if err := registerBlenderMCP(ctx, home, "claude", append([]string{"mcp", "add", "blender", "--scope", "user", "--env", env[0], "--env", env[1], "--env", env[2], "--env", env[3], "--"}, server), progress); err != nil {
+		return err
+	}
+	if blender != "blender" {
+		return registerOpenCodeBlender(home, server)
+	}
+	return nil
 }
 
 func registerBlenderMCP(ctx context.Context, home, agent string, addArgs []string, progress io.Writer) error {

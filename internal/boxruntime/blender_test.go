@@ -11,6 +11,7 @@ import (
 
 func TestBlenderInstallsDesktopAndRestoresWithoutCustomScript(t *testing.T) {
 	home := t.TempDir()
+	retainLegacyBlender(t, home)
 	bin := t.TempDir()
 	log := filepath.Join(t.TempDir(), "packages")
 	t.Setenv("PATH", bin)
@@ -79,6 +80,7 @@ func TestBlenderInstallsDesktopAndRestoresWithoutCustomScript(t *testing.T) {
 
 func TestBlenderAlreadyInstalledDoesNotInvokePackageManager(t *testing.T) {
 	home := t.TempDir()
+	retainLegacyBlender(t, home)
 	bin := t.TempDir()
 	log := filepath.Join(t.TempDir(), "packages")
 	t.Setenv("PATH", bin)
@@ -99,6 +101,67 @@ func TestBlenderAlreadyInstalledDoesNotInvokePackageManager(t *testing.T) {
 	}
 	if strings.Contains(string(data), "mcp add") {
 		t.Fatalf("existing agent MCP configuration was overwritten: %s", data)
+	}
+}
+
+func retainLegacyBlender(t *testing.T, home string) {
+	t.Helper()
+	path, err := toolSetupPath(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "blender-enabled"), []byte("1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewBlenderPresetPins51AndRegistersOpenCode(t *testing.T) {
+	home, bin := t.TempDir(), t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("OPENCODE_CONFIG", "")
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", bin)
+	t.Setenv("PACKAGE_LOG", filepath.Join(t.TempDir(), "packages"))
+	t.Setenv("AGENT_GET_EXIT", "1")
+	for _, name := range []string{"Xtigervnc", "openbox", "chromium", "tint2", "pcmanfm", "xdg-user-dir", "xdotool", "xprintidle"} {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeBlenderToolFakes(t, bin)
+	original := installBlenderRelease
+	t.Cleanup(func() { installBlenderRelease = original })
+	calls := 0
+	installBlenderRelease = func(context.Context, string, io.Writer) error {
+		calls++
+		if err := os.MkdirAll(filepath.Join(home, "bin"), 0700); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(home, "bin", "blender"), []byte("#!/bin/sh\nprintf 'Blender 5.1.2\\n'\n"), 0700)
+	}
+	if err := InstallTools(context.Background(), home, []string{"blender"}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	path, _ := toolSetupPath(home)
+	marker, _ := os.ReadFile(filepath.Join(filepath.Dir(path), "blender-enabled"))
+	if strings.TrimSpace(string(marker)) != blenderVersion || calls != 1 {
+		t.Fatalf("version marker=%q install calls=%d", marker, calls)
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".config", "opencode", "opencode.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "blender-mcp") || !strings.Contains(string(data), "BLENDER_PORT") {
+		t.Fatalf("missing OpenCode MCP registration: %s", data)
+	}
+	if err := RestoreToolSetup(context.Background(), home, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatal("pinned release was not restored")
 	}
 }
 

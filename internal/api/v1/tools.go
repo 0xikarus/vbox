@@ -23,7 +23,7 @@ type ToolPreset struct {
 func ToolPresets() []ToolPreset {
 	return []ToolPreset{
 		{ID: "foundry", Name: "Foundry", Version: "v1.8.1", Description: "forge, cast, anvil and chisel · about 500 MiB installed"},
-		{ID: "blender", Name: "Blender", Version: "distribution package + Blender MCP 1.9.1", Description: "3D editor + auto desktop + MCP for Codex/Claude · extra download/disk/RAM"},
+		{ID: "blender", Name: "Blender", Version: "5.1.2 + Blender MCP 1.9.1", Description: "Pinned 5.1 release + desktop + MCP for Codex/Claude/OpenCode · extra download/disk/RAM"},
 	}
 }
 func ValidateTools(tools []string) error {
