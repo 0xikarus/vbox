@@ -46,6 +46,15 @@ func generatedTaskSession(agent string) string {
 	return agent + "-" + id[:12]
 }
 
+type sqlStateError interface {
+	SQLState() string
+}
+
+func serializationFailure(err error) bool {
+	var state sqlStateError
+	return errors.As(err, &state) && state.SQLState() == "40001"
+}
+
 func (s *Store) CreateBoxTask(ctx context.Context, p Principal, logicalBoxID, idempotency string, request v1.CreateBoxTaskRequest) (v1.BoxTask, bool, error) {
 	if idempotency == "" {
 		return v1.BoxTask{}, false, fmt.Errorf("Idempotency-Key is required")
@@ -76,6 +85,26 @@ func (s *Store) CreateBoxTask(ctx context.Context, p Principal, logicalBoxID, id
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return v1.BoxTask{}, false, err
 	}
+	return s.createBoxTaskWithRetry(ctx, p, box, idempotency, request)
+}
+
+func (s *Store) createBoxTaskWithRetry(ctx context.Context, p Principal, box v1.LogicalBox, idempotency string, request v1.CreateBoxTaskRequest) (v1.BoxTask, bool, error) {
+	var task v1.BoxTask
+	var reused bool
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		task, reused, err = s.createBoxTaskTransaction(ctx, p, box, idempotency, request)
+		if !serializationFailure(err) {
+			return task, reused, err
+		}
+		if ctx.Err() != nil {
+			return task, reused, ctx.Err()
+		}
+	}
+	return task, reused, err
+}
+
+func (s *Store) createBoxTaskTransaction(ctx context.Context, p Principal, box v1.LogicalBox, idempotency string, request v1.CreateBoxTaskRequest) (v1.BoxTask, bool, error) {
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return v1.BoxTask{}, false, err
