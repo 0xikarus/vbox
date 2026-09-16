@@ -415,7 +415,7 @@ func TestStartTmuxTaskPassesOpenCodeInitialPromptAsArgument(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
-	if !strings.Contains(joined, "opencode\n--hostname\n127.0.0.1") || !strings.Contains(joined, "--prompt\nfirst message") {
+	if !strings.Contains(joined, "opencode\n--auto\n--hostname\n127.0.0.1") || !strings.Contains(joined, "--prompt\nfirst message") {
 		t.Fatalf("OpenCode startup arguments were incomplete: %v", calls)
 	}
 }

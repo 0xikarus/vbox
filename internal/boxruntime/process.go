@@ -55,7 +55,7 @@ func processTaskArgv(task v1.ProcessTask) ([]string, error) {
 	case "claude":
 		return append(append([]string{"claude", "-p"}, options...), "--", prompt), nil
 	case "opencode":
-		return append(append([]string{"opencode", "run"}, options...), "--", prompt), nil
+		return append(append([]string{"opencode", "run", "--auto"}, options...), "--", prompt), nil
 	case "shell":
 		return []string{"/bin/bash", "-lc", prompt}, nil
 	default:
