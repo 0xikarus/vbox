@@ -56,6 +56,19 @@ type chatInboundFile struct {
 	Paths []string `json:"paths,omitempty"`
 }
 
+var codexThreadNamingPause = waitForCodexThreadNaming
+
+func waitForCodexThreadNaming(ctx context.Context) error {
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
 func chatEventID() (string, error) {
 	value := make([]byte, 16)
 	if _, err := rand.Read(value); err != nil {
@@ -379,7 +392,8 @@ var runCodexQueue = func(ctx context.Context, home, eventPath string, args []str
 }
 
 func NameCodexChatThread(ctx context.Context, root, session string) error {
-	marker := filepath.Join(root, "messages", "rename-"+session+".delivered")
+	directory := filepath.Join(root, "chat", "codex-named")
+	marker := filepath.Join(directory, session)
 	if _, err := os.Stat(marker); err == nil {
 		return nil
 	} else if !os.IsNotExist(err) {
@@ -388,10 +402,19 @@ func NameCodexChatThread(ctx context.Context, root, session string) error {
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err
 	}
+	if err := codexThreadNamingPause(ctx); err != nil {
+		return err
+	}
+	if err := DeliverTmuxInput(ctx, root, session, "rename-v2-"+session, "/rename "+session, true); err != nil {
+		return err
+	}
 	if err := agentReadySettlePause(ctx); err != nil {
 		return err
 	}
-	return DeliverTmuxInput(ctx, root, session, "rename-"+session, "/rename "+session, true)
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return err
+	}
+	return os.WriteFile(marker, []byte("named\n"), 0600)
 }
 
 func OpenCodeChatPort(session string) int {

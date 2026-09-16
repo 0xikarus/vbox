@@ -151,11 +151,11 @@ func TestStartCodexChatPassesInitialMessageAndImagesAsArguments(t *testing.T) {
 
 func TestNameCodexChatThreadReturnsAfterItWasNamed(t *testing.T) {
 	root := t.TempDir()
-	directory := filepath.Join(root, "messages")
+	directory := filepath.Join(root, "chat", "codex-named")
 	if err := os.MkdirAll(directory, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(directory, "rename-codex-chat.delivered"), []byte("named\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(directory, "codex-chat"), []byte("named\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	original := tmuxCommand
@@ -166,5 +166,35 @@ func TestNameCodexChatThreadReturnsAfterItWasNamed(t *testing.T) {
 	}
 	if err := NameCodexChatThread(context.Background(), root, "codex-chat"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNameCodexChatThreadWaitsThenRecordsCompletion(t *testing.T) {
+	root := t.TempDir()
+	originalCommand, originalNaming, originalSettle, originalSubmit, originalConfirm := tmuxCommand, codexThreadNamingPause, agentReadySettlePause, tmuxSubmitPause, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		tmuxCommand, codexThreadNamingPause, agentReadySettlePause, tmuxSubmitPause, tmuxSubmitConfirmPause = originalCommand, originalNaming, originalSettle, originalSubmit, originalConfirm
+	})
+	var calls []string
+	namingWaited := false
+	codexThreadNamingPause = func(context.Context) error { namingWaited = true; return nil }
+	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("OpenAI Codex\n› Ask Codex to do anything"), nil
+		}
+		return nil, nil
+	}
+	if err := NameCodexChatThread(context.Background(), root, "codex-chat"); err != nil {
+		t.Fatal(err)
+	}
+	if !namingWaited || !strings.Contains(strings.Join(calls, "\n"), "load-buffer") {
+		t.Fatalf("naming sequence was incomplete: waited=%t calls=%v", namingWaited, calls)
+	}
+	if data, err := os.ReadFile(filepath.Join(root, "chat", "codex-named", "codex-chat")); err != nil || string(data) != "named\n" {
+		t.Fatalf("naming completion marker: %q, %v", data, err)
 	}
 }
