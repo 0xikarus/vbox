@@ -101,7 +101,7 @@ function renderBoxes(boxes){
 function renderProfiles(identity,profiles){
  const tree=document.createElement('details');tree.open=true;tree.append(node('summary',identity.accountName+' ('+identity.accountId+')'));
  const choices=$('#profile-choices'),selected={};choices.querySelectorAll('select').forEach(s=>selected[s.name]=s.value);choices.replaceChildren();
- for(const app of ['claude','codex','github']){
+ for(const app of ['claude','codex','opencode','github']){
   const entries=profiles.filter(p=>p.application===app),branch=document.createElement('details');branch.open=true;branch.append(node('summary',app+' ('+entries.length+')'));const list=document.createElement('ul');
   for(const p of entries){const item=node('li',p.name+' · saved '+p.createdAt+' ');item.append(button('Delete',async()=>{if(!confirm('Delete saved profile '+app+' / '+p.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(p.name),'DELETE');await refresh()}));list.append(item)}if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
   const label=node('label',app+' login '),select=document.createElement('select');select.name=app;const empty=node('option','None');empty.value='';select.append(empty);
