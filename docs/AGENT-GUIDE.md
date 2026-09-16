@@ -26,6 +26,12 @@ delete a shared fleet service when asked to delete a logical box.
 
 ## Code map
 
+`Dockerfile` preinstalls Python/pip/venv/pipx, pinned uv/uvx, Node/npm/npx and
+default-component Bun. Version probes are recorded in the image manifest. Run
+`bash tests/worker-tools.sh IMAGE` to verify these tools and offline virtualenv
+creation as the workspace user in a disposable container. New image builds do
+not upgrade existing workers or shared hosts; rollout is a separate operation.
+
 The opt-in [shared-worker provider](SHARED-WORKERS.md) supports several logical
 slots on one physical worker. Its supervisor is `internal/sharedworker`, provider
 adapter is `internal/provider/shared`, and entry point is `cmd/vmbox-shared-worker`.

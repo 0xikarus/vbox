@@ -663,7 +663,15 @@ SHA-256-verified Linux release before your command starts. Installation can take
 a few minutes and requires about 120 MiB of downloads plus workspace disk space.
 Installed tools live on the persistent home volume and survive hibernation.
 
-Tools are optional: unchecked presets add no installation or download. Operator
+The default worker image preinstalls Python 3 (`python` and `python3`), pip,
+venv, pipx, uv/uvx, Node.js 22 with npm/npx, and Bun. These are available without
+selecting a preset or downloading them when a box starts. Use `uv venv` or
+`python -m venv .venv` for project dependencies rather than changing system Python.
+uv is pinned to 0.12.15 and its official image digest; Python uses Debian's
+maintained packages. This applies to newly built worker images, not an in-place
+upgrade of running workers or existing shared hosts.
+
+Tool presets are optional: unchecked presets add no installation or download. Operator
 worker images may already contain tools; unchecking a preset does not remove them.
 Installation failures are
 reported instead of running a task without its requested tools. Existing custom

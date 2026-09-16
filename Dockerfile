@@ -12,6 +12,8 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags=
 
 FROM node:22-bookworm-slim
 
+COPY --from=ghcr.io/astral-sh/uv:0.12.15@sha256:62f8c047d0a0e9ece6b53fc63df902585a67a47a7f318ddec4a37db586edc8e3 /uv /uvx /usr/local/bin/
+
 ARG VMBOX_IMAGE_VERSION=dev
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -37,6 +39,11 @@ RUN apt-get update \
       openssh-client \
       locales \
       ncurses-term \
+      python3 \
+      python-is-python3 \
+      python3-pip \
+      python3-venv \
+      pipx \
       sudo \
       unzip \
       tmux \
@@ -100,6 +107,7 @@ RUN set -eux; \
     { \
       printf 'image-version=%s\ncomponents=%s\n' "$VMBOX_IMAGE_VERSION" "$normalized_components"; \
       git --version; gh --version | sed -n '1p'; railway --version; tmux -V; node --version; \
+      npm --version; python --version; python3 --version; python3 -m pip --version; pipx --version; uv --version; uvx --version; \
       bun --version; codex --version; claude --version; opencode --version; forge --version | sed -n '1p'; \
       sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-worker-agent /usr/local/bin/vmbox-entrypoint /etc/vmbox/tmux.conf; \
     } >/usr/local/lib/vmbox-image-manifest; \
