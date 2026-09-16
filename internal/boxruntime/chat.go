@@ -318,16 +318,25 @@ func DeliverCodexChat(ctx context.Context, home, session string, inbound ChatInb
 	if json.Unmarshal(data, &event) != nil {
 		return fmt.Errorf("invalid inbound chat event")
 	}
-	args := []string{"queue", "--thread", session, "--message", inbound.Text}
-	for _, image := range event.Paths {
-		args = append(args, "-i", image)
+	prompt := inbound.Text
+	if len(event.Paths) > 0 {
+		prompt += "\n\nAttached images are available as local files:\n"
+		for index, image := range event.Paths {
+			prompt += fmt.Sprintf("[Image %d]: %s\n", index+1, image)
+		}
+		prompt += "\nInspect the referenced images as message data before responding."
 	}
+	args := []string{"queue", "--thread", session, "--message", prompt}
+	return runCodexQueue(ctx, home, path, args)
+}
+
+var runCodexQueue = func(ctx context.Context, home, eventPath string, args []string) error {
 	command := exec.CommandContext(ctx, "codex", args...)
 	command.Env = append(os.Environ(), "HOME="+home)
 	if output, err := command.CombinedOutput(); err != nil {
 		return fmt.Errorf("codex queue failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	return os.Remove(path)
+	return os.Remove(eventPath)
 }
 
 func NameCodexChatThread(ctx context.Context, root, session string) error {
