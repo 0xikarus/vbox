@@ -19,10 +19,21 @@ function updateBoxPlacements(boxes){
 function renderPoolChoices(providers){
  for(const selector of ['#create-pool','#capacity-pool']){
   const select=$(selector),previous=select.value;select.replaceChildren();
-  const fallback=node('option','Controller default');fallback.value='';select.append(fallback);
+  const fallback=node('option',selector==='#create-pool'?'Automatic (available capacity)':'Controller default');fallback.value='';select.append(fallback);
   for(const provider of providers){const option=node('option',poolLabel(provider.provider,provider.name));option.value=poolKey(provider.provider,provider.name);select.append(option)}
   if([...select.options].some(option=>option.value===previous))select.value=previous;
  }
+}
+async function chooseCreationPool(tools){
+ const fallback=await api('/v1/controller-defaults');
+ const providers=await api('/v1/provider-credentials');
+ const candidates=await Promise.all(providers.map(async provider=>{
+  const target={provider:provider.provider,providerCredential:provider.name||''};
+  try{const fleet=await api('/v1/fleet/status?'+new URLSearchParams(target));return fleet.freeSlots>0?{...target,load:(fleet.occupiedSlots||0)/Math.max(1,fleet.actualSlots||0),free:fleet.freeSlots}:null}catch{return null}
+ }));
+ const available=candidates.filter(Boolean).sort((left,right)=>left.load-right.load||right.free-left.free||Number(right.provider===fallback.provider&&right.providerCredential===fallback.providerCredential)-Number(left.provider===fallback.provider&&left.providerCredential===fallback.providerCredential)||poolKey(left.provider,left.providerCredential).localeCompare(poolKey(right.provider,right.providerCredential)));
+ if(!available.length)return fallback;
+ return {provider:available[0].provider,providerCredential:available[0].providerCredential};
 }
 const deletingBoxes=new Set();
 const startingBoxes=new Set();
@@ -161,7 +172,7 @@ async function refresh(){
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
 $('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,d=f.pool.value?JSON.parse(f.pool.value):await api('/v1/controller-defaults'),loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value;if(d.provider==='shared-worker'&&tools.includes('blender'))throw Error('Blender MCP currently requires a dedicated worker; select the Railway pool.');const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools);const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));

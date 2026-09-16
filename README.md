@@ -648,6 +648,10 @@ Run once retains its terminal view; Grid prefers enabled desktops. Newly enabled
 Blender presets install the checksum-verified official Linux x64 Blender 5.1.2
 release; Blender MCP is pinned to 1.9.1. Existing legacy Blender presets keep their
 distribution version, including after hibernation; live boxes are not upgraded.
+Dedicated and shared workers use the same image-bundled Blender and MCP versions.
+Shared boxes have distinct workspace-specific MCP ports; no manual port selection
+is needed. New boxes automatically use available capacity in the least occupied
+pool; expand **Placement** in the creation form to override the pool.
 The preset is
 restored after hibernation and adds download, disk and RAM usage. MCP telemetry is
 disabled, safe mode is enabled, and its Blender socket listens only on loopback.

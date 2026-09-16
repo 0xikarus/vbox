@@ -27,6 +27,19 @@ func installPinnedBlender(ctx context.Context, home string, progress io.Writer) 
 	if !filepath.IsAbs(home) || home == "/" {
 		return fmt.Errorf("Blender requires a persistent absolute home")
 	}
+	imageBinary := "/opt/vmbox/blender-" + blenderVersion + "/blender"
+	if _, err := os.Stat(filepath.Join(home, "bin", "blender")); os.IsNotExist(err) {
+		if output, err := exec.CommandContext(ctx, imageBinary, "--version").Output(); err == nil && strings.HasPrefix(string(output), "Blender "+blenderVersion+"\n") {
+			return linkPinnedBlender(home, imageBinary)
+		}
+	}
+	if target, err := os.Readlink(filepath.Join(home, "bin", "blender")); err == nil && target == imageBinary {
+		output, err := exec.CommandContext(ctx, imageBinary, "--version").Output()
+		if err != nil || !strings.HasPrefix(string(output), "Blender "+blenderVersion+"\n") {
+			return fmt.Errorf("image Blender installation failed verification")
+		}
+		return nil
+	}
 	base := filepath.Join(home, ".local", "share", "vmbox", "tools")
 	if err := os.MkdirAll(base, 0700); err != nil {
 		return err
@@ -48,6 +61,9 @@ func installPinnedBlender(ctx context.Context, home string, progress io.Writer) 
 		ready = err == nil && strings.HasPrefix(string(output), "Blender "+blenderVersion+"\n")
 	}
 	if !ready {
+		if WorkspaceRoot() != "/data" {
+			return fmt.Errorf("shared worker image must include Blender %s and its dependencies", blenderVersion)
+		}
 		for _, args := range [][]string{{"update"}, {"install", "--no-remove", "-y", "--no-install-recommends", "pipx", "python3-venv", "xz-utils", "libxxf86vm1", "libxfixes3", "libxi6", "libxrender1", "libxkbcommon0", "libgl1", "libsm6", "libice6"}} {
 			command := exec.CommandContext(ctx, "sudo", append([]string{"-n", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get", "-o", "DPkg::Lock::Timeout=30"}, args...)...)
 			command.Stdout, command.Stderr = progress, progress
@@ -175,7 +191,7 @@ func registerOpenCodeBlender(home, server string) error {
 	if _, exists := entries["blender"]; exists {
 		return nil
 	}
-	entries["blender"], _ = json.Marshal(map[string]any{"type": "local", "command": []string{server}, "enabled": true, "environment": map[string]string{"BLENDER_HOST": "127.0.0.1", "BLENDER_PORT": "9876", "BLENDER_MCP_SAFE_MODE": "1", "DISABLE_TELEMETRY": "true"}})
+	entries["blender"], _ = json.Marshal(map[string]any{"type": "local", "command": []string{server}, "enabled": true, "environment": map[string]string{"BLENDER_HOST": "127.0.0.1", "BLENDER_PORT": blenderMCPPort(), "BLENDER_MCP_SAFE_MODE": "1", "DISABLE_TELEMETRY": "true"}})
 	config["mcp"], _ = json.Marshal(entries)
 	return writeJSONAtomic(path, config, 0600)
 }

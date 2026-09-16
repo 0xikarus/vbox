@@ -92,8 +92,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 
 - Blender is an optional preset, including desktop packages. New presets pin the
   official Linux x64 Blender 5.1.2 archive and its SHA-256 in
-  `internal/boxruntime/blender_release.go`; the binary lives under the retained
-  home and is linked from `~/bin/blender`. Existing legacy presets are not upgraded.
+  `internal/boxruntime/blender_release.go`; the common worker image bundles the
+  binary and MCP package under `/opt/vmbox`, linked into each tagged box's home.
+  Older dedicated images retain the per-home verified download fallback; shared
+  workers require the bundled image. Shared MCP listeners use the workspace UID
+  as a stable loopback port, and both the add-on and client use that port.
+  Existing legacy presets are not upgraded.
   `internal/boxruntime/blender.go` retains a `blender-enabled` marker under
   `~/.config/vmbox/`, separate from custom Bash: `1` retains the legacy distribution
   package, while `5.1.2` selects the pinned release. `RestoreToolSetup` restores the

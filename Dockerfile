@@ -67,6 +67,17 @@ RUN if [ "$VMBOX_DESKTOP" = true ]; then \
     fi
 
 ARG VMBOX_COMPONENTS=codex,claude,opencode,bun,foundry
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      xz-utils libxxf86vm1 libxfixes3 libxi6 libxrender1 libxkbcommon0 libgl1 libsm6 libice6 \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/vmbox/blender-5.1.2 \
+    && curl -fsSL https://download.blender.org/release/Blender5.1/blender-5.1.2-linux-x64.tar.xz -o /tmp/blender.tar.xz \
+    && echo 'aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb  /tmp/blender.tar.xz' | sha256sum -c - \
+    && tar -xJf /tmp/blender.tar.xz --strip-components=1 -C /opt/vmbox/blender-5.1.2 \
+    && rm /tmp/blender.tar.xz \
+    && /opt/vmbox/blender-5.1.2/blender --version | head -1 | grep -Fx 'Blender 5.1.2' \
+    && python3 -m venv /opt/vmbox/blender-mcp-1.9.1 \
+    && /opt/vmbox/blender-mcp-1.9.1/bin/pip install --no-cache-dir blender-mcp==1.9.1
 LABEL org.opencontainers.image.version=$VMBOX_IMAGE_VERSION \
       io.vmbox.image.version=$VMBOX_IMAGE_VERSION \
       io.vmbox.components=$VMBOX_COMPONENTS

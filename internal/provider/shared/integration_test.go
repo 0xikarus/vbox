@@ -20,7 +20,7 @@ func TestDisposableTwoSlotWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 	type fixture struct {
 		box     provider.Box
@@ -92,6 +92,20 @@ func TestDisposableTwoSlotWorker(t *testing.T) {
 			t.Fatalf("slot %d desktop screenshot is not PNG", index)
 		}
 	}
+	blenderEnabled := os.Getenv("VMBOX_TEST_SHARED_BLENDER") == "1"
+	checkBlender := func(index int) {
+		t.Helper()
+		execute(index, "/opt/vmbox/blender-mcp-1.9.1/bin/python", "-c", sharedBlenderMCPProbe, fmt.Sprintf("workspace-%d", index))
+	}
+	if blenderEnabled {
+		for index := range 2 {
+			execute(index, "vmbox-runtime", "install-tools", "blender")
+			execute(index, "vmbox-runtime", "restore-tools")
+			execute(index, "sh", "-c", fmt.Sprintf(`tmux new-session -d -s blender-test 'DISPLAY="$VMBOX_DESKTOP_DISPLAY" blender --python-expr "import bpy; bpy.context.scene.name=\"workspace-%d\"; bpy.context.scene.blendermcp_port=9876; bpy.ops.blendermcp.start_server()" > "$HOME/blender-test.log" 2>&1'`, index))
+		}
+		checkBlender(0)
+		checkBlender(1)
+	}
 	if _, err := client.Stop(ctx, fixtures[0].box.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -99,9 +113,41 @@ func TestDisposableTwoSlotWorker(t *testing.T) {
 		t.Fatal("stale connection accepted")
 	}
 	execute(1, "tmux", "has-session", "-t", "persistent")
+	if blenderEnabled {
+		checkBlender(1)
+	}
 	if _, err := client.Start(ctx, fixtures[0].box.ID); err != nil {
 		t.Fatal(err)
 	}
 	execute(0, "sh", "-c", `test "$(cat "$HOME/marker")" = first; if tmux has-session -t persistent 2>/dev/null; then exit 1; fi`)
 	execute(0, "/usr/local/bin/vmbox-runtime", "health")
 }
+
+const sharedBlenderMCPProbe = `
+import asyncio, os, socket, sys, time
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+async def main():
+    port = os.getuid()
+    for attempt in range(60):
+        try:
+            with socket.create_connection(('127.0.0.1', port), timeout=1):
+                break
+        except OSError:
+            await asyncio.sleep(1)
+    else:
+        raise RuntimeError('Blender did not listen on workspace port')
+    env = dict(os.environ, BLENDER_HOST='127.0.0.1', BLENDER_PORT=str(port), BLENDER_MCP_SAFE_MODE='1', DISABLE_TELEMETRY='true')
+    params = StdioServerParameters(command=os.path.expanduser('~/.local/bin/blender-mcp'), env=env)
+    async with stdio_client(params) as streams:
+        async with ClientSession(*streams) as session:
+            await session.initialize()
+            result = await session.call_tool('get_scene_info', {'user_prompt': 'Verify isolated disposable workspace scene'})
+            assert not result.isError, result
+            text = '\n'.join(getattr(item, 'text', '') for item in result.content)
+            assert sys.argv[1] in text, text
+            print('Blender MCP workspace verified:', sys.argv[1], port)
+
+asyncio.run(main())
+`

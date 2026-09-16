@@ -67,7 +67,20 @@ yet implemented; retain the volume and reconcile/reallocate before reconnecting.
 CPU, memory, PID capacity, network and disk are shared. Requested disk size is
 metadata, not an enforced quota. Network ports must not collide. System packages
 must be preinstalled; user-local tools work, but recipes requiring sudo do not.
-Blender MCP currently requires a dedicated worker because its port is global.
+Blender-tagged boxes use the same image-bundled Blender 5.1.2 and Blender MCP
+1.9.1 as dedicated workers. Each shared workspace uses its stable Linux UID as
+its loopback MCP port; the add-on and agent configuration agree on that port,
+including when a saved scene contains another port. These ports avoid accidental
+cross-box connections, not deliberate access by another trusted workspace.
+Launch Blender and start the MCP server in its add-on panel as on dedicated boxes.
+Older shared images without bundled Blender must be upgraded before using this
+preset. Existing dedicated Blender installations are preserved.
+
+Box creation automatically selects available capacity from the least occupied
+pool (occupied slots / total slots), breaking ties by free slots and the controller
+default. This is an availability heuristic, not a CPU benchmark. If all pools are
+full or unavailable, creation queues in the default pool. Expand the placement
+override to select a pool explicitly; existing boxes are never moved by this choice.
 Retained workspaces cannot migrate to another physical worker/alias.
 
 ## Verification
@@ -78,6 +91,10 @@ uses and removes explicitly disposable worker and PostgreSQL containers. It chec
 two simultaneous desktops/screenshots, distinct users/files/tmux state, controller
 creation and runtime staging, authenticated CLI relay, hibernate/resume and deletion
 without disrupting the sibling box. It does not contact production or Railway.
+Set `VMBOX_TEST_SHARED_BLENDER=1` with the bundled image to additionally install
+and restore the preset in both workspaces, run two real Blender GUI instances,
+query their distinct scenes through MCP, and recheck the sibling after stopping
+the first workspace.
 
 The broader physical-worker inventory, autoscaling, quotas and recovery roadmap
 remains in [the shared-slot proposal](SHARED-WORKER-SLOTS-PLAN.md). The provider

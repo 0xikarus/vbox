@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -18,8 +19,8 @@ const blenderMCPVersion = "1.9.1"
 var installBlenderRelease = installPinnedBlender
 
 func configureBlender(ctx context.Context, home string, progress io.Writer) error {
-	if WorkspaceRoot() != "/data" {
-		return errors.New("Blender MCP is not supported on shared workers; use a dedicated worker")
+	if WorkspaceRoot() != "/data" && (os.Getuid() < 30000 || os.Getuid() >= 59000) {
+		return errors.New("shared Blender requires a valid workspace UID")
 	}
 	path, err := toolSetupPath(home)
 	if err != nil {
@@ -93,11 +94,18 @@ func installBlenderMCPBinary(ctx context.Context, home, blender string, progress
 			return err
 		}
 		fmt.Fprintf(progress, "Installing pinned third-party Blender MCP %s…\n", blenderMCPVersion)
-		cmd := exec.CommandContext(ctx, "pipx", "install", "--force", "blender-mcp=="+blenderMCPVersion)
-		cmd.Env = append(os.Environ(), "HOME="+home, "PIPX_HOME="+filepath.Join(home, ".local", "share", "pipx"), "PIPX_BIN_DIR="+binDir, "PIP_DISABLE_PIP_VERSION_CHECK=1")
-		cmd.Stdout, cmd.Stderr = progress, progress
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("install pinned server package: %w", err)
+		imageServer := "/opt/vmbox/blender-mcp-" + blenderMCPVersion + "/bin/blender-mcp"
+		if _, err := os.Stat(imageServer); err == nil && os.IsNotExist(serverErr) {
+			if err := os.Symlink(imageServer, server); err != nil {
+				return err
+			}
+		} else {
+			cmd := exec.CommandContext(ctx, "pipx", "install", "--force", "blender-mcp=="+blenderMCPVersion)
+			cmd.Env = append(os.Environ(), "HOME="+home, "PIPX_HOME="+filepath.Join(home, ".local", "share", "pipx"), "PIPX_BIN_DIR="+binDir, "PIP_DISABLE_PIP_VERSION_CHECK=1")
+			cmd.Stdout, cmd.Stderr = progress, progress
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("install pinned server package: %w", err)
+			}
 		}
 		if _, err := os.Stat(server); err != nil {
 			return fmt.Errorf("installed server executable unavailable: %w", err)
@@ -122,6 +130,11 @@ func installBlenderMCPBinary(ctx context.Context, home, blender string, progress
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("install Blender add-on: %w", err)
 	}
+	if WorkspaceRoot() != "/data" {
+		if err := configureSharedBlenderAddon(filepath.Join(addonDir, "blender_mcp.py")); err != nil {
+			return err
+		}
+	}
 	cmd = exec.CommandContext(ctx, blender, "--background", "--python-expr", "import bpy; bpy.ops.preferences.addon_enable(module='blender_mcp'); bpy.ops.wm.save_userpref()")
 	cmd.Env = append(os.Environ(), "HOME="+home)
 	cmd.Stdout, cmd.Stderr = progress, progress
@@ -129,7 +142,7 @@ func installBlenderMCPBinary(ctx context.Context, home, blender string, progress
 		return fmt.Errorf("enable Blender add-on: %w", err)
 	}
 
-	env := []string{"BLENDER_HOST=127.0.0.1", "BLENDER_PORT=9876", "BLENDER_MCP_SAFE_MODE=1", "DISABLE_TELEMETRY=true"}
+	env := []string{"BLENDER_HOST=127.0.0.1", "BLENDER_PORT=" + blenderMCPPort(), "BLENDER_MCP_SAFE_MODE=1", "DISABLE_TELEMETRY=true"}
 	if err := registerBlenderMCP(ctx, home, "codex", append([]string{"mcp", "add", "blender", "--env", env[0], "--env", env[1], "--env", env[2], "--env", env[3], "--"}, server), progress); err != nil {
 		return err
 	}
@@ -140,6 +153,31 @@ func installBlenderMCPBinary(ctx context.Context, home, blender string, progress
 		return registerOpenCodeBlender(home, server)
 	}
 	return nil
+}
+
+func blenderMCPPort() string {
+	if WorkspaceRoot() != "/data" {
+		return strconv.Itoa(os.Getuid())
+	}
+	return "9876"
+}
+
+func configureSharedBlenderAddon(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	source := string(data)
+	for _, replacement := range [][2]string{
+		{"        self.host = host\n        self.port = port", "        self.host = '127.0.0.1'\n        self.port = os.getuid()"},
+		{"        default=9876,", "        default=os.getuid(),\n        get=lambda self: os.getuid(),\n        set=lambda self, value: None,"},
+	} {
+		if strings.Count(source, replacement[0]) != 1 {
+			return fmt.Errorf("unexpected Blender MCP add-on; cannot configure workspace port")
+		}
+		source = strings.Replace(source, replacement[0], replacement[1], 1)
+	}
+	return os.WriteFile(path, []byte(source), 0600)
 }
 
 func registerBlenderMCP(ctx context.Context, home, agent string, addArgs []string, progress io.Writer) error {

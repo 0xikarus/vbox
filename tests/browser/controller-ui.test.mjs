@@ -77,6 +77,7 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · shared-01 · slot 1/);
  assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · shared-02 · slot 1/);
  const selected=JSON.stringify({provider:'shared-worker',providerCredential:'shared-02'});
+ await page.click('#create details summary');
  await page.select('#create-pool',selected);await page.type('#create input[name=name]','comparison-box');await page.click('#create button');
  await page.waitForFunction(()=>window.poolCreates.length===1);
  const created=await page.evaluate(()=>window.poolCreates[0]);assert.equal(created.provider,'shared-worker');assert.equal(created.providerCredential,'shared-02');
@@ -85,6 +86,33 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  await page.select('#capacity-pool',JSON.stringify({provider:'shared-worker',providerCredential:'shared-01'}));await page.click('#slots button');
  await page.waitForFunction(()=>window.poolCapacity.length===1);
  assert.deepEqual(await page.evaluate(()=>window.poolCapacity[0]),{provider:'shared-worker',providerCredential:'shared-01',compute_box_slots:2});
+ await page.close();
+});
+test('automatic placement refreshes capacity and prefers a less occupied pool',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.autoCreates=[];window.capacityMode='free';
+  window.fetch=async(path,options={})=>{
+   const url=new URL(path,location.origin),method=options.method||'GET';
+   if(method==='GET'&&url.pathname==='/v1/provider-credentials')return new Response(JSON.stringify([{provider:'railway',name:'primary'},{provider:'shared-worker',name:'shared-01'},{provider:'shared-worker',name:'shared-02'}]));
+   if(method==='GET'&&url.pathname==='/v1/fleet/status'){
+    const alias=url.searchParams.get('providerCredential'),free=window.capacityMode==='full'?0:alias==='shared-02'?2:1;
+    return new Response(JSON.stringify({actualSlots:2,desiredSlots:2,freeSlots:free,occupiedSlots:2-free,slots:[]}));
+   }
+   if(method==='POST'&&url.pathname==='/v1/logical-boxes'){window.autoCreates.push(JSON.parse(options.body));return new Response(JSON.stringify({id:'auto-created'}))}
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForFunction(()=>document.querySelector('#create-pool').options.length===4);
+ assert.equal(await page.$eval('#create-pool',element=>element.value),'');
+ assert.equal(await page.$eval('#create details',element=>element.open),false);
+ await page.type('#create input[name=name]','auto-box');await page.click('#create button');
+ await page.waitForFunction(()=>window.autoCreates.length===1);
+ assert.equal(await page.evaluate(()=>window.autoCreates[0].providerCredential),'shared-02');
+ await page.evaluate(()=>{window.capacityMode='full'});
+ await page.click('#create button');await page.waitForFunction(()=>window.autoCreates.length===2);
+ assert.equal(await page.evaluate(()=>window.autoCreates[1].providerCredential),'primary');
  await page.close();
 });
 test('box deletion confirms exact identity, prevents repeats and shows asynchronous progress',async()=>{
