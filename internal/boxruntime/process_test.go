@@ -44,7 +44,7 @@ func TestIdleHibernateRealTmux(t *testing.T) {
 
 func TestProcessArgv(t *testing.T) {
 	prompt := "-dangerous ' $HOME; ä\nsecond line"
-	for agent, want := range map[string][]string{"codex": {"codex", "exec", "--skip-git-repo-check", "--", prompt}, "claude": {"claude", "-p", "--", prompt}, "opencode": {"opencode", "run", "--", prompt}, "shell": {"/bin/bash", "-lc", prompt}} {
+	for agent, want := range map[string][]string{"codex": {"codex", "exec", "--skip-git-repo-check", "--", prompt}, "claude": {"claude", "-p", "--", prompt}, "opencode": {"opencode", "run", "--auto", "--", prompt}, "shell": {"/bin/bash", "-lc", prompt}} {
 		got, err := processArgv(agent, prompt)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("%s: %q %v", agent, got, err)
