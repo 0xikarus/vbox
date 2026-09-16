@@ -3,12 +3,15 @@ package boxruntime
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -76,5 +79,33 @@ func TestChatSessionFindsSanitizedMCPThroughProcessTree(t *testing.T) {
 	})
 	if err != nil || session != "managed-codex" {
 		t.Fatalf("session=%q err=%v", session, err)
+	}
+}
+
+func TestDeliverCodexChatReferencesLocalImagesWithoutUnsupportedQueueFlags(t *testing.T) {
+	home := t.TempDir()
+	var encoded bytes.Buffer
+	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	canvas.Set(0, 0, color.RGBA{R: 80, G: 20, B: 180, A: 255})
+	if err := png.Encode(&encoded, canvas); err != nil {
+		t.Fatal(err)
+	}
+
+	original := runCodexQueue
+	t.Cleanup(func() { runCodexQueue = original })
+	var got []string
+	runCodexQueue = func(_ context.Context, _ string, eventPath string, args []string) error {
+		got = append([]string(nil), args...)
+		return os.Remove(eventPath)
+	}
+	inbound := ChatInbound{ID: "message-1", Text: "Inspect [Image 1]", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
+	if err := DeliverCodexChat(context.Background(), home, "codex-chat", inbound); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5 || !reflect.DeepEqual(got[:4], []string{"queue", "--thread", "codex-chat", "--message"}) {
+		t.Fatalf("unexpected codex queue arguments: %q", got)
+	}
+	if strings.Contains(strings.Join(got, "\n"), "-i") || !strings.Contains(got[4], "[Image 1]: ") || !strings.Contains(got[4], "/inbox/codex-chat/files/message-1/image-1.png") {
+		t.Fatalf("image was not delivered as a local file reference: %q", got)
 	}
 }
