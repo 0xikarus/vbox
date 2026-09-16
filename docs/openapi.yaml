@@ -37,11 +37,11 @@ paths:
               schema: {type: array, items: {$ref: '#/components/schemas/LoginProfile'}}
   /v1/login-profiles/{application}/{name}:
     parameters:
-      - {in: path, name: application, required: true, schema: {enum: [claude, codex]}}
+      - {in: path, name: application, required: true, schema: {enum: [claude, codex, opencode, github]}}
       - {in: path, name: name, required: true, schema: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$'}}
     put:
       summary: Owner-only encrypted account profile creation; refuses overwrite
-      description: Maximum 512 KiB decoded. Codex accepts auth.json and config.toml. Claude accepts .credentials.json, settings.json and .claude.json. No plaintext export endpoint exists.
+      description: Maximum 512 KiB decoded. Codex accepts auth.json and config.toml. Claude accepts .credentials.json, settings.json and .claude.json. OpenCode accepts auth.json plus optional opencode.json or opencode.jsonc. GitHub accepts the controller's portable credential object. No plaintext export endpoint exists.
       requestBody:
         required: true
         content:
@@ -75,7 +75,7 @@ paths:
               type: object
               required: [agent, prompt]
               properties:
-                agent: {type: string, enum: [codex, claude, shell]}
+                agent: {type: string, enum: [codex, claude, opencode, shell]}
                 prompt: {type: string, minLength: 1, maxLength: 100000}
                 session: {type: string}
       responses:
@@ -110,7 +110,7 @@ paths:
               type: object
               required: [agent]
               properties:
-                agent: {type: string, enum: [codex, claude, shell]}
+                agent: {type: string, enum: [codex, claude, opencode, shell]}
                 reuseShell: {type: boolean, default: false, description: Reuse the remembered shell or create it if missing. Requires agent shell and no startCli.}
                 startCli: {type: string, maxLength: 16384, description: Optional command to run once in a new shell before returning to the login shell. Requires agent shell; maximum 16 KiB and no NUL.}
       responses: {'200': {description: Object containing exact reused shell session name}, '201': {description: Object containing exact created session name}, '400': {description: Invalid agent or startup/reuse options}, '409': {description: Box assignment changed}, '502': {description: Inventory or startup unconfirmed; inspect sessions before retrying}}
@@ -528,7 +528,7 @@ components:
       type: object
       required: [application, name]
       properties:
-        application: {enum: [claude, codex]}
+        application: {enum: [claude, codex, opencode, github]}
         name: {type: string}
     LoginProfile:
       allOf:

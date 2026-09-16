@@ -101,6 +101,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `vmbox-desktop` MCP exposes `chat_reply` and `chat_ask`; controller acknowledgement
   happens after reply text, validated images, or a choice prompt is stored. Terminal
   capture remains a compatibility fallback for clients that do not call the tool.
+- A new OpenCode Agent chat passes its first message with native `--prompt`, then
+  uses the loopback API for follow-ups. Persistent OpenCode and OpenCode Run once
+  start with `--auto`; explicit client deny rules still take precedence.
 - Foundry is a pinned preset. Custom tooling is trusted user-supplied Bash run
   **inside the worker**, with a five-minute deadline, before the task. Persistent
   boxes retain and rerun the recipe on resume: installation must be idempotent.

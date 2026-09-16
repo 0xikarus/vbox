@@ -1,6 +1,6 @@
 ---
 name: vmbox
-description: Use the vmbox service to connect to controller-managed remote boxes, work in persistent tmux shells or graphical desktops, submit and inspect one-shot tasks, and import Claude, Codex, or GitHub login profiles.
+description: Use the vmbox service to connect to controller-managed remote boxes, work in persistent tmux shells or graphical desktops, submit and inspect one-shot tasks, and import Claude, Codex, OpenCode, or GitHub login profiles.
 ---
 
 # Using vmbox
@@ -81,7 +81,7 @@ vmbox profiles upload
 vmbox profiles list --json
 ```
 
-The upload table discovers Claude, Codex, and GitHub accounts. Arrows move;
+The upload table discovers Claude, Codex, OpenCode, and GitHub accounts. Arrows move;
 Space/Enter toggles each profile; select Upload to submit. Add entry accepts an
 undiscovered directory or GitHub account. Names derive from account identity
 when available, otherwise the source directory, with suffixes for collisions.
@@ -92,6 +92,7 @@ For non-interactive import, explicit save still requires a name:
 ```bash
 vmbox profiles save claude ACCOUNT_NAME --from /path/to/claude-profile
 vmbox profiles save codex ACCOUNT_NAME --from /path/to/codex-profile
+vmbox profiles save opencode ACCOUNT_NAME --from /path/to/opencode-profile
 vmbox profiles save github GITHUB_USER --from github.com:GITHUB_USER
 ```
 
@@ -110,7 +111,7 @@ vmbox work --session              # existing-session picker
 vmbox work --session NAME         # select exact session and remember it
 ```
 
-Run `claude`, `codex`, or ordinary commands inside the shell. Plain reconnect
+Run `claude`, `codex`, `opencode`, or ordinary commands inside the shell. Plain reconnect
 reuses the remembered session without restarting programs. Prefer it over
 creating extra sessions. When explicitly needed,
 `vmbox work --start-cli 'COMMAND'` creates a new persistent shell, runs the command
@@ -160,13 +161,14 @@ transport; do not assume equivalent GUI support for every provider.
 vmbox task work                   # interactive agent/prompt selector
 vmbox task work codex --prompt 'Fix the tests and verify the change' --idempotency-key UNIQUE_TASK_KEY --json
 vmbox task work claude --prompt 'Review the implementation and report findings' --json
+vmbox task work opencode --prompt 'Implement the change and run its checks' --json
 vmbox task work shell --prompt 'cd /data/workspace/PROJECT && make test' --json
 vmbox task-status work TASK_ID --json
 vmbox task-output work TASK_ID
 ```
 
-The positional agent or `--agent codex|claude|shell` selects `codex exec`,
-`claude -p`, or `bash -lc`. Tasks start in `/data/workspace`, waking the box when
+The positional agent or `--agent codex|claude|opencode|shell` selects `codex exec`,
+`claude -p`, `opencode run --auto`, or `bash -lc`. Tasks start in `/data/workspace`, waking the box when
 necessary. Submission returns a task record, not completed work. Save its ID;
 inspect status/output with bounded polling and report unfinished tasks honestly.
 Reads do not wake compute. Reuse a stable unique idempotency key for the same

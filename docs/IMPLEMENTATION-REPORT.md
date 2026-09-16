@@ -1,5 +1,8 @@
 # Controller-first implementation evidence
 
+> Historical evidence from 2026-09-05. For the current product contract and
+> production handoff, use `AGENT-GUIDE.md` and `NEXT-AGENT-TODO.md`.
+
 2026-09-05. Implemented locally on the existing worktree; no commit or deployment.
 Production services, worker processes, sessions and volumes were not changed.
 The original Codex/startup/reconciliation drafts were preserved. Unrelated

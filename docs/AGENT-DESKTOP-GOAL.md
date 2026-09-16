@@ -586,7 +586,7 @@ order; listing a capability does not mean it is implemented or deployed.
 1. **Inspectable startup.** Start the desktop and visible managed terminal for
    Codex, Claude, OpenCode, and shell. Verify shared process identity, reconnects,
    task output, and cleanup. Audit interactive and Run once support separately:
-   OpenCode's interactive launch path does not establish one-shot support.
+   OpenCode now has separate interactive and `opencode run --auto` one-shot paths.
 2. **Desktop tools and takeover.** Implement screenshots and input, Bézier movement,
    cancellation, and shared control ownership. Verify actual image/tool exchanges
    with all three agent clients and a real desktop. Select vision-capable models
