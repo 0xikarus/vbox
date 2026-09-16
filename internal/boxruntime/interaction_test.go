@@ -2,7 +2,10 @@ package boxruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -417,6 +420,71 @@ func TestStartTmuxTaskPassesOpenCodeInitialPromptAsArgument(t *testing.T) {
 	joined := strings.Join(calls, "\n")
 	if !strings.Contains(joined, "opencode\n--auto\n--hostname\n127.0.0.1") || !strings.Contains(joined, "--prompt\nfirst message") {
 		t.Fatalf("OpenCode startup arguments were incomplete: %v", calls)
+	}
+}
+
+type openCodeTestTransport func(*http.Request) (*http.Response, error)
+
+func (transport openCodeTestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	originalCommand, originalProbe, originalSettle, originalTransport := tmuxCommand, openCodeReadyProbe, agentReadySettlePause, http.DefaultTransport
+	t.Cleanup(func() {
+		tmuxCommand, openCodeReadyProbe, agentReadySettlePause, http.DefaultTransport = originalCommand, originalProbe, originalSettle, originalTransport
+	})
+	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
+	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if stdin != "" {
+			t.Fatal("unexpected terminal input")
+		}
+		switch args[0] {
+		case "has-session":
+			return nil, nil
+		case "show-environment":
+			return []byte(taskAgentEnvironment + "=opencode"), nil
+		default:
+			t.Fatalf("existing session was modified: %v", args)
+			return nil, nil
+		}
+	}
+	submitted := 0
+	http.DefaultTransport = openCodeTestTransport(func(request *http.Request) (*http.Response, error) {
+		body := "{}"
+		switch request.URL.Path {
+		case "/session":
+			encoded, _ := json.Marshal([]map[string]string{{"id": "existing-conversation", "directory": WorkspaceDirectory()}})
+			body = string(encoded)
+		case "/session/status":
+		case "/session/existing-conversation/prompt_async":
+			if request.Method != http.MethodPost {
+				t.Fatal("expected native prompt submission")
+			}
+			var payload struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if len(payload.Parts) != 1 || payload.Parts[0].Text != "continue existing work" {
+				t.Fatalf("wrong prompt: %+v", payload)
+			}
+			submitted++
+		default:
+			t.Fatalf("unexpected API path %q", request.URL.Path)
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})
+	if err := StartTmuxTask(context.Background(), t.TempDir(), "opencode-existing", "opencode", "message-existing", "continue existing work"); err != nil {
+		t.Fatal(err)
+	}
+	if submitted != 1 {
+		t.Fatalf("native prompt submissions = %d", submitted)
 	}
 }
 

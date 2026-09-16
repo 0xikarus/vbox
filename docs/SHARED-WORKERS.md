@@ -70,3 +70,9 @@ without disrupting the sibling box. It does not contact production or Railway.
 The broader physical-worker inventory, autoscaling, quotas and recovery roadmap
 remains in [the shared-slot proposal](SHARED-WORKER-SLOTS-PLAN.md). The provider
 described here is the implemented first step, not completion of that entire plan.
+
+Production verification on 2026-09-16: Railway service `vmbox-shared-01`, controller
+alias `shared-worker/shared-01`, has two healthy logical slots. Two explicitly
+disposable boxes simultaneously ran separate desktops and returned real PNG
+screenshots; reconnecting each reused its existing shell session. Both test boxes
+were queued for deletion afterwards. Existing dedicated workers were not restarted.

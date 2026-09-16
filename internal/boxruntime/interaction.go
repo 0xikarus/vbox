@@ -377,6 +377,9 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 		return nil
 	}
 	if !created && agent != "shell" {
+		if agent == "opencode" {
+			return DeliverOpenCodeChat(ctx, os.Getenv("HOME"), session, ChatInbound{ID: messageID, Text: prompt})
+		}
 		// Existing native agent sessions receive messages through their native
 		// conversation transport, never through terminal input.
 		return fmt.Errorf("tmux session %q already exists", session)
