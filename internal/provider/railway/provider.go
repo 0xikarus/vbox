@@ -1103,11 +1103,11 @@ func (p *Provider) Connection(ctx context.Context, id string) (provider.Connecti
 	return provider.Connection{Transport: "openssh", Endpoint: target, Metadata: map[string]string{"deploymentInstanceId": instance}}, nil
 }
 func (p *Provider) Logs(ctx context.Context, id string, opts provider.LogOptions, dst io.Writer) error {
-	service, err := p.resolve(ctx, id)
-	if err != nil {
-		return err
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("Railway service ID is required")
 	}
-	args := []string{"logs", "--service", service.Name}
+	args := []string{"logs", "--service", id}
 	if opts.Tail > 0 {
 		args = append(args, "--lines", strconv.Itoa(opts.Tail))
 	}
