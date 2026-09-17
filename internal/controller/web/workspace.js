@@ -393,7 +393,10 @@ if(messageForm){
    const messages=await api(bp+'/messages');
    if(document.querySelector('#workspace').hidden)return;
    const list=document.querySelector('#agent-messages');list.replaceChildren();clearMessageURLs();
-   for(const message of messages){const row=document.createElement('li');const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);for(const attachment of message.images||[]){const response=await fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(attachment.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)});if(response.ok){const imageURL=URL.createObjectURL(await response.blob()),image=document.createElement('img');messageURLs.push(imageURL);image.src=imageURL;image.alt='Image '+attachment.number+' from '+message.direction;row.append(image)}}appendQuestion(row,message);list.append(row)}
+   const recent=messages.slice(-5),note=document.querySelector('#agent-chat-note-text');
+   if(note)note.textContent=messages.length>recent.length?('Showing the last '+recent.length+' of '+messages.length+' messages.'):'Showing all '+recent.length+' messages.';
+   const chatLink=document.querySelector('#agent-chat-link');if(chatLink)chatLink.href='/chat#box='+encodeURIComponent(boxID);
+   for(const message of recent){const row=document.createElement('li');const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);for(const attachment of message.images||[]){const response=await fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(attachment.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)});if(response.ok){const imageURL=URL.createObjectURL(await response.blob()),image=document.createElement('img');messageURLs.push(imageURL);image.src=imageURL;image.alt='Image '+attachment.number+' from '+message.direction;row.append(image)}}appendQuestion(row,message);list.append(row)}
   }catch(e){status.textContent=e.message}
   timer=setTimeout(refresh,3000);
  };

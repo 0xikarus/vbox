@@ -157,6 +157,21 @@
   };
   return form;
  }
+ const linkPattern=/https?:\/\/[^\s<>()"'`]+/gi;
+ function linkify(text){
+  const fragment=document.createDocumentFragment();
+  let last=0,match;
+  linkPattern.lastIndex=0;
+  while((match=linkPattern.exec(text))){
+   if(match.index>last)fragment.append(text.slice(last,match.index));
+   const link=document.createElement('a');
+   link.href=match[0];link.textContent=match[0];link.target='_blank';link.rel='noopener noreferrer';
+   fragment.append(link);
+   last=match.index+match[0].length;
+  }
+  if(last<text.length)fragment.append(text.slice(last));
+  return fragment;
+ }
  function bubble(box,message){
   const row=document.createElement('div');
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
@@ -165,7 +180,8 @@
   if(message.state==='silent'){const label=document.createElement('span');label.className='note-label';label.textContent='Note · not sent to the agent';row.append(label)}
   if(message.text.startsWith('Forwarded from ')){const mark=document.createElement('span');mark.className='fwd-mark';const end=message.text.indexOf(':\n');mark.textContent=end>0?message.text.slice(0,end+1):'Forwarded';row.append(mark)}
   const text=document.createElement('span');text.className='text';
-  text.textContent=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
+  const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
+  text.append(linkify(body));
   row.append(text);
   for(const image of message.images||[]){
    imageURL(message,image).then(url=>{if(!url)return;const img=document.createElement('img');img.className='chat-image';img.src=url;img.alt='Image '+image.number+' from '+message.direction;row.insertBefore(img,row.querySelector('.meta'))});

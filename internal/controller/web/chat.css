@@ -219,3 +219,6 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #new-box-card label,#delete-box-card label{display:block;margin:0 0 .45rem;font-size:.85rem;color:#54656f;text-transform:none}
 #new-box-card label>input,#new-box-card label>select{display:block;width:100%;margin-top:.18rem;font:inherit;color:#111b21}
 #new-box-card button#create-box-submit{display:block;width:100%;background:#00a884;color:#fff;font-weight:600}
+
+.msg .text a{color:#027eb5;text-decoration:underline;word-break:break-word}
+.msg.user .text a{color:#0b6bb0}
