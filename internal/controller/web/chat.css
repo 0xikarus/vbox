@@ -222,3 +222,10 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 
 .msg .text a{color:#027eb5;text-decoration:underline;word-break:break-word}
 .msg.user .text a{color:#0b6bb0}
+
+.msg.processing .tv-button{display:inline-flex;align-items:center;justify-content:center;background:none;border:0;padding:.15rem;margin-left:.1rem;color:#54656f;cursor:pointer;border-radius:.35rem}
+.msg.processing .tv-button:hover,.msg.processing .tv-button:focus-visible{background:#e9edef;color:#075e54}
+.msg.processing .tv-button svg{width:1rem;height:1rem}
+.tv-preview{position:fixed;z-index:40;padding:.3rem;background:#fff;border:1px solid #d1d7db;border-radius:.6rem;box-shadow:0 12px 32px rgba(11,20,26,.28);pointer-events:none}
+.tv-preview img{display:block;width:100%;border-radius:.4rem;background:#111b21}
+.tv-preview:empty::after{content:'no desktop preview yet';display:flex;align-items:center;justify-content:center;min-height:7rem;color:#667781;font-size:.8rem}

@@ -54,6 +54,34 @@
   return wrap;
  }
 
+ /* ---------- TV preview: hover the processing bubble for a bigger view ---- */
+ const tvPreviewEl=document.createElement('div');tvPreviewEl.className='tv-preview';tvPreviewEl.hidden=true;
+ document.body.append(tvPreviewEl);
+ function tvIcon(){
+  const ns='http://www.w3.org/2000/svg';
+  const svg=document.createElementNS(ns,'svg');
+  svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','2');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');
+  const screen=document.createElementNS(ns,'rect');screen.setAttribute('width','20');screen.setAttribute('height','15');screen.setAttribute('x','2');screen.setAttribute('y','7');screen.setAttribute('rx','2');screen.setAttribute('ry','2');
+  const antenna=document.createElementNS(ns,'polyline');antenna.setAttribute('points','17 2 12 7 7 2');
+  svg.append(screen,antenna);
+  return svg;
+ }
+ function showTvPreview(button,box){
+  tvPreviewEl.dataset.avatar=box.id;tvPreviewEl.dataset.state=box.state;
+  tvPreviewEl.hidden=false;
+  tvPreviewEl.style.width=Math.min(380,window.innerWidth-24)+'px';
+  avatarRefresh(box);refreshAvatarNodes(box);
+  const rect=button.getBoundingClientRect(),height=tvPreviewEl.offsetHeight;
+  const width=tvPreviewEl.offsetWidth;
+  const left=Math.min(Math.max(12,rect.left-8),Math.max(12,window.innerWidth-width-12));
+  let top=rect.top-height-10;
+  if(top<12)top=Math.min(rect.bottom+10,Math.max(12,window.innerHeight-height-12));
+  tvPreviewEl.style.left=left+'px';tvPreviewEl.style.top=top+'px';
+ }
+ function hideTvPreview(){tvPreviewEl.hidden=true}
+ addEventListener('scroll',hideTvPreview,true);
+ addEventListener('resize',hideTvPreview);
+
  /* ---------- chat list ---------- */
  const fmtTime=value=>{const d=new Date(value),now=new Date(),sameDay=d.toDateString()===now.toDateString();if(sameDay)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(d.toDateString()===yesterday.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'2-digit',month:'2-digit',year:'numeric'})};
  function summarize(id){
@@ -197,6 +225,7 @@
   return row;
  }
  function renderMessages(box){
+  hideTvPreview();
   const nearBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;
   messagesEl.replaceChildren();
   let day='';
@@ -211,7 +240,14 @@
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
-   t.append(dots,label);messagesEl.append(t);
+   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview the desktop, click to take control';tv.setAttribute('aria-label','Preview the desktop and take control');
+   tv.append(tvIcon());
+   tv.onmouseenter=()=>showTvPreview(tv,box);
+   tv.onmouseleave=hideTvPreview;
+   tv.onfocus=()=>showTvPreview(tv,box);
+   tv.onblur=hideTvPreview;
+   tv.onclick=()=>{hideTvPreview();void openTakeover('desktop')};
+   t.append(dots,label,tv);messagesEl.append(t);
   }
   if(nearBottom||lastSignature==='')messagesEl.scrollTop=messagesEl.scrollHeight;
  }
