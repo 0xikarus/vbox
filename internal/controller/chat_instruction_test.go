@@ -10,13 +10,16 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 	if !strings.Contains(got, "vmbox Agent chat message m1") {
 		t.Fatalf("default envelope must carry the message id: %q", got)
 	}
-	for _, fragment := range []string{"chat_message(text, replyTo=\"m1\")", "chat_ask(question, choices, multiple, replyTo=\"m1\")", "PNG/JPEG/GIF"} {
+	for _, fragment := range []string{"chat_message tool with replyTo m1", "chat_ask with the same replyTo", "PNG/JPEG/GIF"} {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("default envelope must mention %q: %q", fragment, got)
 		}
 	}
-	if strings.Contains(got, "When your response is ready") {
+	if strings.Contains(got, "complete response text") || strings.Contains(got, "multiple flag") {
 		t.Fatalf("old verbose envelope still present")
+	}
+	if len(defaultChatInstruction) > 320 {
+		t.Fatalf("default envelope should stay short, got %d characters", len(defaultChatInstruction))
 	}
 	if strings.Count(got, "\n") > 3 {
 		t.Fatalf("envelope should stay compact (max 3 newlines), got %d", strings.Count(got, "\n"))
@@ -26,7 +29,7 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 func TestChatInstructionTemplateOverride(t *testing.T) {
 	s := &Server{ChatInstructionTemplate: "\nchat %s"}
 	got := s.chatInstruction("abc", "claude")
-	if !strings.Contains(got, "chat abc") || strings.Contains(got, "chat_message") {
+	if !strings.Contains(got, "chat abc") || strings.Contains(got, "chat_message tool") {
 		t.Fatalf("override must replace the default envelope: %q", got)
 	}
 }

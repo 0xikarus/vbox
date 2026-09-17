@@ -37,7 +37,7 @@ func attachBoxMessageImages(ctx context.Context, tx *sql.Tx, accountID, messageI
 
 // defaultChatInstruction is appended to every agent chat prompt. Keep it compact —
 // it is visible context in the agent's proliferating conversation.
-const defaultChatInstruction = "\n\n[vmbox Agent chat message %s]\nReply with vmbox-desktop chat_message(text, replyTo=\"%s\"); replyTo is optional. chat_ask(question, choices, multiple, replyTo=\"%s\") asks the user to choose. Absolute PNG/JPEG/GIF paths attach as images."
+const defaultChatInstruction = "\n\n[vmbox Agent chat message %s]\nWhen your response is ready, call the vmbox-desktop chat_message tool with replyTo %s and your response text. Include absolute PNG/JPEG/GIF paths in files for images. To let the user choose, call chat_ask with the same replyTo, question, choices, and multiple."
 
 // ChatInstructionTemplate controls the envelope appended to every agent chat
 // prompt; set with VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of
