@@ -14,10 +14,10 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
-	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/0xikarus/vmbox-service/internal/secrets"
 	"github.com/0xikarus/vmbox-service/internal/workerprotocol"
+	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 )
@@ -593,9 +593,17 @@ func TestWorkspaceStreamRevalidationPolicy(t *testing.T) {
 	for name, setup := range map[string]func(mock sqlmock.Sqlmock){
 		"assignment fence change": func(mock sqlmock.Sqlmock) { assignmentRows(mock, "replacement-fence", "running") },
 		"stopped box":             func(mock sqlmock.Sqlmock) { assignmentRows(mock, "fence-token", "hibernated") },
-		"revoked token":           func(mock sqlmock.Sqlmock) { assignmentRows(mock, "fence-token", "running"); mock.ExpectQuery(`SELECT t.account_id::text,t.user_id::text,u.role,u.subject FROM access_tokens`).WithArgs(sqlmock.AnyArg()).WillReturnError(errInvalidBearerToken) },
-		"role downgrade":          func(mock sqlmock.Sqlmock) { assignmentRows(mock, "fence-token", "running"); authenticateRows(mock, "user") },
-		"deleted box":             func(mock sqlmock.Sqlmock) { mock.ExpectQuery(`FROM logical_boxes\s+WHERE account_id=\$1 AND id=\$2`).WillReturnError(errLogicalBoxMissing) },
+		"revoked token": func(mock sqlmock.Sqlmock) {
+			assignmentRows(mock, "fence-token", "running")
+			mock.ExpectQuery(`SELECT t.account_id::text,t.user_id::text,u.role,u.subject FROM access_tokens`).WithArgs(sqlmock.AnyArg()).WillReturnError(errInvalidBearerToken)
+		},
+		"role downgrade": func(mock sqlmock.Sqlmock) {
+			assignmentRows(mock, "fence-token", "running")
+			authenticateRows(mock, "user")
+		},
+		"deleted box": func(mock sqlmock.Sqlmock) {
+			mock.ExpectQuery(`FROM logical_boxes\s+WHERE account_id=\$1 AND id=\$2`).WillReturnError(errLogicalBoxMissing)
+		},
 	} {
 		t.Run("definitive: "+name, func(t *testing.T) {
 			store, mock := testStore(t)
