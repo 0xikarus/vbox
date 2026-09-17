@@ -80,6 +80,7 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 						return err
 					}
 					if done {
+						s.pushAgentReply(ctx, accountID, task, reply)
 						return nil
 					}
 				}

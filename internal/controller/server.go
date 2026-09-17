@@ -93,6 +93,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /grid.js", uiHandler("grid.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /grid.css", uiHandler("grid.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /v1/grid-boxes", s.owner(s.gridBoxesHandler))
+	mux.HandleFunc("GET /chat", uiHandler("chat.html", "text/html; charset=utf-8", false))
+	mux.HandleFunc("GET /chat.js", uiHandler("chat.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /chat.css", uiHandler("chat.css", "text/css; charset=utf-8", false))
+	mux.HandleFunc("GET /push-sw.js", uiHandler("push-sw.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /manifest.json", uiHandler("manifest.json", "application/manifest+json; charset=utf-8", false))
+	mux.HandleFunc("GET /v1/push/vapid-key", s.auth(s.vapidKeyHandler))
+	mux.HandleFunc("PUT /v1/push/subscriptions", s.auth(s.putPushSubscriptionHandler))
+	mux.HandleFunc("DELETE /v1/push/subscriptions", s.auth(s.deletePushSubscriptionHandler))
 	for _, asset := range []string{"xterm.js", "xterm-fit.js", "workspace-terminal.js", "novnc.js", "workspace-desktop.js"} {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/javascript; charset=utf-8", false))
 	}
@@ -1016,9 +1024,10 @@ func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-		if strings.HasPrefix(r.URL.Path, "/boxes/") || r.URL.Path == "/grid" {
-			// Terminal palettes and noVNC geometry generate styles at runtime.
-			// Script execution remains restricted to locally bundled assets.
+		if strings.HasPrefix(r.URL.Path, "/boxes/") || r.URL.Path == "/grid" || r.URL.Path == "/chat" {
+			// Terminal palettes, noVNC geometry and chat menu/message bubbles
+			// generate styles at runtime. Script execution remains restricted
+			// to locally bundled assets.
 			w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
 		}
 		w.Header().Set("Referrer-Policy", "no-referrer")

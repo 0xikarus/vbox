@@ -156,5 +156,6 @@ func (s *Server) pullStructuredAgentReply(ctx context.Context, prov provider.Pro
 	if ack.ExitCode != 0 {
 		return false, fmt.Errorf("structured chat acknowledgement failed")
 	}
+	s.pushAgentReply(ctx, accountID, task, text)
 	return true, nil
 }
