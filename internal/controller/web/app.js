@@ -160,7 +160,7 @@ function renderBoxes(boxes){
    try{await api(bp(b.id)+'/volume','DELETE',{confirmation:b.name});const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}
    catch(err){if(version===epoch){remove.disabled=false;remove.title=remove.getAttribute('aria-label');throw err}}
    finally{deletingBoxes.delete(b.id)}
-  });remove.disabled=TRANSIENT_STATES.has(b.state)||deletingBoxes.has(b.id);actions.append(remove);
+  });remove.disabled=TRANSIENT_STATES.has(b.state)||deletingBoxes.has(b.id);actions.prepend(remove);
   const placement=node('td',boxPlacement(b));placement.className='box-placement';const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,placement,cell,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
