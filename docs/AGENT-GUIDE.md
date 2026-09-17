@@ -77,6 +77,18 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 
 ## Other recently established behavior
 
+- Live workspace streams (web terminal and VNC desktop) revalidate themselves
+  periodically: the controller stream rechecks the assignment and browser
+  session every 5 seconds, the direct-worker stream rechecks its binding every
+  second, and the shared agent connection renews its lease every 20 seconds.
+  A transient store failure inside these checks must never disconnect a healthy
+  viewer by itself: streams tolerate such failures for a bounded grace window
+  (`streamRevalidationGrace`) and then fail closed, while definitive evidence
+  (assignment fence change, stopped box, revoked or expired token, replaced
+  agent epoch, lost controller lease) still ends the stream or connection on
+  the first observation. Regression tests live in
+  `internal/controller/workspace_stream_revalidation_test.go`.
+
 - Default worker builds include desktop packages (`VMBOX_DESKTOP=true`). Opening
   a sleeping web workspace is read-only until **Resume box** is clicked. A running
   workspace starts the desktop on attachment; TMUX retains its flow.

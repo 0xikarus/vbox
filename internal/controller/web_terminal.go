@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -122,26 +123,13 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 	go func() {
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
+		var flakySince time.Time
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				current, err := s.Store.assignment(ctx, p.AccountID, a.Box.ID)
-				if err != nil || nativeFence(current) != inv.Assignment || current.Box.State != "running" {
-					cancel()
-					return
-				}
-				token, ok := authorizationValue(r.Header.Get("Authorization"), "Bearer")
-				if !ok {
-					token, ok = s.browserToken(r)
-				}
-				if !ok {
-					cancel()
-					return
-				}
-				principal, err := s.Store.Authenticate(ctx, token)
-				if err != nil || principal.AccountID != p.AccountID || principal.UserID != p.UserID || principal.Role != "owner" {
+				if !s.workspaceStreamAlive(ctx, r, p, inv.Assignment, a, &flakySince) {
 					cancel()
 					return
 				}
@@ -158,4 +146,43 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 		return
 	}
 	_ = ws.Close(websocket.StatusNormalClosure, "Terminal detached")
+}
+
+// revalidationTolerated reports whether one more transient store failure may be
+// tolerated inside streamRevalidationGrace. A healthy revalidation resets the
+// window; a persistent fault eventually fails closed.
+func revalidationTolerated(flaky *time.Time) bool {
+	if flaky.IsZero() {
+		*flaky = time.Now()
+		return true
+	}
+	return time.Since(*flaky) <= streamRevalidationGrace
+}
+
+// workspaceStreamAlive rechecks one live viewer stream. Transient store failures
+// must not disconnect a healthy viewer: they are tolerated for a bounded grace
+// window, then fail closed. A genuine assignment change, stopped box, or
+// revoked/expired token ends the stream on the first observation.
+func (s *Server) workspaceStreamAlive(ctx context.Context, r *http.Request, p Principal, fence string, a fleetAssignment, flaky *time.Time) bool {
+	current, err := s.Store.assignment(ctx, p.AccountID, a.Box.ID)
+	if err != nil {
+		return !errors.Is(err, errLogicalBoxMissing) && revalidationTolerated(flaky)
+	}
+	*flaky = time.Time{}
+	if nativeFence(current) != fence || current.Box.State != "running" {
+		return false
+	}
+	token, ok := authorizationValue(r.Header.Get("Authorization"), "Bearer")
+	if !ok {
+		token, ok = s.browserToken(r)
+	}
+	if !ok {
+		return false
+	}
+	principal, err := s.Store.Authenticate(ctx, token)
+	if err != nil {
+		return !errors.Is(err, errInvalidBearerToken) && revalidationTolerated(flaky)
+	}
+	*flaky = time.Time{}
+	return principal.AccountID == p.AccountID && principal.UserID == p.UserID && principal.Role == "owner"
 }

@@ -91,7 +91,7 @@ func (s *Store) assignment(ctx context.Context, accountID, logicalBoxID string) 
 	var assignment fleetAssignment
 	box, err := scanLogicalBox(s.DB.QueryRowContext(ctx, logicalBoxSelect+" WHERE account_id=$1 AND id=$2", accountID, logicalBoxID))
 	if errors.Is(err, sql.ErrNoRows) {
-		return assignment, fmt.Errorf("logical box not found")
+		return assignment, errLogicalBoxMissing
 	}
 	if err != nil {
 		return assignment, err
