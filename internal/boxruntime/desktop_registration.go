@@ -99,6 +99,9 @@ func registerOpenCodeDesktop(home string) error {
 	if configRoot == "" {
 		configRoot = filepath.Join(home, ".config")
 	}
+	if err := registerOpenCodeTUI(home, configRoot); err != nil {
+		return err
+	}
 	dir := filepath.Join(configRoot, "opencode")
 	path := filepath.Join(dir, "opencode.json")
 	if custom := os.Getenv("OPENCODE_CONFIG"); custom != "" {

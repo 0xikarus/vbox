@@ -431,6 +431,9 @@ func (transport openCodeTestTransport) RoundTrip(request *http.Request) (*http.R
 
 func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
+	originalVisible := openCodeVisibleClient
+	t.Cleanup(func() { openCodeVisibleClient = originalVisible })
+	openCodeVisibleClient = func(context.Context, string, string) (*http.Client, error) { return &http.Client{}, nil }
 	originalCommand, originalProbe, originalSettle, originalTransport := tmuxCommand, openCodeReadyProbe, agentReadySettlePause, http.DefaultTransport
 	t.Cleanup(func() {
 		tmuxCommand, openCodeReadyProbe, agentReadySettlePause, http.DefaultTransport = originalCommand, originalProbe, originalSettle, originalTransport
@@ -455,11 +458,7 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 	http.DefaultTransport = openCodeTestTransport(func(request *http.Request) (*http.Response, error) {
 		body := "{}"
 		switch request.URL.Path {
-		case "/session":
-			encoded, _ := json.Marshal([]map[string]string{{"id": "existing-conversation", "directory": WorkspaceDirectory()}})
-			body = string(encoded)
-		case "/session/status":
-		case "/session/existing-conversation/prompt_async":
+		case "/prompt":
 			if request.Method != http.MethodPost {
 				t.Fatal("expected native prompt submission")
 			}

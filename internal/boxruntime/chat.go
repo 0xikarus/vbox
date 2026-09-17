@@ -14,7 +14,6 @@ import (
 	_ "image/jpeg"
 	_ "image/png"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -424,12 +423,15 @@ func OpenCodeChatPort(session string) int {
 }
 
 var openCodeReadyProbe = func(ctx context.Context, session string) (bool, error) {
-	base := fmt.Sprintf("http://127.0.0.1:%d", OpenCodeChatPort(session))
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/session", nil)
+	client, err := openCodeVisibleClient(ctx, os.Getenv("HOME"), session)
 	if err != nil {
 		return false, err
 	}
-	response, err := (&http.Client{Timeout: time.Second}).Do(request)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://vmbox-tui/health", nil)
+	if err != nil {
+		return false, err
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return false, nil
 	}
@@ -437,18 +439,7 @@ var openCodeReadyProbe = func(ctx context.Context, session string) (bool, error)
 	if response.StatusCode != http.StatusOK {
 		return false, nil
 	}
-	var sessions []struct {
-		Directory string `json:"directory"`
-	}
-	if json.NewDecoder(response.Body).Decode(&sessions) != nil {
-		return false, nil
-	}
-	for _, candidate := range sessions {
-		if candidate.Directory == WorkspaceDirectory() {
-			return true, nil
-		}
-	}
-	return false, nil
+	return true, nil
 }
 
 func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound ChatInbound) error {
@@ -464,63 +455,9 @@ func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound Chat
 	if json.Unmarshal(data, &event) != nil {
 		return fmt.Errorf("invalid inbound chat event")
 	}
-	base := fmt.Sprintf("http://127.0.0.1:%d", OpenCodeChatPort(session))
-	client := &http.Client{Timeout: 10 * time.Second}
-	var sessions []struct {
-		ID        string `json:"id"`
-		Directory string `json:"directory"`
-	}
-	for attempts := 0; ; attempts++ {
-		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/session", nil)
-		response, requestErr := client.Do(request)
-		if requestErr == nil && response.StatusCode == http.StatusOK {
-			requestErr = json.NewDecoder(response.Body).Decode(&sessions)
-		}
-		if response != nil {
-			response.Body.Close()
-		}
-		if requestErr == nil && len(sessions) > 0 {
-			break
-		}
-		if attempts >= 30 {
-			return fmt.Errorf("OpenCode session API unavailable")
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Second):
-		}
-	}
-	sessionID := sessions[0].ID
-	for _, candidate := range sessions {
-		if candidate.Directory == WorkspaceDirectory() {
-			sessionID = candidate.ID
-			break
-		}
-	}
-	for attempts := 0; attempts < 60; attempts++ {
-		request, _ := http.NewRequestWithContext(ctx, http.MethodGet, base+"/session/status", nil)
-		response, requestErr := client.Do(request)
-		statuses := map[string]struct {
-			Type string `json:"type"`
-		}{}
-		if requestErr == nil && response.StatusCode == http.StatusOK {
-			requestErr = json.NewDecoder(response.Body).Decode(&statuses)
-		}
-		if response != nil {
-			response.Body.Close()
-		}
-		if requestErr != nil || statuses[sessionID].Type != "busy" {
-			break
-		}
-		if attempts == 59 {
-			return fmt.Errorf("OpenCode session remained busy; message was not submitted")
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(500 * time.Millisecond):
-		}
+	client, err := openCodeVisibleClient(ctx, home, session)
+	if err != nil {
+		return err
 	}
 	parts := []map[string]any{{"type": "text", "text": inbound.Text}}
 	for _, path := range event.Paths {
@@ -535,7 +472,7 @@ func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound Chat
 		parts = append(parts, map[string]any{"type": "file", "mime": media, "filename": filepath.Base(path), "url": "data:" + media + ";base64," + base64.StdEncoding.EncodeToString(data)})
 	}
 	payload, _ := json.Marshal(map[string]any{"parts": parts})
-	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, base+"/session/"+url.PathEscape(sessionID)+"/prompt_async", bytes.NewReader(payload))
+	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://vmbox-tui/prompt", bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
