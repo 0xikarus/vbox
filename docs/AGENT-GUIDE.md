@@ -122,7 +122,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   while a reply is awaited, and acknowledges an event only after it is stored.
   A late or repeated reply whose message is already answered is stored as its own
   agent message, so the outbox can never head-of-line block. Terminal capture
-  remains a compatibility fallback for clients that do not call the tool.
+  remains a compatibility fallback for clients that do not call the tool. The
+  same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
+  `desktop_type`, `desktop_key`), so an agent can operate the box's computer.
 - A new OpenCode Agent chat passes its first message with native `--prompt`, then
   uses the loopback API for follow-ups. Persistent OpenCode and OpenCode one-shot
   tasks start with `--auto`; explicit client deny rules still take precedence.

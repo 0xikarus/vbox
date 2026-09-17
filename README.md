@@ -104,7 +104,9 @@ explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
 Agent choice requests render as radio buttons or checkboxes. The managed
 `vmbox-desktop` MCP supplies the structured `chat_message`, `chat_reply`, and
-`chat_ask` tools; `chat_message` works with or without a reply reference.
+`chat_ask` tools; `chat_message` works with or without a reply reference. The
+same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
+`desktop_type`, `desktop_key`), so agents can operate the box's computer.
 
 ## Windows setup (WSL)
 
