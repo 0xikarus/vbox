@@ -124,11 +124,60 @@ sibling, and shared CPU/memory/network remain shared. A `uid` box must never be
 described as isolated, even when its private directories are DAC-protected.
 Neither tier is a security sandbox against hostile tenants.
 
-The `namespace` tier is not enabled in production and has not been verified in
-this checkout. There is no disposable worker here, so the live probe has not run.
-Before enabling it, run `tests/shared-worker/probe.sh` and
-`tests/shared-worker/isolation.sh` on an explicitly disposable worker; both must
-pass on that host before the namespace tier is enabled in production.
+### What the namespace tier needs, and what Railway allows
+
+The `namespace` tier is implemented and its sandbox is verified, but it **cannot
+activate on Railway**. Probed on a live production shared worker, every namespace
+primitive is refused, including as root:
+
+```
+Seccomp:  2
+CapEff:   00000000800405fb      # no CAP_SYS_ADMIN (bit 21)
+
+bwrap --unshare-user --unshare-pid ...   Creating new namespace failed: Permission denied
+unshare --user                           Permission denied
+unshare --pid / --mount / --ipc / --uts  Operation not permitted
+```
+
+The kernel permits namespaces (`max_user_namespaces` is large,
+`unprivileged_userns_clone=1`) and `bwrap` is installed; the container runtime's
+seccomp filter and the missing `CAP_SYS_ADMIN` are what block it. So on Railway
+`ProbeCapabilities` reports every primitive unavailable and `SelectIsolation`
+degrades every box to `uid` with a recorded reason. That is the intended,
+honest behavior — but it means **shared workers on Railway provide soft isolation
+only**, and the namespace tier stays inert until the host permits nested
+namespaces (a privileged container, sysbox, or a VM-backed runner).
+
+The sandbox itself is verified, on a host where namespaces are permitted, using
+the argv this code actually generates:
+
+```
+own_tmp=BOX1PRIVATE                                     # the box's own tmp, not a shared one
+visible_pids=5                                          # its own PID namespace
+sibling_secret=/data/workspaces/box2/secret.txt: No such file or directory
+sibling_dir=ls: cannot access '/data/workspaces': No such file or directory
+```
+
+Before enabling the tier on any host, run `tests/shared-worker/probe.sh` and
+`tests/shared-worker/isolation.sh` there; both must pass on that host first.
+
+### Soft isolation: what `uid` actually gives you
+
+This is what a box on a Railway shared worker gets today. Measured on a live
+worker as one box's user against a sibling box:
+
+| | |
+| --- | --- |
+| read the sibling's workspace | denied (`drwx------`, distinct UIDs) |
+| read `/data/.shared-worker` | denied |
+| enumerate sibling workspaces | denied (`/data/workspaces` is `0711`) |
+| see the sibling's processes | **visible** |
+| see the whole container process table | **visible** |
+| read the host root (`/etc`, `/usr`, ...) | **readable** |
+
+Files are separated; processes and the host filesystem are not. Fixing the last
+three rows requires a PID namespace or a `hidepid` remount of `/proc`, both of
+which need `CAP_SYS_ADMIN`. Treat boxes on one shared worker as mutually trusted.
 
 ## Verification
 

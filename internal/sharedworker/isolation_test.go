@@ -86,8 +86,24 @@ func TestNamespaceArgvHidesHostAndKeepsPersistentState(t *testing.T) {
 	mustContainSequence(t, args, "--unshare-pid")
 	mustContainSequence(t, args, "--ro-bind", "/", "/")
 	mustContainSequence(t, args, "--bind", root, "/data")
-	mustContainSequence(t, args, "--bind", "/data/tmp", "/tmp")
-	mustContainSequence(t, args, "--bind", "/data/run", "/run")
+	// Sources must name this box's own directories on the host. bwrap resolves
+	// them against the host root, so a literal "/data/tmp" would be the shared
+	// host path, not this box's tmp inside the sandbox.
+	mustContainSequence(t, args, "--bind", root+"/tmp", "/tmp")
+	mustContainSequence(t, args, "--bind", root+"/run", "/run")
+	mustContainSequence(t, args, "--bind", root+"/tmp", "/var/tmp")
+	for index := 0; index+2 < len(args); index++ {
+		if args[index] != "--bind" {
+			continue
+		}
+		source, destination := args[index+1], args[index+2]
+		if destination == "/data" {
+			continue
+		}
+		if !strings.HasPrefix(source, root+"/") {
+			t.Fatalf("bind source %q for %q is not inside the box root %q", source, destination, root)
+		}
+	}
 	mustContainSequence(t, args, "--tmpfs", "/dev/shm")
 	mustContainSequence(t, args, "--clearenv")
 	mustContainSequence(t, args, "--setenv", "HOME", "/data/home")

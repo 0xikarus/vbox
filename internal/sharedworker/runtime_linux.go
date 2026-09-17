@@ -125,6 +125,23 @@ func (r *LinuxRuntime) Prepare(ctx context.Context, workspace Workspace) error {
 	if err := os.Chmod(root, 0700); err != nil {
 		return err
 	}
+	// The namespace tier binds these directories as sources, and bwrap refuses to
+	// start when a source is missing. The bootstrap below runs inside that very
+	// sandbox, so it cannot be what creates them: they are made here, on the host,
+	// first. The uid tier uses the same paths for TMPDIR and XDG_RUNTIME_DIR, so
+	// this is correct for both tiers.
+	for _, name := range []string{"tmp", "run"} {
+		private := filepath.Join(root, name)
+		if err := os.Mkdir(private, 0700); err != nil && !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		if err := os.Chown(private, workspace.UID, groupID); err != nil {
+			return err
+		}
+		if err := os.Chmod(private, 0700); err != nil {
+			return err
+		}
+	}
 	command, err := r.Command(ctx, workspace, []string{"sh", "-c", `set -eu; umask 077; mkdir -p "$HOME/bin" "$HOME/.local/bin" "$VMBOX_WORKSPACE_ROOT/workspace" "$TMPDIR" "$XDG_RUNTIME_DIR"; if [ ! -e "$HOME/bin/vmbox-runtime" ]; then ln -s "$1" "$HOME/bin/vmbox-runtime"; fi`, "vmbox-shared-prepare", r.Binary})
 	if err != nil {
 		return err

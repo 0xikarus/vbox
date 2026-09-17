@@ -193,9 +193,14 @@ func namespaceArgv(hostRoot string, env []string, chdir string, argv []string) [
 		"--unshare-cgroup-try",
 		"--ro-bind", "/", "/",
 		"--bind", hostRoot, "/data",
-		"--bind", "/data/tmp", "/tmp",
-		"--bind", "/data/run", "/run",
-		"--bind", "/data/tmp", "/var/tmp",
+		// bwrap resolves bind sources against the host root, never against a
+		// bind made earlier in the same invocation, so these name the box's own
+		// directories on the host. Naming "/data/tmp" here would mean the host's
+		// shared /data/tmp: absent on the current layout, which fails every exec,
+		// and a directory shared by every box if it ever existed.
+		"--bind", filepath.Join(hostRoot, "tmp"), "/tmp",
+		"--bind", filepath.Join(hostRoot, "run"), "/run",
+		"--bind", filepath.Join(hostRoot, "tmp"), "/var/tmp",
 		"--dev", "/dev",
 		"--proc", "/proc",
 		"--tmpfs", "/dev/shm",
