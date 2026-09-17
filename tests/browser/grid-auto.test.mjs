@@ -53,3 +53,41 @@ test('Grid fills every running box, prefers desktop, switches viewers and replac
   assert.equal(await p.evaluate(()=>connections.filter(c=>!c.closed).length),0);
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });
+test('grid tiles only offer actions the box state allows',async()=>{
+ const boxes=[{id:'run',name:'Run',state:'running'},{id:'sleep',name:'Sleep',state:'hibernated'},{id:'build',name:'Build',state:'attaching'}];
+ const calls=[];
+ const server=http.createServer(async(req,res)=>{
+  calls.push([req.method,req.url]);res.setHeader('Content-Type','application/json');
+  if(req.url==='/v1/browser-session'){res.statusCode=204;return res.end()}
+  if(req.url==='/v1/whoami')return res.end('{}');
+  if(req.url==='/v1/grid-boxes')return res.end(JSON.stringify(boxes));
+  if(req.url.endsWith('/desktop'))return res.end(JSON.stringify({enabled:false}));
+  if(req.url.endsWith('/sessions/interactive'))return res.end('{"session":"shell"}');
+  if(req.url.endsWith('/sessions/primary'))return res.end('{"session":"shell"}');
+  if(req.url.endsWith('/sessions'))return res.end('{"state":"live","sessions":[{"name":"shell"}]}');
+  const file=req.url==='/grid'?'grid.html':req.url.slice(1);
+  if(['xterm.js','xterm-fit.js','workspace-terminal.js','novnc.js','workspace-desktop.js'].includes(file)){res.setHeader('Content-Type','text/javascript');return res.end('')}
+  try{let data=await readFile('internal/controller/web/'+file,'utf8');res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(data)}catch{res.end('')}
+ });
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',args:['--no-sandbox']});
+ try{
+  const p=await browser.newPage();
+  await p.evaluateOnNewDocument(()=>{
+   window.connections=[];
+   const attach=(kind,id,cb,o)=>{const c={kind,id,drop:o.onDisconnect,closed:false};connections.push(c);o.root.textContent=kind+' '+id;cb('Connected');return()=>{c.closed=true}};
+   window.openWorkspaceDesktop=(id,cb,o)=>attach('desktop',id,cb,o);
+   window.openWorkspaceTerminal=(id,s,cb,o)=>attach('terminal',id,s,cb,o);
+  });
+  await p.goto('http://127.0.0.1:'+server.address().port+'/grid');
+  await p.waitForFunction(()=>document.querySelectorAll('.tile').length>=2);
+  const action=sel=>p.$eval(sel,e=>({hidden:e.hidden,disabled:e.disabled,text:e.textContent}));
+  await p.select('.tile:nth-child(2) header label:first-of-type select','sleep');
+  await p.waitForFunction(()=>document.querySelector('.tile:nth-child(2) header button:first-of-type').textContent==='Resume');
+  assert.deepEqual(await action('.tile:nth-child(2) header button:first-of-type'),{hidden:false,disabled:false,text:'Resume'});
+  await p.select('.tile:nth-child(2) header label:first-of-type select','build');
+  await p.waitForFunction(()=>document.querySelector('.tile:nth-child(2) header button:first-of-type').hidden);
+  assert.deepEqual(await action('.tile:nth-child(2) header button:first-of-type'),{hidden:true,disabled:true,text:'Resume'});
+  assert(!calls.some(([,url])=>url.includes('/allocate')));
+ }finally{await browser.close();await new Promise(r=>server.close(r))}
+});

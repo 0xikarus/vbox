@@ -39,7 +39,7 @@ function showWorkspaceView(view){
  $('#desktop-tab').setAttribute('aria-selected',String(desktop));
  $('#terminal-tab').setAttribute('aria-selected',String(!desktop));
 }
-function showInteractiveWorkspace(){$('#workspace').hidden=false;$('#workspace-tabs').hidden=false;$('#hibernate').hidden=false}
+function showInteractiveWorkspace(){$('#workspace').hidden=false;$('#workspace-tabs').hidden=false}
 async function ensureTerminal(version=epoch){
  if(!workspaceCurrent(version)||terminalAttached)return terminalAttached;
  if(terminalBusy)return terminalBusy;
@@ -172,15 +172,60 @@ $('#resource-form').onsubmit=async event=>{
  }catch(e){if(workspaceCurrent(snapshot.version))$('#resource-status').textContent=e.message+' Reload limits before retrying.'}
  finally{form.querySelector('button').disabled=false;$('#load-resources').disabled=false}
 };
-function state(b){$('#box-settings').hidden=workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ');$('#connect').textContent=b.state==='running'?'Reconnect viewers':'Resume box';$('#lifecycle-note').textContent=b.state==='running'?'Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.':'This page does not start the box. Resume box explicitly requests compute; workspace files remain saved.'}
-function showSleepingWorkspace(){
- stopStats();$('#workspace').hidden=false;$('#workspace-tabs').hidden=true;$('#terminal').hidden=true;$('#desktop').hidden=true;$('#hibernate').hidden=true;$('#session').textContent='Saved workspace. Resume the box to connect.';
+const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+// Only offer an action the box state can actually satisfy: never connect or
+// resume a box that is still being created or is mid-transition.
+function boxPhase(state){if(state==='running')return 'running';if(state==='failed')return 'failed';if(state==='reserved'||state==='attaching')return 'creating';if(state==='deleting')return 'deleting';if(state==='hibernating'||state==='draining')return 'transitioning';return 'stopped'}
+let deletePending=false;
+function statusLine(b){const phase=boxPhase(b.state);const hint=phase==='creating'?'being created; connect becomes available when it is running':phase==='transitioning'?'transitioning; this page updates automatically':phase==='deleting'?'being deleted':'';return [b.state,b.restorationState,b.failureReason,hint].filter(Boolean).join(' · ')}
+function applyBoxState(b){
+ boxSummary=b;renderStats();
+ $('#name').textContent=b.name;document.title=b.name+' · vmbox';
+ const phase=boxPhase(b.state),owner=workspaceRole==='owner',connectable=phase==='running'||phase==='stopped'||phase==='failed';
+ $('#status').textContent=statusLine(b);
+ $('#connect').hidden=!connectable;
+ $('#connect').textContent=phase==='running'?'Reconnect viewers':'Resume box';
+ $('#hibernate').hidden=!(phase==='running'&&owner);
+ $('#box-settings').hidden=!(phase==='running'&&owner);
+ $('#delete-box').hidden=!owner||!(phase==='running'||phase==='stopped'||phase==='failed');
+ $('#delete-box').disabled=deletePending||phase==='deleting';
+ $('#lifecycle-note').textContent={
+  running:'Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.',
+  stopped:'This page does not start the box. Resume box explicitly requests compute; workspace files remain saved.',
+  failed:'This box failed to start. Read the reason above, then resume to retry or delete the box and its workspace.',
+  creating:'This box is being created. This page updates automatically; connecting becomes available when it is running.',
+  transitioning:'This box is transitioning. This page updates automatically.',
+  deleting:'This box is being deleted. Its workspace volume will be removed.'
+ }[phase];
+}
+function showSleepingWorkspace(message){
+ stopStats();$('#workspace').hidden=false;$('#workspace-tabs').hidden=true;$('#terminal').hidden=true;$('#desktop').hidden=true;$('#hibernate').hidden=true;
+ $('#session').textContent=message||'Saved workspace. Resume the box to connect.';
+}
+// Watch a box that is already in motion (creating, hibernating, draining,
+// deleting) instead of offering a resume action it cannot honour.
+async function observeBox(box,version){
+ const deadline=Date.now()+180000;
+ for(;;){
+  if(version!==epoch)return;
+  const phase=boxPhase(box.state);
+  if(phase==='running'){startStats();await openPreferredView(box,version);return}
+  if(phase==='stopped'){showSleepingWorkspace();return}
+  if(phase==='failed'){showSleepingWorkspace(box.failureReason?('Box failed: '+box.failureReason):'Box failed to start. Resume to retry or delete it.');return}
+  $('#status').textContent=statusLine(box);
+  if(Date.now()>deadline)throw Error('Still '+box.state+'. This page stopped watching; reload to check again.');
+  await new Promise(r=>setTimeout(r,2000));if(version!==epoch)return;
+  try{box=await api(bp)}catch(err){if(phase==='deleting'){location.assign('/');return}throw err}
+  if(version!==epoch)return;applyBoxState(box);
+ }
 }
 async function connect(resume=false){
  if(busy)return;resetBoxSettings();busy=true;const version=++epoch;$('#connect').disabled=true;$('#error').textContent='';
  try{
-  let box=await api(bp);if(version!==epoch)return;state(box);
-  if(box.state!=='running'){
+  let box=await api(bp);if(version!==epoch)return;applyBoxState(box);
+  const phase=boxPhase(box.state);
+  if(phase==='running'){startStats();await openPreferredView(box,version);return}
+  if(phase==='stopped'||phase==='failed'){
    if(!resume){showSleepingWorkspace();return}
    if(!allocation)allocation=await api(bp+'/allocate','POST',{leaseOwner:'web'},{'Idempotency-Key':allocationKey});
    const deadline=Date.now()+180000;
@@ -192,15 +237,32 @@ async function connect(resume=false){
     await new Promise(r=>setTimeout(r,1500));if(version!==epoch)return;
     allocation=await api('/v1/allocations/'+encodeURIComponent(allocation.requestId));
    }
-   box=await api(bp);if(version!==epoch)return;state(box);
+   box=await api(bp);if(version!==epoch)return;applyBoxState(box);
+   startStats();await openPreferredView(box,version);return;
   }
-  startStats();await openPreferredView(box,version);
+  await observeBox(box,version);
  }catch(e){if(version===epoch)$('#error').textContent=e.message}finally{busy=false;$('#connect').disabled=false}
 }
 $('#connect').onclick=()=>void connect(true);
 $('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){$('#error').textContent=e.message}};
 $('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#login').hidden=false;$('#status').textContent='Logged out. The box was not stopped.'}catch(e){$('#error').textContent=e.message}};
-$('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;stopStats();closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';showSleepingWorkspace();$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
+$('#hibernate').onclick=async()=>{
+ if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;
+ const version=++epoch;stopStats();closeTerminal();closeDesktop();allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#terminal-screen').replaceChildren();busy=true;
+ try{const box=await api(bp+'/hibernate','POST',{});if(version!==epoch)return;applyBoxState(box);await observeBox(box,version)}
+ catch(e){if(version===epoch)$('#error').textContent=e.message}
+ finally{busy=false}
+};
+// Owner-only, and only offered for boxes that can actually be deleted.
+$('#delete-box').innerHTML=TRASH_ICON;
+$('#delete-box').onclick=async()=>{
+ if(deletePending||busy||!boxSummary)return;
+ const box=boxSummary;
+ if(!confirm('Delete box "'+box.name+'" and its workspace volume? Running processes will stop and all files in the volume will be permanently deleted. This cannot be undone.'))return;
+ const version=epoch;deletePending=true;$('#delete-box').disabled=true;$('#error').textContent='';
+ try{await api(bp+'/volume','DELETE',{confirmation:box.name});if(version!==epoch)return;deletePending=false;await connect(false)}
+ catch(e){if(version===epoch){deletePending=false;$('#delete-box').disabled=false;$('#error').textContent=e.message}}
+};
 window.addEventListener('pagehide',()=>{epoch++;stopStats();closeTerminal();closeDesktop()});
 (async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){$('#error').textContent=e.message}})();
 
