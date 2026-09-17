@@ -344,6 +344,16 @@ func boxTaskRow(id, state string) *sqlmock.Rows {
 	return boxTaskRowWithSession(id, state, "vmbox")
 }
 
+func boxMessageRow(id, taskID, userID, direction, body, state string) *sqlmock.Rows {
+	now := time.Now().UTC()
+	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key"}).
+		AddRow(id, taskID, userID, direction, body, state, now, now, "")
+}
+
+func emptyBoxMessageRows() *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key"})
+}
+
 func boxTaskRowWithSession(id, state, session string) *sqlmock.Rows {
 	now := time.Now().UTC()
 	return sqlmock.NewRows([]string{
@@ -357,14 +367,13 @@ func boxTaskRowWithSession(id, state, session string) *sqlmock.Rows {
 // messages into the channel of a dead, previously active session.
 func TestDirectMessageIgnoresActiveTaskFromReplacedSession(t *testing.T) {
 	store, mock := testStore(t)
-	now := time.Now().UTC()
 	principal := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
 
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
 	mock.ExpectQuery("FROM box_notes").WithArgs("account-a", "box-1", "key").WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "body", "created_at"}))
 	mock.ExpectQuery("FROM box_messages m JOIN box_tasks").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}))
+		WillReturnRows(emptyBoxMessageRows())
 	mock.ExpectQuery("SELECT COALESCE\\(metadata").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"session", "agent"}).AddRow("current-claude", "claude"))
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRow(v1.LogicalBoxRunning))
@@ -385,8 +394,7 @@ func TestDirectMessageIgnoresActiveTaskFromReplacedSession(t *testing.T) {
 		WithArgs("account-a", "task-1", "user-a", "user").
 		WillReturnRows(boxTaskRowWithSession("task-1", "queued", "current-claude"))
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
-			AddRow("message-1", "task-1", "user-a", "user", "hello", "queued", now, now))
+		WillReturnRows(boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "queued"))
 	mock.ExpectQuery("FROM box_message_images").WithArgs("account-a", "message-1").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "ordinal", "media_type"}))
 

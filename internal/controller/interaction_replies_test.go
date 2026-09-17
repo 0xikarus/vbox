@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 )
@@ -128,11 +127,9 @@ func TestUpsertAgentBoxMessageStreamsAndFinalizesCorrelatedReply(t *testing.T) {
 
 func TestAgentBoxMessageRestoresStreamingReplyAfterWatcherRestart(t *testing.T) {
 	store, mock := testStore(t)
-	now := time.Now().UTC()
 	mock.ExpectQuery("FROM box_messages WHERE account_id").
 		WithArgs("account-a", "agent-reply:message-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
-			AddRow("reply-1", "task-1", "", "agent", "partial", "streaming", now, now))
+		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "partial", "streaming"))
 	message, found, err := store.AgentBoxMessage(context.Background(), "account-a", "message-1")
 	if err != nil || !found || message.Text != "partial" || message.State != "streaming" {
 		t.Fatalf("message=%+v found=%v err=%v", message, found, err)
@@ -144,13 +141,11 @@ func TestAgentBoxMessageRestoresStreamingReplyAfterWatcherRestart(t *testing.T) 
 
 func TestUnansweredBoxMessagesExcludesCapturedReplies(t *testing.T) {
 	store, mock := testStore(t)
-	now := time.Now().UTC()
 	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").
 		WithArgs("account-a", "task-1", "user-a", "user").
 		WillReturnRows(boxTaskRow("task-1", "active"))
 	mock.ExpectQuery("reply.state='delivered'").WithArgs("account-a", "task-1").
-		WillReturnRows(sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at"}).
-			AddRow("message-1", "task-1", "user-a", "user", "hello", "delivered", now, now))
+		WillReturnRows(boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "delivered"))
 	messages, err := store.UnansweredBoxMessages(context.Background(), Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}, "task-1")
 	if err != nil || len(messages) != 1 || messages[0].ID != "message-1" {
 		t.Fatalf("messages=%+v err=%v", messages, err)

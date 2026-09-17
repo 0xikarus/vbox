@@ -103,7 +103,8 @@ sessions auto-approve permission asks by default unless their configuration
 explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
 Agent choice requests render as radio buttons or checkboxes. The managed
-`vmbox-desktop` MCP supplies the structured `chat_reply` and `chat_ask` tools.
+`vmbox-desktop` MCP supplies the structured `chat_message`, `chat_reply`, and
+`chat_ask` tools; `chat_message` works with or without a reply reference.
 
 ## Windows setup (WSL)
 

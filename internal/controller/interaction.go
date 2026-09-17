@@ -286,6 +286,9 @@ func (s *Server) reconcileActiveTask(ctx context.Context, accountID string, task
 	if err != nil {
 		return err
 	}
+	if err := s.drainAgentChat(ctx, accountID, task); err != nil {
+		s.Logger.Warn("agent chat drain failed", "task", task.ID, "error", err)
+	}
 	missing, err := taskSessionMissing(ctx, prov, assignment.Slot.ServiceID, task.Session)
 	if err != nil || !missing {
 		return err
@@ -372,6 +375,13 @@ func (s *Server) listBoxMessagesHandler(w http.ResponseWriter, r *http.Request, 
 	task, err := s.Store.BoxTask(context.WithoutCancel(r.Context()), p, taskID)
 	if err != nil || task.State != "active" || task.Agent == "shell" {
 		return
+	}
+	if s.claimChatDrain(p.AccountID + ":" + task.ID) {
+		drainCtx, cancelDrain := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+		if err := s.drainAgentChat(drainCtx, p.AccountID, task); err != nil {
+			s.Logger.Warn("agent chat drain failed", "task", taskID, "error", err)
+		}
+		cancelDrain()
 	}
 	unanswered, err := s.Store.UnansweredBoxMessages(context.WithoutCancel(r.Context()), p, taskID)
 	if err != nil {

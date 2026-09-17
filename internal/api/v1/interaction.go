@@ -66,6 +66,7 @@ type BoxMessage struct {
 	TaskID    string              `json:"taskId"`
 	UserID    string              `json:"userId,omitempty"`
 	Direction string              `json:"direction"`
+	ChatKey   string              `json:"chatKey,omitempty"`
 	Text      string              `json:"text"`
 	State     string              `json:"state"`
 	CreatedAt time.Time           `json:"createdAt"`

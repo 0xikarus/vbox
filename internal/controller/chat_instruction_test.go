@@ -10,7 +10,7 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 	if !strings.Contains(got, "vmbox Agent chat message m1") {
 		t.Fatalf("default envelope must carry the message id: %q", got)
 	}
-	for _, fragment := range []string{"chat_reply(m1", "chat_ask(m1", "PNG/JPEG/GIF"} {
+	for _, fragment := range []string{"chat_message(text, replyTo=\"m1\")", "chat_ask(question, choices, multiple, replyTo=\"m1\")", "PNG/JPEG/GIF"} {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("default envelope must mention %q: %q", fragment, got)
 		}
@@ -26,7 +26,7 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 func TestChatInstructionTemplateOverride(t *testing.T) {
 	s := &Server{ChatInstructionTemplate: "\nchat %s"}
 	got := s.chatInstruction("abc", "claude")
-	if !strings.Contains(got, "chat abc") || strings.Contains(got, "chat_reply") {
+	if !strings.Contains(got, "chat abc") || strings.Contains(got, "chat_message") {
 		t.Fatalf("override must replace the default envelope: %q", got)
 	}
 }

@@ -395,7 +395,7 @@ func (s *Store) PendingGroupDeliveries(ctx context.Context) ([]pendingGroupDeliv
 }
 
 func (s *Store) DirectBoxMessageByKey(ctx context.Context, p Principal, logicalBoxID, key string) (v1.BoxTask, v1.BoxMessage, bool, error) {
-	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id JOIN logical_boxes b ON b.id=t.logical_box_id AND b.account_id=t.account_id WHERE m.account_id=$1 AND t.logical_box_id=$2 AND m.idempotency_key IN ($3,$4) AND (b.owner_user_id=$5 OR $6='owner') ORDER BY m.created_at LIMIT 1`, p.AccountID, logicalBoxID, key+":task:initial", key+":message", p.UserID, p.Role))
+	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,'') FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id JOIN logical_boxes b ON b.id=t.logical_box_id AND b.account_id=t.account_id WHERE m.account_id=$1 AND t.logical_box_id=$2 AND m.idempotency_key IN ($3,$4) AND (b.owner_user_id=$5 OR $6='owner') ORDER BY m.created_at LIMIT 1`, p.AccountID, logicalBoxID, key+":task:initial", key+":message", p.UserID, p.Role))
 	if errors.Is(err, sql.ErrNoRows) {
 		return v1.BoxTask{}, v1.BoxMessage{}, false, nil
 	}
@@ -407,6 +407,6 @@ func (s *Store) DirectBoxMessageByKey(ctx context.Context, p Principal, logicalB
 }
 
 func (s *Store) AppendSystemBoxMessage(ctx context.Context, accountID, taskID, text, key string) error {
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,'system',$4,false,'delivered',$5) ON CONFLICT(account_id,idempotency_key) DO NOTHING`, uuid(), accountID, taskID, text, key)
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,chat_key) VALUES($1,$2,$3,'system',$4,false,'delivered',$5,$6) ON CONFLICT(account_id,idempotency_key) DO NOTHING`, uuid(), accountID, taskID, text, key, chatMessageKey())
 	return err
 }

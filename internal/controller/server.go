@@ -36,6 +36,7 @@ type Server struct {
 	browserSessions      map[[32]byte]browserSession
 	webStreams           int
 	replyWatches         map[string]struct{}
+	chatDrains           map[string]time.Time
 	PublicURL            string
 	DefaultImage         string
 	// ChatInstructionTemplate overrides the agent-chat envelope appended to

@@ -69,11 +69,11 @@ func waitForCodexThreadNaming(ctx context.Context) error {
 }
 
 func chatEventID() (string, error) {
-	value := make([]byte, 16)
+	value := make([]byte, 6)
 	if _, err := rand.Read(value); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%020d-%s", time.Now().UTC().UnixNano(), hex.EncodeToString(value)), nil
+	return hex.EncodeToString(value), nil
 }
 
 func chatSession(ctx context.Context) (string, error) {

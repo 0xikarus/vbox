@@ -27,7 +27,7 @@ func TestCreateBoxTaskRetriesConcurrentSerializableUpdate(t *testing.T) {
 	mock.ExpectQuery(`INSERT INTO box_tasks`).WithArgs(insertArgs...).WillReturnRows(sqlmock.NewRows([]string{
 		"id", "logical_box_id", "box_name", "user_id", "requested_role", "agent", "session_name", "prompt", "state", "failure_reason", "created_at", "updated_at",
 	}).AddRow("task", "box", "test-box", "user", "owner", "codex", "codex-test", "test prompt", "queued", "", now, now))
-	mock.ExpectExec(`INSERT INTO box_messages`).WithArgs(sqlmock.AnyArg(), "account", "task", "user", "test prompt", "message-key:task:initial").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`INSERT INTO box_messages`).WithArgs(sqlmock.AnyArg(), "account", "task", "user", "test prompt", "message-key:task:initial", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account", "user", "task", "box", "codex").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
