@@ -141,6 +141,7 @@
         continue;
       }
       const rendered = block(fragment, lines, i);
+      fragment.append(rendered[0]);
       i = rendered[1];
     }
     const root = document.createElement('div');

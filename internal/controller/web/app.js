@@ -23,7 +23,7 @@ function boxPlacement(box){
 }
 function updateBoxPlacements(boxes){
  const byID=new Map(boxes.map(box=>[box.id,box]));
- for(const row of document.querySelectorAll('#box-list [data-box-id]')){const box=byID.get(row.dataset.boxId);if(box)row.querySelector('.box-placement').textContent=boxPlacement(box)}
+ for(const row of document.querySelectorAll('#box-list [data-box-id]')){const box=byID.get(row.dataset.boxId);if(box){const cell=row.querySelector('.box-placement'),text=boxPlacement(box);cell.textContent=text;cell.title=text}}
 }
 function renderPoolChoices(providers){
  for(const selector of ['#create-pool','#capacity-pool']){
@@ -53,6 +53,9 @@ async function api(path,method='GET',body,headers={}){
 function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';try{await fn(e)}catch(err){$('#error').textContent=err.message}}}
 function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
 function tableText(text){const t=text??'—',n=node('span',t);n.className=t==='—'?'table-text muted':'table-text';n.title=String(t);return n}
+// Secondary cell values (restoration state, failure reason) read as a dimmed
+// note under the primary value instead of running into it.
+function tableNote(text){const n=tableText(text);n.className='table-text state-note';return n}
 function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
@@ -146,8 +149,8 @@ function renderBoxes(boxes){
   select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);
   const name=node('td',''),link=node(b.state==='deleting'?'span':'a',b.name);link.className='table-text';link.title=b.name;if(b.state!=='deleting')link.href='/boxes/'+encodeURIComponent(b.id);name.append(link);
   status.replaceChildren(tableText(startingBoxes.has(b.id)&&b.state!=='running'?'starting':b.state));
-  if(b.restorationState)status.append(tableText(b.restorationState));
-  if(b.failureReason)status.append(tableText(b.failureReason));
+  if(b.restorationState)status.append(tableNote(b.restorationState));
+  if(b.failureReason)status.append(tableNote(b.failureReason));
   if(boxPhase(b.state)==='stopped'||boxPhase(b.state)==='failed'){
    const resume=button('Resume',async()=>{
     if(startingBoxes.has(b.id))return;
@@ -157,8 +160,8 @@ function renderBoxes(boxes){
     const version=epoch;const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)
    });resume.setAttribute('aria-label','Resume box '+b.name);actions.append(resume);
   }
-  actions.append(button('Instructions…',()=>openBoxInstructions(b)));
-  if(ownerTools)actions.append(button('Credentials…',()=>openBoxCredentials(b)));
+  const instructions=button('Instructions…',()=>openBoxInstructions(b));instructions.setAttribute('aria-label','Instructions for box '+b.name);actions.append(instructions);
+  if(ownerTools){const credentials=button('Credentials…',()=>openBoxCredentials(b));credentials.setAttribute('aria-label','Credentials for box '+b.name);actions.append(credentials)}
   const remove=trashButton('Delete box '+b.name,async()=>{
    if(deletingBoxes.has(b.id)||!confirm('Delete box "'+b.name+'" and its workspace volume? Running processes will stop and all files in the volume will be permanently deleted. This cannot be undone. Shared fleet services and other boxes are kept.'))return;
    const version=epoch;deletingBoxes.add(b.id);remove.disabled=true;remove.title='requesting deletion…';
@@ -166,7 +169,7 @@ function renderBoxes(boxes){
    catch(err){if(version===epoch){remove.disabled=false;remove.title=remove.getAttribute('aria-label');throw err}}
    finally{deletingBoxes.delete(b.id)}
   });remove.disabled=TRANSIENT_STATES.has(b.state)||deletingBoxes.has(b.id);actions.prepend(remove);
-  const placement=node('td',boxPlacement(b));placement.className='box-placement';const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,placement,cell,cli,actions);table.append(row);
+  const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,placement,cell,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
 }
@@ -176,14 +179,14 @@ function renderProfiles(identity,profiles){
  for(const app of ['claude','codex','opencode','github']){
   const entries=profiles.filter(p=>p.application===app),branch=document.createElement('details');branch.open=true;branch.append(node('summary',app+' ('+entries.length+')'));const list=document.createElement('ul');
   for(const p of entries){const item=node('li',p.name+' · saved '+p.createdAt+' ');item.append(button('Delete',async()=>{if(!confirm('Delete saved profile '+app+' / '+p.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(p.name),'DELETE');await refresh()}));list.append(item)}if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
-  const label=node('label',app+' login '),select=document.createElement('select');select.name=app;const empty=node('option','None');empty.value='';select.append(empty);
+  const label=node('label',app+' login ');label.className='field';const select=document.createElement('select');select.name=app;const empty=node('option','None');empty.value='';select.append(empty);
   for(const p of entries){const option=node('option',p.name);option.value=p.name;select.append(option)}if(entries.some(p=>p.name===selected[app]))select.value=selected[app];label.append(select);choices.append(label);
  }$('#profile-tree').replaceChildren(tree);
 }
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
  ownerTools=caps.providerEdits;
- document.querySelectorAll('[data-owner]').forEach(n=>n.hidden=!ownerTools);
+ document.querySelectorAll('[data-owner]:not(.modal)').forEach(n=>n.hidden=!ownerTools);
  applyInstructionPresets(instructionList);
  renderBoxes(boxes);
  if(!ownerTools)return;
@@ -267,14 +270,18 @@ $('#instruction-file').addEventListener('change',action(async()=>{
  $('#instruction-editor').open=true;renderInstructionPreview();status.textContent='Loaded '+file.name+'. Name the preset and save.';
  input.value='';
 }));
+// Preset problems belong beside the editor, not in the page-wide error banner.
 $('#instruction-form').addEventListener('submit',action(async e=>{
  e.preventDefault();const f=e.target.elements,name=f.name.value.trim(),markdown=f.markdown.value,status=$('#instruction-status');
- if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name))throw Error('Preset names use 1–64 letters, digits, dots, underscores or hyphens and start with a letter or digit.');
- if(markdown.length>65536)throw Error('Markdown is limited to 64 KiB.');
- if(!markdown.trim())throw Error('Enter the Markdown instructions to save.');
- const saved=await api('/v1/instruction-presets/'+encodeURIComponent(name),'PUT',{markdown});
- status.textContent='Saved '+name+' · r'+saved.preset.revision+' ('+saved.preset.sizeBytes+' bytes).';
- e.target.reset();$('#instruction-preview').hidden=true;await refresh();
+ status.textContent='';
+ try{
+  if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name))throw Error('Preset names use 1–64 letters, digits, dots, underscores or hyphens and start with a letter or digit.');
+  if(markdown.length>65536)throw Error('Markdown is limited to 64 KiB.');
+  if(!markdown.trim())throw Error('Enter the Markdown instructions to save.');
+  const saved=await api('/v1/instruction-presets/'+encodeURIComponent(name),'PUT',{markdown});
+  status.textContent='Saved '+name+' · r'+saved.preset.revision+' ('+saved.preset.sizeBytes+' bytes).';
+  e.target.reset();$('#instruction-preview').hidden=true;await refresh();
+ }catch(err){status.textContent=err.message}
 }));
 function renderCreateInstructionChoice(){
  const select=$('#create-instructions'),previous=select.value;select.replaceChildren();
