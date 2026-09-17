@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>vmbox grid</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/xterm.css"><link rel="stylesheet" href="/grid.css">
-<nav><a href="/">Controller</a> · <button id="logout" hidden>Log out</button></nav>
+<header class="topbar"><span class="brand">vmbox</span><nav><a href="/">controller</a> · <a href="/grid" class="on">grid</a> <button id="logout" class="linkbtn" hidden>log out</button></nav></header>
 <h1>Grid</h1><p>Running interactive boxes appear automatically. Desktop is preferred when enabled; choose TMUX in any tile. Unavailable boxes are replaced automatically. Sleeping boxes stay asleep.</p>
 <form id="login" hidden><label>Controller token <input name="token" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
 <p id="error" role="alert"></p>

@@ -49,12 +49,13 @@ async function api(path,method='GET',body,headers={}){
 }
 function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';try{await fn(e)}catch(err){$('#error').textContent=err.message}}}
 function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
-function tableText(text){const n=node('span',text??'—');n.className='table-text';n.title=String(text??'—');return n}
-function button(text,fn){const b=node('button',text);b.type='button';b.addEventListener('click',action(fn));return b}
+function tableText(text){const t=text??'—',n=node('span',t);n.className=t==='—'?'table-text muted':'table-text';n.title=String(t);return n}
+function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 // Restore same-tab navigation without storing credentials in JavaScript storage.
 async function restoreLogin(){try{await api('/v1/browser-session');await refresh();$('#login').hidden=true;$('#app').hidden=false}catch{}}
 window.addEventListener('DOMContentLoaded',restoreLogin);
-function dataTable(headers,rows){const table=document.createElement('table'),head=document.createElement('tr');for(const h of headers)head.append(node('th',h));table.append(head);for(const values of rows){const row=document.createElement('tr');for(const value of values){const cell=node('td');cell.append(tableText(value));row.append(cell)}table.append(row)}return table}
+function dataTable(headers,rows){const wrap=node('div');wrap.className='table-wrap';const table=node('table');table.className='markets';const head=node('tr');for(const h of headers)head.append(node('th',h));table.append(head);for(const values of rows){const row=node('tr');row.className='row';for(const value of values){const cell=node('td');cell.append(tableText(value));row.append(cell)}table.append(row)}wrap.append(table);return wrap}
+function kpi(pairs){const k=node('div');k.className='kpi';for(const [label,value] of pairs){const s=node('span',label+' ');s.append(node('b',String(value)));k.append(s)}return k}
 function rawDetails(value){const d=document.createElement('details');d.append(node('summary','Technical details · JSON'),node('pre',JSON.stringify(value,null,2)));return d}
 let locationTarget=null,locationLoading=false,locationSaving=false;
 function resetLocation(){locationTarget=null;$('#location-form').hidden=true;$('#location-status').textContent='';}
@@ -110,11 +111,11 @@ function renderWorkerCapacity(){
  const root=$('#capacity');root.replaceChildren();
  const workers=fleetSnapshots.reduce((total,fleet)=>total+(fleet.error?0:fleet.provider==='shared-worker'?(fleet.slots?.length?1:0):(fleet.slots?.length||0)),0);
  const slots=fleetSnapshots.reduce((total,fleet)=>total+(fleet.actualSlots||0),0);
- root.append(node('p',`Loaded capacity: ${workers} workers · ${slots} compute slots. Shared slots compete for their host’s CPU and memory.`));
+ root.append(kpi([['Loaded capacity:',workers+' workers · '+slots+' compute slots']]),node('p','Shared slots compete for their host’s CPU and memory.'));
  for(const fleet of fleetSnapshots){
   root.append(node('h3',poolLabel(fleet.provider,fleet.providerCredential)));
   if(fleet.error){root.append(node('p','Capacity unavailable: '+fleet.error));continue}
-  root.append(node('p',`Desired: ${fleet.desiredSlots} · Free: ${fleet.freeSlots} · Occupied: ${fleet.occupiedSlots} · Unhealthy: ${fleet.unhealthySlots}`));
+  root.append(kpi([['Desired:',fleet.desiredSlots],['Free:',fleet.freeSlots],['Occupied:',fleet.occupiedSlots],['Unhealthy:',fleet.unhealthySlots]]));
   root.append(dataTable(['Worker','Slot','State','Health','Location','Box'],(fleet.slots||[]).map(slot=>[fleet.provider==='shared-worker'?fleet.providerCredential:(slot.serviceName||slot.serviceId||slot.id||'—'),slot.ordinal,slot.state,slot.health,slot.region,slot.logicalBoxName||'—'])));
   const detached=fleet.detachedLogicalBoxes||[];if(detached.length)root.append(node('h3','Detached workspaces'),dataTable(['Box','State'],detached.map(box=>[box.name,box.state])));
  }
@@ -129,9 +130,10 @@ const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider
 function renderBoxes(boxes){
  clearTimeout(boxRefreshTimer);
  for(const id of startingBoxes){const box=boxes.find(b=>b.id===id);if(!box||box.state==='running'||box.state==='failed'||box.state==='deleting'||box.state==='hibernated'&&box.failureReason)startingBoxes.delete(id)}
- const table=document.createElement('table'),head=document.createElement('tr');['Name','State','Worker / slot','Default agent','CLI','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
+ const wrap=node('div');wrap.className='table-wrap';
+ const table=document.createElement('table');table.className='markets';const head=document.createElement('tr');['Name','State','Worker / slot','Default agent','CLI','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
  for(const b of boxes){
-  const row=document.createElement('tr'),cell=document.createElement('td'),select=document.createElement('select'),status=node('td',b.state),actions=document.createElement('td');row.dataset.boxId=b.id;
+  const row=document.createElement('tr');row.className='row';const cell=document.createElement('td'),select=document.createElement('select'),status=node('td',b.state),actions=document.createElement('td');row.dataset.boxId=b.id;
   for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;select.disabled=b.state==='deleting'||deletingBoxes.has(b.id);
   select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);
   const name=node('td',''),link=node(b.state==='deleting'?'span':'a',b.name);link.className='table-text';link.title=b.name;if(b.state!=='deleting')link.href='/boxes/'+encodeURIComponent(b.id);name.append(link);
@@ -142,9 +144,9 @@ function renderBoxes(boxes){
    try{await api(bp(b.id)+'/volume','DELETE',{confirmation:b.name});const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}
    catch(err){if(version===epoch){remove.disabled=false;remove.textContent='Delete';throw err}}
    finally{deletingBoxes.delete(b.id)}
-  });remove.setAttribute('aria-label','Delete box '+b.name);remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.append(remove);
+  });remove.setAttribute('aria-label','Delete box '+b.name);remove.classList.add('danger');remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.append(remove);
   const placement=node('td',boxPlacement(b));placement.className='box-placement';const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,placement,cell,cli,actions);table.append(row);
- }$('#box-list').replaceChildren(table);
+ }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(startingBoxes.size||boxes.some(b=>['attaching','reserved','hibernating','deleting'].includes(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
 }
 function renderProfiles(identity,profiles){
