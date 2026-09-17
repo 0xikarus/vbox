@@ -15,8 +15,40 @@ import (
 )
 
 type LinuxRuntime struct {
-	Root   string
-	Binary string
+	Root      string
+	Binary    string
+	Isolation IsolationStatus
+}
+
+// ConfigureIsolation probes the host when a namespace tier is requested and
+// records the tier actually achieved. It must run before Open so retained
+// workspaces are recovered with the same environment they will execute in.
+func (r *LinuxRuntime) ConfigureIsolation(ctx context.Context, mode IsolationMode) IsolationStatus {
+	if mode == "" {
+		mode = IsolationModeUID
+	}
+	if mode == IsolationModeUID {
+		r.Isolation = SelectIsolation(mode, Capabilities{})
+		return r.Isolation
+	}
+	r.Isolation = SelectIsolation(mode, ProbeCapabilities(ctx))
+	return r.Isolation
+}
+
+// IsolationStatus reports the resolved tier. An unconfigured runtime reports the
+// legacy uid tier rather than implying isolation.
+func (r *LinuxRuntime) IsolationStatus() IsolationStatus {
+	if r.Isolation.Tier == "" {
+		return SelectIsolation(IsolationModeUID, Capabilities{})
+	}
+	return r.Isolation
+}
+
+func (r *LinuxRuntime) isolationTier() IsolationTier { return r.IsolationStatus().Tier }
+
+// Isolated reports whether the namespace tier is in force.
+func (r *LinuxRuntime) Isolated() bool {
+	return r.isolationTier() == IsolationTierNamespace
 }
 
 func validateWorkspace(workspace Workspace) error {
@@ -116,20 +148,33 @@ func (r *LinuxRuntime) Command(ctx context.Context, workspace Workspace, argv []
 		return nil, err
 	}
 	root := r.workspaceRoot(workspace)
-	home := filepath.Join(root, "home")
-	if account.Username != workspaceUser(workspace) || account.HomeDir != home {
+	if account.Username != workspaceUser(workspace) || account.HomeDir != filepath.Join(root, "home") {
 		return nil, errors.New("workspace UID identity changed")
 	}
-	args := []string{"--reuid", account.Uid, "--regid", account.Gid, "--clear-groups", "--no-new-privs", "--inh-caps=-all", "--ambient-caps=-all", "--bounding-set=-all", "--", "env", "-i",
-		"HOME=" + home, "USER=" + account.Username, "LOGNAME=" + account.Username, "SHELL=/bin/bash", "LANG=C.UTF-8", "TERM=xterm-256color",
-		"PATH=" + home + "/bin:" + home + "/.local/bin:/opt/bun/bin:/opt/foundry/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-		"VMBOX_WORKSPACE_ROOT=" + root, "VMBOX_RUNTIME_DIR=" + filepath.Join(root, ".vmbox"), "VMBOX_DESKTOP_DISPLAY=:" + strconv.Itoa(workspace.Display),
-		"TMPDIR=" + filepath.Join(root, "tmp"), "TMUX_TMPDIR=" + filepath.Join(root, "tmp"), "XDG_RUNTIME_DIR=" + filepath.Join(root, "run"),
+	tier := r.isolationTier()
+	paths := r.workloadPaths(workspace, tier)
+	env := workloadEnv(paths, account, workspace.Display)
+	privilege := []string{"--reuid", account.Uid, "--regid", account.Gid, "--clear-groups", "--no-new-privs", "--inh-caps=-all", "--ambient-caps=-all", "--bounding-set=-all", "--"}
+	args := append([]string(nil), privilege...)
+	if tier == IsolationTierNamespace {
+		bwrap := r.Isolation.Capabilities.BubblewrapPath
+		if bwrap == "" {
+			bwrap = "bwrap"
+		}
+		args = append(args, bwrap)
+		args = append(args, namespaceArgv(root, env, paths.Workspace, argv)...)
+	} else {
+		args = append(args, "env", "-i")
+		args = append(args, env...)
+		args = append(args, argv...)
 	}
-	args = append(args, argv...)
 	command := exec.CommandContext(ctx, "setpriv", args...)
 	command.Env = []string{"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
-	command.Dir = filepath.Join(root, "workspace")
+	if tier == IsolationTierNamespace {
+		command.Dir = root
+	} else {
+		command.Dir = paths.Workspace
+	}
 	return command, nil
 }
 

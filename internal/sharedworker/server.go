@@ -183,6 +183,12 @@ func (s *Server) execute(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) workspaceArgv(workspace Workspace, argv []string) []string {
 	result := append([]string(nil), argv...)
+	// The namespace tier binds the box's own directory at /data, so logical
+	// /data paths already resolve inside the box and must not be remapped to the
+	// host workspace root.
+	if s.Runtime.Isolated() {
+		return result
+	}
 	remap := func(path string) string {
 		if path == "/data" {
 			return s.Runtime.workspaceRoot(workspace)

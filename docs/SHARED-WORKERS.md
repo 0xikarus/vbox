@@ -92,6 +92,44 @@ full or unavailable, creation queues in the default pool. Expand the placement
 override to select a pool explicitly; existing boxes are never moved by this choice.
 Retained workspaces cannot migrate to another physical worker/alias.
 
+### Isolation tiers
+
+Each worker selects exactly one isolation tier per box at startup and reports it.
+The tier is never inferred from the deployment image.
+
+- `uid` (default): the box runs as its own workspace UID with a clean
+  environment, dropped capabilities and DAC-protected private directories. This is
+  the current behavior and is **not** filesystem isolation.
+- `namespace` (preferred when available): the box runs in a per-exec user, mount
+  and PID namespace built with the already-shipped `bwrap`. The host root is
+  mounted read-only, the box's own directory is bound at `/data`, and the host
+  volume, sibling workspaces and `/data/.shared-worker` are unreachable. The
+  process runs as UID 0 inside the user namespace, which maps to the workspace UID
+  on the host, so host root and other UIDs are unmapped.
+
+Control the tier with `VMBOX_SHARED_ISOLATION=uid|namespace|auto`. The default is
+`uid`. `auto` uses `namespace` only when the probe confirms the primitives work;
+otherwise it stays on `uid` and records a reason.
+
+Every box reports its tier in connection metadata (`isolationTier`,
+`isolationMode`, `isolationReason`) and in box labels (`isolation.tier`,
+`isolation.mode`). A `uid` box is never labelled or described as isolated.
+
+### Threat model and shared-kernel limits
+
+All slots share one kernel, CPU, memory, network and disk. The `namespace` tier
+reduces filesystem reachability between trusted boxes on one account. It is not a
+defense against kernel exploits: a namespace or container escape reaches every
+sibling, and shared CPU/memory/network remain shared. A `uid` box must never be
+described as isolated, even when its private directories are DAC-protected.
+Neither tier is a security sandbox against hostile tenants.
+
+The `namespace` tier is not enabled in production and has not been verified in
+this checkout. There is no disposable worker here, so the live probe has not run.
+Before enabling it, run `tests/shared-worker/probe.sh` and
+`tests/shared-worker/isolation.sh` on an explicitly disposable worker; both must
+pass on that host before the namespace tier is enabled in production.
+
 ## Verification
 
 Run `bash tests/shared-worker/run.sh` with Docker and Go available. Optionally set

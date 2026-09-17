@@ -32,7 +32,13 @@ func run() error {
 	if root == "" {
 		root = "/data"
 	}
+	mode, err := sharedworker.ParseIsolationMode(os.Getenv("VMBOX_SHARED_ISOLATION"))
+	if err != nil {
+		return err
+	}
 	runtime := &sharedworker.LinuxRuntime{Root: root, Binary: "/usr/local/bin/vmbox-runtime"}
+	status := runtime.ConfigureIsolation(context.Background(), mode)
+	log.Printf("shared worker isolation: tier=%s mode=%s reason=%s", status.Tier, status.Mode, status.Reason)
 	store, err := sharedworker.Open(root, os.Getenv("VMBOX_SHARED_ACCOUNT_ID"), capacity, runtime)
 	if err != nil {
 		return err

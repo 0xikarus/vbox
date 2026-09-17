@@ -42,3 +42,4 @@ VMBOX_TEST_SHARED_DISPOSABLE_ENDPOINT="http://127.0.0.1:$port" \
 VMBOX_TEST_SHARED_TOKEN=disposable-test-token-not-for-production \
 VMBOX_TEST_SHARED_RUNTIME="$artifacts/runtime" \
   "$go_binary" test ./internal/controller -run TestSharedWorkerControllerPostgres -v -count=1
+bash tests/shared-worker/isolation.sh
