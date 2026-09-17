@@ -173,6 +173,30 @@ test('table previews stay fixed size and tool choices stay compact',async()=>{
   assert.deepEqual(result.after,result.before);assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
  }
 });
+test('box actions follow state: no resume while creating, resume on failure',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.boxReads=0;
+  window.fetch=async(path,options={})=>{
+   const url=new URL(path,location.origin),method=options.method||'GET';
+   if(method==='GET'&&url.pathname==='/v1/logical-boxes'){window.boxReads++;return new Response(JSON.stringify([
+    {id:'creating',name:'building',state:'attaching',defaultAgent:'shell',provider:'railway',providerCredential:'primary',restorationState:'attaching-volume'},
+    {id:'broke',name:'broken',state:'failed',defaultAgent:'shell',failureReason:'provider refused the volume'},
+    {id:'sleepy',name:'sleepy',state:'hibernated',defaultAgent:'shell'}
+   ]))}
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('[data-box-id="creating"]');
+ const buttons=id=>page.$$eval(`[data-box-id="${id}"] button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
+ assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:true}]);
+ assert.deepEqual(await buttons('broke'),[{aria:'Resume box broken',disabled:false},{aria:'Delete box broken',disabled:false}]);
+ assert.deepEqual(await buttons('sleepy'),[{aria:'Resume box sleepy',disabled:false},{aria:'Delete box sleepy',disabled:false}]);
+ assert.match(await page.$eval('[data-box-id="broke"] td:nth-child(2)',n=>n.textContent),/provider refused the volume/);
+ await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
+ await page.close();
+});
 test('cost overview loads on demand and reports partial provider coverage',async()=>{
  const page=await browser.newPage();const before=requests.filter(r=>r.path==='/v1/fleet/costs').length;
  await page.goto(base+'/#costs');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#costs:not([hidden])',{visible:true});

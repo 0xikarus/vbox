@@ -202,5 +202,14 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    await p.click('#connect');await p.waitForFunction(()=>document.querySelector('#error').textContent.includes('Fixture stopped box'));
    assert.equal(requests.filter(r=>r.endsWith('/allocate')).length,1);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.equal(await p.evaluate(()=>window.terminals),0);await p.close();state='running';
   });
+  await t.test('a box being created offers no resume action and connects when running',async()=>{
+   state='attaching';const p=await page();await p.waitForFunction(()=>document.querySelector('#connect').hidden);
+   assert.equal(await p.$eval('#delete-box',e=>e.hidden),true);
+   assert.match(await p.$eval('#lifecycle-note',e=>e.textContent),/being created/);
+   assert.equal(requests.some(r=>r.includes('/allocate')),false);assert.equal(await p.evaluate(()=>window.terminals),0);
+   state='running';
+   await p.waitForFunction(()=>window.terminals===1&&!document.querySelector('#connect').disabled&&!document.querySelector('#connect').hidden,{timeout:15000});
+   assert.equal(requests.some(r=>r.includes('/allocate')),false);await p.close();state='running';
+  });
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });
