@@ -81,10 +81,13 @@
    let row=rows.get(box.id);
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
+    const chevron=document.createElement('button');chevron.className='row-chevron';chevron.type='button';chevron.textContent='▾';chevron.title='Box actions';
+    chevron.onclick=event=>{event.stopPropagation();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY,top:event.clientY})};
+    row.oncontextmenu=event=>{event.preventDefault();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
     const meta=document.createElement('div');meta.className='chat-meta';
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(badge,preview,unread);
-    meta.append(r1,r2);row.prepend(meta);
+    meta.append(r1,r2);row.prepend(meta);row.append(chevron);
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
@@ -110,7 +113,7 @@
   return fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(image.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
    .then(r=>{if(!r.ok)throw Error('image unavailable');return r.blob()}).then(b=>{const url=URL.createObjectURL(b);imageURLs.set(key,url);return url}).catch(()=>null);
  }
- const questionSelections=new Map();// messageId -> Set of checked choices; survives poll re-renders
+ const questionSelections=new Map();// messageId -> Set of picked choices; survives live re-renders
  function questionAnswered(box,message){
   if(answeredQuestions.has(message.id))return true;
   const ms=box.messages||[],index=ms.findIndex(m=>m.id===message.id);
@@ -118,28 +121,34 @@
  }
  function questionForm(box,message){
   if(!message.question)return null;
-  const form=document.createElement('form');form.className='question';const group='q-'+message.id;
-  const saved=questionSelections.get(message.id);
-  message.question.choices.forEach((choice,index)=>{
-   const label=document.createElement('label'),input=document.createElement('input');
-   input.type=message.question.multiple?'checkbox':'radio';input.name=group;input.value=choice;
-   if(!message.question.multiple&&index===0)input.required=true;
-   if(saved?.has(choice))input.checked=true;
-   label.append(input,document.createTextNode(' '+choice));form.append(label);
-  });
-  form.addEventListener('change',()=>{questionSelections.set(message.id,new Set([...form.querySelectorAll('input:checked')].map(i=>i.value)))});
-  const send=document.createElement('button');send.type='submit';send.textContent='Send selection';
-  form.append(send);
+  const form=document.createElement('form');form.className='question';
   const answered=questionAnswered(box,message);
-  send.disabled=answered;form.querySelectorAll('input').forEach(i=>i.disabled=answered);
+  const choices=document.createElement('div');choices.className='choices';
+  const record=()=>questionSelections.set(message.id,new Set([...choices.children].filter(c=>c.classList.contains('on')).map(c=>c.dataset.value)));
+  const saved=questionSelections.get(message.id);
+  for(const choice of message.question.choices){
+   const btn=document.createElement('button');btn.type='button';btn.className='choice';btn.dataset.value=choice;btn.textContent=choice;
+   if(saved?.has(choice))btn.classList.add('on');
+   btn.disabled=answered;
+   btn.onclick=()=>{
+    if(btn.disabled)return;
+    if(message.question.multiple)btn.classList.toggle('on');
+    else{btn.classList.add('on');for(const sib of choices.children)if(sib!==btn)sib.classList.remove('on')}
+    record();
+   };
+   choices.append(btn);
+  }
+  const send=document.createElement('button');send.type='submit';send.className='send';send.textContent=answered?'Answer sent':'Send selection';send.disabled=answered;
+  form.append(choices,send);
   form.onsubmit=async event=>{
    event.preventDefault();
-   const selectedChoices=[...form.querySelectorAll('input:checked')].map(i=>i.value);
-   if(!selectedChoices.length){statusEl.textContent='Choose at least one option.';return}
+   const selectedChoices=[...choices.children].filter(c=>c.classList.contains('on')).map(c=>c.dataset.value);
+   if(!selectedChoices.length){statusEl.textContent='Pick at least one option.';return}
    send.disabled=true;
    try{
     await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text:'Answer to "'+message.question.text+'": '+selectedChoices.join(', ')});
-    answeredQuestions.add(message.id);questionSelections.delete(message.id);form.querySelectorAll('input').forEach(i=>i.disabled=true);
+    answeredQuestions.add(message.id);questionSelections.delete(message.id);
+    send.textContent='Answer sent';choices.querySelectorAll('button').forEach(c=>{c.disabled=true});
     statusEl.textContent='Selection sent.';await refreshMessages();
    }catch(e){statusEl.textContent=e.message;send.disabled=false}
   };
@@ -215,6 +224,7 @@
  addEventListener('keydown',event=>{if(event.key==='Escape')closeForwardMenu()});
 
  /* ---------- data loading ---------- */
+ const doodle=text=>{const el=$('#chat-loading');$('#chat-loading-text').textContent=text||'';el.hidden=!text;};
  async function loadBoxes(){
   const values=await api(owner?'/v1/grid-boxes':'/v1/logical-boxes');
   const current=new Map();const alive=new Set();
@@ -257,7 +267,7 @@
   const signature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|');
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
-  applySeen(selected);renderRows();
+  applySeen(selected);renderRows();renderInspect();
  }
  async function openBox(id){
   if(!boxes.has(id))return;
@@ -267,7 +277,10 @@
   renderHeader();
   statusEl.textContent='';
   closeForwardMenu();
-  try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}
+  closeTakeover();
+  renderInspect();
+  if(!(boxes.get(id).messages||[]).length)doodle('Loading messages…');
+  try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{doodle('')}
   inputEl.focus();
  }
 
@@ -325,6 +338,155 @@
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
  addEventListener('hashchange',()=>{const id=new URLSearchParams(location.hash.slice(1)).get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id)});
+
+ /* ---------- takeover popup: VNC/TMUX control ---------- */
+ const takeover=$('#takeover'),takeoverScreen=$('#takeover-screen'),takeoverControls=$('#takeover-controls'),takeoverStatus=$('#takeover-status');
+ const boxViewerMetrics=new Map();
+ let takeoverDispose=null,takeoverKind='';
+ async function openTakeover(kind){
+  const box=boxes.get(selected);if(!box)return;
+  if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it from the workspace first.';return}
+  takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
+  takeover.hidden=false;takeoverKind=kind;
+  $('#takeover-title').textContent=box.name+' · '+(kind==='desktop'?'Desktop':'TMUX');
+  takeoverStatus.textContent=kind==='desktop'?'Starting desktop…':'Opening session…';
+  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.kind===kind));
+  try{
+   if(kind==='desktop'){
+    await api(boxPath(box.id)+'/desktop','POST',{});
+    takeoverDispose=openWorkspaceDesktop(box.id,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,controls:takeoverControls,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
+   }else{
+    const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{agent:box.defaultAgent||'shell',reuseExisting:true});
+    takeoverDispose=openWorkspaceTerminal(box.id,s.session,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,keys:takeoverControls,autoFocus:true,onDisconnect:()=>{takeoverStatus.textContent+=' · disconnected'}});
+   }
+  }catch(e){takeoverStatus.textContent=e.message}
+ }
+ function closeTakeover(){
+  takeoverDispose?.();takeoverDispose=null;takeoverKind='';
+  takeover.hidden=true;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
+ }
+ $('#chat-control').onclick=()=>void openTakeover('desktop');
+ $('#takeover-close').onclick=closeTakeover;
+ $('#takeover-backdrop').onclick=closeTakeover;
+ takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.onclick=()=>void openTakeover(b.dataset.kind));
+
+ /* ---------- inspect drawer: ping / activity per box ---------- */
+ const inspect=$('#inspect'),inspectRows=$('#inspect-rows');
+ let inspectOpen=false,inspectTimer,controllerPing=null;
+ const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
+ const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
+ function renderInspect(){
+  if(!inspectOpen||!selected)return;
+  const box=boxes.get(selected);if(!box)return;
+  const msgs=box.messages||[],lastAgent=lastMessage(msgs,'agent'),lastUser=lastMessage(msgs,'user');
+  const livePing=boxViewerMetrics.get(box.id)?.ping;
+  const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
+  const rows=[
+   ['State',box.state+(box.streaming?' · agent streaming…':''),box.state==='running'?'ok':'alert'],
+   ['Agent',box.defaultAgent||'—'],
+   ['Provider',box.provider||'—'],
+   ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
+   ['Box ping (live VNC)',livePing!=null?livePing+' ms':'while the desktop popup is open'],
+   ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
+   ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
+   ['Messages',String(msgs.length)],
+  ];
+  $('#inspect-title').textContent=box.name;
+  $('#inspect-avatar').replaceChildren(avatarNode(box,false));
+  inspectRows.replaceChildren();
+  for(const [dt,dd,cls] of rows){
+   const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
+   t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);inspectRows.append(row);
+  }
+  const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd'),link=document.createElement('a');
+  t.textContent='Workspace';link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open full workspace';link.target='_blank';link.rel='noopener';d.append(link);row.append(t,d);inspectRows.append(row);
+ }
+ async function samplePing(){
+  if(!inspectOpen)return;
+  if(!document.hidden){
+   const t=performance.now();
+   try{const r=await fetch('/healthz',{credentials:'same-origin',cache:'no-store',signal:AbortSignal.timeout(5000)});await r.text();controllerPing=r.ok?Math.round(performance.now()-t):null}catch{controllerPing=null}
+  }
+  renderInspect();
+ }
+ $('#chat-info').onclick=()=>{
+  inspectOpen=!inspectOpen;inspect.hidden=!inspectOpen;
+  if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
+  else{clearInterval(inspectTimer);controllerPing=null}
+ };
+ $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null};
+
+ /* ---------- toasts ---------- */
+ function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#chat-toasts').append(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},3200);}
+
+ /* ---------- new box ---------- */
+ const fetchDefaults=async()=>{try{return await api('/v1/controller-defaults')}catch{return{}}};
+ const newBoxModal=$('#new-box-modal'),createForm=$('#create-box');
+ function openNewBoxModal(){
+  createForm.reset();$('#new-box-status').textContent='';newBoxModal.hidden=false;
+  void fetchDefaults().then(d=>{createForm.dataset.provider=d.provider||'';createForm.dataset.providerCredential=d.providerCredential||''});
+  createForm.elements.name.focus();
+ }
+ $('#new-box').onclick=openNewBoxModal;
+ $('#new-box-close').onclick=()=>{newBoxModal.hidden=true};
+ $('#new-box-backdrop').onclick=()=>{newBoxModal.hidden=true};
+ createForm.onsubmit=async event=>{
+  event.preventDefault();
+  const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';
+  try{
+   const created=await api('/v1/logical-boxes','POST',{'Idempotency-Key':crypto.randomUUID()},{name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true});
+   newBoxModal.hidden=true;toast('Box '+created.name+' requested — it appears in the list as it starts.');
+   await loadBoxes();
+   if(created?.id&&boxes.has(created.id)){history.replaceState(null,'',location.pathname+'#box='+created.id);await openBox(created.id);toast('Box '+created.name+' is starting.');}
+  }catch(e){$('#new-box-status').textContent=e.message}
+  finally{$('#create-box-submit').disabled=false}
+ };
+
+ /* ---------- row menu / hibernate / delete ---------- */
+ const rowMenu=$('#row-menu');
+ function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren()}
+ function openRowMenu(box,rect){
+  rowMenu.replaceChildren();
+  const items=[
+   ['Show details',()=>{if(!inspectOpen)$('#chat-info').click()}],
+   ['Control desktop',()=>{location.hash='box='+box.id;if(box.id!==selected)void openBox(box.id).then(()=>openTakeover('desktop'));else openTakeover('desktop')}],
+   ['Delete box…',()=>openDeleteModal(box),'danger'],
+  ];
+  if(box.state==='running')items.splice(2,0,['Hibernate box',()=>void hibernateBox(box)]);
+  for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
+  rowMenu.hidden=false;
+  rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
+  rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
+ }
+ document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
+ addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
+ async function hibernateBox(box){
+  try{
+   await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
+   toast(box.name+' is hibernating.');
+   await loadBoxes();
+  }catch(e){toast(e.message)}
+ }
+ const deleteModal=$('#delete-box-modal'),deleteForm=$('#delete-box-form');let deleteTarget=null;
+ function openDeleteModal(box){
+  $('#delete-box-text').textContent='Deleting "'+box.name+'" permanently removes the box and its entire workspace volume. Hibernate keeps the volume instead.';
+  deleteForm.elements.confirmation.value='';$('#delete-box-status').textContent='';$('#delete-box-submit').disabled=true;deleteTarget=box;deleteModal.hidden=false;deleteForm.elements.confirmation.focus();
+ }
+ deleteForm.addEventListener('input',()=>{$('#delete-box-submit').disabled=!deleteTarget||deleteForm.elements.confirmation.value!==deleteTarget.name});
+ deleteForm.onsubmit=async event=>{
+  event.preventDefault();
+  const submit=$('#delete-box-submit');submit.disabled=true;
+  try{
+   await api(boxPath(deleteTarget.id)+'/volume','DELETE',{'Idempotency-Key':crypto.randomUUID()},{confirmation:deleteForm.elements.confirmation.value});
+   deleteModal.hidden=true;toast('Box "'+deleteTarget.name+'" deleted.');
+   if(deleteTarget.id===selected){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;history.replaceState(null,'',location.pathname);closeTakeover()}
+   deleteTarget=null;
+   await loadBoxes();
+  }catch(e){$('#delete-box-status').textContent=e.message}
+  finally{$('#delete-box-submit').disabled=false}
+ };
+ $('#delete-box-close').onclick=()=>{deleteModal.hidden=true};
+ $('#delete-box-backdrop').onclick=()=>{deleteModal.hidden=true};
 
  /* ---------- web push ---------- */
  const pushSupported='serviceWorker'in navigator&&'PushManager'in window&&'Notification'in window;
@@ -390,6 +552,8 @@
  };
  $('#logout').onclick=async()=>{
   clearTimeout(boxTimer);clearTimeout(msgTimer);
+  closeTakeover();
+  inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
   for(const url of imageURLs.values())URL.revokeObjectURL(url);imageURLs.clear();
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
@@ -403,7 +567,8 @@
   try{
    const who=await api('/v1/whoami');owner=who.role==='owner';
    $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;
-   await loadBoxes();
+   doodle('Loading chats…');
+   try{await loadBoxes()}finally{doodle('')}
    const id=new URLSearchParams(location.hash.slice(1)).get('box');
    if(id&&boxes.has(id))await openBox(id);
    schedule();renderPushState();void syncPushSubscription();

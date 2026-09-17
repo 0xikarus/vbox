@@ -97,6 +97,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /chat.js", uiHandler("chat.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /chat.css", uiHandler("chat.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /push-sw.js", uiHandler("push-sw.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /loading-doodle.svg", uiHandler("loading-doodle.svg", "image/svg+xml", false))
 	mux.HandleFunc("GET /manifest.json", uiHandler("manifest.json", "application/manifest+json; charset=utf-8", false))
 	mux.HandleFunc("GET /v1/push/vapid-key", s.auth(s.vapidKeyHandler))
 	mux.HandleFunc("PUT /v1/push/subscriptions", s.auth(s.putPushSubscriptionHandler))

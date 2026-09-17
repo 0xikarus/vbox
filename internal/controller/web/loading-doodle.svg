@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="200" viewBox="0 0 220 200">
+  <!-- Hand-drawn vmbox doodle: a sketchy box-desktop with orbiting agent sparks.
+       Fully self-contained SMIL animation (no scripts) — safe to use via <img>. -->
+
+  <!-- breathing ground shadow -->
+  <ellipse cx="110" cy="164" rx="40" ry="8" fill="#0b141a" fill-opacity=".12">
+    <animate attributeName="rx" values="40;33;40" dur="2.4s" repeatCount="indefinite"/>
+    <animate attributeName="fill-opacity" values=".12;.07;.12" dur="2.4s" repeatCount="indefinite"/>
+  </ellipse>
+
+  <!-- orbiting agent sparks (behind the box on the back half) -->
+  <g transform="translate(110 118)">
+    <g>
+      <circle r="6.5" fill="#f59e0b" fill-opacity=".92">
+        <animateMotion dur="3.4s" begin="-2.19s" repeatCount="indefinite" path="M-74,0 a74,30 0 1,1 148,0 a74,30 0 1,1 -148,0"/>
+      </circle>
+      <circle r="4.5" fill="#8b5cf6" fill-opacity=".9">
+        <animateMotion dur="3.4s" begin="-1.09s" repeatCount="indefinite" path="M-74,0 a74,30 0 1,1 148,0 a74,30 0 1,1 -148,0"/>
+      </circle>
+      <circle r="5.5" fill="#25d366">
+        <animateMotion dur="3.4s" repeatCount="indefinite" path="M-74,0 a74,30 0 1,1 148,0 a74,30 0 1,1 -148,0"/>
+      </circle>
+    </g>
+  </g>
+
+  <!-- sketchy hand-drawn cube / desktop doodle -->
+  <g>
+    <animateTransform attributeName="transform" type="translate" values="0 0; 0 -5; 0 0" dur="2.4s" repeatCount="indefinite"/>
+    <g>
+      <animateTransform attributeName="transform" type="rotate" values="-1.6 110 106; 1.8 110 106; -1.6 110 106" dur="2.4s" repeatCount="indefinite" additive="replace"/>
+      <!-- main outline: deliberately imperfect hand-drawn cube -->
+      <path d="M78 76 C 96 70 126 71 142 77 L 146 128 C 128 134 96 134 74 128 L 74 80 C 74 78 76 77 78 76 Z"
+            fill="#ffffff" fill-opacity=".97" stroke="#075e54" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <!-- sketchy offset second stroke for the hand-drawn look -->
+      <path d="M75 79 C 95 73 127 74 145 80" fill="none" stroke="#075e54" stroke-width="1.6" stroke-opacity=".45" stroke-linecap="round"/>
+      <!-- screen face -->
+      <path d="M88 90 C 100 87 122 87 133 90 L 133 112 C 121 115 100 115 89 112 Z"
+            fill="#efeae2" stroke="#075e54" stroke-width="3" stroke-linejoin="round"/>
+      <!-- doodle face: dot eyes + smile -->
+      <circle cx="100" cy="100" r="3.4" fill="#075e54">
+        <animate attributeName="r" values="3.4;3.4;1.4;3.4;3.4" keyTimes="0;.86;.9;.94;1" dur="3.4s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="122" cy="100" r="3.4" fill="#075e54">
+        <animate attributeName="r" values="3.4;3.4;1.4;3.4;3.4" keyTimes="0;.86;.9;.94;1" dur="3.4s" repeatCount="indefinite"/>
+      </circle>
+      <path d="M102 107 C 106 111 114 112 118 107" fill="none" stroke="#075e54" stroke-width="3" stroke-linecap="round"/>
+      <!-- sketchy highlight lines -->
+      <path d="M84 82 C 92 79 100 78 108 78" fill="none" stroke="#075e54" stroke-width="2" stroke-opacity=".35" stroke-linecap="round"/>
+      <path d="M84 86 C 88 85 92 84 96 83" fill="none" stroke="#075e54" stroke-width="1.6" stroke-opacity=".25" stroke-linecap="round"/>
+    </g>
+  </g>
+
+  <!-- orbit ring with flowing pencil dashes -->
+  <g transform="translate(110 118) rotate(-6)">
+    <ellipse rx="74" ry="30" fill="none" stroke="#075e54" stroke-width="2.4"
+             stroke-linecap="round" stroke-dasharray="10 12" stroke-opacity=".5">
+      <animate attributeName="stroke-dashoffset" values="0;-44" dur="1.7s" repeatCount="indefinite"/>
+    </ellipse>
+  </g>
+</svg>
