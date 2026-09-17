@@ -49,6 +49,7 @@ Do not apply dedicated-worker whole-volume cleanup to these boxes.
 | Ordinary admin UI | `internal/controller/web/index.html`, `app.js`, `app.css` |
 | Single-box UI | `internal/controller/web/workspace*` |
 | Grid | `internal/controller/grid.go`, `web/grid.html`, `web/grid.js`, `web/grid.css` |
+| Agent chats (WhatsApp-style, PWA, web push) | `web/chat.html`, `web/chat.js`, `web/chat.css`, `web/push-sw.js`, `internal/controller/web_push.go` |
 
 The [direct-worker rollout](RAILWAY-DIRECT-WORKERS.md) keeps worker hosting on
 Railway. Each enrolled box has an authenticated worker agent; the controller sends

@@ -529,6 +529,29 @@ CREATE TABLE IF NOT EXISTS desktop_secret_requests (
 ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS idle_timeout_seconds integer NOT NULL DEFAULT 0 CHECK (idle_timeout_seconds BETWEEN 0 AND 604800);
 ALTER TABLE logical_boxes ALTER COLUMN idle_timeout_seconds SET DEFAULT 14400;
 
+-- Web push keeps one controller-wide VAPID keypair; browsers register
+-- per-endpoint subscriptions that receive agent reply notifications.
+CREATE TABLE IF NOT EXISTS web_push_settings (
+ id boolean PRIMARY KEY DEFAULT true CHECK (id),
+ vapid_public text NOT NULL,
+ vapid_private text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+ endpoint text NOT NULL,
+ p256dh text NOT NULL,
+ auth text NOT NULL,
+ user_agent text NOT NULL DEFAULT '',
+ created_at timestamptz NOT NULL DEFAULT now(),
+ updated_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id, endpoint)
+);
+CREATE INDEX IF NOT EXISTS push_subscriptions_account_idx ON push_subscriptions(account_id);
+
 -- Webhooks only queue metadata refresh hints; lifecycle authority remains with
 -- fenced database state and fresh provider evidence.
 CREATE TABLE IF NOT EXISTS railway_refresh_hints (
