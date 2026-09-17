@@ -161,8 +161,16 @@ func (s *Server) connectDirectWorker(w http.ResponseWriter, r *http.Request) {
 			recordCtx, stop := context.WithTimeout(ctx, 5*time.Second)
 			recordErr := s.Store.RecordWorkerObservation(recordCtx, worker, owner, observation)
 			stop()
-			if recordErr != nil {
+			// A single failed observation write is never evidence that the worker
+			// changed. Dropping one snapshot keeps live viewer streams up through
+			// transient store stalls; the next 20-second observation retries, and
+			// a real takeover or revocation is enforced by the renewal below and
+			// the per-stream fences.
+			if recordErr != nil && lostWorkerLease(recordErr) {
 				return
+			}
+			if recordErr != nil {
+				s.Logger.Error("worker observation recording failed; keeping connection", "worker", worker.ID, "error", recordErr)
 			}
 		case <-ticker.C:
 			renew, done := context.WithTimeout(ctx, 5*time.Second)
@@ -172,7 +180,14 @@ func (s *Server) connectDirectWorker(w http.ResponseWriter, r *http.Request) {
 			}
 			done()
 			if err != nil {
-				return
+				// Transient store failures must not close the shared worker
+				// connection: that would disconnect every terminal and desktop
+				// viewer at once. The 60-second connection lease bounds staleness,
+				// and a lost lease or revoked worker fails closed immediately.
+				if lostWorkerLease(err) {
+					return
+				}
+				s.Logger.Error("worker connection renewal failed; keeping connection", "worker", worker.ID, "error", err)
 			}
 		}
 	}

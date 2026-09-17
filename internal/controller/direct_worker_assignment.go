@@ -32,7 +32,7 @@ func (c *directWorkerConnection) synchronizeBinding(ctx context.Context, desired
 		return nil
 	}
 	if desired.AccountID != c.Worker.AccountID || desired.SlotID != c.Worker.SlotID || desired.Incarnation != c.Worker.Incarnation || desired.BoxID == "" || desired.Assignment == "" {
-		return errors.New("worker assignment scope changed")
+		return errWorkerAssignmentScope
 	}
 	updateCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -61,7 +61,7 @@ func (c *directWorkerConnection) synchronizeBinding(ctx context.Context, desired
 		// The agent may have applied the update. Reconnect to observe its local
 		// binding before choosing another transition; never guess the old state.
 		c.Peer.Close()
-		return errors.New("worker assignment acknowledgement unavailable")
+		return errWorkerAckUnavailable
 	}
 	// Preserve the acknowledged local state even if the database changed while
 	// awaiting it. The next resolver can CAS from that state to the new binding.

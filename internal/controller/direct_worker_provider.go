@@ -15,6 +15,44 @@ import (
 
 const directWorkerTransport = "controller-worker"
 
+// Revalidation outcomes. Definitive errors prove that the assignment, worker
+// identity, or transport really changed and must end the stream immediately.
+// Every other failure (timeouts, driver and network errors) is transient: a
+// single store hiccup must not tear down live viewer streams, so the revalidation
+// loops tolerate them for a bounded grace window before failing closed.
+var (
+	errWorkerAgentReconnecting     = errors.New("worker agent reconnecting")
+	errWorkerConnectionUnavailable = errors.New("worker connection unavailable")
+	errWorkerOffline               = errors.New("worker agent offline or revoked; reconnecting")
+	errWorkerOwnershipChanged      = errors.New("worker connection ownership changed")
+	errWorkerAssignmentChanged     = errors.New("worker assignment changed")
+	errWorkerAssignmentScope       = errors.New("worker assignment scope changed")
+	errWorkerAckUnavailable        = errors.New("worker assignment acknowledgement unavailable")
+)
+
+// streamRevalidationGrace bounds how long a live stream keeps flowing while its
+// periodic revalidation only reports transient store failures. Persistent faults
+// and every definitive fence error still fail closed immediately.
+const streamRevalidationGrace = 15 * time.Second
+
+func definitiveWorkerError(err error) bool {
+	return errors.Is(err, errWorkerAgentReconnecting) ||
+		errors.Is(err, errWorkerConnectionUnavailable) ||
+		errors.Is(err, errWorkerOffline) ||
+		errors.Is(err, errWorkerOwnershipChanged) ||
+		errors.Is(err, errWorkerAssignmentChanged) ||
+		errors.Is(err, errWorkerAssignmentScope) ||
+		errors.Is(err, errWorkerAckUnavailable) ||
+		errors.Is(err, errWorkerIdentity)
+}
+
+// lostWorkerLease reports that this controller definitively lost authority for
+// the connection (expired worker rows, a replacement controller lease, or a
+// revoked worker); the agent must reconnect instead of serving streams.
+func lostWorkerLease(err error) bool {
+	return errors.Is(err, errWorkerIdentity) || errors.Is(err, errControllerLeaseLost)
+}
+
 type directWorkerProvider struct {
 	provider.Provider
 	server                *Server
@@ -45,11 +83,11 @@ func (p *directWorkerProvider) resolve(ctx context.Context, serviceID string) (*
 	connection := p.server.directWorkers[w.ID]
 	p.server.mu.Unlock()
 	if connection == nil || connection.Worker.Epoch != w.Epoch || connection.Worker.Incarnation != w.Incarnation {
-		return nil, workerprotocol.Binding{}, true, errors.New("worker agent reconnecting")
+		return nil, workerprotocol.Binding{}, true, errWorkerAgentReconnecting
 	}
 	select {
 	case <-connection.Peer.Done():
-		return nil, workerprotocol.Binding{}, true, errors.New("worker connection unavailable")
+		return nil, workerprotocol.Binding{}, true, errWorkerConnectionUnavailable
 	default:
 	}
 	binding, err := p.server.Store.WorkerBinding(ctx, w)
@@ -62,14 +100,14 @@ func (p *directWorkerProvider) resolve(ctx context.Context, serviceID string) (*
 			return err
 		}
 		if !enabled || current.ID != w.ID || current.Epoch != w.Epoch || current.Incarnation != w.Incarnation {
-			return errors.New("worker connection ownership changed")
+			return errWorkerOwnershipChanged
 		}
 		currentBinding, err := p.server.Store.WorkerBinding(checkCtx, current)
 		if err != nil {
 			return err
 		}
 		if currentBinding != binding {
-			return errors.New("worker assignment changed")
+			return errWorkerAssignmentChanged
 		}
 		return nil
 	}); err != nil {
@@ -171,7 +209,11 @@ func (p *directWorkerProvider) execute(ctx context.Context, id string, expected 
 	}
 	defer stream.Close()
 	// Revalidate without holding a transaction for the stream lifetime. Lifecycle
-	// mutations will also explicitly invalidate affected connections.
+	// mutations will also explicitly invalidate affected connections. Transient
+	// store failures never tear the stream down by themselves: live viewers stay
+	// up through short database stalls, while a persistent fault fails closed
+	// after streamRevalidationGrace.
+	var flakySince time.Time
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
@@ -182,11 +224,23 @@ func (p *directWorkerProvider) execute(ctx context.Context, id string, expected 
 				return
 			case <-ticker.C:
 				current, next, ok, err := p.resolve(ctx, id)
-				if err != nil || !ok || current != connection || next != binding {
-					cancel()
-					stream.Close()
-					return
+				if err == nil && ok && current == connection && next == binding {
+					flakySince = time.Time{}
+					continue
 				}
+				if err != nil && !definitiveWorkerError(err) {
+					if flakySince.IsZero() {
+						flakySince = time.Now()
+					} else if time.Since(flakySince) > streamRevalidationGrace {
+						cancel()
+						stream.Close()
+						return
+					}
+					continue
+				}
+				cancel()
+				stream.Close()
+				return
 			}
 		}
 	}()

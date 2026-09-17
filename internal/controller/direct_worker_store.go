@@ -15,6 +15,10 @@ import (
 
 var errWorkerIdentity = errors.New("worker identity unavailable or expired")
 
+// errControllerLeaseLost reports that another active controller owns the
+// single-controller lease; this process must stop serving worker connections.
+var errControllerLeaseLost = errors.New("direct workers require a single active controller")
+
 type DirectWorker struct {
 	ID          string `json:"id"`
 	AccountID   string `json:"accountId"`
@@ -156,7 +160,7 @@ func (s *Store) ClaimWorkerController(ctx context.Context, owner string) error {
  WHERE direct_worker_controller_lease.owner=$1 OR direct_worker_controller_lease.expires_at<=now()
  RETURNING owner`, owner).Scan(&claimed)
 	if errors.Is(err, sql.ErrNoRows) {
-		return errors.New("direct workers require a single active controller")
+		return errControllerLeaseLost
 	}
 	return err
 }
@@ -177,7 +181,7 @@ func (s *Store) DirectWorkerForService(ctx context.Context, accountID, providerN
 		return DirectWorker{}, false, err
 	}
 	if !live {
-		return w, true, errors.New("worker agent offline or revoked; reconnecting")
+		return w, true, errWorkerOffline
 	}
 	return w, true, nil
 }

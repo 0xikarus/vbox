@@ -58,14 +58,22 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return err
 }
 
+// errInvalidBearerToken marks a definitively rejected credential, as opposed to
+// a transient store failure while rechecking it.
+var errInvalidBearerToken = errors.New("invalid or expired bearer token")
+
+// errLogicalBoxMissing marks a definitively absent logical box, as opposed to a
+// transient store failure while reading it.
+var errLogicalBoxMissing = errors.New("logical box not found")
+
 func (s *Store) Authenticate(ctx context.Context, token string) (Principal, error) {
 	var p Principal
 	if token == "" {
-		return p, fmt.Errorf("missing bearer token")
+		return p, errInvalidBearerToken
 	}
 	err := s.DB.QueryRowContext(ctx, `SELECT t.account_id::text,t.user_id::text,u.role,u.subject FROM access_tokens t JOIN users u ON u.id=t.user_id AND u.account_id=t.account_id WHERE t.token_hash=$1 AND t.revoked_at IS NULL AND u.disabled_at IS NULL AND (t.expires_at IS NULL OR t.expires_at>now())`, secrets.TokenHash(token)).Scan(&p.AccountID, &p.UserID, &p.Role, &p.Subject)
 	if errors.Is(err, sql.ErrNoRows) {
-		return p, fmt.Errorf("invalid or expired bearer token")
+		return p, errInvalidBearerToken
 	}
 	return p, err
 }
