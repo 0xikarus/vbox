@@ -27,13 +27,30 @@ func TestCreateBoxTaskRetriesConcurrentSerializableUpdate(t *testing.T) {
 	mock.ExpectQuery(`INSERT INTO box_tasks`).WithArgs(insertArgs...).WillReturnRows(sqlmock.NewRows([]string{
 		"id", "logical_box_id", "box_name", "user_id", "requested_role", "agent", "session_name", "prompt", "state", "failure_reason", "created_at", "updated_at",
 	}).AddRow("task", "box", "test-box", "user", "owner", "codex", "codex-test", "test prompt", "queued", "", now, now))
-	mock.ExpectExec(`INSERT INTO box_messages`).WithArgs(sqlmock.AnyArg(), "account", "task", "user", "test prompt", "message-key:task:initial").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec(`INSERT INTO box_messages`).WithArgs(sqlmock.AnyArg(), "account", "task", "user", "test prompt", "message-key:task:initial", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account", "user", "task", "box", "codex").WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 
 	task, reused, err := store.createBoxTaskWithRetry(context.Background(), p, box, "message-key:task", request)
 	if err != nil || reused || task.ID != "task" {
 		t.Fatalf("task=%+v reused=%v err=%v", task, reused, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBoxMessageOrdinalCountsAnsweredMessages(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	mock.ExpectQuery("SELECT created_at FROM box_messages").WithArgs("account-a", "message-4").
+		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(now))
+	mock.ExpectQuery("SELECT count").
+		WithArgs("account-a", "task-1", now, "message-4").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(4))
+	ordinal, err := store.BoxMessageOrdinal(context.Background(), "account-a", "task-1", "message-4")
+	if err != nil || ordinal != 4 {
+		t.Fatalf("ordinal=%d err=%v", ordinal, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

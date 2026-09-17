@@ -6,12 +6,24 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 	"github.com/0xikarus/vmbox-service/internal/provider"
+)
+
+const (
+	// chatDrainLimit bounds one outbox drain so a chatty agent cannot stall a
+	// request; the next poll continues where this one stopped.
+	chatDrainLimit = 20
+	// chatDrainTasks bounds how many tasks of one box a chat read drains.
+	chatDrainTasks = 4
+	// chatDrainInterval is the minimum gap between two outbox polls of a task.
+	chatDrainInterval = 2 * time.Second
 )
 
 func (s *Server) chatInboundPayload(ctx context.Context, accountID string, task v1.BoxTask, message v1.BoxMessage) ([]byte, error) {
@@ -104,58 +116,202 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	return tx.Commit()
 }
 
-func (s *Server) pullStructuredAgentReply(ctx context.Context, prov provider.Provider, serviceID, accountID string, task v1.BoxTask, request v1.BoxMessage) (bool, error) {
+func (s *Server) pullChatEvent(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask) (boxruntime.ChatEvent, bool, error) {
+	var event boxruntime.ChatEvent
 	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "chat-pull", task.Session}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) == "" {
-		return false, err
+		return event, false, err
 	}
-	var event boxruntime.ChatEvent
 	if err := json.Unmarshal([]byte(result.Stdout), &event); err != nil {
-		return false, fmt.Errorf("invalid structured chat reply")
+		return event, false, fmt.Errorf("invalid structured chat reply")
 	}
-	if event.ReplyTo != request.ID {
-		return false, nil
+	return event, true, nil
+}
+
+func (s *Server) ackChatEvent(ctx context.Context, prov provider.Provider, serviceID, session, eventID string) error {
+	ack, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "chat-ack", session, eventID}, provider.ExecOptions{})
+	if err != nil {
+		return err
 	}
+	if ack.ExitCode != 0 {
+		return fmt.Errorf("structured chat acknowledgement failed")
+	}
+	return nil
+}
+
+// applyChatEvent stores one pooled outbox event. A reply whose reference no
+// longer resolves to an unanswered message is kept as its own agent message, so
+// a late or repeated delivery is never dropped. The caller acknowledges the
+// event only after the store succeeded; the outbox is therefore head-of-line
+// safe even when events arrive long after their watcher expired.
+func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, serviceID, accountID string, task v1.BoxTask, event boxruntime.ChatEvent) (string, bool, error) {
 	text := strings.TrimSpace(event.Text)
 	switch event.Kind {
 	case "reply":
 		if text == "" {
-			return false, fmt.Errorf("empty structured chat reply")
+			return "", false, fmt.Errorf("empty structured chat reply")
 		}
 	case "question":
 		if event.Question == nil || strings.TrimSpace(event.Question.Text) == "" || len(event.Question.Choices) == 0 {
-			return false, fmt.Errorf("invalid structured chat question")
+			return "", false, fmt.Errorf("invalid structured chat question")
 		}
 		text = encodeBoxMessageQuestion(v1.BoxMessageQuestion{Text: event.Question.Text, Choices: event.Question.Choices, Multiple: event.Question.Multiple})
 	default:
-		return false, fmt.Errorf("unknown structured chat event")
+		return "", false, fmt.Errorf("unknown structured chat event")
+	}
+	replyTo := ""
+	target, found, err := s.Store.BoxMessageByChatKey(ctx, accountID, task.ID, event.ReplyTo)
+	if err != nil {
+		return "", false, err
+	}
+	if found {
+		existing, answered, err := s.Store.AgentBoxMessage(ctx, accountID, target.ID)
+		if err != nil {
+			return "", false, err
+		}
+		if !answered || existing.State != "delivered" {
+			replyTo = target.ID
+		}
+	}
+	if replyTo == "" {
+		message, _, err := s.Store.InsertAgentBoxMessage(ctx, accountID, task.ID, event.ID, text)
+		if err != nil {
+			return "", false, err
+		}
+		if err := s.Store.attachAgentChatImages(ctx, accountID, message.ID, event.Images); err != nil {
+			return "", false, err
+		}
+		s.pushAgentReply(ctx, accountID, task, text)
+		return message.ID, false, nil
 	}
 	if task.Agent == "codex" {
 		prepared, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "chat-codex-name", task.Session}, provider.ExecOptions{})
 		if err != nil {
-			return false, err
+			return "", false, err
 		}
 		if prepared.ExitCode != 0 {
-			return false, fmt.Errorf("codex chat thread naming failed")
+			return "", false, fmt.Errorf("codex chat thread naming failed")
 		}
 	}
-	if _, err := s.Store.UpsertAgentBoxMessage(ctx, accountID, task.ID, request.ID, text, "delivered"); err != nil {
-		return false, err
+	if _, err := s.Store.UpsertAgentBoxMessage(ctx, accountID, task.ID, replyTo, text, "delivered"); err != nil {
+		return "", false, err
 	}
-	reply, found, err := s.Store.AgentBoxMessage(ctx, accountID, request.ID)
+	reply, found, err := s.Store.AgentBoxMessage(ctx, accountID, replyTo)
 	if err != nil || !found {
-		return false, err
+		return "", false, err
 	}
 	if err := s.Store.attachAgentChatImages(ctx, accountID, reply.ID, event.Images); err != nil {
-		return false, err
-	}
-	ack, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "chat-ack", task.Session, event.ID}, provider.ExecOptions{})
-	if err != nil {
-		return false, err
-	}
-	if ack.ExitCode != 0 {
-		return false, fmt.Errorf("structured chat acknowledgement failed")
+		return "", false, err
 	}
 	s.pushAgentReply(ctx, accountID, task, text)
-	return true, nil
+	return replyTo, true, nil
+}
+
+func (s *Server) pullStructuredAgentReply(ctx context.Context, prov provider.Provider, serviceID, accountID string, task v1.BoxTask, request v1.BoxMessage) (bool, error) {
+	for drained := 0; drained < chatDrainLimit; drained++ {
+		event, found, err := s.pullChatEvent(ctx, prov, serviceID, task)
+		if err != nil || !found {
+			return false, err
+		}
+		messageID, _, err := s.applyChatEvent(ctx, prov, serviceID, accountID, task, event)
+		if err != nil {
+			return false, err
+		}
+		if err := s.ackChatEvent(ctx, prov, serviceID, task.Session, event.ID); err != nil {
+			return false, err
+		}
+		if messageID == request.ID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// drainAgentChat collects every queued agent message for a task. Chat windows
+// and the reconciler call it, so agent messages are polled even when no reply
+// is being awaited.
+func (s *Server) drainAgentChat(ctx context.Context, accountID string, task v1.BoxTask) error {
+	if task.Agent == "shell" {
+		return nil
+	}
+	box, err := s.Store.LogicalBox(ctx, taskPrincipal(accountID, task), task.LogicalBoxID)
+	if err != nil || box.State != v1.LogicalBoxRunning {
+		return err
+	}
+	assignment, err := s.Store.assignment(ctx, accountID, box.ID)
+	if err != nil {
+		return err
+	}
+	prov, err := s.provider(ctx, accountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for drained := 0; drained < chatDrainLimit; drained++ {
+		event, found, err := s.pullChatEvent(ctx, prov, assignment.Slot.ServiceID, task)
+		if err != nil {
+			return err
+		}
+		if !found {
+			break
+		}
+		if _, _, err := s.applyChatEvent(ctx, prov, assignment.Slot.ServiceID, accountID, task, event); err != nil {
+			failures = append(failures, err)
+			break
+		}
+		if err := s.ackChatEvent(ctx, prov, assignment.Slot.ServiceID, task.Session, event.ID); err != nil {
+			failures = append(failures, err)
+			break
+		}
+	}
+	return errors.Join(failures...)
+}
+
+// claimChatDrain rate limits outbox polling per task so that an open chat
+// window cannot hammer the provider.
+func (s *Server) claimChatDrain(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.chatDrains == nil {
+		s.chatDrains = map[string]time.Time{}
+	}
+	now := time.Now()
+	for existing, at := range s.chatDrains {
+		if now.Sub(at) > time.Minute {
+			delete(s.chatDrains, existing)
+		}
+	}
+	if at, ok := s.chatDrains[key]; ok && now.Sub(at) < chatDrainInterval {
+		return false
+	}
+	s.chatDrains[key] = now
+	return true
+}
+
+// drainBoxChat polls the active chat tasks of a box. It is best effort: a
+// closed terminal or an unreachable worker must never fail a chat read.
+func (s *Server) drainBoxChat(ctx context.Context, p Principal, box v1.LogicalBox) {
+	if box.State != v1.LogicalBoxRunning {
+		return
+	}
+	tasks, err := s.Store.ListBoxTasks(ctx, p, box.ID)
+	if err != nil {
+		return
+	}
+	claimed := 0
+	for _, task := range tasks {
+		if claimed >= chatDrainTasks {
+			return
+		}
+		if task.State != "active" || task.Agent == "shell" {
+			continue
+		}
+		if !s.claimChatDrain(p.AccountID + ":" + task.ID) {
+			continue
+		}
+		claimed++
+		if err := s.drainAgentChat(ctx, p.AccountID, task); err != nil {
+			s.Logger.Warn("agent chat drain failed", "task", task.ID, "error", err)
+		}
+	}
 }

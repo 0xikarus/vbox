@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
@@ -39,10 +40,13 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		writeError(w, 404, fmt.Errorf("box unavailable"))
 		return
 	}
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id,task_id,user_id,direction,body,state,created_at,updated_at FROM (
- SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2
- UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at FROM box_notes WHERE account_id=$1 AND box_id=$2
- ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at) ORDER BY created_at DESC LIMIT 500`, p.AccountID, box.ID)
+	drainCtx, cancelDrain := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+	s.drainBoxChat(drainCtx, p, box)
+	cancelDrain()
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key FROM (
+ SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,'') FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2
+ UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at,''::text FROM box_notes WHERE account_id=$1 AND box_id=$2
+ ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key) ORDER BY created_at DESC LIMIT 500`, p.AccountID, box.ID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("message history unavailable"))
 		return

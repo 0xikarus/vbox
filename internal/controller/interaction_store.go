@@ -9,6 +9,7 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 )
 
 const boxTaskSelect = "SELECT t.id::text,t.logical_box_id::text,b.name,t.user_id::text,t.requested_role,t.agent,t.session_name,t.prompt,t.state,COALESCE(t.failure_reason,''),t.created_at,t.updated_at FROM box_tasks t JOIN logical_boxes b ON b.id=t.logical_box_id"
@@ -122,7 +123,7 @@ func (s *Store) createBoxTaskTransaction(ctx context.Context, p Principal, box v
 	if err != nil {
 		return v1.BoxTask{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,$4,'user',$5,true,'queued',$6)", messageID, p.AccountID, task.ID, p.UserID, request.Prompt, idempotency+":initial"); err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key) VALUES($1,$2,$3,$4,'user',$5,true,'queued',$6,$7)", messageID, p.AccountID, task.ID, p.UserID, request.Prompt, idempotency+":initial", chatMessageKey()); err != nil {
 		return v1.BoxTask{}, false, err
 	}
 	if err := attachBoxMessageImages(ctx, tx, p.AccountID, messageID, request.Images); err != nil {
@@ -228,13 +229,75 @@ func (s *Store) SetBoxTaskState(ctx context.Context, accountID, id, state, failu
 	return nil
 }
 
-const boxMessageSelect = "SELECT id::text,task_id::text,COALESCE(user_id::text,''),direction,body,state,created_at,updated_at FROM box_messages"
+const boxMessageColumns = "id::text,task_id::text,COALESCE(user_id::text,''),direction,body,state,created_at,updated_at,COALESCE(chat_key,'')"
+
+const boxMessageSelect = "SELECT " + boxMessageColumns + " FROM box_messages"
+
+// chatMessageKey is the short reference handed to the agent in the chat
+// envelope. The agent echoes it as replyTo, so it stays well below the 36
+// character identifier while remaining unique per account.
+func chatMessageKey() string {
+	raw := boxruntime.ID("")
+	if len(raw) <= 12 {
+		return raw
+	}
+	return raw[:12]
+}
 
 func scanBoxMessage(scanner interface{ Scan(...any) error }) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
-	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt)
+	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey)
 	decodeBoxMessageQuestion(&message)
 	return message, err
+}
+
+// BoxMessageByChatKey resolves a replyTo reference inside one task. Newer
+// messages carry the short chat key; conversations started before that still
+// echo the identifier.
+func (s *Store) BoxMessageByChatKey(ctx context.Context, accountID, taskID, key string) (v1.BoxMessage, bool, error) {
+	if key == "" || len(key) > 128 {
+		return v1.BoxMessage{}, false, nil
+	}
+	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, boxMessageSelect+" WHERE account_id=$1 AND task_id=$2 AND (chat_key=$3 OR id::text=$3)", accountID, taskID, key))
+	if errors.Is(err, sql.ErrNoRows) {
+		return message, false, nil
+	}
+	return message, err == nil, err
+}
+
+// BoxMessageOrdinal returns the 1-based position of a chat message inside its
+// task, counting the messages an agent is expected to answer. The chat envelope
+// uses it to repeat itself on the first message and then periodically.
+func (s *Store) BoxMessageOrdinal(ctx context.Context, accountID, taskID, messageID string) (int, error) {
+	var createdAt time.Time
+	if err := s.DB.QueryRowContext(ctx, "SELECT created_at FROM box_messages WHERE account_id=$1 AND id::text=$2", accountID, messageID).Scan(&createdAt); err != nil {
+		return 0, err
+	}
+	var ordinal int
+	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM box_messages
+		WHERE account_id=$1 AND task_id=$2 AND direction IN ('user','system')
+		AND (created_at < $3 OR (created_at = $3 AND id::text <= $4))`, accountID, taskID, createdAt, messageID).Scan(&ordinal)
+	return ordinal, err
+}
+
+// InsertAgentBoxMessage stores an uncorrelated agent message. eventKey makes
+// repeated deliveries of the same outbox event idempotent.
+func (s *Store) InsertAgentBoxMessage(ctx context.Context, accountID, taskID, eventKey, text string) (v1.BoxMessage, bool, error) {
+	if strings.TrimSpace(text) == "" || len(text) > 100_000 {
+		return v1.BoxMessage{}, false, fmt.Errorf("agent message must contain between 1 and 100000 bytes")
+	}
+	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,'agent',$4,false,'delivered',$5) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, uuid(), accountID, taskID, text, "agent-message:"+eventKey))
+	if errors.Is(err, sql.ErrNoRows) {
+		existing, lookupErr := scanBoxMessage(s.DB.QueryRowContext(ctx, boxMessageSelect+" WHERE account_id=$1 AND idempotency_key=$2", accountID, "agent-message:"+eventKey))
+		if lookupErr != nil {
+			return v1.BoxMessage{}, false, lookupErr
+		}
+		return existing, false, nil
+	}
+	if err != nil {
+		return v1.BoxMessage{}, false, err
+	}
+	return message, true, nil
 }
 
 func (s *Store) CreateBoxMessage(ctx context.Context, p Principal, taskID, idempotency string, request v1.SendBoxMessageRequest) (v1.BoxMessage, bool, error) {
@@ -257,7 +320,7 @@ func (s *Store) CreateBoxMessage(ctx context.Context, p Principal, taskID, idemp
 	}
 	defer tx.Rollback()
 	messageID := uuid()
-	message, err := scanBoxMessage(tx.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,$4,'user',$5,$6,'queued',$7) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING id::text,task_id::text,user_id::text,direction,body,state,created_at,updated_at", messageID, p.AccountID, taskID, p.UserID, request.Text, submit, idempotency))
+	message, err := scanBoxMessage(tx.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key) VALUES($1,$2,$3,$4,'user',$5,$6,'queued',$7,$8) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, messageID, p.AccountID, taskID, p.UserID, request.Text, submit, idempotency, chatMessageKey()))
 	if errors.Is(err, sql.ErrNoRows) {
 		if err := tx.Rollback(); err != nil {
 			return v1.BoxMessage{}, false, err
@@ -311,7 +374,7 @@ func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID s
 	if _, err := s.BoxTask(ctx, p, taskID); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at
+	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,'')
 		FROM box_messages m
 		WHERE m.account_id=$1 AND m.task_id=$2 AND m.direction='user' AND m.state='delivered' AND m.submit
 		AND NOT EXISTS (
@@ -385,7 +448,7 @@ func (s *Store) RecoverStaleBoxMessages(ctx context.Context, before time.Time) e
 
 func (s *Store) FirstQueuedTaskMessage(ctx context.Context, accountID, taskID string) (v1.BoxMessage, bool, bool, error) {
 	var submit bool
-	message, err := scanBoxMessageWithSubmit(s.DB.QueryRowContext(ctx, "SELECT id::text,task_id::text,COALESCE(user_id::text,''),direction,body,state,created_at,updated_at,submit FROM box_messages WHERE account_id=$1 AND task_id=$2 AND state='queued' ORDER BY created_at,id LIMIT 1", accountID, taskID), &submit)
+	message, err := scanBoxMessageWithSubmit(s.DB.QueryRowContext(ctx, "SELECT "+boxMessageColumns+",submit FROM box_messages WHERE account_id=$1 AND task_id=$2 AND state='queued' ORDER BY created_at,id LIMIT 1", accountID, taskID), &submit)
 	if errors.Is(err, sql.ErrNoRows) {
 		return message, false, false, nil
 	}
@@ -394,7 +457,7 @@ func (s *Store) FirstQueuedTaskMessage(ctx context.Context, accountID, taskID st
 
 func scanBoxMessageWithSubmit(scanner interface{ Scan(...any) error }, submit *bool) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
-	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, submit)
+	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, submit)
 	decodeBoxMessageQuestion(&message)
 	return message, err
 }

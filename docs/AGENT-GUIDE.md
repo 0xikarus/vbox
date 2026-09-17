@@ -115,9 +115,16 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
-  `vmbox-desktop` MCP exposes `chat_reply` and `chat_ask`; controller acknowledgement
-  happens after reply text, validated images, or a choice prompt is stored. Terminal
-  capture remains a compatibility fallback for clients that do not call the tool.
+  `vmbox-desktop` MCP exposes `chat_message` and `chat_ask`.
+  `chat_message` writes a message on its own; passing `replyTo` (the short chat
+  key carried in the envelope) answers one specific message. The controller polls
+  each active task's outbox while a chat window is open, from the reconciler, and
+  while a reply is awaited, and acknowledges an event only after it is stored.
+  A late or repeated reply whose message is already answered is stored as its own
+  agent message, so the outbox can never head-of-line block. Terminal capture
+  remains a compatibility fallback for clients that do not call the tool. The
+  same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
+  `desktop_type`, `desktop_key`), so an agent can operate the box's computer.
 - A new OpenCode Agent chat passes its first message with native `--prompt`, then
   uses the loopback API for follow-ups. Persistent OpenCode and OpenCode one-shot
   tasks start with `--auto`; explicit client deny rules still take precedence.

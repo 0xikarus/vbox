@@ -34,8 +34,8 @@ func desktopMCPTools() []map[string]any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	return []map[string]any{
-		makeTool("chat_reply", "Send your response to the vmbox Agent chat. Call this once for each completed response, including any image files the user should receive.", map[string]any{"replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "replyTo", "text"),
-		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required.", map[string]any{"replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}}, "replyTo", "question", "choices"),
+		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
+		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("typeSecret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
@@ -96,7 +96,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_reply for every response the user should receive, and chat_ask when the user must choose."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
@@ -212,17 +212,19 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}, nil
 	}
-	if name == "chat_reply" {
+	if name == "chat_message" {
 		var request struct {
 			ReplyTo string   `json:"replyTo"`
 			Text    string   `json:"text"`
 			Files   []string `json:"files"`
 		}
 		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Text) == "" || len(request.Text) > 100_000 {
-			return nil, fmt.Errorf("provide replyTo and response text")
+			return nil, fmt.Errorf("provide response text")
 		}
-		if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
-			return nil, err
+		if request.ReplyTo != "" {
+			if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
+				return nil, err
+			}
 		}
 		images, err := loadChatImages(request.Files)
 		if err != nil {
@@ -241,10 +243,12 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			Multiple bool     `json:"multiple"`
 		}
 		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Question) == "" || len(request.Choices) < 1 || len(request.Choices) > 20 {
-			return nil, fmt.Errorf("provide replyTo, question, and choices")
+			return nil, fmt.Errorf("provide question and choices")
 		}
-		if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
-			return nil, err
+		if request.ReplyTo != "" {
+			if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
+				return nil, err
+			}
 		}
 		for _, choice := range request.Choices {
 			if strings.TrimSpace(choice) == "" || len(choice) > 500 {

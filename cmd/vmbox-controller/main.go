@@ -100,6 +100,13 @@ func run() error {
 	if template := os.Getenv("VMBOX_CHAT_INSTRUCTION"); template != "" {
 		server.ChatInstructionTemplate = template
 	}
+	if value := os.Getenv("VMBOX_CHAT_INSTRUCTION_EVERY"); value != "" {
+		every, parseErr := strconv.Atoi(value)
+		if parseErr != nil || every < 1 {
+			return fmt.Errorf("VMBOX_CHAT_INSTRUCTION_EVERY must be a positive integer")
+		}
+		server.ChatInstructionEvery = every
+	}
 	if server.DirectWorkersEnabled {
 		server.WorkerAgent, err = os.ReadFile("/usr/local/bin/vmbox-worker-agent")
 		if err != nil {

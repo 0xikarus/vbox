@@ -282,6 +282,9 @@ DO $$ BEGIN
       CHECK (state IN ('queued','delivering','streaming','delivered','ambiguous','failed'));
   END IF;
 END $$;
+ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS chat_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS box_messages_chat_key_idx
+  ON box_messages(account_id,chat_key) WHERE chat_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS box_messages_task_time_idx
   ON box_messages(account_id,task_id,created_at,id);
 CREATE INDEX IF NOT EXISTS box_messages_delivery_idx

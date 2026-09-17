@@ -37,13 +37,27 @@ func attachBoxMessageImages(ctx context.Context, tx *sql.Tx, accountID, messageI
 
 // defaultChatInstruction is appended to every agent chat prompt. Keep it compact —
 // it is visible context in the agent's proliferating conversation.
-const defaultChatInstruction = "\n\n[vmbox Agent chat message %s]\nReply with vmbox-desktop chat_reply(%s, text) — that lands in your private chat. chat_ask(%s, question, choices, multiple) for choices. Absolute PNG/JPEG/GIF paths attach as images."
+const defaultChatInstruction = "\n\n[vmbox Agent chat message %s]\nWhen your response is ready, call the vmbox-desktop chat_message tool with replyTo %s and your response text. Include absolute PNG/JPEG/GIF paths in files for images. To let the user choose, call chat_ask with the same replyTo, question, choices, and multiple. Use the vmbox-desktop computer tools (desktop_screenshot, desktop_click, desktop_type, desktop_key) to operate the box yourself."
 
-// ChatInstructionTemplate controls the envelope appended to every agent chat
-// prompt; set with VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of
-// the message id. Set to "off" to skip the envelope entirely.
-func (s *Server) chatInstruction(messageID, agent string) string {
+// defaultChatInstructionEvery carries the envelope on the first message of a
+// chat and then once every this many messages, so the reply contract stays
+// visible without crowding every prompt.
+const defaultChatInstructionEvery = 3
+
+// ChatInstructionTemplate controls the agent chat envelope; set with
+// VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of the message
+// reference. Set to "off" to skip the envelope entirely. ChatInstructionEvery
+// controls the cadence (set with VMBOX_CHAT_INSTRUCTION_EVERY; 1 repeats the
+// envelope on every message).
+func (s *Server) chatInstruction(messageID, agent string, ordinal int) string {
 	if agent == "shell" {
+		return ""
+	}
+	every := s.ChatInstructionEvery
+	if every <= 0 {
+		every = defaultChatInstructionEvery
+	}
+	if ordinal > 1 && every > 1 && (ordinal-1)%every != 0 {
 		return ""
 	}
 	template := s.ChatInstructionTemplate
@@ -56,11 +70,23 @@ func (s *Server) chatInstruction(messageID, agent string) string {
 	return fmt.Sprintf(template, messageID, messageID, messageID)
 }
 
-func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
-	chatInstruction := s.chatInstruction(message.ID, agent)
-	if s.Store == nil || s.Store.DB == nil {
-		return message.Text + chatInstruction, nil
+// chatReference is the short handle an agent echoes as replyTo.
+func chatReference(message v1.BoxMessage) string {
+	if message.ChatKey != "" {
+		return message.ChatKey
 	}
+	return message.ID
+}
+
+func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
+	if s.Store == nil || s.Store.DB == nil {
+		return message.Text + s.chatInstruction(chatReference(message), agent, 1), nil
+	}
+	ordinal, err := s.Store.BoxMessageOrdinal(ctx, accountID, message.TaskID, message.ID)
+	if err != nil {
+		return "", err
+	}
+	chatInstruction := s.chatInstruction(chatReference(message), agent, ordinal)
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.id::text,j.ordinal,i.download_token
 		FROM box_message_images j JOIN run_once_images i ON i.id=j.image_id AND i.account_id=j.account_id
 		WHERE j.account_id=$1 AND j.message_id=$2 ORDER BY j.ordinal`, accountID, message.ID)

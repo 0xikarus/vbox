@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-func TestChatReplyToolPersistsTextAndImageForController(t *testing.T) {
+func TestChatMessageToolPersistsTextAndImageForController(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "codex-chat")
@@ -31,9 +31,9 @@ func TestChatReplyToolPersistsTextAndImageForController(t *testing.T) {
 		t.Fatal(err)
 	}
 	args, _ := json.Marshal(map[string]any{"replyTo": "message-1", "text": "purple image", "files": []string{path}})
-	result, err := callDesktopTool(context.Background(), "assignment", "chat_reply", args)
+	result, err := callDesktopTool(context.Background(), "assignment", "chat_message", args)
 	if err != nil || result["isError"] == true {
-		t.Fatalf("chat_reply failed: %v %+v", err, result)
+		t.Fatalf("chat_message failed: %v %+v", err, result)
 	}
 	event, found, err := PullChatEvent(home, "codex-chat")
 	if err != nil || !found {
@@ -196,5 +196,60 @@ func TestNameCodexChatThreadWaitsThenRecordsCompletion(t *testing.T) {
 	}
 	if data, err := os.ReadFile(filepath.Join(root, "chat", "codex-named", "codex-chat")); err != nil || string(data) != "named\n" {
 		t.Fatalf("naming completion marker: %q, %v", data, err)
+	}
+}
+
+func TestChatMessageToolPersistsStandaloneMessageWithShortEventID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "claude-chat")
+	result, err := callDesktopTool(context.Background(), "assignment", "chat_message", json.RawMessage(`{"text":"Working on it"}`))
+	if err != nil || result["isError"] == true {
+		t.Fatalf("chat_message failed: %v %+v", err, result)
+	}
+	event, found, err := PullChatEvent(home, "claude-chat")
+	if err != nil || !found {
+		t.Fatalf("event unavailable: %v", err)
+	}
+	if event.Kind != "reply" || event.ReplyTo != "" || event.Text != "Working on it" {
+		t.Fatalf("unexpected event: %+v", event)
+	}
+	if len(event.ID) > 16 || strings.Trim(event.ID, "0123456789abcdef") != "" {
+		t.Fatalf("event id should be a short token, got %q", event.ID)
+	}
+}
+
+func TestChatMessageToolAnswersAReference(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "claude-chat")
+	if _, err := callDesktopTool(context.Background(), "assignment", "chat_message", json.RawMessage(`{"replyTo":"abc123","text":"here"}`)); err != nil {
+		t.Fatal(err)
+	}
+	event, found, err := PullChatEvent(home, "claude-chat")
+	if err != nil || !found || event.ReplyTo != "abc123" || event.Text != "here" {
+		t.Fatalf("unexpected event: found=%t err=%v event=%+v", found, err, event)
+	}
+}
+
+func TestRemovedChatReplyToolIsRejected(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "claude-chat")
+	if _, err := callDesktopTool(context.Background(), "assignment", "chat_reply", json.RawMessage(`{"replyTo":"abc123","text":"legacy call"}`)); err == nil {
+		t.Fatal("chat_reply was removed and must not be accepted")
+	}
+}
+
+func TestChatAskAllowsStandaloneQuestion(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "claude-chat")
+	if _, err := callDesktopTool(context.Background(), "assignment", "chat_ask", json.RawMessage(`{"question":"Pick colors","choices":["purple"]}`)); err != nil {
+		t.Fatal(err)
+	}
+	event, found, err := PullChatEvent(home, "claude-chat")
+	if err != nil || !found || event.Kind != "question" || event.ReplyTo != "" || event.Question == nil {
+		t.Fatalf("unexpected question: found=%t err=%v event=%+v", found, err, event)
 	}
 }
