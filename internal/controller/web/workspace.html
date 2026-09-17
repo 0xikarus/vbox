@@ -6,7 +6,7 @@
 <form id="login" hidden><label>Controller token <input name="token" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
 <p id="status" role="status" aria-live="polite">Checking authentication…</p><p id="error" role="alert"></p>
 <main id="workspace" hidden>
-<p class="actions"><button id="connect">Resume / reconnect</button> <button id="hibernate">Hibernate</button><button id="delete-box" type="button" class="linkbtn danger" aria-label="delete box" title="delete box" hidden></button></p>
+<p class="actions"><button id="delete-box" type="button" class="linkbtn danger" aria-label="delete box" title="delete box" hidden></button><button id="connect">Resume / reconnect</button> <button id="hibernate">Hibernate</button></p>
 <p id="lifecycle-note">Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.</p>
 <details id="idle-settings"><summary>Automatic hibernation</summary><button id="load-idle-policy" type="button">Load policy</button><form id="idle-policy-form" hidden><label>Idle hours (0 disables) <input name="hours" type="number" min="0" max="168" step="0.25" value="4" required></label><button>Save</button></form><p id="idle-policy-status">New boxes default to four hours. Managed tasks and pending private requests prevent automatic hibernation. Human takeover pauses it; screenshots do not count as activity.</p></details>
 <section id="agent-chat"><h2>Agent chat</h2><ol id="agent-messages" aria-live="polite"></ol>

@@ -191,8 +191,8 @@ test('box actions follow state: no resume while creating, resume on failure',asy
  await page.waitForSelector('[data-box-id="creating"]');
  const buttons=id=>page.$$eval(`[data-box-id="${id}"] button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
  assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:true}]);
- assert.deepEqual(await buttons('broke'),[{aria:'Resume box broken',disabled:false},{aria:'Delete box broken',disabled:false}]);
- assert.deepEqual(await buttons('sleepy'),[{aria:'Resume box sleepy',disabled:false},{aria:'Delete box sleepy',disabled:false}]);
+ assert.deepEqual(await buttons('broke'),[{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false}]);
+ assert.deepEqual(await buttons('sleepy'),[{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false}]);
  assert.match(await page.$eval('[data-box-id="broke"] td:nth-child(2)',n=>n.textContent),/provider refused the volume/);
  await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
  await page.close();
