@@ -478,7 +478,14 @@
     if(status.free>0)return base+' — '+status.free+' free of '+status.actual;
     return base+' — no free slots ('+status.occupied+'/'+status.actual+' busy)';
    };
-   const poolSelect=$('#create-pool');poolSelect.replaceChildren(new Option('Automatic (least loaded pool with free slots)',''));
+   let autoIndex='';
+   poolStatuses.forEach((status,index)=>{
+    if(!status||status.free<1)return;
+    if(autoIndex===''||status.free>Number(poolStatuses[Number(autoIndex)]?.free||0))autoIndex=String(index);
+   });
+   createForm.dataset.autoPool=autoIndex;
+   const poolSelect=$('#create-pool');
+   poolSelect.replaceChildren(new Option(autoIndex===''?'Automatic (every pool is busy right now)':'Automatic (least busy pool with free slots)',''));
    pools.forEach((pool,index)=>{
     const status=poolStatuses[index],option=new Option(poolLabel(pool,status),String(index));
     option.title=status?('desired '+status.desired+' · actual '+status.actual+' · free '+status.free+' · occupied '+status.occupied+(status.queued?' · '+status.queued+' queued':'')):'slot status unavailable';
@@ -489,7 +496,7 @@
    const poolHint=$('#create-pool-status');
    poolHint.hidden=pools.length===0;
    if(pools.length)poolHint.textContent=pools.map((pool,index)=>poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared')).join(' · ')+' — boxes wait in the controller queue when their pool has no free slots.';
-   createForm.dataset.pools=JSON.stringify(pools.map(p=>({provider:p.provider,providerCredential:p.name||''})));
+   createForm.dataset.pools=JSON.stringify(pools);
    if(defaults.provider){createForm.dataset.provider=defaults.provider;createForm.dataset.providerCredential=defaults.providerCredential||''}
    const byApp={};
    for(const p of profiles)(byApp[p.application]??=[]).push(p.name);
@@ -526,7 +533,7 @@
   const loginProfiles=[...createForm.querySelectorAll('select')].filter(s=>s.name.startsWith('profile:')&&s.value).map(s=>({application:s.name.slice('profile:'.length),name:s.value}));
   const setupScript=(createForm.elements.setupScript?.value||'').trim();
   const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
-  const poolIndex=f.pool.value;
+  const poolIndex=(f.pool.value||createForm.dataset.autoPool||'');
   if(poolIndex!==''){const pool=JSON.parse(createForm.dataset.pools||'[]')[Number(poolIndex)];if(pool){body.provider=pool.provider;body.providerCredential=pool.providerCredential||''}}
   if(loginProfiles.length)body.loginProfiles=loginProfiles;
   if(tools.length)body.tools=tools;
@@ -536,7 +543,13 @@
    newBoxModal.hidden=true;toast('Box '+created.name+' requested — it appears in the list as it starts.');
    await loadBoxes();
    if(created?.id&&boxes.has(created.id)){history.replaceState(null,'',location.pathname+'#box='+created.id);await openBox(created.id);toast('Box '+created.name+' is starting.');}
-  }catch(e){$('#new-box-status').textContent=e.message}
+  }catch(e){
+   let message=e.message||'Could not create the box.';
+   if(message.includes('no healthy free compute slot')){
+    message='No free compute slot in that pool.'+(createForm.dataset.autoPool?' Try Automatic, which picks a pool showing free slots.':' Every configured slot is busy — hibernate a box or add compute slots, then retry.')+' ('+message+')';
+   }
+   $('#new-box-status').textContent=message;
+  }
   finally{$('#create-box-submit').disabled=false}
  };
 
