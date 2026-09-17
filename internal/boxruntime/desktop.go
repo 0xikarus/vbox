@@ -1,14 +1,20 @@
 package boxruntime
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"syscall"
 	"time"
 )
 
@@ -95,39 +101,68 @@ func StartDesktop(ctx context.Context, assignment string) error {
 		}
 	}
 	// A private tmux session owns the graphical processes, not the web viewer.
-	exists := false
-	for _, session := range inv.Sessions {
-		if session.Name == "vmbox-desktop" {
-			exists = true
+	// A session that outlived its desktop-run process reports as present while
+	// no VNC socket will ever appear, so a stale one is replaced once rather
+	// than timing out on every later attempt.
+	for attempt := 0; attempt < 2; attempt++ {
+		present := false
+		for _, session := range inv.Sessions {
+			if session.Name == "vmbox-desktop" {
+				present = true
+			}
 		}
-	}
-	if !exists {
-		_, err = tmuxOutput(ctx, "if-shell", "-F", "#{==:#{@vmbox_assignment},"+assignment+"}", "new-session -d -s vmbox-desktop 'vmbox-runtime desktop-run "+assignment+"'", "display-message 'assignment changed'")
+		if !present {
+			if _, err = tmuxOutput(ctx, "if-shell", "-F", "#{==:#{@vmbox_assignment},"+assignment+"}", "new-session -d -s vmbox-desktop 'vmbox-runtime desktop-run "+assignment+"'", "display-message 'assignment changed'"); err != nil {
+				return err
+			}
+		}
+		ready, err := waitForDesktopSocket(ctx, assignment, 15*time.Second)
 		if err != nil {
 			return err
 		}
+		if ready {
+			if err := ensureDesktopPanel(ctx, assignment); err != nil {
+				return err
+			}
+			if err := ensureDesktopIcons(ctx, assignment); err != nil {
+				return err
+			}
+			return EnsureDesktopTerminals(ctx, assignment)
+		}
+		if attempt > 0 || !present {
+			return fmt.Errorf("desktop startup timed out; inspect vmbox-desktop session")
+		}
+		// Retire the stale session under the same assignment fence used to
+		// create it, so a shared worker cannot lose another box's desktop.
+		if _, err = tmuxOutput(ctx, "if-shell", "-F", "#{==:#{@vmbox_assignment},"+assignment+"}", "kill-session -t vmbox-desktop", "display-message 'assignment changed'"); err != nil {
+			return err
+		}
+		if inv, err = NativeSessions(ctx, assignment); err != nil {
+			return err
+		}
 	}
-	deadline := time.NewTimer(15 * time.Second)
+	return fmt.Errorf("desktop startup timed out; inspect vmbox-desktop session")
+}
+
+// waitForDesktopSocket reports whether the VNC socket accepted a connection
+// within budget. A false return is a timeout, not a transport failure; only a
+// cancelled caller returns an error.
+func waitForDesktopSocket(ctx context.Context, assignment string, budget time.Duration) (bool, error) {
+	deadline := time.NewTimer(budget)
 	defer deadline.Stop()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return false, ctx.Err()
 		case <-deadline.C:
-			return fmt.Errorf("desktop startup timed out; inspect vmbox-desktop session")
+			return false, nil
 		case <-ticker.C:
 			conn, err := net.DialTimeout("unix", desktopSocket(assignment), time.Second)
 			if err == nil {
 				conn.Close()
-				if err := ensureDesktopPanel(ctx, assignment); err != nil {
-					return err
-				}
-				if err := ensureDesktopIcons(ctx, assignment); err != nil {
-					return err
-				}
-				return EnsureDesktopTerminals(ctx, assignment)
+				return true, nil
 			}
 		}
 	}
@@ -144,16 +179,27 @@ func RunDesktop(ctx context.Context, assignment string) error {
 	if err := os.MkdirAll(filepath.Dir(socket), 0700); err != nil {
 		return err
 	}
+	// A previous X server that died without cleaning up keeps the display
+	// claimed, and Xtigervnc then exits immediately on every later attempt.
+	if err := clearStaleDisplayLock(DesktopDisplay()); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	vnc := exec.CommandContext(ctx, "Xtigervnc", DesktopDisplay(), "-geometry", "1280x800", "-depth", "24", "-rfbport", "-1", "-rfbunixpath", socket, "-rfbunixmode", "0600", "-SecurityTypes", "None", "-AlwaysShared", "-nolisten", "tcp")
-	vnc.Stdout, vnc.Stderr = os.Stdout, os.Stderr
+	// This process runs inside the vmbox-desktop tmux session, which tmux
+	// destroys as soon as it exits. Anything Xtigervnc wrote to the pane dies
+	// with it, so its diagnosis is captured here and returned instead.
+	var vncLog lockedBuffer
+	vnc.Stdout, vnc.Stderr = io.MultiWriter(os.Stdout, &vncLog), io.MultiWriter(os.Stderr, &vncLog)
 	if err := vnc.Start(); err != nil {
-		return err
+		return fmt.Errorf("Xtigervnc could not start: %w", err)
 	}
-	defer func() { cancel(); _ = vnc.Wait() }()
+	exited := make(chan error, 1)
+	go func() { exited <- vnc.Wait() }()
+	defer func() { cancel(); <-exited }()
 	ready := false
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 100 && !ready; i++ {
 		conn, err := net.DialTimeout("unix", socket, 100*time.Millisecond)
 		if err == nil {
 			conn.Close()
@@ -163,11 +209,15 @@ func RunDesktop(ctx context.Context, assignment string) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case waitErr := <-exited:
+			// Put the real reason in the error the controller reports.
+			exited <- waitErr
+			return fmt.Errorf("Xtigervnc exited before the desktop was ready (%v): %s", waitErr, vncLog.tail(400))
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
 	if !ready {
-		return fmt.Errorf("VNC did not become ready")
+		return fmt.Errorf("VNC did not become ready: %s", vncLog.tail(400))
 	}
 	wm := exec.CommandContext(ctx, "openbox")
 	wm.Env = append(os.Environ(), "DISPLAY="+DesktopDisplay())
@@ -198,4 +248,58 @@ func StreamDesktop(ctx context.Context, assignment string, input io.Reader, outp
 	case err := <-done:
 		return err
 	}
+}
+
+// lockedBuffer collects child output while the readiness loop inspects it.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) tail(limit int) string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	text := strings.TrimSpace(b.buf.String())
+	if text == "" {
+		return "no diagnostics from Xtigervnc"
+	}
+	if len(text) > limit {
+		text = "…" + text[len(text)-limit:]
+	}
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// clearStaleDisplayLock removes an X display lock whose owning process is gone.
+// A lock held by a live process is left alone: that display really is in use.
+func clearStaleDisplayLock(display string) error {
+	number := strings.TrimPrefix(display, ":")
+	if number == "" || strings.ContainsAny(number, "/\\.") {
+		return nil
+	}
+	// X servers always place this in the real /tmp, not in TMPDIR.
+	lock := filepath.Join("/tmp", ".X"+number+"-lock")
+	data, err := os.ReadFile(lock)
+	if err != nil {
+		return nil
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 1 {
+		return nil
+	}
+	if process, err := os.FindProcess(pid); err == nil {
+		if process.Signal(syscall.Signal(0)) == nil {
+			return nil
+		}
+	}
+	if err := os.Remove(lock); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("remove stale display lock %s: %w", lock, err)
+	}
+	_ = os.Remove(filepath.Join("/tmp", ".X11-unix", "X"+number))
+	return nil
 }

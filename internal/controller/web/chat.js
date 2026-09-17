@@ -281,7 +281,7 @@
    tv.onmouseleave=hideTvPreview;
    tv.onfocus=()=>showTvPreview(tv,box);
    tv.onblur=hideTvPreview;
-   tv.onclick=()=>openLiveView(box);
+   tv.onclick=()=>void openLiveView(box);
    t.append(dots,label,tv);messagesEl.append(t);
   }
   if(follow){
@@ -456,7 +456,7 @@
   takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.kind===kind));
   try{
    if(kind==='desktop'){
-    await api(boxPath(box.id)+'/desktop','POST',{});
+    await ensureDesktopRunning(box);
     takeoverDispose=openWorkspaceDesktop(box.id,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,controls:takeoverControls,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
    }else{
     const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{},{agent:box.defaultAgent||'shell',reuseExisting:true});
@@ -540,20 +540,38 @@
 
  /* ---------- live view: large read-only desktop stream ---------- */
  const liveView=$('#live-view'),liveViewScreen=$('#live-view-screen'),liveViewControls=$('#live-view-controls'),liveViewStatus=$('#live-view-status');
- let liveViewDispose=null;
+ let liveViewDispose=null,liveViewEpoch=0;
  function closeLiveView(){
+  liveViewEpoch++;
   liveViewDispose?.();liveViewDispose=null;
   liveView.hidden=true;liveViewScreen.replaceChildren();liveViewControls.replaceChildren();
  }
- function openLiveView(box){
+ // The desktop stream attaches to a running desktop and never starts one, so a
+ // reload (or any box whose desktop is not up yet) has to start it first. A
+ // worker without the desktop packages needs an explicit enable before start,
+ // which is the same ladder the workspace view uses.
+ async function ensureDesktopRunning(box){
+  try{
+   await api(boxPath(box.id)+'/desktop','POST',{});
+  }catch(e){
+   if(!/components unavailable|enable the desktop/i.test(e.message||''))throw e;
+   await api(boxPath(box.id)+'/desktop/enable','POST',{},{},190000);
+   await api(boxPath(box.id)+'/desktop','POST',{});
+  }
+ }
+ async function openLiveView(box){
   hideTvPreview();
   if(!liveView.hidden)closeLiveView();
+  const epoch=++liveViewEpoch;
   liveView.hidden=false;
   $('#live-view-title').textContent=box.name+' · live view';
-  liveViewStatus.textContent='Connecting…';
+  liveViewStatus.textContent='Starting desktop…';
   try{
+   await ensureDesktopRunning(box);
+   if(epoch!==liveViewEpoch)return;
+   liveViewStatus.textContent='Connecting…';
    liveViewDispose=openWorkspaceDesktop(box.id,message=>{liveViewStatus.textContent=message},{root:liveViewScreen,controls:liveViewControls,viewOnly:true,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
-  }catch(e){liveViewStatus.textContent=e.message}
+  }catch(e){if(epoch===liveViewEpoch)liveViewStatus.textContent=e.message}
  }
 
  /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
