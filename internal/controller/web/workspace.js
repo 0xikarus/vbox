@@ -5,14 +5,12 @@ let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
 let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
 let refreshDesktopPreview=()=>{};
 let selectedWorkspaceView='',workspaceRole='',managedSession='';
-let runID=new URLSearchParams(location.search).get('run');
-let runTimer,attachedRunSession='';
 
 let boxSummary=null,controllerPing=null,statsTimer,statsGeneration=0;
 const viewerStats={desktop:{state:'disconnected',ping:null},terminal:{state:'disconnected'}};
 function renderStats(){
  const row=$('#connection-stats');if(!row)return;
- row.hidden=!!runID||!boxSummary||boxSummary.state!=='running';
+ row.hidden=!boxSummary||boxSummary.state!=='running';
  const current=viewerStats[selectedWorkspaceView]||{state:'connecting'};
  const fields=[['Box',boxSummary?.state||'—'],['Provider',boxSummary?.provider||'—'],['Viewer',(selectedWorkspaceView==='desktop'?'Desktop':'TMUX')+' · '+current.state],['Desktop ping',viewerStats.desktop.ping==null?'—':viewerStats.desktop.ping+' ms'],['Controller',controllerPing==null?'—':controllerPing+' ms']];
  row.replaceChildren(...fields.map(([label,value])=>{const item=document.createElement('span');item.textContent=label+': '+value;if(label==='Desktop ping')item.title='Round trip to the box over the live VNC connection. Includes transport and server response time.';if(label==='Controller')item.title='HTTP round trip to the controller; this does not measure the worker.';return item}));
@@ -33,7 +31,7 @@ function startStats(){
  void sample();
 }
 
-function workspaceCurrent(version){return version===epoch&&!runID&&!$('#workspace').hidden}
+function workspaceCurrent(version){return version===epoch&&!$('#workspace').hidden}
 function showWorkspaceView(view){
  selectedWorkspaceView=view;renderStats();
  const desktop=view==='desktop';
@@ -53,7 +51,7 @@ async function ensureTerminal(version=epoch){
    managedSession=session.session;
    $('#session').textContent='Terminal: '+session.session;
    closeTerminal();terminalAttached=true;recordViewer('terminal',{state:'connecting'});
-   const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{autoFocus:false,onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('terminal',value)}});
+   const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{autoFocus:false,onMetrics:value=>{if(!$('#workspace').hidden)recordViewer('terminal',value)}});
    closeTerminal=()=>{terminalAttached=false;recordViewer('terminal',{state:'disconnected'});dispose()};
    return true;
   }catch(e){if(workspaceCurrent(version))$('#error').textContent=e.message;return false}
@@ -62,37 +60,6 @@ async function ensureTerminal(version=epoch){
  try{return await pending}finally{if(terminalBusy===pending)terminalBusy=null}
 }
 function selectTerminal(version=epoch){showWorkspaceView('terminal');return ensureTerminal(version)}
-
-async function inspectRun(version){
- if(version!==epoch)return;
- try{
-  const run=await api('/v1/run-once/'+encodeURIComponent(runID));if(version!==epoch)return;
-  if(run.boxId!==boxID)throw Error('Run does not belong to this box.');
-  if(run.task?.finishedAt){
-   const task=run.task;closeTerminal();attachedRunSession='';
-   $('#workspace').hidden=false;$('#workspace-tabs').hidden=true;$('#terminal').hidden=false;$('#desktop').hidden=true;$('#hibernate').hidden=true;
-   $('#name').textContent=task.boxName||'Run once results';
-   $('#session').textContent='One-shot '+task.agent+' · '+task.state;
-   $('#status').textContent=[task.exitCode!=null?'Exit code '+task.exitCode:task.signal?'Signal '+task.signal:task.state,run.boxDeleted?'Box deleted; saved results retained.':'Finished; box cleanup pending.'].join(' · ');
-   $('#connect').textContent='Refresh results';
-   const output=document.createElement('pre');output.textContent=task.output||'No output recorded.';
-   if(task.outputTruncated)output.append(document.createTextNode('\n[Saved output truncated]'));
-   $('#terminal-screen').replaceChildren(output);
-   if(!run.boxDeleted)runTimer=setTimeout(()=>inspectRun(version),5000);
-   return;
-  }
-  const box=await api(bp);if(version!==epoch)return;state(box);$('#workspace').hidden=false;
-  $('#workspace-tabs').hidden=true;$('#terminal').hidden=false;$('#desktop').hidden=true;$('#hibernate').hidden=true;$('#connect').textContent='Reconnect / check results';
-  const task=run.task;
-  $('#session').textContent=task?'One-shot '+task.agent+' · '+task.session:'Waiting for the task';
-  $('#status').textContent=[box.state,box.restorationState,task?.state,task?.exitCode!=null?'exit '+task.exitCode:'',run.failure,box.failureReason].filter(Boolean).join(' · ');
-  if(task?.state==='running'&&box.state==='running'&&attachedRunSession!==task.session){
-   closeTerminal();attachedRunSession=task.session;
-   closeTerminal=openWorkspaceTerminal(boxID,task.session,message=>{if(version===epoch)$('#status').textContent=message});
-  }
-  runTimer=setTimeout(()=>inspectRun(version),2000);
- }catch(e){if(version===epoch)$('#error').textContent=e.message}
-}
 
 // Keep automatic attempts for this page's lifetime so reconnects cannot loop.
 const autoDesktopRequestedForBoxIds=new Set();
@@ -104,7 +71,7 @@ async function startAndAttachDesktop(version){
  $('#desktop-status').textContent='Starting desktop…';
  await api(bp+'/desktop','POST',{});if(!workspaceCurrent(version))return false;
  closeDesktop();desktopAttached=true;recordViewer('desktop',{state:'connecting',ping:null});
- const dispose=openWorkspaceDesktop(boxID,message=>{if(workspaceCurrent(version))$('#desktop-status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden&&!runID)recordViewer('desktop',value)}});
+ const dispose=openWorkspaceDesktop(boxID,message=>{if(workspaceCurrent(version))$('#desktop-status').textContent=message},{onMetrics:value=>{if(!$('#workspace').hidden)recordViewer('desktop',value)}});
  closeDesktop=()=>{desktopAttached=false;recordViewer('desktop',{state:'disconnected',ping:null});dispose()};
  refreshDesktopPreview();
  return true;
@@ -205,16 +172,13 @@ $('#resource-form').onsubmit=async event=>{
  }catch(e){if(workspaceCurrent(snapshot.version))$('#resource-status').textContent=e.message+' Reload limits before retrying.'}
  finally{form.querySelector('button').disabled=false;$('#load-resources').disabled=false}
 };
-function state(b){$('#box-settings').hidden=!!runID||workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ');$('#connect').textContent=b.state==='running'?'Reconnect viewers':'Resume box';$('#lifecycle-note').textContent=b.state==='running'?'Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.':'This page does not start the box. Resume box explicitly requests compute; workspace files remain saved.'}
+function state(b){$('#box-settings').hidden=workspaceRole!=='owner'||b.state!=='running';boxSummary=b;renderStats();$('#name').textContent=b.name;document.title=b.name+' · vmbox';$('#status').textContent=[b.state,b.restorationState,b.failureReason].filter(Boolean).join(' · ');$('#connect').textContent=b.state==='running'?'Reconnect viewers':'Resume box';$('#lifecycle-note').textContent=b.state==='running'?'Closing this page leaves the box running. Hibernate stops its processes and retains workspace files.':'This page does not start the box. Resume box explicitly requests compute; workspace files remain saved.'}
 function showSleepingWorkspace(){
  stopStats();$('#workspace').hidden=false;$('#workspace-tabs').hidden=true;$('#terminal').hidden=true;$('#desktop').hidden=true;$('#hibernate').hidden=true;$('#session').textContent='Saved workspace. Resume the box to connect.';
 }
 async function connect(resume=false){
- if(runID){clearTimeout(runTimer);closeTerminal();attachedRunSession='';$('#error').textContent='';await inspectRun(++epoch);return}
  if(busy)return;resetBoxSettings();busy=true;const version=++epoch;$('#connect').disabled=true;$('#error').textContent='';
  try{
-  const run=await api(bp+'/run-once');if(version!==epoch)return;
-  if(run?.id){runID=run.id;history.replaceState(null,'','?run='+encodeURIComponent(runID));await inspectRun(version);return}
   let box=await api(bp);if(version!==epoch)return;state(box);
   if(box.state!=='running'){
    if(!resume){showSleepingWorkspace();return}
@@ -237,7 +201,7 @@ $('#connect').onclick=()=>void connect(true);
 $('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){$('#error').textContent=e.message}};
 $('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#login').hidden=false;$('#status').textContent='Logged out. The box was not stopped.'}catch(e){$('#error').textContent=e.message}};
 $('#hibernate').onclick=async()=>{if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;epoch++;stopStats();closeTerminal();closeDesktop();try{state(await api(bp+'/hibernate','POST',{}));allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';showSleepingWorkspace();$('#terminal-screen').replaceChildren()}catch(e){$('#error').textContent=e.message}};
-window.addEventListener('pagehide',()=>{epoch++;stopStats();clearTimeout(runTimer);closeTerminal();closeDesktop()});
+window.addEventListener('pagehide',()=>{epoch++;stopStats();closeTerminal();closeDesktop()});
 (async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){$('#error').textContent=e.message}})();
 
 {
@@ -361,8 +325,8 @@ if(messageForm){
  const appendQuestion=(row,message)=>{if(!message.question)return;const form=document.createElement('form'),group='question-'+message.id;message.question.choices.forEach((choice,index)=>{const label=document.createElement('label'),input=document.createElement('input');input.type=message.question.multiple?'checkbox':'radio';input.name=group;input.value=choice;if(!message.question.multiple&&index===0)input.required=true;label.append(input,document.createTextNode(' '+choice));form.append(label,document.createElement('br'))});const send=document.createElement('button');send.textContent='Send selection';send.disabled=answeredQuestions.has(message.id);form.append(send);form.onsubmit=async event=>{event.preventDefault();const selected=[...form.querySelectorAll('input:checked')].map(input=>input.value);if(!selected.length){status.textContent='Choose at least one option.';return}send.disabled=true;try{await api(bp+'/messages','POST',{text:'Answer to "'+message.question.text+'": '+selected.join(', ')},{'Idempotency-Key':crypto.randomUUID()});answeredQuestions.add(message.id);status.textContent='Selection sent.';await refresh()}catch(e){status.textContent=e.message;send.disabled=false}};row.append(form)};
  const refresh=async()=>{
   clearTimeout(timer);
-  document.querySelector('#agent-chat').hidden=!!runID;
-  if(document.querySelector('#workspace').hidden||document.hidden||runID){timer=setTimeout(refresh,3000);return}
+  document.querySelector('#agent-chat').hidden=false;
+  if(document.querySelector('#workspace').hidden||document.hidden){timer=setTimeout(refresh,3000);return}
   try{
    const messages=await api(bp+'/messages');
    if(document.querySelector('#workspace').hidden)return;
@@ -389,7 +353,7 @@ if(privateRequests){
  let timer,signature='';
  const refresh=async()=>{
   clearTimeout(timer);
-  if(document.querySelector('#workspace').hidden||document.hidden||runID){timer=setTimeout(refresh,3000);return}
+  if(document.querySelector('#workspace').hidden||document.hidden){timer=setTimeout(refresh,3000);return}
   try{
    const requests=(await api(bp+'/secret-requests')).filter(r=>r.status==='pending');
    const next=JSON.stringify(requests.map(r=>[r.key,r.origin]));

@@ -19,11 +19,6 @@ func (s *Server) queueLogicalBoxDelete(ctx context.Context, p Principal, id, con
 	if confirmation == "" || confirmation != box.Name {
 		return box, fmt.Errorf("deletion confirmation must exactly match logical box name %q", box.Name)
 	}
-	// Preserve already completed results when explicitly deleting older runs
-	// created before Run once switched from hibernation to automatic deletion.
-	if _, err := s.Store.DB.ExecContext(ctx, archiveRunOnceSQL, p.AccountID, box.ID); err != nil {
-		return box, err
-	}
 	a, err := s.Store.BeginLogicalBoxRelease(ctx, p, box.ID, v1.LogicalBoxDeleting)
 	if err != nil {
 		return box, err

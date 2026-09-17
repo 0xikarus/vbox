@@ -251,8 +251,8 @@ func (s *Server) resumeLogicalBoxHibernate(ctx context.Context, p Principal, id 
 	if err != nil || !claimed {
 		return err
 	}
-	// Claims preserve automatic intent and repair legacy Run once claims which
-	// lost their auto- prefix. Use the durable value, not the pre-claim snapshot.
+	// Claims preserve automatic intent for releases started by the controller.
+	// Use the durable value, not the pre-claim snapshot.
 	box, err := s.Store.LogicalBox(ctx, p, assignment.Box.ID)
 	if err != nil {
 		_ = s.Store.ReleaseLogicalBoxHibernateClaim(ctx, p.AccountID, assignment.Box.ID, claim)

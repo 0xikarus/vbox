@@ -160,7 +160,6 @@ function renderProfiles(identity,profiles){
 async function refresh(){
  const version=epoch,[caps,boxes]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes')]);if(version!==epoch)return;
  document.querySelectorAll('[data-owner]').forEach(n=>n.hidden=!caps.providerEdits);
- $('#run-once').hidden=!caps.providerEdits||location.hash!=='#run-once';
  renderBoxes(boxes);
  if(!caps.providerEdits)return;
  const [providers,schema,notifications,identity,profiles,toolPresets]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications'),api('/v1/whoami'),api('/v1/login-profiles'),api('/v1/tool-presets')]);if(version!==epoch)return;

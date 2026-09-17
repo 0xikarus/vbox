@@ -146,9 +146,6 @@ func (s *Server) processResultHandler(w http.ResponseWriter, r *http.Request, p 
 }
 
 func (s *Server) ReconcileProcessesNow(ctx context.Context) error {
-	if err := s.reconcileRunOnce(ctx); err != nil {
-		s.Logger.Warn("run-once queue reconciliation unavailable")
-	}
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT account_id::text,user_id::text,requested_role,id::text FROM process_tasks WHERE NOT auto_checked ORDER BY created_at,id LIMIT 128`)
 	if err != nil {
 		return err
@@ -321,22 +318,8 @@ func (s *Server) hibernateAfterProcess(ctx context.Context, p Principal, a fleet
 	if inv.State != "live" || inv.Assignment != nativeFence(a) || inv.Partial || len(inv.Sessions) != 0 {
 		return nil
 	}
-	// Archive before releasing the box: process_tasks are cascade-deleted with
-	// the workspace. Only Run once owns a disposable box; CLI tasks on an
-	// existing persistent box retain the previous hibernation behavior.
-	archived, err := tx.ExecContext(ctx, archiveRunOnceSQL, p.AccountID, a.Box.ID)
-	if err != nil {
-		return err
-	}
-	n, err := archived.RowsAffected()
-	if err != nil {
-		return err
-	}
-	state, phase := "hibernating", "auto-hibernate-queued"
-	if n > 0 {
-		state, phase = "deleting", "delete-queued"
-	}
-	_, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state=$3,lease_owner=NULL,lease_expires_at=NULL,restoration_state=$4,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID, state, phase)
+	// Process tasks on a persistent box retain the workspace after hibernation.
+	_, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernating',lease_owner=NULL,lease_expires_at=NULL,restoration_state='auto-hibernate-queued',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID)
 	if err != nil {
 		return err
 	}
@@ -353,11 +336,7 @@ func (s *Server) hibernateAfterProcess(ctx context.Context, p Principal, a fleet
 	if err = tx.Commit(); err != nil {
 		return err
 	}
-	if state == "deleting" {
-		s.startLogicalBoxDelete(p, a.Box.ID)
-	} else {
-		s.startLogicalBoxHibernate(p, a.Box.ID)
-	}
+	s.startLogicalBoxHibernate(p, a.Box.ID)
 	return nil
 }
 

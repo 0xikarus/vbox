@@ -8,7 +8,7 @@ keys. No Chief of Staff or separate messaging deployment is required.
 
 Desktop-enabled workers start X11 and a visible xterm attached to the same managed
 tmux session used by the UI. Codex, Claude, OpenCode and shell have launch paths;
-OpenCode is also supported by Run once and saved login profiles. Reopening a viewer
+OpenCode is also supported by saved login profiles. Reopening a viewer
 reuses the managed session. Closing a viewer leaves processes running. Wake restores
 files/layout with a fresh agent conversation, without replaying old prompts.
 
@@ -140,9 +140,9 @@ rejection, box-specific cursors and MCP PNG image exchange.
 
 | Client | Implemented | Credential-free verification |
 | --- | --- | --- |
-| Codex | Interactive/Run once, MCP registration | Real CLI entry enabled; runtime MCP image exchange |
-| Claude | Interactive/Run once, MCP registration | Real CLI reports desktop MCP connected |
-| OpenCode | Interactive/Run once, MCP registration/profile import | Real CLI reports desktop MCP connected |
+| Codex | Interactive, MCP registration | Real CLI entry enabled; runtime MCP image exchange |
+| Claude | Interactive, MCP registration | Real CLI reports desktop MCP connected |
+| OpenCode | Interactive, MCP registration/profile import | Real CLI reports desktop MCP connected |
 | Shell | Managed visible session | Real xterm/tmux identity and graphical keyboard input |
 
 The disposable Debian Chromium 152 fixture measured aggregate process RSS of

@@ -18,46 +18,6 @@ option. The desktop selection is retained across restores. Controller and Grid
 viewers still prefer an available desktop, with TMUX available manually; leaving
 the option unchecked does not disable a desktop already included in the worker.
 
-### Run once from the web
-
-Open your controller and choose **Run once**. Select a provider, Claude/Codex/OpenCode/shell,
-saved logins, and a prompt or shell command. Upload logins from your laptop with
-`vmbox profiles upload`; expired logins must be refreshed locally first.
-
-The controller queues the request until a healthy slot is free, creates a new
-disposable box, and opens its web tmux terminal. You can cancel while waiting for
-capacity. Once claimed, inspect the box before interrupting it.
-
-Claude runs with `-p`, Codex with `exec`, OpenCode with `run --auto`, and shell
-commands with Bash. Real output
-and the process exit code are saved. On completion, the otherwise idle box
-is deleted together with its workspace volume, releasing compute. Saved output
-and exit code remain under **Recent runs**, independently of the box. Push or upload
-files you want to keep before the command exits. Reopening results never reruns it.
-Persistent interactive boxes and CLI tasks on existing boxes are unchanged.
-To intentionally repeat an identical command, choose **Start another run**, then **Run once**.
-
-For an agent, describe the goal, repository/working directory, expected result, and
-how to verify completion. Select its saved login; select GitHub login when repository
-access is needed. Model defaults to your saved configuration; choose a named model
-from the agent-specific dropdown, or **Custom model…** for another ID. Access depends
-on your saved account and agent version. Advanced arguments accept one literal argument per line, without shell
-quoting. They may change agent permissions, so do not paste untrusted options or secrets.
-The CLI supports the same overrides: `vmbox task BOX codex --model MODEL --arg OPTION --prompt 'TASK'`.
-
-Attach up to eight PNG/JPEG/GIF images (8 MiB each) by choosing files, dropping
-images onto the form, or pasting images into the prompt. Normal text paste stays
-unchanged. Use the displayed `[Image 1]` labels in your prompt.
-The controller appends a numbered URL list with instructions
-to fetch and inspect the images. Download links grant access only to the referenced
-image and expire seven days after scheduling; images are retained with account data
-(256 MiB image storage limit). Do not publish these private download links.
-Opening a one-shot box from the box list shows its terminal/results without launching
-an unrelated interactive shell or resuming a completed run.
-
-There is no planning/coordinator service, approval graph, or automatic agent
-retry. An exit code reports process success, not whether the requested work is good.
-
 ### 1. Install
 
 You need Git, OpenSSH, and either Go 1.26 or Docker on your laptop.
@@ -643,14 +603,14 @@ Historical coworker data is retained only for safe cleanup; credentials are revo
 
 ## Optional tools
 
-Select **Blender** in the controller's box creation or Run once tool list (CLI:
+Select **Blender** in the controller's box creation tool list (CLI:
 `--tool blender`) to install Blender, automatically enable desktop components,
 and install the third-party Blender MCP bridge and add-on.
 Opening an interactive box in the web workspace automatically starts and attaches
 its desktop; manual desktop controls remain available for recovery. Launch `blender`
 from its terminal, start its MCP server from the Blender add-on panel, and start a
 new Codex, Claude or OpenCode session to use the registered MCP tools.
-Run once retains its terminal view; Grid prefers enabled desktops. Newly enabled
+Grid prefers enabled desktops. Newly enabled
 Blender presets install the checksum-verified official Linux x64 Blender 5.1.2
 release; Blender MCP is pinned to 1.9.1. Existing legacy Blender presets keep their
 distribution version, including after hibernation; live boxes are not upgraded.
@@ -663,7 +623,7 @@ restored after hibernation and adds download, disk and RAM usage. MCP telemetry 
 disabled, safe mode is enabled, and its Blender socket listens only on loopback.
 Existing `blender` MCP client entries are preserved. GPU rendering remains unverified.
 
-Select **Foundry** when creating a box or starting a Run once task. In the CLI
+Select **Foundry** when creating a box. In the CLI
 form, use Space or Enter to toggle its checkbox. It includes `forge`, `cast`,
 `anvil`, and `chisel`; no separate selections are necessary.
 
@@ -699,13 +659,13 @@ Each tile prefers an enabled desktop and offers a Desktop/TMUX selector. TMUX
 reuses the primary interactive session, or creates a persistent shell if none
 exists. Input and clipboard controls belong to the selected tile.
 
-One-shot boxes and boxes with unfinished one-shot tasks are excluded. Sleeping
+Boxes with unfinished one-shot tasks are excluded. Sleeping
 boxes stay asleep. Next box, reducing the layout, logout, and closing the page
 only disconnect viewers; remote work keeps running. Mobile screens stack tiles.
 
 ## Custom tooling
 
-Expand **Add custom tooling** in box creation or Run once and enter trusted Bash
+Expand **Add custom tooling** in box creation and enter trusted Bash
 install commands, for example `sudo apt-get update && sudo apt-get install -y ripgrep`.
 The commands run inside the worker before the task, with a five-minute limit.
 Use package managers or your own installer; never paste credentials. Installation
@@ -738,6 +698,3 @@ neither a standalone deployment bundle nor provider tooling.
 The two-mode rollout was tested with real Claude/Codex responses, shell exit codes
 0/7, independent worker output comparisons, and persistent interactive sessions.
 Idle-hibernation guards were tested with real local tmux and disposable PostgreSQL.
-Live Railway Run once tests also verified allocation, terminal output, actual
-exit codes, image inspection, and automatic hibernation with retained volumes.
-See [verification evidence](docs/RUN-ONCE-VERIFICATION.md) for results and limits.

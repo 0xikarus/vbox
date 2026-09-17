@@ -7,7 +7,7 @@ import puppeteer from 'puppeteer-core';
 const html=await readFile('internal/controller/web/workspace.html','utf8');
 const script=await readFile('internal/controller/web/workspace.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
- let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',run=null,state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
+ let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
  let requests=[],messageHistory=[],messagePayloads=[],interactiveRequests=[],defaultAgent='shell';
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
@@ -45,8 +45,6 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   if(fail===method+' '+path){res.statusCode=409;return res.end(JSON.stringify({error:'Fixture failure'}))}
   let data={};
   if(path==='/v1/whoami')data={role};
-  else if(path.endsWith('/run-once'))data=run;
-  else if(path==='/v1/run-once/run')data={id:'run',boxId:'test',task:{state:'running',agent:'shell',session:'task-test'}};
   else if(path.endsWith('/secret-requests'))data=[];
   else if(path.endsWith('/sessions/interactive')){let body='';for await(const chunk of req)body+=chunk;interactiveRequests.push(JSON.parse(body));data={session:'shell-test'}}
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
@@ -195,9 +193,8 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    release();await p.waitForFunction(()=>!document.querySelector('#start-desktop').disabled);
    assert.equal(requests.includes('POST '+desktop),false);assert.equal(await p.evaluate(()=>window.attaches),0);await p.close();hold='';enabled=true;
   });
-  await t.test('run once and restricted roles remain on TMUX',async()=>{
-   run={id:'run'};let p=await page();await terminalReady(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.equal(await p.$eval('#workspace-tabs',e=>e.hidden),true);await p.close();run=null;
-   role='member';p=await page();await terminalReady(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});await p.close();role='owner';
+  await t.test('restricted roles remain on TMUX',async()=>{
+   role='member';const p=await page();await terminalReady(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});await p.close();role='owner';
   });
   await t.test('opening a sleeping box stays read-only until explicit resume',async()=>{
    state='hibernated';const p=await page();await p.waitForFunction(()=>document.querySelector('#connect').textContent==='Resume box'&&!document.querySelector('#connect').disabled);
