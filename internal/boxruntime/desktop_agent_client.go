@@ -22,6 +22,43 @@ type DesktopAgentConfig struct {
 	Token      string `json:"token"`
 }
 
+// readDesktopAgentConfig loads and validates the private per-assignment agent
+// configuration. Both the secret bridge and the contact bridge share it so a
+// stale or non-private file can never be used.
+func readDesktopAgentConfig(assignment string) (DesktopAgentConfig, error) {
+	var config DesktopAgentConfig
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return config, fmt.Errorf("desktop agent configuration unavailable")
+	}
+	path := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
+	file, err := os.Open(path)
+	if err != nil {
+		return config, fmt.Errorf("desktop agent configuration unavailable")
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 8192 {
+		return config, fmt.Errorf("desktop agent configuration is not private")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, 8193))
+	if err != nil || len(data) > 8192 {
+		return config, fmt.Errorf("desktop agent configuration unavailable")
+	}
+	defer clear(data)
+	if json.Unmarshal(data, &config) != nil || config.Assignment != assignment || len(config.Token) != 64 {
+		return config, fmt.Errorf("desktop agent configuration is stale")
+	}
+	if _, err = hex.DecodeString(config.Token); err != nil {
+		return config, fmt.Errorf("desktop agent credential invalid")
+	}
+	u, err := url.Parse(config.Controller)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return config, fmt.Errorf("secure controller endpoint required")
+	}
+	return config, nil
+}
+
 func desktopSecretReference(ctx context.Context, assignment, key string) error {
 	_, err := desktopSecretOperation(ctx, assignment, key, false, secrets.PasswordPolicy{})
 	return err
@@ -31,35 +68,9 @@ func desktopSecretOperation(ctx context.Context, assignment, key string, ensure 
 	if !regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`).MatchString(key) {
 		return false, fmt.Errorf("invalid secret reference")
 	}
-	home, err := os.UserHomeDir()
+	config, err := readDesktopAgentConfig(assignment)
 	if err != nil {
-		return false, fmt.Errorf("desktop agent configuration unavailable")
-	}
-	path := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
-	file, err := os.Open(path)
-	if err != nil {
-		return false, fmt.Errorf("desktop agent configuration unavailable")
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 || info.Size() > 8192 {
-		return false, fmt.Errorf("desktop agent configuration is not private")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, 8193))
-	if err != nil || len(data) > 8192 {
-		return false, fmt.Errorf("desktop agent configuration unavailable")
-	}
-	defer clear(data)
-	var config DesktopAgentConfig
-	if json.Unmarshal(data, &config) != nil || config.Assignment != assignment || len(config.Token) != 64 {
-		return false, fmt.Errorf("desktop agent configuration is stale")
-	}
-	if _, err = hex.DecodeString(config.Token); err != nil {
-		return false, fmt.Errorf("desktop agent credential invalid")
-	}
-	u, err := url.Parse(config.Controller)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return false, fmt.Errorf("secure controller endpoint required")
+		return false, err
 	}
 	if _, err = NativeSessions(ctx, assignment); err != nil {
 		return false, err

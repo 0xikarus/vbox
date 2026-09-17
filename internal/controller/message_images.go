@@ -84,15 +84,39 @@ func chatReference(message v1.BoxMessage) string {
 	return message.ID
 }
 
+// defaultContactInstruction is appended to a message that arrived from another
+// box. It states the real origin and how to answer, so a contact message is
+// never mistaken for an owner instruction or a local reply.
+const defaultContactInstruction = "\n\n[vmbox Agent chat message %s from %s (%s)]\nThis message came from another box through the contact permission, not from the account owner. To answer it, call the vmbox-desktop chat_message tool with contact \"%s\" and your response text. Do not attach image files to a contact message. Use chat_message without contact to talk to the owner."
+
+func (s *Server) contactChatInstruction(messageRef, senderID, senderName, agent string) string {
+	if agent == "shell" || senderID == "" {
+		return ""
+	}
+	if strings.TrimSpace(senderName) == "" {
+		senderName = senderID
+	}
+	return fmt.Sprintf(defaultContactInstruction, messageRef, senderName, senderID, senderID)
+}
+
 func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
 	if s.Store == nil || s.Store.DB == nil {
+		if message.SenderBoxID != "" {
+			return message.Text + s.contactChatInstruction(chatReference(message), message.SenderBoxID, "", agent), nil
+		}
 		return message.Text + s.chatInstruction(chatReference(message), agent, 1), nil
 	}
-	ordinal, err := s.Store.BoxMessageOrdinal(ctx, accountID, message.TaskID, message.ID)
-	if err != nil {
-		return "", err
+	var chatInstruction string
+	if message.SenderBoxID != "" {
+		senderName, _ := s.Store.contactBoxName(ctx, accountID, message.SenderBoxID)
+		chatInstruction = s.contactChatInstruction(chatReference(message), message.SenderBoxID, senderName, agent)
+	} else {
+		ordinal, err := s.Store.BoxMessageOrdinal(ctx, accountID, message.TaskID, message.ID)
+		if err != nil {
+			return "", err
+		}
+		chatInstruction = s.chatInstruction(chatReference(message), agent, ordinal)
 	}
-	chatInstruction := s.chatInstruction(chatReference(message), agent, ordinal)
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.id::text,j.ordinal,i.download_token
 		FROM box_message_images j JOIN run_once_images i ON i.id=j.image_id AND i.account_id=j.account_id
 		WHERE j.account_id=$1 AND j.message_id=$2 ORDER BY j.ordinal`, accountID, message.ID)

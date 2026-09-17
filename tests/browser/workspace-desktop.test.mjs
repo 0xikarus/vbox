@@ -9,6 +9,7 @@ const script=await readFile('internal/controller/web/workspace.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
  let requests=[],messageHistory=[],messagePayloads=[],interactiveRequests=[],defaultAgent='shell';
+ let boxRole='worker',protectedBox=false,contacts=[];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url,method=req.method;
@@ -48,7 +49,16 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   else if(path.endsWith('/secret-requests'))data=[];
   else if(path.endsWith('/sessions/interactive')){let body='';for await(const chunk of req)body+=chunk;interactiveRequests.push(JSON.parse(body));data={session:'shell-test'}}
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
-  else if(path==='/v1/logical-boxes/test')data={id:'test',name:'Test',state,tools,defaultAgent};
+  else if(path==='/v1/logical-boxes/test'){if(method==='PATCH'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);if(parsed.role)boxRole=parsed.role}data={id:'test',name:'Test',state,tools,defaultAgent,role:boxRole}}
+  else if(path==='/v1/logical-boxes/test/contacts'){
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
+   return res.end(JSON.stringify(contacts));
+  }
+  else if(path.startsWith('/v1/logical-boxes/test/contacts/')&&method==='DELETE'){contacts=contacts.filter(c=>c.contactName!==decodeURIComponent(path.split('/').pop()));res.statusCode=204;return res.end()}
+  else if(path==='/v1/logical-boxes/test/protection'){
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;protectedBox=!!JSON.parse(body).protected}
+   return res.end(JSON.stringify({protected:protectedBox}));
+  }
   else if(path.endsWith('/resources'))data={slotId:'slot-test',assignmentGeneration:7,resources:{cpu:2,memoryMiB:12288},message:'Limits submitted. No restart requested.'};
   else if(path.endsWith('/connection'))data={connection:{transport:connectionTransport,endpoint:connectionTransport==='openssh'?'instance@ssh.railway.com':'service-id',metadata:{vmboxRegion:'europe-west4'}}};
   else if(path.endsWith('/allocate'))data={state:'failed',failureReason:'Fixture stopped box'};
@@ -195,6 +205,31 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   });
   await t.test('restricted roles remain on TMUX',async()=>{
    role='member';const p=await page();await terminalReady(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});await p.close();role='owner';
+  });
+  await t.test('contacts panel edits the runtime contact graph and captures a screenshot',async()=>{
+   boxRole='worker';protectedBox=false;contacts=[{contactName:'builder',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
+   const p=await page();await p.waitForFunction(()=>!document.querySelector('#connect').disabled);
+   await p.waitForFunction(()=>document.querySelector('#box-contacts').hidden===false);
+   await p.click('#box-contacts summary');
+   await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===1);
+   assert.match(await p.$eval('#contact-status',e=>e.textContent),/worker may message only/);
+   await p.type('#contact-form input[name=contact]','reviewer');await p.click('#contact-form button');
+   await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===2);
+   assert.equal(requests.includes('PUT /v1/logical-boxes/test/contacts'),true);
+   await p.click('#contact-toggle-role');
+   await p.waitForFunction(()=>document.querySelector('#contact-role').textContent==='manager');
+   assert.equal(requests.includes('PATCH /v1/logical-boxes/test'),true);
+   await p.click('#contact-toggle-protection');
+   await p.waitForFunction(()=>document.querySelector('#contact-protection-label').textContent.startsWith('Protected'));
+   assert.equal(requests.includes('PUT /v1/logical-boxes/test/protection'),true);
+   await p.click('#contact-list li button');
+   await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===1);
+   assert.equal(requests.some(r=>r.startsWith('DELETE /v1/logical-boxes/test/contacts/')),true);
+   await (await p.$('#box-contacts')).screenshot({path:'docs/chat-ui/screenshots/desktop-box-contacts.png'});
+   await p.close();boxRole='worker';protectedBox=false;contacts=[];
+  });
+  await t.test('contacts panel stays hidden for non-owners',async()=>{
+   role='member';const p=await page();await terminalReady(p);await p.waitForFunction(()=>document.querySelector('#box-contacts').hidden);assert.equal(requests.some(r=>r.includes('/contacts')||r.includes('/protection')),false);await p.close();role='owner';
   });
   await t.test('opening a sleeping box stays read-only until explicit resume',async()=>{
    state='hibernated';const p=await page();await p.waitForFunction(()=>document.querySelector('#connect').textContent==='Resume box'&&!document.querySelector('#connect').disabled);

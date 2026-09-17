@@ -91,7 +91,11 @@ func (s *Store) UpsertLogicalBox(ctx context.Context, p Principal, box v1.Logica
 	if !validAgent(box.DefaultAgent) {
 		return box, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
 	}
-	err := s.DB.QueryRowContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,state,volume_id,volume_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(account_id,name) DO UPDATE SET updated_at=now() WHERE logical_boxes.volume_id=excluded.volume_id AND logical_boxes.provider=excluded.provider AND logical_boxes.owner_user_id=excluded.owner_user_id RETURNING id::text,owner_user_id::text,state,created_at,updated_at`, box.ID, p.AccountID, box.OwnerUserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.State, box.VolumeID, box.VolumeName).Scan(&box.ID, &box.OwnerUserID, &box.State, &box.CreatedAt, &box.UpdatedAt)
+	box.Role = strings.ToLower(strings.TrimSpace(box.Role))
+	if !v1.ValidBoxRole(box.Role) {
+		box.Role = string(v1.BoxRoleWorker)
+	}
+	err := s.DB.QueryRowContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,role,state,volume_id,volume_name) VALUES($1,$2,$3,$4,$5,$6,$7,$11,$8,$9,$10) ON CONFLICT(account_id,name) DO UPDATE SET updated_at=now() WHERE logical_boxes.volume_id=excluded.volume_id AND logical_boxes.provider=excluded.provider AND logical_boxes.owner_user_id=excluded.owner_user_id RETURNING id::text,owner_user_id::text,state,created_at,updated_at`, box.ID, p.AccountID, box.OwnerUserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.State, box.VolumeID, box.VolumeName, box.Role).Scan(&box.ID, &box.OwnerUserID, &box.State, &box.CreatedAt, &box.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return box, fmt.Errorf("logical box ownership or volume identity does not match the existing record")
 	}
@@ -123,7 +127,7 @@ func scanLogicalBox(scanner interface{ Scan(...any) error }) (v1.LogicalBox, err
 	var tools []byte
 	err := scanner.Scan(
 		&box.ID, &box.AccountID, &box.OwnerUserID, &box.Name, &box.Provider,
-		&box.ProviderCredential, &box.DefaultAgent, &box.State, &box.VolumeID, &box.VolumeName,
+		&box.ProviderCredential, &box.DefaultAgent, &box.Role, &box.State, &box.VolumeID, &box.VolumeName,
 		&box.SlotID, &box.AssignmentGeneration, &box.LeaseOwner, &lease,
 		&box.RestorationState, &box.FailureReason, &box.CreatedAt, &box.UpdatedAt,
 		&tools,
@@ -137,7 +141,7 @@ func scanLogicalBox(scanner interface{ Scan(...any) error }) (v1.LogicalBox, err
 	return box, err
 }
 
-const logicalBoxSelect = `SELECT id::text,account_id::text,owner_user_id::text,name,provider,provider_credential,default_agent,state,volume_id,volume_name,COALESCE(slot_id::text,''),assignment_generation,COALESCE(lease_owner,''),lease_expires_at,COALESCE(restoration_state,''),COALESCE(failure_reason,''),created_at,updated_at,COALESCE(metadata->'tools','[]'::jsonb) FROM logical_boxes`
+const logicalBoxSelect = `SELECT id::text,account_id::text,owner_user_id::text,name,provider,provider_credential,default_agent,COALESCE(role,'worker'),state,volume_id,volume_name,COALESCE(slot_id::text,''),assignment_generation,COALESCE(lease_owner,''),lease_expires_at,COALESCE(restoration_state,''),COALESCE(failure_reason,''),created_at,updated_at,COALESCE(metadata->'tools','[]'::jsonb) FROM logical_boxes`
 
 func (s *Store) FleetStatus(ctx context.Context, accountID, providerName, credential string) (v1.FleetStatus, error) {
 	config, err := s.FleetConfig(ctx, accountID, providerName, credential)

@@ -34,8 +34,9 @@ func desktopMCPTools() []map[string]any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	return []map[string]any{
-		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
-		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
+		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns each contact's id, name, role, agent, state and whether messaging is allowed. Use a contact id or name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass contact (from get_contacts) to send a message to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
+		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass contact (from get_contacts) to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("typeSecret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
@@ -197,6 +198,28 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			return nil, fmt.Errorf("missing required argument: %s", key)
 		}
 	}
+	if name == "get_contacts" {
+		contacts, err := DesktopContacts(ctx, assignment)
+		if err != nil {
+			return nil, err
+		}
+		if len(contacts) == 0 {
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": "No contacts are available. The account owner has not granted this box any contact permission."}}}, nil
+		}
+		var lines []string
+		for _, contact := range contacts {
+			state := contact.State
+			if state == "" {
+				state = "unknown"
+			}
+			role := contact.Role
+			if role == "" {
+				role = "worker"
+			}
+			lines = append(lines, fmt.Sprintf("- %s | id %s | role %s | agent %s | %s | message %t | receive %t", contact.Name, contact.ID, role, contact.Agent, state, contact.CanMessage, contact.CanReceive))
+		}
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
+	}
 	if name == "secret_request" {
 		var key string
 		if json.Unmarshal(values["key"], &key) != nil {
@@ -215,6 +238,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 	if name == "chat_message" {
 		var request struct {
 			ReplyTo string   `json:"replyTo"`
+			Contact string   `json:"contact"`
 			Text    string   `json:"text"`
 			Files   []string `json:"files"`
 		}
@@ -225,6 +249,21 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
 				return nil, err
 			}
+		}
+		if request.Contact != "" {
+			if err := validateContactRef(request.Contact); err != nil {
+				return nil, err
+			}
+			if len(request.Files) > 0 {
+				return nil, fmt.Errorf("contact messages cannot carry image files")
+			}
+			if err := requireContact(ctx, assignment, request.Contact); err != nil {
+				return nil, err
+			}
+			if err := writeChatEvent(ctx, ChatEvent{Kind: "contact", Contact: request.Contact, Text: request.Text}); err != nil {
+				return nil, err
+			}
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Message delivered to the contact's conversation."}}}, nil
 		}
 		images, err := loadChatImages(request.Files)
 		if err != nil {
@@ -238,6 +277,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 	if name == "chat_ask" {
 		var request struct {
 			ReplyTo  string   `json:"replyTo"`
+			Contact  string   `json:"contact"`
 			Question string   `json:"question"`
 			Choices  []string `json:"choices"`
 			Multiple bool     `json:"multiple"`
@@ -254,6 +294,25 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if strings.TrimSpace(choice) == "" || len(choice) > 500 {
 				return nil, fmt.Errorf("invalid choice")
 			}
+		}
+		if request.Contact != "" {
+			if err := validateContactRef(request.Contact); err != nil {
+				return nil, err
+			}
+			if err := requireContact(ctx, assignment, request.Contact); err != nil {
+				return nil, err
+			}
+			text := request.Question + "\n\nChoices:"
+			for _, choice := range request.Choices {
+				text += "\n- " + choice
+			}
+			if request.Multiple {
+				text += "\n\nOne or more choices may be selected."
+			}
+			if err := writeChatEvent(ctx, ChatEvent{Kind: "contact", Contact: request.Contact, Text: text}); err != nil {
+				return nil, err
+			}
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to the contact's conversation."}}}, nil
 		}
 		event := ChatEvent{Kind: "question", ReplyTo: request.ReplyTo, Text: request.Question, Question: &ChatQuestion{Text: request.Question, Choices: request.Choices, Multiple: request.Multiple}}
 		if err := writeChatEvent(ctx, event); err != nil {

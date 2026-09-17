@@ -15,6 +15,9 @@ type CreateBoxTaskRequest struct {
 	Args        []string             `json:"args,omitempty"`
 	Session     string               `json:"session,omitempty"`
 	Images      []BoxMessageImageRef `json:"images,omitempty"`
+	// SenderBoxID marks an inter-box message; it is never accepted from API
+	// callers and only set by the controller after contact validation.
+	SenderBoxID string `json:"-"`
 }
 
 type BoxTask struct {
@@ -36,6 +39,8 @@ type SendBoxMessageRequest struct {
 	Text   string               `json:"text"`
 	Submit *bool                `json:"submit,omitempty"`
 	Images []BoxMessageImageRef `json:"images,omitempty"`
+	// SenderBoxID marks an inter-box message; controller-set only.
+	SenderBoxID string `json:"-"`
 }
 
 type BoxMessageImageRef struct {
@@ -62,17 +67,18 @@ type TerminalInputRequest struct {
 }
 
 type BoxMessage struct {
-	ID        string              `json:"id"`
-	TaskID    string              `json:"taskId"`
-	UserID    string              `json:"userId,omitempty"`
-	Direction string              `json:"direction"`
-	ChatKey   string              `json:"chatKey,omitempty"`
-	Text      string              `json:"text"`
-	State     string              `json:"state"`
-	CreatedAt time.Time           `json:"createdAt"`
-	UpdatedAt time.Time           `json:"updatedAt"`
-	Images    []BoxMessageImage   `json:"images,omitempty"`
-	Question  *BoxMessageQuestion `json:"question,omitempty"`
+	ID          string              `json:"id"`
+	TaskID      string              `json:"taskId"`
+	UserID      string              `json:"userId,omitempty"`
+	Direction   string              `json:"direction"`
+	ChatKey     string              `json:"chatKey,omitempty"`
+	SenderBoxID string              `json:"senderBoxId,omitempty"`
+	Text        string              `json:"text"`
+	State       string              `json:"state"`
+	CreatedAt   time.Time           `json:"createdAt"`
+	UpdatedAt   time.Time           `json:"updatedAt"`
+	Images      []BoxMessageImage   `json:"images,omitempty"`
+	Question    *BoxMessageQuestion `json:"question,omitempty"`
 }
 
 type TerminalSnapshot struct {

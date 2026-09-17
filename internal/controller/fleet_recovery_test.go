@@ -280,12 +280,12 @@ func TestUpdateLogicalBoxPersistsDefaultAgentWithAudit(t *testing.T) {
 	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
 	mock.ExpectBegin()
 	mock.ExpectExec("UPDATE logical_boxes SET default_agent").
-		WithArgs("account-a", "box-1", "user-a", "user", "codex").
+		WithArgs("account-a", "box-1", "user-a", "user", "codex", "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRowWithAgent(v1.LogicalBoxRunning, "codex"))
 	mock.ExpectExec("logical_box.settings.update").
-		WithArgs("account-a", "user-a", "box-1", "codex").
+		WithArgs("account-a", "user-a", "box-1", "codex", "worker").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 	box, err := store.UpdateLogicalBox(context.Background(), p, "box-1", v1.UpdateLogicalBoxRequest{DefaultAgent: " CODEX "})
@@ -312,10 +312,10 @@ func logicalBoxRowWithSlot(state v1.LogicalBoxState, agent, slotID string) *sqlm
 	now := time.Now().UTC()
 	return sqlmock.NewRows([]string{
 		"id", "account_id", "owner_user_id", "name", "provider", "provider_credential",
-		"default_agent", "state", "volume_id", "volume_name", "slot_id", "assignment_generation",
+		"default_agent", "role", "state", "volume_id", "volume_name", "slot_id", "assignment_generation",
 		"lease_owner", "lease_expires_at", "restoration_state", "failure_reason",
 		"created_at", "updated_at", "tools",
-	}).AddRow("box-1", "account-a", "user-a", "research", "railway", "primary", agent,
+	}).AddRow("box-1", "account-a", "user-a", "research", "railway", "primary", agent, "worker",
 		string(state), "volume-1", "volume-name", slotID, int64(3), "", nil, "", "", now, now, "[]")
 }
 
@@ -346,12 +346,12 @@ func boxTaskRow(id, state string) *sqlmock.Rows {
 
 func boxMessageRow(id, taskID, userID, direction, body, state string) *sqlmock.Rows {
 	now := time.Now().UTC()
-	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key"}).
-		AddRow(id, taskID, userID, direction, body, state, now, now, "")
+	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key", "sender_box_id"}).
+		AddRow(id, taskID, userID, direction, body, state, now, now, "", "")
 }
 
 func emptyBoxMessageRows() *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key"})
+	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key", "sender_box_id"})
 }
 
 func boxTaskRowWithSession(id, state, session string) *sqlmock.Rows {

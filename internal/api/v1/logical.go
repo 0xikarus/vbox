@@ -18,6 +18,7 @@ type CreateLogicalBoxRequest struct {
 	// back to the account-default preset (or no managed instructions when no
 	// account default exists). An explicit selection always wins.
 	Instructions *InstructionSelection `json:"instructions,omitempty"`
+	Role         string                `json:"role,omitempty"`
 	Region       string                `json:"region,omitempty"`
 	DiskGiB      int64                 `json:"diskGiB,omitempty"`
 	VolumeID     string                `json:"volumeId,omitempty"`
@@ -37,11 +38,18 @@ func (r *CreateLogicalBoxRequest) Normalize() {
 	if r.DefaultAgent == "" {
 		r.DefaultAgent = "claude"
 	}
+	r.Role = strings.ToLower(strings.TrimSpace(r.Role))
+	if r.Role == "" {
+		r.Role = string(BoxRoleWorker)
+	}
 	if r.DiskGiB <= 0 {
 		r.DiskGiB = 10
 	}
 }
 
+// UpdateLogicalBoxRequest changes mutable box settings. An empty role leaves
+// the current role untouched; changing it requires the owner role.
 type UpdateLogicalBoxRequest struct {
 	DefaultAgent string `json:"defaultAgent"`
+	Role         string `json:"role,omitempty"`
 }

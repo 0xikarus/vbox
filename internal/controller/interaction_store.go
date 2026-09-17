@@ -123,7 +123,8 @@ func (s *Store) createBoxTaskTransaction(ctx context.Context, p Principal, box v
 	if err != nil {
 		return v1.BoxTask{}, false, err
 	}
-	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key) VALUES($1,$2,$3,$4,'user',$5,true,'queued',$6,$7)", messageID, p.AccountID, task.ID, p.UserID, request.Prompt, idempotency+":initial", chatMessageKey()); err != nil {
+	direction, senderBoxID := boxMessageOrigin(request.SenderBoxID)
+	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key,sender_box_id) VALUES($1,$2,$3,$4,$5,$6,true,'queued',$7,$8,$9)", messageID, p.AccountID, task.ID, p.UserID, direction, request.Prompt, idempotency+":initial", chatMessageKey(), senderBoxID); err != nil {
 		return v1.BoxTask{}, false, err
 	}
 	if err := attachBoxMessageImages(ctx, tx, p.AccountID, messageID, request.Images); err != nil {
@@ -229,7 +230,7 @@ func (s *Store) SetBoxTaskState(ctx context.Context, accountID, id, state, failu
 	return nil
 }
 
-const boxMessageColumns = "id::text,task_id::text,COALESCE(user_id::text,''),direction,body,state,created_at,updated_at,COALESCE(chat_key,'')"
+const boxMessageColumns = "id::text,task_id::text,COALESCE(user_id::text,''),direction,body,state,created_at,updated_at,COALESCE(chat_key,''),COALESCE(sender_box_id::text,'')"
 
 const boxMessageSelect = "SELECT " + boxMessageColumns + " FROM box_messages"
 
@@ -246,7 +247,7 @@ func chatMessageKey() string {
 
 func scanBoxMessage(scanner interface{ Scan(...any) error }) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
-	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey)
+	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID)
 	decodeBoxMessageQuestion(&message)
 	return message, err
 }
@@ -300,6 +301,15 @@ func (s *Store) InsertAgentBoxMessage(ctx context.Context, accountID, taskID, ev
 	return message, true, nil
 }
 
+// boxMessageOrigin maps an inter-box sender to the stored direction and origin
+// column. A normal owner/agent message has no sender box.
+func boxMessageOrigin(senderBoxID string) (string, any) {
+	if senderBoxID != "" {
+		return "box", senderBoxID
+	}
+	return "user", nil
+}
+
 func (s *Store) CreateBoxMessage(ctx context.Context, p Principal, taskID, idempotency string, request v1.SendBoxMessageRequest) (v1.BoxMessage, bool, error) {
 	if idempotency == "" {
 		return v1.BoxMessage{}, false, fmt.Errorf("Idempotency-Key is required")
@@ -320,7 +330,8 @@ func (s *Store) CreateBoxMessage(ctx context.Context, p Principal, taskID, idemp
 	}
 	defer tx.Rollback()
 	messageID := uuid()
-	message, err := scanBoxMessage(tx.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key) VALUES($1,$2,$3,$4,'user',$5,$6,'queued',$7,$8) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, messageID, p.AccountID, taskID, p.UserID, request.Text, submit, idempotency, chatMessageKey()))
+	direction, senderBoxID := boxMessageOrigin(request.SenderBoxID)
+	message, err := scanBoxMessage(tx.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key,sender_box_id) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9,$10) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, messageID, p.AccountID, taskID, p.UserID, direction, request.Text, submit, idempotency, chatMessageKey(), senderBoxID))
 	if errors.Is(err, sql.ErrNoRows) {
 		if err := tx.Rollback(); err != nil {
 			return v1.BoxMessage{}, false, err
@@ -374,7 +385,7 @@ func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID s
 	if _, err := s.BoxTask(ctx, p, taskID); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,'')
+	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,'')
 		FROM box_messages m
 		WHERE m.account_id=$1 AND m.task_id=$2 AND m.direction='user' AND m.state='delivered' AND m.submit
 		AND NOT EXISTS (
@@ -457,7 +468,7 @@ func (s *Store) FirstQueuedTaskMessage(ctx context.Context, accountID, taskID st
 
 func scanBoxMessageWithSubmit(scanner interface{ Scan(...any) error }, submit *bool) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
-	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, submit)
+	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID, submit)
 	decodeBoxMessageQuestion(&message)
 	return message, err
 }

@@ -119,7 +119,15 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #takeover-screen>div{width:100%;height:100%}
 
 /* ---------- inspect drawer: per-box ping/activity ---------- */
-#inspect{position:absolute;top:0;right:0;bottom:0;width:min(21rem,86vw);background:#f0f2f5;z-index:6;box-shadow:-.3rem 0 .9rem rgba(11,20,26,.22);display:flex;flex-direction:column}
+#inspect{position:absolute;top:0;right:0;bottom:0;width:min(21rem,86vw);background:#f0f2f5;z-index:6;box-shadow:-.3rem 0 .9rem rgba(11,20,26,.22);display:flex;flex-direction:column;overflow-y:auto}
+#inspect-contacts{padding:.2rem 1rem 1rem;font-size:.88rem;border-top:1px solid #e1e6e9}
+#inspect-contacts h3{margin:.8rem 0 .3rem;font-size:.95rem;color:#111b21}
+#inspect-contacts p{margin:.3rem 0}
+#inspect-contact-list{max-height:11rem;overflow-y:auto;margin:.3rem 0;padding-left:1.1rem}
+#inspect-contact-list li{padding:.2rem 0}
+#inspect-contacts form{display:flex;gap:.4rem;flex-wrap:wrap;align-items:flex-end;margin-top:.4rem}
+#inspect-contacts form label{display:flex;flex-direction:column;gap:.2rem;flex:1 1 9rem}
+#inspect-contacts form input{min-width:0}
 #inspect header{display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:#e9edef;color:#111b21;flex:none}
 #inspect header button{border:0;background:none;font-size:1.2rem;color:#54656f;cursor:pointer;margin:0}
 #inspect-avatar{display:flex;justify-content:center;padding:1rem 0 .4rem}

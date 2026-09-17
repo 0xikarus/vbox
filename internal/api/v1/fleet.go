@@ -36,6 +36,19 @@ const (
 	LogicalBoxFailed      LogicalBoxState = "failed"
 )
 
+// A box role is set when the workspace is created. A manager holds the
+// fleet-wide contact permission; a worker only has explicit contact edges.
+type BoxRole string
+
+const (
+	BoxRoleWorker  BoxRole = "worker"
+	BoxRoleManager BoxRole = "manager"
+)
+
+func ValidBoxRole(role string) bool {
+	return role == string(BoxRoleWorker) || role == string(BoxRoleManager)
+}
+
 type FleetConfig struct {
 	Region             string    `json:"region,omitempty"`
 	Provider           string    `json:"provider"`
@@ -92,6 +105,7 @@ type LogicalBox struct {
 	Provider             string          `json:"provider"`
 	ProviderCredential   string          `json:"providerCredential,omitempty"`
 	DefaultAgent         string          `json:"defaultAgent"`
+	Role                 string          `json:"role,omitempty"`
 	OwnerUserID          string          `json:"ownerUserId,omitempty"`
 	State                LogicalBoxState `json:"state"`
 	VolumeID             string          `json:"volumeId"`

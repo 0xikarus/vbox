@@ -528,6 +528,7 @@
   if(box.state==='running')act('Re-sync','Re-push the saved config to the running box',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
   actions.append(at,ad);inspectRows.append(actions);
+  maybeLoadInspectContacts(box);
  }
  async function samplePing(){
   if(!inspectOpen)return;
@@ -540,9 +541,46 @@
  $('#chat-info').onclick=()=>{
   inspectOpen=!inspectOpen;inspect.hidden=!inspectOpen;
   if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
-  else{clearInterval(inspectTimer);controllerPing=null}
+  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''}
  };
- $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null};
+ $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''};
+
+ /* ---------- inspect drawer: per-box contact graph (owner) ---------- */
+ const inspectContacts=$('#inspect-contacts');
+ let inspectContactsFor='',inspectProtected=false;
+ async function loadInspectContacts(box){
+  const status=$('#inspect-contact-status'),list=$('#inspect-contact-list');
+  status.textContent='Loading…';
+  try{
+   const [contacts,protection]=await Promise.all([api(boxPath(box.id)+'/contacts'),api(boxPath(box.id)+'/protection')]);
+   if(!inspectOpen||selected!==box.id)return;
+   inspectProtected=!!protection.protected;
+   const role=box.role==='manager'?'manager':'worker';
+   $('#inspect-contact-role').textContent=role;
+   $('#inspect-toggle-role').textContent=role==='manager'?'Make worker':'Make manager';
+   $('#inspect-protection-label').textContent=inspectProtected?'Protected — managers cannot see or message this box':'Not protected';
+   $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
+   list.replaceChildren();
+   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No explicit contacts.';list.append(empty)}
+   for(const contact of contacts){
+    const item=document.createElement('li');
+    item.textContent=contact.contactName+' · '+(contact.contactRole||'worker')+' · '+(contact.contactState||'unknown');
+    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';
+    remove.onclick=async()=>{remove.disabled=true;try{await api(boxPath(box.id)+'/contacts/'+encodeURIComponent(contact.contactName),'DELETE');await loadInspectContacts(box)}catch(e){status.textContent=e.message;remove.disabled=false}};
+    item.append(document.createTextNode(' '),remove);list.append(item);
+   }
+   status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the explicit contacts listed above.';
+  }catch(e){status.textContent=e.message}
+ }
+ function maybeLoadInspectContacts(box){
+  if(!owner){inspectContacts.hidden=true;inspectContactsFor='';return}
+  inspectContacts.hidden=false;
+  if(inspectContactsFor===box.id)return;
+  inspectContactsFor=box.id;void loadInspectContacts(box);
+ }
+ $('#inspect-contact-form').onsubmit=async event=>{event.preventDefault();const box=boxes.get(selected);if(!box)return;const button=event.target.querySelector('button');button.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:event.target.elements.contact.value.trim()});event.target.reset();await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}finally{button.disabled=false}};
+ $('#inspect-toggle-role').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const next=box.role==='manager'?'worker':'manager';try{await api(boxPath(box.id),'PATCH',{}, {defaultAgent:box.defaultAgent||'shell',role:next});box.role=next;await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
+ $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
 
  /* ---------- toasts ---------- */
  function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#chat-toasts').append(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},3200);}

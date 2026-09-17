@@ -26,6 +26,7 @@ type ChatEvent struct {
 	ID       string           `json:"id"`
 	Kind     string           `json:"kind"`
 	ReplyTo  string           `json:"replyTo"`
+	Contact  string           `json:"contact,omitempty"`
 	Text     string           `json:"text"`
 	Images   []ChatEventImage `json:"images,omitempty"`
 	Question *ChatQuestion    `json:"question,omitempty"`

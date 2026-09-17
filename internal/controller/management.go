@@ -163,7 +163,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 			// passed to Codex at process start.
 			request.Session = ""
 		}
-		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images})
+		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images, SenderBoxID: request.SenderBoxID})
 		if err != nil {
 			return response, err
 		}
@@ -180,7 +180,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		}
 		return response, nil
 	}
-	message, _, err := s.Store.CreateBoxMessage(ctx, p, selected.ID, idempotency+":message", v1.SendBoxMessageRequest{Text: request.Text, Images: request.Images})
+	message, _, err := s.Store.CreateBoxMessage(ctx, p, selected.ID, idempotency+":message", v1.SendBoxMessageRequest{Text: request.Text, Images: request.Images, SenderBoxID: request.SenderBoxID})
 	if err != nil {
 		return response, err
 	}
