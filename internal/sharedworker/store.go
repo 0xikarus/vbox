@@ -202,17 +202,32 @@ func (s *Store) save() (err error) {
 	return dir.Sync()
 }
 
+// isolationStatus reports the tier actually in force. Runtimes that cannot
+// report a status are treated as the legacy uid tier, never as isolated.
+func (s *Store) isolationStatus() IsolationStatus {
+	if reporter, ok := s.Runtime.(interface{ IsolationStatus() IsolationStatus }); ok {
+		return reporter.IsolationStatus()
+	}
+	return SelectIsolation(IsolationModeUID, Capabilities{})
+}
+
 func (s *Store) connection(slot Slot) provider.Connection {
 	workspace := s.state.Workspaces[slot.WorkspaceID]
-	return provider.Connection{Transport: "shared-worker", Endpoint: slot.Name, Metadata: map[string]string{
+	metadata := map[string]string{
 		"deploymentInstanceId": fmt.Sprintf("%s:%s:%s:%d", s.state.HostID, s.Incarnation, slot.Identity, slot.Revision),
 		"hostId":               s.state.HostID, "workspaceId": slot.WorkspaceID,
 		"accountId": s.state.AccountID, "boxId": workspace.Owner.BoxID,
-	}}
+	}
+	for key, value := range s.isolationStatus().Metadata() {
+		metadata[key] = value
+	}
+	return provider.Connection{Transport: "shared-worker", Endpoint: slot.Name, Metadata: metadata}
 }
 
 func (s *Store) box(slot Slot) provider.Box {
 	box := provider.Box{ID: slot.Name, Name: slot.Name, Provider: "shared-worker", State: slot.State, Owner: slot.Owner, Connection: s.connection(slot), Region: "shared", Image: "shared-worker"}
+	status := s.isolationStatus()
+	box.Labels = map[string]string{"isolation.tier": string(status.Tier), "isolation.mode": string(status.Mode)}
 	if workspace, exists := s.state.Workspaces[slot.WorkspaceID]; exists {
 		storage := storageFor(workspace)
 		box.Storage = &storage

@@ -123,6 +123,142 @@ func TestDisposableTwoSlotWorker(t *testing.T) {
 	execute(0, "/usr/local/bin/vmbox-runtime", "health")
 }
 
+func TestDisposableTwoSlotIsolation(t *testing.T) {
+	endpoint := os.Getenv("VMBOX_TEST_SHARED_DISPOSABLE_ENDPOINT")
+	if endpoint == "" {
+		t.Skip("requires explicitly disposable shared worker")
+	}
+	client, err := New(endpoint, os.Getenv("VMBOX_TEST_SHARED_TOKEN"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedTier := os.Getenv("VMBOX_TEST_SHARED_EXPECT_TIER")
+	if expectedTier != "" && expectedTier != "uid" && expectedTier != "namespace" {
+		t.Fatalf("VMBOX_TEST_SHARED_EXPECT_TIER must be uid or namespace, got %q", expectedTier)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	type fixture struct {
+		box     provider.Box
+		storage provider.Storage
+		owner   provider.Owner
+	}
+	var fixtures []fixture
+	defer func() {
+		cleanup, finish := context.WithTimeout(context.Background(), 30*time.Second)
+		defer finish()
+		for _, item := range fixtures {
+			if err := client.DetachStorage(cleanup, item.box.ID, item.storage); err != nil {
+				t.Error(err)
+				continue
+			}
+			if err := client.DeleteStorage(cleanup, item.storage, item.owner); err != nil {
+				t.Error(err)
+			}
+			if err := client.Delete(cleanup, item.box.ID, item.box.Owner); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	for index := range 2 {
+		name := fmt.Sprintf("isolation-%d-%d", time.Now().UnixNano(), index)
+		owner := provider.Owner{AccountID: "00000000-0000-4000-8000-000000000001", BoxID: name}
+		box, err := client.Create(ctx, provider.CreateRequest{Name: name, Owner: owner})
+		if err != nil {
+			t.Fatal(err)
+		}
+		storage, err := client.CreateWorkspaceStorage(ctx, box.ID, owner, provider.Resources{DiskGiB: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		box, err = client.Inspect(ctx, box.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fixtures = append(fixtures, fixture{box, storage, owner})
+	}
+	execute := func(index int, argv ...string) provider.ExecResult {
+		t.Helper()
+		result, err := client.Exec(ctx, fixtures[index].box.ID, argv, provider.ExecOptions{})
+		if err != nil || result.ExitCode != 0 {
+			t.Fatalf("slot %d: %+v, %v", index, result, err)
+		}
+		return result
+	}
+
+	tier := fixtures[0].box.Connection.Metadata["isolationTier"]
+	label := fixtures[0].box.Labels["isolation.tier"]
+	if tier == "" || label == "" {
+		t.Fatalf("box 0 did not report isolation tier: metadata %+v labels %+v", fixtures[0].box.Connection.Metadata, fixtures[0].box.Labels)
+	}
+	if tier != label {
+		t.Fatalf("inconsistent isolation tier: metadata %q label %q", tier, label)
+	}
+	for index := 1; index < len(fixtures); index++ {
+		if reported := fixtures[index].box.Connection.Metadata["isolationTier"]; reported != tier {
+			t.Fatalf("box %d reported tier %q want %q", index, reported, tier)
+		}
+		if reported := fixtures[index].box.Labels["isolation.tier"]; reported != label {
+			t.Fatalf("box %d reported label %q want %q", index, reported, label)
+		}
+	}
+	if tier == "uid" && strings.TrimSpace(fixtures[0].box.Connection.Metadata["isolationReason"]) == "" {
+		t.Fatal("uid tier must report a non-empty isolationReason")
+	}
+	if expectedTier != "" && tier != expectedTier {
+		t.Fatalf("reported isolation tier %q does not match VMBOX_TEST_SHARED_EXPECT_TIER=%q", tier, expectedTier)
+	}
+
+	siblingWorkspace := fixtures[1].box.Connection.Metadata["workspaceId"]
+	if siblingWorkspace == "" {
+		t.Fatal("box 1 did not report workspaceId metadata")
+	}
+	siblingHome := "/data/workspaces/" + siblingWorkspace + "/home"
+
+	execute(0, "sh", "-c", `set -eu
+test -z "${VMBOX_SHARED_TOKEN:-}"
+printf first > "$HOME/marker"
+tmux new-session -d -s isolation-smoke 'sleep 60'`)
+	execute(1, "sh", "-c", `set -eu
+test -z "${VMBOX_SHARED_TOKEN:-}"
+printf second > "$HOME/marker"
+printf sibling > "$TMPDIR/isolation-sibling-marker"
+printf sibling > "$XDG_RUNTIME_DIR/isolation-sibling-marker"
+tmux new-session -d -s isolation-smoke 'sleep 60'
+tmux new-session -d -s isolation-sleeper "bash -c 'sleep 300' isolation-sibling-process"`)
+
+	execute(0, "sh", "-c", `set -eu
+test "$(cat "$HOME/marker")" = first
+test ! -r "$1/marker"
+test ! -r "$1"
+if ls /data/workspaces >/dev/null 2>&1; then exit 1; fi
+test ! -r /data/.shared-worker/state.json
+if ls /data/.shared-worker >/dev/null 2>&1; then exit 1; fi
+test ! -e /tmp/isolation-sibling-marker
+test ! -e /run/isolation-sibling-marker`, "isolation-test", siblingHome)
+
+	if tier == "namespace" {
+		execute(0, "sh", "-c", `set -eu
+test ! -w /usr
+test ! -w /etc
+test ! -e /data/workspaces
+test -z "${VMBOX_SHARED_TOKEN:-}"
+found=0
+self=$$
+for entry in /proc/[0-9]*; do
+  pid=${entry#/proc/}
+  if [ "$pid" = "$self" ] || [ "$pid" = "$PPID" ]; then continue; fi
+  if [ -r "$entry/cmdline" ] && tr '\000' ' ' < "$entry/cmdline" 2>/dev/null | grep -q isolation-sibling-process; then found=1; fi
+done
+test "$found" = 0`)
+	}
+
+	execute(0, "sh", "-c", `test "$(cat "$HOME/marker")" = first; test "$(tmux list-sessions -F '#{session_name}' | grep -c isolation-smoke)" = 1`)
+	execute(1, "sh", "-c", `test "$(cat "$HOME/marker")" = second; test "$(tmux list-sessions -F '#{session_name}' | grep -c isolation-smoke)" = 1`)
+	execute(0, "/usr/local/bin/vmbox-runtime", "health")
+	execute(1, "/usr/local/bin/vmbox-runtime", "health")
+}
+
 const sharedBlenderMCPProbe = `
 import asyncio, os, socket, sys, time
 from mcp import ClientSession, StdioServerParameters

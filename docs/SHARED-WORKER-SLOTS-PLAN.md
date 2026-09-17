@@ -3,8 +3,10 @@
 Status: broader implementation roadmap. The initial opt-in provider is documented
 in [Shared workers](SHARED-WORKERS.md); not all phases below are implemented. Shared workers are
 explicitly trusted-account process hosting, not Docker or Railway Sandboxes.
-This supersedes the namespace-isolation requirement in SHARED-WORKER-PROVIDER.md
-for this opt-in mode only. Dedicated Railway boxes retain their existing contract.
+This relaxes the namespace-isolation requirement in SHARED-WORKER-PROVIDER.md for
+this opt-in mode only: the default remains uid-based, but a namespace tier is now
+available behind explicit configuration and must be verified per host before use.
+Dedicated Railway boxes retain their existing contract.
 
 ## Outcome and terminology
 

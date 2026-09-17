@@ -32,7 +32,10 @@ not upgrade existing workers or shared hosts; rollout is a separate operation.
 The opt-in [shared-worker provider](SHARED-WORKERS.md) supports several logical
 slots on one physical worker. Its supervisor is `internal/sharedworker`, provider
 adapter is `internal/provider/shared`, and entry point is `cmd/vmbox-shared-worker`.
-Do not apply dedicated-worker whole-volume cleanup to these boxes.
+Each box selects an isolation tier (`uid` by default, `namespace` when configured
+and verified) and reports it in connection metadata and box labels; isolation
+status is reported, never assumed. Do not apply dedicated-worker whole-volume
+cleanup to these boxes.
 
 | Area | Entry points |
 | --- | --- |
