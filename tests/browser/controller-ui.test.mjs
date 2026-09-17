@@ -14,7 +14,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/markdown.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -34,12 +34,19 @@ before(async()=>{
    '/v1/notifications':[],
    '/v1/whoami':{accountId:'account-1',accountName:'Team'},
    '/v1/login-profiles':[{application:'claude',name:'personal',createdAt:revision},{application:'opencode',name:'openrouter',createdAt:revision}],
+   '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
+   '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
+   '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision},pending:false},
+   '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
+  if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/instructions')return res.end(JSON.stringify({...values['/v1/logical-boxes/box-1/instructions'],note:'fixture applied'}));
+  if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/login-profiles')return res.end(JSON.stringify({profiles:body.profiles,pending:[],verified:true,note:'fixture applied'}));
+  if(req.method==='PUT' && (path==='/v1/instruction-presets-default'||path==='/v1/instruction-presets/general')){res.statusCode=204;return res.end()}
   if(req.method==='POST' && path==='/v1/logical-boxes')return res.end(JSON.stringify({id:'created'}));
   if(req.method==='DELETE' && path==='/v1/login-profiles/claude/personal'){res.statusCode=204;return res.end()}
   res.statusCode=404;res.end(JSON.stringify({error:'unexpected endpoint'}));
@@ -329,5 +336,50 @@ test('fleet locations load on demand and preserve occupied fleets on rejection',
  await page.waitForFunction(()=>document.querySelector('#location-status').textContent.includes('empty fleet'));
  assert.deepEqual(await page.evaluate(()=>locationWrites),[{provider:'railway',providerCredential:'primary',region:'us'}]);
  assert.match(await page.$eval('#capacity',e=>e.textContent),/helper ü/);
+ await page.close();
+});
+test('instruction presets preview safely, bound size, and apply explicitly to boxes',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#instruction-list table');
+ assert.match(await page.$eval('#instruction-list',element=>element.textContent),/general/);
+ assert.match(await page.$eval('#instruction-list',element=>element.textContent),/default/);
+ // The creation form offers automatic, none, every preset, and a custom copy.
+ await page.evaluate(()=>{document.querySelector('#box-instructions-block').open=true});
+ assert.deepEqual(await page.$$eval('#create-instructions option',nodes=>nodes.map(node=>node.value)),['auto','none','general','custom']);
+ await page.select('#create-instructions','general');
+ await page.waitForFunction(()=>document.querySelector('#create-instructions-preview').textContent.includes('House rules'));
+ // Embedded markup in user Markdown is rendered as text, never as live nodes.
+ assert.equal(await page.$eval('#create-instructions-preview',element=>element.querySelectorAll('img,script').length),0);
+ assert.equal(await page.evaluate(()=>window.pwned),undefined);
+ assert.match(await page.$eval('#create-instructions-preview',element=>element.textContent),/onerror/);
+ // An edited box copy keeps preset provenance in the creation payload.
+ await page.evaluate(()=>{const area=document.querySelector('#create-instructions-custom');area.value='# House rules\nAlways answer briefly.\nextra';area.dispatchEvent(new Event('input',{bubbles:true}))});
+ await page.type('#create input[name=name]','instructions-fixture');
+ const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
+ await page.click('#create button');await created;
+ assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.instructions,{preset:'general',markdown:'# House rules\nAlways answer briefly.\nextra'});
+ // Explicit Apply instructions action for an existing box.
+ await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Instructions')).click()});
+ await page.waitForFunction(()=>!document.querySelector('#box-instructions-modal').hidden);
+ await page.evaluate(()=>{const area=document.querySelector('#box-instructions-markdown');area.value='# Applied\nDo this.';area.dispatchEvent(new Event('input',{bubbles:true}))});
+ await page.select('#box-instructions-preset','custom');
+ await page.click('#box-instructions-apply');
+ await page.waitForFunction(()=>document.querySelector('#box-instructions-status').textContent.includes('fixture applied'));
+ assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/instructions').body,{markdown:'# Applied\nDo this.'});
+ // Editing imported profiles is an explicit, verified selection.
+ await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Credentials')).click()});
+ await page.waitForFunction(()=>!document.querySelector('#box-credentials-modal').hidden);
+ await page.select('#box-credentials-form select[name=claude]','personal');
+ await page.click('#box-credentials-apply');
+ await page.waitForFunction(()=>document.querySelector('#box-credentials-status').textContent.includes('fixture applied'));
+ assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/login-profiles').body,{profiles:[{application:'claude',name:'personal'}]});
+ // Oversized preset Markdown is rejected before any request is made.
+ await page.evaluate(()=>{document.querySelector('#instruction-editor').open=true});
+ await page.type('#instruction-form input[name=name]','huge-preset');
+ await page.evaluate(()=>{document.querySelector('#instruction-form textarea[name=markdown]').value='x'.repeat(70000)});
+ await page.click('#instruction-form button.primary');
+ await page.waitForFunction(()=>document.querySelector('#instruction-status').textContent.includes('64 KiB'));
+ assert.equal(requests.some(request=>request.method==='PUT'&&request.path==='/v1/instruction-presets/huge-preset'),false);
  await page.close();
 });

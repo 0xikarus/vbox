@@ -14,10 +14,14 @@ type CreateLogicalBoxRequest struct {
 	Provider           string            `json:"provider"`
 	ProviderCredential string            `json:"providerCredential,omitempty"`
 	DefaultAgent       string            `json:"defaultAgent,omitempty"`
-	Region             string            `json:"region,omitempty"`
-	DiskGiB            int64             `json:"diskGiB,omitempty"`
-	VolumeID           string            `json:"volumeId,omitempty"`
-	VolumeName         string            `json:"volumeName,omitempty"`
+	// Instructions selects managed Markdown instructions for the box. nil falls
+	// back to the account-default preset (or no managed instructions when no
+	// account default exists). An explicit selection always wins.
+	Instructions *InstructionSelection `json:"instructions,omitempty"`
+	Region       string                `json:"region,omitempty"`
+	DiskGiB      int64                 `json:"diskGiB,omitempty"`
+	VolumeID     string                `json:"volumeId,omitempty"`
+	VolumeName   string                `json:"volumeName,omitempty"`
 	// Omitted means start after creation. Explicit false retains the volume
 	// without occupying compute (for example, CLI --hibernate).
 	AllocateWhenReady    *bool  `json:"allocateWhenReady,omitempty"`

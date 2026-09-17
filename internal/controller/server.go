@@ -45,13 +45,13 @@ type Server struct {
 	// ChatInstructionEvery repeats the envelope on the first message of a chat
 	// and then every N messages; 1 means every message, 0 uses the default.
 	ChatInstructionEvery int
-	WorkerRuntime           []byte
-	WorkerAgent             []byte
-	Resolve                 ProviderResolver
-	Bootstrap               func(context.Context, provider.Provider, provider.Box, []string) error
-	HTTP                    *http.Client
-	ReconcileEvery          time.Duration
-	Deliver                 NotificationSink
+	WorkerRuntime        []byte
+	WorkerAgent          []byte
+	Resolve              ProviderResolver
+	Bootstrap            func(context.Context, provider.Provider, provider.Box, []string) error
+	HTTP                 *http.Client
+	ReconcileEvery       time.Duration
+	Deliver              NotificationSink
 	// StartTask hands a freshly created task to its agent. It is a field so
 	// that tests can observe the hand-off instead of racing a detached
 	// goroutine against their fixtures.
@@ -109,7 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/push/vapid-key", s.auth(s.vapidKeyHandler))
 	mux.HandleFunc("PUT /v1/push/subscriptions", s.auth(s.putPushSubscriptionHandler))
 	mux.HandleFunc("DELETE /v1/push/subscriptions", s.auth(s.deletePushSubscriptionHandler))
-	for _, asset := range []string{"xterm.js", "xterm-fit.js", "workspace-terminal.js", "novnc.js", "workspace-desktop.js"} {
+	for _, asset := range []string{"xterm.js", "xterm-fit.js", "workspace-terminal.js", "novnc.js", "workspace-desktop.js", "markdown.js"} {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/javascript; charset=utf-8", false))
 	}
 	for _, asset := range []string{"xterm.css", "workspace.css"} {
@@ -129,6 +129,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/ensure", s.desktopAgentAuth(s.ensureAgentDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/request", s.desktopAgentAuth(s.requestDesktopSecret))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/imported-credentials", s.owner(s.importedCredentials))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/login-profiles", s.owner(s.putBoxLoginProfiles))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/secret-requests", s.owner(s.desktopSecretRequests))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secret-requests/{key}", s.owner(s.desktopSecretRequests))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/browser/imports", s.owner(s.browserStateImports))
@@ -226,6 +227,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))
 	mux.HandleFunc("GET /v1/login-profiles", s.owner(s.listLoginProfiles))
 	mux.HandleFunc("DELETE /v1/login-profiles/{application}/{name}", s.owner(s.deleteLoginProfile))
+	mux.HandleFunc("GET /v1/instruction-presets", s.auth(s.listInstructionPresets))
+	mux.HandleFunc("GET /v1/instruction-presets/{name}", s.auth(s.getInstructionPreset))
+	mux.HandleFunc("PUT /v1/instruction-presets/{name}", s.owner(s.putInstructionPreset))
+	mux.HandleFunc("DELETE /v1/instruction-presets/{name}", s.owner(s.deleteInstructionPreset))
+	mux.HandleFunc("PUT /v1/instruction-presets-default", s.owner(s.setInstructionDefault))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/instructions", s.auth(s.boxInstructions))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/instructions", s.auth(s.applyBoxInstructions))
 	mux.HandleFunc("GET /v1/locations", s.auth(s.locationsHandler))
 	mux.HandleFunc("PUT /v1/login-profiles/{application}/{name}", s.owner(s.saveLoginProfile))
 	mux.HandleFunc("GET /v1/provider-schemas", s.owner(s.providerSchemasHandler))

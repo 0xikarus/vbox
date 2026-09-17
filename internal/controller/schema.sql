@@ -573,3 +573,37 @@ CREATE TABLE IF NOT EXISTS railway_refresh_hints (
 );
 CREATE INDEX IF NOT EXISTS railway_refresh_hints_pending_idx ON railway_refresh_hints(state,next_attempt_at,received_at);
 CREATE INDEX IF NOT EXISTS railway_refresh_hints_scope_idx ON railway_refresh_hints(account_id,provider_credential,project_id,environment_id,service_id,state);
+
+-- Instruction presets hold trusted user-authored Markdown guidance, kept
+-- deliberately separate from encrypted login profiles and credentials.
+CREATE TABLE IF NOT EXISTS instruction_presets (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  markdown text NOT NULL,
+  revision bigint NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,name)
+);
+CREATE TABLE IF NOT EXISTS instruction_preset_defaults (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  preset_name text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY(account_id,preset_name) REFERENCES instruction_presets(account_id,name) ON DELETE CASCADE
+);
+-- Boxes snapshot their selected Markdown with preset/version provenance.
+-- Snapshots never reference live preset contents: preset edits or deletion
+-- must not silently modify existing boxes.
+CREATE TABLE IF NOT EXISTS box_instruction_snapshots (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  source text NOT NULL CHECK (source IN ('none','preset','custom')),
+  preset_name text,
+  preset_revision bigint,
+  modified boolean NOT NULL DEFAULT false,
+  markdown text NOT NULL,
+  applied_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,box_id)
+);

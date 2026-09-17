@@ -25,6 +25,12 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 400, err)
 		return
 	}
+	if request.Instructions != nil {
+		if err := request.Instructions.Validate(); err != nil {
+			writeError(w, 400, err)
+			return
+		}
+	}
 	if (request.VolumeID != "" || request.VolumeName != "") && (len(request.Tools) > 0 || request.SetupScript != "") {
 		writeError(w, 400, fmt.Errorf("install tools after importing and resuming a volume; import does not initialize it"))
 		return
@@ -32,6 +38,10 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 	if request.VolumeID != "" || request.VolumeName != "" {
 		if len(request.LoginProfiles) > 0 {
 			writeError(w, 400, fmt.Errorf("saved profiles may only be provisioned when creating a new workspace"))
+			return
+		}
+		if request.Instructions != nil {
+			writeError(w, 400, fmt.Errorf("managed instructions may only be selected when creating a new workspace"))
 			return
 		}
 		if p.Role != "owner" {
@@ -69,9 +79,21 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
+	// Resolve the instruction selection against account presets and default
+	// before the box exists: the snapshot is stored with the box so later
+	// preset edits or deletion cannot change what this box received.
+	resolvedInstructions, err := s.Store.resolveInstructionSelection(r.Context(), p, request.Instructions, true)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
 	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), p, request)
 	if err != nil {
 		writeError(w, http.StatusConflict, err)
+		return
+	}
+	if err := s.Store.PutInstructionSnapshot(r.Context(), p, creation.Assignment.Box.ID, resolvedInstructions); err != nil {
+		writeError(w, http.StatusConflict, fmt.Errorf("could not store the instruction snapshot"))
 		return
 	}
 	writeJSON(w, http.StatusAccepted, creation.Assignment.Box)

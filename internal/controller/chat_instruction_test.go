@@ -26,15 +26,30 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 	}
 }
 
-// TestChatInstructionRepeatsEveryThirdMessage keeps the reply contract visible
-// on the first message and then periodically, instead of on every prompt.
+// TestChatInstructionRepeatsEveryThirdMessage keeps the full envelope on the
+// first message and then periodically; every other message carries the short
+// [sent via chat] reminder that still routes replies through chat_message.
 func TestChatInstructionRepeatsEveryThirdMessage(t *testing.T) {
 	server := &Server{}
 	want := map[int]bool{1: true, 2: false, 3: false, 4: true, 5: false, 6: false, 7: true, 10: true}
-	for ordinal, expected := range want {
+	for ordinal, envelope := range want {
 		got := server.chatInstruction("m1", "claude", ordinal)
-		if (got != "") != expected {
-			t.Fatalf("ordinal %d: envelope=%q, want present=%t", ordinal, got, expected)
+		hasEnvelope := strings.Contains(got, "vmbox Agent chat message m1]")
+		if hasEnvelope != envelope {
+			t.Fatalf("ordinal %d: envelope=%q, want envelope=%t", ordinal, got, envelope)
+		}
+		if !envelope {
+			for _, fragment := range []string{"[sent via vmbox Agent chat m1", "chat_message MCP tool (replyTo m1)", "not the terminal"} {
+				if !strings.Contains(got, fragment) {
+					t.Fatalf("ordinal %d reminder must mention %q: %q", ordinal, fragment, got)
+				}
+			}
+			if len(got) > 170 {
+				t.Fatalf("ordinal %d reminder must stay compact, got %d characters: %q", ordinal, len(got), got)
+			}
+		}
+		if got == "" {
+			t.Fatalf("ordinal %d must always carry either the envelope or the reply reminder", ordinal)
 		}
 	}
 }

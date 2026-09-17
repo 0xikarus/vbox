@@ -584,6 +584,58 @@ creation recovery remembers those selections. Account owners manage and provisio
 saved profiles. Expired upstream logins still need renewal; saving a profile does
 not establish that its authentication is valid.
 
+## Managed agent instructions
+
+Reusable **instruction presets** are named Markdown guidance sets stored on the
+controller account, separate from login credentials. Owners manage them in the
+controller UI (**instruction presets**) and in the chat app (**Presets**); any
+user may select one when creating a box. Presets are trusted user-authored agent
+guidance — never secrets, never setup scripts, and uploaded Markdown is never
+executed.
+
+At creation, choose **Account default preset / none**, an explicit **None**, a
+named preset, or a custom Markdown copy. The selected Markdown is copied into
+the box as an immutable **snapshot** with preset/version provenance. Editing or
+deleting a preset later never changes boxes that already copied it.
+
+Existing boxes change only through an explicit **Instructions…** action
+(controller box list and chat box menu): it previews the current snapshot, lets
+you apply None, a preset, or edited/custom Markdown, and reports whether the
+running box accepted it. A running box is updated in place; a stopped box keeps
+the selection pending and applies it during its next start. Agents never restart
+automatically: a new conversation or a restarted agent process reads the new
+instructions, while an already-running session keeps what it loaded.
+
+One canonical per-box file holds the guidance:
+`~/.config/vmbox/instructions.md`. It is linked into each agent's global
+instruction slot:
+
+| Agent (verified versions) | Slot | Notes |
+| --- | --- | --- |
+| Codex CLI 0.154 | `~/.codex/AGENTS.md` | global instructions merged into the model-visible prompt |
+| Claude Code 2.1 | `~/.claude/CLAUDE.md` | user memory; project `CLAUDE.md` files keep their normal precedence |
+| OpenCode 1.18 | `~/.config/opencode/AGENTS.md` | config-directory instructions; project `AGENTS.md` files keep their precedence |
+
+Links are tracked in a vmbox ledger. A pre-existing file at one of those paths
+is never overwritten or appended to: vmbox reports it as a conflict and that
+agent keeps its own file. Repository-owned `AGENTS.md`/`CLAUDE.md` files are
+never written. Applying **None** removes only vmbox-owned links. Snapshots live
+in the controller database and are re-applied idempotently on hibernation
+resume, worker replacement, and shared-worker recovery.
+
+### Editing the login profiles imported into a box
+
+Owners can also replace the saved Claude/Codex/OpenCode/GitHub profiles already
+imported into an existing box (controller box list and chat box menu →
+**Credentials…**). Credentials are written through the same verified channel
+used at creation, with the assignment locked and the volume checked; contents
+are never displayed. A running box is written immediately — restart the box or
+start a new agent conversation so the agent reads the new credentials — while a
+stopped box queues them and writes them during its next start. Instruction
+snapshots and other box configuration are untouched. Clearing references does
+not remove credential files already present in the box, exactly like deleting a
+saved profile.
+
 ## Deleting a box
 
 The controller UI also has a **Delete** button in each box row. Confirm the named
