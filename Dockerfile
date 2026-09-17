@@ -45,6 +45,7 @@ RUN apt-get update \
       python3-venv \
       pipx \
       sudo \
+      tini \
       unzip \
       tmux \
       util-linux \
@@ -134,4 +135,8 @@ ENV HOME=/data/home
 WORKDIR /data/workspace
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=6 CMD ["/usr/local/bin/vmbox-runtime", "health"]
-ENTRYPOINT ["/usr/local/bin/vmbox-entrypoint"]
+# tini is PID 1 so orphaned processes are reaped. Without a reaping init the
+# entrypoint's `exec sudo` leaves sudo as PID 1, which waits only for its own
+# child: every re-parented desktop/agent process stays a zombie and consumes a
+# cgroup pid slot until `pids.max` is exhausted and nothing can fork.
+ENTRYPOINT ["/usr/bin/tini", "-s", "--", "/usr/local/bin/vmbox-entrypoint"]

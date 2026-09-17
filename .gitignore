@@ -8,3 +8,4 @@
 # Railway infrastructure-as-code dependencies.
 node_modules/
 Codex conversation.md
+.worktrees/
