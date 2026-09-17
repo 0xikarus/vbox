@@ -1,8 +1,9 @@
 'use strict';
 window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
+ const viewOnly=options.viewOnly===true;
  const root=options.root||document.querySelector('#desktop-screen');root.replaceChildren();
  const url=new URL('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/desktop/stream',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
- const rfb=new NoVNC.default(root,url.href);rfb.scaleViewport=true;rfb.resizeSession=false;rfb.showDotCursor=true;let closed=false;
+ const rfb=new NoVNC.default(root,url.href);rfb.scaleViewport=true;rfb.resizeSession=false;rfb.showDotCursor=true;rfb.viewOnly=viewOnly;let closed=false;
  let latencyTimer,pendingProbe=null,probeSequence=0;
  const metrics=value=>options.onMetrics?.(value);
  function probe(){
@@ -18,12 +19,14 @@ window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  let remoteClipboard='';
  rfb.addEventListener('clipboard',e=>{remoteClipboard=e.detail.text||'';onStatus('Remote clipboard ready. Choose Copy to save it to this device.')});
  const controls=options.controls||document.querySelector('#desktop-controls');controls.replaceChildren();
+ if(!viewOnly){
  const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.dataset.action='copy';copy.onclick=async()=>{if(!remoteClipboard){onStatus('Copy or select text in the desktop first.');return}try{await navigator.clipboard.writeText(remoteClipboard);onStatus('Desktop clipboard copied to this device.')}catch{onStatus('Clipboard copy was blocked by the browser.')}};controls.append(copy);
  const paste=document.createElement('button');paste.type='button';paste.textContent='Paste';paste.dataset.action='paste';paste.onclick=async()=>{try{const value=await navigator.clipboard.readText();rfb.clipboardPasteFrom(value);rfb.focus();onStatus('Clipboard sent to the desktop. Use Ctrl+V in the app, or Ctrl+Shift+V in a terminal.')}catch{onStatus('Clipboard paste was blocked by the browser.')}};controls.append(paste);
  const address=document.createElement('button');address.type='button';address.textContent='Address bar';address.onclick=()=>{rfb.sendKey(0xffe3,'ControlLeft',true);rfb.sendKey(0x6c,'KeyL');rfb.sendKey(0xffe3,'ControlLeft',false);rfb.focus()};controls.append(address);
  const text=document.createElement('textarea');text.rows=1;text.placeholder='Type into desktop';text.setAttribute('aria-label','Desktop keyboard input');
  const type=()=>{for(const char of text.value){const code=char.codePointAt(0);rfb.sendKey(code===10?0xff0d:code>255?0x01000000+code:code)}text.value=''};
  text.addEventListener('input',e=>{if(!e.isComposing)type()});text.addEventListener('compositionend',type);text.addEventListener('keydown',e=>{if(e.key==='Backspace'&&!text.value){e.preventDefault();rfb.sendKey(0xff08)}});controls.append(text);
- for(const [label,fn] of [['Fit',()=>{rfb.scaleViewport=!rfb.scaleViewport}],['Fullscreen',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await root.requestFullscreen()}catch{onStatus('Fullscreen unavailable')}}],['Ctrl-Alt-Del',()=>rfb.sendCtrlAltDel()]]){const b=document.createElement('button');b.textContent=label;b.type='button';b.onclick=fn;controls.append(b)}
+ }
+ for(const [label,fn] of [['Fit',()=>{rfb.scaleViewport=!rfb.scaleViewport}],['Fullscreen',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await root.requestFullscreen()}catch{onStatus('Fullscreen unavailable')}}],...(viewOnly?[]:[['Ctrl-Alt-Del',()=>rfb.sendCtrlAltDel()]])]){const b=document.createElement('button');b.textContent=label;b.type='button';b.onclick=fn;controls.append(b)}
  return()=>{closed=true;clearInterval(latencyTimer);pendingProbe=null;rfb.disconnect();controls.replaceChildren()};
 };

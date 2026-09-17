@@ -3,7 +3,7 @@
  const $=s=>document.querySelector(s);
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle');
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set();
- let selected='',owner=false,boxTimer,msgTimer,lastSignature='';
+ let selected='',owner=false,boxTimer,msgTimer,lastSignature='',stickToBottom=true;
  let drafts=[],pendingKey='',pendingFingerprint='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
@@ -56,7 +56,31 @@
 
  /* ---------- TV preview: hover the processing bubble for a bigger view ---- */
  const tvPreviewEl=document.createElement('div');tvPreviewEl.className='tv-preview';tvPreviewEl.hidden=true;
+ const tvPreviewImg=document.createElement('img');tvPreviewImg.alt='';tvPreviewImg.hidden=true;
+ const tvPreviewNote=document.createElement('span');tvPreviewNote.className='tv-preview-note';
+ tvPreviewEl.append(tvPreviewImg,tvPreviewNote);
  document.body.append(tvPreviewEl);
+ const tvShotCache=new Map();
+ function tvShotRender(box){
+  const cached=tvShotCache.get(box.id);
+  tvPreviewImg.hidden=!cached?.url;
+  if(cached?.url&&tvPreviewImg.src!==cached.url)tvPreviewImg.src=cached.url;
+  tvPreviewNote.textContent=cached?.url?'Click for the live view':'no desktop preview yet';
+ }
+ function tvShotRefresh(box){
+  const cached=tvShotCache.get(box.id);
+  if(box.state!=='running'||(cached&&Date.now()-cached.at<5000))return;
+  tvShotCache.set(box.id,{url:cached?.url||'',at:Date.now()});
+  fetch(boxPath(box.id)+'/desktop/screenshot',{credentials:'same-origin',signal:AbortSignal.timeout(15000)})
+   .then(response=>{if(!response.ok)throw Error(response.status);return response.blob()})
+   .then(blob=>{
+    const previous=tvShotCache.get(box.id);
+    if(previous?.url)URL.revokeObjectURL(previous.url);
+    tvShotCache.set(box.id,{url:URL.createObjectURL(blob),at:Date.now()});
+    if(!tvPreviewEl.hidden)tvShotRender(box);
+   })
+   .catch(()=>tvShotCache.set(box.id,{url:cached?.url||'',at:Date.now()}));
+ }
  function tvIcon(){
   const ns='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(ns,'svg');
@@ -67,10 +91,9 @@
   return svg;
  }
  function showTvPreview(button,box){
-  tvPreviewEl.dataset.avatar=box.id;tvPreviewEl.dataset.state=box.state;
   tvPreviewEl.hidden=false;
-  tvPreviewEl.style.width=Math.min(380,window.innerWidth-24)+'px';
-  avatarRefresh(box);refreshAvatarNodes(box);
+  tvPreviewEl.style.width=Math.min(860,window.innerWidth-24)+'px';
+  tvShotRender(box);tvShotRefresh(box);
   const rect=button.getBoundingClientRect(),height=tvPreviewEl.offsetHeight;
   const width=tvPreviewEl.offsetWidth;
   const left=Math.min(Math.max(12,rect.left-8),Math.max(12,window.innerWidth-width-12));
@@ -106,7 +129,8 @@
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter));
-  list.sort((a,b)=>{const at=a.last?new Date(a.last.createdAt).getTime():0,bt=b.last?new Date(b.last.createdAt).getTime():0;return bt-at||a.name.localeCompare(b.name)});
+  // Keep the list stable: activity must not reshuffle rows under the pointer.
+  list.sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
   $('#chat-list-empty').hidden=list.length>0;
   for(const box of list){
    let row=rows.get(box.id);
@@ -224,9 +248,17 @@
   row.append(fwd);
   return row;
  }
+ function scrollMessagesToBottom(){
+  messagesEl.scrollTop=messagesEl.scrollHeight;
+  requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
+ }
+ // A chat opens at its newest message and keeps following output until the
+ // reader scrolls away; scrolling back to the bottom resumes following.
+ function followMessages(){stickToBottom=true;requestAnimationFrame(scrollMessagesToBottom)}
+ messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120});
  function renderMessages(box){
   hideTvPreview();
-  const nearBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;
+  const follow=stickToBottom;
   messagesEl.replaceChildren();
   let day='';
   for(const message of box.messages||[]){
@@ -240,16 +272,21 @@
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
-   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview the desktop, click to take control';tv.setAttribute('aria-label','Preview the desktop and take control');
+   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview the desktop, click for the live view';tv.setAttribute('aria-label','Preview the desktop and open the live view');
    tv.append(tvIcon());
    tv.onmouseenter=()=>showTvPreview(tv,box);
    tv.onmouseleave=hideTvPreview;
    tv.onfocus=()=>showTvPreview(tv,box);
    tv.onblur=hideTvPreview;
-   tv.onclick=()=>{hideTvPreview();void openTakeover('desktop')};
+   tv.onclick=()=>openLiveView(box);
    t.append(dots,label,tv);messagesEl.append(t);
   }
-  if(nearBottom||lastSignature==='')messagesEl.scrollTop=messagesEl.scrollHeight;
+  if(follow){
+   scrollMessagesToBottom();
+   // Late layout and image decoding grow the transcript after the first pass.
+   for(const image of messagesEl.querySelectorAll('img'))if(!image.complete)image.addEventListener('load',()=>{if(stickToBottom)scrollMessagesToBottom()},{once:true});
+   setTimeout(()=>{if(stickToBottom)scrollMessagesToBottom()},150);
+  }
  }
 
  /* ---------- forwarding ---------- */
@@ -334,6 +371,7 @@
  async function openBox(id){
   if(!boxes.has(id))return;
   selected=id;lastSignature='';
+  followMessages();
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;
   appEl.classList.add('in-chat');
   renderHeader();
@@ -430,6 +468,9 @@
  $('#chat-control').onclick=()=>void openTakeover('desktop');
  $('#takeover-close').onclick=closeTakeover;
  $('#takeover-backdrop').onclick=closeTakeover;
+ $('#live-view-close').onclick=closeLiveView;
+ $('#live-view-backdrop').onclick=closeLiveView;
+ $('#live-view-control').onclick=()=>{closeLiveView();void openTakeover('desktop')};
  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.onclick=()=>void openTakeover(b.dataset.kind));
 
  /* ---------- interrupt agent ---------- */
@@ -493,6 +534,24 @@
 
  /* ---------- toasts ---------- */
  function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#chat-toasts').append(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},3200);}
+
+ /* ---------- live view: large read-only desktop stream ---------- */
+ const liveView=$('#live-view'),liveViewScreen=$('#live-view-screen'),liveViewControls=$('#live-view-controls'),liveViewStatus=$('#live-view-status');
+ let liveViewDispose=null;
+ function closeLiveView(){
+  liveViewDispose?.();liveViewDispose=null;
+  liveView.hidden=true;liveViewScreen.replaceChildren();liveViewControls.replaceChildren();
+ }
+ function openLiveView(box){
+  hideTvPreview();
+  if(!liveView.hidden)closeLiveView();
+  liveView.hidden=false;
+  $('#live-view-title').textContent=box.name+' · live view';
+  liveViewStatus.textContent='Connecting…';
+  try{
+   liveViewDispose=openWorkspaceDesktop(box.id,message=>{liveViewStatus.textContent=message},{root:liveViewScreen,controls:liveViewControls,viewOnly:true,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
+  }catch(e){liveViewStatus.textContent=e.message}
+ }
 
  /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
  const newBoxModal=$('#new-box-modal'),createForm=$('#create-box');
@@ -606,7 +665,7 @@
   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
  }
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
- addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
+ addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!liveView.hidden)closeLiveView();if(!takeover.hidden)closeTakeover();}});
  async function hibernateBox(box){
   try{
    await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
@@ -704,6 +763,7 @@
   try{await api('/v1/browser-session','DELETE')}catch{}
   for(const url of imageURLs.values())URL.revokeObjectURL(url);imageURLs.clear();
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
+  for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   avatarCache.clear();headerAvatarKey='';
   for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();

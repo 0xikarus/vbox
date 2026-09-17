@@ -227,5 +227,22 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .msg.processing .tv-button:hover,.msg.processing .tv-button:focus-visible{background:#e9edef;color:#075e54}
 .msg.processing .tv-button svg{width:1rem;height:1rem}
 .tv-preview{position:fixed;z-index:40;padding:.3rem;background:#fff;border:1px solid #d1d7db;border-radius:.6rem;box-shadow:0 12px 32px rgba(11,20,26,.28);pointer-events:none}
-.tv-preview img{display:block;width:100%;border-radius:.4rem;background:#111b21}
-.tv-preview:empty::after{content:'no desktop preview yet';display:flex;align-items:center;justify-content:center;min-height:7rem;color:#667781;font-size:.8rem}
+.tv-preview img{display:block;width:100%;max-height:min(70vh,620px);object-fit:contain;border-radius:.4rem;background:#111b21}
+.tv-preview-note{display:block;padding:.28rem .35rem .1rem;color:#667781;font-size:.78rem}
+
+/* ---------- live view: large read-only desktop stream ---------- */
+#live-view{position:fixed;inset:0;z-index:34;display:flex;align-items:center;justify-content:center}
+#live-view-backdrop{position:absolute;inset:0;background:rgba(11,20,26,.72)}
+#live-view-card{position:relative;display:flex;flex-direction:column;width:min(1600px,97vw);height:min(1000px,94vh);background:#0b141a;border-radius:.6rem;overflow:hidden;box-shadow:0 .6rem 2.2rem rgba(0,0,0,.6)}
+#live-view-header{display:flex;align-items:center;gap:.6rem;padding:.45rem .8rem;background:#075e54;color:#fff;flex:none}
+#live-view-header strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#live-view-header .spacer{flex:1}
+#live-view-badge{background:#25d366;color:#0b141a;border-radius:1rem;padding:.1rem .55rem;font-size:.7rem;font-weight:700;letter-spacing:.06em}
+#live-view-status{font-size:.78rem;color:#d8fdd0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#live-view-header button{border:0;border-radius:1rem;padding:.28rem .8rem;background:rgba(255,255,255,.16);color:#fff;cursor:pointer;margin:0;font-size:.85rem;flex:none}
+#live-view-header button:hover{background:rgba(255,255,255,.28)}
+#live-view-close{border-radius:50%;width:1.9rem;height:1.9rem;font-size:1rem;padding:0}
+#live-view-screen{flex:1;min-height:0;background:#000;margin:0}
+#live-view-controls{display:flex;flex-wrap:wrap;gap:.4rem;padding:.35rem .6rem;background:#111b21;flex:none}
+#live-view-controls:empty{display:none}
+#live-view-controls button{border:0;border-radius:.35rem;padding:.25rem .6rem;background:#202c33;color:#e9edef;cursor:pointer;font-size:.8rem}
