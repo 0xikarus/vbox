@@ -97,6 +97,9 @@ func run() error {
 	server := controller.NewServer(store, registry)
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
 	server.DirectWorkersEnabled = os.Getenv("VMBOX_DIRECT_WORKERS") == "1"
+	if template := os.Getenv("VMBOX_CHAT_INSTRUCTION"); template != "" {
+		server.ChatInstructionTemplate = template
+	}
 	if server.DirectWorkersEnabled {
 		server.WorkerAgent, err = os.ReadFile("/usr/local/bin/vmbox-worker-agent")
 		if err != nil {

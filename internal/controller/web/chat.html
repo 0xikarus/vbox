@@ -87,6 +87,7 @@
    <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
    <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
    <label>Disk GiB <input name="disk" type="number" min="1" max="1024" value="10"></label>
+   <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
    <div id="profile-choices" class="profiles"></div>
    <fieldset id="create-tools" class="tools"><legend>Optional tools</legend></fieldset>
    <details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label>

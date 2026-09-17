@@ -35,11 +35,29 @@ func attachBoxMessageImages(ctx context.Context, tx *sql.Tx, accountID, messageI
 	return nil
 }
 
-func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
-	chatInstruction := ""
-	if agent != "shell" {
-		chatInstruction = fmt.Sprintf("\n\n[vmbox Agent chat message %s]\nWhen your response is ready, call the vmbox-desktop chat_reply tool with replyTo %s and your complete response text. Include absolute PNG/JPEG/GIF paths in files when you want to send images. If you need the user to choose, call chat_ask with the same replyTo, question, choices, and multiple flag.", message.ID, message.ID)
+// defaultChatInstruction is appended to every agent chat prompt. Keep it compact —
+// it is visible context in the agent's proliferating conversation.
+const defaultChatInstruction = "\n\n[vmbox Agent chat message %s]\nReply with vmbox-desktop chat_reply(%s, text) — that lands in your private chat. chat_ask(%s, question, choices, multiple) for choices. Absolute PNG/JPEG/GIF paths attach as images."
+
+// ChatInstructionTemplate controls the envelope appended to every agent chat
+// prompt; set with VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of
+// the message id. Set to "off" to skip the envelope entirely.
+func (s *Server) chatInstruction(messageID, agent string) string {
+	if agent == "shell" {
+		return ""
 	}
+	template := s.ChatInstructionTemplate
+	if template == "" {
+		template = defaultChatInstruction
+	}
+	if template == "off" {
+		return ""
+	}
+	return fmt.Sprintf(template, messageID, messageID, messageID)
+}
+
+func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
+	chatInstruction := s.chatInstruction(message.ID, agent)
 	if s.Store == nil || s.Store.DB == nil {
 		return message.Text + chatInstruction, nil
 	}

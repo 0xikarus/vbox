@@ -448,7 +448,12 @@
  async function primeBoxExtras(){
   if(extrasLoaded)return;
   try{
-   const [tools,profiles,defaults]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults')]);
+   const [tools,profiles,defaults,providers]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[])]);
+   const pools=[...(providers||[])];
+   const poolSelect=$('#create-pool');poolSelect.replaceChildren(new Option('Automatic (available capacity)',''));
+   for(let i=0;i<pools.length;i++){const label=(pools[i].provider==='shared-worker'?'Shared worker':'Dedicated · '+pools[i].provider)+(pools[i].name?' / '+pools[i].name:'');poolSelect.append(new Option(label,String(i)))}
+   $('#create-pool-label').hidden=pools.length===0;
+   createForm.dataset.pools=JSON.stringify(pools.map(p=>({provider:p.provider,providerCredential:p.name||''})));
    if(defaults.provider){createForm.dataset.provider=defaults.provider;createForm.dataset.providerCredential=defaults.providerCredential||''}
    const byApp={};
    for(const p of profiles)(byApp[p.application]??=[]).push(p.name);
@@ -485,6 +490,8 @@
   const loginProfiles=[...createForm.querySelectorAll('select')].filter(s=>s.name.startsWith('profile:')&&s.value).map(s=>({application:s.name.slice('profile:'.length),name:s.value}));
   const setupScript=(createForm.elements.setupScript?.value||'').trim();
   const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
+  const poolIndex=f.pool.value;
+  if(poolIndex!==''){const pool=JSON.parse(createForm.dataset.pools||'[]')[Number(poolIndex)];if(pool){body.provider=pool.provider;body.providerCredential=pool.providerCredential||''}}
   if(loginProfiles.length)body.loginProfiles=loginProfiles;
   if(tools.length)body.tools=tools;
   if(setupScript)body.setupScript=setupScript;
