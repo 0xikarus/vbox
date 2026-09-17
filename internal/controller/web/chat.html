@@ -40,6 +40,7 @@
     <span id="chat-header-avatar"></span>
     <div id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></div>
     <span class="spacer"></span>
+    <button id="chat-interrupt" type="button" title="Interrupt the agent (sends Escape to the primary session, releasing the queue)">Interrupt</button>
     <button id="chat-control" type="button" title="Take control: Desktop or TMUX in a popup">Control</button>
     <button id="chat-info" type="button" title="Box details" aria-label="Box details">Details</button>
     <a id="chat-workspace" href="#">Workspace</a>
@@ -86,6 +87,12 @@
    <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
    <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
    <label>Disk GiB <input name="disk" type="number" min="1" max="1024" value="10"></label>
+   <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
+   <p id="create-pool-status" class="hint" hidden></p>
+   <div id="profile-choices" class="profiles"></div>
+   <fieldset id="create-tools" class="tools"><legend>Optional tools</legend></fieldset>
+   <details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label>
+   <p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details>
    <button id="create-box-submit">Create and start box</button>
   </form>
   <p id="new-box-status" role="status"></p>

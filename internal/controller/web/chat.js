@@ -61,6 +61,9 @@
   const ms=box.messages||[];
   box.last=ms[ms.length-1];
   box.streaming=ms.some(m=>m.state==='streaming');
+  const agent=(box.defaultAgent||'').toLowerCase();
+  const last=box.last;
+  box.processing=agent!=='shell'&&!box.streaming&&last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000;
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=ms.filter(m=>m.direction!=='user'&&new Date(m.createdAt).getTime()>marker).length;
  }
@@ -97,7 +100,7 @@
    else{const avatar=avatarNode(box,false);if(oldAvatar)oldAvatar.replaceWith(avatar);else row.prepend(avatar)}
    row.querySelector('time').textContent=box.last?fmtTime(box.last.createdAt):'';
    row.querySelector('time').classList.toggle('recent',!!box.unread);
-   const preview=row.querySelector('.preview');preview.textContent=box.streaming?'typing…':previewText(box.last);preview.classList.toggle('streaming',!!box.streaming);
+   const preview=row.querySelector('.preview');preview.textContent=box.streaming?'typing…':box.processing?'processing…':previewText(box.last);preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
    const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=box.unread>99?'99+':box.unread;
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
@@ -106,7 +109,7 @@
 
  /* ---------- messages ---------- */
  const dayLabel=value=>{const d=new Date(value),now=new Date();if(d.toDateString()===now.toDateString())return 'Today';const y=new Date(now);y.setDate(now.getDate()-1);if(d.toDateString()===y.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'})};
- const stateTicks={queued:'✓',delivering:'✓',delivered:'✓✓',failed:'⚠ failed',ambiguous:'⚠ maybe failed'};
+ const stateTicks={queued:'🕐',delivering:'✓',delivered:'✓✓',failed:'⚠ failed',ambiguous:'⚠ maybe failed'};
  function imageURL(message,image){
   const key=message.id+':'+image.id;
   if(imageURLs.has(key))return Promise.resolve(imageURLs.get(key));
@@ -154,6 +157,21 @@
   };
   return form;
  }
+ const linkPattern=/https?:\/\/[^\s<>()"'`]+/gi;
+ function linkify(text){
+  const fragment=document.createDocumentFragment();
+  let last=0,match;
+  linkPattern.lastIndex=0;
+  while((match=linkPattern.exec(text))){
+   if(match.index>last)fragment.append(text.slice(last,match.index));
+   const link=document.createElement('a');
+   link.href=match[0];link.textContent=match[0];link.target='_blank';link.rel='noopener noreferrer';
+   fragment.append(link);
+   last=match.index+match[0].length;
+  }
+  if(last<text.length)fragment.append(text.slice(last));
+  return fragment;
+ }
  function bubble(box,message){
   const row=document.createElement('div');
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
@@ -162,7 +180,8 @@
   if(message.state==='silent'){const label=document.createElement('span');label.className='note-label';label.textContent='Note · not sent to the agent';row.append(label)}
   if(message.text.startsWith('Forwarded from ')){const mark=document.createElement('span');mark.className='fwd-mark';const end=message.text.indexOf(':\n');mark.textContent=end>0?message.text.slice(0,end+1):'Forwarded';row.append(mark)}
   const text=document.createElement('span');text.className='text';
-  text.textContent=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
+  const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
+  text.append(linkify(body));
   row.append(text);
   for(const image of message.images||[]){
    imageURL(message,image).then(url=>{if(!url)return;const img=document.createElement('img');img.className='chat-image';img.src=url;img.alt='Image '+image.number+' from '+message.direction;row.insertBefore(img,row.querySelector('.meta'))});
@@ -187,6 +206,13 @@
    messagesEl.append(bubble(box,message));
   }
   if(!(box.messages||[]).length){const hint=document.createElement('p');hint.className='day-sep';hint.textContent='No messages yet — say hello to '+box.name;messagesEl.append(hint)}
+  if(box.processing&&!box.streaming){
+   const t=document.createElement('div');t.className='msg agent processing';
+   const dots=document.createElement('span');dots.className='typing-dots';
+   for(let i=0;i<3;i++)dots.append(document.createElement('span'));
+   const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
+   t.append(dots,label);messagesEl.append(t);
+  }
   if(nearBottom||lastSignature==='')messagesEl.scrollTop=messagesEl.scrollHeight;
  }
 
@@ -254,7 +280,7 @@
  function renderHeader(){
   const box=boxes.get(selected);if(!box)return;
   $('#chat-header-name').textContent=box.name;
-  $('#chat-header-state').replaceChildren(Object.assign(document.createElement('span'),{className:box.state==='running'?'running':'',textContent:(box.defaultAgent||'agent')+' · '+box.state}));
+  $('#chat-header-state').replaceChildren(Object.assign(document.createElement('span'),{className:box.state==='running'?'running':'',textContent:(box.defaultAgent||'agent')+' · '+box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')}));
   const key=box.id+'|'+box.state;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false))}
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
@@ -356,7 +382,7 @@
     await api(boxPath(box.id)+'/desktop','POST',{});
     takeoverDispose=openWorkspaceDesktop(box.id,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,controls:takeoverControls,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
    }else{
-    const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{agent:box.defaultAgent||'shell',reuseExisting:true});
+    const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{},{agent:box.defaultAgent||'shell',reuseExisting:true});
     takeoverDispose=openWorkspaceTerminal(box.id,s.session,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,keys:takeoverControls,autoFocus:true,onDisconnect:()=>{takeoverStatus.textContent+=' · disconnected'}});
    }
   }catch(e){takeoverStatus.textContent=e.message}
@@ -369,6 +395,19 @@
  $('#takeover-close').onclick=closeTakeover;
  $('#takeover-backdrop').onclick=closeTakeover;
  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.onclick=()=>void openTakeover(b.dataset.kind));
+
+ /* ---------- interrupt agent ---------- */
+ $('#chat-interrupt').onclick=async()=>{
+  const box=boxes.get(selected);if(!box)return;
+  if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it from the workspace first.';return}
+  const btn=$('#chat-interrupt');btn.disabled=true;
+  try{
+   const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{},{agent:box.defaultAgent||'shell',reuseExisting:true});
+   await api(boxPath(box.id)+'/terminal/input?session='+encodeURIComponent(s.session),'POST',{'Idempotency-Key':crypto.randomUUID()},{keys:[(box.defaultAgent||'shell')==='shell'?'C-c':'Escape']});
+   toast('Interrupt sent — your queued message comes next.');
+  }catch(e){statusEl.textContent=e.message}
+  finally{btn.disabled=false}
+ };
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect'),inspectRows=$('#inspect-rows');
@@ -419,12 +458,62 @@
  /* ---------- toasts ---------- */
  function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#chat-toasts').append(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},3200);}
 
- /* ---------- new box ---------- */
- const fetchDefaults=async()=>{try{return await api('/v1/controller-defaults')}catch{return{}}};
+ /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
  const newBoxModal=$('#new-box-modal'),createForm=$('#create-box');
+ let extrasLoaded=false;
+ async function primeBoxExtras(){
+  if(extrasLoaded)return;
+  try{
+   const [tools,profiles,defaults,providers]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[])]);
+   const pools=(providers||[]).map(p=>({provider:p.provider,providerCredential:p.name||''}));
+   const poolStatuses=await Promise.all(pools.map(async pool=>{
+    try{
+     const fleet=await api('/v1/fleet/status?'+new URLSearchParams({provider:pool.provider,providerCredential:pool.providerCredential}));
+     return {free:Number(fleet.freeSlots)||0,occupied:Number(fleet.occupiedSlots)||0,actual:Number(fleet.actualSlots)||0,desired:Number(fleet.desiredSlots)||0,queued:Number(fleet.pendingAllocationRequests)||0};
+    }catch{return null}
+   }));
+   const poolLabel=(pool,status)=>{
+    const base=(pool.provider==='shared-worker'?'Shared worker':'Dedicated · '+pool.provider)+(pool.providerCredential?' / '+pool.providerCredential:'');
+    if(!status)return base+' — slot status unavailable';
+    if(status.free>0)return base+' — '+status.free+' free of '+status.actual;
+    return base+' — no free slots ('+status.occupied+'/'+status.actual+' busy)';
+   };
+   const poolSelect=$('#create-pool');poolSelect.replaceChildren(new Option('Automatic (least loaded pool with free slots)',''));
+   pools.forEach((pool,index)=>{
+    const status=poolStatuses[index],option=new Option(poolLabel(pool,status),String(index));
+    option.title=status?('desired '+status.desired+' · actual '+status.actual+' · free '+status.free+' · occupied '+status.occupied+(status.queued?' · '+status.queued+' queued':'')):'slot status unavailable';
+    option.disabled=!!status&&status.free===0;
+    poolSelect.append(option);
+   });
+   $('#create-pool-label').hidden=pools.length===0;
+   const poolHint=$('#create-pool-status');
+   poolHint.hidden=pools.length===0;
+   if(pools.length)poolHint.textContent=pools.map((pool,index)=>poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared')).join(' · ')+' — boxes wait in the controller queue when their pool has no free slots.';
+   createForm.dataset.pools=JSON.stringify(pools.map(p=>({provider:p.provider,providerCredential:p.name||''})));
+   if(defaults.provider){createForm.dataset.provider=defaults.provider;createForm.dataset.providerCredential=defaults.providerCredential||''}
+   const byApp={};
+   for(const p of profiles)(byApp[p.application]??=[]).push(p.name);
+   const profilesWrap=$('#profile-choices');profilesWrap.replaceChildren();
+   for(const app of Object.keys(byApp).sort()){
+    const label=document.createElement('label');label.className='field profile-field';label.textContent=app;
+    const select=document.createElement('select');select.name='profile:'+app;
+    select.append(new Option('None',''),...byApp[app].sort().map(n=>new Option(n,n)));
+    label.append(select);profilesWrap.append(label);
+   }
+   profilesWrap.hidden=!Object.keys(byApp).length;
+   const toolsSet=$('#create-tools');toolsSet.replaceChildren();
+   for(const tool of tools){
+    const label=document.createElement('label'),input=document.createElement('input');
+    input.type='checkbox';input.value=tool.id;input.name='tool';input.title=tool.description||tool.name;
+    label.append(input,document.createTextNode(' '+tool.name));toolsSet.append(label);
+   }
+   toolsSet.hidden=!tools.length;
+   extrasLoaded=true;
+  }catch(e){$('#new-box-status').textContent=e.message}
+ }
  function openNewBoxModal(){
   createForm.reset();$('#new-box-status').textContent='';newBoxModal.hidden=false;
-  void fetchDefaults().then(d=>{createForm.dataset.provider=d.provider||'';createForm.dataset.providerCredential=d.providerCredential||''});
+  void primeBoxExtras();
   createForm.elements.name.focus();
  }
  $('#new-box').onclick=openNewBoxModal;
@@ -433,8 +522,17 @@
  createForm.onsubmit=async event=>{
   event.preventDefault();
   const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';
+  const tools=[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value);
+  const loginProfiles=[...createForm.querySelectorAll('select')].filter(s=>s.name.startsWith('profile:')&&s.value).map(s=>({application:s.name.slice('profile:'.length),name:s.value}));
+  const setupScript=(createForm.elements.setupScript?.value||'').trim();
+  const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
+  const poolIndex=f.pool.value;
+  if(poolIndex!==''){const pool=JSON.parse(createForm.dataset.pools||'[]')[Number(poolIndex)];if(pool){body.provider=pool.provider;body.providerCredential=pool.providerCredential||''}}
+  if(loginProfiles.length)body.loginProfiles=loginProfiles;
+  if(tools.length)body.tools=tools;
+  if(setupScript)body.setupScript=setupScript;
   try{
-   const created=await api('/v1/logical-boxes','POST',{'Idempotency-Key':crypto.randomUUID()},{name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true});
+   const created=await api('/v1/logical-boxes','POST',{'Idempotency-Key':crypto.randomUUID()},body);
    newBoxModal.hidden=true;toast('Box '+created.name+' requested — it appears in the list as it starts.');
    await loadBoxes();
    if(created?.id&&boxes.has(created.id)){history.replaceState(null,'',location.pathname+'#box='+created.id);await openBox(created.id);toast('Box '+created.name+' is starting.');}

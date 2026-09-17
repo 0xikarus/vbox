@@ -188,3 +188,37 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 @media (hover:none){.row-chevron{opacity:.8}}
 #chat-header button{border:1px solid #c6ced4;background:#fff;border-radius:1rem;padding:.3rem .8rem;cursor:pointer;margin:0;font-size:.82rem}
 #chat-header button:hover{background:#e9edef}
+.msg.processing{display:flex;align-items:center;gap:.5rem;color:#667781;font-size:.82rem;padding:.4rem .55rem}
+.typing-dots{display:inline-flex;gap:.28rem}
+.typing-dots span{width:.42rem;height:.42rem;border-radius:50%;background:#8696a0;animation:tdot 1.2s infinite}
+.typing-dots span:nth-child(2){animation-delay:.18s}
+.typing-dots span:nth-child(3){animation-delay:.36s}
+@keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-.22rem);opacity:1}}
+.preview.processing{color:#075e54}
+#chat-header #chat-interrupt{border-color:#f0c0c0;color:#b91c1c}
+.msg.processing{display:flex;align-items:center;gap:.5rem;color:#667781;font-size:.82rem;padding:.4rem .55rem}
+.typing-dots{display:inline-flex;gap:.28rem}
+.typing-dots span{width:.42rem;height:.42rem;border-radius:50%;background:#8696a0;animation:tdot 1.2s infinite}
+.typing-dots span:nth-child(2){animation-delay:.18s}
+.typing-dots span:nth-child(3){animation-delay:.36s}
+@keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-.22rem);opacity:1}}
+.preview.processing{color:#075e54}
+#chat-header #chat-interrupt{border-color:#f0c0c0;color:#b91c1c}
+#create-box input[type=checkbox]{display:inline-block;width:auto;margin:0}
+#create-box .profiles{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.5rem}
+#create-box .profile-field{display:flex;flex-direction:column;font-size:.8rem;color:#54656f}
+#create-box fieldset.tools{border:1px solid #c6ced4;border-radius:.4rem;padding:.3rem .5rem;margin-bottom:.5rem;display:flex;flex-direction:column;gap:.2rem}
+#create-box fieldset.tools legend{font-size:.78rem;color:#54656f;padding:0 .2rem}
+#create-box fieldset.tools label{display:inline-flex;align-items:center;gap:.4rem;margin:0;font-size:.86rem}
+#create-box .custom-tools{margin-bottom:.5rem}
+#create-box .custom-tools summary{cursor:pointer;font-size:.85rem;color:#54656f}
+#create-box .custom-tools textarea{width:100%;max-width:100%;margin-top:.35rem;padding:.4rem .5rem;border:1px solid #c6ced4;border-radius:.4rem;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}
+#create-box .custom-tools .hint{margin:.2rem 0 0;font-size:.72rem;color:#8696a0}
+
+/* self-contained styling — never inherit the controller's terminal-report form layout */
+#new-box-card label,#delete-box-card label{display:block;margin:0 0 .45rem;font-size:.85rem;color:#54656f;text-transform:none}
+#new-box-card label>input,#new-box-card label>select{display:block;width:100%;margin-top:.18rem;font:inherit;color:#111b21}
+#new-box-card button#create-box-submit{display:block;width:100%;background:#00a884;color:#fff;font-weight:600}
+
+.msg .text a{color:#027eb5;text-decoration:underline;word-break:break-word}
+.msg.user .text a{color:#0b6bb0}

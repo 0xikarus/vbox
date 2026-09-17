@@ -38,13 +38,16 @@ type Server struct {
 	replyWatches         map[string]struct{}
 	PublicURL            string
 	DefaultImage         string
-	WorkerRuntime        []byte
-	WorkerAgent          []byte
-	Resolve              ProviderResolver
-	Bootstrap            func(context.Context, provider.Provider, provider.Box, []string) error
-	HTTP                 *http.Client
-	ReconcileEvery       time.Duration
-	Deliver              NotificationSink
+	// ChatInstructionTemplate overrides the agent-chat envelope appended to
+	// every chat prompt; "off" disables it.
+	ChatInstructionTemplate string
+	WorkerRuntime           []byte
+	WorkerAgent             []byte
+	Resolve                 ProviderResolver
+	Bootstrap               func(context.Context, provider.Provider, provider.Box, []string) error
+	HTTP                    *http.Client
+	ReconcileEvery          time.Duration
+	Deliver                 NotificationSink
 	// StartTask hands a freshly created task to its agent. It is a field so
 	// that tests can observe the hand-off instead of racing a detached
 	// goroutine against their fixtures.
