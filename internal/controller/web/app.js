@@ -1,5 +1,11 @@
 'use strict';
 const $=s=>document.querySelector(s);
+function enforceDesktopToolDependency(root){
+ const desktop=root.querySelector('input[value="desktop"]'),blender=root.querySelector('input[value="blender"]');
+ if(!desktop)return;
+ const update=()=>{desktop.disabled=!!blender?.checked;if(desktop.disabled)desktop.checked=true;desktop.parentElement.title=desktop.disabled?'Required for Blender':'Desktop and Chromium browser without Blender'};
+ blender?.addEventListener('change',update);update();
+}
 let token='',defaults=null,epoch=0;
 let boxRefreshTimer;
 let fleetSnapshots=[];
@@ -162,6 +168,7 @@ async function refresh(){
  const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{return {...await api('/v1/fleet/status?'+new URLSearchParams(target)),...target}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
+ enforceDesktopToolDependency($('#create-tools'));
  renderProfiles(identity,profiles);
  $('#provider-list').replaceChildren();
  if(!providers.length)$('#provider-list').append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));

@@ -12,6 +12,12 @@ configuration are documented in [the desktop MVP guide](docs/AGENT-DESKTOP-IMPLE
 
 ## Quick setup
 
+When creating a box, select **Enable desktop** under Optional tools to prepare a
+desktop and Chromium browser without Blender. Selecting Blender requires this
+option. The desktop selection is retained across restores. Controller and Grid
+viewers still prefer an available desktop, with TMUX available manually; leaving
+the option unchecked does not disable a desktop already included in the worker.
+
 ### Run once from the web
 
 Open your controller and choose **Run once**. Select a provider, Claude/Codex/OpenCode/shell,

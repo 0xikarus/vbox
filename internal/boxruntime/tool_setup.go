@@ -60,6 +60,9 @@ func ConfigureToolSetup(ctx context.Context, home, script string, progress io.Wr
 }
 
 func RestoreToolSetup(ctx context.Context, home string, progress io.Writer) error {
+	if err := restoreDesktop(ctx, home, progress); err != nil {
+		return err
+	}
 	if err := restoreBlender(ctx, home, progress); err != nil {
 		return err
 	}

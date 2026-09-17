@@ -3,10 +3,10 @@ package v1
 import "testing"
 
 func TestBlenderPreset(t *testing.T) {
-	if err := ValidateTools([]string{"foundry", "blender"}); err != nil {
+	if err := ValidateTools([]string{"desktop", "foundry", "blender"}); err != nil {
 		t.Fatal(err)
 	}
-	for _, tools := range [][]string{{"blender", "blender"}, {"unknown"}} {
+	for _, tools := range [][]string{{"blender", "blender"}, {"desktop", "desktop"}, {"unknown"}} {
 		if ValidateTools(tools) == nil {
 			t.Fatalf("accepted invalid tools: %v", tools)
 		}

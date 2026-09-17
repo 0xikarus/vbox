@@ -23,7 +23,7 @@ before(async()=>{
   if(path==='/v1/browser-session' && ['POST','DELETE'].includes(req.method)){res.statusCode=204;return res.end()}
   const values={
    '/v1/run-once':[],
-   '/v1/tool-presets':[{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'},{id:'blender',name:'Blender',version:'distribution package',description:'3D editor + desktop automatically enabled; MCP not included'}],
+   '/v1/tool-presets':[{id:'desktop',name:'Enable desktop',version:'worker packages',description:'Desktop and browser'},{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'},{id:'blender',name:'Blender',version:'5.1.2',description:'3D editor + desktop + MCP'}],
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
    '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude'}],
    '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running'},
@@ -50,6 +50,22 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
+test('desktop can be selected without Blender and Blender requires it',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#create-tools input[value=desktop]');
+ const desktop='#create-tools input[value=desktop]',blender='#create-tools input[value=blender]';
+ assert.equal(await page.$eval(desktop,input=>input.checked),false);
+ await page.click(blender);
+ assert.deepEqual(await page.$eval(desktop,input=>[input.checked,input.disabled]),[true,true]);
+ await page.click(blender);
+ assert.deepEqual(await page.$eval(desktop,input=>[input.checked,input.disabled]),[true,false]);
+ await page.type('#create input[name=name]','disposable-desktop-fixture');
+ const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
+ await page.click('#create button');await created;
+ assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.tools,['desktop']);
+ await page.close();
+});
 test('worker placement distinguishes shared hosts and creation targets the selected pool',async()=>{
  const page=await browser.newPage();
  await page.evaluateOnNewDocument(()=>{
@@ -228,7 +244,7 @@ test('agent form preserves literal options and numbered image references',async(
  await page.evaluate(()=>[...document.querySelectorAll('#run-once form button')].find(b=>b.textContent==='Run once').click());
  await page.waitForFunction(()=>window.submittedRun);
  const body=await page.evaluate(()=>window.submittedRun);assert.equal(body.model,'custom-model');assert.deepEqual(body.args,['--option','literal value; $(false)']);assert.deepEqual(body.images,[{id:'image-1',number:1}]);assert.equal(body.prompt,'Inspect [Image 1]');
- assert.deepEqual(body.tools,['foundry','blender']);
+ assert.deepEqual(body.tools,['desktop','foundry','blender']);
  assert.deepEqual(errors,[]);await page.close();
 });
 test('completed one-shot opens retained output without allocation or a new shell',async()=>{
@@ -366,9 +382,10 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
  const selectedAgent=mobile?'shell':'opencode';await page.select('#create select[name=defaultAgent]',selectedAgent);
  await page.click('#create-tools input[value=blender]');
+ assert.deepEqual(await page.$eval('#create-tools input[value=desktop]',input=>({checked:input.checked,disabled:input.disabled})),{checked:true,disabled:true});
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'},{application:'opencode',name:'openrouter'}]);
- assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['blender']);
+ assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['desktop','blender']);
  assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,selectedAgent);
  assert.equal(requests.findLast(r=>r.method==='POST').body.allocateWhenReady,true);
  await page.waitForNetworkIdle();

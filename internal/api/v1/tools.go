@@ -24,13 +24,14 @@ func ToolPresets() []ToolPreset {
 	return []ToolPreset{
 		{ID: "foundry", Name: "Foundry", Version: "v1.8.1", Description: "forge, cast, anvil and chisel · about 500 MiB installed"},
 		{ID: "blender", Name: "Blender", Version: "5.1.2 + Blender MCP 1.9.1", Description: "Pinned 5.1 release + desktop + MCP for Codex/Claude/OpenCode · extra download/disk/RAM"},
+		{ID: "desktop", Name: "Enable desktop", Version: "worker packages", Description: "Desktop and Chromium browser without Blender; required for Blender"},
 	}
 }
 func ValidateTools(tools []string) error {
 	seen := map[string]bool{}
 	for _, tool := range tools {
-		if (tool != "foundry" && tool != "blender") || seen[tool] {
-			return fmt.Errorf("select each supported tool preset at most once (foundry, blender)")
+		if (tool != "foundry" && tool != "blender" && tool != "desktop") || seen[tool] {
+			return fmt.Errorf("select each supported tool preset at most once (foundry, blender, desktop)")
 		}
 		seen[tool] = true
 	}

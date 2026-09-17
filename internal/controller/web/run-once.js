@@ -82,6 +82,7 @@
   try{const [ps,logins,runs,presets]=await Promise.all([api('/v1/provider-credentials'),api('/v1/login-profiles'),api('/v1/run-once'),api('/v1/tool-presets')]);if(ticket!==generation)return;
    const selectedTools=new Set([...tools.querySelectorAll('input:checked')].map(i=>i.value));tools.replaceChildren(node('legend','Optional tools'));
    for(const preset of presets){const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=selectedTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));tools.append(label)}
+   enforceDesktopToolDependency(tools);
    const old=provider.value;provider.replaceChildren();for(const p of ps)option(provider,p.provider+' / '+p.name,JSON.stringify([p.provider,p.name]));if([...provider.options].some(o=>o.value===old))provider.value=old;
    const previous=Object.fromEntries([...profiles.querySelectorAll('select')].map(s=>[s.name,s.value]));profiles.replaceChildren();
    for(const app of ['claude','codex','opencode','github']){const s=field(profiles,app+' login','select',app);option(s,'None','');for(const p of logins.filter(p=>p.application===app))option(s,p.name,p.name);if([...s.options].some(o=>o.value===previous[app]))s.value=previous[app]}

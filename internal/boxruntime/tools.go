@@ -31,6 +31,8 @@ func InstallTools(ctx context.Context, home string, tools []string, progress io.
 	for _, tool := range tools {
 		var err error
 		switch tool {
+		case "desktop":
+			err = configureDesktop(ctx, home, progress)
 		case "foundry":
 			err = installFoundry(ctx, home, progress)
 		case "blender":
