@@ -112,6 +112,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Images can be selected, dropped, or pasted into Agent chat. Uploads use the same
   bounded image API, numbered references and appended download URLs. Normal text
   paste is not intercepted. URLs expire; never expose their access capability in logs.
+- While an agent is processing, the chat shows a TV button beside the bubble:
+  hovering previews the box desktop, and clicking opens the control popup on the
+  Desktop tab.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
