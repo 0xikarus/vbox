@@ -28,6 +28,8 @@ func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, r
 	if len(refs) > maxBoxLoginProfiles {
 		return fmt.Errorf("select at most %d login profiles", maxBoxLoginProfiles)
 	}
+	// Selection shape is checked before any store read so a malformed request is
+	// rejected on its own terms instead of surfacing as an unavailable profile.
 	seen := map[string]bool{}
 	for _, ref := range refs {
 		key := ref.Application + "/" + ref.Name
@@ -35,6 +37,8 @@ func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, r
 			return fmt.Errorf("login profile %s is selected twice", key)
 		}
 		seen[key] = true
+	}
+	for _, ref := range refs {
 		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: accountID}, ref.Application, ref.Name)
 		if err != nil {
 			return fmt.Errorf("selected %s profile %s is unavailable", ref.Application, ref.Name)
