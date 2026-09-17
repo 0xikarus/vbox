@@ -9,7 +9,7 @@ import (
 func reusableInteractiveSession(sessions []v1.Session, preferred string) string {
 	selected := ""
 	for _, session := range sessions {
-		if session.Name == "" || session.Partial || strings.HasPrefix(session.Name, "task-") || strings.HasPrefix(session.Name, "vmbox-") {
+		if session.Name == "" || session.Partial || strings.HasPrefix(session.Name, "task-") || session.Name == "vmbox-desktop" || strings.HasPrefix(session.Name, "vmbox-internal-") {
 			continue
 		}
 		if session.Name == preferred {

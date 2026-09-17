@@ -23,3 +23,14 @@ func TestReusableInteractiveSession(t *testing.T) {
 		t.Fatalf("reused ineligible session %q", got)
 	}
 }
+
+func TestReusableInteractiveSessionKeepsExistingDesktopAgent(t *testing.T) {
+	for _, name := range []string{"vmbox-opencode", "vmbox-claude", "vmbox-codex", "vmbox-shell"} {
+		sessions := []v1.Session{{Name: "vmbox-desktop"}, {Name: "vmbox-internal-chat"}, {Name: name}}
+		for _, preferred := range []string{"", name, "missing"} {
+			if got := reusableInteractiveSession(sessions, preferred); got != name {
+				t.Fatalf("existing %q, preferred %q: got %q", name, preferred, got)
+			}
+		}
+	}
+}

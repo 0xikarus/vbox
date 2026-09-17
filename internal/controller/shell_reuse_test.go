@@ -67,6 +67,13 @@ func testInteractiveShellReuse(t *testing.T, s *Server, p Principal, box string)
 			t.Fatal("workspace connection launched an agent despite an existing terminal")
 		}
 	}
+	prov.names = []string{"vmbox-desktop", "vmbox-internal-chat", "vmbox-opencode"}
+	for _, agent := range []string{"codex", "claude", "opencode", "shell"} {
+		if reused := call(`{"agent":"`+agent+`","reuseExisting":true}`, 200); reused != "vmbox-opencode" || len(prov.starts) != 0 {
+			t.Fatal("workspace connection launched an agent despite an existing vmbox terminal")
+		}
+	}
+	prov.names = []string{"claude-existing"}
 	prov.fail = true
 	call(`{"agent":"codex","reuseExisting":true}`, 409)
 	prov.fail = false
