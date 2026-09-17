@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 	"github.com/0xikarus/vmbox-service/internal/loginprofile"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -22,21 +24,43 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	}
 	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
+	// Keep assignment locked throughout secret transport so reassignment cannot
+	// send account credentials into another box's workspace.
+	tx, err := s.Store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("could not lock credential destination")
+	}
+	defer tx.Rollback()
+	var id string
+	a := creation.Assignment
+	err = tx.QueryRowContext(ctx, `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='attaching' AND slot_id=$3 AND assignment_generation=$4 AND fencing_token=$5 AND volume_id=$6 FOR UPDATE`, creation.AccountID, a.Box.ID, a.Slot.ID, a.Box.AssignmentGeneration, a.FencingToken, a.Box.VolumeID).Scan(&id)
+	if err != nil {
+		return fmt.Errorf("credential destination assignment changed")
+	}
+	if err := s.transferProfileFiles(ctx, tx, prov, creation.AccountID, a.Box.ID, a.Slot.ServiceID, a.Box.VolumeID, creation.Request.LoginProfiles); err != nil {
+		return err
+	}
+	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 {
+		return fmt.Errorf("could not flush provisioned workspace")
+	}
+	return tx.Commit()
+}
+
+// profileSyncRequest builds the integrity-checked file set for the selected
+// login profiles. It returns the GitHub host/user so the caller can verify the
+// GitHub login after the transfer.
+func (s *Server) profileSyncRequest(ctx context.Context, accountID string, refs []v1.LoginProfileRef) (boxruntime.SyncRequest, string, string, error) {
 	request := boxruntime.SyncRequest{}
 	var githubHost, githubUser string
-	defer func() {
-		for _, f := range request.Files {
-			clear(f.Data)
-		}
-	}()
-	for _, ref := range creation.Request.LoginProfiles {
-		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: creation.AccountID}, ref.Application, ref.Name)
+	for _, ref := range refs {
+		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: accountID}, ref.Application, ref.Name)
 		if err != nil {
-			return fmt.Errorf("selected login profile unavailable; no credentials provisioned")
+			return boxruntime.SyncRequest{}, "", "", fmt.Errorf("selected login profile unavailable; no credentials provisioned")
 		}
 		if ref.Application == "github" {
 			if err := loginprofile.Validate(ref.Application, profile.Files, time.Now()); err != nil {
-				return err
+				return boxruntime.SyncRequest{}, "", "", err
 			}
 			var credential loginprofile.GitHub
 			_ = json.Unmarshal(profile.Files["credential.json"], &credential)
@@ -69,20 +93,24 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 			request.Files = append(request.Files, boxruntime.SyncFile{Path: path, Mode: "0600", Data: profile.Files[name]})
 		}
 	}
-	// Keep assignment locked throughout secret transport so reassignment cannot
-	// send account credentials into another box's workspace.
-	tx, err := s.Store.DB.BeginTx(ctx, nil)
+	return request, githubHost, githubUser, nil
+}
+
+// transferProfileFiles writes and verifies one profile set inside an attached
+// box workspace, then records the references. The caller owns the transaction
+// and must hold the assignment lock. Credential transfers never touch
+// instruction files or any other box configuration.
+func (s *Server) transferProfileFiles(ctx context.Context, tx *sql.Tx, prov provider.Provider, accountID, boxID, serviceID, volumeID string, refs []v1.LoginProfileRef) error {
+	request, githubHost, githubUser, err := s.profileSyncRequest(ctx, accountID, refs)
 	if err != nil {
-		return fmt.Errorf("could not lock credential destination")
+		return err
 	}
-	defer tx.Rollback()
-	var id string
-	a := creation.Assignment
-	err = tx.QueryRowContext(ctx, `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='attaching' AND slot_id=$3 AND assignment_generation=$4 AND fencing_token=$5 AND volume_id=$6 FOR UPDATE`, creation.AccountID, a.Box.ID, a.Slot.ID, a.Box.AssignmentGeneration, a.FencingToken, a.Box.VolumeID).Scan(&id)
-	if err != nil {
-		return fmt.Errorf("credential destination assignment changed")
-	}
-	if err := waitForCredentialVolume(ctx, prov, a.Slot.ServiceID, a.Box.VolumeID, 30*time.Second); err != nil {
+	defer func() {
+		for _, f := range request.Files {
+			clear(f.Data)
+		}
+	}()
+	if err := waitForCredentialVolume(ctx, prov, serviceID, volumeID, 30*time.Second); err != nil {
 		return err
 	}
 	payload, err := json.Marshal(request)
@@ -90,27 +118,23 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 		return fmt.Errorf("could not encode selected credentials")
 	}
 	defer clear(payload)
-	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "sync-files"}, provider.ExecOptions{Stdin: bytes.NewReader(payload)})
+	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "sync-files"}, provider.ExecOptions{Stdin: bytes.NewReader(payload)})
 	if err != nil || result.ExitCode != 0 || strings.TrimSpace(result.Stdout) != fmt.Sprintf("%x", sha256.Sum256(payload)) {
 		return fmt.Errorf("selected credential transfer failed integrity verification")
 	}
-	for _, ref := range creation.Request.LoginProfiles {
-		if err := verifyProvisionedLogin(ctx, prov, a.Slot.ServiceID, ref.Application, githubHost, githubUser); err != nil {
+	for _, ref := range refs {
+		if err := verifyProvisionedLogin(ctx, prov, serviceID, ref.Application, githubHost, githubUser); err != nil {
 			return err
 		}
 	}
-	result, err = prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
-	if err != nil || result.ExitCode != 0 {
-		return fmt.Errorf("could not flush provisioned workspace")
-	}
-	refs, err := json.Marshal(creation.Request.LoginProfiles)
+	encoded, err := json.Marshal(refs)
 	if err != nil {
 		return fmt.Errorf("could not record imported credential references")
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb) WHERE account_id=$1 AND id=$2`, creation.AccountID, a.Box.ID, refs); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb),'{pendingLoginProfiles}','[]'::jsonb) WHERE account_id=$1 AND id=$2`, accountID, boxID, encoded); err != nil {
 		return fmt.Errorf("could not record imported credential references")
 	}
-	return tx.Commit()
+	return nil
 }
 
 var errCredentialVolumeUnavailable = errors.New("credential destination volume unavailable")

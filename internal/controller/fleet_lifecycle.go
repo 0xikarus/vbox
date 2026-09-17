@@ -88,6 +88,19 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	if err := s.Store.RenewAssignmentLease(ctx, accountID, allocation, 8*time.Minute); err != nil {
 		return fail("restoring-tools", err)
 	}
+	// A queued credential edit applies here, while the volume is attached and
+	// before the box is declared ready, so a stopped box only needs a resume.
+	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "restoring-credentials", "", false)
+	if err := s.provisionPendingBoxProfiles(ctx, prov, accountID, assignment); err != nil {
+		return fail("restoring-credentials", err)
+	}
+	// The box's instruction snapshot follows attachment like the retained tool
+	// recipe: hibernation resume, replacement, and queued recovery all funnel
+	// here, and the box-side reconcile is idempotent on identical content.
+	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "syncing-instructions", "", false)
+	if err := s.syncBoxInstructions(ctx, prov, accountID, allocation.LogicalBoxID, assignment.Slot.ServiceID); err != nil {
+		return fail("syncing-instructions", err)
+	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "restoring-tools", "", false)
 	toolCtx, toolCancel := context.WithTimeout(ctx, 6*time.Minute)
 	toolResult, toolErr := prov.Exec(toolCtx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "restore-tools"}, provider.ExecOptions{})

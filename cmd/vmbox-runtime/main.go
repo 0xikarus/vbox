@@ -40,7 +40,7 @@ func run() error {
 		args = append([]string{"ask"}, args...)
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox-runtime health | idle | image-info | tmux-snapshot | tmux-context BOX SLOT STATE HEALTH | tmux-restore | prepare-hibernate | run [--detach] -- COMMAND [ARG...] | exec-json DATA | direct-json DATA | put-file PATH MODE | sync-files | setup | tmux-help | welcome | report | ask")
+		return fmt.Errorf("usage: vmbox-runtime health | idle | image-info | tmux-snapshot | tmux-context BOX SLOT STATE HEALTH | tmux-restore | prepare-hibernate | run [--detach] -- COMMAND [ARG...] | exec-json DATA | direct-json DATA | put-file PATH MODE | sync-files | sync-instructions | setup | tmux-help | welcome | report | ask")
 	}
 	if handled, err := runTmuxInteraction(args, runtime); handled {
 		return err
@@ -282,6 +282,30 @@ func run() error {
 			return err
 		}
 		fmt.Println(digest)
+		return nil
+	case "sync-instructions":
+		if len(args) != 1 {
+			return fmt.Errorf("sync-instructions accepts its request only on stdin")
+		}
+		owner, err := boxruntime.LookupWorkloadOwnership(os.Geteuid(), nil)
+		if err != nil {
+			return err
+		}
+		payload, err := readLimited(os.Stdin, 1<<20)
+		if err != nil {
+			return err
+		}
+		var request boxruntime.InstructionSyncRequest
+		if err := json.Unmarshal(payload, &request); err != nil {
+			return fmt.Errorf("decode instruction sync request: %w", err)
+		}
+		report, err := boxruntime.ApplyManagedInstructions(boxruntime.WorkloadHome(), request.Markdown, owner, nil)
+		if err != nil {
+			return fmt.Errorf("apply managed instructions: %w", err)
+		}
+		fmt.Fprintln(os.Stderr, report.InstructionApplyReport())
+		digest := sha256.Sum256(payload)
+		fmt.Printf("%x\n", digest[:])
 		return nil
 	case "setup":
 		if len(args) != 1 {

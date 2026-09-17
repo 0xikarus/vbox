@@ -60,6 +60,12 @@ func ConfigureToolSetup(ctx context.Context, home, script string, progress io.Wr
 }
 
 func RestoreToolSetup(ctx context.Context, home string, progress io.Writer) error {
+	// Managed agent instructions re-assert their agent links from the retained
+	// canonical file on every restore: hibernation, worker replacement, and
+	// shared-worker recovery all run through here with the volume attached.
+	if err := RestoreManagedInstructions(home); err != nil {
+		return err
+	}
 	if err := restoreDesktop(ctx, home, progress); err != nil {
 		return err
 	}

@@ -246,3 +246,23 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #live-view-controls{display:flex;flex-wrap:wrap;gap:.4rem;padding:.35rem .6rem;background:#111b21;flex:none}
 #live-view-controls:empty{display:none}
 #live-view-controls button{border:0;border-radius:.35rem;padding:.25rem .6rem;background:#202c33;color:#e9edef;cursor:pointer;font-size:.8rem}
+
+/* ---------- instruction presets, box instructions, imported profiles ---------- */
+.hint{color:#667781;font-size:.78rem;margin:.25rem 0}
+.sheet{position:fixed;inset:0;z-index:45;display:flex;align-items:center;justify-content:center}
+.sheet-backdrop{position:absolute;inset:0;background:rgba(11,20,26,.55)}
+.sheet-card{position:relative;width:min(30rem,94vw);max-height:88vh;overflow:auto;background:#f0f2f5;border-radius:.7rem;box-shadow:0 .6rem 2rem rgba(11,20,26,.5);padding:.8rem}
+.sheet-card header{display:flex;align-items:center;gap:.5rem;color:#111b21}
+.sheet-card header button{border:0;background:none;font-size:1.2rem;color:#54656f;cursor:pointer;margin:0}
+.sheet-card header .spacer{flex:1}
+.sheet-card label{display:block;margin:0 0 .5rem;font-size:.85rem;color:#54656f}
+.sheet-card label>input,.sheet-card label>select,.sheet-card label>textarea{display:block;width:100%;margin-top:.18rem;font:inherit;color:#111b21;padding:.4rem .5rem;border:1px solid #c6ced4;border-radius:.4rem;box-sizing:border-box}
+.sheet-card textarea{min-height:6rem}
+.sheet-card .primary{display:block;width:100%;background:#00a884;color:#fff;font-weight:600;border:0;border-radius:1rem;padding:.6rem 1.1rem;cursor:pointer}
+.sheet-card #preset-status,.sheet-card #box-instructions-status,.sheet-card #box-credentials-status{margin:.4rem 0 0;font-size:.8rem;color:#667781;min-height:1rem}
+.preset-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin:.4rem 0}
+.preset-actions button{border:1px solid #c6ced4;background:#fff;border-radius:1rem;padding:.35rem .8rem;cursor:pointer;font:inherit;font-size:.82rem}
+.md-preview{margin:.4rem 0;padding:.5rem .7rem;border:1px solid #e1e6e9;background:#fff;border-radius:.4rem;max-height:14rem;overflow:auto;font-size:.85rem}
+.md-preview .md-pre{background:#f2f4f5;padding:.4rem .5rem;border-radius:.3rem;overflow:auto;font-size:.78rem}
+.md-preview .md-quote{border-left:3px solid #d5d9dc;margin:.3rem 0;padding:.1rem .6rem;color:#54656f}
+.md-preview .md-empty{color:#8696a0;font-style:italic}

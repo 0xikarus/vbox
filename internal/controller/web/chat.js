@@ -5,6 +5,9 @@
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set();
  let selected='',owner=false,boxTimer,msgTimer,lastSignature='',stickToBottom=true;
  let drafts=[],pendingKey='',pendingFingerprint='';
+ let instructionPresets={defaultName:'',presets:[]};
+ const presetBodyCache=new Map();
+ let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
 
@@ -559,7 +562,8 @@
  async function primeBoxExtras(){
   if(extrasLoaded)return;
   try{
-   const [tools,profiles,defaults,providers]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[])]);
+   const [tools,profiles,defaults,providers,presetList]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[]),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);
+   applyInstructionPresets(presetList);
    const pools=(providers||[]).map(p=>({provider:p.provider,providerCredential:p.name||''}));
    const poolStatuses=await Promise.all(pools.map(async pool=>{
     try{
@@ -633,6 +637,8 @@
   if(loginProfiles.length)body.loginProfiles=loginProfiles;
   if(tools.length)body.tools=tools;
   if(setupScript)body.setupScript=setupScript;
+  const instructions=await createInstructionSelection();
+  if(instructions)body.instructions=instructions;
   try{
    const created=await api('/v1/logical-boxes','POST',{'Idempotency-Key':crypto.randomUUID()},body);
    newBoxModal.hidden=true;toast('Box '+created.name+' requested — it appears in the list as it starts.');
@@ -656,8 +662,10 @@
   const items=[
    ['Show details',()=>{if(!inspectOpen)$('#chat-info').click()}],
    ['Control desktop',()=>{location.hash='box='+box.id;if(box.id!==selected)void openBox(box.id).then(()=>openTakeover('desktop'));else openTakeover('desktop')}],
-   ['Delete box…',()=>openDeleteModal(box),'danger'],
+   ['Instructions…',()=>void openBoxInstructions(box)],
   ];
+  if(owner)items.push(['Imported profiles…',()=>void openBoxCredentials(box)]);
+  items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
   if(box.state==='running')items.splice(2,0,['Hibernate box',()=>void hibernateBox(box)]);
   for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
   rowMenu.hidden=false;
@@ -773,6 +781,7 @@
  async function enter(){
   try{
    const who=await api('/v1/whoami');owner=who.role==='owner';
+   $('#presets-toggle').hidden=!owner;
    $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;
    doodle('Loading chats…');
    try{await loadBoxes()}finally{doodle('')}
@@ -782,5 +791,209 @@
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false}
  }
  addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url)});
+
+ /* ---------- instruction presets, box instructions, imported profiles ---------- */
+ function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
+ function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
+ document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
+ async function presetBody(name){
+  if(presetBodyCache.has(name))return presetBodyCache.get(name);
+  const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));
+  presetBodyCache.set(name,value.preset.markdown);
+  return value.preset.markdown;
+ }
+ function applyInstructionPresets(list){
+  instructionPresets=list&&Array.isArray(list.presets)?list:{defaultName:'',presets:[]};
+  presetBodyCache.clear();renderCreateInstructionChoice();renderPresetList();
+ }
+ function renderPresetList(){
+  const root=$('#preset-list');if(!root)return;root.replaceChildren();
+  if(!instructionPresets.presets.length){root.append(mk('p','No presets yet. Add one below.'));return}
+  const list=mk('ul');list.className='preset-list';
+  for(const preset of instructionPresets.presets){
+   const item=mk('li');item.append(mk('span',preset.name+' · r'+preset.revision+(preset.default?' · default':'')));
+   const actions=mk('span');actions.className='preset-actions';
+   const edit=mk('button','Edit');edit.type='button';edit.onclick=()=>void editPreset(preset.name);
+   const setDefault=mk('button',preset.default?'Clear default':'Set default');setDefault.type='button';setDefault.onclick=()=>void setDefaultPreset(preset.default?'':preset.name);
+   const remove=mk('button','Delete');remove.type='button';remove.onclick=()=>void deletePreset(preset);
+   actions.append(edit,setDefault,remove);item.append(actions);list.append(item);
+  }
+  root.append(list);
+ }
+ async function openPresetsModal(){
+  const status=$('#preset-status');status.textContent='';
+  $('#presets-modal').hidden=false;
+  try{applyInstructionPresets(await api('/v1/instruction-presets'))}catch(e){status.textContent=e.message}
+ }
+ $('#presets-toggle').onclick=()=>void openPresetsModal();
+ async function editPreset(name){
+  const status=$('#preset-status');
+  try{const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));const form=$('#preset-form');form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.'}
+  catch(e){status.textContent=e.message}
+ }
+ async function setDefaultPreset(name){
+  const status=$('#preset-status');
+  try{await api('/v1/instruction-presets-default','PUT',{name});status.textContent=name?'Account default preset: '+name+'.':'Account default preset cleared.';await openPresetsModal()}
+  catch(e){status.textContent=e.message}
+ }
+ async function deletePreset(preset){
+  if(!confirm('Delete instruction preset "'+preset.name+'"? Boxes that copied it keep their snapshot.'))return;
+  const status=$('#preset-status');
+  try{await api('/v1/instruction-presets/'+encodeURIComponent(preset.name),'DELETE');status.textContent='Preset deleted. Existing boxes keep their snapshot.';await openPresetsModal()}
+  catch(e){status.textContent=e.message}
+ }
+ $('#preset-upload').onclick=()=>$('#preset-file').click();
+ $('#preset-file').addEventListener('change',async()=>{
+  const input=$('#preset-file'),file=input.files&&input.files[0];if(!file)return;
+  const status=$('#preset-status'),lower=file.name.toLowerCase(),typeOk=lower.endsWith('.md')||lower.endsWith('.markdown')||['text/markdown','text/plain'].includes(file.type);
+  try{
+   if(!typeOk)throw Error('Choose a Markdown file (.md or .markdown).');
+   if(file.size>65536)throw Error('Markdown files are limited to 64 KiB.');
+   let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(new Uint8Array(await file.arrayBuffer()))}catch{throw Error('The file must be valid UTF-8 text.')}
+   if(text.includes('\u0000'))throw Error('The file must not contain NUL bytes.');
+   const form=$('#preset-form');form.elements.markdown.value=text;if(!form.elements.name.value)form.elements.name.value=file.name.replace(/\.(md|markdown)$/i,'').slice(0,64);
+   status.textContent='Loaded '+file.name+'. Name the preset and save.';
+  }catch(e){status.textContent=e.message}
+  input.value='';
+ });
+ $('#preset-preview-toggle').onclick=()=>{const preview=$('#preset-preview'),text=$('#preset-form').elements.markdown.value;if(preview.hidden){mdPreview(preview,text)}preview.hidden=!preview.hidden};
+ $('#preset-form').onsubmit=async event=>{
+  event.preventDefault();
+  const f=event.target.elements,name=f.name.value.trim(),markdown=f.markdown.value,status=$('#preset-status');
+  try{
+   if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name))throw Error('Preset names use 1–64 letters, digits, dots, underscores or hyphens and start with a letter or digit.');
+   if(markdown.length>65536)throw Error('Markdown is limited to 64 KiB.');
+   if(!markdown.trim())throw Error('Enter the Markdown instructions to save.');
+   const saved=await api('/v1/instruction-presets/'+encodeURIComponent(name),'PUT',{markdown});
+   status.textContent='Saved '+name+' · r'+saved.preset.revision+'.';
+   event.target.reset();$('#preset-preview').hidden=true;await openPresetsModal();
+  }catch(e){status.textContent=e.message}
+ };
+ function renderCreateInstructionChoice(){
+  const select=$('#create-instructions'),previous=select.value;select.replaceChildren();
+  const auto=mk('option',instructionPresets.defaultName?'Account default preset ('+instructionPresets.defaultName+')':'Account default preset / none');auto.value='auto';select.append(auto);
+  const none=mk('option','None (no managed instructions)');none.value='none';select.append(none);
+  for(const preset of instructionPresets.presets){const option=mk('option',preset.name+' · r'+preset.revision+(preset.default?' · default':''));option.value=preset.name;select.append(option)}
+  const custom=mk('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
+  if([...select.options].some(option=>option.value===previous))select.value=previous;
+  void syncCreateInstructionText();
+ }
+ async function syncCreateInstructionText(){
+  const select=$('#create-instructions'),textarea=$('#create-instructions-custom'),meta=$('#create-instructions-meta'),preview=$('#create-instructions-preview');
+  const value=select.value;
+  $('#create-instructions-label').textContent=select.options[select.selectedIndex]?.textContent||'none';
+  if(value==='auto'||value==='none'){
+   textarea.value='';textarea.readOnly=true;createInstructionSource=value;
+   meta.textContent=value==='auto'?'The account-default preset is copied at creation; with no default the box gets no managed instructions.':'No managed instructions are written for this box.';
+   mdPreview(preview,'');preview.hidden=true;return;
+  }
+  if(value==='custom'){
+   textarea.readOnly=false;
+   if(createInstructionSource!=='custom'){textarea.value='';createInstructionSource='custom'}
+   meta.textContent='Write the box-specific Markdown. It is snapshotted as a custom instruction set.';
+   mdPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();return;
+  }
+  let body='';try{body=await presetBody(value)}catch{body=''}
+  textarea.readOnly=false;
+  if(createInstructionSource!==value){textarea.value=body;createInstructionSource=value}
+  const preset=instructionPresets.presets.find(item=>item.name===value),dirty=textarea.value!==body;
+  meta.textContent='Preset '+(preset?'r'+preset.revision+' · ':'')+(dirty?'edited for this box (preset provenance kept)':'copied verbatim')+'.';
+  mdPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();
+ }
+ $('#create-instructions').addEventListener('change',()=>void syncCreateInstructionText());
+ $('#create-instructions-custom').addEventListener('input',()=>{const preview=$('#create-instructions-preview'),text=$('#create-instructions-custom').value;mdPreview(preview,text);preview.hidden=!text.trim()});
+ async function createInstructionSelection(){
+  const value=$('#create-instructions').value,markdown=$('#create-instructions-custom').value;
+  if(value==='auto')return null;
+  if(value==='none')return {none:true};
+  if(value==='custom'){if(!markdown.trim())throw Error('Enter the custom instruction Markdown or choose another source.');return {markdown}}
+  const body=await presetBody(value);
+  return markdown.trim()&&markdown!==body?{preset:value,markdown}:{preset:value};
+ }
+ function describeBoxInstructions(state){
+  const current=state.instructions||{},parts=['source: '+current.source];
+  if(current.preset)parts.push('preset '+current.preset+' r'+current.presetRevision+(current.modified?' (edited for this box)':''));
+  if(state.preset&&!state.preset.exists)parts.push('preset deleted; snapshot retained');
+  else if(state.preset&&state.preset.stale)parts.push('preset has a newer revision');
+  parts.push(state.pending?'pending apply':'applied');
+  return parts.join(' · ');
+ }
+ async function openBoxInstructions(box){
+  boxInstructionTarget=box;
+  const status=$('#box-instructions-status');status.textContent='Loading…';
+  $('#box-instructions-title').textContent='Instructions · '+box.name;
+  const select=$('#box-instructions-preset');select.replaceChildren();
+  try{
+   const state=await api(boxPath(box.id)+'/instructions'),current=state.instructions||{source:'none',markdown:''};
+   const none=mk('option','None (clear managed instructions)');none.value='';select.append(none);
+   for(const preset of instructionPresets.presets){const option=mk('option',preset.name+' · r'+preset.revision);option.value=preset.name;select.append(option)}
+   const custom=mk('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
+   select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?'custom':'');
+   $('#box-instructions-markdown').value=current.markdown||'';
+   mdPreview($('#box-instructions-preview'),current.markdown||'');
+   $('#box-instructions-current').textContent=describeBoxInstructions(state);
+   status.textContent='';$('#box-instructions-modal').hidden=false;
+  }catch(e){status.textContent=e.message}
+ }
+ $('#box-instructions-preset').addEventListener('change',async()=>{
+  const select=$('#box-instructions-preset'),textarea=$('#box-instructions-markdown'),preview=$('#box-instructions-preview');
+  if(select.value===''){textarea.value='';mdPreview(preview,'');return}
+  if(select.value==='custom'){mdPreview(preview,textarea.value);return}
+  try{textarea.value=await presetBody(select.value)}catch(e){$('#box-instructions-status').textContent=e.message;return}
+  mdPreview(preview,textarea.value);
+ });
+ $('#box-instructions-markdown').addEventListener('input',()=>mdPreview($('#box-instructions-preview'),$('#box-instructions-markdown').value));
+ $('#box-instructions-apply').onclick=async()=>{
+  if(!boxInstructionTarget)return;
+  const status=$('#box-instructions-status'),select=$('#box-instructions-preset'),markdown=$('#box-instructions-markdown').value;
+  try{
+   let body;
+   if(select.value==='')body={none:true};
+   else if(select.value==='custom'){if(!markdown.trim())throw Error('Enter the custom Markdown or choose another source.');body={markdown}}
+   else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
+   status.textContent='Applying…';
+   const result=await api(boxPath(boxInstructionTarget.id)+'/instructions','PUT',body);
+   status.textContent=result.note||describeBoxInstructions(result);
+   if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
+   toast('Instructions applied to '+boxInstructionTarget.name+'.');
+  }catch(e){status.textContent=e.message}
+ };
+ async function openBoxCredentials(box){
+  boxCredentialTarget=box;
+  const status=$('#box-credentials-status');status.textContent='Loading…';
+  $('#box-credentials-title').textContent='Imported profiles · '+box.name;
+  try{
+   const [state,profiles]=await Promise.all([api(boxPath(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
+   const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
+   const current=new Map((state.profiles||[]).map(ref=>[ref.application,ref.name]));
+   const wrap=$('#box-credentials-form');wrap.replaceChildren();
+   for(const application of ['claude','codex','opencode','github']){
+    const label=mk('label',application+' ');label.className='field';
+    const select=document.createElement('select');select.name=application;
+    const empty=mk('option','None');empty.value='';select.append(empty);
+    for(const name of (byApplication[application]||[]).slice().sort()){const option=mk('option',name);option.value=name;select.append(option)}
+    if(current.has(application)&&(byApplication[application]||[]).includes(current.get(application)))select.value=current.get(application);
+    label.append(select);
+    label.title=(byApplication[application]||[]).length?'':'No saved '+application+' profiles. Upload with: vmbox profiles save '+application+' NAME';
+    wrap.append(label);
+   }
+   const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
+   if((state.pending||[]).length)parts.push('Queued for next start: '+(state.pending||[]).map(ref=>ref.application+' · '+ref.name).join(', '));
+   $('#box-credentials-current').textContent=parts.join(' · ')+'.';
+   status.textContent='';$('#box-credentials-modal').hidden=false;
+  }catch(e){status.textContent=e.message}
+ }
+ $('#box-credentials-apply').onclick=async()=>{
+  if(!boxCredentialTarget)return;
+  const status=$('#box-credentials-status'),profiles=[...$('#box-credentials-form').querySelectorAll('select')].filter(select=>select.value).map(select=>({application:select.name,name:select.value}));
+  status.textContent='Applying credentials…';
+  try{
+   const result=await api(boxPath(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
+   status.textContent=result.note||'Saved.';
+   $('#box-credentials-current').textContent=(result.profiles||[]).length?'Imported: '+(result.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', ')+'.':'No imported login profiles recorded.';
+   toast('Login profiles updated for '+boxCredentialTarget.name+'.');
+  }catch(e){status.textContent=e.message}
+ };
+
  void enter();
 })();

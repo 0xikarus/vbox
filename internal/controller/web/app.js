@@ -9,6 +9,9 @@ function enforceDesktopToolDependency(root){
 let token='',defaults=null,epoch=0;
 let boxRefreshTimer;
 let fleetSnapshots=[];
+let ownerTools=false,instructionPresets={defaultName:'',presets:[]};
+const presetBodyCache=new Map();
+let boxInstructionTarget=null,boxCredentialTarget=null;
 const poolKey=(provider,providerCredential)=>JSON.stringify({provider,providerCredential:providerCredential||''});
 const poolLabel=(provider,alias)=>(provider==='shared-worker'?'Shared worker':'Dedicated · '+provider)+' / '+(alias||'default');
 function boxPlacement(box){
@@ -154,6 +157,8 @@ function renderBoxes(boxes){
     const version=epoch;const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)
    });resume.setAttribute('aria-label','Resume box '+b.name);actions.append(resume);
   }
+  actions.append(button('Instructions…',()=>openBoxInstructions(b)));
+  if(ownerTools)actions.append(button('Credentials…',()=>openBoxCredentials(b)));
   const remove=trashButton('Delete box '+b.name,async()=>{
    if(deletingBoxes.has(b.id)||!confirm('Delete box "'+b.name+'" and its workspace volume? Running processes will stop and all files in the volume will be permanently deleted. This cannot be undone. Shared fleet services and other boxes are kept.'))return;
    const version=epoch;deletingBoxes.add(b.id);remove.disabled=true;remove.title='requesting deletion…';
@@ -176,10 +181,12 @@ function renderProfiles(identity,profiles){
  }$('#profile-tree').replaceChildren(tree);
 }
 async function refresh(){
- const version=epoch,[caps,boxes]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes')]);if(version!==epoch)return;
- document.querySelectorAll('[data-owner]').forEach(n=>n.hidden=!caps.providerEdits);
+ const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
+ ownerTools=caps.providerEdits;
+ document.querySelectorAll('[data-owner]').forEach(n=>n.hidden=!ownerTools);
+ applyInstructionPresets(instructionList);
  renderBoxes(boxes);
- if(!caps.providerEdits)return;
+ if(!ownerTools)return;
  const [providers,schema,notifications,identity,profiles,toolPresets]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications'),api('/v1/whoami'),api('/v1/login-profiles'),api('/v1/tool-presets')]);if(version!==epoch)return;
  renderPoolChoices(providers);
  const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{return {...await api('/v1/fleet/status?'+new URLSearchParams(target)),...target}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
@@ -194,9 +201,203 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();if(costTarget&&(costTarget.provider!==d.provider||costTarget.providerCredential!==d.providerCredential))resetCosts();defaults=d;renderWorkerCapacity()}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools);const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));
+
+/* ---------- instruction presets, box instructions, imported profiles ---------- */
+function modalEl(id){return document.getElementById(id)}
+function renderMarkdownPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):node('pre',text||''))}
+async function presetBody(name){
+ if(presetBodyCache.has(name))return presetBodyCache.get(name);
+ const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));
+ presetBodyCache.set(name,value.preset.markdown);
+ return value.preset.markdown;
+}
+function applyInstructionPresets(list){
+ instructionPresets=list&&Array.isArray(list.presets)?list:{defaultName:'',presets:[]};
+ presetBodyCache.clear();renderInstructionList();renderCreateInstructionChoice();
+}
+function renderInstructionList(){
+ const root=$('#instruction-list');root.replaceChildren();
+ if(!instructionPresets.presets.length){root.append(node('p','No instruction presets yet. Create one below to reuse Markdown guidance across boxes.'));return}
+ const wrap=node('div');wrap.className='table-wrap';const table=document.createElement('table');table.className='markets';
+ const head=node('tr');['Name','Revision','Size','Default','Updated','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
+ for(const preset of instructionPresets.presets){
+  const row=node('tr');row.className='row';
+  row.append(node('td',preset.name),node('td','r'+preset.revision),node('td',preset.sizeBytes+' B'),node('td',preset.default?'yes':'no'),node('td',new Date(preset.updatedAt).toLocaleString()));
+  const actions=node('td');
+  if(ownerTools)actions.append(button('Edit',()=>void editInstructionPreset(preset.name)),button(preset.default?'Clear default':'Set default',()=>setInstructionDefault(preset.default?'':preset.name)),trashButton('Delete instruction preset '+preset.name,()=>deleteInstructionPreset(preset)));
+  else actions.append(node('span','—'));
+  row.append(actions);table.append(row);
+ }
+ wrap.append(table);root.append(wrap);
+}
+async function editInstructionPreset(name){
+ const form=$('#instruction-form'),status=$('#instruction-status');
+ try{const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;$('#instruction-editor').open=true;renderInstructionPreview();status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.'}
+ catch(e){status.textContent=e.message}
+}
+async function deleteInstructionPreset(preset){
+ if(!confirm('Delete instruction preset "'+preset.name+'"? Boxes that already copied it keep their snapshot unchanged.'))return;
+ const status=$('#instruction-status');
+ try{await api('/v1/instruction-presets/'+encodeURIComponent(preset.name),'DELETE');status.textContent='Preset deleted. Existing boxes keep their snapshot.';await refresh()}
+ catch(e){status.textContent=e.message}
+}
+async function setInstructionDefault(name){
+ const status=$('#instruction-status');
+ try{await api('/v1/instruction-presets-default','PUT',{name});status.textContent=name?'Account default instruction preset set: '+name+'.':'Account default instruction preset cleared.';await refresh()}
+ catch(e){status.textContent=e.message}
+}
+function renderInstructionPreview(){const text=$('#instruction-form').elements.markdown.value,preview=$('#instruction-preview');renderMarkdownPreview(preview,text);preview.hidden=!text.trim()}
+$('#instruction-preview-toggle').addEventListener('click',()=>{const preview=$('#instruction-preview');if(preview.hidden)renderInstructionPreview();preview.hidden=!preview.hidden});
+$('#instruction-upload').addEventListener('click',()=>$('#instruction-file').click());
+$('#instruction-file').addEventListener('change',action(async()=>{
+ const input=$('#instruction-file'),file=input.files&&input.files[0];if(!file)return;
+ const status=$('#instruction-status'),lower=file.name.toLowerCase(),typeOk=lower.endsWith('.md')||lower.endsWith('.markdown')||['text/markdown','text/plain'].includes(file.type);
+ if(!typeOk)throw Error('Choose a Markdown file (.md or .markdown).');
+ if(file.size>65536)throw Error('Markdown files are limited to 64 KiB.');
+ let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(new Uint8Array(await file.arrayBuffer()))}catch{throw Error('The file must be valid UTF-8 text.')}
+ if(text.includes('\u0000'))throw Error('The file must not contain NUL bytes.');
+ const form=$('#instruction-form');form.elements.markdown.value=text;
+ if(!form.elements.name.value)form.elements.name.value=file.name.replace(/\.(md|markdown)$/i,'').slice(0,64);
+ $('#instruction-editor').open=true;renderInstructionPreview();status.textContent='Loaded '+file.name+'. Name the preset and save.';
+ input.value='';
+}));
+$('#instruction-form').addEventListener('submit',action(async e=>{
+ e.preventDefault();const f=e.target.elements,name=f.name.value.trim(),markdown=f.markdown.value,status=$('#instruction-status');
+ if(!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(name))throw Error('Preset names use 1–64 letters, digits, dots, underscores or hyphens and start with a letter or digit.');
+ if(markdown.length>65536)throw Error('Markdown is limited to 64 KiB.');
+ if(!markdown.trim())throw Error('Enter the Markdown instructions to save.');
+ const saved=await api('/v1/instruction-presets/'+encodeURIComponent(name),'PUT',{markdown});
+ status.textContent='Saved '+name+' · r'+saved.preset.revision+' ('+saved.preset.sizeBytes+' bytes).';
+ e.target.reset();$('#instruction-preview').hidden=true;await refresh();
+}));
+function renderCreateInstructionChoice(){
+ const select=$('#create-instructions'),previous=select.value;select.replaceChildren();
+ const auto=node('option',instructionPresets.defaultName?'Account default preset ('+instructionPresets.defaultName+')':'Account default preset / none');auto.value='auto';select.append(auto);
+ const none=node('option','None (no managed instructions)');none.value='none';select.append(none);
+ for(const preset of instructionPresets.presets){const option=node('option',preset.name+' · r'+preset.revision+(preset.default?' · default':''));option.value=preset.name;select.append(option)}
+ const custom=node('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
+ if([...select.options].some(option=>option.value===previous))select.value=previous;
+ void syncCreateInstructionText();
+}
+let createInstructionSource='';
+async function syncCreateInstructionText(){
+ const select=$('#create-instructions'),textarea=$('#create-instructions-custom'),meta=$('#create-instructions-meta'),preview=$('#create-instructions-preview');
+ const value=select.value;
+ $('#create-instructions-label').textContent=select.options[select.selectedIndex]?.textContent||'none';
+ if(value==='auto'||value==='none'){
+  textarea.value='';textarea.readOnly=true;createInstructionSource=value;
+  meta.textContent=value==='auto'?'The account-default preset is copied at creation; with no default the box gets no managed instructions.':'No managed instructions are written for this box.';
+  renderMarkdownPreview(preview,'');preview.hidden=true;return;
+ }
+ if(value==='custom'){
+  textarea.readOnly=false;
+  if(createInstructionSource!=='custom'){textarea.value='';createInstructionSource='custom'}
+  meta.textContent='Write the box-specific Markdown. It is snapshotted as a custom instruction set.';
+  renderMarkdownPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();return;
+ }
+ let body='';try{body=await presetBody(value)}catch{body=''}
+ textarea.readOnly=false;
+ if(createInstructionSource!==value){textarea.value=body;createInstructionSource=value}
+ const preset=instructionPresets.presets.find(item=>item.name===value),dirty=textarea.value!==body;
+ meta.textContent='Preset '+(preset?'r'+preset.revision+' · ':'')+(dirty?'edited for this box (preset provenance kept)':'copied verbatim')+'.';
+ renderMarkdownPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();
+}
+$('#create-instructions').addEventListener('change',()=>void syncCreateInstructionText());
+$('#create-instructions-custom').addEventListener('input',()=>{const preview=$('#create-instructions-preview'),text=$('#create-instructions-custom').value;renderMarkdownPreview(preview,text);preview.hidden=!text.trim()});
+async function createInstructionSelection(){
+ const value=$('#create-instructions').value,markdown=$('#create-instructions-custom').value;
+ if(value==='auto')return null;
+ if(value==='none')return {none:true};
+ if(value==='custom'){if(!markdown.trim())throw Error('Enter the custom instruction Markdown or choose another source.');return {markdown}}
+ const body=await presetBody(value);
+ return markdown.trim()&&markdown!==body?{preset:value,markdown}:{preset:value};
+}
+function describeBoxInstructions(state){
+ const current=state.instructions||{},parts=['source: '+current.source];
+ if(current.preset)parts.push('preset '+current.preset+' r'+current.presetRevision+(current.modified?' (edited for this box)':''));
+ if(state.preset&&!state.preset.exists)parts.push('preset deleted; snapshot retained');
+ else if(state.preset&&state.preset.stale)parts.push('preset has a newer revision');
+ parts.push(state.pending?'pending apply':'applied to the box');
+ return parts.join(' · ');
+}
+async function openBoxInstructions(box){
+ boxInstructionTarget=box;
+ const status=$('#box-instructions-status');status.textContent='Loading…';
+ $('#box-instructions-title').textContent='Instructions · '+box.name;
+ const select=$('#box-instructions-preset');select.replaceChildren();
+ try{
+  const state=await api(bp(box.id)+'/instructions'),current=state.instructions||{source:'none',markdown:''};
+  const none=node('option','None (clear managed instructions)');none.value='';select.append(none);
+  for(const preset of instructionPresets.presets){const option=node('option',preset.name+' · r'+preset.revision);option.value=preset.name;select.append(option)}
+  const custom=node('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
+  select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?'custom':'');
+  $('#box-instructions-markdown').value=current.markdown||'';
+  renderMarkdownPreview($('#box-instructions-preview'),current.markdown||'');
+  $('#box-instructions-current').textContent=describeBoxInstructions(state);
+  status.textContent='';
+  modalEl('box-instructions-modal').hidden=false;
+ }catch(e){status.textContent=e.message}
+}
+$('#box-instructions-preset').addEventListener('change',action(async()=>{
+ const select=$('#box-instructions-preset'),textarea=$('#box-instructions-markdown'),preview=$('#box-instructions-preview');
+ if(select.value===''){textarea.value='';renderMarkdownPreview(preview,'');return}
+ if(select.value==='custom'){renderMarkdownPreview(preview,textarea.value);return}
+ try{textarea.value=await presetBody(select.value)}catch(e){$('#box-instructions-status').textContent=e.message;return}
+ renderMarkdownPreview(preview,textarea.value);
+}));
+$('#box-instructions-markdown').addEventListener('input',()=>renderMarkdownPreview($('#box-instructions-preview'),$('#box-instructions-markdown').value));
+$('#box-instructions-apply').addEventListener('click',action(async()=>{
+ if(!boxInstructionTarget)return;
+ const status=$('#box-instructions-status'),select=$('#box-instructions-preset'),markdown=$('#box-instructions-markdown').value;
+ let body;
+ if(select.value==='')body={none:true};
+ else if(select.value==='custom'){if(!markdown.trim())throw Error('Enter the custom Markdown or choose another source.');body={markdown}}
+ else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
+ status.textContent='Applying…';
+ const result=await api(bp(boxInstructionTarget.id)+'/instructions','PUT',body);
+ status.textContent=result.note||describeBoxInstructions(result);
+ if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
+ await refresh();
+}));
+async function openBoxCredentials(box){
+ boxCredentialTarget=box;
+ const status=$('#box-credentials-status');status.textContent='Loading…';
+ $('#box-credentials-title').textContent='Imported login profiles · '+box.name;
+ try{
+  const [state,profiles]=await Promise.all([api(bp(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
+  const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
+  const current=new Map((state.profiles||[]).map(ref=>[ref.application,ref.name]));
+  const wrap=$('#box-credentials-form');wrap.replaceChildren();
+  for(const application of ['claude','codex','opencode','github']){
+   const label=node('label','');label.className='field';label.append(document.createTextNode(application+' '));
+   const select=document.createElement('select');select.name=application;
+   const empty=node('option','None');empty.value='';select.append(empty);
+   for(const name of (byApplication[application]||[]).slice().sort()){const option=node('option',name);option.value=name;select.append(option)}
+   if(current.has(application)&&(byApplication[application]||[]).includes(current.get(application)))select.value=current.get(application);
+   label.append(select);
+   label.title=(byApplication[application]||[]).length?'':'No saved '+application+' profiles. Upload with: vmbox profiles save '+application+' NAME';
+   wrap.append(label);
+  }
+  const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
+  if((state.pending||[]).length)parts.push('Queued for next start: '+(state.pending||[]).map(ref=>ref.application+' · '+ref.name).join(', '));
+  $('#box-credentials-current').textContent=parts.join(' · ')+'.';
+  status.textContent='';
+  modalEl('box-credentials-modal').hidden=false;
+ }catch(e){status.textContent=e.message}
+}
+$('#box-credentials-apply').addEventListener('click',action(async()=>{
+ if(!boxCredentialTarget)return;
+ const status=$('#box-credentials-status'),profiles=[...$('#box-credentials-form').querySelectorAll('select')].filter(select=>select.value).map(select=>({application:select.name,name:select.value}));
+ status.textContent='Applying credentials…';
+ const result=await api(bp(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
+ status.textContent=result.note||'Saved.';
+ $('#box-credentials-current').textContent=(result.profiles||[]).length?'Imported: '+(result.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', ')+'.':'No imported login profiles recorded.';
+ await refresh();
+}));
+document.querySelectorAll('[data-close]').forEach(element=>element.addEventListener('click',()=>{const card=element.closest('.modal');if(card)card.hidden=true}));

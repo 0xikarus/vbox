@@ -203,6 +203,11 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 		if err := s.provisionCreationProfiles(ctx, prov, creation); err != nil {
 			return fail(err)
 		}
+		// Managed instructions land in the new volume like selected profiles,
+		// before the retained workspace detaches for good.
+		if err := s.syncBoxInstructions(ctx, prov, creation.AccountID, creation.Assignment.Box.ID, serviceID); err != nil {
+			return fail(fmt.Errorf("provision managed instructions: %w", err))
+		}
 		if len(creation.Request.Tools) > 0 {
 			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-installing-tools"); err != nil {
 				return fail(err)

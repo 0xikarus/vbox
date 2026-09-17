@@ -44,6 +44,12 @@ const defaultChatInstruction = "\n\n[vmbox Agent chat message %s]\nWhen your res
 // visible without crowding every prompt.
 const defaultChatInstructionEvery = 3
 
+// defaultChatReminder rides on every message between envelope repeats so the
+// agent always knows to answer through the chat_message MCP instead of its own
+// terminal output. It stays on even where the full envelope is skipped: without
+// it, messages between repeats would never produce a chat reply.
+const defaultChatReminder = "\n\n[sent via vmbox Agent chat %s — reply with the vmbox-desktop chat_message MCP tool (replyTo %s), not the terminal]"
+
 // ChatInstructionTemplate controls the agent chat envelope; set with
 // VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of the message
 // reference. Set to "off" to skip the envelope entirely. ChatInstructionEvery
@@ -57,15 +63,15 @@ func (s *Server) chatInstruction(messageID, agent string, ordinal int) string {
 	if every <= 0 {
 		every = defaultChatInstructionEvery
 	}
-	if ordinal > 1 && every > 1 && (ordinal-1)%every != 0 {
-		return ""
-	}
 	template := s.ChatInstructionTemplate
-	if template == "" {
-		template = defaultChatInstruction
-	}
 	if template == "off" {
 		return ""
+	}
+	if ordinal > 1 && every > 1 && (ordinal-1)%every != 0 {
+		return fmt.Sprintf(defaultChatReminder, messageID, messageID)
+	}
+	if template == "" {
+		template = defaultChatInstruction
 	}
 	return fmt.Sprintf(template, messageID, messageID, messageID)
 }

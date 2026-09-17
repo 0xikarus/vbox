@@ -20,3 +20,5 @@ button:focus-visible,summary:focus-visible{outline:2px solid #03c;outline-offset
 #error{color:#b00}
 nav,th,h1,h2,button,legend,summary,label{text-transform:lowercase}
 p,li{overflow-wrap:anywhere}
+
+@media(max-width:600px){body{padding:0 8px 48px}.form-actions{flex-direction:column;align-items:stretch}.modal .card{width:min(46rem,96vw)}}

@@ -42,6 +42,7 @@ Do not apply dedicated-worker whole-volume cleanup to these boxes.
 | Fleet creation, allocation, hibernation, deletion | `internal/controller/fleet_*.go` |
 | Provider interfaces and transports | `internal/provider`, `internal/transport` |
 | Persisted entities and migrations | `internal/controller/schema.sql` |
+| Instruction presets, box snapshots, re-imported logins | `internal/controller/instruction_presets.go`, `login_profile_reimport.go`, `internal/boxruntime/instructions.go` |
 | Chat/box image blob storage | `internal/controller/run_once_images.go` |
 | Actual task execution and exit journal | `internal/boxruntime/process.go` |
 | tmux identity, context and restoration | `internal/boxruntime/native.go`, `tmux_context.go`, `tmux.go` |
@@ -142,6 +143,21 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - `process_tasks` cascade when a box is deleted. Never infer task success from SSH errors.
 - Login profiles are uploaded from the CLI; selecting a profile copies credentials
   to a box. Deleting a saved profile does not revoke copies already on workers.
+  Owners can replace a box's imported profiles (**Credentials…** in both UIs):
+  running boxes are written through the locked, integrity-checked transfer, stopped
+  boxes queue the selection and write it during the next allocation, and
+  credential edits never modify instructions.
+- Instruction presets are account-scoped Markdown snapshotted per box
+  (`box_instruction_snapshots`), never referenced live: preset edits/deletions
+  cannot change existing boxes. `internal/boxruntime/instructions.go` keeps one
+  canonical `~/.config/vmbox/instructions.md` and links it into exactly the
+  verified global slots (`~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`,
+  `~/.config/opencode/AGENTS.md`), tracking ownership in a ledger. Pre-existing
+  user files are conflicts left untouched, repository instruction files are
+  never written, and re-application on every attach (`sync-instructions` before
+  `restore-tools`, plus `RestoreManagedInstructions` inside restore) is
+  idempotent. `vmbox-runtime sync-instructions` verifies its payload digest like
+  `sync-files`.
 
 ## Verification and honest evidence
 
