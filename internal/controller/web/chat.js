@@ -449,10 +449,30 @@
   if(extrasLoaded)return;
   try{
    const [tools,profiles,defaults,providers]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[])]);
-   const pools=[...(providers||[])];
-   const poolSelect=$('#create-pool');poolSelect.replaceChildren(new Option('Automatic (available capacity)',''));
-   for(let i=0;i<pools.length;i++){const label=(pools[i].provider==='shared-worker'?'Shared worker':'Dedicated · '+pools[i].provider)+(pools[i].name?' / '+pools[i].name:'');poolSelect.append(new Option(label,String(i)))}
+   const pools=(providers||[]).map(p=>({provider:p.provider,providerCredential:p.name||''}));
+   const poolStatuses=await Promise.all(pools.map(async pool=>{
+    try{
+     const fleet=await api('/v1/fleet/status?'+new URLSearchParams({provider:pool.provider,providerCredential:pool.providerCredential}));
+     return {free:Number(fleet.freeSlots)||0,occupied:Number(fleet.occupiedSlots)||0,actual:Number(fleet.actualSlots)||0,desired:Number(fleet.desiredSlots)||0,queued:Number(fleet.pendingAllocationRequests)||0};
+    }catch{return null}
+   }));
+   const poolLabel=(pool,status)=>{
+    const base=(pool.provider==='shared-worker'?'Shared worker':'Dedicated · '+pool.provider)+(pool.providerCredential?' / '+pool.providerCredential:'');
+    if(!status)return base+' — slot status unavailable';
+    if(status.free>0)return base+' — '+status.free+' free of '+status.actual;
+    return base+' — no free slots ('+status.occupied+'/'+status.actual+' busy)';
+   };
+   const poolSelect=$('#create-pool');poolSelect.replaceChildren(new Option('Automatic (least loaded pool with free slots)',''));
+   pools.forEach((pool,index)=>{
+    const status=poolStatuses[index],option=new Option(poolLabel(pool,status),String(index));
+    option.title=status?('desired '+status.desired+' · actual '+status.actual+' · free '+status.free+' · occupied '+status.occupied+(status.queued?' · '+status.queued+' queued':'')):'slot status unavailable';
+    option.disabled=!!status&&status.free===0;
+    poolSelect.append(option);
+   });
    $('#create-pool-label').hidden=pools.length===0;
+   const poolHint=$('#create-pool-status');
+   poolHint.hidden=pools.length===0;
+   if(pools.length)poolHint.textContent=pools.map((pool,index)=>poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared')).join(' · ')+' — boxes wait in the controller queue when their pool has no free slots.';
    createForm.dataset.pools=JSON.stringify(pools.map(p=>({provider:p.provider,providerCredential:p.name||''})));
    if(defaults.provider){createForm.dataset.provider=defaults.provider;createForm.dataset.providerCredential=defaults.providerCredential||''}
    const byApp={};
