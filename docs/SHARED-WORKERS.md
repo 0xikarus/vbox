@@ -23,6 +23,15 @@ secret `{"token":"WORKER_TOKEN"}`. Set the alias's fleet desired slot count to N
 not exceeding the worker capacity. Do not register the same host under multiple
 aliases. The worker must not receive the controller database or Railway token.
 
+On startup, retained workspace identities are validated and their Unix accounts
+and directories are prepared before the worker serves health or execution requests.
+Conflicting identities fail startup rather than silently changing ownership.
+When a viewer next observes a running box after a worker restart, the controller
+verifies its workspace identity, restores its runtime/tmux state, and refreshes
+the connection incarnation under the existing assignment fence. Existing live
+sessions are not duplicated. Files survive restarts; terminated processes are not
+resurrected, and a fresh managed agent can be started when reconnecting.
+
 The controller manages logical slot and directory IDs through this provider;
 these IDs are never passed to Railway as service or volume IDs. Deleting a box
 deletes only its directory, not the worker or permanent volume. Creating boxes,

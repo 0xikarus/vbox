@@ -107,6 +107,23 @@ func TestSharedWorkerControllerPostgres(t *testing.T) {
 		}
 	}
 	first := assignments[0]
+	if _, err := store.DB.ExecContext(ctx, `UPDATE compute_slots SET deployment_instance_id='old-worker-incarnation' WHERE id=$1`, first.Slot.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prov.Exec(ctx, first.Slot.ServiceID, []string{"tmux", "kill-server"}, provider.ExecOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.observeSessions(ctx, principal, first.Box.ID); err != nil {
+		t.Fatalf("automatic shared runtime recovery: %v", err)
+	}
+	first, err = store.assignment(ctx, principal.AccountID, first.Box.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, err := prov.Connection(ctx, first.Slot.ServiceID)
+	if err != nil || !connectionMatchesAssignment(connection, first) {
+		t.Fatalf("recovered connection fence not refreshed: %v", err)
+	}
 	if _, err := store.BeginLogicalBoxRelease(ctx, principal, first.Box.ID, v1.LogicalBoxHibernating); err != nil {
 		t.Fatal(err)
 	}

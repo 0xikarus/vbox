@@ -11,11 +11,55 @@ import (
 )
 
 type fakeRuntime struct {
-	stopped   []string
-	stopError error
+	stopped      []string
+	stopError    error
+	prepared     []string
+	prepareError error
 }
 
-func (r *fakeRuntime) Prepare(context.Context, Workspace) error { return nil }
+func (r *fakeRuntime) Prepare(_ context.Context, workspace Workspace) error {
+	r.prepared = append(r.prepared, workspace.ID)
+	return r.prepareError
+}
+
+func TestReopenRestoresWorkspacesBeforeReady(t *testing.T) {
+	root := t.TempDir()
+	runtime := &fakeRuntime{}
+	store, err := Open(root, "account", 2, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Create(provider.CreateRequest{Name: "slot-a", Owner: provider.Owner{AccountID: "account", BoxID: "slot-a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage, err := store.CreateStorage(context.Background(), "slot-a", provider.Owner{AccountID: "account", BoxID: "box-a"}, provider.Resources{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	runtime.prepared = nil
+	runtime.prepareError = errors.New("identity conflict")
+	if reopened, err := Open(root, "account", 2, runtime); err == nil {
+		reopened.Close()
+		t.Fatal("worker became ready despite recovery failure")
+	}
+	runtime.prepareError = nil
+	runtime.prepared = nil
+	reopened, err := Open(root, "account", 2, runtime)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if len(runtime.prepared) != 1 || runtime.prepared[0] != storage.ID {
+		t.Fatalf("workspaces not recovered: %v", runtime.prepared)
+	}
+	if err := reopened.Health(); err != nil {
+		t.Fatal(err)
+	}
+}
 func (r *fakeRuntime) Stop(_ context.Context, workspace Workspace) error {
 	r.stopped = append(r.stopped, workspace.ID)
 	return r.stopError

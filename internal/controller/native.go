@@ -86,6 +86,11 @@ func (s *Server) observeSessions(ctx context.Context, p Principal, id string) (v
 	if err != nil {
 		return out, err
 	}
+	if box.Provider == "shared-worker" {
+		if err := s.recoverSharedWorkspace(ctx, a, prov); err != nil {
+			return out, err
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "native-sessions", nativeFence(a)}, provider.ExecOptions{})

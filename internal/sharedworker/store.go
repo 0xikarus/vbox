@@ -13,6 +13,7 @@ import (
 	"sort"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
@@ -139,6 +140,13 @@ func Open(root, account string, capacity int, runtime Runtime) (*Store, error) {
 				return nil, errors.New("invalid retained attachment")
 			}
 			attachments[slot.WorkspaceID] = true
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	for _, workspace := range store.state.Workspaces {
+		if err := store.Runtime.Prepare(ctx, workspace); err != nil {
+			return nil, fmt.Errorf("recover workspace %s: %w", workspace.ID, err)
 		}
 	}
 	opened = true
