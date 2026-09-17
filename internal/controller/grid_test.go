@@ -13,7 +13,7 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-func TestGridExcludesOneShotAndOtherAccounts(t *testing.T) {
+func TestGridExcludesBusyAndOtherAccounts(t *testing.T) {
 	dsn := os.Getenv("VMBOX_TEST_DATABASE_URL")
 	if dsn == "" {
 		t.Skip("requires disposable PostgreSQL")
@@ -53,10 +53,8 @@ func TestGridExcludesOneShotAndOtherAccounts(t *testing.T) {
 		return id
 	}
 	persistent := add(p, "once-is-a-valid-interactive-name")
-	once := add(p, "ordinary-name-but-disposable")
 	busy := add(p, "busy")
 	add(other, "foreign")
-	exec(`INSERT INTO run_once_requests(id,account_id,user_id,request_key,request,box_id) VALUES($1,$2,$3,'test','{}',$4)`, uuid(), p.AccountID, p.UserID, once)
 	id := uuid()
 	result, _ := json.Marshal(v1.ProcessTask{ID: id, LogicalBoxID: busy, State: "running"})
 	exec(`INSERT INTO process_tasks(id,account_id,logical_box_id,user_id,requested_role,idempotency_key,state,result) VALUES($1,$2,$3,$4,'owner','test','running',$5)`, id, p.AccountID, busy, p.UserID, result)

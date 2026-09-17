@@ -9,7 +9,7 @@ The web application includes per-box desktop and terminal views; the CLI uses
 the same controller for box access.
 
 Codex, Claude, and OpenCode are supported for persistent managed sessions,
-Agent chat, Run once, desktop MCP registration, and encrypted saved profiles.
+Agent chat, desktop MCP registration, and encrypted saved profiles.
 OpenCode starts with `--auto`; its first Agent-chat message is a native startup
 prompt and later messages use its loopback session API.
 

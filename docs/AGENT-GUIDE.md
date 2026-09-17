@@ -13,11 +13,8 @@ can outlive, and later attach to, a different compute slot.
 
 - `vmbox BOX`: persistent interactive shell/tmux workspace; launch agents yourself.
 - Web box workspace: start the selected managed agent and prefer its enabled desktop, with Desktop and TMUX views of the same session.
-- **Run once**: disposable agent/shell run, not a multi-agent task orchestrator.
-  Actual process exit records completion. An idle completed one-shot box and its
-  volume are deleted; saved output and exit code remain in the controller.
 - **Grid**: multiple viewers for existing persistent interactive boxes, not a
-  scheduler, launcher, broadcast-input console, or one-shot results viewer.
+  scheduler, launcher, or broadcast-input console.
 
 Closing a viewer does not stop its box. Hibernating a persistent box stops its
 processes and retains the volume; restoring a workspace is not proof that the old
@@ -45,7 +42,7 @@ Do not apply dedicated-worker whole-volume cleanup to these boxes.
 | Fleet creation, allocation, hibernation, deletion | `internal/controller/fleet_*.go` |
 | Provider interfaces and transports | `internal/provider`, `internal/transport` |
 | Persisted entities and migrations | `internal/controller/schema.sql` |
-| Run once queue, archived results, images | `internal/controller/run_once*.go` |
+| Chat/box image blob storage | `internal/controller/run_once_images.go` |
 | Actual task execution and exit journal | `internal/boxruntime/process.go` |
 | tmux identity, context and restoration | `internal/boxruntime/native.go`, `tmux_context.go`, `tmux.go` |
 | Owner web terminal / desktop transport | `internal/controller/web_terminal.go` |
@@ -82,7 +79,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 
 - Default worker builds include desktop packages (`VMBOX_DESKTOP=true`). Opening
   a sleeping web workspace is read-only until **Resume box** is clicked. A running
-  workspace starts the desktop on attachment; TMUX and Run once retain their flows.
+  workspace starts the desktop on attachment; TMUX retains its flow.
   PCManFM supplies desktop launch icons alongside the tint2 taskbar. Icon files
   are created only when absent; an exact legacy vmbox Terminal icon is refreshed,
   while owner edits survive reconnects. libfm's quick-execute preference allows
@@ -102,19 +99,18 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `~/.config/vmbox/`, separate from custom Bash: `1` retains the legacy distribution
   package, while `5.1.2` selects the pinned release. `RestoreToolSetup` restores the
   preset even without a custom script. The single-box workspace creates/reuses the selected managed session before
-  presenting its preferred desktop view. Run once retains its terminal flow; Grid also prefers enabled desktops. The preset also installs pinned Blender MCP, enables its add-on,
+  presenting its preferred desktop view. Grid also prefers enabled desktops. The preset also installs pinned Blender MCP, enables its add-on,
   and registers its local stdio bridge for Codex and Claude (also OpenCode for new
   pinned presets) unless the user already
   has a `blender` MCP entry. Telemetry is disabled, bridge safe mode is enabled,
   and its Blender-side TCP listener stays on loopback. Both workspace viewers
   provide browser clipboard buttons.
 
-- Run once supports documented Codex model IDs and Claude aliases in a dropdown,
-  plus saved-profile defaults and custom IDs. These are common choices, not an
-  account-entitlement API. Extra arguments are literal argv entries, not shell text.
-- Images can be selected, dropped, or pasted. Uploads use the same bounded image
-  API, numbered references and appended download URLs. Normal text paste is not
-  intercepted. URLs expire; never expose their access capability in logs.
+- Agent model choices and extra arguments are literal argv entries, not shell
+  text. Dropdown model IDs are common choices, not an account-entitlement API.
+- Images can be selected, dropped, or pasted into Agent chat. Uploads use the same
+  bounded image API, numbered references and appended download URLs. Normal text
+  paste is not intercepted. URLs expire; never expose their access capability in logs.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
@@ -122,8 +118,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   happens after reply text, validated images, or a choice prompt is stored. Terminal
   capture remains a compatibility fallback for clients that do not call the tool.
 - A new OpenCode Agent chat passes its first message with native `--prompt`, then
-  uses the loopback API for follow-ups. Persistent OpenCode and OpenCode Run once
-  start with `--auto`; explicit client deny rules still take precedence.
+  uses the loopback API for follow-ups. Persistent OpenCode and OpenCode one-shot
+  tasks start with `--auto`; explicit client deny rules still take precedence.
 - Foundry is a pinned preset. Custom tooling is trusted user-supplied Bash run
   **inside the worker**, with a five-minute deadline, before the task. Persistent
   boxes retain and rerun the recipe on resume: installation must be idempotent.
@@ -131,9 +127,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   owner asks. Cost reads do not start or contact boxes. Railway batches all slot
   lookups into one billing command; credentials without billing scope return an
   unavailable explanation instead of a fabricated estimate.
-- `process_tasks` cascade when a box is deleted. Run once must first archive the
-  completed result into `run_once_requests.result`. The results page must work
-  when the logical box no longer exists. Never infer task success from SSH errors.
+- `process_tasks` cascade when a box is deleted. Never infer task success from SSH errors.
 - Login profiles are uploaded from the CLI; selecting a profile copies credentials
   to a box. Deleting a saved profile does not revoke copies already on workers.
 
@@ -150,8 +144,8 @@ git diff --check
 Go 1.26 is required. PostgreSQL integration tests require
 `VMBOX_TEST_DATABASE_URL` pointing to a **disposable** database, never production.
 They skip without it; a green skipped run is not database proof. In particular,
-`TestGridExcludesOneShotAndOtherAccounts` checks account boundaries and excludes
-both disposable boxes and persistent boxes currently running a one-shot process.
+`TestGridExcludesBusyAndOtherAccounts` checks account boundaries and excludes
+boxes currently running a one-shot process.
 
 `tests/browser/controller-ui.test.mjs` covers admin UI behavior with fixture APIs.
 `tests/browser/grid.test.mjs` uses real isolated local tmux shells connected to
