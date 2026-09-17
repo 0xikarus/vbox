@@ -35,7 +35,6 @@ func desktopMCPTools() []map[string]any {
 	}
 	return []map[string]any{
 		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
-		makeTool("chat_reply", "Answer a specific message in the vmbox Agent chat. Prefer chat_message, which also works without replyTo.", map[string]any{"replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "replyTo", "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
@@ -213,21 +212,14 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}, nil
 	}
-	if name == "chat_message" || name == "chat_reply" {
+	if name == "chat_message" {
 		var request struct {
 			ReplyTo string   `json:"replyTo"`
 			Text    string   `json:"text"`
 			Files   []string `json:"files"`
 		}
-		replyToRequired := name == "chat_reply"
 		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Text) == "" || len(request.Text) > 100_000 {
-			if replyToRequired {
-				return nil, fmt.Errorf("provide replyTo and response text")
-			}
 			return nil, fmt.Errorf("provide response text")
-		}
-		if replyToRequired && strings.TrimSpace(request.ReplyTo) == "" {
-			return nil, fmt.Errorf("provide replyTo and response text")
 		}
 		if request.ReplyTo != "" {
 			if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {

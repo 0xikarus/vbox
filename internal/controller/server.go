@@ -42,6 +42,9 @@ type Server struct {
 	// ChatInstructionTemplate overrides the agent-chat envelope appended to
 	// every chat prompt; "off" disables it.
 	ChatInstructionTemplate string
+	// ChatInstructionEvery repeats the envelope on the first message of a chat
+	// and then every N messages; 1 means every message, 0 uses the default.
+	ChatInstructionEvery int
 	WorkerRuntime           []byte
 	WorkerAgent             []byte
 	Resolve                 ProviderResolver

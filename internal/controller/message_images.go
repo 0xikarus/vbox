@@ -39,11 +39,25 @@ func attachBoxMessageImages(ctx context.Context, tx *sql.Tx, accountID, messageI
 // it is visible context in the agent's proliferating conversation.
 const defaultChatInstruction = "\n\n[vmbox Agent chat message %s]\nWhen your response is ready, call the vmbox-desktop chat_message tool with replyTo %s and your response text. Include absolute PNG/JPEG/GIF paths in files for images. To let the user choose, call chat_ask with the same replyTo, question, choices, and multiple. Use the vmbox-desktop computer tools (desktop_screenshot, desktop_click, desktop_type, desktop_key) to operate the box yourself."
 
-// ChatInstructionTemplate controls the envelope appended to every agent chat
-// prompt; set with VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of
-// the message reference. Set to "off" to skip the envelope entirely.
-func (s *Server) chatInstruction(messageID, agent string) string {
+// defaultChatInstructionEvery carries the envelope on the first message of a
+// chat and then once every this many messages, so the reply contract stays
+// visible without crowding every prompt.
+const defaultChatInstructionEvery = 3
+
+// ChatInstructionTemplate controls the agent chat envelope; set with
+// VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of the message
+// reference. Set to "off" to skip the envelope entirely. ChatInstructionEvery
+// controls the cadence (set with VMBOX_CHAT_INSTRUCTION_EVERY; 1 repeats the
+// envelope on every message).
+func (s *Server) chatInstruction(messageID, agent string, ordinal int) string {
 	if agent == "shell" {
+		return ""
+	}
+	every := s.ChatInstructionEvery
+	if every <= 0 {
+		every = defaultChatInstructionEvery
+	}
+	if ordinal > 1 && every > 1 && (ordinal-1)%every != 0 {
 		return ""
 	}
 	template := s.ChatInstructionTemplate
@@ -65,10 +79,14 @@ func chatReference(message v1.BoxMessage) string {
 }
 
 func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
-	chatInstruction := s.chatInstruction(chatReference(message), agent)
 	if s.Store == nil || s.Store.DB == nil {
-		return message.Text + chatInstruction, nil
+		return message.Text + s.chatInstruction(chatReference(message), agent, 1), nil
 	}
+	ordinal, err := s.Store.BoxMessageOrdinal(ctx, accountID, message.TaskID, message.ID)
+	if err != nil {
+		return "", err
+	}
+	chatInstruction := s.chatInstruction(chatReference(message), agent, ordinal)
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.id::text,j.ordinal,i.download_token
 		FROM box_message_images j JOIN run_once_images i ON i.id=j.image_id AND i.account_id=j.account_id
 		WHERE j.account_id=$1 AND j.message_id=$2 ORDER BY j.ordinal`, accountID, message.ID)

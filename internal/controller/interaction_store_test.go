@@ -39,3 +39,20 @@ func TestCreateBoxTaskRetriesConcurrentSerializableUpdate(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestBoxMessageOrdinalCountsAnsweredMessages(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	mock.ExpectQuery("SELECT created_at FROM box_messages").WithArgs("account-a", "message-4").
+		WillReturnRows(sqlmock.NewRows([]string{"created_at"}).AddRow(now))
+	mock.ExpectQuery("SELECT count").
+		WithArgs("account-a", "task-1", now, "message-4").
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(4))
+	ordinal, err := store.BoxMessageOrdinal(context.Background(), "account-a", "task-1", "message-4")
+	if err != nil || ordinal != 4 {
+		t.Fatalf("ordinal=%d err=%v", ordinal, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}

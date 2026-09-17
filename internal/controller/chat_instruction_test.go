@@ -6,7 +6,7 @@ import (
 )
 
 func TestChatInstructionDefaultIsCompact(t *testing.T) {
-	got := (&Server{}).chatInstruction("m1", "claude")
+	got := (&Server{}).chatInstruction("m1", "claude", 1)
 	if !strings.Contains(got, "vmbox Agent chat message m1") {
 		t.Fatalf("default envelope must carry the message id: %q", got)
 	}
@@ -26,23 +26,45 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 	}
 }
 
+// TestChatInstructionRepeatsEveryThirdMessage keeps the reply contract visible
+// on the first message and then periodically, instead of on every prompt.
+func TestChatInstructionRepeatsEveryThirdMessage(t *testing.T) {
+	server := &Server{}
+	want := map[int]bool{1: true, 2: false, 3: false, 4: true, 5: false, 6: false, 7: true, 10: true}
+	for ordinal, expected := range want {
+		got := server.chatInstruction("m1", "claude", ordinal)
+		if (got != "") != expected {
+			t.Fatalf("ordinal %d: envelope=%q, want present=%t", ordinal, got, expected)
+		}
+	}
+}
+
+func TestChatInstructionEveryMessageOverride(t *testing.T) {
+	server := &Server{ChatInstructionEvery: 1}
+	for _, ordinal := range []int{1, 2, 3, 7} {
+		if got := server.chatInstruction("m1", "claude", ordinal); got == "" {
+			t.Fatalf("ordinal %d must carry the envelope when every message is requested", ordinal)
+		}
+	}
+}
+
 func TestChatInstructionTemplateOverride(t *testing.T) {
 	s := &Server{ChatInstructionTemplate: "\nchat %s"}
-	got := s.chatInstruction("abc", "claude")
-	if !strings.Contains(got, "chat abc") || strings.Contains(got, "chat_message tool") {
+	got := s.chatInstruction("abc", "claude", 1)
+	if !strings.Contains(got, "chat abc") || strings.Contains(got, "chat_message") {
 		t.Fatalf("override must replace the default envelope: %q", got)
 	}
 }
 
 func TestChatInstructionDisabled(t *testing.T) {
 	s := &Server{ChatInstructionTemplate: "off"}
-	if got := s.chatInstruction("abc", "claude"); got != "" {
+	if got := s.chatInstruction("abc", "claude", 1); got != "" {
 		t.Fatalf("off must disable the envelope, got %q", got)
 	}
 }
 
 func TestChatInstructionSkipsShell(t *testing.T) {
-	if got := (&Server{}).chatInstruction("abc", "shell"); got != "" {
+	if got := (&Server{}).chatInstruction("abc", "shell", 1); got != "" {
 		t.Fatalf("shell agents never get the chat envelope, got %q", got)
 	}
 }

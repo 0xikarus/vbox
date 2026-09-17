@@ -265,6 +265,21 @@ func (s *Store) BoxMessageByChatKey(ctx context.Context, accountID, taskID, key 
 	return message, err == nil, err
 }
 
+// BoxMessageOrdinal returns the 1-based position of a chat message inside its
+// task, counting the messages an agent is expected to answer. The chat envelope
+// uses it to repeat itself on the first message and then periodically.
+func (s *Store) BoxMessageOrdinal(ctx context.Context, accountID, taskID, messageID string) (int, error) {
+	var createdAt time.Time
+	if err := s.DB.QueryRowContext(ctx, "SELECT created_at FROM box_messages WHERE account_id=$1 AND id::text=$2", accountID, messageID).Scan(&createdAt); err != nil {
+		return 0, err
+	}
+	var ordinal int
+	err := s.DB.QueryRowContext(ctx, `SELECT count(*) FROM box_messages
+		WHERE account_id=$1 AND task_id=$2 AND direction IN ('user','system')
+		AND (created_at < $3 OR (created_at = $3 AND id::text <= $4))`, accountID, taskID, createdAt, messageID).Scan(&ordinal)
+	return ordinal, err
+}
+
 // InsertAgentBoxMessage stores an uncorrelated agent message. eventKey makes
 // repeated deliveries of the same outbox event idempotent.
 func (s *Store) InsertAgentBoxMessage(ctx context.Context, accountID, taskID, eventKey, text string) (v1.BoxMessage, bool, error) {

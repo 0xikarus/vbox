@@ -16,7 +16,7 @@ import (
 	"testing"
 )
 
-func TestChatReplyToolPersistsTextAndImageForController(t *testing.T) {
+func TestChatMessageToolPersistsTextAndImageForController(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "codex-chat")
@@ -31,9 +31,9 @@ func TestChatReplyToolPersistsTextAndImageForController(t *testing.T) {
 		t.Fatal(err)
 	}
 	args, _ := json.Marshal(map[string]any{"replyTo": "message-1", "text": "purple image", "files": []string{path}})
-	result, err := callDesktopTool(context.Background(), "assignment", "chat_reply", args)
+	result, err := callDesktopTool(context.Background(), "assignment", "chat_message", args)
 	if err != nil || result["isError"] == true {
-		t.Fatalf("chat_reply failed: %v %+v", err, result)
+		t.Fatalf("chat_message failed: %v %+v", err, result)
 	}
 	event, found, err := PullChatEvent(home, "codex-chat")
 	if err != nil || !found {
@@ -232,12 +232,12 @@ func TestChatMessageToolAnswersAReference(t *testing.T) {
 	}
 }
 
-func TestChatReplyRequiresAReference(t *testing.T) {
+func TestRemovedChatReplyToolIsRejected(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "claude-chat")
-	if _, err := callDesktopTool(context.Background(), "assignment", "chat_reply", json.RawMessage(`{"text":"no reference"}`)); err == nil {
-		t.Fatal("chat_reply must require replyTo")
+	if _, err := callDesktopTool(context.Background(), "assignment", "chat_reply", json.RawMessage(`{"replyTo":"abc123","text":"legacy call"}`)); err == nil {
+		t.Fatal("chat_reply was removed and must not be accepted")
 	}
 }
 
