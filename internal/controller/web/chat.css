@@ -186,3 +186,5 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .row-chevron:hover{background:#e9edef}
 #chat-entries li:hover .row-chevron{opacity:1}
 @media (hover:none){.row-chevron{opacity:.8}}
+#chat-header button{border:1px solid #c6ced4;background:#fff;border-radius:1rem;padding:.3rem .8rem;cursor:pointer;margin:0;font-size:.82rem}
+#chat-header button:hover{background:#e9edef}
