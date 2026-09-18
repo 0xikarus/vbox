@@ -648,6 +648,23 @@
  /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
  const newBoxModal=$('#new-box-modal'),createForm=$('#create-box');
  let extrasLoaded=false;
+ function renderCreationProfileChoices(profiles){
+  const root=$('#profile-choices'),agentSelect=createForm.elements.defaultAgent;root.replaceChildren();
+  const profileLabel=document.createElement('label');profileLabel.className='field profile-field';profileLabel.textContent='Login profile';
+  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
+  const modelLabel=document.createElement('label');modelLabel.className='field profile-field';modelLabel.textContent='Model';
+  const modelInput=document.createElement('input'),modelList=document.createElement('datalist');modelInput.name='agentModel';modelInput.maxLength=200;modelInput.placeholder='Exact CLI model name';modelInput.setAttribute('list','chat-create-model-options');modelList.id='chat-create-model-options';modelLabel.append(modelInput,modelList);
+  root.append(profileLabel,modelLabel);
+  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelInput.required=hasProfile;if(hasProfile)modelInput.value=option?.dataset.model||'';else modelInput.value='';modelLabel.hidden=!hasProfile};
+  const populate=()=>{
+   const previous=profileSelect.value,app=agentSelect.value;profileSelect.replaceChildren(new Option('None',''));modelList.replaceChildren();
+   const choices=profiles.filter(profile=>profile.application===app);
+   for(const profile of choices){const option=new Option(profile.name,JSON.stringify({application:profile.application,name:profile.name}));option.dataset.model=profile.model||'';profileSelect.append(option);if(profile.model&&!Array.from(modelList.options).some(o=>o.value===profile.model))modelList.append(new Option(profile.model))}
+   if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
+   root.hidden=app==='shell'||choices.length===0;syncModel();
+  };
+  profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
+ }
  async function primeBoxExtras(){
   if(extrasLoaded)return;
   try{
@@ -686,12 +703,7 @@
    if(pools.length)poolHint.textContent=pools.map((pool,index)=>poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared')).join(' · ')+' — boxes wait in the controller queue when their pool has no free slots.';
    createForm.dataset.pools=JSON.stringify(pools);
    if(defaults.provider){createForm.dataset.provider=defaults.provider;createForm.dataset.providerCredential=defaults.providerCredential||''}
-   const byApp={};
-   for(const p of profiles)(byApp[p.application]??=[]).push(p.name);
-   const profilesWrap=$('#profile-choices');profilesWrap.replaceChildren();
-   const availableApps=['claude','codex','opencode'].filter(app=>byApp[app]?.length);
-   if(availableApps.length){const label=document.createElement('label');label.className='field profile-field';label.textContent='Login profile';const select=document.createElement('select');select.name='loginProfile';select.append(new Option('None',''));for(const app of availableApps){const group=document.createElement('optgroup');group.label=app;for(const name of byApp[app].sort()){const option=new Option(name,JSON.stringify({application:app,name}));group.append(option)}select.append(group)}label.append(select);profilesWrap.append(label)}
-   profilesWrap.hidden=!availableApps.length;
+   renderCreationProfileChoices(profiles);
    const toolsSet=$('#create-tools');toolsSet.replaceChildren();
    for(const tool of tools){
     const label=document.createElement('label'),input=document.createElement('input');
@@ -703,7 +715,7 @@
   }catch(e){$('#new-box-status').textContent=e.message}
  }
  function openNewBoxModal(){
-  createForm.reset();$('#new-box-status').textContent='';newBoxModal.hidden=false;
+  createForm.reset();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
   void primeBoxExtras();
   createForm.elements.name.focus();
  }
@@ -715,7 +727,8 @@
   const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';
   const tools=[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value);
   const selectedProfile=createForm.elements.loginProfile?.value;
-  const loginProfiles=selectedProfile?[JSON.parse(selectedProfile)]:[];
+  const profileRef=selectedProfile?JSON.parse(selectedProfile):null;
+  const loginProfiles=profileRef?[{...profileRef,model:(createForm.elements.agentModel?.value||'').trim()}]:[];
   const setupScript=(createForm.elements.setupScript?.value||'').trim();
   const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
   const poolIndex=(f.pool.value||createForm.dataset.autoPool||'');

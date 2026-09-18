@@ -88,7 +88,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if _, err = s.SaveLoginProfile(ctx, p, "codex", "work", req); err != nil {
 		t.Fatal(err)
 	}
-	personal := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-private-profile-2"}`)}}
+	personal := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-private-profile-2"}`), "config.toml": []byte(`model = "gpt-test-metadata"`)}}
 	if _, err = s.SaveLoginProfile(ctx, p, "codex", "personal", personal); err != nil {
 		t.Fatal(err)
 	}
@@ -127,6 +127,9 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if err != nil || len(listed) != 2 {
 		t.Fatal("named profiles missing")
 	}
+	if listed[0].Name != "personal" || listed[0].Model != "gpt-test-metadata" {
+		t.Fatalf("profile model metadata missing: %+v", listed)
+	}
 	public, _ := json.Marshal(listed)
 	if strings.Contains(string(public), "synthetic-private-profile") || strings.Contains(string(public), "files") {
 		t.Fatal("secret in metadata")
@@ -135,7 +138,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if _, err = s.DB.ExecContext(ctx, `INSERT INTO compute_slots(id,account_id,provider,ordinal,state,service_id,health,region) VALUES($1,$2,'railway',1,'free','profile-test-service','healthy','test-region')`, slot, p.AccountID); err != nil {
 		t.Fatal(err)
 	}
-	createReq := v1.CreateLogicalBoxRequest{Name: "profile-box", Provider: "railway", Tools: []string{"foundry"}, SetupScript: "printf custom-install", LoginProfiles: []v1.LoginProfileRef{{Application: "codex", Name: "work"}}}
+	createReq := v1.CreateLogicalBoxRequest{Name: "profile-box", Provider: "railway", Tools: []string{"foundry"}, SetupScript: "printf custom-install", LoginProfiles: []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-box-override"}}}
 	creation, err := s.BeginLogicalBoxCreation(ctx, p, createReq)
 	if err != nil {
 		t.Fatal(err)
@@ -152,7 +155,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		t.Fatal("box API exposed private creation metadata")
 	}
 	recovered, err := fresh.RecoverableLogicalBoxCreations(ctx)
-	if err != nil || len(recovered) != 1 || len(recovered[0].Request.LoginProfiles) != 1 || recovered[0].Request.LoginProfiles[0].Name != "work" {
+	if err != nil || len(recovered) != 1 || len(recovered[0].Request.LoginProfiles) != 1 || recovered[0].Request.LoginProfiles[0].Name != "work" || recovered[0].Request.LoginProfiles[0].Model != "gpt-box-override" {
 		t.Fatalf("selection recovery failed: %v", err)
 	}
 	if len(recovered[0].Request.Tools) != 1 || recovered[0].Request.Tools[0] != "foundry" {
@@ -171,7 +174,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if err = server.provisionCreationProfiles(ctx, transport, creation); err != nil {
 		t.Fatal(err)
 	}
-	if len(transport.files) != 1 || transport.files[0].Path != "/data/home/.codex/auth.json" || transport.files[0].Mode != "0600" {
+	if len(transport.files) != 2 || transport.files[0].Path != "/data/home/.codex/auth.json" || transport.files[0].Mode != "0600" || transport.files[1].Path != "/data/home/.codex/config.toml" || transport.files[1].Mode != "0600" {
 		t.Fatal("incorrect selected file provisioning")
 	}
 	// Transport records only metadata; production bytes are intentionally cleared.
@@ -181,7 +184,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if container := os.Getenv("VMBOX_TEST_WORKER_CONTAINER"); container != "" {
 		// Inspect bytes and ownership as the real workload user, not from the
 		// transport double. The fixture credential above is deliberately fake.
-		cmd := exec.CommandContext(ctx, "docker", "exec", "--user", "10001:10001", container, "sh", "-c", `test "$(stat -c '%a:%u:%g' /data/home/.codex/auth.json)" = '600:10001:10001' && test "$(stat -c '%a:%u:%g' /data/home/.codex)" = '700:10001:10001' && test ! -e /data/home/.claude/.credentials.json && sha256sum /data/home/.codex/auth.json`)
+		cmd := exec.CommandContext(ctx, "docker", "exec", "--user", "10001:10001", container, "sh", "-c", `test "$(stat -c '%a:%u:%g' /data/home/.codex/auth.json)" = '600:10001:10001' && test "$(stat -c '%a:%u:%g' /data/home/.codex)" = '700:10001:10001' && grep -qx 'model = "gpt-box-override"' /data/home/.codex/config.toml && test ! -e /data/home/.claude/.credentials.json && sha256sum /data/home/.codex/auth.json`)
 		output, err := cmd.Output()
 		if err != nil || !strings.HasPrefix(string(output), fmt.Sprintf("%x", sha256.Sum256(req.Files["auth.json"]))) {
 			t.Fatal("real worker selected credential contents, permissions, or isolation incorrect")

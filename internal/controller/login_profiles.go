@@ -51,7 +51,7 @@ func profileEncryptionScope(account, application, name string) string {
 }
 
 func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, name string, req v1.SaveLoginProfileRequest) (v1.LoginProfile, error) {
-	value := v1.LoginProfile{Application: application, Name: name}
+	value := v1.LoginProfile{Application: application, Name: name, Model: loginprofile.Model(application, req.Files)}
 	if err := validateLoginProfile(application, name, req); err != nil {
 		return value, err
 	}
@@ -119,7 +119,10 @@ func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, 
 }
 
 func (s *Store) ListLoginProfiles(ctx context.Context, p Principal) ([]v1.LoginProfile, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT application,name,created_at FROM login_profiles WHERE account_id=$1 ORDER BY application,name`, p.AccountID)
+	if s.Envelope == nil {
+		return nil, fmt.Errorf("credential encryption unavailable")
+	}
+	rows, err := s.DB.QueryContext(ctx, `SELECT application,name,encrypted_value,created_at FROM login_profiles WHERE account_id=$1 ORDER BY application,name`, p.AccountID)
 	if err != nil {
 		return nil, err
 	}
@@ -127,9 +130,22 @@ func (s *Store) ListLoginProfiles(ctx context.Context, p Principal) ([]v1.LoginP
 	values := []v1.LoginProfile{}
 	for rows.Next() {
 		var v v1.LoginProfile
-		if err := rows.Scan(&v.Application, &v.Name, &v.CreatedAt); err != nil {
+		var sealed string
+		if err := rows.Scan(&v.Application, &v.Name, &sealed, &v.CreatedAt); err != nil {
 			return nil, err
 		}
+		plain, err := s.Envelope.Open(profileEncryptionScope(p.AccountID, v.Application, v.Name), sealed)
+		if err != nil {
+			return nil, fmt.Errorf("could not read saved profile metadata")
+		}
+		var profile v1.SaveLoginProfileRequest
+		if json.Unmarshal(plain, &profile) == nil {
+			v.Model = loginprofile.Model(v.Application, profile.Files)
+		}
+		for _, data := range profile.Files {
+			clear(data)
+		}
+		clear(plain)
 		values = append(values, v)
 	}
 	return values, rows.Err()

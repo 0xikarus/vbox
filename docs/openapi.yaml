@@ -531,12 +531,14 @@ components:
       properties:
         application: {enum: [claude, codex, opencode, github]}
         name: {type: string}
+        model: {type: string, maxLength: 200, description: Optional per-box model override}
     LoginProfile:
       allOf:
         - {$ref: '#/components/schemas/LoginProfileRef'}
         - type: object
           properties:
             createdAt: {type: string, format: date-time}
+            model: {type: string, description: Non-secret model default read from the saved profile configuration}
     FleetConfig:
       type: object
       required: [provider, compute_box_slots]

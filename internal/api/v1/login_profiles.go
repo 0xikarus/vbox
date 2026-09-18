@@ -5,12 +5,14 @@ import "time"
 type LoginProfileRef struct {
 	Application string `json:"application"`
 	Name        string `json:"name"`
+	Model       string `json:"model,omitempty"`
 }
 
 // LoginProfile is public metadata. Credential bytes never appear in list responses.
 type LoginProfile struct {
 	Application string    `json:"application"`
 	Name        string    `json:"name"`
+	Model       string    `json:"model,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 

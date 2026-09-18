@@ -32,6 +32,9 @@ func TestValidateBoxProfileRefsRejectsDuplicateOversizedAndUnavailable(t *testin
 	if err := server.validateBoxProfileRefs(context.Background(), "a", oversized); err == nil {
 		t.Fatal("oversized profile selection accepted")
 	}
+	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "bad\nmodel"}}); err == nil || !strings.Contains(err.Error(), "control characters") {
+		t.Fatalf("invalid model was not rejected before store lookup: %v", err)
+	}
 	// No encryption envelope: the profile cannot be loaded, so it must be rejected.
 	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work"}}); err == nil {
 		t.Fatal("unavailable profile accepted")
