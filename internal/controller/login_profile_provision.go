@@ -18,6 +18,38 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
+var portableProfilePaths = []string{
+	"/data/home/.claude/.credentials.json",
+	"/data/home/.claude/settings.json",
+	"/data/home/.claude.json",
+	"/data/home/.codex/auth.json",
+	"/data/home/.codex/config.toml",
+	"/data/home/.local/share/opencode/auth.json",
+	"/data/home/.config/opencode/opencode.json",
+	"/data/home/.config/opencode/opencode.jsonc",
+	"/data/home/.config/gh/hosts.yml",
+}
+
+func selectedProfileAgent(current string, refs []v1.LoginProfileRef) string {
+	if len(refs) == 1 {
+		switch refs[0].Application {
+		case "codex", "claude", "opencode":
+			return refs[0].Application
+		}
+	}
+	return current
+}
+
+func profileRemovalPaths(written map[string]bool) map[string]bool {
+	removed := make(map[string]bool)
+	for _, path := range portableProfilePaths {
+		if !written[path] {
+			removed[path] = true
+		}
+	}
+	return removed
+}
+
 func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Provider, creation logicalBoxCreation) error {
 	if len(creation.Request.LoginProfiles) == 0 {
 		return nil
@@ -37,7 +69,7 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 	if err != nil {
 		return fmt.Errorf("credential destination assignment changed")
 	}
-	if err := s.transferProfileFiles(ctx, tx, prov, creation.AccountID, a.Box.ID, a.Slot.ServiceID, a.Box.VolumeID, creation.Request.LoginProfiles); err != nil {
+	if err := s.transferProfileFiles(ctx, tx, prov, creation.AccountID, a.Box.ID, a.Slot.ServiceID, a.Box.VolumeID, creation.Request.LoginProfiles, creation.Request.DefaultAgent); err != nil {
 		return err
 	}
 	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
@@ -50,11 +82,11 @@ func (s *Server) provisionCreationProfiles(ctx context.Context, prov provider.Pr
 // profileSyncRequest builds the integrity-checked file set for the selected
 // login profiles. It returns the GitHub host/user so the caller can verify the
 // GitHub login after the transfer.
-func (s *Server) profileSyncRequest(ctx context.Context, accountID string, refs []v1.LoginProfileRef) (boxruntime.SyncRequest, string, string, error) {
+func (s *Server) profileSyncRequest(ctx context.Context, tx *sql.Tx, accountID string, refs []v1.LoginProfileRef) (boxruntime.SyncRequest, string, string, error) {
 	request := boxruntime.SyncRequest{}
 	var githubHost, githubUser string
 	for _, ref := range refs {
-		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: accountID}, ref.Application, ref.Name)
+		profile, err := s.Store.loadLoginProfile(ctx, tx, Principal{AccountID: accountID}, ref.Application, ref.Name)
 		if err != nil {
 			return boxruntime.SyncRequest{}, "", "", fmt.Errorf("selected login profile unavailable; no credentials provisioned")
 		}
@@ -93,15 +125,26 @@ func (s *Server) profileSyncRequest(ctx context.Context, accountID string, refs 
 			request.Files = append(request.Files, boxruntime.SyncFile{Path: path, Mode: "0600", Data: profile.Files[name]})
 		}
 	}
+	written := make(map[string]bool, len(request.Files))
+	for _, file := range request.Files {
+		written[file.Path] = true
+	}
+	removed := profileRemovalPaths(written)
+	request.Remove = make([]string, 0, len(removed))
+	for path := range removed {
+		request.Remove = append(request.Remove, path)
+	}
+	sort.Strings(request.Remove)
 	return request, githubHost, githubUser, nil
 }
 
 // transferProfileFiles writes and verifies one profile set inside an attached
-// box workspace, then records the references. The caller owns the transaction
-// and must hold the assignment lock. Credential transfers never touch
-// instruction files or any other box configuration.
-func (s *Server) transferProfileFiles(ctx context.Context, tx *sql.Tx, prov provider.Provider, accountID, boxID, serviceID, volumeID string, refs []v1.LoginProfileRef) error {
-	request, githubHost, githubUser, err := s.profileSyncRequest(ctx, accountID, refs)
+// box workspace, removes portable files owned by unselected profiles, then
+// records the references and authoritative harness. The caller owns the
+// transaction and must hold the assignment lock. Instruction and workspace
+// files are outside this protocol.
+func (s *Server) transferProfileFiles(ctx context.Context, tx *sql.Tx, prov provider.Provider, accountID, boxID, serviceID, volumeID string, refs []v1.LoginProfileRef, defaultAgent string) error {
+	request, githubHost, githubUser, err := s.profileSyncRequest(ctx, tx, accountID, refs)
 	if err != nil {
 		return err
 	}
@@ -131,7 +174,7 @@ func (s *Server) transferProfileFiles(ctx context.Context, tx *sql.Tx, prov prov
 	if err != nil {
 		return fmt.Errorf("could not record imported credential references")
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb),'{pendingLoginProfiles}','[]'::jsonb) WHERE account_id=$1 AND id=$2`, accountID, boxID, encoded); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET default_agent=$4,metadata=jsonb_set(jsonb_set(metadata,'{importedLoginProfiles}',$3::jsonb),'{pendingLoginProfiles}','[]'::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2`, accountID, boxID, encoded, defaultAgent); err != nil {
 		return fmt.Errorf("could not record imported credential references")
 	}
 	return nil

@@ -308,7 +308,7 @@ func restoreTmuxSession(ctx context.Context, snapshot TmuxSnapshot, session Tmux
 			continue
 		}
 		first := window.Panes[0]
-		command := restoredPaneCommand(snapshot, first)
+		command := restoredPaneCommand(snapshot, session.Name, first)
 		var args []string
 		if windowOffset == 0 {
 			args = []string{"new-session", "-d", "-s", session.Name, "-n", window.Name, "-c", first.WorkingDirectory, command}
@@ -326,7 +326,7 @@ func restoreTmuxSession(ctx context.Context, snapshot TmuxSnapshot, session Tmux
 		for paneOffset, pane := range window.Panes {
 			target := fmt.Sprintf("%s:%d", session.Name, window.Index)
 			if paneOffset > 0 {
-				if _, err := tmuxOutput(ctx, "split-window", "-d", "-t", target, "-c", pane.WorkingDirectory, restoredPaneCommand(snapshot, pane)); err != nil {
+				if _, err := tmuxOutput(ctx, "split-window", "-d", "-t", target, "-c", pane.WorkingDirectory, restoredPaneCommand(snapshot, session.Name, pane)); err != nil {
 					return fmt.Errorf("restore tmux pane %s.%d: %w", target, pane.Index, err)
 				}
 			}
@@ -342,7 +342,7 @@ func restoreTmuxSession(ctx context.Context, snapshot TmuxSnapshot, session Tmux
 	return nil
 }
 
-func restoredPaneCommand(snapshot TmuxSnapshot, pane TmuxPane) string {
+func restoredPaneCommand(snapshot TmuxSnapshot, session string, pane TmuxPane) string {
 	parts := []string{}
 	if pane.ScrollbackFile != "" {
 		parts = append(parts, "if [ -r "+shellQuote(pane.ScrollbackFile)+" ]; then cat -- "+shellQuote(pane.ScrollbackFile)+"; fi")
@@ -355,12 +355,12 @@ func restoredPaneCommand(snapshot TmuxSnapshot, pane TmuxPane) string {
 		parts = append(parts, "exec "+shellJoin([]string{"vmbox-runtime", "welcome"}))
 		return strings.Join(parts, "; ")
 	}
+	if agent := strings.TrimSuffix(pane.ResumeStrategy, "-fresh-conversation"); agent != pane.ResumeStrategy && (agent == "codex" || agent == "claude" || agent == "opencode") {
+		parts = append(parts, "exec "+shellJoin([]string{"vmbox-runtime", "agent-restore", session, agent}))
+		return strings.Join(parts, "; ")
+	}
 	if len(pane.ResumeArgv) > 0 {
-		argv := pane.ResumeArgv
-		if fresh, _ := agentResume(pane.CurrentCommand, nil); len(fresh) == 1 {
-			argv = fresh
-		}
-		parts = append(parts, "exec "+shellJoin(argv))
+		parts = append(parts, "exec "+shellJoin(pane.ResumeArgv))
 		return strings.Join(parts, "; ")
 	}
 	interrupted := struct {

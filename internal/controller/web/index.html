@@ -20,7 +20,7 @@
 </fieldset>
 <fieldset class="group" data-owner><legend>2 · logins</legend>
 <p class="hint">Choose at most one Codex, Claude, or OpenCode login. It is copied into the box at creation; choose None to start without an agent login.</p>
-<div id="profile-choices" class="row-fields" data-owner></div>
+<div id="profile-choices" class="row-fields" data-owner></div><p class="hint" data-owner>A selected login profile determines the box harness. One box has at most one agent profile.</p>
 </fieldset>
 <fieldset class="group" data-owner><legend>3 · tools</legend>
 <fieldset id="create-tools" class="tools" data-owner><legend>optional tools</legend></fieldset>
@@ -57,8 +57,8 @@
 <div id="box-credentials-modal" class="modal" data-owner hidden>
 <div class="backdrop" data-close="box-credentials-modal"></div>
 <section class="card" role="dialog" aria-modal="true">
-<header><strong id="box-credentials-title">Imported login profiles</strong><button type="button" class="linkbtn" data-close="box-credentials-modal" aria-label="Close">×</button></header>
-<p class="hint">Replace the single agent login profile imported into this box. Credentials are written through the same verified channel used at creation and never displayed. Instructions and other box configuration are unchanged. A running box needs a restart or a new agent conversation to read the new credentials; a stopped box applies them automatically on its next start.</p>
+<header><strong id="box-credentials-title">Agent profile</strong><button type="button" class="linkbtn" data-close="box-credentials-modal" aria-label="Close">×</button></header>
+<p class="hint">Choose the box's single agent profile. Its application becomes the active harness, credentials from other harnesses are removed, and stale agent conversations are closed. Credentials use the verified creation channel and are never displayed. A stopped box applies the selection on its next start.</p>
 <p id="box-credentials-current" class="hint"></p>
 <div id="box-credentials-form"></div>
 <div class="form-actions"><button type="button" class="primary" id="box-credentials-apply">apply to box</button><button type="button" class="linkbtn" data-close="box-credentials-modal">cancel</button></div>

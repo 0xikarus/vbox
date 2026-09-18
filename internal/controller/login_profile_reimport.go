@@ -3,13 +3,14 @@ package controller
 // Editing the login profiles already imported into a box. This re-runs the same
 // integrity-checked credential transfer used at creation, so an owner can
 // refresh Claude/Codex/OpenCode/GitHub credentials on an existing box without
-// recreating it. While the box is running the credentials are written
-// immediately; while it is hibernated or detached the selection is queued as
-// pending and provisioned on the next start. A credential transfer never
-// touches managed instructions or any other box configuration.
+// recreating it. An agent profile also selects the matching harness. While the
+// box is running, stale agent sessions are stopped immediately; while it is
+// hibernated or detached, the selection is queued for the next start. Managed
+// instructions and ordinary workspace files are not changed.
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -130,7 +131,7 @@ func (s *Server) putBoxLoginProfiles(w http.ResponseWriter, r *http.Request, p P
 			return
 		}
 		state.Applied = true
-		state.Note = "Credentials written into the box. Restart the box or start a new agent conversation so the agent reads them; running sessions keep their loaded credentials until then. Instructions and other box configuration are unchanged."
+		state.Note = fmt.Sprintf("Profile applied. %s is now the box harness; stale agent conversations were closed so the next message starts with these credentials.", selectedProfileAgent(box.DefaultAgent, request.Profiles))
 		writeJSON(w, http.StatusOK, state)
 	case v1.LogicalBoxHibernated, v1.LogicalBoxDetached:
 		encoded, err := json.Marshal(request.Profiles)
@@ -138,7 +139,8 @@ func (s *Server) putBoxLoginProfiles(w http.ResponseWriter, r *http.Request, p P
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not encode the profile selection"))
 			return
 		}
-		result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{pendingLoginProfiles}',$3::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2 AND state IN ('hibernated','detached')`, p.AccountID, box.ID, encoded)
+		defaultAgent := selectedProfileAgent(box.DefaultAgent, request.Profiles)
+		result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE logical_boxes SET default_agent=$4,metadata=jsonb_set(metadata,'{pendingLoginProfiles}',$3::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2 AND state IN ('hibernated','detached')`, p.AccountID, box.ID, encoded, defaultAgent)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("could not queue the profile selection"))
 			return
@@ -152,7 +154,7 @@ func (s *Server) putBoxLoginProfiles(w http.ResponseWriter, r *http.Request, p P
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("credential references unavailable"))
 			return
 		}
-		state.Note = "Saved. Credentials are written when the box next starts — reboot/resume it to apply. Instructions and other box configuration are unchanged."
+		state.Note = fmt.Sprintf("Profile saved. %s will be the box harness and the credentials are applied on its next start.", defaultAgent)
 		writeJSON(w, http.StatusOK, state)
 	default:
 		writeError(w, http.StatusConflict, fmt.Errorf("wait for the box to finish its current transition, then edit imported profiles"))
@@ -172,10 +174,30 @@ func (s *Server) applyBoxLoginProfiles(ctx context.Context, prov provider.Provid
 	if err != nil {
 		return fmt.Errorf("credential destination assignment changed")
 	}
-	if err := s.transferProfileFiles(ctx, tx, prov, assignment.Box.AccountID, assignment.Box.ID, assignment.Slot.ServiceID, assignment.Box.VolumeID, refs); err != nil {
+	defaultAgent := selectedProfileAgent(assignment.Box.DefaultAgent, refs)
+	if err := s.transferProfileFiles(ctx, tx, prov, assignment.Box.AccountID, assignment.Box.ID, assignment.Slot.ServiceID, assignment.Box.VolumeID, refs, defaultAgent); err != nil {
+		return err
+	}
+	if err := reconcileBoxAgentProfile(ctx, tx, prov, assignment, defaultAgent); err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+func reconcileBoxAgentProfile(ctx context.Context, tx interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}, prov provider.Provider, assignment fleetAssignment, defaultAgent string) error {
+	result, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "agent-reconcile", defaultAgent}, provider.ExecOptions{})
+	if err != nil || result.ExitCode != 0 {
+		return fmt.Errorf("could not stop stale agent sessions after changing credentials")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE box_messages SET state='failed',updated_at=now() WHERE account_id=$1 AND task_id IN (SELECT id FROM box_tasks WHERE account_id=$1 AND logical_box_id=$2 AND state IN ('queued','waiting_capacity','starting','active')) AND state='queued'`, assignment.Box.AccountID, assignment.Box.ID); err != nil {
+		return fmt.Errorf("could not invalidate stale agent messages")
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE box_tasks SET state='failed',failure_reason='agent profile changed; start a new conversation',updated_at=now() WHERE account_id=$1 AND logical_box_id=$2 AND state IN ('queued','waiting_capacity','starting','active')`, assignment.Box.AccountID, assignment.Box.ID); err != nil {
+		return fmt.Errorf("could not invalidate stale agent conversations")
+	}
+	return nil
 }
 
 // provisionPendingBoxProfiles applies a queued credential selection during box
@@ -203,7 +225,11 @@ func (s *Server) provisionPendingBoxProfiles(ctx context.Context, prov provider.
 	if err != nil {
 		return fmt.Errorf("credential destination assignment changed")
 	}
-	if err := s.transferProfileFiles(transferCtx, tx, prov, accountID, assignment.Box.ID, assignment.Slot.ServiceID, assignment.Box.VolumeID, state.Pending); err != nil {
+	defaultAgent := selectedProfileAgent(assignment.Box.DefaultAgent, state.Pending)
+	if err := s.transferProfileFiles(transferCtx, tx, prov, accountID, assignment.Box.ID, assignment.Slot.ServiceID, assignment.Box.VolumeID, state.Pending, defaultAgent); err != nil {
+		return err
+	}
+	if err := reconcileBoxAgentProfile(transferCtx, tx, prov, assignment, defaultAgent); err != nil {
 		return err
 	}
 	return tx.Commit()

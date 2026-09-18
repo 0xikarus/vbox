@@ -118,3 +118,36 @@ func TestPutBoxLoginProfilesRejectsInvalidPayload(t *testing.T) {
 		t.Fatalf("invalid payload status=%d", response.Code)
 	}
 }
+
+func TestSelectedAgentProfileControlsBoxHarness(t *testing.T) {
+	if got := selectedProfileAgent("claude", []v1.LoginProfileRef{{Application: "codex", Name: "work"}}); got != "codex" {
+		t.Fatalf("Codex profile left box on %q", got)
+	}
+	if got := selectedProfileAgent("opencode", nil); got != "opencode" {
+		t.Fatalf("clearing a profile unexpectedly changed harness to %q", got)
+	}
+	if got := selectedProfileAgent("claude", []v1.LoginProfileRef{{Application: "github", Name: "work"}}); got != "claude" {
+		t.Fatalf("non-agent profile unexpectedly changed harness to %q", got)
+	}
+}
+
+func TestProfileSyncRemovesOtherHarnessCredentials(t *testing.T) {
+	written := map[string]bool{"/data/home/.codex/auth.json": true}
+	removed := profileRemovalPaths(written)
+	for _, path := range []string{
+		"/data/home/.claude/.credentials.json",
+		"/data/home/.claude/settings.json",
+		"/data/home/.claude.json",
+		"/data/home/.codex/config.toml",
+		"/data/home/.local/share/opencode/auth.json",
+		"/data/home/.config/opencode/opencode.json",
+		"/data/home/.config/opencode/opencode.jsonc",
+	} {
+		if !removed[path] {
+			t.Fatalf("stale profile path %s would survive", path)
+		}
+	}
+	if removed["/data/home/.codex/auth.json"] {
+		t.Fatal("selected credential would be removed after writing")
+	}
+}

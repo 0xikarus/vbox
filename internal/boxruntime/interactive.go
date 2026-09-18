@@ -3,7 +3,10 @@ package boxruntime
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 )
 
 func StartInteractive(ctx context.Context, root, session, agent string) error {
@@ -64,6 +67,43 @@ func interactiveArgv(session, agent string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("interactive agent must be codex, claude, opencode, or shell")
 	}
+}
+
+// RestoreManagedAgent reconstructs the current managed launcher instead of
+// replaying the bare executable saved by an older tmux snapshot. Backends and
+// desktop registration must exist before the process replaces this launcher.
+func RestoreManagedAgent(ctx context.Context, root, session, agent string) error {
+	if !processID.MatchString(session) {
+		return fmt.Errorf("invalid session name")
+	}
+	argv, err := persistentAgentArgv(session, agent)
+	if err != nil {
+		return err
+	}
+	assignment, err := prepareManagedDesktop(ctx, agent)
+	if err != nil {
+		return err
+	}
+	if err := ensureAgentBackend(ctx, session, agent, assignment); err != nil {
+		return err
+	}
+	if _, err := tmuxOutput(ctx, "set-environment", "-t", session, taskAgentEnvironment, agent); err != nil {
+		return err
+	}
+	if err := ApplyTmuxContext(ctx, root, session); err != nil {
+		return err
+	}
+	_, _ = tmuxOutput(ctx, "source-file", "/etc/vmbox/tmux.conf")
+	if assignment != "" {
+		if err := EnsureDesktopTerminals(ctx, assignment); err != nil {
+			return err
+		}
+	}
+	binary, err := exec.LookPath(argv[0])
+	if err != nil {
+		return err
+	}
+	return syscall.Exec(binary, argv, os.Environ())
 }
 
 // ensureAgentBackend starts whatever an agent needs before its terminal can

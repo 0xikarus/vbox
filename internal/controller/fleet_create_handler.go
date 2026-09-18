@@ -66,6 +66,7 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 400, err)
 		return
 	}
+	request.DefaultAgent = selectedProfileAgent(request.DefaultAgent, request.LoginProfiles)
 	// Resolve the instruction selection against account presets and default
 	// before the box exists: the snapshot is stored with the box so later
 	// preset edits or deletion cannot change what this box received.

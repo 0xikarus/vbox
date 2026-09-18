@@ -9,7 +9,8 @@ type SyncFile struct {
 }
 
 type SyncRequest struct {
-	Files []SyncFile `json:"files"`
+	Files  []SyncFile `json:"files"`
+	Remove []string   `json:"remove,omitempty"`
 }
 
 type GitHubSetup struct {
