@@ -438,6 +438,18 @@ func (s *Store) AgentBoxMessage(ctx context.Context, accountID, replyTo string) 
 	return message, err == nil, err
 }
 
+// AgentReplyWatchActive is false once the conversation or its box has left the
+// state in which a reply can arrive. In particular, logical-box deletion
+// cascades the task away; reply watchers must not keep polling a removed worker.
+func (s *Store) AgentReplyWatchActive(ctx context.Context, accountID, taskID string) (bool, error) {
+	var active bool
+	err := s.DB.QueryRowContext(ctx, `SELECT EXISTS(
+		SELECT 1 FROM box_tasks t JOIN logical_boxes b ON b.id=t.logical_box_id AND b.account_id=t.account_id
+		WHERE t.account_id=$1 AND t.id=$2 AND t.state='active' AND b.state='running'
+	)`, accountID, taskID).Scan(&active)
+	return active, err
+}
+
 func (s *Store) ClaimBoxMessage(ctx context.Context, accountID, id string) (bool, error) {
 	result, err := s.DB.ExecContext(ctx, "UPDATE box_messages SET state='delivering',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='queued'", accountID, id)
 	if err != nil {

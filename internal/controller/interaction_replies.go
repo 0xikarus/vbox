@@ -65,10 +65,27 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 	// create Agent chat messages; scraping rendered TUI output races that outbox
 	// and exposes ordinary stdout as duplicate chat bubbles.
 	for {
-		if done, err := s.pullStructuredAgentReply(ctx, prov, assignment.Slot.ServiceID, accountID, task, message); err != nil {
-			s.Logger.Warn("structured agent reply unavailable", "task", task.ID, "message", message.ID, "error", err)
-		} else if done {
+		done, pullErr := s.pullStructuredAgentReply(ctx, prov, assignment.Slot.ServiceID, accountID, task, message)
+		if done {
 			return nil
+		}
+		// Chat reads and reconciliation drain the same structured outbox. If one
+		// of them stored this reply first, the dedicated watcher sees an empty
+		// outbox; recheck durable state before waiting or logging a false failure.
+		if existing, found, err := s.Store.AgentBoxMessage(ctx, accountID, message.ID); err != nil {
+			return err
+		} else if found && existing.State == "delivered" {
+			return nil
+		}
+		active, err := s.Store.AgentReplyWatchActive(ctx, accountID, task.ID)
+		if err != nil {
+			return err
+		}
+		if !active {
+			return nil
+		}
+		if pullErr != nil {
+			s.Logger.Warn("structured agent reply unavailable", "task", task.ID, "message", message.ID, "error", pullErr)
 		}
 		select {
 		case <-ctx.Done():

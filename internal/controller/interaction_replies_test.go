@@ -43,6 +43,11 @@ func TestAgentChatDoesNotReadRepliesFromTerminalOutput(t *testing.T) {
 		))
 	mock.ExpectQuery("FROM box_messages WHERE account_id").WithArgs("account-a", "agent-reply:message-1").
 		WillReturnRows(emptyBoxMessageRows())
+	// Another drain path can consume and store the outbox event between watcher
+	// polls. The watcher must observe that durable reply and stop instead of
+	// polling the now-empty outbox until its ten-minute timeout.
+	mock.ExpectQuery("FROM box_messages WHERE account_id").WithArgs("account-a", "agent-reply:message-1").
+		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))
 
 	transport := &replyTransportProvider{}
 	server := chatTestServer(store)
@@ -50,7 +55,9 @@ func TestAgentChatDoesNotReadRepliesFromTerminalOutput(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", UserID: "user-a", RequestedRole: "user", Agent: "opencode", Session: "opencode-1"}
-	_ = server.captureAgentReply(ctx, "account-a", task, v1.BoxMessage{ID: "message-1", Text: "hello"})
+	if err := server.captureAgentReply(ctx, "account-a", task, v1.BoxMessage{ID: "message-1", Text: "hello"}); err != nil {
+		t.Fatalf("watcher did not stop after the reply was delivered elsewhere: %v", err)
+	}
 
 	for _, call := range transport.calls {
 		if len(call) > 1 && call[1] == "tmux-screen" {
@@ -91,6 +98,19 @@ func TestAgentBoxMessageRestoresStreamingReplyAfterWatcherRestart(t *testing.T) 
 	message, found, err := store.AgentBoxMessage(context.Background(), "account-a", "message-1")
 	if err != nil || !found || message.Text != "partial" || message.State != "streaming" {
 		t.Fatalf("message=%+v found=%v err=%v", message, found, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgentReplyWatchActiveStopsAfterBoxDeletion(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("SELECT EXISTS").WithArgs("account-a", "task-1").
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	active, err := store.AgentReplyWatchActive(context.Background(), "account-a", "task-1")
+	if err != nil || active {
+		t.Fatalf("active=%v err=%v", active, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
