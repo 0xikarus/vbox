@@ -1,8 +1,6 @@
 package boxruntime
 
 import (
-	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -120,89 +118,6 @@ func sortedKeys(values map[string]string) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// CodexThreadID maps a tmux session to the Codex thread running in it, the way
-// OpenCodeChatPort maps one to a port. Codex will not take an id at launch, so
-// the id it recorded in its rollout is read once and remembered against the
-// session name. That addresses a Codex started from a terminal too, which
-// renaming its thread through the TUI could not do without typing into it.
-func CodexThreadID(root, home, session, workspace string) (string, error) {
-	marker := filepath.Join(root, "chat", "codex-threads", session)
-	if data, err := os.ReadFile(marker); err == nil {
-		if id := strings.TrimSpace(string(data)); id != "" {
-			return id, nil
-		}
-	}
-	id, err := newestCodexThread(home, workspace)
-	if err != nil {
-		return "", err
-	}
-	if err := writeTextAtomic(marker, id+"\n", 0600); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-// ForgetCodexThread drops a remembered id so the next delivery re-reads it.
-func ForgetCodexThread(root, session string) error {
-	err := os.Remove(filepath.Join(root, "chat", "codex-threads", session))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
-}
-
-// newestCodexThread returns the id of the most recently written rollout that
-// Codex recorded for this workspace.
-func newestCodexThread(home, workspace string) (string, error) {
-	root := filepath.Join(home, ".codex", "sessions")
-	best, newest := "", int64(0)
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".jsonl") {
-			return nil
-		}
-		info, statErr := entry.Info()
-		if statErr != nil || info.ModTime().UnixNano() <= newest {
-			return nil
-		}
-		id, cwd := readCodexSessionMeta(path)
-		if id == "" || cwd != workspace {
-			return nil
-		}
-		best, newest = id, info.ModTime().UnixNano()
-		return nil
-	})
-	if err != nil && !os.IsNotExist(err) {
-		return "", err
-	}
-	if best == "" {
-		return "", fmt.Errorf("no Codex thread recorded for %s", workspace)
-	}
-	return best, nil
-}
-
-func readCodexSessionMeta(path string) (string, string) {
-	file, err := os.Open(path)
-	if err != nil {
-		return "", ""
-	}
-	defer file.Close()
-	line, err := bufio.NewReaderSize(file, 128*1024).ReadBytes('\n')
-	if err != nil && len(line) == 0 {
-		return "", ""
-	}
-	var record struct {
-		Type    string `json:"type"`
-		Payload struct {
-			SessionID string `json:"session_id"`
-			CWD       string `json:"cwd"`
-		} `json:"payload"`
-	}
-	if json.Unmarshal(line, &record) != nil || record.Type != "session_meta" {
-		return "", ""
-	}
-	return record.Payload.SessionID, record.Payload.CWD
 }
 
 func writeTextAtomic(path, contents string, mode os.FileMode) error {

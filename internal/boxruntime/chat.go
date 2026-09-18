@@ -339,25 +339,10 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 		}
 		prompt += "\nInspect the referenced images as message data before responding."
 	}
-	thread, err := CodexThreadID(root, home, session, WorkspaceDirectory())
-	if err != nil {
-		// Codex records a thread only once it has run a turn, so a freshly
-		// started one has nothing to queue against. Type into its prompt instead
-		// of starting a second Codex beside it.
-		return deliverCodexThroughTUI(ctx, session, prompt, path)
-	}
-	if err := runCodexQueue(ctx, home, path, []string{"queue", "--thread", thread, "--message", prompt}); err != nil {
-		// A remembered id can outlive its thread; re-read once before falling back.
-		if forget := ForgetCodexThread(root, session); forget != nil {
-			return err
-		}
-		thread, idErr := CodexThreadID(root, home, session, WorkspaceDirectory())
-		if idErr != nil {
-			return deliverCodexThroughTUI(ctx, session, prompt, path)
-		}
-		return runCodexQueue(ctx, home, path, []string{"queue", "--thread", thread, "--message", prompt})
-	}
-	return nil
+	// `codex queue` writes to the stored thread, which the Codex the user is
+	// watching does not pick up: queueing reported success while the terminal
+	// stayed empty. Typing into its prompt is what actually reaches it.
+	return deliverCodexThroughTUI(ctx, session, prompt, path)
 }
 
 // StartCodexChat starts a new interactive Codex session with the first Agent
