@@ -82,7 +82,7 @@ func TestChatSessionFindsSanitizedMCPThroughProcessTree(t *testing.T) {
 	}
 }
 
-func TestDeliverCodexChatReferencesLocalImagesWithoutUnsupportedQueueFlags(t *testing.T) {
+func TestDeliverCodexChatSendsTextAndImagePathsThroughTheAppServer(t *testing.T) {
 	home := t.TempDir()
 	var encoded bytes.Buffer
 	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
@@ -90,45 +90,29 @@ func TestDeliverCodexChatReferencesLocalImagesWithoutUnsupportedQueueFlags(t *te
 	if err := png.Encode(&encoded, canvas); err != nil {
 		t.Fatal(err)
 	}
-
-	original := runCodexQueue
-	t.Cleanup(func() { runCodexQueue = original })
-	var got []string
-	runCodexQueue = func(_ context.Context, _ string, eventPath string, args []string) error {
-		got = append([]string(nil), args...)
-		return os.Remove(eventPath)
+	original := CodexStartTurn
+	t.Cleanup(func() { CodexStartTurn = original })
+	var gotText string
+	var gotImages []string
+	CodexStartTurn = func(_ context.Context, _, _, _, text string, images []string) error {
+		gotText, gotImages = text, images
+		return nil
 	}
-	// Delivery types into the running Codex, so images travel as local file
-	// references inside the prompt rather than as queue flags.
 	root := t.TempDir()
-	originalCommand, originalSubmit := tmuxCommand, tmuxSubmitPause
-	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalSubmit })
-	tmuxSubmitPause = func(context.Context) error { return nil }
-	typed := ""
-	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		if len(args) > 0 && args[0] == "capture-pane" {
-			return []byte("OpenAI Codex\n\u203a Ask Codex to do anything"), nil
-		}
-		if len(args) >= 5 && args[0] == "send-keys" && args[3] == "-l" {
-			typed = args[4]
-		}
-		return nil, nil
-	}
-
 	inbound := ChatInbound{ID: "message-1", Text: "Inspect [Image 1]", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
 	if err := DeliverCodexChat(context.Background(), root, home, "codex-chat", inbound); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("queued instead of typing into the session: %q", got)
+	if !strings.Contains(gotText, "Inspect [Image 1]") {
+		t.Fatalf("message text was not sent: %q", gotText)
 	}
-	if !strings.Contains(typed, "[Image 1]: ") || !strings.Contains(typed, "/inbox/codex-chat/files/message-1/image-1.png") {
-		t.Fatalf("image was not delivered as a local file reference: %q", typed)
+	if len(gotImages) != 1 || !strings.Contains(gotImages[0], "/inbox/codex-chat/files/message-1/image-1.png") {
+		t.Fatalf("image was not sent as a local file: %v", gotImages)
 	}
 }
-
 func TestStartCodexChatPassesInitialMessageAndImagesAsArguments(t *testing.T) {
 	stubRegisteredAgent(t, "codex")
+	stubCodexBackend(t)
 	home := t.TempDir()
 	var encoded bytes.Buffer
 	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
@@ -268,4 +252,13 @@ func TestChatAskAllowsStandaloneQuestion(t *testing.T) {
 	if err != nil || !found || event.Kind != "question" || event.ReplyTo != "" || event.Question == nil {
 		t.Fatalf("unexpected question: found=%t err=%v event=%+v", found, err, event)
 	}
+}
+
+// stubCodexBackend keeps tests off a real app server while still exercising the
+// path that starts one.
+func stubCodexBackend(t *testing.T) {
+	t.Helper()
+	original := EnsureCodexAppServer
+	t.Cleanup(func() { EnsureCodexAppServer = original })
+	EnsureCodexAppServer = func(context.Context, string) error { return nil }
 }
