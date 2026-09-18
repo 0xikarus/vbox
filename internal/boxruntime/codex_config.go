@@ -78,37 +78,52 @@ func setCodexTopLevel(lines []string, values map[string]string) []string {
 }
 
 // setCodexProjectTrust marks one workspace trusted so Codex never asks about it.
+// The table is edited where it already is: appending a second one is a duplicate
+// key, and Codex then refuses to parse the file at all.
 func setCodexProjectTrust(lines []string, workspace string) []string {
 	header := fmt.Sprintf("[projects.%q]", workspace)
+	const trusted = `trust_level = "trusted"`
 	out := make([]string, 0, len(lines)+3)
-	inTarget, wrote := false, false
+	inTarget, wrote, found, dropping := false, false, false, false
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "[") {
 			if inTarget && !wrote {
-				out = append(out, `trust_level = "trusted"`)
+				out = append(out, trusted)
+				wrote = true
 			}
-			inTarget = trimmed == header
-			wrote = false
+			inTarget, dropping = false, false
+			if trimmed == header {
+				// A second copy is what an earlier append left behind. Carrying
+				// it forward would keep the file unparseable.
+				if found {
+					dropping = true
+					continue
+				}
+				inTarget, found, wrote = true, true, false
+			}
 			out = append(out, line)
+			continue
+		}
+		if dropping {
 			continue
 		}
 		if inTarget && strings.HasPrefix(trimmed, "trust_level") {
 			if !wrote {
-				out = append(out, `trust_level = "trusted"`)
+				out = append(out, trusted)
 				wrote = true
 			}
 			continue
 		}
 		out = append(out, line)
 	}
-	if inTarget {
-		if !wrote {
-			out = append(out, `trust_level = "trusted"`)
-		}
+	if inTarget && !wrote {
+		out = append(out, trusted)
+	}
+	if found {
 		return out
 	}
-	return append(out, "", header, `trust_level = "trusted"`)
+	return append(out, "", header, trusted)
 }
 
 func sortedKeys(values map[string]string) []string {
