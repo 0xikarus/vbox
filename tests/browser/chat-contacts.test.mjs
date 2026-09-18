@@ -48,7 +48,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   res.statusCode=404;return res.end('{}');
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
- const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
+ const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
   await p.setViewport({width:420,height:820,deviceScaleFactor:1});
