@@ -67,14 +67,88 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			return err
 		}
 		return a.logicalBoxOutput(box, asJSON)
+	case "contacts":
+		if len(args) < 2 {
+			return fmt.Errorf("usage: vmbox boxes contacts NAME [--add CONTACT | --remove CONTACT | --protect | --unprotect] [--json]")
+		}
+		name := args[1]
+		fs := flag.NewFlagSet("contacts", flag.ContinueOnError)
+		fs.SetOutput(a.Err)
+		add := fs.String("add", "", "grant a contact edge to CONTACT (box name or id)")
+		remove := fs.String("remove", "", "revoke a contact edge to CONTACT")
+		protect := fs.Bool("protect", false, "mark the box as off-limits to managers")
+		unprotect := fs.Bool("unprotect", false, "remove manager protection from the box")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return fmt.Errorf("unexpected contacts argument %q", fs.Arg(0))
+		}
+		selected := 0
+		for _, value := range []string{*add, *remove} {
+			if value != "" {
+				selected++
+			}
+		}
+		if *protect {
+			selected++
+		}
+		if *unprotect {
+			selected++
+		}
+		if selected > 1 {
+			return fmt.Errorf("choose one of --add, --remove, --protect or --unprotect")
+		}
+		switch {
+		case *protect:
+			var status map[string]bool
+			if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(name)+"/protection", map[string]bool{"protected": true}, &status, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Out, "%s is protected\n", name)
+			return nil
+		case *unprotect:
+			var status map[string]bool
+			if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(name)+"/protection", map[string]bool{"protected": false}, &status, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Out, "%s is not protected\n", name)
+			return nil
+		case *add != "":
+			var contact v1.BoxContact
+			if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts", v1.PutBoxContactRequest{Contact: *add}, &contact, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Out, "%s may message %s\n", contact.BoxName, contact.ContactName)
+			return nil
+		case *remove != "":
+			if _, err := a.request(ctx, c, token, http.MethodDelete, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts/"+url.PathEscape(*remove), nil, nil, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Out, "%s may no longer message %s\n", name, *remove)
+			return nil
+		}
+		var contacts []v1.BoxContact
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts", nil, &contacts, nil); err != nil {
+			return err
+		}
+		if asJSON {
+			return json.NewEncoder(a.Out).Encode(contacts)
+		}
+		fmt.Fprintln(a.Out, "CONTACT              ROLE       STATE        MESSAGE  RECEIVE")
+		for _, contact := range contacts {
+			fmt.Fprintf(a.Out, "%-20s %-10s %-12s %-8t %-8t\n", contact.ContactName, contact.ContactRole, contact.ContactState, contact.CanMessage, contact.CanReceive)
+		}
+		return nil
 	case "create", "new":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
+			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--role worker|manager] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
 		}
 		fs := flag.NewFlagSet("new", flag.ContinueOnError)
 		fs.SetOutput(a.Err)
 		disk := fs.Int64("disk", 10, "persistent workspace size in GiB")
 		region := fs.String("region", "", "preferred region")
+		role := fs.String("role", "worker", "box role: worker or manager (a manager sees every non-protected box)")
 		var selectedProfiles []v1.LoginProfileRef
 		fs.Func("profile", "saved login profile APP=NAME (repeat for each app)", func(value string) error {
 			app, name, ok := strings.Cut(value, "=")
@@ -124,7 +198,10 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		if asJSON && mode == creationConnect {
 			return fmt.Errorf("--json requires --detach or --hibernate")
 		}
-		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Region: *region, DiskGiB: *disk, DefaultAgent: "shell", AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
+		if !v1.ValidBoxRole(strings.ToLower(*role)) {
+			return fmt.Errorf("--role must be worker or manager")
+		}
+		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Role: *role, Region: *region, DiskGiB: *disk, DefaultAgent: "shell", AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
 		request.LoginProfiles = selectedProfiles
 		request.Tools = tools
 		request.SetupScript = *setupScript

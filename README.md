@@ -108,6 +108,16 @@ tools; `chat_message` works with or without a reply reference. The
 same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
 `desktop_type`, `desktop_key`), so agents can operate the box's computer.
 
+Agents can also address each other when the owner grants a contact edge.
+`get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
+accept an optional `contact`; the message is delivered into that box's same
+native conversation and appears in the chat app attributed to its sender. A box
+with the `manager` role (`vmbox new NAME --role manager`) may address every
+non-protected box automatically; a worker only has explicit edges. The owner
+edits the graph per box in the workspace page or the chat Details drawer and can
+mark a box protected. Changes apply immediately and the controller authorizes
+every send, so the model cannot widen its own reach.
+
 ## Windows setup (WSL)
 
 Use Ubuntu inside Windows through WSL. The current installer supports Linux and

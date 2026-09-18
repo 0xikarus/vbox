@@ -607,3 +607,47 @@ CREATE TABLE IF NOT EXISTS box_instruction_snapshots (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id,box_id)
 );
+-- A box's role is chosen at creation. A manager holds the fleet-wide contact
+-- permission; a worker starts with no contacts and only explicit edges.
+ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'worker' CHECK (role IN ('worker','manager'));
+
+-- Directed, owner-managed contact edges. A box may address another box only
+-- while an enabled row exists; the controller re-validates every send.
+CREATE TABLE IF NOT EXISTS box_contacts (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  contact_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  can_message boolean NOT NULL DEFAULT true,
+  can_receive boolean NOT NULL DEFAULT true,
+  created_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(box_id, contact_box_id),
+  CHECK (box_id <> contact_box_id)
+);
+CREATE INDEX IF NOT EXISTS box_contacts_owner_idx ON box_contacts(account_id, box_id);
+CREATE INDEX IF NOT EXISTS box_contacts_target_idx ON box_contacts(account_id, contact_box_id);
+
+-- Owner-designated protected boxes are invisible and unreachable to a manager.
+CREATE TABLE IF NOT EXISTS box_protection (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  protected_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id, box_id)
+);
+
+-- Inter-box messages carry their origin; 'box' is a distinct direction so the
+-- chat UI and prompts can attribute the sender instead of showing a false owner.
+ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS sender_box_id uuid REFERENCES logical_boxes(id) ON DELETE SET NULL;
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid='box_messages'::regclass AND conname='box_messages_direction_check'
+      AND position('''box''' IN pg_get_constraintdef(oid))=0
+  ) THEN
+    ALTER TABLE box_messages DROP CONSTRAINT box_messages_direction_check;
+    ALTER TABLE box_messages ADD CONSTRAINT box_messages_direction_check
+      CHECK (direction IN ('user','system','agent','box'));
+  END IF;
+END $$;

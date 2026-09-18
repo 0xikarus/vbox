@@ -132,6 +132,16 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   hovering previews the box desktop at full capture resolution, and clicking
   opens a large read-only live view of the desktop with a button that switches
   to the control popup.
+- Agent contacts are controller-owned. `box_contacts` holds directed owner-managed
+  edges, `box_protection` hides a box from any manager, and `logical_boxes.role`
+  (`worker`/`manager`) selects whether the implicit fleet-wide permission applies.
+  `GET /v1/agent-desktop/contacts` feeds the `get_contacts` tool; `chat_message`
+  and `chat_ask` accept an optional `contact`, and the controller routes it into
+  the target's existing native conversation (never a second session) with the
+  sender recorded as `box_messages.sender_box_id` and direction `box`. The owner
+  edits the graph at `/v1/logical-boxes/{id}/contacts` and `/protection`; the
+  workspace page and the chat Details drawer are only editors. Entry points:
+  `internal/controller/contacts.go`, `internal/boxruntime/contacts.go`.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed

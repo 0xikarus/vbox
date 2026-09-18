@@ -19,12 +19,12 @@ func logicalBoxRows(id, state string) *sqlmock.Rows {
 	now := time.Now().UTC()
 	return sqlmock.NewRows([]string{
 		"id", "account_id", "owner_user_id", "name", "provider",
-		"provider_credential", "default_agent", "state", "volume_id", "volume_name",
+		"provider_credential", "default_agent", "role", "state", "volume_id", "volume_name",
 		"slot_id", "assignment_generation", "lease_owner", "lease_expires_at",
 		"restoration_state", "failure_reason", "created_at", "updated_at", "tools",
 	}).AddRow(
 		id, "a", "u", "box", "shared-worker",
-		"shared-01", "opencode", state, "vol", "vol",
+		"shared-01", "opencode", "worker", state, "vol", "vol",
 		"", 1, "", nil,
 		"restored", "", now, now, []byte(`[]`),
 	)

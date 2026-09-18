@@ -37,12 +37,21 @@ func (s *Store) UpdateLogicalBox(ctx context.Context, p Principal, id string, re
 	if !validAgent(request.DefaultAgent) {
 		return v1.LogicalBox{}, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
 	}
+	request.Role = strings.ToLower(strings.TrimSpace(request.Role))
+	if request.Role != "" {
+		if !v1.ValidBoxRole(request.Role) {
+			return v1.LogicalBox{}, fmt.Errorf("role must be worker or manager")
+		}
+		if p.Role != "owner" {
+			return v1.LogicalBox{}, fmt.Errorf("only an account owner may change a box role")
+		}
+	}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
 		return v1.LogicalBox{}, err
 	}
 	defer tx.Rollback()
-	result, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET default_agent=$5,updated_at=now() WHERE account_id=$1 AND (id::text=$2 OR name=$2) AND (owner_user_id=$3 OR $4='owner')`, p.AccountID, id, p.UserID, p.Role, request.DefaultAgent)
+	result, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET default_agent=$5,role=CASE WHEN $6::text='' THEN role ELSE $6 END,updated_at=now() WHERE account_id=$1 AND (id::text=$2 OR name=$2) AND (owner_user_id=$3 OR $4='owner')`, p.AccountID, id, p.UserID, p.Role, request.DefaultAgent, request.Role)
 	if err != nil {
 		return v1.LogicalBox{}, err
 	}
@@ -53,7 +62,7 @@ func (s *Store) UpdateLogicalBox(ctx context.Context, p Principal, id string, re
 	if err != nil {
 		return v1.LogicalBox{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.settings.update','logical_box',$3,jsonb_build_object('default_agent',$4::text))`, p.AccountID, p.UserID, box.ID, request.DefaultAgent); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.settings.update','logical_box',$3,jsonb_build_object('default_agent',$4::text,'role',$5::text))`, p.AccountID, p.UserID, box.ID, request.DefaultAgent, box.Role); err != nil {
 		return v1.LogicalBox{}, err
 	}
 	return box, tx.Commit()

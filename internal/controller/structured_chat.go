@@ -156,6 +156,11 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 			return "", false, fmt.Errorf("invalid structured chat question")
 		}
 		text = encodeBoxMessageQuestion(v1.BoxMessageQuestion{Text: event.Question.Text, Choices: event.Question.Choices, Multiple: event.Question.Multiple})
+	case "contact":
+		// An inter-box message is never an answer to the sender's own chat. It is
+		// routed into the contact's conversation and acknowledged here; a rejection
+		// is recorded on the sender's task instead of blocking the outbox.
+		return s.routeContactMessage(ctx, accountID, task, event), false, nil
 	default:
 		return "", false, fmt.Errorf("unknown structured chat event")
 	}
@@ -265,6 +270,56 @@ func (s *Server) drainAgentChat(ctx context.Context, accountID string, task v1.B
 		}
 	}
 	return errors.Join(failures...)
+}
+
+// routeContactMessage delivers one inter-box message into the contact's live
+// conversation through the same path the owner chat uses, so there is still a
+// single native conversation per task. It never returns an error: a rejected or
+// undeliverable contact message is recorded on the sender's task and
+// acknowledged, so one bad recipient cannot head-of-line block the sender's
+// entire chat outbox.
+func (s *Server) routeContactMessage(ctx context.Context, accountID string, task v1.BoxTask, event boxruntime.ChatEvent) string {
+	text := strings.TrimSpace(event.Text)
+	reject := func(reason string) string {
+		_ = s.Store.AppendSystemBoxMessage(ctx, accountID, task.ID, "Contact message rejected: "+reason, "contact-reject:"+event.ID)
+		return ""
+	}
+	if text == "" || len(text) > 100_000 {
+		return reject("message must contain between 1 and 100000 bytes")
+	}
+	if len(event.Images) > 0 {
+		return reject("contact messages do not support images yet")
+	}
+	ref := strings.TrimSpace(event.Contact)
+	targetID, targetName, _, targetAgent, targetState, protected, err := s.Store.contactBox(ctx, accountID, ref)
+	if err != nil {
+		return reject("unknown contact")
+	}
+	if protected {
+		return reject("contact box is protected")
+	}
+	if targetState != string(v1.LogicalBoxRunning) {
+		return reject(targetName + " is " + targetState + "; only a running box can receive a message")
+	}
+	if err := s.Store.AuthorizeBoxMessage(ctx, accountID, task.LogicalBoxID, targetID); err != nil {
+		return reject(err.Error())
+	}
+	var ownerID string
+	if err := s.Store.DB.QueryRowContext(ctx, `SELECT owner_user_id::text FROM logical_boxes WHERE account_id=$1 AND id=$2`, accountID, targetID).Scan(&ownerID); err != nil {
+		return reject("contact box owner unavailable")
+	}
+	senderName, err := s.Store.contactBoxName(ctx, accountID, task.LogicalBoxID)
+	if err != nil || strings.TrimSpace(senderName) == "" {
+		senderName = task.BoxName
+	}
+	body := "[From " + senderName + " (" + task.LogicalBoxID + ")]\n\n" + text
+	principal := Principal{AccountID: accountID, UserID: ownerID, Role: "owner", Subject: "box:" + task.LogicalBoxID}
+	result, err := s.routeBoxMessage(ctx, principal, targetID, "contact:"+event.ID, v1.DirectBoxMessageRequest{Text: body, Agent: targetAgent, SenderBoxID: task.LogicalBoxID})
+	if err != nil {
+		return reject("delivery failed: " + err.Error())
+	}
+	_, _ = s.Store.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.message','logical_box',$3,jsonb_build_object('sender_box_id',$4::text,'event_id',$5::text))`, accountID, ownerID, targetID, task.LogicalBoxID, event.ID)
+	return result.Message.ID
 }
 
 // claimChatDrain rate limits outbox polling per task so that an open chat

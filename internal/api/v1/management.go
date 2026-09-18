@@ -32,6 +32,8 @@ type DirectBoxMessageRequest struct {
 	Agent   string               `json:"agent,omitempty"`
 	Session string               `json:"session,omitempty"`
 	Images  []BoxMessageImageRef `json:"images,omitempty"`
+	// SenderBoxID marks an inter-box message; controller-set only.
+	SenderBoxID string `json:"-"`
 }
 
 type DirectBoxMessageResponse struct {
