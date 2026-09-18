@@ -14,7 +14,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/markdown.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/markdown.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -180,6 +180,46 @@ test('table previews stay fixed size and tool choices stay compact',async()=>{
   assert.deepEqual(result.after,result.before);assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
  }
 });
+test('rows and the create form lay out in reading order without overlapping values',async()=>{
+ const page=await browser.newPage();await page.setViewport({width:1280,height:900});
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;
+  window.fetch=async(path,options={})=>{
+   const url=new URL(path,location.origin),method=options.method||'GET';
+   if(method==='GET'&&url.pathname==='/v1/logical-boxes')return new Response(JSON.stringify([
+    {id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude',restorationState:'restored'},
+    {id:'box-2',name:'sleepy',state:'hibernated',defaultAgent:'codex',restorationState:'saved'}
+   ]));
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#create-tools input[value=blender]');
+ const layout=await page.evaluate(()=>{
+  const box=element=>element.getBoundingClientRect();
+  const stateCell=document.querySelector('[data-box-id="box-1"] td:nth-child(2)');
+  const primary=stateCell.querySelector('.table-text:not(.state-note)'),note=stateCell.querySelector('.state-note');
+  const labels=[...document.querySelectorAll('#create-tools label')].map(box);
+  const cells=[...document.querySelectorAll('#box-list tr.row td')];
+  return {
+   ownerDialogHidden:document.querySelector('#box-credentials-modal').hidden,
+   stateStacked:!!note&&Math.round(box(primary).bottom)<=Math.round(box(note).top),
+   stateTexts:[primary.textContent,note&&note.textContent],
+   labelGaps:labels.slice(1).map((rect,index)=>Math.round(rect.left-labels[index].right)),
+   overflowing:cells.filter(cell=>[...cell.children].some(child=>box(child).right>box(cell).right+1)).length,
+   legends:[...document.querySelectorAll('#create>fieldset.group>legend')].map(l=>l.textContent),
+   actionBelowGroups:box(document.querySelector('#create .form-actions')).top>=box([...document.querySelectorAll('#create>fieldset.group')].pop()).bottom
+  };
+ });
+ assert.equal(layout.ownerDialogHidden,true);
+ assert.deepEqual(layout.stateTexts,['running','restored']);
+ assert.equal(layout.stateStacked,true);
+ assert.ok(layout.labelGaps.length&&layout.labelGaps.every(gap=>gap>=8),'tool labels need visible separation: '+layout.labelGaps);
+ assert.equal(layout.overflowing,0);
+ assert.deepEqual(layout.legends,['1 · box','2 · logins','3 · tools','4 · instructions']);
+ assert.equal(layout.actionBelowGroups,true);
+ await page.close();
+});
 test('box actions follow state: no resume while creating, resume on failure',async()=>{
  const page=await browser.newPage();
  await page.evaluateOnNewDocument(()=>{
@@ -197,9 +237,11 @@ test('box actions follow state: no resume while creating, resume on failure',asy
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('[data-box-id="creating"]');
  const buttons=id=>page.$$eval(`[data-box-id="${id}"] button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
- assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:true}]);
- assert.deepEqual(await buttons('broke'),[{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false}]);
- assert.deepEqual(await buttons('sleepy'),[{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false}]);
+ // Instructions and credentials are editable in any state; only delete and
+ // resume follow the lifecycle.
+ assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:true},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
+ assert.deepEqual(await buttons('broke'),[{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false}]);
+ assert.deepEqual(await buttons('sleepy'),[{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false}]);
  assert.match(await page.$eval('[data-box-id="broke"] td:nth-child(2)',n=>n.textContent),/provider refused the volume/);
  await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
  await page.close();
@@ -244,6 +286,17 @@ test('configuration UI stays tiny and has no terminal code',async()=>{
  const css=await readFile(resolve(root,'app.css'),'utf8'),js=await readFile(resolve(root,'app.js'),'utf8');
  assert(Buffer.byteLength(css)<2048);assert(!/@import|url\(/.test(css));
  for(const removed of ['/terminal','/tasks','chat-groups','setInterval'])assert(!js.includes(removed),removed);
+});
+test('index styles ship in a page-scoped sheet, not inline and not in shared app.css',async()=>{
+ const html=await readFile(resolve(root,'index.html'),'utf8'),page=await readFile(resolve(root,'controller.css'),'utf8');
+ // The index is served under style-src 'self', so an inline <style> block is
+ // blocked outright and the layout silently disappears.
+ assert(!/<style[\s>]/.test(html),'controller index must not rely on an inline <style> block');
+ assert(/<link rel="stylesheet" href="\/controller.css">/.test(html));
+ // Only the index links controller.css: grid, chat and workspace share app.css
+ // and their terminal viewers are sensitive to changes in page geometry.
+ for(const other of ['grid.html','chat.html','workspace.html'])assert(!(await readFile(resolve(root,other),'utf8')).includes('controller.css'),other);
+ assert(Buffer.byteLength(page)<8192);assert(!/@import|url\(/.test(page));
 });
 test('new box starts automatically and its row follows startup through the temporary saved state',async()=>{
  const page=await browser.newPage();
@@ -367,6 +420,9 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  await page.click('#box-instructions-apply');
  await page.waitForFunction(()=>document.querySelector('#box-instructions-status').textContent.includes('fixture applied'));
  assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/instructions').body,{markdown:'# Applied\nDo this.'});
+ // A dialog is modal: dismiss it before touching the page underneath.
+ await page.click('#box-instructions-modal .form-actions .linkbtn');
+ await page.waitForFunction(()=>document.querySelector('#box-instructions-modal').hidden);
  // Editing imported profiles is an explicit, verified selection.
  await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Credentials')).click()});
  await page.waitForFunction(()=>!document.querySelector('#box-credentials-modal').hidden);
@@ -374,6 +430,8 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  await page.click('#box-credentials-apply');
  await page.waitForFunction(()=>document.querySelector('#box-credentials-status').textContent.includes('fixture applied'));
  assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/login-profiles').body,{profiles:[{application:'claude',name:'personal'}]});
+ await page.click('#box-credentials-modal .form-actions .linkbtn');
+ await page.waitForFunction(()=>document.querySelector('#box-credentials-modal').hidden);
  // Oversized preset Markdown is rejected before any request is made.
  await page.evaluate(()=>{document.querySelector('#instruction-editor').open=true});
  await page.type('#instruction-form input[name=name]','huge-preset');
