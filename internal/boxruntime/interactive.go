@@ -28,6 +28,9 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if err != nil {
 		return err
 	}
+	if err := ensureAgentBackend(ctx, session, agent); err != nil {
+		return err
+	}
 	args := []string{"new-session", "-d", "-s", session, "-c", filepath.Join(filepath.Dir(root), "workspace"), "--"}
 	args = append(args, argv...)
 	_, err = tmuxOutput(ctx, args...)
@@ -63,19 +66,26 @@ func interactiveArgv(session, agent string) ([]string, error) {
 	}
 }
 
+// ensureAgentBackend starts whatever a persistent agent needs before its
+// terminal can attach. OpenCode serves its own API in-process; Codex needs its
+// app server running first, because the terminal joins it with --remote.
+func ensureAgentBackend(ctx context.Context, session, agent string) error {
+	if agent != "codex" {
+		return nil
+	}
+	return EnsureCodexAppServer(ctx, session)
+}
+
 func persistentAgentArgv(session, agent string) ([]string, error) {
 	switch agent {
 	case "codex":
-		// A box is a disposable, externally sandboxed machine, so Codex runs with
-		// approvals and its own sandbox off. Without this it prompts before every
-		// command and tries to build its own sandbox namespace, which the
-		// container runtime refuses — the failure surfaces to the agent as
-		// "the workspace sandbox is failing to create its namespace" before any
-		// repository command runs. OpenCode gets the same treatment from --auto.
-		// These are process flags rather than config keys because an imported
-		// login profile ships its own config.toml and Codex rewrites that file at
-		// runtime; flags cannot be overwritten by either.
-		return []string{agent, "-c", "check_for_update_on_startup=false", "--dangerously-bypass-approvals-and-sandbox"}, nil
+		// The terminal attaches to the session's app server rather than running
+		// its own, so chat and the box show the same thread. Approvals and Codex's
+		// own sandbox are off because a box is already an externally sandboxed
+		// machine and that sandbox needs namespaces the runtime refuses; OpenCode
+		// gets the same from --auto.
+		return []string{agent, "--remote", codexAppServerURL(session),
+			"-c", "check_for_update_on_startup=false", "--dangerously-bypass-approvals-and-sandbox"}, nil
 	case "opencode":
 		return []string{agent, "--auto", "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
 	case "claude":

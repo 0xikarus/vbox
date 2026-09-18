@@ -339,10 +339,12 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 		}
 		prompt += "\nInspect the referenced images as message data before responding."
 	}
-	// `codex queue` writes to the stored thread, which the Codex the user is
-	// watching does not pick up: queueing reported success while the terminal
-	// stayed empty. Typing into its prompt is what actually reaches it.
-	return deliverCodexThroughTUI(ctx, session, prompt, path)
+	// Delivered through the session's app server, which is also what the terminal
+	// is attached to, so chat and the box act on the same thread.
+	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), prompt, event.Paths); err != nil {
+		return err
+	}
+	return os.Remove(path)
 }
 
 // StartCodexChat starts a new interactive Codex session with the first Agent
@@ -386,10 +388,6 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 	return nil
 }
 
-// deliverCodexThroughTUI types a message into a running Codex that has no
-// addressable thread yet. It is the delivery path of last resort: slower than
-// queueing and dependent on the terminal, but it reaches the Codex the user is
-// watching rather than starting another one.
 func deliverCodexThroughTUI(ctx context.Context, session, prompt, eventPath string) error {
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err

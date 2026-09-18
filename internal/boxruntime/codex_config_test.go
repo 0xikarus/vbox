@@ -1,7 +1,6 @@
 package boxruntime
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,47 +86,4 @@ func readCodexConfig(t *testing.T, home string) string {
 		t.Fatal(err)
 	}
 	return string(data)
-}
-
-func TestDeliverCodexChatTypesLiteralKeysWhenNoThreadRecorded(t *testing.T) {
-	home, root := t.TempDir(), t.TempDir()
-	originalQueue, originalCommand, originalSubmit := runCodexQueue, tmuxCommand, tmuxSubmitPause
-	t.Cleanup(func() { runCodexQueue, tmuxCommand, tmuxSubmitPause = originalQueue, originalCommand, originalSubmit })
-	tmuxSubmitPause = func(context.Context) error { return nil }
-	queued := false
-	runCodexQueue = func(context.Context, string, string, []string) error { queued = true; return nil }
-	var calls [][]string
-	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		calls = append(calls, args)
-		if len(args) > 0 && args[0] == "capture-pane" {
-			return []byte("OpenAI Codex\n\u203a Ask Codex to do anything"), nil
-		}
-		return nil, nil
-	}
-	if err := DeliverCodexChat(context.Background(), root, home, "codex-chat", ChatInbound{ID: "message-1", Text: "hello"}); err != nil {
-		t.Fatal(err)
-	}
-	if queued {
-		t.Fatal("queued against a thread that does not exist")
-	}
-	var typed, submitted bool
-	for _, call := range calls {
-		if len(call) >= 5 && call[0] == "send-keys" && call[3] == "-l" && call[4] == "hello" {
-			typed = true
-		}
-		if len(call) >= 4 && call[0] == "send-keys" && call[3] == "Enter" {
-			submitted = typed
-		}
-	}
-	if !typed {
-		t.Fatalf("message was not sent as literal keys: %v", calls)
-	}
-	if !submitted {
-		t.Fatalf("message was not submitted after being typed: %v", calls)
-	}
-	for _, call := range calls {
-		if len(call) > 0 && (call[0] == "load-buffer" || call[0] == "paste-buffer") {
-			t.Fatalf("used bracketed paste, which Codex ignores: %v", calls)
-		}
-	}
 }

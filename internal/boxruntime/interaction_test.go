@@ -265,6 +265,7 @@ func TestStartTmuxTaskRejectsAnExistingSessionForAnotherAgent(t *testing.T) {
 }
 
 func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
+	stubCodexBackend(t)
 	stubRegisteredAgent(t, "codex")
 	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
 	t.Cleanup(func() {
@@ -300,7 +301,7 @@ func TestStartTmuxTaskWaitsForCodexInputBeforeDeliveringPrompt(t *testing.T) {
 	if captures < 2 {
 		t.Fatalf("prompt was delivered before readiness: %v", calls)
 	}
-	if !strings.Contains(strings.Join(calls, "\n"), "-- codex -c check_for_update_on_startup=false") {
+	if !strings.Contains(strings.Join(calls, "\n"), "check_for_update_on_startup=false") {
 		t.Fatalf("managed Codex session may intercept the initial prompt with an update menu: %v", calls)
 	}
 	joined := strings.Join(calls, "\n")
