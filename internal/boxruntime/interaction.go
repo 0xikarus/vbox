@@ -333,7 +333,7 @@ func resetClaudeContext(ctx context.Context, root, session, messageID string) er
 	if err := claudeChannelReadyWait(ctx, session, priorChannels); err != nil {
 		return err
 	}
-	if err := agentReadySettlePause(ctx); err != nil {
+	if err := settleAgentReadiness(ctx, session, "claude"); err != nil {
 		return err
 	}
 	if err := os.Rename(restarted, delivered); err != nil {
@@ -488,7 +488,7 @@ func StartTmuxTask(ctx context.Context, root, session, agent, messageID, prompt 
 		if err := waitForAgentReady(ctx, session, agent); err != nil {
 			return err
 		}
-		if err := agentReadySettlePause(ctx); err != nil {
+		if err := settleAgentReadiness(ctx, session, agent); err != nil {
 			return err
 		}
 	}
@@ -589,6 +589,32 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 		case <-time.After(agentReadyPollInterval):
 		}
 	}
+}
+
+// Claude can briefly render an input-ready prompt between its startup dialogs.
+// A message delivered during that gap lands in the later dialog instead of the
+// conversation. Require the prompt to remain ready through a settle interval;
+// if another dialog appears, answer it and start a fresh settle interval.
+func settleAgentReadiness(ctx context.Context, session, agent string) error {
+	for attempt := 0; attempt < 4; attempt++ {
+		if err := agentReadySettlePause(ctx); err != nil {
+			return err
+		}
+		if agent == "opencode" {
+			return nil
+		}
+		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
+		if err == nil {
+			text := string(content)
+			if _, waiting := pendingStartupDialog(agent, text); !waiting && agentInputReady(agent, text) {
+				return nil
+			}
+		}
+		if err := waitForAgentReady(ctx, session, agent); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("%s task session did not remain input-ready", agent)
 }
 
 // startupDialog is a prompt an agent shows before its input is usable. Nobody is

@@ -345,10 +345,10 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 			if captures == 2 {
 				return []byte("Quick safety check:\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm"), nil
 			}
-			if captures == 3 {
+			if captures == 3 || captures == 4 {
 				return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
 			}
-			if captures == 4 {
+			if captures == 5 {
 				return []byte("Claude Code v2\n❯\u00a0hello"), nil
 			}
 			return []byte("Claude Code v2\n❯\u00a0"), nil
@@ -745,10 +745,10 @@ func TestStartTmuxTaskAnswersAutoModeBeforeDeliveringPrompt(t *testing.T) {
 			if captures == 1 {
 				return []byte("Claude Code v2.1.276\nMake auto mode your default permission mode?\n❯ Yes, set auto mode as my default permission mode\n  No, keep bypass permissions"), nil
 			}
-			if captures == 2 {
+			if captures == 2 || captures == 3 {
 				return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
 			}
-			if captures == 3 {
+			if captures == 4 {
 				return []byte("Claude Code v2\n❯\u00a0hello"), nil
 			}
 			return []byte("Claude Code v2\n❯\u00a0"), nil
@@ -766,5 +766,55 @@ func TestStartTmuxTaskAnswersAutoModeBeforeDeliveringPrompt(t *testing.T) {
 	}
 	if delivery < 0 || answer >= delivery {
 		t.Fatalf("the prompt was delivered into the dialog: %v", calls)
+	}
+}
+
+func TestStartTmuxTaskAnswersAutoModeThatAppearsAfterFirstReadyPrompt(t *testing.T) {
+	stubRegisteredAgent(t, "claude")
+	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause = originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm
+	})
+	agentReadyPollInterval = 0
+	agentReadyTimeout = time.Second
+	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
+	var calls []string
+	firstReady, answered, delivered := false, false, false
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		call := strings.Join(args, " ")
+		calls = append(calls, call)
+		switch {
+		case strings.HasPrefix(call, "has-session"):
+			return nil, errors.New("missing")
+		case strings.HasPrefix(call, "send-keys -t claude-delayed Down Enter"):
+			answered = true
+			return nil, nil
+		case strings.HasPrefix(call, "load-buffer"):
+			delivered = true
+			return nil, nil
+		case strings.HasPrefix(call, "capture-pane"):
+			if !firstReady {
+				firstReady = true
+				return []byte("Claude Code v2.1.276\n❯ Try \"fix a bug\""), nil
+			}
+			if !answered {
+				return []byte("Claude Code v2.1.276\nMake auto mode your default permission mode?\n❯ Yes, set auto mode as my default permission mode\n  No, keep bypass permissions"), nil
+			}
+			if delivered {
+				return []byte("Claude Code v2.1.276\n❯"), nil
+			}
+			return []byte("Claude Code v2.1.276\n❯ Try \"fix a bug\""), nil
+		}
+		return nil, nil
+	}
+	if err := StartTmuxTask(context.Background(), t.TempDir(), "claude-delayed", "claude", "message_delayed", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(calls, "\n")
+	answer := strings.Index(joined, "send-keys -t claude-delayed Down Enter")
+	delivery := strings.Index(joined, "load-buffer")
+	if answer < 0 || delivery < 0 || answer >= delivery {
+		t.Fatalf("delayed auto-mode dialog was not answered before delivery: %v", calls)
 	}
 }
