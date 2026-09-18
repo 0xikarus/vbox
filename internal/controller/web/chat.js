@@ -665,13 +665,9 @@
    const byApp={};
    for(const p of profiles)(byApp[p.application]??=[]).push(p.name);
    const profilesWrap=$('#profile-choices');profilesWrap.replaceChildren();
-   for(const app of Object.keys(byApp).sort()){
-    const label=document.createElement('label');label.className='field profile-field';label.textContent=app;
-    const select=document.createElement('select');select.name='profile:'+app;
-    select.append(new Option('None',''),...byApp[app].sort().map(n=>new Option(n,n)));
-    label.append(select);profilesWrap.append(label);
-   }
-   profilesWrap.hidden=!Object.keys(byApp).length;
+   const availableApps=['claude','codex','opencode'].filter(app=>byApp[app]?.length);
+   if(availableApps.length){const label=document.createElement('label');label.className='field profile-field';label.textContent='Login profile';const select=document.createElement('select');select.name='loginProfile';select.append(new Option('None',''));for(const app of availableApps){const group=document.createElement('optgroup');group.label=app;for(const name of byApp[app].sort()){const option=new Option(name,JSON.stringify({application:app,name}));group.append(option)}select.append(group)}label.append(select);profilesWrap.append(label)}
+   profilesWrap.hidden=!availableApps.length;
    const toolsSet=$('#create-tools');toolsSet.replaceChildren();
    for(const tool of tools){
     const label=document.createElement('label'),input=document.createElement('input');
@@ -694,7 +690,8 @@
   event.preventDefault();
   const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';
   const tools=[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value);
-  const loginProfiles=[...createForm.querySelectorAll('select')].filter(s=>s.name.startsWith('profile:')&&s.value).map(s=>({application:s.name.slice('profile:'.length),name:s.value}));
+  const selectedProfile=createForm.elements.loginProfile?.value;
+  const loginProfiles=selectedProfile?[JSON.parse(selectedProfile)]:[];
   const setupScript=(createForm.elements.setupScript?.value||'').trim();
   const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
   const poolIndex=(f.pool.value||createForm.dataset.autoPool||'');
@@ -1062,18 +1059,11 @@
   try{
    const [state,profiles]=await Promise.all([api(boxPath(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
    const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
-   const current=new Map((state.profiles||[]).map(ref=>[ref.application,ref.name]));
+   const current=(state.profiles||[])[0];
    const wrap=$('#box-credentials-form');wrap.replaceChildren();
-   for(const application of ['claude','codex','opencode','github']){
-    const label=mk('label',application+' ');label.className='field';
-    const select=document.createElement('select');select.name=application;
-    const empty=mk('option','None');empty.value='';select.append(empty);
-    for(const name of (byApplication[application]||[]).slice().sort()){const option=mk('option',name);option.value=name;select.append(option)}
-    if(current.has(application)&&(byApplication[application]||[]).includes(current.get(application)))select.value=current.get(application);
-    label.append(select);
-    label.title=(byApplication[application]||[]).length?'':'No saved '+application+' profiles. Upload with: vmbox profiles save '+application+' NAME';
-    wrap.append(label);
-   }
+   const label=mk('label','Login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=mk('option','None');empty.value='';select.append(empty);
+   for(const application of ['claude','codex','opencode']){const names=(byApplication[application]||[]).slice().sort();if(!names.length)continue;const group=document.createElement('optgroup');group.label=application;for(const name of names){const option=mk('option',name);option.value=JSON.stringify({application,name});group.append(option)}select.append(group)}
+   const currentValue=current&&JSON.stringify({application:current.application,name:current.name});if(currentValue&&[...select.options].some(option=>option.value===currentValue))select.value=currentValue;label.append(select);wrap.append(label);
    const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
    if((state.pending||[]).length)parts.push('Queued for next start: '+(state.pending||[]).map(ref=>ref.application+' · '+ref.name).join(', '));
    $('#box-credentials-current').textContent=parts.join(' · ')+'.';
@@ -1082,7 +1072,7 @@
  }
  $('#box-credentials-apply').onclick=async()=>{
   if(!boxCredentialTarget)return;
-  const status=$('#box-credentials-status'),profiles=[...$('#box-credentials-form').querySelectorAll('select')].filter(select=>select.value).map(select=>({application:select.name,name:select.value}));
+  const status=$('#box-credentials-status'),profile=$('#box-credentials-form select')?.value,profiles=profile?[JSON.parse(profile)]:[];
   status.textContent='Applying credentials…';
   try{
    const result=await api(boxPath(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});

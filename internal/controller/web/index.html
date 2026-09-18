@@ -19,7 +19,7 @@
 <details id="create-placement"><summary>placement: automatic (override)</summary><label class="field">worker pool <select id="create-pool" name="pool"><option value="">Automatic (available capacity)</option></select></label><p class="hint">Uses available capacity in the least occupied pool. If none is free, queues in the controller default pool. Override to compare workers.</p></details>
 </fieldset>
 <fieldset class="group" data-owner><legend>2 · logins</legend>
-<p class="hint">Copied into the box at creation from the account-wide saved profiles below. Leave a slot on None to start the box without that login.</p>
+<p class="hint">Choose at most one Codex, Claude, or OpenCode login. It is copied into the box at creation; choose None to start without an agent login.</p>
 <div id="profile-choices" class="row-fields" data-owner></div>
 </fieldset>
 <fieldset class="group" data-owner><legend>3 · tools</legend>
@@ -31,7 +31,7 @@
 </fieldset>
 <div class="form-actions"><button class="primary">create and start box</button><span class="hint">The box is provisioned and started immediately.</span></div>
 </form></section>
-<section id="profiles" data-owner><h2>saved login profiles</h2><p class="hint">Account-wide credentials, managed by owners. Select profiles above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>
+<section id="profiles" data-owner><h2>saved login profiles</h2><p class="hint">Account-wide credentials, managed by owners. Select one agent profile above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>
 <p class="hint">Upload or refresh profiles through the CLI: <code>vmbox profiles save APPLICATION NAME</code>. Deleting a saved profile leaves credentials already copied into boxes untouched. Pending creations using it may fail.</p></section>
 <section id="instructions"><h2>instruction presets</h2><p class="hint">Reusable Markdown guidance for agent boxes, account-scoped and stored separately from login credentials. A preset is copied into a box as an immutable snapshot at creation, or applied to an existing box with <b>Instructions…</b> in the box list. Owners manage presets; any user may select one when creating a box. Instructions are trusted user-authored agent guidance — never secrets, never executed. Changes take effect at the next agent conversation or process start; agents are never restarted automatically.</p><div id="instruction-list"></div>
 <details id="instruction-editor" data-owner><summary>new preset · paste Markdown or upload a .md file</summary><form id="instruction-form"><label class="field">name <input name="name" required maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._\-]*" placeholder="code-reviewer"></label><label class="field">markdown · max 64 KiB <textarea name="markdown" rows="8" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points&#10;- Cite the files you changed"></textarea></label><div class="form-actions"><button class="primary">save preset</button><button type="button" class="linkbtn" id="instruction-upload">upload .md file</button><input id="instruction-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" class="linkbtn" id="instruction-preview-toggle">preview Markdown</button><button type="reset" class="linkbtn">reset</button></div><p class="hint">Only Markdown text up to 64 KiB is accepted; other file types and larger uploads are rejected. Uploaded Markdown is rendered safely in previews and is never executed.</p></form><div id="instruction-preview" class="md-preview" hidden></div><p id="instruction-status" role="status"></p></details></section>
@@ -58,7 +58,7 @@
 <div class="backdrop" data-close="box-credentials-modal"></div>
 <section class="card" role="dialog" aria-modal="true">
 <header><strong id="box-credentials-title">Imported login profiles</strong><button type="button" class="linkbtn" data-close="box-credentials-modal" aria-label="Close">×</button></header>
-<p class="hint">Replace the saved login profiles imported into this box. Credentials are written through the same verified channel used at creation and never displayed. Instructions and other box configuration are unchanged. A running box needs a restart or a new agent conversation to read the new credentials; a stopped box applies them automatically on its next start.</p>
+<p class="hint">Replace the single agent login profile imported into this box. Credentials are written through the same verified channel used at creation and never displayed. Instructions and other box configuration are unchanged. A running box needs a restart or a new agent conversation to read the new credentials; a stopped box applies them automatically on its next start.</p>
 <p id="box-credentials-current" class="hint"></p>
 <div id="box-credentials-form"></div>
 <div class="form-actions"><button type="button" class="primary" id="box-credentials-apply">apply to box</button><button type="button" class="linkbtn" data-close="box-credentials-modal">cancel</button></div>

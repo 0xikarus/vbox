@@ -20,14 +20,11 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-const maxBoxLoginProfiles = 8
+const maxBoxLoginProfiles = 1
 
 // validateBoxProfileRefs accepts only profiles that exist for the account and
 // validate for their application. Credential bytes are cleared immediately.
 func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, refs []v1.LoginProfileRef) error {
-	if len(refs) > maxBoxLoginProfiles {
-		return fmt.Errorf("select at most %d login profiles", maxBoxLoginProfiles)
-	}
 	// Selection shape is checked before any store read so a malformed request is
 	// rejected on its own terms instead of surfacing as an unavailable profile.
 	seen := map[string]bool{}
@@ -37,6 +34,9 @@ func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, r
 			return fmt.Errorf("login profile %s is selected twice", key)
 		}
 		seen[key] = true
+	}
+	if len(refs) > maxBoxLoginProfiles {
+		return fmt.Errorf("select at most %d login profile", maxBoxLoginProfiles)
 	}
 	for _, ref := range refs {
 		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: accountID}, ref.Application, ref.Name)
