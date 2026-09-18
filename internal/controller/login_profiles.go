@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-var loginProfileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$`)
+var loginProfileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9@+_.:() -]{0,127}$`)
 
 // Only portable profile files are accepted, never arbitrary paths or archives.
 func validateLoginProfile(application, name string, req v1.SaveLoginProfileRequest) error {
@@ -25,7 +25,7 @@ func validateLoginProfile(application, name string, req v1.SaveLoginProfileReque
 	}
 	files, ok := allowed[application]
 	if !ok || !loginProfileName.MatchString(name) {
-		return fmt.Errorf("use claude, codex, opencode or github and a profile name of 1–64 letters, digits, dots, underscores or hyphens")
+		return fmt.Errorf("use claude, codex, opencode or github and a profile name of 1–128 safe display characters")
 	}
 	if len(req.Files) == 0 {
 		return fmt.Errorf("profile contains no files")

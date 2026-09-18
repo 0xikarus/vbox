@@ -38,7 +38,7 @@ paths:
   /v1/login-profiles/{application}/{name}:
     parameters:
       - {in: path, name: application, required: true, schema: {enum: [claude, codex, opencode, github]}}
-      - {in: path, name: name, required: true, schema: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$'}}
+      - {in: path, name: name, required: true, schema: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9@+_.:() -]{0,127}$'}}
     put:
       summary: Owner-only encrypted account profile creation; refuses overwrite
       description: Maximum 512 KiB decoded. Codex accepts auth.json and config.toml. Claude accepts .credentials.json, settings.json and .claude.json. OpenCode accepts auth.json plus optional opencode.json or opencode.jsonc. GitHub accepts the controller's portable credential object. No plaintext export endpoint exists.

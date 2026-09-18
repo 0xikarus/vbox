@@ -19,6 +19,12 @@ func TestProfileAccountNames(t *testing.T) {
 	if got := profileAccountName("codex", path); got != "coder-example.test" {
 		t.Fatal(got)
 	}
+	if got := profileNameWithModel("codex", path, "gpt-test"); got != "coder@example.test (gpt-test)" {
+		t.Fatal(got)
+	}
+	if got := profileNameWithModel("codex", path, "vendor/model"); got != "coder@example.test (vendor-model)" {
+		t.Fatal(got)
+	}
 	if err := os.WriteFile(filepath.Join(path, "auth.json"), []byte(`{"access_token":"never-display-this"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
