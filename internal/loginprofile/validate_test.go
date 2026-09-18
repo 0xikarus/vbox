@@ -17,6 +17,7 @@ func TestValidatePortableCredentials(t *testing.T) {
 		{"opencode", "auth.json", `{}`, false},
 		{"opencode", "auth.json", `null`, false},
 		{"claude", ".credentials.json", `{"claudeAiOauth":{"accessToken":"test","expiresAt":4102444800000}}`, true},
+		{"claude", ".credentials.json", `{"claudeAiOauth":{"accessToken":"expired","refreshToken":"refreshable","expiresAt":1}}`, true},
 		{"claude", ".credentials.json", `{"claudeAiOauth":{"expiresAt":1}}`, false},
 		{"claude", ".credentials.json", `{"claudeAiOauth":{"accessToken":"test","expiresAt":1}}`, false},
 		{"codex", "auth.json", `{"OPENAI_API_KEY":"test"}`, true},
