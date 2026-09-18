@@ -327,10 +327,10 @@ func resetClaudeContext(ctx context.Context, root, session, messageID string) er
 	} else if err != nil {
 		return err
 	}
-	if err := claudeChannelReadyWait(ctx, session, priorChannels); err != nil {
+	if err := waitForAgentReady(ctx, session, "claude"); err != nil {
 		return err
 	}
-	if err := waitForAgentReady(ctx, session, "claude"); err != nil {
+	if err := claudeChannelReadyWait(ctx, session, priorChannels); err != nil {
 		return err
 	}
 	if err := agentReadySettlePause(ctx); err != nil {

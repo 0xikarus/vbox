@@ -540,8 +540,10 @@ func TestResetClaudeContextRespawnsChannelTUI(t *testing.T) {
 		tmuxCommand, agentReadySettlePause, claudeChannelReadyWait = originalCommand, originalSettle, originalChannelWait
 	})
 	agentReadySettlePause = func(context.Context) error { return nil }
+	var calls []string
 	channelWaits := 0
 	claudeChannelReadyWait = func(_ context.Context, session string, prior map[string]struct{}) error {
+		calls = append(calls, "wait-channel "+session)
 		channelWaits++
 		if session != "claude-session" {
 			t.Fatalf("waited for the wrong Claude channel %q", session)
@@ -551,7 +553,6 @@ func TestResetClaudeContextRespawnsChannelTUI(t *testing.T) {
 		}
 		return nil
 	}
-	var calls []string
 	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 		calls = append(calls, strings.Join(args, " "))
 		if len(args) > 0 && args[0] == "capture-pane" {
@@ -572,6 +573,10 @@ func TestResetClaudeContextRespawnsChannelTUI(t *testing.T) {
 	}
 	if channelWaits != 1 {
 		t.Fatalf("fresh Claude channel was not awaited: %d", channelWaits)
+	}
+	promptReady, channelReady := strings.Index(joined, "capture-pane"), strings.Index(joined, "wait-channel claude-session")
+	if promptReady < 0 || channelReady < 0 || promptReady > channelReady {
+		t.Fatalf("Claude channel was awaited before startup dialogs could be handled: %v", calls)
 	}
 	before := len(calls)
 	if err := ResetAgentContext(context.Background(), root, "claude-session", "claude", "reset-message"); err != nil {
