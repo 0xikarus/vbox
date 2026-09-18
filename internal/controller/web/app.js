@@ -334,34 +334,32 @@ $('#instruction-form').addEventListener('submit',action(async e=>{
 }));
 function renderCreateInstructionChoice(){
  const select=$('#create-instructions'),previous=select.value;select.replaceChildren();
- const auto=node('option',instructionPresets.defaultName?'Account default preset ('+instructionPresets.defaultName+')':'Account default preset / none');auto.value='auto';select.append(auto);
- const none=node('option','None (no managed instructions)');none.value='none';select.append(none);
- for(const preset of instructionPresets.presets){const option=node('option',preset.name+' · r'+preset.revision+(preset.default?' · default':''));option.value=preset.name;select.append(option)}
- const custom=node('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
+ const auto=node('option',instructionPresets.defaultName?'Default · '+instructionPresets.defaultName:'Default / none');auto.value='auto';select.append(auto);
+ const none=node('option','None');none.value='none';select.append(none);
+ for(const preset of instructionPresets.presets){const option=node('option',preset.name+(preset.default?' · default':''));option.value=preset.name;select.append(option)}
+ const custom=node('option','Custom Markdown');custom.value='custom';select.append(custom);
  if([...select.options].some(option=>option.value===previous))select.value=previous;
  void syncCreateInstructionText();
 }
 let createInstructionSource='';
 async function syncCreateInstructionText(){
- const select=$('#create-instructions'),textarea=$('#create-instructions-custom'),meta=$('#create-instructions-meta'),preview=$('#create-instructions-preview');
+ const select=$('#create-instructions'),editor=$('#create-instructions-editor'),textarea=$('#create-instructions-custom'),preview=$('#create-instructions-preview');
  const value=select.value;
- $('#create-instructions-label').textContent=select.options[select.selectedIndex]?.textContent||'none';
  if(value==='auto'||value==='none'){
   textarea.value='';textarea.readOnly=true;createInstructionSource=value;
-  meta.textContent=value==='auto'?'The account-default preset is copied at creation; with no default the box gets no managed instructions.':'No managed instructions are written for this box.';
+  editor.hidden=true;editor.open=false;
   renderMarkdownPreview(preview,'');preview.hidden=true;return;
  }
  if(value==='custom'){
   textarea.readOnly=false;
-  if(createInstructionSource!=='custom'){textarea.value='';createInstructionSource='custom'}
-  meta.textContent='Write the box-specific Markdown. It is snapshotted as a custom instruction set.';
+  if(createInstructionSource!=='custom'){textarea.value='';createInstructionSource='custom';editor.open=true}
+  editor.hidden=false;
   renderMarkdownPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();return;
  }
  let body='';try{body=await presetBody(value)}catch{body=''}
  textarea.readOnly=false;
- if(createInstructionSource!==value){textarea.value=body;createInstructionSource=value}
- const preset=instructionPresets.presets.find(item=>item.name===value),dirty=textarea.value!==body;
- meta.textContent='Preset '+(preset?'r'+preset.revision+' · ':'')+(dirty?'edited for this box (preset provenance kept)':'copied verbatim')+'.';
+ if(createInstructionSource!==value){textarea.value=body;createInstructionSource=value;editor.open=false}
+ editor.hidden=false;
  renderMarkdownPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();
 }
 $('#create-instructions').addEventListener('change',()=>void syncCreateInstructionText());

@@ -32,6 +32,9 @@ button.primary{padding:4px 12px}
 .group>legend{font-size:12px;color:#0b0b0b;font-weight:700;padding:0 5px;letter-spacing:.02em}
 .group .hint{margin:6px 0 0}
 .group>details{margin:8px 0 0}
+#create-instructions-editor summary{font-size:12px;color:#52514e}
+#create-instructions-editor .field{display:block;max-width:64rem}
+#create-instructions-editor textarea{box-sizing:border-box}
 .row-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:10px 16px;align-items:end;margin-top:6px;max-width:64rem}
 #create .field{display:block;min-width:0}
 #create .field>input,#create .field>select,#create .field>textarea{width:100%;margin-top:3px}

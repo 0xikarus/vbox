@@ -175,11 +175,11 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #new-box-card fieldset,#create-box label,#delete-box-form label{display:block;margin-bottom:.5rem}
 #new-box-modal,#delete-box-modal{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center}
 #new-box-backdrop,#delete-box-backdrop{position:absolute;inset:0;background:rgba(11,20,26,.55)}
-#new-box-card,#delete-box-card{position:relative;width:min(24rem,92vw);background:#f0f2f5;border-radius:.7rem;box-shadow:0 .6rem 2rem rgba(11,20,26,.5);padding:.8rem}
+#new-box-card,#delete-box-card{position:relative;width:min(24rem,92vw);max-height:calc(100dvh - 2rem);overflow:auto;box-sizing:border-box;background:#f0f2f5;border-radius:.7rem;box-shadow:0 .6rem 2rem rgba(11,20,26,.5);padding:.8rem}
 #new-box-card header,#delete-box-card header{display:flex;align-items:center;gap:.5rem;color:#111b21}
 #new-box-card header button,#delete-box-card header button{border:0;background:none;font-size:1.2rem;color:#54656f;cursor:pointer;margin:0}
 #new-box-card header .spacer,#delete-box-card header .spacer{flex:1}
-#create-box input,#delete-box-form input{width:100%;padding:.4rem .5rem;border:1px solid #c6ced4;border-radius:.4rem;font:inherit;box-sizing:border-box}
+#create-box input,#create-box textarea,#delete-box-form input{width:100%;padding:.4rem .5rem;border:1px solid #c6ced4;border-radius:.4rem;font:inherit;box-sizing:border-box}
 #create-box select,#delete-box-form select{width:100%;padding:.4rem .5rem;border:1px solid #c6ced4;border-radius:.4rem;font:inherit}
 #create-box button,#delete-box-form button{border:0;border-radius:1rem;padding:.6rem 1.1rem;font-size:.92rem;font-weight:600;cursor:pointer;width:100%}
 #create-box button{background:#00a884;color:#fff;margin-top:.4rem}
@@ -227,6 +227,9 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #create-box .custom-tools summary{cursor:pointer;font-size:.85rem;color:#54656f}
 #create-box .custom-tools textarea{width:100%;max-width:100%;margin-top:.35rem;padding:.4rem .5rem;border:1px solid #c6ced4;border-radius:.4rem;font:12px/1.4 ui-monospace,monospace;box-sizing:border-box}
 #create-box .custom-tools .hint{margin:.2rem 0 0;font-size:.72rem;color:#8696a0}
+#create-instructions-editor{margin:0 0 .5rem}
+#create-instructions-editor summary{cursor:pointer;font-size:.85rem;color:#54656f}
+#create-instructions-editor label{margin-top:.35rem}
 
 /* self-contained styling — never inherit the controller's terminal-report form layout */
 #new-box-card label,#delete-box-card label{display:block;margin:0 0 .45rem;font-size:.85rem;color:#54656f;text-transform:none}
@@ -275,6 +278,7 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .sheet-card #preset-status,.sheet-card #box-instructions-status,.sheet-card #box-credentials-status{margin:.4rem 0 0;font-size:.8rem;color:#667781;min-height:1rem}
 .preset-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin:.4rem 0}
 .preset-actions button{border:1px solid #c6ced4;background:#fff;border-radius:1rem;padding:.35rem .8rem;cursor:pointer;font:inherit;font-size:.82rem}
+#preset-form .preset-actions .primary{display:inline-block;width:auto;padding:.35rem .8rem}
 .md-preview{margin:.4rem 0;padding:.5rem .7rem;border:1px solid #e1e6e9;background:#fff;border-radius:.4rem;max-height:14rem;overflow:auto;font-size:.85rem}
 .md-preview .md-pre{background:#f2f4f5;padding:.4rem .5rem;border-radius:.3rem;overflow:auto;font-size:.78rem}
 .md-preview .md-quote{border-left:3px solid #d5d9dc;margin:.3rem 0;padding:.1rem .6rem;color:#54656f}
