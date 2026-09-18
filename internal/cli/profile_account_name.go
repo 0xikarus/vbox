@@ -11,6 +11,26 @@ import (
 // Account metadata is a naming hint, not authentication proof. Never display
 // tokens or arbitrary fallback JSON values.
 func profileAccountName(app, path string) string {
+	identity := profileAccountIdentity(app, path)
+	var b strings.Builder
+	for _, r := range strings.ToLower(identity) {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			b.WriteRune(r)
+		} else {
+			b.WriteByte('-')
+		}
+		if b.Len() >= 48 {
+			break
+		}
+	}
+	name := strings.Trim(b.String(), "-._")
+	if name == "" {
+		return app + "-account"
+	}
+	return name
+}
+
+func profileAccountIdentity(app, path string) string {
 	identity := ""
 	if app == "github" {
 		_, identity, _ = strings.Cut(path, ":")
@@ -69,20 +89,25 @@ func profileAccountName(app, path string) string {
 	if identity == "" {
 		identity = app + "-" + filepath.Base(filepath.Clean(path))
 	}
+	return identity
+}
+
+func profileNameWithModel(app, path, model string) string {
+	value := profileAccountIdentity(app, path) + " (" + strings.TrimSpace(model) + ")"
 	var b strings.Builder
-	for _, r := range strings.ToLower(identity) {
-		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("@+_.:() -", r) {
 			b.WriteRune(r)
 		} else {
 			b.WriteByte('-')
 		}
-		if b.Len() >= 48 {
+		if b.Len() >= 128 {
 			break
 		}
 	}
-	name := strings.Trim(b.String(), "-._")
+	name := strings.Trim(b.String(), " -._")
 	if name == "" {
-		return app + "-account"
+		return profileAccountName(app, path)
 	}
 	return name
 }

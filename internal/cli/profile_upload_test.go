@@ -27,14 +27,17 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(path, ".credentials.json"), []byte(`{"email":"person@example.test","synthetic":"profile"}`), 0600); err != nil {
 			t.Fatal(err)
 		}
+		if err := os.WriteFile(filepath.Join(path, "settings.json"), []byte(`{"model":"sonnet"}`), 0600); err != nil {
+			t.Fatal(err)
+		}
 		uploads := 0
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.Method == "GET" && r.URL.Path == "/v1/login-profiles":
 				json.NewEncoder(w).Encode([]v1.LoginProfile{})
-			case r.Method == "PUT" && r.URL.Path == "/v1/login-profiles/claude/person-example.test":
+			case r.Method == "PUT" && r.URL.Path == "/v1/login-profiles/claude/person@example.test (sonnet)":
 				uploads++
-				json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "person-example.test"})
+				json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "person@example.test (sonnet)"})
 			default:
 				t.Error("unexpected operation", r.Method, r.URL.Path)
 				http.NotFound(w, r)
@@ -50,7 +53,7 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 		if cancel {
 			keys += "\x03"
 		} else {
-			keys += strings.Repeat("\t", 3) + "\r"
+			keys += strings.Repeat("\t", 4) + "\r"
 		}
 		a.In = strings.NewReader(keys)
 		err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"})
@@ -95,6 +98,45 @@ func TestProfileUploadDialogOffersOpenCodeAPIKeyEntry(t *testing.T) {
 	}
 	if !strings.Contains(screen.String(), "Add OpenCode API key") {
 		t.Fatalf("OpenCode API-key upload option missing from dialog: %q", screen.String())
+	}
+}
+
+func TestProfileUploadDialogOffersClaudeAndCodexModelFields(t *testing.T) {
+	for _, tc := range []struct {
+		application, directory, authFile, configFile, config string
+	}{
+		{"claude", ".claude", ".credentials.json", "settings.json", `{"model":"sonnet"}`},
+		{"codex", ".codex", "auth.json", "config.toml", `model = "gpt-test"`},
+	} {
+		t.Run(tc.application, func(t *testing.T) {
+			home := t.TempDir()
+			profile := filepath.Join(home, tc.directory)
+			if err := os.MkdirAll(profile, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(profile, tc.authFile), []byte(`{"synthetic":"profile"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(profile, tc.configFile), []byte(tc.config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				json.NewEncoder(w).Encode([]v1.LoginProfile{})
+			}))
+			defer server.Close()
+
+			a := New()
+			a.Environ = map[string]string{"HOME": home}
+			a.Runner = &procexec.FakeRunner{}
+			a.IsTerminal = func() bool { return true }
+			var screen bytes.Buffer
+			a.Out, a.Err = &bytes.Buffer{}, &screen
+			a.In = strings.NewReader(" \x03")
+			_ = a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"})
+			if !strings.Contains(screen.String(), tc.application+" model") {
+				t.Fatalf("%s model field missing after selecting profile: %q", tc.application, screen.String())
+			}
+		})
 	}
 }
 

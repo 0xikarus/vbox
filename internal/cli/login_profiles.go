@@ -122,6 +122,10 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 }
 
 func (a *App) saveLocalLoginProfile(ctx context.Context, c config.Context, token, application, name, path string) (v1.LoginProfile, error) {
+	return a.saveLocalLoginProfileWithModel(ctx, c, token, application, name, path, "")
+}
+
+func (a *App) saveLocalLoginProfileWithModel(ctx context.Context, c config.Context, token, application, name, path, model string) (v1.LoginProfile, error) {
 	var result v1.LoginProfile
 	if application == "github" {
 		return a.saveGitHubLoginProfile(ctx, c, token, name, path)
@@ -139,7 +143,6 @@ func (a *App) saveLocalLoginProfile(ctx context.Context, c config.Context, token
 			clear(data)
 		}
 	}()
-	total := 0
 	for _, source := range profile.Files {
 		info, err := os.Stat(source)
 		if err != nil || !info.Mode().IsRegular() || info.Size() > 512*1024 {
@@ -150,10 +153,18 @@ func (a *App) saveLocalLoginProfile(ctx context.Context, c config.Context, token
 			return result, fmt.Errorf("could not read selected profile file")
 		}
 		req.Files[filepath.Base(source)] = data
-		total += len(data)
-		if total > 512*1024 {
-			return result, fmt.Errorf("profile exceeds 512 KiB")
+	}
+	if model != "" {
+		if err := applyProfileModel(application, req.Files, model); err != nil {
+			return result, err
 		}
+	}
+	total := 0
+	for _, data := range req.Files {
+		total += len(data)
+	}
+	if total > 512*1024 {
+		return result, fmt.Errorf("profile exceeds 512 KiB")
 	}
 	_, err = a.request(ctx, c, token, http.MethodPut, "/v1/login-profiles/"+url.PathEscape(application)+"/"+url.PathEscape(name), req, &result, nil)
 	return result, err

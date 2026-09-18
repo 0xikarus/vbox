@@ -79,8 +79,9 @@ vmbox profiles upload
 The table lists discovered accounts and their source paths. Use **↑/↓** to move,
 **Space or Enter** to select profiles, then select **Upload** and press Enter.
 **Add entry** accepts an undiscovered path or GitHub account. Names are derived
-from account identity; no manual naming is required. Nothing is uploaded until
-you submit. **Add OpenCode API key** accepts an OpenRouter or Venice key, verifies
+from account identity; selected Claude and Codex profiles also expose an editable
+model field and are named `account (model)`. Nothing is uploaded until you
+submit. **Add OpenCode API key** accepts an OpenRouter or Venice key, verifies
 it without running a paid completion, loads the provider's current tool-capable
 text models, and saves the chosen model with the encrypted OpenCode profile. You
 can also select local logins while creating a box.
@@ -231,7 +232,10 @@ Run `vmbox profiles upload` to detect and upload local Claude/Codex/OpenCode/Git
 in a table without creating a box or allocating compute. Space or Enter toggles
 each profile's upload checkbox; **Add entry** adds a custom path or GitHub account. There is no
 name prompt: names use the account email/username/ID when available, otherwise
-the source directory, with a suffix for existing names. For scripts,
+the source directory, with a suffix for existing names. Claude and Codex uploads
+require an explicit model (prefilled from their local settings when available),
+write it into the saved configuration snapshot, and include it in the profile
+name so boxes with different model defaults remain distinguishable. For scripts,
 use `vmbox profiles save APPLICATION NAME --from SOURCE` (`SOURCE` is a local
 directory for Claude/Codex/OpenCode, or `HOST:USER` for GitHub).
 The separate **Add OpenCode API key** action supports OpenRouter and Venice. It

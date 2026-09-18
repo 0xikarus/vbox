@@ -25,12 +25,14 @@ func TestLoginProfileValidation(t *testing.T) {
 		valid           bool
 	}{
 		{"codex", "work", "auth.json", true},
+		{"codex", "person@example.test (gpt-test)", "auth.json", true},
 		{"opencode", "work", "auth.json", true},
 		{"opencode", "work", "opencode.json", true},
 		{"opencode", "work", "../auth.json", false},
 		{"claude", "personal", ".credentials.json", true},
 		{"shell", "work", "auth.json", false},
 		{"codex", "../work", "auth.json", false},
+		{"codex", "work/model", "auth.json", false},
 		{"codex", "work", "../auth.json", false},
 		{"claude", "work", "auth.json", false},
 	} {

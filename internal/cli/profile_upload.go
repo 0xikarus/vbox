@@ -11,8 +11,8 @@ import (
 )
 
 type uploadEntry struct {
-	application, path, choice *formField
-	saved                     bool
+	application, path, model, choice *formField
+	saved                            bool
 }
 
 func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token string) error {
@@ -59,14 +59,22 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				return fmt.Sprintf("%s %-8s %-*s %s", mark, entry.application.Value, accountWidth, tuiLabel(account, accountWidth), strings.TrimPrefix(label, "Local: "))
 			}
 			fields = append(fields, entry.choice)
+			if p.app == "claude" || p.app == "codex" {
+				entry.model = &formField{Label: p.app + " model", Value: detectedProfileModel(p.app, path)}
+				entry.model.When = func() bool { return entry.choice.Value == "Upload" && !entry.saved }
+				fields = append(fields, entry.model)
+			}
 		}
 	}
 	add := &formField{Label: "[ Add entry ]"}
 	add.AddFields = func() []*formField {
-		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "opencode", "github"}}, path: &formField{Label: "Path / HOST:USER"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
+		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "opencode", "github"}}, path: &formField{Label: "Path / HOST:USER"}, model: &formField{Label: "Agent model"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
+		entry.model.When = func() bool {
+			return (entry.application.Value == "claude" || entry.application.Value == "codex") && entry.choice.Value == "Upload" && !entry.saved
+		}
 		entry.choice.Checkbox = true
 		entries = append(entries, entry)
-		return []*formField{entry.application, entry.path, entry.choice}
+		return []*formField{entry.application, entry.path, entry.model, entry.choice}
 	}
 	fields = append(fields, add)
 	providers := a.openCodeAPIProviderChoices()
@@ -93,7 +101,19 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			if strings.TrimSpace(path) == "" {
 				return fmt.Errorf("enter a path (Claude/Codex) or HOST:USER (GitHub)")
 			}
+			model := ""
+			if app == "claude" || app == "codex" {
+				if entry.model != nil {
+					model = strings.TrimSpace(entry.model.Value)
+				}
+				if model == "" {
+					return fmt.Errorf("enter the %s model for this profile", app)
+				}
+			}
 			base := profileAccountName(app, path)
+			if model != "" {
+				base = profileNameWithModel(app, path, model)
+			}
 			name := base
 			for i := 2; ; i++ {
 				used := false
@@ -109,7 +129,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				name = fmt.Sprintf("%s-%d", base, i)
 			}
 			progress("Uploading " + app + " / " + name + "…")
-			profile, err := a.saveLocalLoginProfile(ctx, c, token, app, name, path)
+			profile, err := a.saveLocalLoginProfileWithModel(ctx, c, token, app, name, path, model)
 			if err != nil {
 				return err
 			}
