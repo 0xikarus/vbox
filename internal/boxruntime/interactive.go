@@ -66,7 +66,16 @@ func interactiveArgv(session, agent string) ([]string, error) {
 func persistentAgentArgv(session, agent string) ([]string, error) {
 	switch agent {
 	case "codex":
-		return []string{agent, "-c", "check_for_update_on_startup=false"}, nil
+		// A box is a disposable, externally sandboxed machine, so Codex runs with
+		// approvals and its own sandbox off. Without this it prompts before every
+		// command and tries to build its own sandbox namespace, which the
+		// container runtime refuses — the failure surfaces to the agent as
+		// "the workspace sandbox is failing to create its namespace" before any
+		// repository command runs. OpenCode gets the same treatment from --auto.
+		// These are process flags rather than config keys because an imported
+		// login profile ships its own config.toml and Codex rewrites that file at
+		// runtime; flags cannot be overwritten by either.
+		return []string{agent, "-c", "check_for_update_on_startup=false", "--dangerously-bypass-approvals-and-sandbox"}, nil
 	case "opencode":
 		return []string{agent, "--auto", "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
 	case "claude":

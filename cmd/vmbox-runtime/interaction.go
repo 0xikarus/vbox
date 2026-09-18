@@ -198,7 +198,7 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		if err != nil {
 			return true, err
 		}
-		return true, boxruntime.DeliverCodexChat(context.Background(), home, args[1], inbound)
+		return true, boxruntime.DeliverCodexChat(context.Background(), runtime.Root, home, args[1], inbound)
 	case "chat-codex-start":
 		if len(args) != 2 {
 			return true, fmt.Errorf("chat-codex-start requires SESSION")

@@ -318,7 +318,7 @@ func nextChatInbound(home, session string) (chatInboundFile, string, bool, error
 	return event, "", false, nil
 }
 
-func DeliverCodexChat(ctx context.Context, home, session string, inbound ChatInbound) error {
+func DeliverCodexChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
 	if err := StoreChatInbound(home, session, inbound); err != nil {
 		return err
 	}
@@ -339,8 +339,23 @@ func DeliverCodexChat(ctx context.Context, home, session string, inbound ChatInb
 		}
 		prompt += "\nInspect the referenced images as message data before responding."
 	}
-	args := []string{"queue", "--thread", session, "--message", prompt}
-	return runCodexQueue(ctx, home, path, args)
+	thread, err := CodexThreadID(root, home, session, WorkspaceDirectory())
+	if err != nil {
+		return err
+	}
+	args := []string{"queue", "--thread", thread, "--message", prompt}
+	if err := runCodexQueue(ctx, home, path, args); err != nil {
+		// A remembered id can outlive its thread; re-read once before failing.
+		if forget := ForgetCodexThread(root, session); forget != nil {
+			return err
+		}
+		thread, idErr := CodexThreadID(root, home, session, WorkspaceDirectory())
+		if idErr != nil {
+			return err
+		}
+		return runCodexQueue(ctx, home, path, []string{"queue", "--thread", thread, "--message", prompt})
+	}
+	return nil
 }
 
 // StartCodexChat starts a new interactive Codex session with the first Agent
@@ -377,7 +392,9 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 		return err
 	}
 	if !created {
-		return fmt.Errorf("codex chat session %q already exists", session)
+		// The session is already running Codex, so queue into it rather than
+		// refusing and leaving the message undelivered.
+		return DeliverCodexChat(ctx, root, home, session, inbound)
 	}
 	return nil
 }

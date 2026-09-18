@@ -128,6 +128,15 @@ printf '%s\n' "$@" >> "$HOME/registration-args"
 				if agent == "claude" {
 					want += "--scope\nuser\n"
 				}
+				// Codex sanitizes the environment it gives an MCP server, so the
+				// variables the desktop server needs are passed explicitly.
+				if agent == "codex" {
+					for _, key := range desktopMCPEnvironment {
+						if value := os.Getenv(key); value != "" {
+							want += "--env\n" + key + "=" + value + "\n"
+						}
+					}
+				}
 				want += "--\n" + managedDesktopRuntimePath + "\ndesktop-mcp\n"
 				if readErr != nil || string(args) != want {
 					t.Fatalf("registration argv: %q, %v", args, readErr)
