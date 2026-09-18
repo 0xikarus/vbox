@@ -562,12 +562,26 @@ func agentInputReady(agent, content string) bool {
 		if !strings.Contains(content, "Claude Code v") {
 			return false
 		}
-		for _, line := range strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n") {
+		lines := strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n")
+		for _, line := range lines {
 			if strings.HasPrefix(strings.TrimSpace(line), "❯ Try \"") {
 				return true
 			}
 		}
-		return false
+		// After the first turn Claude replaces the rotating Try placeholder with
+		// a personalized suggestion. Treat it as ready only when it is in the
+		// live input footer alongside the permission-mode status; an old prompt
+		// retained in scrollback while Claude is working is not sufficient.
+		if len(lines) > 8 {
+			lines = lines[len(lines)-8:]
+		}
+		prompt, status := false, false
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			prompt = prompt || strings.HasPrefix(line, "❯")
+			status = status || strings.Contains(line, "bypass permissions on")
+		}
+		return prompt && status
 	default:
 		return false
 	}
