@@ -227,6 +227,48 @@ func TestEnsureAgentBackendStartsTheFacadeForEveryAgent(t *testing.T) {
 	}
 }
 
+// A restored snapshot can leave the well-known facade session running a shell
+// even though nothing is listening. The session name alone must not block a
+// replacement server from starting.
+func TestEnsureDesktopMCPHTTPReplacesAnUnreadyNamedSession(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
+	runtime := desktopRuntimePath()
+	if err := os.MkdirAll(filepath.Dir(runtime), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runtime, []byte("runtime"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	originalTmux, originalReady := tmuxCommand, desktopMCPHTTPReady
+	t.Cleanup(func() {
+		tmuxCommand = originalTmux
+		desktopMCPHTTPReady = originalReady
+	})
+	readyChecks := 0
+	desktopMCPHTTPReady = func(context.Context, string) bool {
+		readyChecks++
+		return readyChecks > 1
+	}
+	commands := []string{}
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		commands = append(commands, strings.Join(args, " "))
+		return nil, nil // has-session reports the stale named session exists.
+	}
+
+	if err := EnsureDesktopMCPHTTP(context.Background(), "worker-a"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(commands, "\n")
+	if !strings.Contains(joined, "kill-session -t ="+desktopMCPHTTPSession()) {
+		t.Fatalf("stale facade session was not stopped:\n%s", joined)
+	}
+	if !strings.Contains(joined, "new-session -d -s "+desktopMCPHTTPSession()) {
+		t.Fatalf("replacement facade session was not started:\n%s", joined)
+	}
+}
+
 func stubTmuxSessions(t *testing.T, sessions map[string]string) {
 	t.Helper()
 	original := tmuxCommand
