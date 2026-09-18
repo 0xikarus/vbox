@@ -106,6 +106,14 @@ func (s *Server) profileSyncRequest(ctx context.Context, tx *sql.Tx, accountID s
 			request.Files = append(request.Files, boxruntime.SyncFile{Path: "/data/home/.config/gh/hosts.yml", Mode: "0600", Data: data})
 			continue
 		}
+		if ref.Model != "" {
+			if err := loginprofile.SetModel(ref.Application, profile.Files, ref.Model); err != nil {
+				for _, data := range profile.Files {
+					clear(data)
+				}
+				return boxruntime.SyncRequest{}, "", "", err
+			}
+		}
 		names := make([]string, 0, len(profile.Files))
 		for name := range profile.Files {
 			names = append(names, name)

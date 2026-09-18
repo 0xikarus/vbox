@@ -61,6 +61,26 @@ function tableNote(text){const n=tableText(text);n.className='table-text state-n
 function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
+function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
+ root.replaceChildren();
+ const profileLabel=node('label','login profile ');profileLabel.className='field';
+ const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
+ const modelLabel=node('label','model ');modelLabel.className='field';
+ const modelInput=document.createElement('input'),modelList=document.createElement('datalist');modelInput.name='agentModel';modelInput.maxLength=200;modelInput.placeholder='Exact CLI model name';modelInput.setAttribute('list','create-model-options');modelList.id='create-model-options';modelLabel.append(modelInput,modelList);
+ root.append(profileLabel,modelLabel);
+ const populate=()=>{
+  const app=agentSelect.value,previous=profileSelect.value||selected;profileSelect.replaceChildren();modelList.replaceChildren();
+  const empty=node('option','None');empty.value='';profileSelect.append(empty);
+  const choices=profiles.filter(profile=>profile.application===app);
+  for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option);if(profile.model&&!Array.from(modelList.options).some(o=>o.value===profile.model))modelList.append(new Option(profile.model))}
+  if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
+  root.hidden=app==='shell'||choices.length===0;
+  syncModel();
+ };
+ const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelInput.required=hasProfile;if(hasProfile)modelInput.value=option?.dataset.model||'';else modelInput.value='';modelLabel.hidden=!hasProfile};
+ profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
+ return {profileSelect,modelInput};
+}
 // Re-push the complete saved box configuration. Reapplying a profile closes
 // stale agent conversations so the selected harness reloads its credentials.
 async function resyncBox(b){
@@ -224,13 +244,9 @@ function renderProfiles(identity,profiles){
  const choices=$('#profile-choices'),selected=choices.querySelector('select')?.value||'';choices.replaceChildren();
  for(const app of ['claude','codex','opencode','github']){
   const entries=profiles.filter(p=>p.application===app),branch=document.createElement('details');branch.open=true;branch.append(node('summary',app+' ('+entries.length+')'));const list=document.createElement('ul');
-  for(const p of entries){const item=node('li',p.name+' · saved '+p.createdAt+' ');item.append(button('Delete',async()=>{if(!confirm('Delete saved profile '+app+' / '+p.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(p.name),'DELETE');await refresh()}));list.append(item)}if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
+  for(const p of entries){const item=node('li',p.name+(p.model?' · '+p.model:'')+' · saved '+p.createdAt+' ');item.append(button('Delete',async()=>{if(!confirm('Delete saved profile '+app+' / '+p.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(p.name),'DELETE');await refresh()}));list.append(item)}if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
  }$('#profile-tree').replaceChildren(tree);
- const label=node('label','login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
- for(const app of ['claude','codex','opencode']){const entries=profiles.filter(p=>p.application===app);if(!entries.length)continue;const group=document.createElement('optgroup');group.label=app;for(const p of entries){const option=node('option',p.name);option.value=JSON.stringify({application:app,name:p.name});group.append(option)}select.append(group)}
- if([...select.options].some(option=>option.value===selected))select.value=selected;
- const syncAgent=()=>{const agent=$('#create select[name="defaultAgent"]');if(!agent)return;if(select.value){agent.value=JSON.parse(select.value).application;agent.disabled=true}else agent.disabled=false};
- select.addEventListener('change',syncAgent);label.append(select);choices.append(label);syncAgent();
+ renderCreationProfileChoices(choices,profiles,$('#create select[name="defaultAgent"]'),selected);
 }
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
@@ -255,7 +271,7 @@ async function refresh(){
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
 $('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=$('#profile-choices select')?.value,loginProfiles=profile?[JSON.parse(profile)]:[],tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=$('#profile-choices select')?.value,profileRef=profile?JSON.parse(profile):null,loginProfiles=profileRef?[{...profileRef,model:f.agentModel.value.trim()}]:[],tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));

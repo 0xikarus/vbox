@@ -40,6 +40,15 @@ func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, r
 		return fmt.Errorf("select at most %d login profile", maxBoxLoginProfiles)
 	}
 	for _, ref := range refs {
+		if ref.Model != "" {
+			probe := map[string][]byte{}
+			if err := loginprofile.SetModel(ref.Application, probe, ref.Model); err != nil {
+				return err
+			}
+			for _, data := range probe {
+				clear(data)
+			}
+		}
 		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: accountID}, ref.Application, ref.Name)
 		if err != nil {
 			return fmt.Errorf("selected %s profile %s is unavailable", ref.Application, ref.Name)

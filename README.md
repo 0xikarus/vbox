@@ -112,6 +112,11 @@ tools; `chat_message` works with or without a reply reference. The
 same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
 `desktop_type`, `desktop_key`), so agents can operate the box's computer.
 
+The controller and chat creation forms filter saved profiles to the selected
+harness and prefill the model stored in that profile. The model can be replaced
+with an exact Claude, Codex, or OpenCode CLI model name for that box; the saved
+encrypted profile remains unchanged.
+
 Agents can also address each other when the owner grants a contact edge.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
 accept an optional `contact`; the message is delivered into that box's same
