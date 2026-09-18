@@ -15,7 +15,7 @@ func TestInteractiveShellUsesSpecsWelcome(t *testing.T) {
 	port := fmt.Sprintf("%d", OpenCodeChatPort("managed-session"))
 	for agent, want := range map[string][]string{
 		"shell":    {"vmbox-runtime", "welcome"},
-		"codex":    {"codex", "-c", "check_for_update_on_startup=false"},
+		"codex":    {"codex", "-c", "check_for_update_on_startup=false", "--dangerously-bypass-approvals-and-sandbox"},
 		"claude":   {"env", "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", "/data/home/.local/share/vmbox/chat", "--dangerously-load-development-channels", "server:vmbox-desktop"},
 		"opencode": {"opencode", "--auto", "--hostname", "127.0.0.1", "--port", port},
 	} {

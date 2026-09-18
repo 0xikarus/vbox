@@ -18,6 +18,10 @@ const managedDesktopRuntimePath = "/data/home/bin/vmbox-runtime"
 // RegisterDesktopMCP registers only the selected client, before starting it.
 // Existing entries are never overwritten. Diagnostics omit configuration output
 // because unrelated MCP entries may contain credentials.
+// desktopMCPEnvironment is what `vmbox-runtime desktop-mcp` needs to find its
+// box: the workspace root and the tmux server holding the assignment fence.
+var desktopMCPEnvironment = []string{"HOME", "VMBOX_WORKSPACE_ROOT", "VMBOX_RUNTIME_DIR", "TMUX_TMPDIR", "XDG_RUNTIME_DIR", "VMBOX_DESKTOP_DISPLAY"}
+
 func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -59,6 +63,13 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	if err != nil {
 		return fmt.Errorf("selected agent is not installed")
 	}
+	if agent == "codex" {
+		// Re-asserted on every attach: an imported login profile ships its own
+		// config.toml, which would otherwise drop the box's permissions.
+		if err := EnsureCodexDefaults(home, WorkspaceDirectory()); err != nil {
+			return fmt.Errorf("could not apply codex box defaults: %w", err)
+		}
+	}
 	probe := exec.CommandContext(ctx, path, "mcp", "get", "vmbox-desktop")
 	probe.Env = append(os.Environ(), "HOME="+home)
 	output, err := probe.CombinedOutput()
@@ -84,6 +95,19 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	args := []string{"mcp", "add", "vmbox-desktop"}
 	if agent == "claude" {
 		args = append(args, "--scope", "user")
+	}
+	// Codex launches MCP servers with a sanitized environment, so the desktop
+	// server has to be told where its workspace and tmux server are. Without
+	// them it exits immediately with "worker assignment unavailable" and Codex
+	// reports "MCP startup incomplete (failed: vmbox-desktop)", leaving the agent
+	// with no chat_message tool to answer on. OpenCode and Claude inherit the
+	// environment instead, which is why only Codex loses the tools.
+	if agent == "codex" {
+		for _, key := range desktopMCPEnvironment {
+			if value := os.Getenv(key); value != "" {
+				args = append(args, "--env", key+"="+value)
+			}
+		}
 	}
 	args = append(args, "--", desktopRuntimePath(), "desktop-mcp")
 	cmd := exec.CommandContext(ctx, path, args...)

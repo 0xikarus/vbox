@@ -99,11 +99,24 @@ func TestDeliverCodexChatReferencesLocalImagesWithoutUnsupportedQueueFlags(t *te
 		got = append([]string(nil), args...)
 		return os.Remove(eventPath)
 	}
-	inbound := ChatInbound{ID: "message-1", Text: "Inspect [Image 1]", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
-	if err := DeliverCodexChat(context.Background(), home, "codex-chat", inbound); err != nil {
+	// Codex is addressed by the thread id it recorded, not by the tmux session
+	// name, so a thread started from a terminal can be reached too.
+	root := t.TempDir()
+	thread := "01a0b294-9d7d-7243-a1d8-f5caf047d919"
+	rollout := filepath.Join(home, ".codex", "sessions", "2026", "09", "18", "rollout-2026-09-18T03-34-39-"+thread+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(rollout), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 5 || !reflect.DeepEqual(got[:4], []string{"queue", "--thread", "codex-chat", "--message"}) {
+	meta := `{"type":"session_meta","payload":{"session_id":"` + thread + `","cwd":"` + WorkspaceDirectory() + `"}}` + "\n"
+	if err := os.WriteFile(rollout, []byte(meta), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	inbound := ChatInbound{ID: "message-1", Text: "Inspect [Image 1]", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
+	if err := DeliverCodexChat(context.Background(), root, home, "codex-chat", inbound); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 5 || !reflect.DeepEqual(got[:4], []string{"queue", "--thread", thread, "--message"}) {
 		t.Fatalf("unexpected codex queue arguments: %q", got)
 	}
 	if strings.Contains(strings.Join(got, "\n"), "-i") || !strings.Contains(got[4], "[Image 1]: ") || !strings.Contains(got[4], "/inbox/codex-chat/files/message-1/image-1.png") {

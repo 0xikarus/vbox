@@ -157,12 +157,9 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	}
 	selected := reusableBoxTask(tasks, box.State, request.Agent, request.Session)
 	if selected == nil {
-		if request.Agent == "codex" && !explicitSession {
-			// A primary terminal can contain an empty, unaddressable Codex thread.
-			// New Agent chats get their own session so the first message can be
-			// passed to Codex at process start.
-			request.Session = ""
-		}
+		// Codex used to get a fresh session here because a running thread could
+		// not be addressed. It can now, so an existing primary Codex is reused
+		// instead of starting a second one beside it.
 		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images, SenderBoxID: request.SenderBoxID})
 		if err != nil {
 			return response, err
