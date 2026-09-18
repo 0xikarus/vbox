@@ -25,20 +25,21 @@ import (
 )
 
 type App struct {
-	In                io.Reader
-	Out, Err          io.Writer
-	Environ           map[string]string
-	HTTP              *http.Client
-	ConfigPath        string
-	WorkingDir        string
-	ProgressInterval  time.Duration
-	ExitPromptTimeout time.Duration
-	Runner            procexec.Runner
-	IsTerminal        func() bool
-	Verbose           bool
-	creationProgress  func(string)
-	authReplacements  map[string]string
-	authPrompt        func(string) (string, error)
+	In                   io.Reader
+	Out, Err             io.Writer
+	Environ              map[string]string
+	HTTP                 *http.Client
+	ConfigPath           string
+	WorkingDir           string
+	ProgressInterval     time.Duration
+	ExitPromptTimeout    time.Duration
+	Runner               procexec.Runner
+	IsTerminal           func() bool
+	Verbose              bool
+	creationProgress     func(string)
+	authReplacements     map[string]string
+	authPrompt           func(string) (string, error)
+	openCodeAPIProviders []openCodeAPIProvider
 }
 
 type stringList []string
