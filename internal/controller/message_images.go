@@ -68,12 +68,14 @@ func (s *Server) chatInstruction(messageID, agent string, ordinal int) string {
 		return ""
 	}
 	if ordinal > 1 && every > 1 && (ordinal-1)%every != 0 {
-		return fmt.Sprintf(defaultChatReminder, messageID, messageID)
-	}
-	if template == "" {
+		template = defaultChatReminder
+	} else if template == "" {
 		template = defaultChatInstruction
 	}
-	return fmt.Sprintf(template, messageID, messageID, messageID)
+	// The envelope is operator-configurable, so every %s is filled rather than
+	// counted: a template with a different number of them used to reach the
+	// agent carrying Go's %!(EXTRA ...) complaint.
+	return strings.ReplaceAll(template, "%s", messageID)
 }
 
 // chatReference is the short handle an agent echoes as replyTo.

@@ -74,6 +74,7 @@ func testDesktopPrivateDataRoutes(t *testing.T, store *Store, owner, other Princ
 	if response.Code != 200 || strings.Contains(response.Body.String(), value) {
 		t.Fatal("private password in history or history query failed")
 	}
+	testBoxMessageHistoryReturnsMessages(t, store, server, invoke, owner, box)
 	response = invoke(server.deleteDesktopSecret, "DELETE", "", "private-login", other)
 	if response.Code != 404 {
 		t.Fatal("cross-account secret deletion accepted")
@@ -163,4 +164,36 @@ func testDesktopPrivateDataRoutes(t *testing.T, store *Store, owner, other Princ
 		t.Fatal(err)
 	}
 
+}
+
+// An empty history hides a column mismatch between the query and the scan, so
+// the chat UI only broke once a box had said something. One real message is
+// enough to catch it.
+func testBoxMessageHistoryReturnsMessages(t *testing.T, store *Store, server *Server, invoke func(func(http.ResponseWriter, *http.Request, Principal), string, string, string, Principal) *httptest.ResponseRecorder, owner Principal, box string) {
+	t.Helper()
+	task := uuid()
+	if _, err := store.DB.Exec(`INSERT INTO box_tasks(id,account_id,logical_box_id,user_id,requested_role,agent,prompt,state,idempotency_key)
+		VALUES($1,$2,$3,$4,'owner','codex','history fixture','active',$5)`, task, owner.AccountID, box, owner.UserID, "history-fixture-"+task); err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range []struct{ direction, body string }{{"user", "history-question"}, {"agent", "history-answer"}} {
+		if _, err := store.DB.Exec(`INSERT INTO box_messages(id,account_id,task_id,direction,body,state,idempotency_key)
+			VALUES($1,$2,$3,$4,$5,'delivered',$6)`, uuid(), owner.AccountID, task, message.direction, message.body, message.direction+"-"+task); err != nil {
+			t.Fatal(err)
+		}
+	}
+	response := invoke(server.boxMessageHistory, "GET", "", "", owner)
+	if response.Code != 200 {
+		t.Fatalf("history with messages failed: %d %s", response.Code, response.Body.String())
+	}
+	for _, want := range []string{"history-question", "history-answer"} {
+		if !strings.Contains(response.Body.String(), want) {
+			t.Fatalf("history lost %q: %s", want, response.Body.String())
+		}
+	}
+	// The fixture task is active, which would make the box look busy to the
+	// idle checks that follow.
+	if _, err := store.DB.Exec(`DELETE FROM box_tasks WHERE id=$1`, task); err != nil {
+		t.Fatal(err)
+	}
 }

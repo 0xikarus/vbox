@@ -83,3 +83,26 @@ func TestChatInstructionSkipsShell(t *testing.T) {
 		t.Fatalf("shell agents never get the chat envelope, got %q", got)
 	}
 }
+
+// The envelope used to be formatted with a fixed number of arguments, so the
+// default template reached the agent with Go's %!(EXTRA string=...) appended.
+func TestChatInstructionNeverLeaksFormatComplaints(t *testing.T) {
+	servers := map[string]*Server{
+		"default":     {},
+		"one":         {ChatInstructionTemplate: "\nchat %s"},
+		"three":       {ChatInstructionTemplate: "\n%s %s %s"},
+		"none":        {ChatInstructionTemplate: "\nreply in chat"},
+		"every-third": {ChatInstructionEvery: 3},
+	}
+	for name, server := range servers {
+		for _, ordinal := range []int{1, 2, 3, 4} {
+			got := server.chatInstruction("m1", "claude", ordinal)
+			if strings.Contains(got, "%!") || strings.Contains(got, "%s") {
+				t.Fatalf("%s ordinal %d leaked formatting: %q", name, ordinal, got)
+			}
+		}
+	}
+	if got := (&Server{ChatInstructionTemplate: "\n%s %s %s"}).chatInstruction("m1", "claude", 1); !strings.Contains(got, "m1 m1 m1") {
+		t.Fatalf("every placeholder must be filled: %q", got)
+	}
+}
