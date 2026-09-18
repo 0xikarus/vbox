@@ -215,10 +215,12 @@ var CodexAppServerReady = func(ctx context.Context, session string) (bool, error
 	return true, nil
 }
 
-// codexAppServerSession is the tmux session holding a session's app server. The
-// vmbox-internal- prefix keeps it out of the desktop's viewer windows, and tmux
-// owning it means it dies with the box rather than outliving it.
-func codexAppServerSession(session string) string { return "vmbox-internal-codex-" + session }
+// codexAppServerPrefix marks the tmux session holding a session's app server.
+// The vmbox-internal- prefix keeps it out of the desktop's viewer windows, and
+// tmux owning it means it dies with the box rather than outliving it.
+const codexAppServerPrefix = "vmbox-internal-codex-"
+
+func codexAppServerSession(session string) string { return codexAppServerPrefix + session }
 
 // EnsureCodexAppServer starts the app server the terminal and chat both talk to,
 // and waits for it to accept a connection. Starting it before the terminal
