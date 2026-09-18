@@ -38,6 +38,7 @@ var agentReadyTimeout = 20 * time.Second
 var tmuxSubmitPause = waitBeforeTmuxSubmit
 var agentReadySettlePause = waitForAgentSettle
 var tmuxSubmitConfirmPause = waitBeforeTmuxSubmitConfirmation
+var claudeChannelReadyWait = waitForClaudeChannelReady
 
 func waitBeforeTmuxSubmit(ctx context.Context) error {
 	timer := time.NewTimer(150 * time.Millisecond)
@@ -242,10 +243,10 @@ func DeliverTmuxKeys(ctx context.Context, root, session, messageID string, keys 
 	return nil
 }
 
-// ResetAgentContext runs the harness's native new-conversation command inside
-// the existing watched TUI. The command and carriage return have separate
-// idempotency markers so a retry can finish an interrupted reset without ever
-// replaying the command into a second context.
+// ResetAgentContext starts a fresh conversation in the existing watched tmux
+// session. Codex and OpenCode expose native commands. Claude channels have no
+// control/reset notification, so Claude is respawned without --resume and the
+// next channel event reaches a genuinely empty context.
 func ResetAgentContext(ctx context.Context, root, session, agent, messageID string) error {
 	if err := validateTmuxToken("session", session); err != nil {
 		return err
@@ -253,25 +254,111 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 	if err := validateTmuxToken("message ID", messageID); err != nil {
 		return err
 	}
-	command := ""
 	switch agent {
 	case "claude":
-		command = "/clear"
+		return resetClaudeContext(ctx, root, session, messageID)
 	case "codex", "opencode":
-		command = "/new"
+		// Continue below.
 	default:
 		return fmt.Errorf("unsupported context reset agent %q", agent)
 	}
 	if err := waitForAgentReady(ctx, session, agent); err != nil {
 		return err
 	}
-	if err := DeliverTmuxInput(ctx, root, session, messageID+"-command", command, false); err != nil {
+	if err := DeliverTmuxInput(ctx, root, session, messageID+"-command", "/new", false); err != nil {
 		return err
 	}
 	if err := tmuxSubmitPause(ctx); err != nil {
 		return err
 	}
 	return DeliverTmuxInput(ctx, root, session, messageID+"-submit", "\r", false)
+}
+
+func resetClaudeContext(ctx context.Context, root, session, messageID string) error {
+	directory := filepath.Join(root, "messages")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return err
+	}
+	pending := filepath.Join(directory, messageID+"-restart.pending")
+	restarted := filepath.Join(directory, messageID+"-restart.ready")
+	delivered := filepath.Join(directory, messageID+"-restart.delivered")
+	var priorChannels map[string]struct{}
+	if _, err := os.Stat(delivered); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if _, err := os.Stat(restarted); errors.Is(err, os.ErrNotExist) {
+		file, createErr := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if errors.Is(createErr, os.ErrExist) {
+			return ErrAmbiguousMessage
+		}
+		if createErr != nil {
+			return createErr
+		}
+		if _, createErr = fmt.Fprintf(file, "%s\n", time.Now().UTC().Format(time.RFC3339Nano)); createErr == nil {
+			createErr = file.Sync()
+		}
+		if closeErr := file.Close(); createErr == nil {
+			createErr = closeErr
+		}
+		if createErr != nil {
+			return createErr
+		}
+		argv, err := persistentAgentArgv(session, "claude")
+		if err != nil {
+			return err
+		}
+		priorChannels, err = claudeChannelOwners(WorkloadHome(), session)
+		if err != nil {
+			return err
+		}
+		args := []string{"respawn-pane", "-k", "-t", session, "-c", WorkspaceDirectory(), "--"}
+		args = append(args, argv...)
+		if _, err := tmuxCommand(ctx, "", args...); err != nil {
+			return ErrAmbiguousMessage
+		}
+		if _, err := tmuxCommand(ctx, "", "set-environment", "-t", session, taskAgentEnvironment, "claude"); err != nil {
+			return ErrAmbiguousMessage
+		}
+		if err := os.Rename(pending, restarted); err != nil {
+			return ErrAmbiguousMessage
+		}
+	} else if err != nil {
+		return err
+	}
+	if err := claudeChannelReadyWait(ctx, session, priorChannels); err != nil {
+		return err
+	}
+	if err := waitForAgentReady(ctx, session, "claude"); err != nil {
+		return err
+	}
+	if err := agentReadySettlePause(ctx); err != nil {
+		return err
+	}
+	if err := os.Rename(restarted, delivered); err != nil {
+		return ErrAmbiguousMessage
+	}
+	return nil
+}
+
+func waitForClaudeChannelReady(ctx context.Context, session string, prior map[string]struct{}) error {
+	for {
+		owners, err := claudeChannelOwners(WorkloadHome(), session)
+		if err != nil {
+			return err
+		}
+		for owner := range owners {
+			if _, existed := prior[owner]; !existed {
+				return nil
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(agentReadyPollInterval):
+		}
+	}
 }
 
 func validTmuxKey(key string) bool {
@@ -562,26 +649,12 @@ func agentInputReady(agent, content string) bool {
 		if !strings.Contains(content, "Claude Code v") {
 			return false
 		}
-		lines := strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n")
-		for _, line := range lines {
+		for _, line := range strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n") {
 			if strings.HasPrefix(strings.TrimSpace(line), "❯ Try \"") {
 				return true
 			}
 		}
-		// After the first turn Claude replaces the rotating Try placeholder with
-		// a personalized suggestion. Treat it as ready only when it is in the
-		// live input footer alongside the permission-mode status; an old prompt
-		// retained in scrollback while Claude is working is not sufficient.
-		if len(lines) > 8 {
-			lines = lines[len(lines)-8:]
-		}
-		prompt, status := false, false
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			prompt = prompt || strings.HasPrefix(line, "❯")
-			status = status || strings.Contains(line, "bypass permissions on")
-		}
-		return prompt && status
+		return false
 	default:
 		return false
 	}

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -137,16 +138,17 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 	if err != nil {
 		return
 	}
-	readyDir := filepath.Join(home, ".local", "share", "vmbox", "chat", "channel-ready")
+	readyDir := claudeChannelReadyDir(home)
 	if os.MkdirAll(readyDir, 0700) != nil {
 		return
 	}
-	ready := filepath.Join(readyDir, session)
+	owner := ID("channel_")
+	ready := claudeChannelReadyPath(home, session, owner)
 	defer os.Remove(ready)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		_ = os.WriteFile(ready, []byte(time.Now().UTC().Format(time.RFC3339Nano)), 0600)
+		_ = os.WriteFile(ready, []byte(owner), 0600)
 		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
 			content := event.Text
 			if len(event.Paths) > 0 {
@@ -166,6 +168,32 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func claudeChannelReadyDir(home string) string {
+	return filepath.Join(home, ".local", "share", "vmbox", "chat", "channel-ready")
+}
+
+func claudeChannelReadyPath(home, session, owner string) string {
+	return filepath.Join(claudeChannelReadyDir(home), session+"."+owner)
+}
+
+func claudeChannelOwners(home, session string) (map[string]struct{}, error) {
+	owners := map[string]struct{}{}
+	entries, err := os.ReadDir(claudeChannelReadyDir(home))
+	if errors.Is(err, os.ErrNotExist) {
+		return owners, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	prefix := session + ".channel_"
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+			owners[strings.TrimPrefix(entry.Name(), session+".")] = struct{}{}
+		}
+	}
+	return owners, nil
 }
 
 func callDesktopTool(ctx context.Context, assignment, name string, args json.RawMessage) (map[string]any, error) {
