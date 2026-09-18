@@ -140,6 +140,11 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		}
 		snapshot.BoxName = os.Getenv("VMBOX_NAME")
 		return true, json.NewEncoder(os.Stdout).Encode(snapshot)
+	case "chat-reset":
+		if len(args) != 4 {
+			return true, fmt.Errorf("chat-reset requires SESSION AGENT MESSAGE_ID")
+		}
+		return true, boxruntime.ResetAgentContext(context.Background(), runtime.Root, args[1], args[2], args[3])
 	case "chat-pull":
 		if len(args) != 2 {
 			return true, fmt.Errorf("chat-pull requires SESSION")

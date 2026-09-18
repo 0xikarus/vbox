@@ -10,6 +10,7 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
 func silentMessage(text string) (string, bool) {
@@ -74,4 +75,62 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, values)
+}
+
+// clearBoxContextHandler starts a fresh context inside the active chat task's
+// existing tmux session. Chat history remains an audit trail; only the agent's
+// in-memory conversation is reset.
+func (s *Server) clearBoxContextHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("Idempotency-Key is required"))
+		return
+	}
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Errorf("box unavailable"))
+		return
+	}
+	if box.State != v1.LogicalBoxRunning {
+		writeError(w, http.StatusConflict, fmt.Errorf("logical box is %s, not running", box.State))
+		return
+	}
+	if box.DefaultAgent != "codex" && box.DefaultAgent != "claude" && box.DefaultAgent != "opencode" {
+		writeError(w, http.StatusConflict, fmt.Errorf("the box does not use an agent context"))
+		return
+	}
+	tasks, err := s.Store.ListBoxTasks(r.Context(), p, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("chat task unavailable"))
+		return
+	}
+	task := reusableBoxTask(tasks, box.State, box.DefaultAgent, "")
+	if task == nil || task.State != "active" {
+		writeError(w, http.StatusConflict, fmt.Errorf("no active %s chat context to clear", box.DefaultAgent))
+		return
+	}
+	assignment, err := s.Store.assignment(r.Context(), p.AccountID, box.ID)
+	if err != nil {
+		writeError(w, http.StatusConflict, fmt.Errorf("box assignment unavailable"))
+		return
+	}
+	prov, err := s.provider(r.Context(), p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("worker unavailable"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	resetID := terminalInputMessageID(p.AccountID, box.ID, task.Session, key)
+	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "chat-reset", task.Session, task.Agent, resetID}, provider.ExecOptions{})
+	if execErr != nil || result.ExitCode != 0 {
+		detail := strings.TrimSpace(result.Stderr)
+		if detail == "" && execErr != nil {
+			detail = execErr.Error()
+		}
+		writeError(w, http.StatusConflict, fmt.Errorf("could not clear agent context: %s", detail))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"agent": task.Agent, "session": task.Session, "taskId": task.ID})
 }

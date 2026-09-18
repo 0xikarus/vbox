@@ -400,6 +400,8 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 		{path: "/app.css", contentType: "text/css", contains: []string{"@media(max-width:600px)", "[hidden]"}},
 		{path: "/controller.css", contentType: "text/css", contains: []string{"@media(max-width:600px)", "table-layout:fixed"}},
 		{path: "/app.js", contentType: "text/javascript", contains: []string{"/v1/provider-schemas", "If-Match", "defaultAgent", "epoch++"}},
+		{path: "/chat", contentType: "text/html", contains: []string{"chat-clear-context", "Clear context"}},
+		{path: "/chat.js", contentType: "text/javascript", contains: []string{"#chat-clear-context", "/messages/clear-context"}},
 		{path: "/favicon.svg", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
 		{path: "/favicon.ico", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
 	} {
