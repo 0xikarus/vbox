@@ -77,10 +77,25 @@ func chatEventID() (string, error) {
 	return hex.EncodeToString(value), nil
 }
 
+type chatSessionKey struct{}
+
+// WithChatSession names the conversation a chat event belongs to. A caller that
+// is not running inside the conversation's tmux session -- the HTTP tool facade
+// serves every session from one process -- has to say which one it means.
+func WithChatSession(ctx context.Context, session string) context.Context {
+	return context.WithValue(ctx, chatSessionKey{}, session)
+}
+
 // chatSession names the conversation this process belongs to. Codex's MCP
 // server is a child of the app server, which tmux keeps in its own session, so
 // the session a process sits in is not always the one the controller reads.
 func chatSession(ctx context.Context) (string, error) {
+	if named, ok := ctx.Value(chatSessionKey{}).(string); ok && named != "" {
+		if err := validateTmuxToken("session", named); err != nil {
+			return "", err
+		}
+		return named, nil
+	}
 	session, err := hostingSession(ctx)
 	if err != nil {
 		return "", err

@@ -139,9 +139,10 @@ func desktopMCPIndexHandler(writer http.ResponseWriter, request *http.Request) {
 		"server": "vmbox-desktop",
 		"tools":  names,
 		"usage": map[string]string{
-			"list": "GET /tools",
-			"call": "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
-			"auth": "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
+			"list":    "GET /tools",
+			"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
+			"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
+			"session": "chat_message and chat_ask post to the box's agent conversation; name another with an X-Vmbox-Session header",
 		},
 	})
 }
@@ -153,26 +154,82 @@ func desktopMCPCallHandler(assignment string) http.HandlerFunc {
 			writeDesktopMCPError(writer, http.StatusNotFound, "unknown desktop tool")
 			return
 		}
-		arguments, status, err := desktopMCPArguments(request, name)
+		query := request.URL.Query()
+		session := request.Header.Get("X-Vmbox-Session")
+		if session == "" {
+			session = query.Get("vmbox_session")
+		}
+		query.Del("vmbox_session")
+		arguments, status, err := desktopMCPArguments(request, query, name)
 		if err != nil {
 			writeDesktopMCPError(writer, status, err.Error())
 			return
 		}
 		ctx, cancel := context.WithTimeout(request.Context(), 30*time.Second)
 		defer cancel()
+		if desktopMCPChatTools[name] {
+			if session == "" {
+				if session, err = soleAgentConversation(ctx); err != nil {
+					writeDesktopMCPError(writer, http.StatusConflict, err.Error())
+					return
+				}
+			}
+			ctx = WithChatSession(ctx, session)
+		}
 		result, err := callDesktopTool(ctx, assignment, name, arguments)
 		if err != nil {
 			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
 			return
 		}
+		if session != "" {
+			result["session"] = session
+		}
 		writeDesktopMCPJSON(writer, http.StatusOK, result)
 	}
 }
 
-func desktopMCPArguments(request *http.Request, name string) (json.RawMessage, int, error) {
+// desktopMCPChatTools names the tools that write into a conversation. The
+// facade serves the whole box from one process, so it has to say which
+// conversation rather than letting the writer infer it from its own tmux
+// session, which is the facade's own.
+var desktopMCPChatTools = map[string]bool{"chat_message": true, "chat_ask": true}
+
+// soleAgentConversation names the box's agent conversation when there is
+// exactly one. With several, the caller has to choose: guessing would post a
+// script's message into somebody else's thread.
+func soleAgentConversation(ctx context.Context) (string, error) {
+	listed, err := tmuxCommand(ctx, "", "list-sessions", "-F", "#{session_name}")
+	if err != nil {
+		return "", fmt.Errorf("no agent conversation is running")
+	}
+	var conversations []string
+	for _, name := range strings.Fields(string(listed)) {
+		if strings.HasPrefix(name, "vmbox-internal-") || validateTmuxToken("session", name) != nil {
+			continue
+		}
+		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", name, taskAgentEnvironment)
+		if err != nil {
+			continue
+		}
+		agent := strings.TrimPrefix(strings.TrimSpace(string(marker)), taskAgentEnvironment+"=")
+		if agent == "codex" || agent == "claude" || agent == "opencode" {
+			conversations = append(conversations, name)
+		}
+	}
+	switch len(conversations) {
+	case 0:
+		return "", fmt.Errorf("no agent conversation is running")
+	case 1:
+		return conversations[0], nil
+	default:
+		return "", fmt.Errorf("name the conversation with X-Vmbox-Session; this box is running %s", strings.Join(conversations, ", "))
+	}
+}
+
+func desktopMCPArguments(request *http.Request, query url.Values, name string) (json.RawMessage, int, error) {
 	switch request.Method {
 	case http.MethodGet:
-		arguments, err := desktopMCPQueryArguments(request.URL.Query(), name)
+		arguments, err := desktopMCPQueryArguments(query, name)
 		if err != nil {
 			return nil, http.StatusBadRequest, err
 		}
