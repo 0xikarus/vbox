@@ -85,10 +85,15 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-private-profile"}`)}}
-	for _, name := range []string{"work", "personal"} {
-		if _, err = s.SaveLoginProfile(ctx, p, "codex", name, req); err != nil {
-			t.Fatal(err)
-		}
+	if _, err = s.SaveLoginProfile(ctx, p, "codex", "work", req); err != nil {
+		t.Fatal(err)
+	}
+	personal := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-private-profile-2"}`)}}
+	if _, err = s.SaveLoginProfile(ctx, p, "codex", "personal", personal); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SaveLoginProfile(ctx, p, "codex", "duplicate", req); err == nil {
+		t.Fatal("same profile content was saved under a second name")
 	}
 	if _, err = s.SaveLoginProfile(ctx, p, "codex", "work", req); err == nil {
 		t.Fatal("overwrote existing profile")

@@ -226,6 +226,9 @@ The web admin panel’s **Profiles** section shows an expandable account → app
 → profile tree. Owners can delete saved profiles (with confirmation)
 and select them when creating a box. Uploads happen only through the CLI. Saved credentials are encrypted,
 never exported, and immutable: upload refreshed credentials under a new name.
+Uploading byte-for-byte identical credentials and configuration under another
+name is rejected, preventing accidental double uploads; genuinely different
+snapshots can still coexist and can be deleted from the profile tree.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
 Run `vmbox profiles upload` to detect and upload local Claude/Codex/OpenCode/GitHub logins
