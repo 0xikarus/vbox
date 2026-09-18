@@ -175,30 +175,22 @@ func writeRollout(t *testing.T, home, id, workspace string) {
 	}
 }
 
-// A Codex that has not run a turn yet records no thread. Delivery must fall back
-// to its terminal rather than reporting failure, which is what sent the previous
-// implementation off to start a second Codex.
-func TestDeliverCodexChatTypesIntoTerminalWhenNoThreadRecorded(t *testing.T) {
+// A Codex that has not run a turn yet records no thread. Delivery falls back to
+// its terminal, and must use literal keys: Codex 0.155 ignores the bracketed
+// paste that Claude accepts, which made an earlier fallback report success
+// while the message never reached the agent.
+func TestDeliverCodexChatTypesLiteralKeysWhenNoThreadRecorded(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()
-	originalQueue, originalCommand := runCodexQueue, tmuxCommand
-	originalSettle, originalSubmit, originalConfirm := agentReadySettlePause, tmuxSubmitPause, tmuxSubmitConfirmPause
-	t.Cleanup(func() {
-		runCodexQueue, tmuxCommand = originalQueue, originalCommand
-		agentReadySettlePause, tmuxSubmitPause, tmuxSubmitConfirmPause = originalSettle, originalSubmit, originalConfirm
-	})
-	agentReadySettlePause = func(context.Context) error { return nil }
+	originalQueue, originalCommand, originalSubmit := runCodexQueue, tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() { runCodexQueue, tmuxCommand, tmuxSubmitPause = originalQueue, originalCommand, originalSubmit })
 	tmuxSubmitPause = func(context.Context) error { return nil }
-	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
 	queued := false
 	runCodexQueue = func(context.Context, string, string, []string) error { queued = true; return nil }
-	var buffered string
-	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+	var calls [][]string
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, args)
 		if len(args) > 0 && args[0] == "capture-pane" {
 			return []byte("OpenAI Codex\n\u203a Ask Codex to do anything"), nil
-		}
-		// The text is staged first, then a separate buffer submits it.
-		if len(args) > 0 && args[0] == "load-buffer" && buffered == "" {
-			buffered = stdin
 		}
 		return nil, nil
 	}
@@ -208,7 +200,24 @@ func TestDeliverCodexChatTypesIntoTerminalWhenNoThreadRecorded(t *testing.T) {
 	if queued {
 		t.Fatal("queued against a thread that does not exist")
 	}
-	if buffered != "hello" {
-		t.Fatalf("message typed into the terminal = %q", buffered)
+	var typed, submitted bool
+	for _, call := range calls {
+		if len(call) >= 5 && call[0] == "send-keys" && call[3] == "-l" && call[4] == "hello" {
+			typed = true
+		}
+		if len(call) >= 4 && call[0] == "send-keys" && call[3] == "Enter" {
+			submitted = typed
+		}
+	}
+	if !typed {
+		t.Fatalf("message was not sent as literal keys: %v", calls)
+	}
+	if !submitted {
+		t.Fatalf("message was not submitted after being typed: %v", calls)
+	}
+	for _, call := range calls {
+		if len(call) > 0 && (call[0] == "load-buffer" || call[0] == "paste-buffer") {
+			t.Fatalf("used bracketed paste, which Codex ignores: %v", calls)
+		}
 	}
 }
