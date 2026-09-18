@@ -50,7 +50,9 @@ async function api(path,method='GET',body,headers={}){
  const r=await fetch(path,{method,credentials:'same-origin',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
 }
-function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';try{await fn(e)}catch(err){$('#error').textContent=err.message}}}
+function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';try{await fn(e)}catch(err){$('#error').className='flash error';$('#error').textContent=err.message}}}
+// The banner is shared with errors, so success has to put the styling back.
+function notice(message){const el=$('#error');el.className='flash';el.textContent=message}
 function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
 function tableText(text){const t=text??'—',n=node('span',t);n.className=t==='—'?'table-text muted':'table-text';n.title=String(t);return n}
 // Secondary cell values (restoration state, failure reason) read as a dimmed
@@ -59,6 +61,33 @@ function tableNote(text){const n=tableText(text);n.className='table-text state-n
 function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
+// Re-push the instructions a box already carries. A replaced worker or a
+// restored hibernation can leave a running box behind its saved config, and
+// re-typing the same Markdown just to force a write is a poor way to fix it.
+async function resyncBox(b){
+ const result=await api(bp(b.id)+'/instructions/resync','POST',{'Idempotency-Key':crypto.randomUUID()},{},120000);
+ notice(result?.note||('Config re-synced to '+b.name+'.'));
+}
+// Hibernate then allocate again. Agents and tmux sessions do not survive it, so
+// it asks first; the workspace volume is kept either way.
+async function restartBox(b){
+ if(!confirm('Restart box "'+b.name+'"? It hibernates and starts again, so running agents and terminal sessions end. The workspace volume is kept, and the box picks up its current instructions and credentials on the way back up.'))return;
+ notice('Restarting '+b.name+'…');
+ await api(bp(b.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
+ const deadline=Date.now()+180000;
+ for(;;){
+  await new Promise(r=>setTimeout(r,3000));
+  const current=(await api('/v1/logical-boxes')).find(x=>x.id===b.id);
+  if(!current)throw Error('Box disappeared while restarting.');
+  const phase=boxPhase(current.state);
+  if(phase==='stopped'||phase==='failed')break;
+  if(Date.now()>deadline)throw Error('Still '+current.state+' after 3 minutes; resume it once it settles.');
+ }
+ await api(bp(b.id)+'/allocate','POST',{'Idempotency-Key':crypto.randomUUID()},{leaseOwner:'web'});
+ notice(b.name+' is starting again.');
+ await refresh();
+}
+
 // Box states that are still moving; only show an action the state can satisfy.
 const TRANSIENT_STATES=new Set(['reserved','attaching','hibernating','draining','deleting']);
 function boxPhase(state){if(state==='running')return 'running';if(state==='failed')return 'failed';if(state==='reserved'||state==='attaching')return 'creating';if(state==='deleting')return 'deleting';if(state==='hibernating'||state==='draining')return 'transitioning';return 'stopped'}
@@ -162,6 +191,18 @@ function renderBoxes(boxes){
   }
   const instructions=button('Instructions…',()=>openBoxInstructions(b));instructions.setAttribute('aria-label','Instructions for box '+b.name);actions.append(instructions);
   if(ownerTools){const credentials=button('Credentials…',()=>openBoxCredentials(b));credentials.setAttribute('aria-label','Credentials for box '+b.name);actions.append(credentials)}
+  if(boxPhase(b.state)==='running'){
+   const resync=button('Re-sync',()=>void resyncBox(b));
+   resync.title='Re-push the saved instructions to the running box';
+   resync.setAttribute('aria-label','Re-sync config for box '+b.name);actions.append(resync);
+  }
+  // Restart hibernates first, which only a running box can do; a stopped box
+  // already offers Resume, so offering Restart there would just fail.
+  if(boxPhase(b.state)==='running'){
+   const restart=button('Restart…',()=>void restartBox(b));
+   restart.title='Hibernate and start again; running agents and sessions end';
+   restart.setAttribute('aria-label','Restart box '+b.name);actions.append(restart);
+  }
   const remove=trashButton('Delete box '+b.name,async()=>{
    if(deletingBoxes.has(b.id)||!confirm('Delete box "'+b.name+'" and its workspace volume? Running processes will stop and all files in the volume will be permanently deleted. This cannot be undone. Shared fleet services and other boxes are kept.'))return;
    const version=epoch;deletingBoxes.add(b.id);remove.disabled=true;remove.title='requesting deletion…';

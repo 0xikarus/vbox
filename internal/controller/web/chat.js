@@ -526,7 +526,7 @@
   act('Instructions…','Edit the Markdown instructions synced into this box',()=>void openBoxInstructions(box));
   if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
   if(box.state==='running')act('Re-sync','Re-push the saved config to the running box',()=>void resyncBox(box));
-  act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
+  if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
   actions.append(at,ad);inspectRows.append(actions);
  }
  async function samplePing(){
@@ -692,8 +692,7 @@
    ['Instructions…',()=>void openBoxInstructions(box)],
   ];
   if(owner)items.push(['Imported profiles…',()=>void openBoxCredentials(box)]);
-  if(box.state==='running')items.push(['Re-sync config',()=>void resyncBox(box)]);
-  items.push(['Restart box…',()=>void restartBox(box)]);
+  if(box.state==='running')items.push(['Re-sync config',()=>void resyncBox(box)],['Restart box…',()=>void restartBox(box)]);
   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
   if(box.state==='running')items.splice(2,0,['Hibernate box',()=>void hibernateBox(box)]);
   for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
