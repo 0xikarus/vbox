@@ -13,79 +13,8 @@ import (
 // worker socket. It deliberately supports only RFB 3.8/None and raw encoding,
 // matching the private TigerVNC server. Never use this on a public listener.
 func CaptureRFB(conn net.Conn) (*image.RGBA, error) {
-	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		return nil, err
-	}
-	read := func(n int) ([]byte, error) { b := make([]byte, n); _, err := io.ReadFull(conn, b); return b, err }
-	write := func(b []byte) error {
-		for len(b) > 0 {
-			n, err := conn.Write(b)
-			if err != nil {
-				return err
-			}
-			if n == 0 {
-				return io.ErrShortWrite
-			}
-			b = b[n:]
-		}
-		return nil
-	}
-	version, err := read(12)
+	read, write, w, h, err := initializeRFB(conn, 10*time.Second)
 	if err != nil {
-		return nil, err
-	}
-	if string(version) != "RFB 003.008\n" {
-		return nil, fmt.Errorf("unsupported desktop protocol")
-	}
-	if err = write(version); err != nil {
-		return nil, err
-	}
-	count, err := read(1)
-	if err != nil {
-		return nil, err
-	}
-	if count[0] == 0 {
-		return nil, fmt.Errorf("desktop rejected connection")
-	}
-	types, err := read(int(count[0]))
-	if err != nil {
-		return nil, err
-	}
-	none := false
-	for _, v := range types {
-		if v == 1 {
-			none = true
-		}
-	}
-	if !none {
-		return nil, fmt.Errorf("private desktop security mode unavailable")
-	}
-	if err = write([]byte{1}); err != nil {
-		return nil, err
-	}
-	security, err := read(4)
-	if err != nil {
-		return nil, err
-	}
-	if binary.BigEndian.Uint32(security) != 0 {
-		return nil, fmt.Errorf("desktop authentication failed")
-	}
-	if err = write([]byte{1}); err != nil {
-		return nil, err
-	} // Shared: never evict a human viewer.
-	init, err := read(24)
-	if err != nil {
-		return nil, err
-	}
-	w, h := int(binary.BigEndian.Uint16(init)), int(binary.BigEndian.Uint16(init[2:]))
-	if w == 0 || h == 0 || w > 4096 || h > 4096 {
-		return nil, fmt.Errorf("desktop dimensions exceed capture limit")
-	}
-	nameLen := binary.BigEndian.Uint32(init[20:])
-	if nameLen > 4096 {
-		return nil, fmt.Errorf("desktop name exceeds limit")
-	}
-	if _, err = read(int(nameLen)); err != nil {
 		return nil, err
 	}
 	// 32 bits, 24 depth, little endian, true colour, RGB shifts 0/8/16.
@@ -170,4 +99,91 @@ func CaptureRFB(conn net.Conn) (*image.RGBA, error) {
 		}
 	}
 	return nil, fmt.Errorf("desktop did not return a complete frame")
+}
+
+// ProbeRFB completes a shared, unauthenticated RFB handshake on the private
+// desktop socket. Unlike a bare connect-and-close readiness probe, this is a
+// valid RFB client session and does not make TigerVNC blacklist the socket.
+func ProbeRFB(conn net.Conn) error {
+	_, _, _, _, err := initializeRFB(conn, 2*time.Second)
+	return err
+}
+
+func initializeRFB(conn net.Conn, timeout time.Duration) (func(int) ([]byte, error), func([]byte) error, int, int, error) {
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		return nil, nil, 0, 0, err
+	}
+	read := func(n int) ([]byte, error) { b := make([]byte, n); _, err := io.ReadFull(conn, b); return b, err }
+	write := func(b []byte) error {
+		for len(b) > 0 {
+			n, err := conn.Write(b)
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return io.ErrShortWrite
+			}
+			b = b[n:]
+		}
+		return nil
+	}
+	version, err := read(12)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	if string(version) != "RFB 003.008\n" {
+		return nil, nil, 0, 0, fmt.Errorf("unsupported desktop protocol")
+	}
+	if err = write(version); err != nil {
+		return nil, nil, 0, 0, err
+	}
+	count, err := read(1)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	if count[0] == 0 {
+		return nil, nil, 0, 0, fmt.Errorf("desktop rejected connection")
+	}
+	types, err := read(int(count[0]))
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	none := false
+	for _, v := range types {
+		if v == 1 {
+			none = true
+		}
+	}
+	if !none {
+		return nil, nil, 0, 0, fmt.Errorf("private desktop security mode unavailable")
+	}
+	if err = write([]byte{1}); err != nil {
+		return nil, nil, 0, 0, err
+	}
+	security, err := read(4)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	if binary.BigEndian.Uint32(security) != 0 {
+		return nil, nil, 0, 0, fmt.Errorf("desktop authentication failed")
+	}
+	if err = write([]byte{1}); err != nil {
+		return nil, nil, 0, 0, err
+	} // Shared: never evict a human viewer.
+	init, err := read(24)
+	if err != nil {
+		return nil, nil, 0, 0, err
+	}
+	w, h := int(binary.BigEndian.Uint16(init)), int(binary.BigEndian.Uint16(init[2:]))
+	if w == 0 || h == 0 || w > 4096 || h > 4096 {
+		return nil, nil, 0, 0, fmt.Errorf("desktop dimensions exceed capture limit")
+	}
+	nameLen := binary.BigEndian.Uint32(init[20:])
+	if nameLen > 4096 {
+		return nil, nil, 0, 0, fmt.Errorf("desktop name exceeds limit")
+	}
+	if _, err = read(int(nameLen)); err != nil {
+		return nil, nil, 0, 0, err
+	}
+	return read, write, w, h, nil
 }
