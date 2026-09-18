@@ -60,15 +60,16 @@ func Validate(app string, files map[string][]byte, now time.Time) error {
 	case "claude":
 		var c struct {
 			OAuth struct {
-				Access string `json:"accessToken"`
-				Expiry int64  `json:"expiresAt"`
+				Access  string `json:"accessToken"`
+				Refresh string `json:"refreshToken"`
+				Expiry  int64  `json:"expiresAt"`
 			} `json:"claudeAiOauth"`
 		}
 		if json.Unmarshal(files[".credentials.json"], &c) != nil || strings.TrimSpace(c.OAuth.Access) == "" {
 			return fmt.Errorf("Claude profile has no usable access token; run claude auth login locally, then save a new profile name")
 		}
-		if c.OAuth.Expiry <= now.UnixMilli() {
-			return fmt.Errorf("Claude profile is expired or has no expiry; refresh it with claude auth login locally, then save a new profile name")
+		if c.OAuth.Expiry <= now.UnixMilli() && strings.TrimSpace(c.OAuth.Refresh) == "" {
+			return fmt.Errorf("Claude profile is expired and has no refresh token; run claude auth login locally, then save a new profile name")
 		}
 	case "codex":
 		var c struct {
