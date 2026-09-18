@@ -365,17 +365,28 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 		}
 		prompt += "\nInspect the referenced images as message data before responding."
 	}
-	// Delivered through the session's app server, which is also what the terminal
-	// is attached to, so chat and the box act on the same thread.
+	// A blank conversation created by /new does not exist in the app server's
+	// thread/list until its first prompt. If the visible TUI is ready, type there
+	// so it remains the authority for which thread the user is watching. While a
+	// turn is running the pane is not input-ready, and app-server delivery safely
+	// queues into that already-materialized current thread.
+	if codexTUIInputReady(ctx, session) {
+		return deliverCodexThroughTUI(ctx, session, prompt, path)
+	}
 	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), prompt, event.Paths); err != nil {
 		return err
 	}
 	return os.Remove(path)
 }
 
+func codexTUIInputReady(ctx context.Context, session string) bool {
+	content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
+	return err == nil && agentInputReady("codex", string(content))
+}
+
 // StartCodexChat starts a new interactive Codex session with the first Agent
-// chat message in Codex's supported process arguments. Later messages use
-// DeliverCodexChat after the thread has been named for the tmux session.
+// chat message in Codex's supported process arguments. Later messages prefer
+// the input-ready TUI and use the shared app server while a turn is running.
 func StartCodexChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
 	if err := StoreChatInbound(home, session, inbound); err != nil {
 		return err

@@ -110,6 +110,59 @@ func TestDeliverCodexChatSendsTextAndImagePathsThroughTheAppServer(t *testing.T)
 		t.Fatalf("image was not sent as a local file: %v", gotImages)
 	}
 }
+
+// After /new, Codex shows an input-ready conversation that does not exist in
+// thread/list until its first prompt. App-server delivery would therefore reuse
+// the previous thread and leave the watched TUI blank. An input-ready pane must
+// receive the message through that visible TUI instead.
+func TestDeliverCodexChatUsesVisibleInputReadyTUI(t *testing.T) {
+	home := t.TempDir()
+	root := t.TempDir()
+	originalTurn, originalCommand, originalSubmit := CodexStartTurn, tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() {
+		CodexStartTurn, tmuxCommand, tmuxSubmitPause = originalTurn, originalCommand, originalSubmit
+	})
+	CodexStartTurn = func(context.Context, string, string, string, string, []string) error {
+		t.Fatal("input-ready Codex message was sent to an app-server thread instead of the visible TUI")
+		return nil
+	}
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	var calls []string
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("OpenAI Codex (v0.155.0)\n› Ask Codex to do anything\ngpt-6-astra default · /data/workspace"), nil
+		}
+		return nil, nil
+	}
+	if err := DeliverCodexChat(context.Background(), root, home, "codex-visible", ChatInbound{ID: "message-new", Text: "visible follow-up"}); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(calls, "\n")
+	if !strings.Contains(joined, "send-keys -t codex-visible -l visible follow-up") || !strings.Contains(joined, "send-keys -t codex-visible Enter") {
+		t.Fatalf("visible TUI did not receive and submit the follow-up: %v", calls)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "codex-visible", "message-new.json")); !os.IsNotExist(err) {
+		t.Fatalf("delivered inbox event remained: %v", err)
+	}
+}
+
+func TestNewestCodexThreadDoesNotPinRememberedConversation(t *testing.T) {
+	threads := []any{
+		map[string]any{"id": "new-visible", "recencyAt": float64(200)},
+		map[string]any{"id": "old-remembered", "recencyAt": float64(100)},
+	}
+	if got := newestCodexThread(threads, "old-remembered"); got != "new-visible" {
+		t.Fatalf("post-/new delivery selected %q, want the newly active thread", got)
+	}
+	withoutRecency := []any{
+		map[string]any{"id": "first"},
+		map[string]any{"id": "old-remembered"},
+	}
+	if got := newestCodexThread(withoutRecency, "old-remembered"); got != "old-remembered" {
+		t.Fatalf("old server fallback selected %q, want remembered thread", got)
+	}
+}
 func TestStartCodexChatPassesInitialMessageAndImagesAsArguments(t *testing.T) {
 	stubRegisteredAgent(t, "codex")
 	stubCodexBackend(t)
