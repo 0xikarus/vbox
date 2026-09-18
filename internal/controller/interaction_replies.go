@@ -2,12 +2,9 @@ package controller
 
 import (
 	"context"
-	"encoding/json"
-	"strings"
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
-	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
 const (
@@ -58,33 +55,20 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 	}
 	ticker := time.NewTicker(agentReplyPollInterval)
 	defer ticker.Stop()
-	var progress agentReplyProgress
 	if existing, found, err := s.Store.AgentBoxMessage(ctx, accountID, message.ID); err != nil {
 		return err
-	} else if found && existing.State == "streaming" {
-		progress.lastReply = existing.Text
+	} else if found && existing.State == "delivered" {
+		return nil
 	}
+	// The watched terminal is presentation, not a second chat transport. Every
+	// harness has the vmbox-desktop MCP server, so only its structured outbox may
+	// create Agent chat messages; scraping rendered TUI output races that outbox
+	// and exposes ordinary stdout as duplicate chat bubbles.
 	for {
 		if done, err := s.pullStructuredAgentReply(ctx, prov, assignment.Slot.ServiceID, accountID, task, message); err != nil {
 			s.Logger.Warn("structured agent reply unavailable", "task", task.ID, "message", message.ID, "error", err)
 		} else if done {
 			return nil
-		}
-		result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-screen", task.Session, "2000"}, provider.ExecOptions{})
-		if execErr == nil && result.ExitCode == 0 {
-			var snapshot v1.TerminalSnapshot
-			if json.Unmarshal([]byte(result.Stdout), &snapshot) == nil {
-				reply, complete := extractAgentReply(task.Agent, message.Text, snapshot.Content)
-				if reply, state, done := progress.observe(reply, complete); reply != "" {
-					if _, err := s.Store.UpsertAgentBoxMessage(ctx, accountID, task.ID, message.ID, reply, state); err != nil {
-						return err
-					}
-					if done {
-						s.pushAgentReply(ctx, accountID, task, reply)
-						return nil
-					}
-				}
-			}
 		}
 		select {
 		case <-ctx.Done():
@@ -92,112 +76,4 @@ func (s *Server) captureAgentReply(ctx context.Context, accountID string, task v
 		case <-ticker.C:
 		}
 	}
-}
-
-type agentReplyProgress struct {
-	lastReply            string
-	stableCompletePolls  int
-	missingBoundaryPolls int
-}
-
-func (p *agentReplyProgress) observe(reply string, complete bool) (string, string, bool) {
-	if reply == "" {
-		if p.lastReply == "" {
-			return "", "", false
-		}
-		p.missingBoundaryPolls++
-		if p.missingBoundaryPolls >= 2 {
-			return p.lastReply, "delivered", true
-		}
-		return "", "", false
-	}
-	p.missingBoundaryPolls = 0
-	if reply != p.lastReply {
-		p.lastReply = reply
-		p.stableCompletePolls = 0
-	}
-	if complete {
-		p.stableCompletePolls++
-	} else {
-		p.stableCompletePolls = 0
-	}
-	if p.stableCompletePolls >= 2 {
-		return reply, "delivered", true
-	}
-	return reply, "streaming", false
-}
-
-func extractAgentReply(agent, prompt, content string) (string, bool) {
-	prompt = strings.TrimSpace(strings.Split(strings.ReplaceAll(prompt, "\r", ""), "\n")[0])
-	if prompt == "" {
-		return "", false
-	}
-	lines := strings.Split(strings.ReplaceAll(strings.ReplaceAll(content, "\r", ""), "\u00a0", " "), "\n")
-	start := -1
-	for index := len(lines) - 1; index >= 0; index-- {
-		line := strings.TrimSpace(lines[index])
-		if (strings.HasPrefix(line, "›") || strings.HasPrefix(line, "❯")) && strings.TrimSpace(strings.TrimLeft(line, "›❯ ")) == prompt {
-			start = index + 1
-			break
-		}
-	}
-	if start < 0 {
-		return "", false
-	}
-	end := -1
-	for index := start; index < len(lines); index++ {
-		line := strings.TrimSpace(lines[index])
-		switch agent {
-		case "codex":
-			if strings.HasPrefix(line, "›") {
-				end = index
-			}
-		case "claude":
-			if strings.HasPrefix(line, "❯") {
-				end = index
-			}
-		case "opencode":
-			if line == ">" || line == "❯" {
-				end = index
-			}
-		}
-		if end >= 0 {
-			break
-		}
-	}
-	complete := end >= 0
-	if !complete {
-		end = len(lines)
-	}
-
-	answer := make([]string, 0, end-start)
-	seenResponse := false
-	for _, raw := range lines[start:end] {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			if seenResponse && len(answer) > 0 && answer[len(answer)-1] != "" {
-				answer = append(answer, "")
-			}
-			continue
-		}
-		if strings.HasPrefix(line, "•") || strings.HasPrefix(line, "●") || strings.HasPrefix(line, "⏺") {
-			seenResponse = true
-			line = strings.TrimSpace(strings.TrimLeft(line, "•●⏺ "))
-		}
-		if !seenResponse || decorativeAgentLine(line) {
-			continue
-		}
-		answer = append(answer, line)
-	}
-	for len(answer) > 0 && answer[len(answer)-1] == "" {
-		answer = answer[:len(answer)-1]
-	}
-	reply := strings.TrimSpace(strings.Join(answer, "\n"))
-	return reply, complete && reply != ""
-}
-
-func decorativeAgentLine(line string) bool {
-	return strings.HasPrefix(line, "✻ ") || strings.HasPrefix(line, "✘ Auto-update") ||
-		strings.HasPrefix(line, "⏵⏵ ") || strings.HasPrefix(line, "? for shortcuts") ||
-		strings.Trim(line, "─━═ ") == "" || strings.Contains(line, " · /data/workspace")
 }

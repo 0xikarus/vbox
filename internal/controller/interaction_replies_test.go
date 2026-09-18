@@ -3,104 +3,62 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-func TestExtractCodexReplyAfterUpdatePrompt(t *testing.T) {
-	content := `✨ Update available! 0.153.0 -> 0.153.2
-
-› 1. Update now
-  2. Skip
-
-› What's today's date?
-
-• Today is September 4, 2026.
-
-› Ask Codex to do anything
-
-  gpt-5.6-sol high · /data/workspace`
-	reply, complete := extractAgentReply("codex", "What's today's date?", content)
-	if !complete || reply != "Today is September 4, 2026." {
-		t.Fatalf("complete=%v reply=%q", complete, reply)
-	}
+type replyTransportProvider struct {
+	fakeProvider
+	calls [][]string
 }
 
-func TestExtractClaudeReplyOmitsTerminalChrome(t *testing.T) {
-	content := `❯ What's today's date?
-
-● Today's date is September 4, 2026 (Friday).
-
-✻ Brewed for 1s · done 10:28 AM
-
-────────────────────────────────────────
-❯
-────────────────────────────────────────
-  ⏵⏵ auto mode on (shift+tab to cycle)
-   ✘ Auto-update failed: no write permission`
-	reply, complete := extractAgentReply("claude", "What's today's date?", content)
-	if !complete || reply != "Today's date is September 4, 2026 (Friday)." {
-		t.Fatalf("complete=%v reply=%q", complete, reply)
-	}
+func (p *replyTransportProvider) Exec(_ context.Context, _ string, argv []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+	p.calls = append(p.calls, append([]string(nil), argv...))
+	return provider.ExecResult{}, nil
 }
 
-func TestExtractAgentReplyWaitsForInputPrompt(t *testing.T) {
-	content := "❯ Explain the result\n\n● Still working through the details"
-	if reply, complete := extractAgentReply("claude", "Explain the result", content); complete || reply != "Still working through the details" {
-		t.Fatalf("in-progress reply was not exposed: complete=%v reply=%q", complete, reply)
+func TestAgentChatDoesNotReadRepliesFromTerminalOutput(t *testing.T) {
+	store, mock := testStore(t)
+	now := time.Now().UTC()
+	boxRows := func() *sqlmock.Rows {
+		return sqlmock.NewRows([]string{
+			"id", "account_id", "owner_user_id", "name", "provider", "provider_credential",
+			"default_agent", "role", "state", "volume_id", "volume_name", "slot_id", "assignment_generation",
+			"lease_owner", "lease_expires_at", "restoration_state", "failure_reason", "created_at", "updated_at", "tools",
+		}).AddRow("box-1", "account-a", "user-a", "research", "fake", "primary", "opencode", "worker",
+			string(v1.LogicalBoxRunning), "volume-1", "volume-name", "slot-1", int64(3), "", nil, "", "", now, now, "[]")
 	}
-}
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(boxRows())
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(boxRows())
+	mock.ExpectQuery("SELECT COALESCE\\(fencing_token").WithArgs("account-a", "box-1").
+		WillReturnRows(sqlmock.NewRows([]string{"fencing_token"}).AddRow("fence-1"))
+	mock.ExpectQuery("FROM compute_slots").WithArgs("account-a", "slot-1").
+		WillReturnRows(sqlmock.NewRows(computeSlotColumns()).AddRow(
+			"slot-1", "account-a", "fake", "primary", 1, "occupied", "service-1", "slot-1",
+			"deployment-1", "box-1", "research", "iad", "worker@sha256:digest", "", "healthy",
+			int64(3), "", nil, "", now, now,
+		))
+	mock.ExpectQuery("FROM box_messages WHERE account_id").WithArgs("account-a", "agent-reply:message-1").
+		WillReturnRows(emptyBoxMessageRows())
 
-func TestExtractAgentReplyUsesNewestMatchingPrompt(t *testing.T) {
-	content := `› Repeat
+	transport := &replyTransportProvider{}
+	server := chatTestServer(store)
+	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return transport, nil }
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", UserID: "user-a", RequestedRole: "user", Agent: "opencode", Session: "opencode-1"}
+	_ = server.captureAgentReply(ctx, "account-a", task, v1.BoxMessage{ID: "message-1", Text: "hello"})
 
-• First answer.
-
-› Ask Codex to do anything
-
-› Repeat
-
-• Second answer.
-
-› Ask Codex to do anything`
-	reply, complete := extractAgentReply("codex", "Repeat", content)
-	if !complete || reply != "Second answer." {
-		t.Fatalf("complete=%v reply=%q", complete, reply)
+	for _, call := range transport.calls {
+		if len(call) > 1 && call[1] == "tmux-screen" {
+			t.Fatalf("ordinary terminal output was used as an agent-chat reply: %v", call)
+		}
 	}
-}
-
-func TestExtractAgentReplyCompletesWhenNextInputIsAlreadyStaged(t *testing.T) {
-	content := `❯ Inspect authentication
-
-● Authentication is ready.
-
-❯ list my repos`
-	reply, complete := extractAgentReply("claude", "Inspect authentication", content)
-	if !complete || reply != "Authentication is ready." {
-		t.Fatalf("complete=%v reply=%q", complete, reply)
-	}
-}
-
-func TestAgentReplyProgressFinalizesWhenCapturedBoundaryScrollsAway(t *testing.T) {
-	var progress agentReplyProgress
-	if reply, state, done := progress.observe("partial output", false); reply != "partial output" || state != "streaming" || done {
-		t.Fatalf("initial observation=(%q,%q,%v)", reply, state, done)
-	}
-	if reply, state, done := progress.observe("", false); reply != "" || state != "" || done {
-		t.Fatalf("first missing boundary=(%q,%q,%v)", reply, state, done)
-	}
-	if reply, state, done := progress.observe("", false); reply != "partial output" || state != "delivered" || !done {
-		t.Fatalf("second missing boundary=(%q,%q,%v)", reply, state, done)
-	}
-}
-
-func TestAgentReplyProgressRequiresStableCompleteOutput(t *testing.T) {
-	var progress agentReplyProgress
-	if _, state, done := progress.observe("answer", true); state != "streaming" || done {
-		t.Fatalf("first complete observation state=%q done=%v", state, done)
-	}
-	if _, state, done := progress.observe("answer", true); state != "delivered" || !done {
-		t.Fatalf("stable complete observation state=%q done=%v", state, done)
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
