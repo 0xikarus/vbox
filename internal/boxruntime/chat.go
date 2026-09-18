@@ -344,7 +344,7 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 		// Codex records a thread only once it has run a turn, so a freshly
 		// started one has nothing to queue against. Type into its prompt instead
 		// of starting a second Codex beside it.
-		return deliverCodexThroughTUI(ctx, root, session, inbound.ID, prompt, path)
+		return deliverCodexThroughTUI(ctx, session, prompt, path)
 	}
 	if err := runCodexQueue(ctx, home, path, []string{"queue", "--thread", thread, "--message", prompt}); err != nil {
 		// A remembered id can outlive its thread; re-read once before falling back.
@@ -353,7 +353,7 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 		}
 		thread, idErr := CodexThreadID(root, home, session, WorkspaceDirectory())
 		if idErr != nil {
-			return deliverCodexThroughTUI(ctx, root, session, inbound.ID, prompt, path)
+			return deliverCodexThroughTUI(ctx, session, prompt, path)
 		}
 		return runCodexQueue(ctx, home, path, []string{"queue", "--thread", thread, "--message", prompt})
 	}
@@ -405,11 +405,19 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 // addressable thread yet. It is the delivery path of last resort: slower than
 // queueing and dependent on the terminal, but it reaches the Codex the user is
 // watching rather than starting another one.
-func deliverCodexThroughTUI(ctx context.Context, root, session, messageID, prompt, eventPath string) error {
+func deliverCodexThroughTUI(ctx context.Context, session, prompt, eventPath string) error {
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err
 	}
-	if err := DeliverTmuxInput(ctx, root, session, messageID, prompt, true); err != nil {
+	// Codex 0.155 ignores tmux bracketed paste, which DeliverTmuxInput uses and
+	// Claude accepts, so the text is sent as literal keys instead.
+	if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "-l", prompt); err != nil {
+		return err
+	}
+	if err := tmuxSubmitPause(ctx); err != nil {
+		return err
+	}
+	if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Enter"); err != nil {
 		return err
 	}
 	return os.Remove(eventPath)
