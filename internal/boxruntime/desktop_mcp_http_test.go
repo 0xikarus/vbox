@@ -211,10 +211,16 @@ func TestEnsureAgentBackendStartsTheFacadeForEveryAgent(t *testing.T) {
 	originalTmux := tmuxCommand
 	t.Cleanup(func() { tmuxCommand = originalTmux })
 	tmuxCommand = func(context.Context, string, ...string) ([]byte, error) {
-		t.Fatal("a box with no managed desktop must not start a façade")
+		t.Fatal("no façade should have been started")
 		return nil, nil
 	}
 	if err := originalFacade(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	// An image without the box runtime cannot serve the façade; blocking the
+	// agent launch on it for the ready timeout would be worse than not having it.
+	t.Setenv("VMBOX_WORKSPACE_ROOT", t.TempDir())
+	if err := originalFacade(context.Background(), "worker-a"); err != nil {
 		t.Fatal(err)
 	}
 }

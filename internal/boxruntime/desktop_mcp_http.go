@@ -278,6 +278,12 @@ var EnsureDesktopMCPHTTP = func(ctx context.Context, assignment string) error {
 	if assignment == "" {
 		return nil
 	}
+	// An image without the box runtime in HOME has no MCP server either, which
+	// is reported where it is registered. Waiting for a facade that can never
+	// start would block every agent launch behind it.
+	if info, err := os.Stat(desktopRuntimePath()); err != nil || info.Mode()&0o111 == 0 {
+		return nil
+	}
 	name := desktopMCPHTTPSession()
 	if _, err := tmuxCommand(ctx, "", "has-session", "-t", name); err != nil {
 		argv := []string{"new-session", "-d", "-s", name, "-c", WorkspaceDirectory(), "--", desktopRuntimePath(), "desktop-mcp-http"}
