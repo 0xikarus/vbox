@@ -433,3 +433,53 @@ func (s *Server) applyBoxInstructions(w http.ResponseWriter, r *http.Request, p 
 	response.Note = "Applied to the running box. New conversations and launched agents read it at process start; running sessions keep their loaded instructions until restarted by you."
 	writeJSON(w, http.StatusOK, response)
 }
+
+// resyncBoxInstructions re-materializes the snapshot the box already carries. It
+// stores nothing new: a worker replacement, a restored hibernation or a sync
+// that failed earlier can leave a running box behind its saved instructions, and
+// re-entering the same Markdown only to trigger a write is a poor way to fix it.
+func (s *Server) resyncBoxInstructions(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	response, err := s.boxInstructionsState(r.Context(), p, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not load box instructions"))
+		return
+	}
+	if box.State != v1.LogicalBoxRunning {
+		response.Pending = true
+		response.Note = "Nothing to re-sync while the box is " + string(box.State) + "; its instructions materialize when it starts."
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	assignment, err := s.Store.assignment(ctx, p.AccountID, box.ID)
+	if err != nil || assignment.Slot.ServiceID == "" {
+		writeError(w, http.StatusConflict, fmt.Errorf("box assignment is unavailable; retry when the box is running"))
+		return
+	}
+	prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	if err := s.syncBoxInstructions(ctx, prov, p.AccountID, box.ID, assignment.Slot.ServiceID); err != nil {
+		response.Pending = true
+		response.Note = "Re-sync failed (" + err.Error() + "). The instructions apply on the next start."
+		writeJSON(w, http.StatusOK, response)
+		return
+	}
+	current, err := s.Store.assignment(ctx, p.AccountID, box.ID)
+	if err != nil || nativeFence(current) != nativeFence(assignment) {
+		writeError(w, http.StatusConflict, fmt.Errorf("assignment changed while re-syncing instructions"))
+		return
+	}
+	response, _ = s.boxInstructionsState(r.Context(), p, box.ID)
+	response.Note = "Re-synced to the running box. New conversations and launched agents read it at process start; running sessions keep what they loaded."
+	writeJSON(w, http.StatusOK, response)
+}

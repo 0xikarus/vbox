@@ -234,6 +234,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/instruction-presets-default", s.owner(s.setInstructionDefault))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/instructions", s.auth(s.boxInstructions))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/instructions", s.auth(s.applyBoxInstructions))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/instructions/resync", s.auth(s.resyncBoxInstructions))
 	mux.HandleFunc("GET /v1/locations", s.auth(s.locationsHandler))
 	mux.HandleFunc("PUT /v1/login-profiles/{application}/{name}", s.owner(s.saveLoginProfile))
 	mux.HandleFunc("GET /v1/provider-schemas", s.owner(s.providerSchemasHandler))

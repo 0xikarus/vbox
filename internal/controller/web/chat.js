@@ -519,6 +519,15 @@
   }
   const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd'),link=document.createElement('a');
   t.textContent='Workspace';link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open full workspace';link.target='_blank';link.rel='noopener';d.append(link);row.append(t,d);inspectRows.append(row);
+  // Config the box keeps in sync, editable from the same place it is reported.
+  const actions=document.createElement('div'),at=document.createElement('dt'),ad=document.createElement('dd');
+  at.textContent='Config';ad.className='inspect-actions';
+  const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;ad.append(b)};
+  act('Instructions…','Edit the Markdown instructions synced into this box',()=>void openBoxInstructions(box));
+  if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
+  if(box.state==='running')act('Re-sync','Re-push the saved config to the running box',()=>void resyncBox(box));
+  act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
+  actions.append(at,ad);inspectRows.append(actions);
  }
  async function samplePing(){
   if(!inspectOpen)return;
@@ -683,6 +692,8 @@
    ['Instructions…',()=>void openBoxInstructions(box)],
   ];
   if(owner)items.push(['Imported profiles…',()=>void openBoxCredentials(box)]);
+  if(box.state==='running')items.push(['Re-sync config',()=>void resyncBox(box)]);
+  items.push(['Restart box…',()=>void restartBox(box)]);
   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
   if(box.state==='running')items.splice(2,0,['Hibernate box',()=>void hibernateBox(box)]);
   for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
@@ -692,6 +703,37 @@
  }
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
  addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!liveView.hidden)closeLiveView();if(!takeover.hidden)closeTakeover();}});
+ // Re-push the instructions the box already carries. A replaced worker or a
+ // restored hibernation can leave a running box behind its saved config, and
+ // re-typing the same Markdown just to trigger a write is a poor way to fix it.
+ async function resyncBox(box){
+  try{
+   const result=await api(boxPath(box.id)+'/instructions/resync','POST',{'Idempotency-Key':crypto.randomUUID()},{},120000);
+   toast(result?.note||'Config re-synced to '+box.name+'.');
+   await loadBoxes();
+  }catch(e){toast(e.message)}
+ }
+ // Hibernate then allocate again. Agents and tmux sessions do not survive this,
+ // so it asks first; the workspace volume is kept either way.
+ async function restartBox(box){
+  if(!confirm('Restart "'+box.name+'"? It hibernates and starts again, so running agents and terminal sessions end. The workspace volume is kept, and the box picks up its current instructions and credentials on the way back up.'))return;
+  try{
+   toast('Restarting '+box.name+'…');
+   await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
+   const deadline=Date.now()+180000;
+   for(;;){
+    await new Promise(r=>setTimeout(r,3000));
+    const list=await api('/v1/logical-boxes');
+    const current=list.find(b=>b.id===box.id);
+    if(!current)throw Error('Box disappeared while restarting.');
+    if(current.state==='hibernated'||current.state==='stopped'||current.state==='failed')break;
+    if(Date.now()>deadline)throw Error('Still '+current.state+' after 3 minutes; start it again from the box menu once it settles.');
+   }
+   await api(boxPath(box.id)+'/allocate','POST',{'Idempotency-Key':crypto.randomUUID()},{leaseOwner:'chat'});
+   toast(box.name+' is starting again.');
+   await loadBoxes();
+  }catch(e){toast(e.message)}
+ }
  async function hibernateBox(box){
   try{
    await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
