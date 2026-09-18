@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -485,6 +486,51 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 	}
 	if submitted != 1 {
 		t.Fatalf("native prompt submissions = %d", submitted)
+	}
+}
+
+func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
+	originalCommand, originalProbe, originalPause := tmuxCommand, openCodeReadyProbe, tmuxSubmitPause
+	t.Cleanup(func() {
+		tmuxCommand, openCodeReadyProbe, tmuxSubmitPause = originalCommand, originalProbe, originalPause
+	})
+	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	for _, test := range []struct {
+		agent, ready, command string
+	}{
+		{agent: "claude", ready: "Claude Code v2.1.276\n❯ Try \"fix a bug\"", command: "/clear"},
+		{agent: "codex", ready: "OpenAI Codex\n›", command: "/new"},
+		{agent: "opencode", command: "/new"},
+	} {
+		t.Run(test.agent, func(t *testing.T) {
+			var inputs []string
+			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+				if len(args) > 0 && args[0] == "capture-pane" {
+					return []byte(test.ready), nil
+				}
+				if len(args) > 0 && args[0] == "load-buffer" {
+					inputs = append(inputs, stdin)
+				}
+				return nil, nil
+			}
+			root := t.TempDir()
+			if err := ResetAgentContext(context.Background(), root, test.agent+"-session", test.agent, "reset-message"); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(inputs, []string{test.command, "\r"}) {
+				t.Fatalf("terminal inputs = %q", inputs)
+			}
+			if err := ResetAgentContext(context.Background(), root, test.agent+"-session", test.agent, "reset-message"); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(inputs, []string{test.command, "\r"}) {
+				t.Fatalf("idempotent retry replayed terminal input: %q", inputs)
+			}
+		})
+	}
+	if err := ResetAgentContext(context.Background(), t.TempDir(), "shell-session", "shell", "reset-message"); err == nil {
+		t.Fatal("shell context reset accepted")
 	}
 }
 

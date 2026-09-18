@@ -242,6 +242,38 @@ func DeliverTmuxKeys(ctx context.Context, root, session, messageID string, keys 
 	return nil
 }
 
+// ResetAgentContext runs the harness's native new-conversation command inside
+// the existing watched TUI. The command and carriage return have separate
+// idempotency markers so a retry can finish an interrupted reset without ever
+// replaying the command into a second context.
+func ResetAgentContext(ctx context.Context, root, session, agent, messageID string) error {
+	if err := validateTmuxToken("session", session); err != nil {
+		return err
+	}
+	if err := validateTmuxToken("message ID", messageID); err != nil {
+		return err
+	}
+	command := ""
+	switch agent {
+	case "claude":
+		command = "/clear"
+	case "codex", "opencode":
+		command = "/new"
+	default:
+		return fmt.Errorf("unsupported context reset agent %q", agent)
+	}
+	if err := waitForAgentReady(ctx, session, agent); err != nil {
+		return err
+	}
+	if err := DeliverTmuxInput(ctx, root, session, messageID+"-command", command, false); err != nil {
+		return err
+	}
+	if err := tmuxSubmitPause(ctx); err != nil {
+		return err
+	}
+	return DeliverTmuxInput(ctx, root, session, messageID+"-submit", "\r", false)
+}
+
 func validTmuxKey(key string) bool {
 	switch key {
 	case "Enter", "BSpace", "Tab", "Escape", "Up", "Down", "Right", "Left", "Home", "End", "DC", "PPage", "NPage":

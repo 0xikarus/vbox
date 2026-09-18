@@ -359,6 +359,7 @@
   $('#chat-header-state').replaceChildren(Object.assign(document.createElement('span'),{className:box.state==='running'?'running':'',textContent:(box.defaultAgent||'agent')+' · '+box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')}));
   const key=box.id+'|'+box.state;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false))}
+  $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
  }
  async function refreshMessages(force){
@@ -487,6 +488,20 @@
    toast('Interrupt sent — your queued message comes next.');
   }catch(e){statusEl.textContent=e.message}
   finally{btn.disabled=false}
+ };
+
+ /* ---------- clear agent context ---------- */
+ $('#chat-clear-context').onclick=async()=>{
+  const box=boxes.get(selected);if(!box)return;
+  if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it before clearing context.';return}
+  if(!confirm('Clear the active '+(box.defaultAgent||'agent')+' context for "'+box.name+'"? Chat history stays visible, but the next message starts without the agent\'s prior context.'))return;
+  const btn=$('#chat-clear-context');btn.disabled=true;statusEl.textContent='Clearing agent context…';
+  try{
+   const result=await api(boxPath(box.id)+'/messages/clear-context','POST',{'Idempotency-Key':crypto.randomUUID()},{},45000);
+   statusEl.textContent='Context cleared. The next message continues in the same visible terminal with fresh context.';
+   toast('Context cleared for '+result.agent+'.');
+  }catch(e){statusEl.textContent=e.message}
+  finally{renderHeader()}
  };
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
