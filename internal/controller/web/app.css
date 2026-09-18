@@ -1,111 +1,24 @@
-/* Shared shell for every controller page. The controller index is served under
-   style-src 'self', so every rule it needs must live in this file: an inline
-   <style> block is blocked by the CSP and silently drops the whole layout. */
 *{box-sizing:border-box}
 body{max-width:80rem;margin:0 auto;padding:0 14px 60px;background:#fff;color:#0b0b0b;font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
 a{color:#03c;text-decoration:underline}a:hover{color:#c00}
 h1{font-size:18px;margin:14px 0 4px}h2{font-size:14px;border-bottom:1px solid #ddd;margin:22px 0 6px;padding-bottom:3px}
-h3{font-size:13px;margin:16px 0 4px}
 code{font:inherit;background:#f4f4f4}pre{font-size:11.5px;color:#52514e;white-space:pre-wrap;overflow-wrap:anywhere}
 [hidden]{display:none!important}
-#error:empty,p:empty{display:none}
-p,li{overflow-wrap:anywhere}
-nav,th,h1,h2,button,legend,summary,label{text-transform:lowercase}
-
-/* nav */
 .topbar{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:10px 0;border-bottom:1px solid #0b0b0b}
 .topbar .brand{font-weight:700}.topbar nav{display:flex;flex-wrap:wrap;gap:4px 10px}
 .topbar a{color:#52514e;text-decoration:none}.topbar a:hover{color:#c00}
-.topbar .on{color:#000;font-weight:700;text-decoration:none}
-
-/* prose */
-.sub{color:#52514e;margin:0 0 10px}
-.hint{font-size:11.5px;color:#52514e;max-width:78ch;margin:4px 0}
-.hint.tiny{color:#898781}
-.flash{background:#f4faf4;border-left:3px solid #0a7a0a;padding:5px 8px;margin:8px 0}
-.flash.error{background:#fdf4f4;border-color:#b00;color:#b00}
-#error{color:#b00}
-
-/* controls */
 details{margin:8px 0}summary{cursor:pointer}details>details{margin-left:12px}
-form{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:flex-end;margin:10px 0}
+form{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:flex-end;margin:10px 0}
 label{display:inline-block;font-size:11px;color:#898781}
-label>input,label>select,label>textarea{display:block;margin-top:3px}
-input,select,textarea,button{box-sizing:border-box;font:inherit;color:#111;background:#fff;border:1px solid #e2e2e2;padding:3px 5px;max-width:100%}
-input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #03c;outline-offset:0}
+label>input,label>select,label>textarea{display:block;margin-top:2px}
+input,select,textarea,button{box-sizing:border-box;font:inherit;color:#111;background:#fff;border:1px solid #e2e2e2;padding:2px 4px;max-width:100%}
 textarea{width:32rem;max-width:100%}button{cursor:pointer}
-button.primary{background:#0b0b0b;color:#fff;border-color:#0b0b0b;padding:4px 12px}
+button.primary{background:#0b0b0b;color:#fff;border-color:#0b0b0b}
 .linkbtn{border:0;background:none;color:#03c;text-decoration:underline;padding:0;margin-right:8px}
 .linkbtn:hover{color:#c00}.linkbtn.danger{color:#b00}
 button:focus-visible,summary:focus-visible{outline:2px solid #03c;outline-offset:1px}
-.field{display:inline-block}
-.form-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;flex-basis:100%}
+#error{color:#b00}
+nav,th,h1,h2,button,legend,summary,label{text-transform:lowercase}
+p,li{overflow-wrap:anywhere}
 
-/* grouped form sections (create box) */
-#create{display:block;margin:12px 0}
-.group{border:1px solid #e2e2e2;margin:0 0 10px;padding:4px 12px 12px;min-width:0}
-.group>legend{font-size:11px;color:#0b0b0b;font-weight:700;padding:0 5px}
-.group .hint{margin:6px 0 0}
-.group>details{margin:8px 0 0}
-.row-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:10px 16px;align-items:end;margin-top:6px;max-width:64rem}
-#create .field{display:block;min-width:0}
-#create .field>input,#create .field>select,#create .field>textarea{width:100%}
-#create .form-actions{margin-top:2px}
-#create .form-actions .hint{margin:0}
-
-/* optional tool presets */
-.tools{border:0;padding:0;margin:6px 0 0;min-width:0;display:block}
-.tools legend{font-size:11px;color:#898781;padding:0}
-.tools label{display:inline-flex;align-items:center;gap:6px;margin:4px 18px 0 0;font-size:13px;color:#0b0b0b}
-.tools input[type=checkbox]{display:inline-block;flex:none;width:auto;margin:0;padding:0}
-.custom-tools{max-width:100%;margin:10px 0 0}
-
-/* tables */
-.kpi{display:flex;flex-wrap:wrap;gap:2px 20px;background:#fafafa;border:1px solid #eee;padding:5px 8px;margin:8px 0}
-.kpi span{white-space:nowrap;color:#52514e}
-.kpi b{color:#0b0b0b;font-weight:700}
-.table-wrap{overflow-x:auto}
-table.markets{border-collapse:collapse;width:100%;min-width:44rem;table-layout:fixed}
-table.markets th,table.markets td{text-align:left;padding:7px 12px;border-bottom:1px solid #eee;vertical-align:top;overflow-wrap:anywhere}
-table.markets th{font-weight:600;white-space:nowrap;overflow-wrap:normal;color:#52514e}
-table.markets th+th,table.markets td+td{border-left:1px solid #f0f0f0}
-table.markets tr.row:hover{background:#fafafa}
-.table-text{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.table-text.muted,.state-note{color:#898781}
-.state-note{font-size:11.5px;margin-top:1px}
-#box-list table.markets{min-width:52rem}
-#box-list th:nth-child(1){width:17%}
-#box-list th:nth-child(2){width:14%}
-#box-list th:nth-child(3){width:21%}
-#box-list th:nth-child(4){width:11%}
-#box-list th:nth-child(5){width:18%}
-#box-list th:nth-child(6){width:19%}
-#box-list td select{width:100%}
-#box-list td .linkbtn{display:inline-block;margin:0 8px 2px 0}
-
-/* dialogs */
-.modal{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center}
-.modal .backdrop{position:absolute;inset:0;background:rgba(11,20,26,.55)}
-.modal .card{position:relative;width:min(46rem,94vw);max-height:88vh;overflow:auto;background:#fff;border:1px solid #0b0b0b;box-shadow:0 .6rem 2rem rgba(11,20,26,.5);padding:12px 14px}
-.modal .card header{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
-.modal .card header strong{flex:1}
-.modal .card label{display:block;margin:8px 0}
-.modal .card select,.modal .card textarea,.modal .card input[type=text]{width:100%;font:inherit;padding:3px 5px;border:1px solid #e2e2e2}
-.modal .card textarea{min-height:9rem}
-
-/* markdown previews */
-.md-preview{margin:8px 0;padding:6px 10px;border:1px solid #e2e2e2;background:#fafafa;max-height:20rem;overflow:auto}
-.md-preview .md-h1,.md-preview .md-h2,.md-preview .md-h3{margin:4px 0 3px}
-.md-preview .md-pre{background:#f2f4f5;padding:6px 8px;overflow:auto;font-size:12px}
-.md-preview .md-quote{border-left:3px solid #d5d9dc;margin:4px 0;padding:1px 10px;color:#52514e}
-.md-preview .md-hr{border:0;border-top:1px solid #e2e2e2}
-.md-preview .md-empty{color:#898781;font-style:italic}
-
-@media(max-width:600px){
- body{padding:0 8px 48px}
- label{display:block}input,textarea{width:100%}
- table.markets{font-size:.85rem}
- .form-actions{flex-direction:column;align-items:stretch}
- .modal .card{width:min(46rem,96vw)}
- .group{padding:4px 8px 10px}
-}
+@media(max-width:600px){body{padding:0 8px 48px}.form-actions{flex-direction:column;align-items:stretch}.modal .card{width:min(46rem,96vw)}}
