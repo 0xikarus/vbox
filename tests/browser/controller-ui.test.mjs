@@ -338,17 +338,16 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  const edit=requests.findLast(r=>r.method==='PATCH'&&r.path.endsWith('/primary'));assert.equal(edit.revision,revision);assert.deepEqual(edit.body,{config:{image:'new'}});
  await page.waitForNetworkIdle();
  assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles.*opencode.*openrouter/s);
- await page.select('#profile-choices select[name=claude]','personal');
- await page.select('#profile-choices select[name=opencode]','openrouter');
+ await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'openrouter'}));
  await page.type('#create input[name=name]','profile-box');
  assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
- const selectedAgent=mobile?'shell':'opencode';await page.select('#create select[name=defaultAgent]',selectedAgent);
+ assert.deepEqual(await page.$eval('#create select[name=defaultAgent]',select=>({value:select.value,disabled:select.disabled})),{value:'opencode',disabled:true});
  await page.click('#create-tools input[value=blender]');
  assert.deepEqual(await page.$eval('#create-tools input[value=desktop]',input=>({checked:input.checked,disabled:input.disabled})),{checked:true,disabled:true});
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
- assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'claude',name:'personal'},{application:'opencode',name:'openrouter'}]);
+ assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'opencode',name:'openrouter'}]);
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['desktop','blender']);
- assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,selectedAgent);
+ assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,'opencode');
  assert.equal(requests.findLast(r=>r.method==='POST').body.allocateWhenReady,true);
  await page.waitForNetworkIdle();
  assert.equal(await page.$('#profile-upload'),null);
@@ -426,7 +425,7 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  // Editing imported profiles is an explicit, verified selection.
  await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Credentials')).click()});
  await page.waitForFunction(()=>!document.querySelector('#box-credentials-modal').hidden);
- await page.select('#box-credentials-form select[name=claude]','personal');
+ await page.select('#box-credentials-form select',JSON.stringify({application:'claude',name:'personal'}));
  await page.click('#box-credentials-apply');
  await page.waitForFunction(()=>document.querySelector('#box-credentials-status').textContent.includes('fixture applied'));
  assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/logical-boxes/box-1/login-profiles').body,{profiles:[{application:'claude',name:'personal'}]});

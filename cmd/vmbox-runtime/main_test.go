@@ -56,6 +56,52 @@ func TestReceiveFilesRejectsDestinationOutsideRoot(t *testing.T) {
 	}
 }
 
+func TestReceiveFilesRemovesStaleProfileFiles(t *testing.T) {
+	root := t.TempDir()
+	stale := filepath.Join(root, "home", ".claude", ".credentials.json")
+	if err := os.MkdirAll(filepath.Dir(stale), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("stale-claude-login"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(root, "home", ".codex", "auth.json")
+	payload, err := json.Marshal(map[string]any{
+		"files":  []boxruntime.SyncFile{{Path: destination, Mode: "0600", Data: []byte("new-codex-login")}},
+		"remove": []string{stale},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := receiveFiles(bytes.NewReader(payload), root, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
+		t.Fatalf("stale Claude credential survived Codex profile selection: %v", err)
+	}
+	if data, err := os.ReadFile(destination); err != nil || string(data) != "new-codex-login" {
+		t.Fatalf("selected Codex credential=%q err=%v", data, err)
+	}
+}
+
+func TestReceiveFilesAllowsRemoveOnlyProfileClear(t *testing.T) {
+	root := t.TempDir()
+	stale := filepath.Join(root, "home", ".codex", "auth.json")
+	if err := os.MkdirAll(filepath.Dir(stale), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stale, []byte("stale"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	payload, _ := json.Marshal(map[string]any{"files": []boxruntime.SyncFile{}, "remove": []string{stale}})
+	if _, err := receiveFiles(bytes.NewReader(payload), root, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(stale); !os.IsNotExist(err) {
+		t.Fatalf("cleared profile credential still exists: %v", err)
+	}
+}
+
 type setupCall struct {
 	argv  []string
 	stdin string

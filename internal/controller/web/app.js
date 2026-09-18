@@ -61,12 +61,17 @@ function tableNote(text){const n=tableText(text);n.className='table-text state-n
 function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
-// Re-push the instructions a box already carries. A replaced worker or a
-// restored hibernation can leave a running box behind its saved config, and
-// re-typing the same Markdown just to force a write is a poor way to fix it.
+// Re-push the complete saved box configuration. Reapplying a profile closes
+// stale agent conversations so the selected harness reloads its credentials.
 async function resyncBox(b){
- const result=await api(bp(b.id)+'/instructions/resync','POST',{'Idempotency-Key':crypto.randomUUID()},{},120000);
- notice(result?.note||('Config re-synced to '+b.name+'.'));
+ const instructions=await api(bp(b.id)+'/instructions/resync','POST',{}, {'Idempotency-Key':crypto.randomUUID()});
+ let credentials;
+ if(ownerTools){
+  const state=await api(bp(b.id)+'/imported-credentials');
+  credentials=await api(bp(b.id)+'/login-profiles','PUT',{profiles:state.profiles||[]});
+ }
+ notice(credentials?.note||instructions?.note||('Config re-synced to '+b.name+'.'));
+ await refresh();
 }
 // Hibernate then allocate again. Agents and tmux sessions do not survive it, so
 // it asks first; the workspace volume is kept either way.
@@ -193,7 +198,7 @@ function renderBoxes(boxes){
   if(ownerTools){const credentials=button('Credentials…',()=>openBoxCredentials(b));credentials.setAttribute('aria-label','Credentials for box '+b.name);actions.append(credentials)}
   if(boxPhase(b.state)==='running'){
    const resync=button('Re-sync',()=>void resyncBox(b));
-   resync.title='Re-push the saved instructions to the running box';
+   resync.title='Re-push saved instructions and the selected login profile; stale agent conversations close';
    resync.setAttribute('aria-label','Re-sync config for box '+b.name);actions.append(resync);
   }
   // Restart hibernates first, which only a running box can do; a stopped box
@@ -223,7 +228,9 @@ function renderProfiles(identity,profiles){
  }$('#profile-tree').replaceChildren(tree);
  const label=node('label','login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
  for(const app of ['claude','codex','opencode']){const entries=profiles.filter(p=>p.application===app);if(!entries.length)continue;const group=document.createElement('optgroup');group.label=app;for(const p of entries){const option=node('option',p.name);option.value=JSON.stringify({application:app,name:p.name});group.append(option)}select.append(group)}
- if([...select.options].some(option=>option.value===selected))select.value=selected;label.append(select);choices.append(label);
+ if([...select.options].some(option=>option.value===selected))select.value=selected;
+ const syncAgent=()=>{const agent=$('#create select[name="defaultAgent"]');if(!agent)return;if(select.value){agent.value=JSON.parse(select.value).application;agent.disabled=true}else agent.disabled=false};
+ select.addEventListener('change',syncAgent);label.append(select);choices.append(label);syncAgent();
 }
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
@@ -417,7 +424,7 @@ $('#box-instructions-apply').addEventListener('click',action(async()=>{
 async function openBoxCredentials(box){
  boxCredentialTarget=box;
  const status=$('#box-credentials-status');status.textContent='Loading…';
- $('#box-credentials-title').textContent='Imported login profiles · '+box.name;
+ $('#box-credentials-title').textContent='Agent profile · '+box.name;
  try{
   const [state,profiles]=await Promise.all([api(bp(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
   const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
@@ -436,7 +443,7 @@ async function openBoxCredentials(box){
 $('#box-credentials-apply').addEventListener('click',action(async()=>{
  if(!boxCredentialTarget)return;
  const status=$('#box-credentials-status'),profile=$('#box-credentials-form select')?.value,profiles=profile?[JSON.parse(profile)]:[];
- status.textContent='Applying credentials…';
+ status.textContent='Applying profile and closing stale agent conversations…';
  const result=await api(bp(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
  status.textContent=result.note||'Saved.';
  $('#box-credentials-current').textContent=(result.profiles||[]).length?'Imported: '+(result.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', ')+'.':'No imported login profiles recorded.';

@@ -19,6 +19,16 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		return false, nil
 	}
 	switch args[0] {
+	case "agent-reconcile":
+		if len(args) != 2 {
+			return true, fmt.Errorf("agent-reconcile requires SELECTED_AGENT")
+		}
+		return true, boxruntime.ReconcileManagedAgentSessions(context.Background(), runtime.Root, args[1])
+	case "agent-restore":
+		if len(args) != 3 {
+			return true, fmt.Errorf("agent-restore requires SESSION AGENT")
+		}
+		return true, boxruntime.RestoreManagedAgent(context.Background(), runtime.Root, args[1], args[2])
 	case "process-start":
 		if len(args) != 2 {
 			return true, fmt.Errorf("process-start requires encoded task")

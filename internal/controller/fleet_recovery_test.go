@@ -279,6 +279,9 @@ func TestUpdateLogicalBoxPersistsDefaultAgentWithAudit(t *testing.T) {
 	store, mock := testStore(t)
 	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
 	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT COALESCE\\(metadata->'importedLoginProfiles'").
+		WithArgs("account-a", "box-1", "user-a", "user").
+		WillReturnRows(sqlmock.NewRows([]string{"profiles"}).AddRow([]byte(`[]`)))
 	mock.ExpectExec("UPDATE logical_boxes SET default_agent").
 		WithArgs("account-a", "box-1", "user-a", "user", "codex", "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -294,6 +297,23 @@ func TestUpdateLogicalBoxPersistsDefaultAgentWithAudit(t *testing.T) {
 	}
 	if box.DefaultAgent != "codex" {
 		t.Fatalf("default agent=%q", box.DefaultAgent)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUpdateLogicalBoxRejectsHarnessThatContradictsProfile(t *testing.T) {
+	store, mock := testStore(t)
+	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT COALESCE\\(metadata->'importedLoginProfiles'").
+		WithArgs("account-a", "box-1", "user-a", "owner").
+		WillReturnRows(sqlmock.NewRows([]string{"profiles"}).AddRow([]byte(`[{"application":"codex","name":"work"}]`)))
+	mock.ExpectRollback()
+	_, err := store.UpdateLogicalBox(context.Background(), p, "box-1", v1.UpdateLogicalBoxRequest{DefaultAgent: "claude"})
+	if err == nil || !strings.Contains(err.Error(), "Codex") && !strings.Contains(err.Error(), "codex") {
+		t.Fatalf("contradictory harness selection error=%v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

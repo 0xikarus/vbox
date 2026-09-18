@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -51,6 +52,21 @@ func (s *Store) UpdateLogicalBox(ctx context.Context, p Principal, id string, re
 		return v1.LogicalBox{}, err
 	}
 	defer tx.Rollback()
+	var rawProfiles []byte
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(metadata->'importedLoginProfiles',metadata->'loginProfiles','[]'::jsonb) FROM logical_boxes WHERE account_id=$1 AND (id::text=$2 OR name=$2) AND (owner_user_id=$3 OR $4='owner') FOR UPDATE`, p.AccountID, id, p.UserID, p.Role).Scan(&rawProfiles); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return v1.LogicalBox{}, fmt.Errorf("logical box not found")
+		}
+		return v1.LogicalBox{}, err
+	}
+	var profiles []v1.LoginProfileRef
+	if json.Unmarshal(rawProfiles, &profiles) != nil {
+		return v1.LogicalBox{}, fmt.Errorf("imported login profile state is invalid")
+	}
+	requiredAgent := selectedProfileAgent(request.DefaultAgent, profiles)
+	if requiredAgent != request.DefaultAgent {
+		return v1.LogicalBox{}, fmt.Errorf("selected %s profile requires the %s harness; change credentials instead", profiles[0].Application, requiredAgent)
+	}
 	result, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET default_agent=$5,role=CASE WHEN $6::text='' THEN role ELSE $6 END,updated_at=now() WHERE account_id=$1 AND (id::text=$2 OR name=$2) AND (owner_user_id=$3 OR $4='owner')`, p.AccountID, id, p.UserID, p.Role, request.DefaultAgent, request.Role)
 	if err != nil {
 		return v1.LogicalBox{}, err

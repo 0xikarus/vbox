@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -625,10 +626,31 @@ func receiveFiles(reader io.Reader, root string, owner *boxruntime.Ownership, ch
 	if err := json.Unmarshal(payload, &request); err != nil {
 		return "", fmt.Errorf("decode sync request: %w", err)
 	}
-	if len(request.Files) == 0 || len(request.Files) > 128 {
-		return "", fmt.Errorf("sync request must contain 1 to 128 files")
+	if len(request.Files)+len(request.Remove) == 0 || len(request.Files)+len(request.Remove) > 256 || len(request.Files) > 128 || len(request.Remove) > 128 {
+		return "", fmt.Errorf("sync request must contain 1 to 256 file operations")
 	}
-	seen := make(map[string]bool, len(request.Files))
+	seen := make(map[string]bool, len(request.Files)+len(request.Remove))
+	remove := make([]string, 0, len(request.Remove))
+	for _, requested := range request.Remove {
+		path := filepath.Clean(boxruntime.WorkspacePath(requested))
+		rootPath := filepath.Clean(root)
+		relative, err := filepath.Rel(rootPath, path)
+		if err != nil || relative == "." || relative == ".." || filepath.IsAbs(relative) || strings.HasPrefix(relative, ".."+string(os.PathSeparator)) {
+			return "", fmt.Errorf("file removal must be below %s", rootPath)
+		}
+		if seen[path] {
+			return "", fmt.Errorf("duplicate sync destination %s", path)
+		}
+		seen[path] = true
+		info, err := os.Lstat(path)
+		if err == nil && info.IsDir() {
+			return "", fmt.Errorf("refuse to remove directory %s", path)
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("inspect removal %s: %w", path, err)
+		}
+		remove = append(remove, path)
+	}
 	for _, file := range request.Files {
 		path := filepath.Clean(boxruntime.WorkspacePath(file.Path))
 		if seen[path] {
@@ -638,6 +660,14 @@ func receiveFiles(reader io.Reader, root string, owner *boxruntime.Ownership, ch
 		if len(file.Data) > maxSyncedFileSize {
 			return "", fmt.Errorf("sync file %s exceeds %d bytes", path, maxSyncedFileSize)
 		}
+	}
+	for _, path := range remove {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return "", fmt.Errorf("remove %s: %w", path, err)
+		}
+	}
+	for _, file := range request.Files {
+		path := filepath.Clean(boxruntime.WorkspacePath(file.Path))
 		if _, err := writeSyncedFile(root, path, file.Mode, bytes.NewReader(file.Data), owner, chown); err != nil {
 			return "", fmt.Errorf("write %s: %w", path, err)
 		}

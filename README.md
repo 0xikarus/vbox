@@ -577,7 +577,7 @@ vmbox profiles                         # named Claude/Codex/OpenCode profiles, n
 vmbox profiles save codex work --from /path/to/codex-profile
 vmbox profiles save claude personal --from /path/to/claude-profile
 vmbox profiles save opencode openrouter --from /path/to/opencode-profile
-vmbox new research --profile codex=work --profile claude=personal
+vmbox new research --profile codex=work
 vmbox new clean-box --no-profiles
 ```
 
@@ -586,13 +586,14 @@ the application and profile name. Saving an existing name fails instead of
 overwriting it. Only supported profile files are uploaded (512 KiB total limit).
 The list API returns metadata only; there is no plaintext export endpoint.
 
-Interactive creation offers saved profiles, explicit local upload, or skip for
-each application. Noninteractive creation without `--profile` provisions no agent
-credentials. To upload from a script, save the local profile first, then select
-it by name. Only selected profiles are copied into the new persistent volume;
-creation recovery remembers those selections. Account owners manage and provision
-saved profiles. Expired upstream logins still need renewal; saving a profile does
-not establish that its authentication is valid.
+Interactive creation offers one saved Claude, Codex, or OpenCode profile, or no
+profile. Selecting one also selects that application's harness; a box cannot
+carry competing agent profiles. Noninteractive creation without `--profile`
+provisions no agent credentials. To upload from a script, save the local profile
+first, then select it by name. The selected profile is copied into the new
+persistent volume and creation recovery remembers it. Account owners manage and
+provision saved profiles. Expired upstream logins still need renewal; saving a
+profile does not establish that its authentication is valid.
 
 ## Managed agent instructions
 
@@ -635,16 +636,16 @@ resume, worker replacement, and shared-worker recovery.
 
 ### Editing the login profiles imported into a box
 
-Owners can also replace the saved Claude/Codex/OpenCode/GitHub profiles already
-imported into an existing box (controller box list and chat box menu →
-**Credentials…**). Credentials are written through the same verified channel
-used at creation, with the assignment locked and the volume checked; contents
-are never displayed. A running box is written immediately — restart the box or
-start a new agent conversation so the agent reads the new credentials — while a
-stopped box queues them and writes them during its next start. Instruction
-snapshots and other box configuration are untouched. Clearing references does
-not remove credential files already present in the box, exactly like deleting a
-saved profile.
+Owners can replace the single saved agent profile imported into an existing box
+(controller box list → **Credentials…**). The profile application becomes the
+box harness. Credentials are written through the same verified channel used at
+creation, with the assignment locked and volume checked; contents are never
+displayed. Files belonging to the other harnesses are removed. On a running box,
+stale agent sessions and tasks are closed so the next message starts the selected
+harness with the new credentials; shells remain open. A stopped box queues the
+selection and performs the same reconciliation on its next start. **Re-sync**
+reapplies both saved instructions and the selected profile. Clearing the profile
+removes the portable agent credential files without changing the chosen harness.
 
 ## Deleting a box
 

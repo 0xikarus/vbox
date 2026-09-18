@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -89,12 +90,20 @@ func (s *Store) ListLoginProfiles(ctx context.Context, p Principal) ([]v1.LoginP
 
 // LoadLoginProfile is controller-internal: no endpoint exports plaintext profiles.
 func (s *Store) LoadLoginProfile(ctx context.Context, p Principal, application, name string) (v1.SaveLoginProfileRequest, error) {
+	return s.loadLoginProfile(ctx, s.DB, p, application, name)
+}
+
+type loginProfileRowQuerier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func (s *Store) loadLoginProfile(ctx context.Context, query loginProfileRowQuerier, p Principal, application, name string) (v1.SaveLoginProfileRequest, error) {
 	var value v1.SaveLoginProfileRequest
 	if s.Envelope == nil {
 		return value, fmt.Errorf("credential encryption unavailable")
 	}
 	var sealed string
-	if err := s.DB.QueryRowContext(ctx, `SELECT encrypted_value FROM login_profiles WHERE account_id=$1 AND application=$2 AND name=$3`, p.AccountID, application, name).Scan(&sealed); err != nil {
+	if err := query.QueryRowContext(ctx, `SELECT encrypted_value FROM login_profiles WHERE account_id=$1 AND application=$2 AND name=$3`, p.AccountID, application, name).Scan(&sealed); err != nil {
 		return value, err
 	}
 	plain, err := s.Envelope.Open(profileEncryptionScope(p.AccountID, application, name), sealed)

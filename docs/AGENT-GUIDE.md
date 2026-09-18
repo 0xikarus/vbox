@@ -166,12 +166,16 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   lookups into one billing command; credentials without billing scope return an
   unavailable explanation instead of a fabricated estimate.
 - `process_tasks` cascade when a box is deleted. Never infer task success from SSH errors.
-- Login profiles are uploaded from the CLI; selecting a profile copies credentials
-  to a box. Deleting a saved profile does not revoke copies already on workers.
-  Owners can replace a box's imported profiles (**Credentials…** in both UIs):
-  running boxes are written through the locked, integrity-checked transfer, stopped
-  boxes queue the selection and write it during the next allocation, and
-  credential edits never modify instructions.
+- Login profiles are uploaded from the CLI. A box has at most one imported agent
+  profile, and its application authoritatively selects the managed harness.
+  Replacing it uses the locked, integrity-checked transfer, removes portable
+  credential/config files for other harnesses, fails stale chat tasks, kills only
+  managed agent tmux sessions, and rewrites the tmux snapshot so an old harness
+  cannot return after deployment. Shell/desktop sessions survive. Stopped boxes
+  queue the same reconciliation for their next allocation. Managed agent restore
+  always uses `agent-restore`, which reconstructs current channel/API/backend
+  arguments instead of launching a bare executable. Deleting a controller-saved
+  profile does not revoke a copy already imported into a box.
 - Instruction presets are account-scoped Markdown snapshotted per box
   (`box_instruction_snapshots`), never referenced live: preset edits/deletions
   cannot change existing boxes. `internal/boxruntime/instructions.go` keeps one

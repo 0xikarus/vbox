@@ -65,7 +65,7 @@ func TestShellResumePrintsCurrentPersistentWelcome(t *testing.T) {
 
 func TestOldShellSnapshotMigratesToCurrentWelcome(t *testing.T) {
 	pane := TmuxPane{ResumeStrategy: "shell", ResumeArgv: []string{"/bin/bash", "-l"}, ScrollbackFile: "/data/.vmbox/tmux/shell.log"}
-	command := restoredPaneCommand(TmuxSnapshot{}, pane)
+	command := restoredPaneCommand(TmuxSnapshot{}, "shell-session", pane)
 	if !strings.Contains(command, "cat -- '/data/.vmbox/tmux/shell.log'") || !strings.Contains(command, "exec 'vmbox-runtime' 'welcome'") {
 		t.Fatalf("old shell snapshot command=%q", command)
 	}
@@ -81,12 +81,39 @@ func TestRestoredPaneNeverReplaysArbitraryCommand(t *testing.T) {
 		ProcessArgv:    []string{"deploy-production", "--force", "customer"},
 		ScrollbackFile: "/data/.vmbox/tmux/pane.log",
 	}
-	command := restoredPaneCommand(TmuxSnapshot{SavedAt: saved}, pane)
+	command := restoredPaneCommand(TmuxSnapshot{SavedAt: saved}, "manual-session", pane)
 	if strings.Contains(command, "deploy-production") {
 		t.Fatalf("arbitrary command would be replayed: %s", command)
 	}
 	if !strings.Contains(command, "interrupted-pane") || !strings.Contains(command, "pane.log") {
 		t.Fatalf("missing safe reconstruction: %s", command)
+	}
+}
+
+func TestRestoredAgentUsesManagedLauncher(t *testing.T) {
+	pane := TmuxPane{
+		CurrentCommand: "claude",
+		ResumeArgv:     []string{"claude"},
+		ResumeStrategy: "claude-fresh-conversation",
+	}
+	command := restoredPaneCommand(TmuxSnapshot{}, "claude-session", pane)
+	if !strings.Contains(command, "'vmbox-runtime' 'agent-restore' 'claude-session' 'claude'") {
+		t.Fatalf("restored Claude bypassed managed channel startup: %q", command)
+	}
+	if strings.HasSuffix(command, "exec 'claude'") {
+		t.Fatalf("restored Claude lost its managed channel arguments: %q", command)
+	}
+}
+
+func TestFilterManagedAgentSessionsPreservesShells(t *testing.T) {
+	snapshot := TmuxSnapshot{Version: TmuxSnapshotVersion, Sessions: []TmuxSession{
+		{Name: "claude-old", Windows: []TmuxWindow{{Panes: []TmuxPane{{CurrentCommand: "claude", ResumeStrategy: "claude-fresh-conversation"}}}}},
+		{Name: "codex-old", Windows: []TmuxWindow{{Panes: []TmuxPane{{CurrentCommand: "codex", ResumeStrategy: "codex-fresh-conversation"}}}}},
+		{Name: "shell-keep", ShellFirst: true, Windows: []TmuxWindow{{Panes: []TmuxPane{{CurrentCommand: "bash", ResumeStrategy: "shell"}}}}},
+	}}
+	filtered, removed := filterManagedAgentSessions(snapshot)
+	if removed != 2 || len(filtered.Sessions) != 1 || filtered.Sessions[0].Name != "shell-keep" {
+		t.Fatalf("filtered snapshot=%+v removed=%d", filtered, removed)
 	}
 }
 

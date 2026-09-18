@@ -588,7 +588,8 @@ components:
         defaultAgent: {enum: [shell, claude, codex, opencode]}
         loginProfiles:
           type: array
-          description: Owner-only saved profile selection, at most one per application; omitted means no saved credentials provisioned
+          maxItems: 1
+          description: Owner-only single saved profile selection; an agent profile application also selects the box harness; omitted means no saved credentials provisioned
           items: {$ref: '#/components/schemas/LoginProfileRef'}
         diskGiB: {type: integer, format: int64, default: 10}
         volumeId: {type: string, description: Owner-only import; must be paired with volumeName.}
