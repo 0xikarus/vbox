@@ -94,7 +94,19 @@ func (s *Server) desktopAction(w http.ResponseWriter, r *http.Request, p Princip
 		return
 	}
 	verb := strings.TrimPrefix(command, "desktop-")
-	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", command, nativeFence(a)}, provider.ExecOptions{})
+	argv := []string{"vmbox-runtime", command, nativeFence(a)}
+	result, err := prov.Exec(ctx, a.Slot.ServiceID, argv, provider.ExecOptions{})
+	// A restarted worker keeps the box running but loses the tmux server that
+	// carried its assignment, so every desktop command fails until the fence is
+	// put back. Repair it once and retry rather than making the reader run an
+	// unrelated-looking "enable sessions" call to get their desktop back.
+	if err == nil && result.ExitCode != 0 && workerFenceLost(result.Stderr) {
+		if repairErr := s.rebindWorkerAssignment(ctx, p.AccountID, a, prov); repairErr != nil {
+			writeError(w, 409, fmt.Errorf("desktop %s failed: the worker no longer holds this box's assignment and it could not be repaired: %w", verb, repairErr))
+			return
+		}
+		result, err = prov.Exec(ctx, a.Slot.ServiceID, argv, provider.ExecOptions{})
+	}
 	if err != nil {
 		// A cancelled request and an unreachable worker are different problems;
 		// reporting either as a missing desktop component sends the reader to
