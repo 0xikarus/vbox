@@ -437,6 +437,48 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 	}
 }
 
+func TestInstructionPresetUIKeepsCreationCompact(t *testing.T) {
+	server := NewServer(nil, provider.NewRegistry())
+	for _, path := range []string{"/", "/chat"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", path, response.Code, response.Body.String())
+		}
+		body := response.Body.String()
+		if !strings.Contains(body, `id="create-instructions-editor" hidden`) {
+			t.Fatalf("%s does not keep the box-specific Markdown editor hidden by default", path)
+		}
+		for _, decoration := range []string{
+			"Preview the selected Markdown and optionally edit",
+			"Reusable Markdown guidance, account-scoped",
+			"· copied into the box at creation</summary>",
+		} {
+			if strings.Contains(body, decoration) {
+				t.Fatalf("%s still contains decorative preset copy %q", path, decoration)
+			}
+		}
+	}
+	for _, path := range []string{"/app.js", "/chat.js"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		server.Handler().ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s status=%d body=%s", path, response.Code, response.Body.String())
+		}
+		for _, decoration := range []string{
+			"The account-default preset is copied at creation",
+			"No managed instructions are written for this box",
+			"No presets yet. Add one below.",
+		} {
+			if strings.Contains(response.Body.String(), decoration) {
+				t.Fatalf("%s still contains decorative preset copy %q", path, decoration)
+			}
+		}
+	}
+}
+
 type inventoryObservationFixture struct {
 	*fakeProvider
 	observed time.Time

@@ -119,10 +119,9 @@
    <fieldset id="create-tools" class="tools"><legend>Optional tools</legend></fieldset>
    <details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label>
    <p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details>
-   <details id="create-instructions-block"><summary>Instructions: <span id="create-instructions-label">account default / none</span></summary>
-   <label>Instruction source <select id="create-instructions"><option value="auto">Account default preset / none</option></select></label>
-   <label>Markdown for this box <textarea id="create-instructions-custom" rows="5" maxlength="65536" placeholder="Snapshotted with the box; edit to override just this box"></textarea></label>
-   <p id="create-instructions-meta" class="hint"></p>
+   <label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label>
+   <details id="create-instructions-editor" hidden><summary>Customize Markdown</summary>
+   <label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label>
    <div id="create-instructions-preview" class="md-preview" hidden></div></details>
    <button id="create-box-submit">Create and start box</button>
   </form>
@@ -148,8 +147,8 @@
  <section class="sheet-card" role="dialog" aria-modal="true">
   <header><strong id="box-instructions-title">Instructions</strong><span class="spacer"></span><button type="button" data-close="box-instructions-modal" aria-label="Close">×</button></header>
   <p id="box-instructions-current" class="hint"></p>
-  <label>Instruction source <select id="box-instructions-preset"></select></label>
-  <label>Markdown for this box <textarea id="box-instructions-markdown" rows="6" maxlength="65536" spellcheck="false"></textarea></label>
+  <label>Preset <select id="box-instructions-preset"></select></label>
+  <label>Markdown <textarea id="box-instructions-markdown" rows="6" maxlength="65536" spellcheck="false"></textarea></label>
   <div id="box-instructions-preview" class="md-preview"></div>
   <button type="button" id="box-instructions-apply" class="primary">Apply instructions</button>
   <p id="box-instructions-status" role="status"></p>
@@ -169,12 +168,11 @@
  <div class="sheet-backdrop" data-close="presets-modal"></div>
  <section class="sheet-card" role="dialog" aria-modal="true">
   <header><strong>Instruction presets</strong><span class="spacer"></span><button type="button" data-close="presets-modal" aria-label="Close">×</button></header>
-  <p class="hint">Reusable Markdown guidance, account-scoped and separate from credentials. Existing boxes keep their snapshot when a preset changes or is deleted.</p>
   <div id="preset-list"></div>
   <form id="preset-form">
    <label>Name <input name="name" required maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="code-reviewer" autocomplete="off"></label>
-   <label>Markdown · max 64 KiB <textarea name="markdown" rows="5" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
-   <div class="preset-actions"><button type="submit" class="primary">Save preset</button><button type="button" id="preset-upload">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle">Preview</button></div>
+   <label>Markdown <textarea name="markdown" rows="5" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
+   <div class="preset-actions"><button type="submit" class="primary">Save</button><button type="button" id="preset-upload">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle">Preview</button></div>
   </form>
   <div id="preset-preview" class="md-preview" hidden></div>
   <p id="preset-status" role="status"></p>
