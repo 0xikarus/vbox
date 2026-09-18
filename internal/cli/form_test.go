@@ -130,3 +130,27 @@ func TestFormAddsEntryInline(t *testing.T) {
 		t.Fatal("inline entry failed", err, field.Value)
 	}
 }
+
+func TestUnifiedFormActionRunsWithoutSubmitting(t *testing.T) {
+	a := New()
+	a.Err = &bytes.Buffer{}
+	a.IsTerminal = func() bool { return true }
+	actionCalls, submitCalls := 0, 0
+	action := &formField{Label: "Check key", Action: func(progress func(string)) error {
+		actionCalls++
+		progress("Key verified")
+		return nil
+	}}
+	a.In = strings.NewReader("\r\t\r")
+	err := a.runFormButton(context.Background(), "Upload", "Upload", []*formField{action}, func(func(string)) error {
+		submitCalls++
+		return nil
+	})
+	if err != nil || actionCalls != 1 || submitCalls != 1 {
+		t.Fatal("form action did not stay distinct from submit", err, actionCalls, submitCalls)
+	}
+	screen := a.Err.(*bytes.Buffer).String()
+	if !strings.Contains(screen, "[ Check key ]") || !strings.Contains(screen, "Key verified") {
+		t.Fatalf("form action was not rendered with status: %q", screen)
+	}
+}

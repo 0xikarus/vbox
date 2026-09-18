@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"crypto/sha256"
 	"fmt"
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/config"
@@ -81,8 +80,28 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	addAPIKey := &formField{Label: "[ Add OpenCode API key ]"}
 	addAPIKey.AddFields = func() []*formField {
 		entry := newOpenCodeAPIUploadEntry(providers)
+		entry.check.Action = func(progress func(string)) error {
+			provider, ok := openCodeAPIProviderByLabel(providers, entry.provider.Value)
+			if !ok {
+				return fmt.Errorf("choose OpenRouter or Venice for the OpenCode profile")
+			}
+			key := strings.TrimSpace(entry.key.Value)
+			if key == "" {
+				return fmt.Errorf("enter the %s API key", provider.Label)
+			}
+			progress("Checking " + provider.Label + " and loading models…")
+			models, err := a.queryOpenCodeAPIModels(ctx, provider, key)
+			if err != nil {
+				return err
+			}
+			entry.verifiedInput = openCodeAPIInputFingerprint(provider, key)
+			entry.model.Choices = models
+			entry.model.Value = models[0]
+			progress(fmt.Sprintf("%s key verified · %d tool-capable models", provider.Label, len(models)))
+			return nil
+		}
 		apiEntries = append(apiEntries, entry)
-		return []*formField{entry.provider, entry.name, entry.key, entry.model, entry.choice}
+		return []*formField{entry.provider, entry.name, entry.key, entry.check, entry.model, entry.choice}
 	}
 	fields = append(fields, addAPIKey)
 	defer func() {
@@ -151,20 +170,9 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			if key == "" {
 				return fmt.Errorf("enter the %s API key", provider.Label)
 			}
-			keyBytes := []byte(key)
-			digest := sha256.Sum256(keyBytes)
-			clear(keyBytes)
-			verifiedInput := fmt.Sprintf("%s:%x", provider.ID, digest)
+			verifiedInput := openCodeAPIInputFingerprint(provider, key)
 			if entry.verifiedInput != verifiedInput {
-				progress("Verifying " + provider.Label + " and loading tool-capable models…")
-				models, err := a.queryOpenCodeAPIModels(ctx, provider, key)
-				if err != nil {
-					return err
-				}
-				entry.verifiedInput = verifiedInput
-				entry.model.Choices = models
-				entry.model.Value = models[0]
-				return fmt.Errorf("%s API key verified; choose a model, then select Upload again", provider.Label)
+				return fmt.Errorf("check the %s API key, then choose a model", provider.Label)
 			}
 			if !containsString(entry.model.Choices, entry.model.Value) {
 				return fmt.Errorf("choose one of the available %s models", provider.Label)
@@ -199,6 +207,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			entry.provider.Hidden = true
 			entry.name.Hidden = true
 			entry.key.Hidden = true
+			entry.check.Hidden = true
 			entry.model.Hidden = true
 			entry.choice.Label = "opencode / " + name
 			entry.choice.Value = "Saved"

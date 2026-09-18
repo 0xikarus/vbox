@@ -101,6 +101,33 @@ func TestProfileUploadDialogOffersOpenCodeAPIKeyEntry(t *testing.T) {
 	}
 }
 
+func TestProfileUploadDialogShowsSeparateOpenCodeKeyCheck(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/login-profiles" {
+			t.Fatalf("unexpected operation %s %s", r.Method, r.URL.Path)
+		}
+		json.NewEncoder(w).Encode([]v1.LoginProfile{})
+	}))
+	defer server.Close()
+
+	a := New()
+	a.Environ = map[string]string{"HOME": t.TempDir()}
+	a.Runner = &procexec.FakeRunner{}
+	a.IsTerminal = func() bool { return true }
+	var screen bytes.Buffer
+	a.Out, a.Err = &bytes.Buffer{}, &screen
+	// Add an API-key entry, move from provider through name to the secret key,
+	// enter it, and cancel without ever submitting the upload form.
+	a.In = strings.NewReader("\x1b[B\r\t\t\rsynthetic-private-key\r\x03")
+	_ = a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"})
+	if !strings.Contains(screen.String(), "Check key") {
+		t.Fatalf("OpenCode entry does not expose a distinct key check before upload: %q", screen.String())
+	}
+	if strings.Contains(screen.String(), "synthetic-private-key") {
+		t.Fatal("API key was rendered in the terminal")
+	}
+}
+
 func TestProfileUploadDialogOffersClaudeAndCodexModelFields(t *testing.T) {
 	for _, tc := range []struct {
 		application, directory, authFile, configFile, config string
@@ -251,7 +278,9 @@ func TestSaveOpenCodeAPIKeyProfileIncludesSelectedProviderAndModel(t *testing.T)
 
 func TestProfileUploadDialogVerifiesSelectsAndSavesOpenCodeAPIKey(t *testing.T) {
 	puts := 0
+	var calls []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, r.Method+" "+r.URL.Path)
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/login-profiles":
 			json.NewEncoder(w).Encode([]v1.LoginProfile{})
@@ -285,14 +314,22 @@ func TestProfileUploadDialogVerifiesSelectsAndSavesOpenCodeAPIKey(t *testing.T) 
 	a.openCodeAPIProviders = []openCodeAPIProvider{{ID: "openrouter", Label: "OpenRouter", VerifyURL: server.URL + "/verify", ModelsURL: server.URL + "/models"}}
 	var output, screen bytes.Buffer
 	a.Out, a.Err = &output, &screen
-	// Open the API-key entry, set its name and hidden key, submit once to load
-	// models, then submit the default (and only) tool-capable model.
-	a.In = strings.NewReader("\x1b[B\r\t\rwork\r\t\rsynthetic-private-key\r\t\t\t\r\t\r")
+	// Open the API-key entry, set its name and hidden key, run the dedicated
+	// check action to load models, then upload the default tool-capable model.
+	a.In = strings.NewReader("\x1b[B\r\t\rwork\r\t\rsynthetic-private-key\r\t\r\t\t\t\t\r")
 	if err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "controller-token", []string{"upload"}); err != nil {
 		t.Fatal(err)
 	}
 	if puts != 1 || !strings.Contains(output.String(), "Uploaded 1 login profile") {
 		t.Fatal("OpenCode profile was not saved exactly once", puts, output.String())
+	}
+	if got := strings.Join(calls, ","); got != "GET /v1/login-profiles,GET /verify,GET /models,PUT /v1/login-profiles/opencode/work" {
+		t.Fatalf("check and upload operations ran out of order: %s", got)
+	}
+	for _, want := range []string{"[ Check key ]", "OpenRouter key verified", "openrouter/vendor/tool-model"} {
+		if !strings.Contains(screen.String(), want) {
+			t.Fatalf("OpenCode check/model flow did not render %q: %q", want, screen.String())
+		}
 	}
 	if strings.Contains(screen.String(), "synthetic-private-key") {
 		t.Fatal("API key was rendered in the terminal")
