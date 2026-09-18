@@ -13,7 +13,13 @@ type AccountFleetConfig struct {
 }
 
 func (s *Store) ListFleetConfigs(ctx context.Context) ([]AccountFleetConfig, error) {
-	rows, err := s.DB.QueryContext(ctx, `SELECT account_id::text,provider,provider_credential,compute_box_slots,updated_at FROM fleet_settings ORDER BY account_id,provider,provider_credential`)
+	rows, err := s.DB.QueryContext(ctx, `SELECT f.account_id::text,f.provider,f.provider_credential,f.compute_box_slots,f.updated_at
+		FROM fleet_settings f
+		WHERE f.provider_credential<>'' OR NOT EXISTS (
+			SELECT 1 FROM fleet_settings named
+			WHERE named.account_id=f.account_id AND named.provider=f.provider AND named.provider_credential<>''
+		)
+		ORDER BY f.account_id,f.provider,f.provider_credential`)
 	if err != nil {
 		return nil, err
 	}
