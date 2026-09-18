@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -128,6 +129,26 @@ func TestSelectedAgentProfileControlsBoxHarness(t *testing.T) {
 	}
 	if got := selectedProfileAgent("claude", []v1.LoginProfileRef{{Application: "github", Name: "work"}}); got != "claude" {
 		t.Fatalf("non-agent profile unexpectedly changed harness to %q", got)
+	}
+}
+
+func TestFailedProfileApplyRestoresPreviousSelection(t *testing.T) {
+	requested := []v1.LoginProfileRef{{Application: "claude", Name: "expired"}}
+	previous := []v1.LoginProfileRef{{Application: "codex", Name: "working"}}
+	providerFailure := errors.New("provider rejected profile")
+	var calls [][]v1.LoginProfileRef
+	err := applyBoxLoginProfilesWithRollback(requested, previous, func(refs []v1.LoginProfileRef) error {
+		calls = append(calls, append([]v1.LoginProfileRef(nil), refs...))
+		if len(calls) == 1 {
+			return providerFailure
+		}
+		return nil
+	})
+	if !errors.Is(err, providerFailure) {
+		t.Fatalf("original profile error was lost: %v", err)
+	}
+	if len(calls) != 2 || calls[0][0].Application != "claude" || calls[1][0].Application != "codex" {
+		t.Fatalf("profile apply sequence = %+v", calls)
 	}
 }
 
