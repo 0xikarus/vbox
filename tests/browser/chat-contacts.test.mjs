@@ -14,9 +14,10 @@ const appcss=await readFile('internal/controller/web/app.css','utf8');
 // workspace-desktop.test.mjs). This test drives the real page against fixture
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
- let boxRole='worker',protectedBox=false,requests=[];
+ let boxRole='worker',protectedBox=false,requests=[],fullDesktopShots=0;
  let contacts=[{contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
+ const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0],method=req.method;requests.push(method+' '+path);
   if(path==='/chat')return res.end(html);
@@ -28,7 +29,10 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,role:b.id==='builder'?boxRole:'worker'}))));
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
-  if(path.endsWith('/desktop/screenshot')){res.statusCode=409;return res.end(JSON.stringify({error:'desktop offline'}))}
+  if(path.endsWith('/desktop/screenshot')){
+   if(req.url.includes('thumbnail=true')){res.statusCode=409;return res.end(JSON.stringify({error:'thumbnail offline'}))}
+   fullDesktopShots++;res.setHeader('Content-Type','image/png');return res.end(thumbnail);
+  }
   if(path==='/v1/logical-boxes/builder/messages')return res.end(JSON.stringify([{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}]));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
   if(path==='/v1/logical-boxes/builder/contacts'){
@@ -55,6 +59,14 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-app').hidden);
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  for(const selector of ['#chat-entries [data-avatar="builder"]','#chat-header-avatar [data-avatar="builder"]']){
+   await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
+   assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');
+   await p.waitForFunction(()=>document.querySelector('.tv-preview img')?.naturalWidth===1);
+   await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseleave')));
+   assert.equal(await p.$eval('.tv-preview',e=>e.hidden),true,selector+' did not close the desktop preview');
+  }
+  assert.equal(fullDesktopShots>0,true);
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='worker');

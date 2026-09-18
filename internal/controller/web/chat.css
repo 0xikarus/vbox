@@ -29,6 +29,8 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .avatar.small{width:2.5rem;height:2.5rem}
 .avatar .dot{position:absolute;right:0;bottom:0;width:.8rem;height:.8rem;border-radius:50%;border:2px solid #fff;background:#8696a0}
 .avatar .dot.running{background:#25d366}
+.avatar.preview-trigger{cursor:pointer}
+.avatar.preview-trigger:focus-visible{outline:3px solid #00a884;outline-offset:2px}
 .chat-meta{flex:1;min-width:0}
 .chat-meta .row1{display:flex;align-items:baseline;gap:.5rem}
 .chat-meta .name{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
