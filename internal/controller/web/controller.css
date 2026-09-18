@@ -9,12 +9,18 @@ h3{font-size:13px;margin:16px 0 4px}
 
 /* prose */
 .sub{color:#52514e;margin:0 0 10px}
-.hint{font-size:11.5px;color:#52514e;max-width:78ch;margin:4px 0}
-.hint.tiny{color:#898781}
+.hint{font-size:12px;color:#52514e;max-width:78ch;margin:4px 0}
+.hint.tiny{color:#6b6864}
 .flash{background:#f4faf4;border-left:3px solid #0a7a0a;padding:5px 8px;margin:8px 0}
 .flash.error{background:#fdf4f4;border-color:#b00;color:#b00}
 
 /* controls */
+/* Field labels are the text that says what each control is, so they have to be
+   legible. The shared default is #898781 at 11px, about 3.4:1 on white, which
+   fails WCAG AA for normal text and reads as washed out at that size. These are
+   scoped to this page so other pages keep their tested layout. */
+label{font-size:12px;color:#52514e}
+.field>label,.row-fields label{color:#3f3d3a;font-weight:600;letter-spacing:.01em}
 input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #03c;outline-offset:0}
 button.primary{padding:4px 12px}
 .field{display:inline-block}
@@ -23,7 +29,7 @@ button.primary{padding:4px 12px}
 /* grouped form sections (create box) */
 #create{display:block;margin:12px 0}
 .group{border:1px solid #e2e2e2;margin:0 0 10px;padding:4px 12px 12px;min-width:0}
-.group>legend{font-size:11px;color:#0b0b0b;font-weight:700;padding:0 5px}
+.group>legend{font-size:12px;color:#0b0b0b;font-weight:700;padding:0 5px;letter-spacing:.02em}
 .group .hint{margin:6px 0 0}
 .group>details{margin:8px 0 0}
 .row-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:10px 16px;align-items:end;margin-top:6px;max-width:64rem}
@@ -34,7 +40,7 @@ button.primary{padding:4px 12px}
 
 /* optional tool presets */
 .tools{border:0;padding:0;margin:6px 0 0;min-width:0;display:block}
-.tools legend{font-size:11px;color:#898781;padding:0}
+.tools legend{font-size:12px;color:#3f3d3a;font-weight:600;padding:0;letter-spacing:.01em}
 .tools label{display:inline-flex;align-items:center;gap:6px;margin:4px 18px 0 0;font-size:13px;color:#0b0b0b}
 .tools input[type=checkbox]{display:inline-block;flex:none;width:auto;margin:0;padding:0}
 .custom-tools{max-width:100%;margin:10px 0 0}
@@ -46,12 +52,12 @@ button.primary{padding:4px 12px}
 .table-wrap{overflow-x:auto}
 table.markets{border-collapse:collapse;width:100%;min-width:44rem;table-layout:fixed}
 table.markets th,table.markets td{text-align:left;padding:7px 12px;border-bottom:1px solid #eee;vertical-align:top;overflow-wrap:anywhere}
-table.markets th{font-weight:600;white-space:nowrap;overflow-wrap:normal;color:#52514e}
+table.markets th{font-weight:700;white-space:nowrap;overflow-wrap:normal;color:#3f3d3a}
 table.markets th+th,table.markets td+td{border-left:1px solid #f0f0f0}
 table.markets tr.row:hover{background:#fafafa}
 .table-text{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.table-text.muted,.state-note{color:#898781}
-.state-note{font-size:11.5px;margin-top:1px}
+.table-text.muted,.state-note{color:#6b6864}
+.state-note{font-size:12px;margin-top:1px}
 #box-list table.markets{min-width:52rem}
 #box-list th:nth-child(1){width:17%}
 #box-list th:nth-child(2){width:14%}
@@ -78,7 +84,7 @@ table.markets tr.row:hover{background:#fafafa}
 .md-preview .md-pre{background:#f2f4f5;padding:6px 8px;overflow:auto;font-size:12px}
 .md-preview .md-quote{border-left:3px solid #d5d9dc;margin:4px 0;padding:1px 10px;color:#52514e}
 .md-preview .md-hr{border:0;border-top:1px solid #e2e2e2}
-.md-preview .md-empty{color:#898781;font-style:italic}
+.md-preview .md-empty{color:#6b6864;font-style:italic}
 
 @media(max-width:600px){
  label{display:block}input,textarea{width:100%}
