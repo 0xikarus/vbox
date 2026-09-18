@@ -22,6 +22,7 @@ type formField struct {
 	DeleteChoice func(string) error
 	OnSelect     func(string)
 	AddFields    func() []*formField
+	Action       func(func(string)) error
 	Checkbox     bool
 	RenderRow    func(int) string
 	TableHeader  string
@@ -77,7 +78,9 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 				value = "••••••"
 			}
 			line := fmt.Sprintf("%-18s %s", f.Label, value)
-			if f.RenderRow != nil {
+			if f.Action != nil {
+				line = "[ " + f.Label + " ]"
+			} else if f.RenderRow != nil {
 				line = f.RenderRow(width - 4)
 			} else if f.List {
 				noun := f.ChoiceNoun
@@ -111,6 +114,9 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 				help = "↑/↓ Tab: move · Space/Enter: toggle · Enter: action/edit"
 				break
 			}
+		}
+		if selected < len(rows) && rows[selected].Action != nil {
+			help = "↑/↓ Tab: move · Enter: " + strings.ToLower(rows[selected].Label)
 		}
 		if picker != nil {
 			help = "↑/↓: select profile · Enter: use · d: delete saved · Esc: back"
@@ -337,6 +343,14 @@ func (a *App) runFormButton(ctx context.Context, title, submitLabel string, fiel
 					continue
 				}
 				return nil
+			}
+			if rows[selected].Action != nil {
+				status = rows[selected].Label + "…"
+				render()
+				if err := rows[selected].Action(func(message string) { status = message; render() }); err != nil {
+					status = err.Error()
+				}
+				continue
 			}
 			if len(rows[selected].Choices) > 0 {
 				// Ordinary fields keep their existing selection behavior.

@@ -242,7 +242,9 @@ name so boxes with different model defaults remain distinguishable. For scripts,
 use `vmbox profiles save APPLICATION NAME --from SOURCE` (`SOURCE` is a local
 directory for Claude/Codex/OpenCode, or `HOST:USER` for GitHub).
 The separate **Add OpenCode API key** action supports OpenRouter and Venice. It
-authenticates the key against the provider, queries the live model catalog, and
+shows a **Check key** action after the masked key is entered. Checking authenticates
+against the provider and loads the live model catalog without submitting the
+profile; choose a model, then use **Upload** once to save it. The picker
 offers only text models that advertise tool calling so chat and desktop MCP work
 from the first prompt. The chosen provider and model are stored in `auth.json`
 and `opencode.json`; the plaintext key is never printed or written locally.

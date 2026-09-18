@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,9 +26,9 @@ var defaultOpenCodeAPIProviders = []openCodeAPIProvider{
 }
 
 type openCodeAPIUploadEntry struct {
-	provider, name, key, model, choice *formField
-	verifiedInput                      string
-	saved                              bool
+	provider, name, key, check, model, choice *formField
+	verifiedInput                             string
+	saved                                     bool
 }
 
 func (a *App) openCodeAPIProviderChoices() []openCodeAPIProvider {
@@ -55,14 +56,26 @@ func newOpenCodeAPIUploadEntry(providers []openCodeAPIProvider) *openCodeAPIUplo
 		provider: &formField{Label: "OpenCode provider", Choices: labels},
 		name:     &formField{Label: "Profile name"},
 		key:      &formField{Label: "API key", Secret: true},
+		check:    &formField{Label: "Check key"},
 		model:    &formField{Label: "Model", List: true, ChoiceNoun: "models"},
 		choice:   &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}, Checkbox: true},
 	}
 	if len(labels) > 0 {
 		entry.provider.Value = labels[0]
 	}
-	entry.model.When = func() bool { return len(entry.model.Choices) > 0 }
+	entry.check.When = func() bool { return !entry.saved && strings.TrimSpace(entry.key.Value) != "" }
+	entry.model.When = func() bool {
+		provider, ok := openCodeAPIProviderByLabel(providers, entry.provider.Value)
+		return ok && len(entry.model.Choices) > 0 && entry.verifiedInput == openCodeAPIInputFingerprint(provider, entry.key.Value)
+	}
 	return entry
+}
+
+func openCodeAPIInputFingerprint(provider openCodeAPIProvider, key string) string {
+	keyBytes := []byte(strings.TrimSpace(key))
+	digest := sha256.Sum256(keyBytes)
+	clear(keyBytes)
+	return fmt.Sprintf("%s:%x", provider.ID, digest)
 }
 
 func (a *App) queryOpenCodeAPIModels(ctx context.Context, provider openCodeAPIProvider, key string) ([]string, error) {
