@@ -53,10 +53,13 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- ServeDesktopMCP(ctx, "invalid", input, output) }()
 
-	ready := filepath.Join(home, ".local", "share", "vmbox", "chat", "channel-ready", "claude-order")
+	ready := func() bool {
+		owners, err := claudeChannelOwners(home, "claude-order")
+		return err == nil && len(owners) > 0
+	}
 	time.Sleep(50 * time.Millisecond)
-	if _, err := os.Stat(ready); !os.IsNotExist(err) {
-		t.Fatalf("channel advertised readiness before initialize: %v", err)
+	if ready() {
+		t.Fatal("channel advertised readiness before initialize")
 	}
 	select {
 	case line := <-output.lines:
@@ -73,8 +76,8 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 		t.Fatalf("first output was not initialize response: %s", first)
 	}
 	time.Sleep(50 * time.Millisecond)
-	if _, err := os.Stat(ready); !os.IsNotExist(err) {
-		t.Fatalf("channel advertised readiness before initialized notification: %v", err)
+	if ready() {
+		t.Fatal("channel advertised readiness before initialized notification")
 	}
 	select {
 	case line := <-output.lines:
@@ -103,6 +106,31 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("MCP server did not stop")
+	}
+}
+
+func TestClaudeChannelOldProcessCannotRemoveReplacementReadiness(t *testing.T) {
+	home := t.TempDir()
+	dir := claudeChannelReadyDir(home)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	oldPath := claudeChannelReadyPath(home, "session", "channel_old")
+	newPath := claudeChannelReadyPath(home, "session", "channel_new")
+	for _, path := range []string{oldPath, newPath} {
+		if err := os.WriteFile(path, []byte(filepath.Base(path)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(oldPath); err != nil {
+		t.Fatal(err)
+	}
+	owners, err := claudeChannelOwners(home, "session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := owners["channel_new"]; !ok {
+		t.Fatalf("old process removal affected replacement readiness: %v", owners)
 	}
 }
 

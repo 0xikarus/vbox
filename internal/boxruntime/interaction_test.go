@@ -499,7 +499,6 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 	for _, test := range []struct {
 		agent, ready, command string
 	}{
-		{agent: "claude", ready: "Claude Code v2.1.276\n❯ Try \"fix a bug\"", command: "/clear"},
 		{agent: "codex", ready: "OpenAI Codex\n›", command: "/new"},
 		{agent: "opencode", command: "/new"},
 	} {
@@ -534,6 +533,55 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 	}
 }
 
+func TestResetClaudeContextRespawnsChannelTUI(t *testing.T) {
+	t.Setenv("VMBOX_WORKSPACE_ROOT", t.TempDir())
+	originalCommand, originalSettle, originalChannelWait := tmuxCommand, agentReadySettlePause, claudeChannelReadyWait
+	t.Cleanup(func() {
+		tmuxCommand, agentReadySettlePause, claudeChannelReadyWait = originalCommand, originalSettle, originalChannelWait
+	})
+	agentReadySettlePause = func(context.Context) error { return nil }
+	channelWaits := 0
+	claudeChannelReadyWait = func(_ context.Context, session string, prior map[string]struct{}) error {
+		channelWaits++
+		if session != "claude-session" {
+			t.Fatalf("waited for the wrong Claude channel %q", session)
+		}
+		if len(prior) != 0 {
+			t.Fatalf("unexpected prior channels: %v", prior)
+		}
+		return nil
+	}
+	var calls []string
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		calls = append(calls, strings.Join(args, " "))
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("Claude Code v2.1.276\n❯ Try \"fix a bug\""), nil
+		}
+		return nil, nil
+	}
+	root := t.TempDir()
+	if err := ResetAgentContext(context.Background(), root, "claude-session", "claude", "reset-message"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(calls, "\n")
+	if !strings.Contains(joined, "respawn-pane -k -t claude-session") {
+		t.Fatalf("Claude context was not replaced with a fresh channel TUI: %v", calls)
+	}
+	if strings.Contains(joined, "load-buffer") || strings.Contains(joined, "paste-buffer") {
+		t.Fatalf("Claude reset was injected as terminal text: %v", calls)
+	}
+	if channelWaits != 1 {
+		t.Fatalf("fresh Claude channel was not awaited: %d", channelWaits)
+	}
+	before := len(calls)
+	if err := ResetAgentContext(context.Background(), root, "claude-session", "claude", "reset-message"); err != nil {
+		t.Fatal(err)
+	}
+	if len(calls) != before {
+		t.Fatalf("idempotent retry restarted Claude again: %v", calls[before:])
+	}
+}
+
 func stubRegisteredAgent(t *testing.T, agent string) {
 	t.Helper()
 	home, bin := t.TempDir(), t.TempDir()
@@ -550,17 +598,6 @@ func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {
 	}
 	if !agentInputReady("claude", "Claude Code v2.1.259\n❯\u00a0Try \"fix lint errors\"") {
 		t.Fatal("Claude real input placeholder was not recognized")
-	}
-}
-
-func TestClaudeInputReadinessAcceptsActiveSuggestion(t *testing.T) {
-	pane := "Claude Code v2.1.276\n" +
-		"────────────────────────────────────────\n" +
-		"❯\u00a0confirm both replies posted correctly\n" +
-		"────────────────────────────────────────\n" +
-		"  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents\n"
-	if !agentInputReady("claude", pane) {
-		t.Fatal("active Claude suggestion was not recognized as an input-ready prompt")
 	}
 }
 
