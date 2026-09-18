@@ -216,13 +216,14 @@ function renderBoxes(boxes){
 }
 function renderProfiles(identity,profiles){
  const tree=document.createElement('details');tree.open=true;tree.append(node('summary',identity.accountName+' ('+identity.accountId+')'));
- const choices=$('#profile-choices'),selected={};choices.querySelectorAll('select').forEach(s=>selected[s.name]=s.value);choices.replaceChildren();
+ const choices=$('#profile-choices'),selected=choices.querySelector('select')?.value||'';choices.replaceChildren();
  for(const app of ['claude','codex','opencode','github']){
   const entries=profiles.filter(p=>p.application===app),branch=document.createElement('details');branch.open=true;branch.append(node('summary',app+' ('+entries.length+')'));const list=document.createElement('ul');
   for(const p of entries){const item=node('li',p.name+' · saved '+p.createdAt+' ');item.append(button('Delete',async()=>{if(!confirm('Delete saved profile '+app+' / '+p.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(p.name),'DELETE');await refresh()}));list.append(item)}if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
-  const label=node('label',app+' login ');label.className='field';const select=document.createElement('select');select.name=app;const empty=node('option','None');empty.value='';select.append(empty);
-  for(const p of entries){const option=node('option',p.name);option.value=p.name;select.append(option)}if(entries.some(p=>p.name===selected[app]))select.value=selected[app];label.append(select);choices.append(label);
  }$('#profile-tree').replaceChildren(tree);
+ const label=node('label','login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
+ for(const app of ['claude','codex','opencode']){const entries=profiles.filter(p=>p.application===app);if(!entries.length)continue;const group=document.createElement('optgroup');group.label=app;for(const p of entries){const option=node('option',p.name);option.value=JSON.stringify({application:app,name:p.name});group.append(option)}select.append(group)}
+ if([...select.options].some(option=>option.value===selected))select.value=selected;label.append(select);choices.append(label);
 }
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
@@ -247,7 +248,7 @@ async function refresh(){
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
 $('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,loginProfiles=Array.from($('#profile-choices').querySelectorAll('select')).filter(s=>s.value).map(s=>({application:s.name,name:s.value})),tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=$('#profile-choices select')?.value,loginProfiles=profile?[JSON.parse(profile)]:[],tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));
@@ -420,18 +421,11 @@ async function openBoxCredentials(box){
  try{
   const [state,profiles]=await Promise.all([api(bp(box.id)+'/imported-credentials'),api('/v1/login-profiles')]);
   const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
-  const current=new Map((state.profiles||[]).map(ref=>[ref.application,ref.name]));
+  const current=(state.profiles||[])[0];
   const wrap=$('#box-credentials-form');wrap.replaceChildren();
-  for(const application of ['claude','codex','opencode','github']){
-   const label=node('label','');label.className='field';label.append(document.createTextNode(application+' '));
-   const select=document.createElement('select');select.name=application;
-   const empty=node('option','None');empty.value='';select.append(empty);
-   for(const name of (byApplication[application]||[]).slice().sort()){const option=node('option',name);option.value=name;select.append(option)}
-   if(current.has(application)&&(byApplication[application]||[]).includes(current.get(application)))select.value=current.get(application);
-   label.append(select);
-   label.title=(byApplication[application]||[]).length?'':'No saved '+application+' profiles. Upload with: vmbox profiles save '+application+' NAME';
-   wrap.append(label);
-  }
+  const label=node('label','login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
+  for(const application of ['claude','codex','opencode']){const names=(byApplication[application]||[]).slice().sort();if(!names.length)continue;const group=document.createElement('optgroup');group.label=application;for(const name of names){const option=node('option',name);option.value=JSON.stringify({application,name});group.append(option)}select.append(group)}
+  const currentValue=current&&JSON.stringify({application:current.application,name:current.name});if(currentValue&&[...select.options].some(option=>option.value===currentValue))select.value=currentValue;label.append(select);wrap.append(label);
   const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
   if((state.pending||[]).length)parts.push('Queued for next start: '+(state.pending||[]).map(ref=>ref.application+' · '+ref.name).join(', '));
   $('#box-credentials-current').textContent=parts.join(' · ')+'.';
@@ -441,7 +435,7 @@ async function openBoxCredentials(box){
 }
 $('#box-credentials-apply').addEventListener('click',action(async()=>{
  if(!boxCredentialTarget)return;
- const status=$('#box-credentials-status'),profiles=[...$('#box-credentials-form').querySelectorAll('select')].filter(select=>select.value).map(select=>({application:select.name,name:select.value}));
+ const status=$('#box-credentials-status'),profile=$('#box-credentials-form select')?.value,profiles=profile?[JSON.parse(profile)]:[];
  status.textContent='Applying credentials…';
  const result=await api(bp(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
  status.textContent=result.note||'Saved.';

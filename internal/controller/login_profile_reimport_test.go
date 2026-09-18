@@ -16,6 +16,10 @@ import (
 func TestValidateBoxProfileRefsRejectsDuplicateOversizedAndUnavailable(t *testing.T) {
 	s, _ := testStore(t)
 	server := &Server{Store: s}
+	twoProfiles := []v1.LoginProfileRef{{Application: "claude", Name: "work"}, {Application: "codex", Name: "work"}}
+	if err := server.validateBoxProfileRefs(context.Background(), "a", twoProfiles); err == nil || !strings.Contains(err.Error(), "select at most 1 login profile") {
+		t.Fatalf("multiple profile selection was not rejected by the one-profile limit: %v", err)
+	}
 	duplicate := []v1.LoginProfileRef{{Application: "claude", Name: "work"}, {Application: "claude", Name: "work"}}
 	if err := server.validateBoxProfileRefs(context.Background(), "a", duplicate); err == nil || !strings.Contains(err.Error(), "twice") {
 		t.Fatalf("duplicate profile selection accepted: %v", err)
@@ -30,6 +34,25 @@ func TestValidateBoxProfileRefsRejectsDuplicateOversizedAndUnavailable(t *testin
 	// No encryption envelope: the profile cannot be loaded, so it must be rejected.
 	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work"}}); err == nil {
 		t.Fatal("unavailable profile accepted")
+	}
+}
+
+func TestCreateLogicalBoxRejectsMultipleLoginProfiles(t *testing.T) {
+	s, _ := testStore(t)
+	server := &Server{Store: s}
+	request := httptest.NewRequest(http.MethodPost, "/v1/logical-boxes", strings.NewReader(`{
+		"name":"one-profile-only",
+		"loginProfiles":[
+			{"application":"claude","name":"work"},
+			{"application":"codex","name":"work"}
+		]
+	}`))
+	response := httptest.NewRecorder()
+
+	server.createLogicalBoxHandler(response, request, Principal{AccountID: "a", UserID: "u", Role: "owner"})
+
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "select at most 1 login profile") {
+		t.Fatalf("multiple profile creation status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
