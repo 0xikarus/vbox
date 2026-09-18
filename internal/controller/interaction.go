@@ -113,6 +113,16 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 }
 
 func (s *Server) startAssignedBoxTaskRuntime(ctx context.Context, p Principal, prov provider.Provider, a fleetAssignment, task v1.BoxTask, message v1.BoxMessage) (provider.ExecResult, error) {
+	// A shared-worker rollout retains the workspace but replaces the process
+	// namespace and therefore its tmux server. Session inventory already repairs
+	// that transition; chat startup must do the same before probing desktop
+	// capability or launching a harness, otherwise the first message after a
+	// rollout is reported as an ambiguous delivery even though no prompt ran.
+	if a.Box.Provider == "shared-worker" {
+		if err := s.recoverSharedWorkspace(ctx, a, prov); err != nil {
+			return provider.ExecResult{}, fmt.Errorf("recover shared workspace runtime: %w", err)
+		}
+	}
 	tx, err := s.Store.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return provider.ExecResult{}, fmt.Errorf("task assignment lock unavailable")
