@@ -262,3 +262,21 @@ func stubCodexBackend(t *testing.T) {
 	t.Cleanup(func() { EnsureCodexAppServer = original })
 	EnsureCodexAppServer = func(context.Context, string) error { return nil }
 }
+
+// Codex's MCP server is a child of the app server, so the tmux session holding
+// it is the internal one. Its chat replies still belong to the conversation the
+// controller reads, which is the same name without the prefix.
+func TestChatSessionUnwrapsTheCodexAppServerSession(t *testing.T) {
+	t.Setenv("VMBOX_CHAT_SESSION", codexAppServerSession("codex-abc123"))
+	session, err := chatSession(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session != "codex-abc123" {
+		t.Fatalf("chat replies would be filed under %q", session)
+	}
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-abc123")
+	if session, err = chatSession(context.Background()); err != nil || session != "codex-abc123" {
+		t.Fatalf("an ordinary session must pass through: %q %v", session, err)
+	}
+}
