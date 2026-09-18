@@ -63,11 +63,16 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	if err != nil {
 		return fmt.Errorf("selected agent is not installed")
 	}
-	if agent == "codex" {
+	switch agent {
+	case "codex":
 		// Re-asserted on every attach: an imported login profile ships its own
 		// config.toml, which would otherwise drop the box's permissions.
 		if err := EnsureCodexDefaults(home, WorkspaceDirectory()); err != nil {
 			return fmt.Errorf("could not apply codex box defaults: %w", err)
+		}
+	case "claude":
+		if err := EnsureClaudeDefaults(home, WorkspaceDirectory()); err != nil {
+			return fmt.Errorf("could not apply claude box defaults: %w", err)
 		}
 	}
 	probe := exec.CommandContext(ctx, path, "mcp", "get", "vmbox-desktop")
@@ -162,6 +167,11 @@ func registerOpenCodeDesktop(home string) error {
 	}
 	entries["vmbox-desktop"], _ = json.Marshal(map[string]any{"type": "local", "command": []string{desktopRuntimePath(), "desktop-mcp"}})
 	config["mcp"], _ = json.Marshal(entries)
+	// --auto is a launch flag, so a terminal `opencode` would still prompt. The
+	// config equivalent gives it the same permissions as a chat-started one.
+	if _, set := config["permission"]; !set {
+		config["permission"], _ = json.Marshal("allow")
+	}
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return err
