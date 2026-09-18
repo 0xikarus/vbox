@@ -553,6 +553,17 @@ func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {
 	}
 }
 
+func TestClaudeInputReadinessAcceptsActiveSuggestion(t *testing.T) {
+	pane := "Claude Code v2.1.276\n" +
+		"────────────────────────────────────────\n" +
+		"❯\u00a0confirm both replies posted correctly\n" +
+		"────────────────────────────────────────\n" +
+		"  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents\n"
+	if !agentInputReady("claude", pane) {
+		t.Fatal("active Claude suggestion was not recognized as an input-ready prompt")
+	}
+}
+
 func TestWaitForAgentReadyUsesOpenCodeSessionAPI(t *testing.T) {
 	originalProbe, originalInterval, originalTimeout := openCodeReadyProbe, agentReadyPollInterval, agentReadyTimeout
 	t.Cleanup(func() {
