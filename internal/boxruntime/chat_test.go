@@ -11,7 +11,6 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -99,28 +98,32 @@ func TestDeliverCodexChatReferencesLocalImagesWithoutUnsupportedQueueFlags(t *te
 		got = append([]string(nil), args...)
 		return os.Remove(eventPath)
 	}
-	// Codex is addressed by the thread id it recorded, not by the tmux session
-	// name, so a thread started from a terminal can be reached too.
+	// Delivery types into the running Codex, so images travel as local file
+	// references inside the prompt rather than as queue flags.
 	root := t.TempDir()
-	thread := "01a0b294-9d7d-7243-a1d8-f5caf047d919"
-	rollout := filepath.Join(home, ".codex", "sessions", "2026", "09", "18", "rollout-2026-09-18T03-34-39-"+thread+".jsonl")
-	if err := os.MkdirAll(filepath.Dir(rollout), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	meta := `{"type":"session_meta","payload":{"session_id":"` + thread + `","cwd":"` + WorkspaceDirectory() + `"}}` + "\n"
-	if err := os.WriteFile(rollout, []byte(meta), 0o600); err != nil {
-		t.Fatal(err)
+	originalCommand, originalSubmit := tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalSubmit })
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	typed := ""
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("OpenAI Codex\n\u203a Ask Codex to do anything"), nil
+		}
+		if len(args) >= 5 && args[0] == "send-keys" && args[3] == "-l" {
+			typed = args[4]
+		}
+		return nil, nil
 	}
 
 	inbound := ChatInbound{ID: "message-1", Text: "Inspect [Image 1]", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
 	if err := DeliverCodexChat(context.Background(), root, home, "codex-chat", inbound); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 5 || !reflect.DeepEqual(got[:4], []string{"queue", "--thread", thread, "--message"}) {
-		t.Fatalf("unexpected codex queue arguments: %q", got)
+	if len(got) != 0 {
+		t.Fatalf("queued instead of typing into the session: %q", got)
 	}
-	if strings.Contains(strings.Join(got, "\n"), "-i") || !strings.Contains(got[4], "[Image 1]: ") || !strings.Contains(got[4], "/inbox/codex-chat/files/message-1/image-1.png") {
-		t.Fatalf("image was not delivered as a local file reference: %q", got)
+	if !strings.Contains(typed, "[Image 1]: ") || !strings.Contains(typed, "/inbox/codex-chat/files/message-1/image-1.png") {
+		t.Fatalf("image was not delivered as a local file reference: %q", typed)
 	}
 }
 
