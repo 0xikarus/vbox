@@ -584,3 +584,88 @@ func TestSteerInterruptsBeforePasteAndDoesNotReplay(t *testing.T) {
 		t.Fatal("idempotent steer replayed")
 	}
 }
+
+// Claude 2.1.276 added a permission-mode dialog that blocks the prompt. Nobody
+// is at the box to answer it, and the box is deliberately on bypassPermissions,
+// so the second choice is the one that keeps its configuration.
+func TestStartupDialogKeepsBypassPermissions(t *testing.T) {
+	pane := "Make auto mode your default permission mode?\n" +
+		"  Auto mode lets Claude handle permission prompts automatically.\n" +
+		"  ❯ Yes, set auto mode as my default permission mode\n" +
+		"    No, keep bypass permissions\n"
+	dialog, waiting := pendingStartupDialog("claude", pane)
+	if !waiting {
+		t.Fatal("the auto mode dialog was not recognised")
+	}
+	if strings.Join(dialog.keys, " ") != "Down Enter" {
+		t.Fatalf("auto mode would have been accepted: %v", dialog.keys)
+	}
+	if _, waiting = pendingStartupDialog("codex", pane); waiting {
+		t.Fatal("a claude dialog must not be answered in a codex pane")
+	}
+}
+
+func TestStartupDialogsCoverEachKnownPrompt(t *testing.T) {
+	for _, testCase := range []struct{ agent, pane, keys string }{
+		{"claude", "WARNING: Loading development channels\n❯ 1. I am using this for local development\n  2. Exit\nEnter to confirm", "Enter"},
+		{"claude", "Quick safety check:\n❯ No, exit\n  Yes, I trust this folder\nEnter to confirm", "Down Enter"},
+		{"codex", "OpenAI Codex\nApproaching rate limits\n› 1. Switch model\nPress enter to confirm or esc to go back", "Escape"},
+	} {
+		dialog, waiting := pendingStartupDialog(testCase.agent, testCase.pane)
+		if !waiting || strings.Join(dialog.keys, " ") != testCase.keys {
+			t.Fatalf("%s pane answered with %v, want %q", testCase.agent, dialog.keys, testCase.keys)
+		}
+	}
+	if _, waiting := pendingStartupDialog("claude", "Claude Code v2\n❯ Try \"write a test\""); waiting {
+		t.Fatal("a ready prompt must not be mistaken for a dialog")
+	}
+}
+
+// The dialog is answered before the prompt is delivered, or the message lands in
+// a menu instead of the conversation.
+func TestStartTmuxTaskAnswersAutoModeBeforeDeliveringPrompt(t *testing.T) {
+	stubRegisteredAgent(t, "claude")
+	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause = originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm
+	})
+	agentReadyPollInterval = 0
+	agentReadyTimeout = time.Second
+	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
+	var calls []string
+	captures := 0
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		call := strings.Join(args, " ")
+		calls = append(calls, call)
+		if strings.HasPrefix(call, "has-session") {
+			return nil, errors.New("missing")
+		}
+		if strings.HasPrefix(call, "capture-pane") {
+			captures++
+			if captures == 1 {
+				return []byte("Claude Code v2.1.276\nMake auto mode your default permission mode?\n❯ Yes, set auto mode as my default permission mode\n  No, keep bypass permissions"), nil
+			}
+			if captures == 2 {
+				return []byte("Claude Code v2\n❯\u00a0Try \"write a test for <filepath>\""), nil
+			}
+			if captures == 3 {
+				return []byte("Claude Code v2\n❯\u00a0hello"), nil
+			}
+			return []byte("Claude Code v2\n❯\u00a0"), nil
+		}
+		return nil, nil
+	}
+	if err := StartTmuxTask(context.Background(), t.TempDir(), "claude-auto", "claude", "message_9", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(calls, "\n")
+	answer := strings.Index(joined, "send-keys -t claude-auto Down Enter")
+	delivery := strings.Index(joined, "load-buffer")
+	if answer < 0 {
+		t.Fatalf("the auto mode dialog was never answered: %v", calls)
+	}
+	if delivery < 0 || answer >= delivery {
+		t.Fatalf("the prompt was delivered into the dialog: %v", calls)
+	}
+}

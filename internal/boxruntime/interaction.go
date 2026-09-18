@@ -453,17 +453,10 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 		content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
 		if err == nil {
 			text := string(content)
-			if agent == "claude" && strings.Contains(text, "WARNING: Loading development channels") && strings.Contains(text, "I am using this for local development") && strings.Contains(text, "Enter to confirm") {
-				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Enter"); err != nil {
-					return fmt.Errorf("accept development channel in %s session: %w", agent, err)
-				}
-			} else if agent == "codex" && strings.Contains(text, "Approaching rate limits") && strings.Contains(text, "Press enter to confirm or esc to go back") {
-				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Escape"); err != nil {
-					return fmt.Errorf("dismiss rate limit reminder in %s session: %w", agent, err)
-				}
-			} else if agent == "claude" && strings.Contains(text, "Quick safety check:") && strings.Contains(text, "Yes, I trust this folder") && strings.Contains(text, "Enter to confirm") {
-				if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Down", "Enter"); err != nil {
-					return fmt.Errorf("accept trusted workspace in %s session: %w", agent, err)
+			if dialog, waiting := pendingStartupDialog(agent, text); waiting {
+				keys := append([]string{"send-keys", "-t", session}, dialog.keys...)
+				if _, err := tmuxCommand(ctx, "", keys...); err != nil {
+					return fmt.Errorf("%s in %s session: %w", dialog.purpose, agent, err)
 				}
 			} else if agentInputReady(agent, text) {
 				return nil
@@ -477,6 +470,56 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 		case <-time.After(agentReadyPollInterval):
 		}
 	}
+}
+
+// startupDialog is a prompt an agent shows before its input is usable. Nobody is
+// at the box to answer one, so each is recognised by several lines of its own
+// text and answered with the keys that keep the box's configuration.
+type startupDialog struct {
+	agent   string
+	purpose string
+	markers []string
+	keys    []string
+}
+
+var startupDialogs = []startupDialog{
+	{"claude", "accept development channel",
+		[]string{"WARNING: Loading development channels", "I am using this for local development", "Enter to confirm"},
+		[]string{"Enter"}},
+	{"claude", "accept trusted workspace",
+		[]string{"Quick safety check:", "Yes, I trust this folder", "Enter to confirm"},
+		[]string{"Down", "Enter"}},
+	// EnsureClaudeDefaults sets bypassPermissions on purpose: auto mode would
+	// put a reviewer in front of the tools a box exists to run unattended. The
+	// second choice keeps what is configured.
+	{"claude", "keep bypass permissions",
+		[]string{"Make auto mode your default permission mode?", "No, keep bypass permissions"},
+		[]string{"Down", "Enter"}},
+	{"codex", "dismiss rate limit reminder",
+		[]string{"Approaching rate limits", "Press enter to confirm or esc to go back"},
+		[]string{"Escape"}},
+}
+
+// pendingStartupDialog reports the dialog a pane is showing. The copy moves
+// between agent releases, so one that stops matching surfaces as a start-up
+// timeout rather than as a wrong answer.
+func pendingStartupDialog(agent, text string) (startupDialog, bool) {
+	for _, dialog := range startupDialogs {
+		if dialog.agent != agent {
+			continue
+		}
+		matched := true
+		for _, marker := range dialog.markers {
+			if !strings.Contains(text, marker) {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return dialog, true
+		}
+	}
+	return startupDialog{}, false
 }
 
 func agentInputReady(agent, content string) bool {
