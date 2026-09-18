@@ -3,10 +3,12 @@ package boxruntime
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -222,5 +224,88 @@ func TestEnsureAgentBackendStartsTheFacadeForEveryAgent(t *testing.T) {
 	t.Setenv("VMBOX_WORKSPACE_ROOT", t.TempDir())
 	if err := originalFacade(context.Background(), "worker-a"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func stubTmuxSessions(t *testing.T, sessions map[string]string) {
+	t.Helper()
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "list-sessions":
+			names := make([]string, 0, len(sessions))
+			for name := range sessions {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			return []byte(strings.Join(names, "\n") + "\n"), nil
+		case "show-environment":
+			agent, ok := sessions[args[2]]
+			if !ok || agent == "" {
+				return nil, fmt.Errorf("unknown variable")
+			}
+			return []byte(taskAgentEnvironment + "=" + agent + "\n"), nil
+		}
+		return nil, fmt.Errorf("unexpected tmux call %v", args)
+	}
+}
+
+// The façade serves the whole box from one process, so a chat reply written
+// from it would otherwise be filed under the façade's own tmux session, where
+// the controller never looks.
+func TestDesktopMCPHTTPNamesTheConversationForChatTools(t *testing.T) {
+	stubTmuxSessions(t, map[string]string{
+		"codex-abc123":                      "codex",
+		"vmbox-internal-codex-codex-abc123": "",
+		"vmbox-internal-mcp-http":           "",
+		"shell-one":                         "shell",
+	})
+	session, err := soleAgentConversation(context.Background())
+	if err != nil || session != "codex-abc123" {
+		t.Fatalf("sole conversation = %q %v", session, err)
+	}
+}
+
+func TestSoleAgentConversationRefusesToGuess(t *testing.T) {
+	stubTmuxSessions(t, map[string]string{"codex-abc123": "codex", "claude-def456": "claude"})
+	session, err := soleAgentConversation(context.Background())
+	if err == nil {
+		t.Fatalf("two conversations must not resolve to %q", session)
+	}
+	for _, want := range []string{"X-Vmbox-Session", "codex-abc123", "claude-def456"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("the caller cannot choose from %q", err.Error())
+		}
+	}
+	stubTmuxSessions(t, map[string]string{"shell-one": "shell"})
+	if _, err = soleAgentConversation(context.Background()); err == nil {
+		t.Fatal("a box with no agent conversation must say so")
+	}
+}
+
+// A named session reaches writeChatEvent through the context, because the
+// façade cannot set a process-wide environment variable per request.
+func TestWithChatSessionOverridesTheHostingSession(t *testing.T) {
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-hosting")
+	session, err := chatSession(WithChatSession(context.Background(), "claude-named"))
+	if err != nil || session != "claude-named" {
+		t.Fatalf("named session = %q %v", session, err)
+	}
+	if _, err = chatSession(WithChatSession(context.Background(), "not a session")); err == nil {
+		t.Fatal("an invalid session name must be refused")
+	}
+	if session, err = chatSession(context.Background()); err != nil || session != "codex-hosting" {
+		t.Fatalf("without a name the hosting session applies: %q %v", session, err)
+	}
+}
+
+// vmbox_session steers the call; it is not a tool argument.
+func TestDesktopMCPHTTPSessionParameterIsNotAToolArgument(t *testing.T) {
+	stubTmuxSessions(t, map[string]string{"codex-abc123": "codex"})
+	handler := desktopMCPHTTPHandler("assignment", "secret-token")
+	status, body := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools/desktop_click?x=1&y=2&vmbox_session=codex-abc123", "secret-token", "")
+	if status == http.StatusBadRequest && strings.Contains(body["error"].(string), "unknown tool argument") {
+		t.Fatalf("vmbox_session was treated as a tool argument: %v", body)
 	}
 }
