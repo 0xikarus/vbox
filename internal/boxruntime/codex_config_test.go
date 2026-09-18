@@ -87,3 +87,84 @@ func readCodexConfig(t *testing.T, home string) string {
 	}
 	return string(data)
 }
+
+// Codex appends its own tables, so the workspace table stops being last. The
+// trust marker used to be appended again, and Codex then refused to parse its
+// own configuration: "duplicate key".
+func TestEnsureCodexDefaultsKeepsOneProjectTable(t *testing.T) {
+	home := t.TempDir()
+	workspace := "/data/workspace"
+	if err := EnsureCodexDefaults(home, workspace); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".codex", "config.toml")
+	appended, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Codex writes this itself after its first run.
+	if err := os.WriteFile(path, append(appended, []byte("\n[tui.model_availability_nux]\ngpt-6-astra = 2\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 3 {
+		if err := EnsureCodexDefaults(home, workspace); err != nil {
+			t.Fatal(err)
+		}
+	}
+	final, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := `[projects."/data/workspace"]`
+	if count := strings.Count(string(final), header); count != 1 {
+		t.Fatalf("workspace table appears %d times:\n%s", count, final)
+	}
+	for _, want := range []string{"gpt-6-astra = 2", "[tui.model_availability_nux]", `trust_level = "trusted"`} {
+		if !strings.Contains(string(final), want) {
+			t.Fatalf("lost %q:\n%s", want, final)
+		}
+	}
+}
+
+// Boxes already carry the duplicate this bug wrote, so the repair has to run on
+// what is on disk rather than only preventing the next one.
+func TestEnsureCodexDefaultsRepairsAnExistingDuplicate(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	broken := `approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[mcp_servers.vmbox-desktop]
+command = "/data/home/bin/vmbox-runtime"
+
+[projects."/data/workspace"]
+trust_level = "trusted"
+
+[tui.model_availability_nux]
+gpt-6-astra = 2
+
+[projects."/data/workspace"]
+trust_level = "trusted"
+`
+	if err := os.WriteFile(path, []byte(broken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureCodexDefaults(home, "/data/workspace"); err != nil {
+		t.Fatal(err)
+	}
+	final, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(string(final), `[projects."/data/workspace"]`); count != 1 {
+		t.Fatalf("duplicate not repaired (%d tables):\n%s", count, final)
+	}
+	for _, want := range []string{"[mcp_servers.vmbox-desktop]", "gpt-6-astra = 2", `trust_level = "trusted"`} {
+		if !strings.Contains(string(final), want) {
+			t.Fatalf("repair lost %q:\n%s", want, final)
+		}
+	}
+}
