@@ -342,11 +342,20 @@ var EnsureDesktopMCPHTTP = func(ctx context.Context, assignment string) error {
 		return nil
 	}
 	name := desktopMCPHTTPSession()
-	if _, err := tmuxCommand(ctx, "", "has-session", "-t", name); err != nil {
-		argv := []string{"new-session", "-d", "-s", name, "-c", WorkspaceDirectory(), "--", desktopRuntimePath(), "desktop-mcp-http"}
-		if _, err := tmuxCommand(ctx, "", argv...); err != nil {
-			return fmt.Errorf("start desktop tool server: %w", err)
+	if desktopMCPHTTPReady(ctx, assignment) {
+		return nil
+	}
+	// A tmux snapshot can restore this well-known session as a shell instead of
+	// the runtime command. Its name is not evidence that the server is alive;
+	// replace any unready occupant before waiting on the port.
+	if _, err := tmuxCommand(ctx, "", "has-session", "-t", "="+name); err == nil {
+		if _, err := tmuxCommand(ctx, "", "kill-session", "-t", "="+name); err != nil {
+			return fmt.Errorf("stop stale desktop tool server: %w", err)
 		}
+	}
+	argv := []string{"new-session", "-d", "-s", name, "-c", WorkspaceDirectory(), "--", desktopRuntimePath(), "desktop-mcp-http"}
+	if _, err := tmuxCommand(ctx, "", argv...); err != nil {
+		return fmt.Errorf("start desktop tool server: %w", err)
 	}
 	deadline := time.Now().Add(agentReadyTimeout)
 	for {
