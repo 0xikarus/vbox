@@ -341,17 +341,19 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	}
 	thread, err := CodexThreadID(root, home, session, WorkspaceDirectory())
 	if err != nil {
-		return err
+		// Codex records a thread only once it has run a turn, so a freshly
+		// started one has nothing to queue against. Type into its prompt instead
+		// of starting a second Codex beside it.
+		return deliverCodexThroughTUI(ctx, root, session, inbound.ID, prompt, path)
 	}
-	args := []string{"queue", "--thread", thread, "--message", prompt}
-	if err := runCodexQueue(ctx, home, path, args); err != nil {
-		// A remembered id can outlive its thread; re-read once before failing.
+	if err := runCodexQueue(ctx, home, path, []string{"queue", "--thread", thread, "--message", prompt}); err != nil {
+		// A remembered id can outlive its thread; re-read once before falling back.
 		if forget := ForgetCodexThread(root, session); forget != nil {
 			return err
 		}
 		thread, idErr := CodexThreadID(root, home, session, WorkspaceDirectory())
 		if idErr != nil {
-			return err
+			return deliverCodexThroughTUI(ctx, root, session, inbound.ID, prompt, path)
 		}
 		return runCodexQueue(ctx, home, path, []string{"queue", "--thread", thread, "--message", prompt})
 	}
@@ -397,6 +399,20 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 		return DeliverCodexChat(ctx, root, home, session, inbound)
 	}
 	return nil
+}
+
+// deliverCodexThroughTUI types a message into a running Codex that has no
+// addressable thread yet. It is the delivery path of last resort: slower than
+// queueing and dependent on the terminal, but it reaches the Codex the user is
+// watching rather than starting another one.
+func deliverCodexThroughTUI(ctx context.Context, root, session, messageID, prompt, eventPath string) error {
+	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
+		return err
+	}
+	if err := DeliverTmuxInput(ctx, root, session, messageID, prompt, true); err != nil {
+		return err
+	}
+	return os.Remove(eventPath)
 }
 
 var runCodexQueue = func(ctx context.Context, home, eventPath string, args []string) error {

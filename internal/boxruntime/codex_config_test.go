@@ -1,6 +1,7 @@
 package boxruntime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,5 +172,43 @@ func writeRollout(t *testing.T, home, id, workspace string) {
 	stamp := time.Now().Add(time.Duration(rolloutClock) * time.Second)
 	if err := os.Chtimes(path, stamp, stamp); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A Codex that has not run a turn yet records no thread. Delivery must fall back
+// to its terminal rather than reporting failure, which is what sent the previous
+// implementation off to start a second Codex.
+func TestDeliverCodexChatTypesIntoTerminalWhenNoThreadRecorded(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	originalQueue, originalCommand := runCodexQueue, tmuxCommand
+	originalSettle, originalSubmit, originalConfirm := agentReadySettlePause, tmuxSubmitPause, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		runCodexQueue, tmuxCommand = originalQueue, originalCommand
+		agentReadySettlePause, tmuxSubmitPause, tmuxSubmitConfirmPause = originalSettle, originalSubmit, originalConfirm
+	})
+	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
+	queued := false
+	runCodexQueue = func(context.Context, string, string, []string) error { queued = true; return nil }
+	var buffered string
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if len(args) > 0 && args[0] == "capture-pane" {
+			return []byte("OpenAI Codex\n\u203a Ask Codex to do anything"), nil
+		}
+		// The text is staged first, then a separate buffer submits it.
+		if len(args) > 0 && args[0] == "load-buffer" && buffered == "" {
+			buffered = stdin
+		}
+		return nil, nil
+	}
+	if err := DeliverCodexChat(context.Background(), root, home, "codex-chat", ChatInbound{ID: "message-1", Text: "hello"}); err != nil {
+		t.Fatal(err)
+	}
+	if queued {
+		t.Fatal("queued against a thread that does not exist")
+	}
+	if buffered != "hello" {
+		t.Fatalf("message typed into the terminal = %q", buffered)
 	}
 }
