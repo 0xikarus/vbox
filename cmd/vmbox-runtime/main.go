@@ -129,6 +129,21 @@ func run() error {
 			return fmt.Errorf("worker assignment unavailable")
 		}
 		return boxruntime.ServeDesktopMCP(ctx, strings.TrimSpace(string(fence)), os.Stdin, os.Stdout)
+	case "desktop-mcp-http":
+		if len(args) != 1 {
+			return fmt.Errorf("desktop-mcp-http accepts no arguments")
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		fence, err := exec.CommandContext(ctx, "tmux", "show-option", "-gv", "@vmbox_assignment").Output()
+		if err != nil {
+			return fmt.Errorf("worker assignment unavailable")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		return boxruntime.ServeDesktopMCPHTTP(ctx, strings.TrimSpace(string(fence)), home)
 	case "desktop-input":
 		if len(args) != 2 {
 			return fmt.Errorf("desktop-input requires ASSIGNMENT")

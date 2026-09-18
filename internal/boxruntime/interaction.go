@@ -396,7 +396,7 @@ func startTmuxTaskSession(ctx context.Context, root, session, agent string, argv
 		if err != nil {
 			return false, err
 		}
-		if err := ensureAgentBackend(ctx, session, agent); err != nil {
+		if err := ensureAgentBackend(ctx, session, agent, assignment); err != nil {
 			return false, err
 		}
 		args := []string{"new-session", "-d", "-s", session, "-c", WorkspaceDirectory(), "--"}

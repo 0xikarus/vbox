@@ -97,7 +97,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose. These tools are also reachable over HTTP from inside this box: read ~/.local/share/vmbox/mcp-http.json for the url and token, then POST a JSON object of arguments to {url}/tools/{name} with an Authorization: Bearer header. Use that when a script or background job has to queue a message outside an agent turn."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":

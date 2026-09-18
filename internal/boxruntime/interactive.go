@@ -28,7 +28,7 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if err != nil {
 		return err
 	}
-	if err := ensureAgentBackend(ctx, session, agent); err != nil {
+	if err := ensureAgentBackend(ctx, session, agent, assignment); err != nil {
 		return err
 	}
 	args := []string{"new-session", "-d", "-s", session, "-c", filepath.Join(filepath.Dir(root), "workspace"), "--"}
@@ -66,10 +66,14 @@ func interactiveArgv(session, agent string) ([]string, error) {
 	}
 }
 
-// ensureAgentBackend starts whatever a persistent agent needs before its
-// terminal can attach. OpenCode serves its own API in-process; Codex needs its
-// app server running first, because the terminal joins it with --remote.
-func ensureAgentBackend(ctx context.Context, session, agent string) error {
+// ensureAgentBackend starts whatever an agent needs before its terminal can
+// attach. Every box gets the HTTP tool façade so scripts can reach the desktop
+// tools; OpenCode serves its own API in-process, and Codex needs its app server
+// running first, because the terminal joins it with --remote.
+func ensureAgentBackend(ctx context.Context, session, agent, assignment string) error {
+	if err := EnsureDesktopMCPHTTP(ctx, assignment); err != nil {
+		return err
+	}
 	if agent != "codex" {
 		return nil
 	}
