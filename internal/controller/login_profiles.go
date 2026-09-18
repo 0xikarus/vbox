@@ -2,8 +2,10 @@ package controller
 
 import (
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -14,6 +16,7 @@ import (
 )
 
 var loginProfileName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9@+_.:() -]{0,127}$`)
+var errDuplicateLoginProfile = errors.New("duplicate login profile")
 
 // Only portable profile files are accepted, never arbitrary paths or archives.
 func validateLoginProfile(application, name string, req v1.SaveLoginProfileRequest) error {
@@ -63,12 +66,56 @@ func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, 
 		return value, fmt.Errorf("could not encode profile")
 	}
 	defer clear(plain)
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return value, fmt.Errorf("could not begin profile save")
+	}
+	defer tx.Rollback()
+	// Serialize profile writes for this account/application so two simultaneous
+	// uploads cannot both pass the plaintext comparison under different names.
+	if _, err = tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, p.AccountID+":"+application); err != nil {
+		return value, fmt.Errorf("could not lock profile save")
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT name,encrypted_value FROM login_profiles WHERE account_id=$1 AND application=$2 ORDER BY name`, p.AccountID, application)
+	if err != nil {
+		return value, fmt.Errorf("could not compare saved profiles")
+	}
+	for rows.Next() {
+		var existingName, existingSealed string
+		if err = rows.Scan(&existingName, &existingSealed); err != nil {
+			rows.Close()
+			return value, fmt.Errorf("could not compare saved profiles")
+		}
+		existing, openErr := s.Envelope.Open(profileEncryptionScope(p.AccountID, application, existingName), existingSealed)
+		if openErr != nil {
+			rows.Close()
+			return value, fmt.Errorf("could not compare saved profiles")
+		}
+		duplicate := subtle.ConstantTimeCompare(existing, plain) == 1
+		clear(existing)
+		if duplicate {
+			rows.Close()
+			return value, fmt.Errorf("%w: identical %s credentials and configuration are already saved as %q", errDuplicateLoginProfile, application, existingName)
+		}
+	}
+	if err = rows.Close(); err != nil {
+		return value, fmt.Errorf("could not compare saved profiles")
+	}
+	if err = rows.Err(); err != nil {
+		return value, fmt.Errorf("could not compare saved profiles")
+	}
 	sealed, err := s.Envelope.Seal(profileEncryptionScope(p.AccountID, application, name), plain)
 	if err != nil {
 		return value, fmt.Errorf("could not encrypt profile")
 	}
-	err = s.DB.QueryRowContext(ctx, `INSERT INTO login_profiles(account_id,application,name,encrypted_value) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING created_at`, p.AccountID, application, name, sealed).Scan(&value.CreatedAt)
-	return value, err
+	err = tx.QueryRowContext(ctx, `INSERT INTO login_profiles(account_id,application,name,encrypted_value) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING created_at`, p.AccountID, application, name, sealed).Scan(&value.CreatedAt)
+	if err != nil {
+		return value, err
+	}
+	if err = tx.Commit(); err != nil {
+		return value, fmt.Errorf("could not commit profile save")
+	}
+	return value, nil
 }
 
 func (s *Store) ListLoginProfiles(ctx context.Context, p Principal) ([]v1.LoginProfile, error) {
@@ -170,6 +217,10 @@ func (s *Server) saveLoginProfile(w http.ResponseWriter, r *http.Request, p Prin
 	}
 	value, err := s.Store.SaveLoginProfile(r.Context(), p, app, name, req)
 	if err != nil {
+		if errors.Is(err, errDuplicateLoginProfile) {
+			writeError(w, 409, err)
+			return
+		}
 		writeError(w, 409, fmt.Errorf("could not save profile; choose a new name if it already exists, or check controller storage/encryption"))
 		return
 	}
