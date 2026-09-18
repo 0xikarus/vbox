@@ -16,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/0xikarus/vmbox-service/internal/desktop"
 )
 
 func desktopSocket(assignment string) string {
@@ -159,13 +161,20 @@ func waitForDesktopSocket(ctx context.Context, assignment string, budget time.Du
 		case <-deadline.C:
 			return false, nil
 		case <-ticker.C:
-			conn, err := net.DialTimeout("unix", desktopSocket(assignment), time.Second)
-			if err == nil {
-				conn.Close()
+			if err := probeDesktopSocket(ctx, assignment); err == nil {
 				return true, nil
 			}
 		}
 	}
+}
+
+func probeDesktopSocket(ctx context.Context, assignment string) error {
+	conn, err := (&net.Dialer{Timeout: time.Second}).DialContext(ctx, "unix", desktopSocket(assignment))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	return desktop.ProbeRFB(conn)
 }
 
 func RunDesktop(ctx context.Context, assignment string) error {
@@ -200,9 +209,7 @@ func RunDesktop(ctx context.Context, assignment string) error {
 	defer func() { cancel(); <-exited }()
 	ready := false
 	for i := 0; i < 100 && !ready; i++ {
-		conn, err := net.DialTimeout("unix", socket, 100*time.Millisecond)
-		if err == nil {
-			conn.Close()
+		if err := probeDesktopSocket(ctx, assignment); err == nil {
 			ready = true
 			break
 		}
