@@ -132,10 +132,10 @@ func (c *codexClient) call(ctx context.Context, method string, params any) (map[
 	return c.await(ctx, id)
 }
 
-// CodexCurrentThread reports the thread the terminal is on. The remembered id is
-// used when it is still one the server knows; otherwise the most recent thread
-// for this workspace is adopted, which covers a conversation the user started in
-// the terminal after the box came up.
+// CodexCurrentThread reports the most recently active thread for the workspace.
+// A remembered id is only a fallback for old servers that omit recencyAt. It
+// must not pin delivery to an earlier thread after the user starts or resumes a
+// different conversation in the terminal.
 func CodexCurrentThread(ctx context.Context, client *codexClient, root, session, workspace string) (string, error) {
 	remembered := ""
 	if data, err := os.ReadFile(codexThreadFile(root, session)); err == nil {
@@ -146,20 +146,7 @@ func CodexCurrentThread(ctx context.Context, client *codexClient, root, session,
 		return "", err
 	}
 	threads, _ := result["data"].([]any)
-	newest, newestAt := "", float64(0)
-	for _, value := range threads {
-		thread, _ := value.(map[string]any)
-		id, _ := thread["id"].(string)
-		if id == "" {
-			continue
-		}
-		if id == remembered {
-			return id, nil
-		}
-		if at, ok := thread["recencyAt"].(float64); ok && at >= newestAt {
-			newest, newestAt = id, at
-		}
-	}
+	newest := newestCodexThread(threads, remembered)
 	if newest != "" {
 		return newest, rememberCodexThread(root, session, newest)
 	}
@@ -175,6 +162,36 @@ func CodexCurrentThread(ctx context.Context, client *codexClient, root, session,
 		return "", fmt.Errorf("codex app server returned no thread")
 	}
 	return id, rememberCodexThread(root, session, id)
+}
+
+func newestCodexThread(threads []any, remembered string) string {
+	newest, fallback := "", ""
+	newestAt := float64(0)
+	hasRecency, rememberedFound := false, false
+	for _, value := range threads {
+		thread, _ := value.(map[string]any)
+		id, _ := thread["id"].(string)
+		if id == "" {
+			continue
+		}
+		if fallback == "" {
+			fallback = id
+		}
+		if id == remembered {
+			rememberedFound = true
+		}
+		if at, ok := thread["recencyAt"].(float64); ok && (!hasRecency || at > newestAt) {
+			newest, newestAt = id, at
+			hasRecency = true
+		}
+	}
+	if hasRecency {
+		return newest
+	}
+	if rememberedFound {
+		return remembered
+	}
+	return fallback
 }
 
 func rememberCodexThread(root, session, id string) error {
