@@ -80,7 +80,10 @@ The table lists discovered accounts and their source paths. Use **↑/↓** to m
 **Space or Enter** to select profiles, then select **Upload** and press Enter.
 **Add entry** accepts an undiscovered path or GitHub account. Names are derived
 from account identity; no manual naming is required. Nothing is uploaded until
-you submit. You can also select local logins while creating a box.
+you submit. **Add OpenCode API key** accepts an OpenRouter or Venice key, verifies
+it without running a paid completion, loads the provider's current tool-capable
+text models, and saves the chosen model with the encrypted OpenCode profile. You
+can also select local logins while creating a box.
 
 ### 5. Create and connect
 
@@ -231,6 +234,11 @@ name prompt: names use the account email/username/ID when available, otherwise
 the source directory, with a suffix for existing names. For scripts,
 use `vmbox profiles save APPLICATION NAME --from SOURCE` (`SOURCE` is a local
 directory for Claude/Codex/OpenCode, or `HOST:USER` for GitHub).
+The separate **Add OpenCode API key** action supports OpenRouter and Venice. It
+authenticates the key against the provider, queries the live model catalog, and
+offers only text models that advertise tool calling so chat and desktop MCP work
+from the first prompt. The chosen provider and model are stored in `auth.json`
+and `opencode.json`; the plaintext key is never printed or written locally.
 In the creation dialog, press Enter on a login row to expand its profile list inline.
 Saved profiles reuse controller credentials; selecting a detected Local login uploads
 it when you create the box. Custom local path is only for an undetected location.

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/config"
@@ -29,6 +30,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	a.addCreationGitHubAccounts(ctx, profiles)
 	var fields []*formField
 	var entries []*uploadEntry
+	var apiEntries []*openCodeAPIUploadEntry
 	accountWidth := 7
 	for _, p := range profiles {
 		for _, path := range p.localPaths {
@@ -67,6 +69,20 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 		return []*formField{entry.application, entry.path, entry.choice}
 	}
 	fields = append(fields, add)
+	providers := a.openCodeAPIProviderChoices()
+	addAPIKey := &formField{Label: "[ Add OpenCode API key ]"}
+	addAPIKey.AddFields = func() []*formField {
+		entry := newOpenCodeAPIUploadEntry(providers)
+		apiEntries = append(apiEntries, entry)
+		return []*formField{entry.provider, entry.name, entry.key, entry.model, entry.choice}
+	}
+	fields = append(fields, addAPIKey)
+	defer func() {
+		for _, entry := range apiEntries {
+			entry.key.Value = ""
+			entry.verifiedInput = ""
+		}
+	}()
 	savedCount := 0
 	err = a.runFormButton(ctx, "Upload profiles · select entries; names use account identity", "Upload", fields, func(progress func(string)) error {
 		for _, entry := range entries {
@@ -99,6 +115,72 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			}
 			saved = append(saved, profile)
 			entry.saved = true
+			entry.choice.Value = "Saved"
+			entry.choice.Choices = []string{"Saved"}
+			savedCount++
+		}
+		for _, entry := range apiEntries {
+			if entry.saved || entry.choice.Value != "Upload" {
+				continue
+			}
+			provider, ok := openCodeAPIProviderByLabel(providers, entry.provider.Value)
+			if !ok {
+				return fmt.Errorf("choose OpenRouter or Venice for the OpenCode profile")
+			}
+			key := strings.TrimSpace(entry.key.Value)
+			if key == "" {
+				return fmt.Errorf("enter the %s API key", provider.Label)
+			}
+			keyBytes := []byte(key)
+			digest := sha256.Sum256(keyBytes)
+			clear(keyBytes)
+			verifiedInput := fmt.Sprintf("%s:%x", provider.ID, digest)
+			if entry.verifiedInput != verifiedInput {
+				progress("Verifying " + provider.Label + " and loading tool-capable models…")
+				models, err := a.queryOpenCodeAPIModels(ctx, provider, key)
+				if err != nil {
+					return err
+				}
+				entry.verifiedInput = verifiedInput
+				entry.model.Choices = models
+				entry.model.Value = models[0]
+				return fmt.Errorf("%s API key verified; choose a model, then select Upload again", provider.Label)
+			}
+			if !containsString(entry.model.Choices, entry.model.Value) {
+				return fmt.Errorf("choose one of the available %s models", provider.Label)
+			}
+			base := strings.TrimSpace(entry.name.Value)
+			if base == "" {
+				base = "opencode-" + provider.ID
+			}
+			name := base
+			for i := 2; ; i++ {
+				used := false
+				for _, profile := range saved {
+					if profile.Application == "opencode" && profile.Name == name {
+						used = true
+						break
+					}
+				}
+				if !used {
+					break
+				}
+				name = fmt.Sprintf("%s-%d", base, i)
+			}
+			progress("Uploading opencode / " + name + "…")
+			profile, err := a.saveOpenCodeAPIKeyProfile(ctx, c, token, name, provider, key, entry.model.Value)
+			if err != nil {
+				return err
+			}
+			saved = append(saved, profile)
+			entry.saved = true
+			entry.key.Value = ""
+			entry.verifiedInput = ""
+			entry.provider.Hidden = true
+			entry.name.Hidden = true
+			entry.key.Hidden = true
+			entry.model.Hidden = true
+			entry.choice.Label = "opencode / " + name
 			entry.choice.Value = "Saved"
 			entry.choice.Choices = []string{"Saved"}
 			savedCount++
