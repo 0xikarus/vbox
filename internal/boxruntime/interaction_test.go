@@ -363,9 +363,15 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 		t.Fatalf("managed Claude task did not disable background self-update: %v", calls)
 	}
 	channel := strings.Index(joined, "send-keys -t claude-ready Enter")
-	trust := strings.Index(joined, "send-keys -t claude-ready Down Enter")
+	trustDown := strings.Index(joined, "send-keys -t claude-ready Down")
+	trust := -1
+	if trustDown >= 0 {
+		if offset := strings.Index(joined[trustDown:], "send-keys -t claude-ready Enter"); offset >= 0 {
+			trust = trustDown + offset
+		}
+	}
 	delivery := strings.Index(joined, "load-buffer")
-	if channel < 0 || trust < channel || delivery < 0 || trust >= delivery {
+	if channel < 0 || trustDown < channel || trust < trustDown || delivery < 0 || trust >= delivery {
 		t.Fatalf("channel and workspace confirmations were not accepted before prompt delivery: %v", calls)
 	}
 }
@@ -534,7 +540,15 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 }
 
 func TestResetClaudeContextRespawnsChannelTUI(t *testing.T) {
-	t.Setenv("VMBOX_WORKSPACE_ROOT", t.TempDir())
+	workspaceRoot := t.TempDir()
+	t.Setenv("VMBOX_WORKSPACE_ROOT", workspaceRoot)
+	settingsPath := filepath.Join(workspaceRoot, "home", ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(`{"permissions":{"defaultMode":"auto"}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	originalCommand, originalSettle, originalChannelWait := tmuxCommand, agentReadySettlePause, claudeChannelReadyWait
 	t.Cleanup(func() {
 		tmuxCommand, agentReadySettlePause, claudeChannelReadyWait = originalCommand, originalSettle, originalChannelWait
@@ -577,6 +591,21 @@ func TestResetClaudeContextRespawnsChannelTUI(t *testing.T) {
 	promptReady, channelReady := strings.Index(joined, "capture-pane"), strings.Index(joined, "wait-channel claude-session")
 	if promptReady < 0 || channelReady < 0 || promptReady > channelReady {
 		t.Fatalf("Claude channel was awaited before startup dialogs could be handled: %v", calls)
+	}
+	settingsData, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var settings struct {
+		Permissions struct {
+			DefaultMode string `json:"defaultMode"`
+		} `json:"permissions"`
+	}
+	if err := json.Unmarshal(settingsData, &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings.Permissions.DefaultMode != "bypassPermissions" {
+		t.Fatalf("Claude reset retained unsafe default mode %q", settings.Permissions.DefaultMode)
 	}
 	before := len(calls)
 	if err := ResetAgentContext(context.Background(), root, "claude-session", "claude", "reset-message"); err != nil {
@@ -720,6 +749,46 @@ func TestStartupDialogsCoverEachKnownPrompt(t *testing.T) {
 	}
 }
 
+func TestWaitForAgentReadyPausesBetweenDialogKeys(t *testing.T) {
+	originalCommand, originalInterval, originalTimeout, originalPause := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, tmuxSubmitConfirmPause
+	t.Cleanup(func() {
+		tmuxCommand, agentReadyPollInterval, agentReadyTimeout, tmuxSubmitConfirmPause = originalCommand, originalInterval, originalTimeout, originalPause
+	})
+	agentReadyPollInterval = 0
+	agentReadyTimeout = time.Second
+	var calls []string
+	captures := 0
+	tmuxSubmitConfirmPause = func(context.Context) error {
+		calls = append(calls, "pause")
+		return nil
+	}
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		call := strings.Join(args, " ")
+		calls = append(calls, call)
+		if strings.HasPrefix(call, "capture-pane") {
+			captures++
+			if captures == 1 {
+				return []byte("Claude Code v2.1.276\nMake auto mode your default permission mode?\n❯ Yes, set auto mode as my default permission mode\n  No, keep bypass permissions"), nil
+			}
+			return []byte("Claude Code v2.1.276\n❯ Try \"fix a bug\""), nil
+		}
+		return nil, nil
+	}
+	if err := waitForAgentReady(context.Background(), "claude-sequential", "claude"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"capture-pane -p -J -S -80 -t claude-sequential",
+		"send-keys -t claude-sequential Down",
+		"pause",
+		"send-keys -t claude-sequential Enter",
+		"capture-pane -p -J -S -80 -t claude-sequential",
+	}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("dialog key sequence = %v, want %v", calls, want)
+	}
+}
+
 // The dialog is answered before the prompt is delivered, or the message lands in
 // a menu instead of the conversation.
 func TestStartTmuxTaskAnswersAutoModeBeforeDeliveringPrompt(t *testing.T) {
@@ -759,9 +828,10 @@ func TestStartTmuxTaskAnswersAutoModeBeforeDeliveringPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
-	answer := strings.Index(joined, "send-keys -t claude-auto Down Enter")
+	down := strings.Index(joined, "send-keys -t claude-auto Down")
+	answer := strings.Index(joined, "send-keys -t claude-auto Enter")
 	delivery := strings.Index(joined, "load-buffer")
-	if answer < 0 {
+	if down < 0 || answer < 0 || down >= answer {
 		t.Fatalf("the auto mode dialog was never answered: %v", calls)
 	}
 	if delivery < 0 || answer >= delivery {
@@ -780,14 +850,20 @@ func TestStartTmuxTaskAnswersAutoModeThatAppearsAfterFirstReadyPrompt(t *testing
 	agentReadySettlePause = func(context.Context) error { return nil }
 	tmuxSubmitConfirmPause = func(context.Context) error { return nil }
 	var calls []string
-	firstReady, answered, delivered := false, false, false
+	firstReady, selected, answered, delivered := false, false, false, false
 	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		call := strings.Join(args, " ")
 		calls = append(calls, call)
 		switch {
 		case strings.HasPrefix(call, "has-session"):
 			return nil, errors.New("missing")
-		case strings.HasPrefix(call, "send-keys -t claude-delayed Down Enter"):
+		case strings.HasPrefix(call, "send-keys -t claude-delayed Down"):
+			selected = true
+			return nil, nil
+		case strings.HasPrefix(call, "send-keys -t claude-delayed Enter"):
+			if !selected {
+				t.Fatal("confirmed the default choice before selecting bypass permissions")
+			}
 			answered = true
 			return nil, nil
 		case strings.HasPrefix(call, "load-buffer"):
@@ -812,9 +888,10 @@ func TestStartTmuxTaskAnswersAutoModeThatAppearsAfterFirstReadyPrompt(t *testing
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
-	answer := strings.Index(joined, "send-keys -t claude-delayed Down Enter")
+	down := strings.Index(joined, "send-keys -t claude-delayed Down")
+	answer := strings.Index(joined, "send-keys -t claude-delayed Enter")
 	delivery := strings.Index(joined, "load-buffer")
-	if answer < 0 || delivery < 0 || answer >= delivery {
+	if down < 0 || answer < 0 || down >= answer || delivery < 0 || answer >= delivery {
 		t.Fatalf("delayed auto-mode dialog was not answered before delivery: %v", calls)
 	}
 }

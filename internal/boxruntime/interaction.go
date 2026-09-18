@@ -288,6 +288,9 @@ func resetClaudeContext(ctx context.Context, root, session, messageID string) er
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	if err := EnsureClaudeDefaults(WorkloadHome(), WorkspaceDirectory()); err != nil {
+		return fmt.Errorf("restore Claude defaults before context reset: %w", err)
+	}
 	if _, err := os.Stat(restarted); errors.Is(err, os.ErrNotExist) {
 		file, createErr := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if errors.Is(createErr, os.ErrExist) {
@@ -573,9 +576,15 @@ func waitForAgentReady(ctx context.Context, session, agent string) error {
 		if err == nil {
 			text := string(content)
 			if dialog, waiting := pendingStartupDialog(agent, text); waiting {
-				keys := append([]string{"send-keys", "-t", session}, dialog.keys...)
-				if _, err := tmuxCommand(ctx, "", keys...); err != nil {
-					return fmt.Errorf("%s in %s session: %w", dialog.purpose, agent, err)
+				for index, key := range dialog.keys {
+					if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, key); err != nil {
+						return fmt.Errorf("%s in %s session: %w", dialog.purpose, agent, err)
+					}
+					if index+1 < len(dialog.keys) {
+						if err := tmuxSubmitConfirmPause(ctx); err != nil {
+							return err
+						}
+					}
 				}
 			} else if agentInputReady(agent, text) {
 				return nil
