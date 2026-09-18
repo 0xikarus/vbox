@@ -49,7 +49,7 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if err == nil && agent != "shell" {
 		err = waitForAgentReady(ctx, session, agent)
 		if err == nil {
-			err = agentReadySettlePause(ctx)
+			err = settleAgentReadiness(ctx, session, agent)
 		}
 	}
 	return err
