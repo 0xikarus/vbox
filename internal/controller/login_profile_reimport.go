@@ -116,7 +116,10 @@ func (s *Server) putBoxLoginProfiles(w http.ResponseWriter, r *http.Request, p P
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
-		if err := s.applyBoxLoginProfiles(ctx, prov, assignment, request.Profiles); err != nil {
+		err = applyBoxLoginProfilesWithRollback(request.Profiles, state.Imported, func(refs []v1.LoginProfileRef) error {
+			return s.applyBoxLoginProfiles(ctx, prov, assignment, refs)
+		})
+		if err != nil {
 			writeError(w, http.StatusConflict, err)
 			return
 		}
@@ -159,6 +162,21 @@ func (s *Server) putBoxLoginProfiles(w http.ResponseWriter, r *http.Request, p P
 	default:
 		writeError(w, http.StatusConflict, fmt.Errorf("wait for the box to finish its current transition, then edit imported profiles"))
 	}
+}
+
+// A credential transfer writes remote files before its provider check can run,
+// while the database transaction can only roll back controller state. Reapply
+// the recorded selection after a rejected replacement so disk and database do
+// not describe different harnesses.
+func applyBoxLoginProfilesWithRollback(requested, previous []v1.LoginProfileRef, apply func([]v1.LoginProfileRef) error) error {
+	err := apply(requested)
+	if err == nil {
+		return nil
+	}
+	if rollbackErr := apply(previous); rollbackErr != nil {
+		return fmt.Errorf("%w; restoring the previous profile also failed: %v", err, rollbackErr)
+	}
+	return err
 }
 
 // applyBoxLoginProfiles performs the locked credential transfer for a box that
