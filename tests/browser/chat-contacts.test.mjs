@@ -35,7 +35,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/logical-boxes'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;creations.push(JSON.parse(body));return res.end(JSON.stringify({id:'created',name:'github-chat-fixture'}))}
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,role:b.id==='builder'?boxRole:'worker'}))));
   if(path==='/v1/tool-presets')return res.end('[]');
-  if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'github',name:'gh-work'}]));
+  if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'opencode',name:'openrouter',model:'openrouter/saved'},{application:'github',name:'gh-work'}]));
+  if(path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/live-model',label:'Live model'}]}));
   if(path==='/v1/controller-defaults')return res.end('{}');
   if(path==='/v1/provider-credentials')return res.end('[]');
   if(path==='/v1/instruction-presets')return res.end(JSON.stringify({defaultName:'',presets:[]}));
@@ -142,14 +143,22 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await (await p.$('#inspect')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
   await p.$eval('#new-box',button=>button.click());
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
+  await p.select('#create-box select[name=defaultAgent]','opencode');
+  await p.select('#create-box select[name=loginProfile]',JSON.stringify({application:'opencode',name:'openrouter'}));
+  await p.click('#create-box .model-picker-open');
+  await p.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('OpenRouter live catalog'));
+  assert.ok((await p.$$eval('dialog.model-picker-dialog .model-picker-option',nodes=>nodes.map(node=>node.dataset.model))).includes('openrouter/live-model'));
+  await p.click('dialog.model-picker-dialog .model-picker-close');
+  await p.select('#create-box select[name=defaultAgent]','claude');
   await p.select('#create-box select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
-  await p.click('#create-box .model-picker-toggle');
-  const claude=await p.$$eval('#create-box .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent));
-  for(const model of ['sonnet','opus','haiku','sonnet[1m]','opus[1m]'])assert.ok(claude.includes(model),model+' is offered');
-  await p.$$eval('#create-box .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.textContent==='haiku').click());
+  await p.click('#create-box .model-picker-open');
+  await p.waitForSelector('dialog.model-picker-dialog[open]');
+  const claude=await p.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model));
+  for(const model of ['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'])assert.ok(claude.includes(model),model+' is offered');
+  await p.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.dataset.model==='haiku').click());
   assert.equal(await p.$eval('#create-box input[name=agentModel]',input=>input.value),'haiku');
-  await p.click('#create-box .model-picker-toggle');
-  await p.$eval('#create-box input[name=agentModel]',input=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+  await p.click('#create-box .model-picker-open');
+  await p.keyboard.press('Escape');
   assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
   await p.type('#create-box input[name=name]','github-chat-fixture');

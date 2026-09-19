@@ -662,21 +662,21 @@
  const newBoxModal=$('#new-box-modal'),createForm=$('#create-box');
  let extrasLoaded=false;
  function renderCreationProfileChoices(profiles){
-  const root=$('#profile-choices'),agentSelect=createForm.elements.defaultAgent;root.replaceChildren();
+  const root=$('#profile-choices'),agentSelect=createForm.elements.defaultAgent;root._modelPicker?.destroy();root.replaceChildren();
   const profileLabel=document.createElement('label');profileLabel.className='field profile-field';profileLabel.textContent='Login profile';
   const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
   const modelLabel=document.createElement('label');modelLabel.className='field profile-field';modelLabel.textContent='Model';
-  const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelInput.placeholder='Search or enter an exact model';modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);
+  const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);root._modelPicker=modelPicker;
   const githubLabel=document.createElement('label');githubLabel.className='field profile-field';githubLabel.textContent='GitHub profile';
   const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(new Option('None',''));
   for(const profile of profiles.filter(profile=>profile.application==='github'))githubSelect.append(new Option(profile.name,JSON.stringify({application:'github',name:profile.name})));
   githubLabel.append(githubSelect);githubLabel.hidden=githubSelect.options.length===1;
   root.append(profileLabel,modelLabel,githubLabel);
-  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelInput.required=hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelLabel.hidden=!hasProfile};
+  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref?.application==='opencode'?()=>api('/v1/login-profiles/opencode/'+encodeURIComponent(ref.name)+'/models'):null)};
   const populate=()=>{
    const previous=profileSelect.value,app=agentSelect.value;profileSelect.replaceChildren(new Option('None',''));
    const choices=profiles.filter(profile=>profile.application===app);
-   for(const profile of choices){const option=new Option(profile.name,JSON.stringify({application:profile.application,name:profile.name}));option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(app,choices.map(profile=>profile.model)));
+   for(const profile of choices){const option=new Option(profile.name,JSON.stringify({application:profile.application,name:profile.name}));option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setApplication(app);
    if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
    profileLabel.hidden=app==='shell'||choices.length===0;root.hidden=profileLabel.hidden&&githubLabel.hidden;syncModel();
   };
@@ -746,6 +746,7 @@
   const selectedProfile=createForm.elements.loginProfile?.value;
   const profileRef=selectedProfile?JSON.parse(selectedProfile):null;
   const loginProfiles=profileRef?[{...profileRef,model:(createForm.elements.agentModel?.value||'').trim()}]:[];
+  if(profileRef&&!loginProfiles[0].model){$('#new-box-status').textContent='Choose a model';submit.disabled=false;return}
   const githubProfile=createForm.elements.githubProfile?.value;
   if(githubProfile)loginProfiles.push(JSON.parse(githubProfile));
   const setupScript=(createForm.elements.setupScript?.value||'').trim();

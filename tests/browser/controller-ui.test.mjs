@@ -40,6 +40,7 @@ before(async()=>{
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
+  if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash'},{id:'openrouter/google/gemini-test',label:'Gemini test'}]}));
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
@@ -71,21 +72,29 @@ test('desktop can be selected without Blender and Blender requires it',async()=>
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.tools,['desktop']);
  await page.close();
 });
-test('model choice is a searchable popup instead of a browser datalist',async()=>{
+test('model choice opens a searchable modal and loads the provider catalog',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#profile-choices select');
  await page.select('#create select[name=defaultAgent]','opencode');
  await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'openrouter'}));
  const input='#create input[name=agentModel]';
- assert.equal(await page.$eval(input,e=>e.hasAttribute('list')),false);
- await page.click('#create .model-picker-toggle');
- assert.deepEqual(await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent)),['openrouter/deepseek/deepseek-v4.1-flash','venice/deepseek-v4-1-flash']);
- await page.click(input);await page.$eval(input,e=>{e.value='venice';e.dispatchEvent(new Event('input',{bubbles:true}))});
- await page.waitForSelector('#create .model-picker-options:not([hidden])');
- assert.deepEqual(await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent)),['venice/deepseek-v4-1-flash']);
- await page.click('#create .model-picker-option:not([hidden])');
- assert.equal(await page.$eval(input,e=>e.value),'venice/deepseek-v4-1-flash');
+ assert.equal(await page.$eval(input,e=>e.type),'hidden');
+ await page.click('#create .model-picker-open');
+ await page.waitForSelector('dialog.model-picker-dialog[open]');
+ await page.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('OpenRouter live catalog'));
+ assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model)),['openrouter/deepseek/deepseek-v4.1-flash','openrouter/google/gemini-test']);
+ await page.type('.model-picker-search','gemini');
+ assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model)),['openrouter/google/gemini-test']);
+ await page.click('dialog.model-picker-dialog .model-picker-option:not([hidden])');
+ assert.equal(await page.$eval(input,e=>e.value),'openrouter/google/gemini-test');
+ assert.equal(await page.$eval('dialog.model-picker-dialog',e=>e.open),false);
+ assert.ok(requests.some(request=>request.path==='/v1/login-profiles/opencode/openrouter/models'));
+ await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'venice'}));
+ await page.click('#create .model-picker-open');
+ await page.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('Could not load provider models'));
+ assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-option',nodes=>nodes.map(node=>node.dataset.model)),['venice/deepseek-v4-1-flash']);
+ await page.click('dialog.model-picker-dialog .model-picker-close');
  await page.close();
 });
 test('creation offers current Claude and Codex CLI models beyond uploaded profile defaults',async()=>{
@@ -105,16 +114,19 @@ test('creation offers current Claude and Codex CLI models beyond uploaded profil
  await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
  const input='#create input[name=agentModel]';
  assert.equal(await page.$eval(input,e=>e.value),'opus[1m]');
- await page.click('#create .model-picker-toggle');
- const claude=await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent));
- for(const model of ['sonnet','opus','haiku','sonnet[1m]','opus[1m]'])assert.ok(claude.includes(model),model+' is offered');
+ await page.click('#create .model-picker-open');
+ await page.waitForSelector('dialog.model-picker-dialog[open]');
+ const claude=await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model));
+ for(const model of ['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'])assert.ok(claude.includes(model),model+' is offered');
+ assert.match(await page.$eval('.model-picker-source',node=>node.textContent),/Claude Code/);
+ await page.click('dialog.model-picker-dialog .model-picker-close');
  await page.select('#create select[name=defaultAgent]','codex');
  await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'codex',name:'personal-codex'}));
  assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-sol');
- await page.click('#create .model-picker-toggle');
- const codex=await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent));
+ await page.click('#create .model-picker-open');
+ const codex=await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model));
  for(const model of ['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'])assert.ok(codex.includes(model),model+' is offered');
- await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.textContent==='gpt-5.6-terra').click());
+ await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.dataset.model==='gpt-5.6-terra').click());
  assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-terra');
  await page.type('#create input[name=name]','disposable-model-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
