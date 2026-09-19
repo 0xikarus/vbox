@@ -60,6 +60,7 @@ function tableText(text){const t=text??'—',n=node('span',t);n.className=t==='�
 function tableNote(text){const n=tableText(text);n.className='table-text state-note';return n}
 function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
+const RESTART_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.4 7"/><path d="M3 4v7h7"/></svg>';
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
 function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  root.replaceChildren();
@@ -80,18 +81,6 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelInput.required=hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelLabel.hidden=!hasProfile};
  profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
  return {profileSelect,modelInput};
-}
-// Re-push the complete saved box configuration. Reapplying a profile closes
-// stale agent conversations so the selected harness reloads its credentials.
-async function resyncBox(b){
- const instructions=await api(bp(b.id)+'/instructions/resync','POST',{}, {'Idempotency-Key':crypto.randomUUID()});
- let credentials;
- if(ownerTools){
-  const state=await api(bp(b.id)+'/imported-credentials');
-  credentials=await api(bp(b.id)+'/login-profiles','PUT',{profiles:state.profiles||[]});
- }
- notice(credentials?.note||instructions?.note||('Config re-synced to '+b.name+'.'));
- await refresh();
 }
 // Hibernate then allocate again. Agents and tmux sessions do not survive it, so
 // it asks first; the workspace volume is kept either way.
@@ -124,28 +113,6 @@ function kpi(pairs){const k=node('div');k.className='kpi';for(const [label,value
 function rawDetails(value){const d=document.createElement('details');d.append(node('summary','Technical details · JSON'),node('pre',JSON.stringify(value,null,2)));return d}
 let locationTarget=null,locationLoading=false,locationSaving=false;
 function resetLocation(){locationTarget=null;$('#location-form').hidden=true;$('#location-status').textContent='';}
-let costTarget=null,costLoading=false;
-function resetCosts(){costTarget=null;$('#cost-overview').replaceChildren(node('p','Costs have not been loaded.'))}
-function formatCost(cost){
- if(!cost?.available)return 'Unavailable';
- try{return new Intl.NumberFormat(undefined,{style:'currency',currency:cost.currency||'USD'}).format(cost.accrued||0)+(cost.estimated?' estimated':'')}
- catch{return (cost.currency||'')+' '+Number(cost.accrued||0).toFixed(2)+(cost.estimated?' estimated':'')}
-}
-function renderCosts(value){
- const root=$('#cost-overview'),coverage=value.availableSlotCount+' of '+value.slots.length+' slots reported';
- root.replaceChildren(node('p',(value.total.available?'Available slot total: '+formatCost(value.total):'Total unavailable')+' · '+coverage));
- root.append(value.slots.length?dataTable(['Slot','State','Box','Current period','Provider detail'],value.slots.map(s=>[s.ordinal,s.state,s.logicalBoxName||'—',formatCost(s.cost),s.cost.detail||'—'])):node('p','No compute slots configured.'));
- if(value.unavailableSlotCount)root.append(node('p','Some service costs are unavailable. The provider detail above explains each missing amount.'));
- if(value.observedAt)root.append(node('p','Observed '+new Date(value.observedAt).toLocaleString()+'.'));
- root.append(rawDetails(value));
-}
-$('#load-costs').addEventListener('click',action(async()=>{
- if(costLoading)return;if(!defaults)throw Error('Configure controller default first.');
- const target={provider:defaults.provider,providerCredential:defaults.providerCredential},version=epoch;costLoading=true;$('#load-costs').disabled=true;$('#cost-overview').replaceChildren(node('p','Loading provider billing…'));
- try{const q=new URLSearchParams(target),value=await api('/v1/fleet/costs?'+q);if(version!==epoch||defaults?.provider!==target.provider||defaults?.providerCredential!==target.providerCredential)return;costTarget=target;renderCosts(value)}
- catch(err){if(version===epoch)$('#cost-overview').replaceChildren(node('p',err.message))}
- finally{costLoading=false;$('#load-costs').disabled=false}
-}));
 $('#load-locations').addEventListener('click',action(async()=>{
  if(locationLoading||locationSaving)return;if(!defaults)throw Error('Configure controller default first');
  const target={provider:defaults.provider,providerCredential:defaults.providerCredential},version=epoch;locationLoading=true;$('#load-locations').disabled=true;resetLocation();$('#location-status').textContent='Loading locations…';
@@ -216,15 +183,10 @@ function renderBoxes(boxes){
   }
   const instructions=button('Instructions…',()=>openBoxInstructions(b));instructions.setAttribute('aria-label','Instructions for box '+b.name);actions.append(instructions);
   if(ownerTools){const credentials=button('Credentials…',()=>openBoxCredentials(b));credentials.setAttribute('aria-label','Credentials for box '+b.name);actions.append(credentials)}
-  if(boxPhase(b.state)==='running'){
-   const resync=button('Re-sync',()=>void resyncBox(b));
-   resync.title='Re-push saved instructions and the selected login profile; stale agent conversations close';
-   resync.setAttribute('aria-label','Re-sync config for box '+b.name);actions.append(resync);
-  }
   // Restart hibernates first, which only a running box can do; a stopped box
   // already offers Resume, so offering Restart there would just fail.
   if(boxPhase(b.state)==='running'){
-   const restart=button('Restart…',()=>void restartBox(b));
+   const restart=button('',()=>void restartBox(b));restart.classList.add('restart-action');restart.innerHTML=RESTART_ICON;
    restart.title='Hibernate and start again; running agents and sessions end';
    restart.setAttribute('aria-label','Restart box '+b.name);actions.append(restart);
   }
@@ -266,10 +228,10 @@ async function refresh(){
  if(!providers.length)$('#provider-list').append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));
  for(const p of providers){const line=node('p',p.provider+' / '+p.name+' ');line.append(button('Edit',()=>{const f=$('#provider').elements;f.provider.value=p.provider;f.alias.value=p.name;f.config.value=JSON.stringify(p.config||{},null,2);f.secret.value='';f.revision.value=p.updatedAt;$('#provider-editor').open=true;f.config.focus()}),button('Validate',async()=>{const result=await api(pp(p.provider,p.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}),button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:p.provider,providerCredential:p.name});await refresh()}));const details=document.createElement('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(p.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));$('#provider-list').append(line,details)}
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
- try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();if(costTarget&&(costTarget.provider!==d.provider||costTarget.providerCredential!==d.providerCredential))resetCosts();defaults=d;renderWorkerCapacity()}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
+ try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity()}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();resetCosts();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=$('#profile-choices select')?.value,profileRef=profile?JSON.parse(profile):null,loginProfiles=profileRef?[{...profileRef,model:f.agentModel.value.trim()}]:[],tools=[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value),setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();const created=await api('/v1/logical-boxes','POST',{name:f.name.value,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,...(tools.length?{tools}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);await refresh()}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
