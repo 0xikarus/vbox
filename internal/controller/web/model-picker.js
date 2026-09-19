@@ -1,6 +1,16 @@
 'use strict';
 (()=>{
  let sequence=0;
+ // These are CLI model IDs/aliases, not account entitlements. Claude Code
+ // recommends aliases that follow its available releases; Codex publishes the
+ // exact CLI IDs. Keep the input editable for account-specific model names.
+ // https://code.claude.com/docs/en/model-config
+ // https://learn.chatgpt.com/docs/models
+ const suggested={
+  claude:['sonnet','opus','haiku','sonnet[1m]','opus[1m]'],
+  codex:['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'],
+ };
+ function optionsFor(application,profileModels=[]){return [...(suggested[application]||[]),...profileModels]}
  function create(input){
   const wrapper=document.createElement('span');wrapper.className='model-picker';
   input.parentNode.insertBefore(wrapper,input);wrapper.append(input);
@@ -38,5 +48,5 @@
    open,
   };
  }
- window.VMBoxModelPicker={create};
+ window.VMBoxModelPicker={create,optionsFor};
 })();

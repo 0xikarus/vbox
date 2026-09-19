@@ -88,6 +88,40 @@ test('model choice is a searchable popup instead of a browser datalist',async()=
  assert.equal(await page.$eval(input,e=>e.value),'venice/deepseek-v4-1-flash');
  await page.close();
 });
+test('creation offers current Claude and Codex CLI models beyond uploaded profile defaults',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;
+  window.fetch=async(path,options)=>{
+   const response=await original(path,options);
+   if(new URL(path,location.origin).pathname!=='/v1/login-profiles')return response;
+   const profiles=await response.json();profiles.push({application:'codex',name:'personal-codex',model:'gpt-5.6-sol',createdAt:'2026-09-05T12:00:00Z'});
+   return new Response(JSON.stringify(profiles),{status:response.status,headers:response.headers});
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#profile-choices select');
+ await page.select('#create select[name=defaultAgent]','claude');
+ await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
+ const input='#create input[name=agentModel]';
+ assert.equal(await page.$eval(input,e=>e.value),'opus[1m]');
+ await page.click('#create .model-picker-toggle');
+ const claude=await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent));
+ for(const model of ['sonnet','opus','haiku','sonnet[1m]','opus[1m]'])assert.ok(claude.includes(model),model+' is offered');
+ await page.select('#create select[name=defaultAgent]','codex');
+ await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'codex',name:'personal-codex'}));
+ assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-sol');
+ await page.click('#create .model-picker-toggle');
+ const codex=await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent));
+ for(const model of ['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'])assert.ok(codex.includes(model),model+' is offered');
+ await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.textContent==='gpt-5.6-terra').click());
+ assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-terra');
+ await page.type('#create input[name=name]','disposable-model-fixture');
+ const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
+ await page.click('#create button[type=submit]');await created;
+ assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'codex',name:'personal-codex',model:'gpt-5.6-terra'}]);
+ await page.close();
+});
 test('creation can import one agent profile alongside a GitHub profile',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');

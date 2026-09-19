@@ -144,14 +144,18 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
   await p.select('#create-box select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
   await p.click('#create-box .model-picker-toggle');
-  assert.deepEqual(await p.$$eval('#create-box .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent)),['opus','sonnet']);
+  const claude=await p.$$eval('#create-box .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent));
+  for(const model of ['sonnet','opus','haiku','sonnet[1m]','opus[1m]'])assert.ok(claude.includes(model),model+' is offered');
+  await p.$$eval('#create-box .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.textContent==='haiku').click());
+  assert.equal(await p.$eval('#create-box input[name=agentModel]',input=>input.value),'haiku');
+  await p.click('#create-box .model-picker-toggle');
   await p.$eval('#create-box input[name=agentModel]',input=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
   assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
   await p.type('#create-box input[name=name]','github-chat-fixture');
   await p.$eval('#create-box',form=>form.requestSubmit());
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
-  assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'sonnet'},{application:'github',name:'gh-work'}]);
+  assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

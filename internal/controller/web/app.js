@@ -77,7 +77,7 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
   const app=agentSelect.value,previous=profileSelect.value||selected;profileSelect.replaceChildren();
   const empty=node('option','None');empty.value='';profileSelect.append(empty);
   const choices=profiles.filter(profile=>profile.application===app);
-  for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setOptions(choices.map(profile=>profile.model));
+  for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(app,choices.map(profile=>profile.model)));
   if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
   profileLabel.hidden=app==='shell'||choices.length===0;
   root.hidden=profileLabel.hidden&&githubLabel.hidden;

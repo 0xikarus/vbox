@@ -113,9 +113,12 @@ same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
 `desktop_type`, `desktop_key`), so agents can operate the box's computer.
 
 The controller and chat creation forms filter saved profiles to the selected
-harness and prefill the model stored in that profile. The model can be replaced
-with an exact Claude, Codex, or OpenCode CLI model name for that box; the saved
-encrypted profile remains unchanged.
+harness and prefill the model stored in that profile. The model picker also
+suggests documented Claude Code aliases and Codex CLI model IDs; OpenCode
+offers models already selected on saved profiles (its provider catalog is
+checked during profile upload). The model can be replaced with an exact Claude,
+Codex, or OpenCode CLI model name for that box; the saved encrypted profile
+remains unchanged. Suggested models are not a guarantee of account access.
 
 Agents can also address each other when the owner grants a contact edge.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
