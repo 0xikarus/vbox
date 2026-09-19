@@ -1397,10 +1397,13 @@
   }catch(e){toast(e.message)}
  }
  const deleteModal=$('#delete-box-modal'),deleteForm=$('#delete-box-form');let deleteTarget=null;
- async function deleteBoxWhenReady(){
+ // Takes the box as a parameter on purpose: this loop can retry for five
+ // minutes, and reading the live deleteTarget would let a delete dialog opened
+ // meanwhile retarget an in-flight deletion at a different box's volume.
+ async function deleteBoxWhenReady(target){
   const deadline=Date.now()+5*60*1000,key=crypto.randomUUID();
   for(;;){
-   try{return await api(boxPath(deleteTarget.id)+'/volume','DELETE',{'Idempotency-Key':key},{confirmation:deleteTarget.name})}
+   try{return await api(boxPath(target.id)+'/volume','DELETE',{'Idempotency-Key':key},{confirmation:target.name})}
    catch(error){
     if(Date.now()>=deadline||!/creation is still active|cannot transition from (?:attaching|reserved)|has not released its compute claim|workspace flush is active/i.test(error.message))throw error;
     $('#delete-box-status').textContent='Waiting for the current setup step to finish…';
@@ -1416,7 +1419,7 @@
   event.preventDefault();
   const submit=$('#delete-box-submit'),target=deleteTarget;submit.disabled=true;
   try{
-   await deleteBoxWhenReady();
+   await deleteBoxWhenReady(target);
    deleteModal.hidden=true;toast('Deleting box "'+target.name+'"…');
    if(target.id===selected){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;history.replaceState(null,'',location.pathname);closeTakeover()}
    deleteTarget=null;
