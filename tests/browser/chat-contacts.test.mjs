@@ -16,6 +16,7 @@ const appcss=await readFile('internal/controller/web/app.css','utf8');
 test('chat details drawer edits the per-box contact graph',async()=>{
  let boxRole='worker',protectedBox=false,requests=[],fullDesktopShots=0;
  let contacts=[{contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
+ let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
@@ -33,7 +34,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    if(req.url.includes('thumbnail=true')){res.statusCode=409;return res.end(JSON.stringify({error:'thumbnail offline'}))}
    fullDesktopShots++;res.setHeader('Content-Type','image/png');return res.end(thumbnail);
   }
-  if(path==='/v1/logical-boxes/builder/messages')return res.end(JSON.stringify([{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}]));
+  if(path==='/v1/logical-boxes/builder/messages')return res.end(JSON.stringify(builderMessages));
   if(path==='/v1/logical-boxes/reviewer/sessions/interactive'&&method==='POST')return res.end(JSON.stringify({session:'codex-reviewer'}));
   if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
@@ -70,6 +71,14 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.deepEqual(loginLayout,{position:'fixed',z:100,card:true,modal:'true'});
   await p.evaluate(()=>{document.querySelector('#login').hidden=true});
   await p.evaluate(()=>document.activeElement?.blur());
+  const now=new Date().toISOString();
+  builderMessages=[...builderMessages,{id:'m2',direction:'user',state:'delivered',text:'Please work on this.',createdAt:now,updatedAt:now}];
+  await p.$eval('[data-box-id="builder"]',element=>element.click());
+  await p.waitForFunction(()=>document.querySelector('#chat-messages .msg.processing')?.textContent.includes('agent is processing…'),{timeout:1500});
+  builderMessages=[...builderMessages,{id:'m3',direction:'agent',state:'delivered',text:'Done.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
+  await p.$eval('[data-box-id="builder"]',element=>element.click());
+  await p.waitForFunction(()=>document.querySelector('#chat-messages .msg.agent .text')?.textContent==='Done.'||[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Done.'),{timeout:1500});
+  assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'processing must end when the agent reply appears');
   const beforeListRefresh=requests.filter(r=>r==='GET /v1/grid-boxes').length;
   await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
   await new Promise(resolve=>setTimeout(resolve,650));
