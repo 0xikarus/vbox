@@ -95,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /", uiHandler("index.html", "text/html; charset=utf-8", true))
 	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /model-picker.js", uiHandler("model-picker.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /boxes/{id}", uiHandler("workspace.html", "text/html; charset=utf-8", false))
 	mux.HandleFunc("GET /workspace.js", uiHandler("workspace.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /grid", uiHandler("grid.html", "text/html; charset=utf-8", false))

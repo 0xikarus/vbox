@@ -36,6 +36,11 @@ button.primary{padding:4px 12px}
 #create-instructions-editor .field{display:block;max-width:64rem}
 #create-instructions-editor textarea{box-sizing:border-box}
 .row-fields{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:10px 16px;align-items:end;margin-top:6px;max-width:64rem}
+.model-picker{display:block;position:relative}
+.model-picker>input{width:100%}
+.model-picker-options{position:absolute;z-index:50;left:0;right:0;top:calc(100% + 2px);max-height:14rem;overflow:auto;background:#fff;border:1px solid #b8b8b8;box-shadow:0 5px 16px rgba(0,0,0,.18);padding:3px}
+.model-picker-option{display:block;width:100%;border:0;background:#fff;text-align:left;padding:5px 7px;overflow-wrap:anywhere}
+.model-picker-option:hover,.model-picker-option.active{background:#eef3ff;color:#001b72}
 #create .field{display:block;min-width:0}
 #create .field>input,#create .field>select,#create .field>textarea{width:100%;margin-top:3px}
 #create .form-actions{margin-top:2px}
