@@ -12,11 +12,11 @@ configuration are documented in [the desktop MVP guide](docs/AGENT-DESKTOP-IMPLE
 
 ## Quick setup
 
-When creating a box, select **Enable desktop** under Optional tools to prepare a
-desktop and Chromium browser without Blender. Selecting Blender requires this
-option. The desktop selection is retained across restores. Controller and Grid
-viewers still prefer an available desktop, with TMUX available manually; leaving
-the option unchecked does not disable a desktop already included in the worker.
+New boxes created in the Controller or Agent chat prepare the desktop and
+Chromium browser automatically, including across restores. Blender remains an
+optional tool. Controller and Grid viewers prefer an available desktop, with
+TMUX available manually. Older workers without desktop packages prepare them
+when the new box is created.
 
 ### 1. Install
 

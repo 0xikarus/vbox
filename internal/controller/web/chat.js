@@ -821,11 +821,12 @@
    renderCreationProfileChoices(profiles);
    const toolsSet=$('#create-tools');toolsSet.replaceChildren();
    for(const tool of tools){
+    if(tool.id==='desktop')continue;
     const label=document.createElement('label'),input=document.createElement('input');
     input.type='checkbox';input.value=tool.id;input.name='tool';input.title=tool.description||tool.name;
     label.append(input,document.createTextNode(' '+tool.name));toolsSet.append(label);
    }
-   toolsSet.hidden=!tools.length;
+   toolsSet.hidden=!toolsSet.children.length;
    extrasLoaded=true;
   }catch(e){$('#new-box-status').textContent=e.message}
  }
@@ -840,7 +841,7 @@
  createForm.onsubmit=async event=>{
   event.preventDefault();
   const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';
-  const tools=[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value);
+  const tools=['desktop',...[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value)];
   const selectedProfile=createForm.elements.loginProfile?.value;
   const profileRef=selectedProfile?JSON.parse(selectedProfile):null;
   const loginProfiles=profileRef?[{...profileRef,model:(createForm.elements.agentModel?.value||'').trim(),...(createForm.elements.agentReasoningEffort?.value?{reasoningEffort:createForm.elements.agentReasoningEffort.value}:{})}]:[];
