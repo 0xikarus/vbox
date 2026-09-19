@@ -56,16 +56,11 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
-test('desktop can be selected without Blender and Blender requires it',async()=>{
+test('desktop is implicit in creation and Blender remains optional',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#create-tools input[value=desktop]');
- const desktop='#create-tools input[value=desktop]',blender='#create-tools input[value=blender]';
- assert.equal(await page.$eval(desktop,input=>input.checked),false);
- await page.click(blender);
- assert.deepEqual(await page.$eval(desktop,input=>[input.checked,input.disabled]),[true,true]);
- await page.click(blender);
- assert.deepEqual(await page.$eval(desktop,input=>[input.checked,input.disabled]),[true,false]);
+ await page.waitForSelector('#create-tools input[value=blender]');
+ assert.equal(await page.$('#create-tools input[value=desktop]'),null);
  await page.type('#create input[name=name]','disposable-desktop-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
  await page.click('#create button[type=submit]');await created;
@@ -243,14 +238,14 @@ test('box deletion confirms exact identity, prevents repeats and shows asynchron
  await page.evaluate(()=>window.deleteState='gone');await page.waitForFunction(()=>!document.querySelector('[data-box-id="box-1"]'),{timeout:10000});
  assert.ok(await page.$('[data-box-id="sibling"]'));assert.deepEqual(errors,[]);await page.close();
 });
-test('mobile box deletion reports rejection without hiding the box or replaying deletion',async()=>{
+test('mobile box deletion reports a non-transient rejection without replaying deletion',async()=>{
  const page=await browser.newPage();await page.setViewport({width:390,height:844});
  await page.evaluateOnNewDocument(()=>{
   const original=window.fetch;window.deleteCalls=0;
-  window.fetch=async(path,options={})=>{if(path==='/v1/logical-boxes/box-1/volume'&&options.method==='DELETE'){window.deleteCalls++;return new Response(JSON.stringify({error:'Creation is still active; try again after it finishes.'}),{status:409})}return original(path,options)};
+  window.fetch=async(path,options={})=>{if(path==='/v1/logical-boxes/box-1/volume'&&options.method==='DELETE'){window.deleteCalls++;return new Response(JSON.stringify({error:'Deletion forbidden by policy.'}),{status:409})}return original(path,options)};
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button');
- page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button');await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Creation is still active'));
+ page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button');await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Deletion forbidden by policy'));
  assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),false);assert.equal(await page.evaluate(()=>window.deleteCalls),1);assert.ok(await page.$('[data-box-id="box-1"]'));await page.close();
 });
 test('table previews stay fixed size and tool choices stay compact',async()=>{
@@ -322,13 +317,37 @@ test('box actions follow state: no resume while creating, resume on failure',asy
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('[data-box-id="creating"]');
  const buttons=id=>page.$$eval(`[data-box-id="${id}"] button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
- // Instructions and credentials are editable in any state; only delete and
- // resume follow the lifecycle.
- assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:true},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
+ // Delete remains available during creation so a stuck box can be cancelled.
+ assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
  assert.deepEqual(await buttons('broke'),[{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false}]);
  assert.deepEqual(await buttons('sleepy'),[{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false}]);
  assert.match(await page.$eval('[data-box-id="broke"] td:nth-child(2)',n=>n.textContent),/provider refused the volume/);
  await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
+ await page.close();
+});
+test('delete retries safely while an attaching box is still creating',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;window.deleteAttempts=0;
+  window.fetch=async(path,options={})=>{
+   const url=new URL(path,location.origin),method=options.method||'GET';
+   if(method==='GET'&&url.pathname==='/v1/logical-boxes')return new Response(JSON.stringify([
+    {id:'creating',name:'building',state:window.deleteAttempts>=2?'deleting':'attaching',defaultAgent:'claude',provider:'railway',providerCredential:'primary'}
+   ]));
+   if(method==='DELETE'&&url.pathname==='/v1/logical-boxes/creating/volume'){
+    window.deleteAttempts++;
+    if(window.deleteAttempts===1)return new Response(JSON.stringify({error:'logical box creation is still active; retry deletion shortly'}),{status:409});
+    return new Response(JSON.stringify({state:'deleting'}),{status:202});
+   }
+   return original(path,options);
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('[data-box-id="creating"] button[aria-label="Delete box building"]');
+ page.once('dialog',dialog=>dialog.accept());
+ await page.click('[data-box-id="creating"] button[aria-label="Delete box building"]');
+ await page.waitForFunction(()=>window.deleteAttempts===2,{timeout:10000});
+ await page.waitForFunction(()=>document.querySelector('[data-box-id="creating"] button[aria-label="Delete box building"]')?.disabled);
  await page.close();
 });
 test('controller omits costs and renders compact box actions',async()=>{
@@ -429,7 +448,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
  assert.deepEqual(await page.$eval('#create select[name=defaultAgent]',select=>({value:select.value,disabled:select.disabled})),{value:'opencode',disabled:true});
  await page.click('#create-tools input[value=blender]');
- assert.deepEqual(await page.$eval('#create-tools input[value=desktop]',input=>({checked:input.checked,disabled:input.disabled})),{checked:true,disabled:true});
+ assert.equal(await page.$('#create-tools input[value=desktop]'),null);
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button[type=submit]');await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'opencode',name:'openrouter'}]);
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['desktop','blender']);

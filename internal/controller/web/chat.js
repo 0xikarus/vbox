@@ -932,17 +932,28 @@
   }catch(e){toast(e.message)}
  }
  const deleteModal=$('#delete-box-modal'),deleteForm=$('#delete-box-form');let deleteTarget=null;
+ async function deleteBoxWhenReady(box){
+  const deadline=Date.now()+5*60*1000,key=crypto.randomUUID();
+  for(;;){
+   try{return await api(boxPath(box.id)+'/volume','DELETE',{'Idempotency-Key':key},{confirmation:box.name})}
+   catch(error){
+    if(Date.now()>=deadline||!/creation is still active|cannot transition from (?:attaching|reserved)|has not released its compute claim|workspace flush is active/i.test(error.message))throw error;
+    $('#delete-box-status').textContent='Waiting for the current setup step to finish…';
+    await new Promise(resolve=>setTimeout(resolve,1500));
+   }
+  }
+ }
  function openDeleteModal(box){
   $('#delete-box-text').textContent='Deleting "'+box.name+'" permanently removes the box and its entire workspace volume. Hibernate keeps the volume instead.';
   $('#delete-box-status').textContent='';$('#delete-box-submit').disabled=false;deleteTarget=box;deleteModal.hidden=false;$('#delete-box-submit').focus();
  }
  deleteForm.onsubmit=async event=>{
   event.preventDefault();
-  const submit=$('#delete-box-submit');submit.disabled=true;
+  const submit=$('#delete-box-submit'),target=deleteTarget;submit.disabled=true;
   try{
-   await api(boxPath(deleteTarget.id)+'/volume','DELETE',{'Idempotency-Key':crypto.randomUUID()},{confirmation:deleteTarget.name});
-   deleteModal.hidden=true;toast('Box "'+deleteTarget.name+'" deleted.');
-   if(deleteTarget.id===selected){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;history.replaceState(null,'',location.pathname);closeTakeover()}
+   await deleteBoxWhenReady(target);
+   deleteModal.hidden=true;toast('Deleting box "'+target.name+'"…');
+   if(target.id===selected){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;history.replaceState(null,'',location.pathname);closeTakeover()}
    deleteTarget=null;
    await loadBoxes();
   }catch(e){$('#delete-box-status').textContent=e.message}
