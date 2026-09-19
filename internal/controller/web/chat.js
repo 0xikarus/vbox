@@ -56,12 +56,12 @@
   const dot=document.createElement('span');dot.className='dot'+(box.state==='running'?' running':'');wrap.append(dot);
   if(preview&&box.state==='running'){
    wrap.classList.add('preview-trigger');wrap.tabIndex=0;wrap.setAttribute('role','button');
-   wrap.title='Hover to preview the desktop, click for the live view';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open the live view');
+   wrap.title='Hover to preview; click for Desktop/TMUX control';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open Desktop or TMUX control');
    const currentBox=()=>boxes.get(box.id)||box;
    wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=hideTvPreview;
    wrap.onfocus=()=>showTvPreview(wrap,currentBox());wrap.onblur=hideTvPreview;
-   wrap.onclick=event=>{event.stopPropagation();void openLiveView(currentBox())};
-   wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openLiveView(currentBox())}};
+   wrap.onclick=event=>{event.stopPropagation();void openBoxControl(currentBox(),'desktop')};
+   wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
   }
   return wrap;
  }
@@ -77,7 +77,7 @@
   const cached=tvShotCache.get(box.id);
   tvPreviewImg.hidden=!cached?.url;
   if(cached?.url&&tvPreviewImg.src!==cached.url)tvPreviewImg.src=cached.url;
-  tvPreviewNote.textContent=cached?.url?'Click for the live view':'no desktop preview yet';
+  tvPreviewNote.textContent=cached?.url?'Click for Desktop/TMUX control':'no desktop preview yet';
  }
  function tvShotRefresh(box){
   const cached=tvShotCache.get(box.id);
@@ -284,13 +284,13 @@
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
-   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview the desktop, click for the live view';tv.setAttribute('aria-label','Preview the desktop and open the live view');
+   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview; click for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
    tv.append(tvIcon());
    tv.onmouseenter=()=>showTvPreview(tv,box);
    tv.onmouseleave=hideTvPreview;
    tv.onfocus=()=>showTvPreview(tv,box);
    tv.onblur=hideTvPreview;
-   tv.onclick=()=>void openLiveView(box);
+   tv.onclick=()=>void openBoxControl(box,'desktop');
    t.append(dots,label,tv);messagesEl.append(t);
   }
   if(follow){
@@ -456,8 +456,8 @@
  const takeover=$('#takeover'),takeoverScreen=$('#takeover-screen'),takeoverControls=$('#takeover-controls'),takeoverStatus=$('#takeover-status');
  const boxViewerMetrics=new Map();
  let takeoverDispose=null,takeoverKind='';
- async function openTakeover(kind){
-  const box=boxes.get(selected);if(!box)return;
+ async function openTakeover(kind,boxID=selected){
+  const box=boxes.get(boxID);if(!box)return;
   if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it from the workspace first.';return}
   takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
   takeover.hidden=false;takeoverKind=kind;
@@ -474,6 +474,11 @@
    }
   }catch(e){takeoverStatus.textContent=e.message}
  }
+ async function openBoxControl(box,kind){
+  hideTvPreview();
+  if(selected!==box.id){history.replaceState(null,'',location.pathname+'#box='+encodeURIComponent(box.id));await openBox(box.id)}
+  await openTakeover(kind,box.id);
+ }
  function closeTakeover(){
   takeoverDispose?.();takeoverDispose=null;takeoverKind='';
   takeover.hidden=true;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
@@ -481,9 +486,6 @@
  $('#chat-control').onclick=()=>void openTakeover('desktop');
  $('#takeover-close').onclick=closeTakeover;
  $('#takeover-backdrop').onclick=closeTakeover;
- $('#live-view-close').onclick=closeLiveView;
- $('#live-view-backdrop').onclick=closeLiveView;
- $('#live-view-control').onclick=()=>{closeLiveView();void openTakeover('desktop')};
  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.onclick=()=>void openTakeover(b.dataset.kind));
 
  /* ---------- interrupt agent ---------- */
@@ -609,18 +611,10 @@
  /* ---------- toasts ---------- */
  function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#chat-toasts').append(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},3200);}
 
- /* ---------- live view: large read-only desktop stream ---------- */
- const liveView=$('#live-view'),liveViewScreen=$('#live-view-screen'),liveViewControls=$('#live-view-controls'),liveViewStatus=$('#live-view-status');
- let liveViewDispose=null,liveViewEpoch=0;
- function closeLiveView(){
-  liveViewEpoch++;
-  liveViewDispose?.();liveViewDispose=null;
-  liveView.hidden=true;liveViewScreen.replaceChildren();liveViewControls.replaceChildren();
- }
- // The desktop stream attaches to a running desktop and never starts one, so a
- // reload (or any box whose desktop is not up yet) has to start it first. A
- // worker without the desktop packages needs an explicit enable before start,
- // which is the same ladder the workspace view uses.
+ /* The desktop stream attaches to a running desktop and never starts one, so a
+    reload (or any box whose desktop is not up yet) has to start it first. A
+    worker without the desktop packages needs an explicit enable before start,
+    which is the same ladder the workspace view uses. */
  async function ensureDesktopRunning(box){
   try{
    await api(boxPath(box.id)+'/desktop','POST',{});
@@ -630,21 +624,6 @@
    await api(boxPath(box.id)+'/desktop','POST',{});
   }
  }
- async function openLiveView(box){
-  hideTvPreview();
-  if(!liveView.hidden)closeLiveView();
-  const epoch=++liveViewEpoch;
-  liveView.hidden=false;
-  $('#live-view-title').textContent=box.name+' · live view';
-  liveViewStatus.textContent='Starting desktop…';
-  try{
-   await ensureDesktopRunning(box);
-   if(epoch!==liveViewEpoch)return;
-   liveViewStatus.textContent='Connecting…';
-   liveViewDispose=openWorkspaceDesktop(box.id,message=>{liveViewStatus.textContent=message},{root:liveViewScreen,controls:liveViewControls,viewOnly:true,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
-  }catch(e){if(epoch===liveViewEpoch)liveViewStatus.textContent=e.message}
- }
-
  /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
  const newBoxModal=$('#new-box-modal'),createForm=$('#create-box');
  let extrasLoaded=false;
@@ -773,7 +752,7 @@
   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
  }
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
- addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!liveView.hidden)closeLiveView();if(!takeover.hidden)closeTakeover();}});
+ addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
  // Re-push the instructions the box already carries. A replaced worker or a
  // restored hibernation can leave a running box behind its saved config, and
  // re-typing the same Markdown just to trigger a write is a poor way to fix it.
