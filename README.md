@@ -127,6 +127,24 @@ edits the graph per box in the workspace page or the chat Details drawer and can
 mark a box protected. Changes apply immediately and the controller authorizes
 every send, so the model cannot widen its own reach.
 
+### Agent chat harness parity
+
+| Feature | Codex | Claude | OpenCode |
+| --- | --- | --- | --- |
+| First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the startup prompt |
+| Follow-ups reuse the same native task/thread | Yes | Yes | Yes |
+| **Clear context** keeps the watched session usable | Native `/new` | Respawns Claude with a new channel | Native `/new` |
+| Old process cleanup when a respawn is required | Not applicable | Old Claude tree is terminated | Not applicable |
+| `chat_message`, `chat_ask`, and contact routing | Yes | Yes | Yes |
+| Desktop screenshot, mouse, keyboard, and typing tools | Yes | Yes | Yes |
+| Box-side HTTP façade with the same 14 tools | Yes | Yes | Yes |
+| Harness-specific saved profile and per-box model | Yes | Yes | Yes |
+| Agent exchange remains visible in TMUX/VNC | Yes | Yes | Yes |
+
+Codex and OpenCode clear their model context without killing a healthy TUI.
+Claude has no equivalent channel reset, so clearing it replaces the Claude
+process and waits for the new channel before accepting another chat message.
+
 ## Windows setup (WSL)
 
 Use Ubuntu inside Windows through WSL. The current installer supports Linux and
