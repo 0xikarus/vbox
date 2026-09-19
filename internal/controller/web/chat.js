@@ -35,7 +35,6 @@
  function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}return()=>{h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return(h^=h>>>16)>>>0;};}
  function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
  const hsl=(h,s,l)=>'hsl('+(((h%360)+360)%360)+' '+s+'% '+l+'%)';
- const hslA=(h,s,l,a)=>'hsl('+(((h%360)+360)%360)+' '+s+'% '+l+'% / '+a+')';
  const THEME_ADJ=['mossy','sunny','plucky','sleepy','brisk','cosy','fizzy','tiny','bold','minty','wobbly','glossy'];
  const THEME_NOUN=['pebble','mochi','bramble','biscuit','comet','dumpling','clover','pixel','marble','sprout','pudding','ember'];
  const titleCase=w=>w.charAt(0).toUpperCase()+w.slice(1);
@@ -54,9 +53,8 @@
    pop:hsl(pop,sat,52),'bubble-out':hsl(accent,sat,84),'bubble-in':'#fff','bubble-in-ink':hsl(base,soft,13),
    danger:hsl(6,72,44),warn:hsl(38,86,36),ok:hsl(150,58,32),
    radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',
-   shadow:hslA(base,40,40,.13)+' 0 .5rem 1.4rem,'+hslA(base,40,40,.08)+' 0 .12rem .35rem',
-   'shadow-pop':hslA(base,40,30,.22)+' 0 1rem 2.4rem',
-   wall:'radial-gradient(38rem 30rem at 8% -8%,'+hsl(accent,sat,93)+',transparent 62%),radial-gradient(34rem 26rem at 102% 6%,'+hsl(accent,soft,94)+',transparent 66%)'};
+   shadow:'none','shadow-pop':'none',
+   wall:'none'};
   return {name,font,base,accent,radius,tokens:t};
  }
  function applyVariant(){
@@ -164,18 +162,14 @@
   const freckles=!t.freckles?'':[-1,1].flatMap(s=>[[0,0],[7,4],[-6,5]].map(([dx,dy])=>'<circle cx="'+(120+s*(chX+dx))+'" cy="'+(chY+dy-2)+'" r="1.7"/>')).join('');
   const pat=mxPattern(t);
   const mouthY=((cy-106)*.7+(t.H-146)*.4).toFixed(1);
-  const eye=(cx,side)=>'<g class="mx-eye mx-eye-'+side+'" style="transform-origin:'+cx+'px '+cy+'px"><g class="mx-blinker" style="transform-origin:'+cx+'px '+cy+'px"><rect x="'+(cx-t.eyeW/2)+'" y="'+(cy-t.eyeH/2)+'" width="'+t.eyeW+'" height="'+t.eyeH+'" rx="'+er+'" fill="url(#'+uid+'-eyeg)"/><circle cx="'+(cx-t.eyeW*.22)+'" cy="'+(cy-t.eyeH*.26)+'" r="'+(t.glint?Math.min(4,t.eyeW*.22):0)+'" fill="#fff"/></g></g>';
+  const eye=(cx,side)=>'<g class="mx-eye mx-eye-'+side+'" style="transform-origin:'+cx+'px '+cy+'px"><g class="mx-blinker" style="transform-origin:'+cx+'px '+cy+'px"><rect x="'+(cx-t.eyeW/2)+'" y="'+(cy-t.eyeH/2)+'" width="'+t.eyeW+'" height="'+t.eyeH+'" rx="'+er+'" fill="#fff"/><circle cx="'+(cx-t.eyeW*.22)+'" cy="'+(cy-t.eyeH*.26)+'" r="'+(t.glint?Math.min(4,t.eyeW*.22):0)+'" fill="#dceef4"/></g></g>';
   return '<svg class="mascot-svg" data-mood="idle" viewBox="0 0 240 240" role="img" aria-label="generated mascot">'+
-   '<defs><linearGradient id="'+uid+'-gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset=".5" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#000" stop-opacity=".12"/></linearGradient>'+
-   '<linearGradient id="'+uid+'-eyeg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#dceef4"/></linearGradient>'+
-   '<clipPath id="'+uid+'-body"><path d="'+d+'"/></clipPath>'+
+   '<defs><clipPath id="'+uid+'-body"><path d="'+d+'"/></clipPath>'+
    '<clipPath id="'+uid+'-mouth"><path d="M101 141 A20 20 0 0 0 141 141 Z"/></clipPath>'+
    '<clipPath id="'+uid+'-laugh"><path d="M93 135 A27 25 0 0 0 147 135 Z"/></clipPath></defs>'+
-   '<g class="mx-shadow-g"><ellipse class="mx-shadow" cx="120" cy="198" rx="'+Math.round(t.W*.33)+'" ry="9"/></g>'+
    '<g class="mx-look"><g class="mx-float"><g class="mx-turn"><g class="mx-pop"><g class="mx-body-g">'+
    antenna+
    '<path class="mx-body" d="'+d+'"/>'+
-   '<path d="'+d+'" fill="url(#'+uid+'-gloss)"/>'+
    '<g clip-path="url(#'+uid+'-body)"><g class="mx-back-view"><path d="'+d+'" fill="var(--mx-dark)" opacity=".18"/><g class="mx-back-pattern">'+pat+'</g>'+
    '<rect x="'+(bx-9)+'" y="'+(by-9)+'" width="'+(cell*5+18)+'" height="'+(cell*5+18)+'" rx="'+((cell*5+18)/2)+'" fill="var(--mx-dark)" opacity=".34"/><g class="mx-badge">'+badge+'</g></g></g>'+
    '<g clip-path="url(#'+uid+'-body)"><g class="mx-face"><g class="mx-pattern">'+pat+'</g><g class="mx-freckles" fill="var(--mx-dark)" opacity=".4">'+freckles+'</g>'+

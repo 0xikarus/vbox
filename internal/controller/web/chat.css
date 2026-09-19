@@ -27,10 +27,8 @@ body{max-width:none;margin:0;padding:0;height:100%;
   --bubble-out:hsl(160 70% 86%);--bubble-in:#fff;--bubble-in-ink:var(--ink);
   --danger:hsl(6 72% 48%);--warn:hsl(38 86% 40%);--ok:hsl(150 60% 34%);
   --radius:8px;--radius-sm:4px;--radius-lg:14px;
-  --shadow:0 .5rem 1.4rem hsl(58 40% 40% / .12),0 .12rem .35rem hsl(58 40% 40% / .08);
-  --shadow-pop:0 1rem 2.4rem hsl(58 40% 30% / .22);
-  --wall:radial-gradient(38rem 30rem at 8% -8%,var(--accent-soft),transparent 62%),
-         radial-gradient(34rem 26rem at 102% 6%,var(--bg2),transparent 66%);
+  --shadow:none;--shadow-pop:none;
+  --wall:none;
 }
 :root:not([data-variant]){--bg:hsl(58 46% 96%);--ink:hsl(58 46% 13%);--surface:#fff;--line:hsl(58 46% 88%)}
 
@@ -69,7 +67,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
 /* ── two screens, push navigation (mobile-first at every width) ──────── */
 #chat-app{flex:1;display:flex;min-height:0;position:relative;overflow:hidden}
 #chat-list{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;min-height:0;
-  background:var(--wall),var(--bg);padding-bottom:env(safe-area-inset-bottom)}
+  background:var(--bg);padding-bottom:env(safe-area-inset-bottom)}
 #chat-list-head{display:flex;align-items:center;gap:.6rem;padding:.7rem .8rem .1rem}
 #chat-list-head h1{margin:0;font-size:1.45rem;font-weight:800;letter-spacing:-.02em}
 #chat-list-head p{margin:.1rem 0 0;color:var(--ink-soft);font-size:.8rem}
@@ -110,8 +108,8 @@ body{max-width:none;margin:0;padding:0;height:100%;
   border-radius:.5rem;padding:.1rem .4rem;font-weight:700}
 
 #chat-main{position:absolute;inset:0;display:flex;flex-direction:column;min-width:0;min-height:0;
-  background:var(--wall),var(--bg);transform:translateX(100%);transition:transform .24s cubic-bezier(.3,.8,.3,1);
-  z-index:5;box-shadow:-.4rem 0 1.4rem hsl(0 0% 0% / .18)}
+  background:var(--bg);transform:translateX(100%);transition:transform .24s cubic-bezier(.3,.8,.3,1);
+  z-index:5}
 #chat-app.in-chat #chat-main{transform:none}
 #chat-empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;
   text-align:center;color:var(--ink-soft);padding:1.6rem}
