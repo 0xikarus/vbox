@@ -326,41 +326,59 @@ func (s *Server) completeLogicalBoxHibernate(ctx context.Context, p Principal, a
 	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "saving-workspace"); err != nil {
 		return fail(err)
 	}
-	// A running volume may still have the runtime from an earlier controller
-	// revision. Apply snapshot fixes before saving, without restarting compute.
-	if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
-		return fail(fmt.Errorf("stage hibernate runtime: %w", err))
-	}
-	prepareCommand := "prepare-hibernate"
-	if strings.HasPrefix(assignment.Box.RestorationState, "auto-") {
-		prepareCommand = "prepare-idle-hibernate"
-	}
-	flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Minute)
-	prepared, err := prov.Exec(flushCtx, assignment.Slot.ServiceID, []string{"vmbox-runtime", prepareCommand}, provider.ExecOptions{})
-	flushCancel()
-	if err != nil {
-		return fail(fmt.Errorf("save workload state: %w", err))
-	}
-	if prepared.ExitCode != 0 {
-		return fail(fmt.Errorf("workspace remained busy; volume is still attached: %s", strings.TrimSpace(prepared.Stderr)))
-	}
-	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "detaching-volume"); err != nil {
-		return fail(err)
-	}
 	storage := provider.Storage{ID: assignment.Box.VolumeID, Name: assignment.Box.VolumeName, MountPath: "/data"}
-	if err := detachable.DetachStorage(ctx, assignment.Slot.ServiceID, storage); err != nil {
-		return fail(fmt.Errorf("detach retained volume: %w", err))
-	}
-	if inspector, ok := prov.(provider.AttachedStorageProvider); ok {
-		if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "verifying-detach"); err != nil {
-			return fail(err)
-		}
+	inspector, canInspect := prov.(provider.AttachedStorageProvider)
+	alreadyDetached := false
+	if canInspect {
 		attached, err := inspector.AttachedStorage(ctx, assignment.Slot.ServiceID)
 		if err != nil {
-			return fail(fmt.Errorf("verify detached volume: %w", err))
+			return fail(fmt.Errorf("inspect hibernate volume: %w", err))
 		}
-		if attached != nil {
-			return fail(fmt.Errorf("Railway still reports volume %s attached; slot remains draining", attached.ID))
+		if attached == nil {
+			// A previous attempt can detach and sanitize successfully, then lose
+			// its final serializable database transaction. Retrying commands on
+			// that empty slot can never work; finish the durable release instead.
+			alreadyDetached = true
+		} else if attached.ID != storage.ID {
+			return fail(fmt.Errorf("compute slot unexpectedly contains volume %s while hibernating %s", attached.ID, storage.ID))
+		}
+	}
+	if !alreadyDetached {
+		// A running volume may still have the runtime from an earlier controller
+		// revision. Apply snapshot fixes before saving, without restarting compute.
+		if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+			return fail(fmt.Errorf("stage hibernate runtime: %w", err))
+		}
+		prepareCommand := "prepare-hibernate"
+		if strings.HasPrefix(assignment.Box.RestorationState, "auto-") {
+			prepareCommand = "prepare-idle-hibernate"
+		}
+		flushCtx, flushCancel := context.WithTimeout(ctx, 2*time.Minute)
+		prepared, err := prov.Exec(flushCtx, assignment.Slot.ServiceID, []string{"vmbox-runtime", prepareCommand}, provider.ExecOptions{})
+		flushCancel()
+		if err != nil {
+			return fail(fmt.Errorf("save workload state: %w", err))
+		}
+		if prepared.ExitCode != 0 {
+			return fail(fmt.Errorf("workspace remained busy; volume is still attached: %s", strings.TrimSpace(prepared.Stderr)))
+		}
+		if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "detaching-volume"); err != nil {
+			return fail(err)
+		}
+		if err := detachable.DetachStorage(ctx, assignment.Slot.ServiceID, storage); err != nil {
+			return fail(fmt.Errorf("detach retained volume: %w", err))
+		}
+		if canInspect {
+			if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "verifying-detach"); err != nil {
+				return fail(err)
+			}
+			attached, err := inspector.AttachedStorage(ctx, assignment.Slot.ServiceID)
+			if err != nil {
+				return fail(fmt.Errorf("verify detached volume: %w", err))
+			}
+			if attached != nil {
+				return fail(fmt.Errorf("Railway still reports volume %s attached; slot remains draining", attached.ID))
+			}
 		}
 	}
 	if err := s.Store.SetLogicalBoxHibernatePhase(ctx, p.AccountID, assignment.Box.ID, claim, "sanitizing-compute"); err != nil {
