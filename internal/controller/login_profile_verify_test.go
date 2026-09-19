@@ -40,3 +40,13 @@ func TestVerifyProvisionedLogin(t *testing.T) {
 		}
 	}
 }
+
+func TestClaudeCreationDoesNotRequireOneShotCompletion(t *testing.T) {
+	p := &loginCheckProvider{result: provider.ExecResult{Stdout: `{"loggedIn":true}`}}
+	if err := verifyProvisionedLogin(context.Background(), p, "service", "claude", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.commands) != 1 || strings.Join(p.commands[0], " ") != "claude auth status --json" {
+		t.Fatalf("Claude creation must only check login status, got commands %v", p.commands)
+	}
+}
