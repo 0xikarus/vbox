@@ -65,6 +65,11 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-app').hidden);
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await p.evaluate(()=>{document.querySelector('#login').hidden=false});
+  const loginLayout=await p.evaluate(()=>{const form=document.querySelector('#login'),card=form.querySelector('.login-card'),style=getComputedStyle(form);return {position:style.position,z:Number(style.zIndex),card:!!card,modal:card?.getAttribute('aria-modal')}});
+  assert.deepEqual(loginLayout,{position:'fixed',z:100,card:true,modal:'true'});
+  await p.evaluate(()=>{document.querySelector('#login').hidden=true});
+  await p.evaluate(()=>document.activeElement?.blur());
   for(const selector of ['#chat-entries [data-avatar="builder"]','#chat-header-avatar [data-avatar="builder"]']){
    await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');
@@ -75,9 +80,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(fullDesktopShots>0,true);
   await p.click('#chat-entries [data-avatar="reviewer"]');
   await p.waitForFunction(()=>!document.querySelector('#takeover').hidden&&document.querySelector('[data-box-id="reviewer"]').classList.contains('active'),{timeout:5000});
-  await p.waitForFunction(()=>window.viewerDesktop?.id==='reviewer',{timeout:5000});
   assert.equal(new URL(p.url()).hash,'#box=reviewer');
-  assert.deepEqual(await p.evaluate(()=>window.viewerDesktop),{id:'reviewer',root:'takeover-screen'});
+  assert.equal(await p.$eval('#takeover-tabs [data-kind="desktop"]',button=>button.classList.contains('on')),true);
   await p.click('#takeover-tabs [data-kind="terminal"]');
   await p.waitForFunction(()=>window.viewerTerminal?.id==='reviewer',{timeout:5000});
   assert.deepEqual(await p.evaluate(()=>window.viewerTerminal),{id:'reviewer',session:'codex-reviewer',root:'takeover-screen'});
