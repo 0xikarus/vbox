@@ -67,6 +67,27 @@ test('desktop is implicit in creation and Blender remains optional',async()=>{
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.tools,['desktop']);
  await page.close();
 });
+test('successful creation clears the form and returns to the top',async()=>{
+ const page=await browser.newPage();await page.setViewport({width:390,height:844});
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#create-tools input[value=foundry]');
+ await page.type('#create input[name=name]','disposable-reset-fixture');
+ await page.$eval('#create input[name=disk]',input=>input.value='20');
+ await page.select('#create select[name=defaultAgent]','opencode');
+ await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'opencode',name:'openrouter'}));
+ await page.select('#profile-choices select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
+ await page.click('#create-tools input[value=foundry]');
+ await page.type('#create textarea[name=setupScript]','echo fixture');
+ await page.select('#create-instructions','none');
+ await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
+ const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
+ await page.click('#create button[type=submit]');await created;
+ await page.waitForFunction(()=>{
+  const form=document.querySelector('#create');
+  return form.elements.name.value===''&&form.elements.disk.value==='10'&&form.elements.defaultAgent.value==='claude'&&form.elements.loginProfile.value===''&&form.elements.agentModel.value===''&&form.elements.githubProfile.value===''&&!form.querySelector('input[value=foundry]').checked&&form.elements.setupScript.value===''&&form.elements.instructions.value==='auto'&&form.querySelector('.model-picker-open').textContent==='Choose model'&&window.scrollY===0;
+ },{timeout:5000});
+ await page.close();
+});
 test('model choice opens a searchable modal and loads the provider catalog',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
