@@ -30,6 +30,11 @@ func ensureClaudeSettings(path, workspace string) error {
 	}
 	permissions["defaultMode"] = "bypassPermissions"
 	settings["permissions"], _ = json.Marshal(permissions)
+	// Auto mode's first-run offer can block an unattended Claude terminal even
+	// though this box explicitly uses bypassPermissions. Disable that alternate
+	// mode through Claude's documented setting rather than inspecting TUI text.
+	settings["disableAutoMode"] = json.RawMessage(`"disable"`)
+	settings["skipDangerousModePermissionPrompt"] = json.RawMessage(`true`)
 
 	var trusted []string
 	if raw, ok := settings["trustedDirectories"]; ok && json.Unmarshal(raw, &trusted) != nil {

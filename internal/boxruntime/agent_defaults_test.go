@@ -17,6 +17,12 @@ func TestEnsureClaudeDefaultsGrantsPermissionsAndTrust(t *testing.T) {
 	if mode := settings["permissions"].(map[string]any)["defaultMode"]; mode != "bypassPermissions" {
 		t.Fatalf("defaultMode = %v", mode)
 	}
+	if got := settings["disableAutoMode"]; got != "disable" {
+		t.Fatalf("auto mode was not disabled: %v", got)
+	}
+	if got := settings["skipDangerousModePermissionPrompt"]; got != true {
+		t.Fatalf("bypass confirmation was not disabled: %v", got)
+	}
 	if dirs := settings["trustedDirectories"].([]any); len(dirs) != 1 || dirs[0] != workspace {
 		t.Fatalf("trustedDirectories = %v", dirs)
 	}
