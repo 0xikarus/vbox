@@ -141,6 +141,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/browser/imports/{import}", s.owner(s.deleteBrowserState))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/desktop/control", s.owner(s.desktopControl))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/screenshot", s.owner(s.desktopScreenshot))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/replay", s.owner(s.desktopReplayList))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/replay/{frame}", s.owner(s.desktopReplayFrame))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/desktop/stream", s.owner(s.webDesktop))
 	mux.HandleFunc("POST /v1/browser-session", s.auth(s.browserLogin))
 	mux.HandleFunc("GET /v1/browser-session", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -609,6 +611,7 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	// This independent loop must keep running when infrastructure reconciliation
 	// waits behind the shared Railway request budget.
 	s.startRunningWorkerReplacementReconciler(ctx)
+	s.startDesktopReplayRecorder(ctx)
 	if err := s.ReconcileNow(ctx); err != nil {
 		s.Logger.Error("initial controller reconciliation failed", "error", err)
 	}

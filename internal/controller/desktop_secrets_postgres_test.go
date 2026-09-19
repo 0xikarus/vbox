@@ -139,6 +139,12 @@ func TestDesktopSecretsPostgres(t *testing.T) {
 	}
 
 	testDesktopPrivateDataRoutes(t, s, p, q, box)
+	frameID := uuid()
+	frameBytes := []byte{0xff, 0xd8, 0xff, 0xd9}
+	if _, err = s.DB.ExecContext(ctx, `INSERT INTO desktop_replay_frames(id,account_id,box_id,captured_at,width,height,data) VALUES($1,$2,$3,now()-interval '1 minute',1,1,$4)`, frameID, p.AccountID, box, frameBytes); err != nil {
+		t.Fatalf("desktop replay frame was not retained: %v", err)
+	}
+	testDesktopReplayRoutes(t, s, p, q, box, frameID, frameBytes)
 
 	fence := strings.Repeat("a", 64)
 	if _, err = s.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='running',fencing_token=$2 WHERE id=$1`, box, fence); err != nil {

@@ -276,9 +276,20 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .msg.processing .tv-button{display:inline-flex;align-items:center;justify-content:center;background:none;border:0;padding:.15rem;margin-left:.1rem;color:#54656f;cursor:pointer;border-radius:.35rem}
 .msg.processing .tv-button:hover,.msg.processing .tv-button:focus-visible{background:#e9edef;color:#075e54}
 .msg.processing .tv-button svg{width:1rem;height:1rem}
-.tv-preview{position:fixed;z-index:40;padding:.3rem;background:#fff;border:1px solid #d1d7db;border-radius:.6rem;box-shadow:0 12px 32px rgba(11,20,26,.28);pointer-events:none}
-.tv-preview img{display:block;width:100%;max-height:min(70vh,620px);object-fit:contain;border-radius:.4rem;background:#111b21}
+.tv-preview{position:fixed;z-index:40;padding:.3rem;background:#fff;border:1px solid #d1d7db;border-radius:.6rem;box-shadow:0 12px 32px rgba(11,20,26,.28);cursor:pointer}
+.tv-preview-screen{position:relative;width:100%;aspect-ratio:16/10;max-height:min(70vh,620px);overflow:hidden;border-radius:.4rem;background:#111b21}
+.tv-preview img{display:block;width:100%;height:100%;object-fit:contain}
+.tv-preview img[hidden]{display:none}
+.tv-preview-live{position:absolute;inset:0;opacity:0;pointer-events:none}
+.tv-preview-live.connected{opacity:1}
 .tv-preview-note{display:block;padding:.28rem .35rem .1rem;color:#667781;font-size:.78rem}
+.tv-preview-timeline{display:flex;align-items:center;gap:.45rem;padding:.2rem .35rem .3rem}
+.tv-preview-timeline button{border:1px solid #d1d7db;border-radius:.35rem;background:#fff;color:#075e54;padding:.2rem .45rem;font:inherit;font-size:.8rem;cursor:pointer}
+.tv-preview-timeline button.active{background:#d9fdd3}
+.tv-preview-timeline button:disabled{opacity:.45;cursor:default}
+.tv-preview-timeline input{flex:1;min-width:3rem;accent-color:#00a884;cursor:pointer}
+.tv-preview-timeline input:disabled{cursor:default}
+.tv-preview-time{min-width:7.5rem;text-align:right;color:#667781;font-size:.76rem}
 
 /* ---------- instruction presets, box instructions, imported profiles ---------- */
 .hint{color:#667781;font-size:.78rem;margin:.25rem 0}
