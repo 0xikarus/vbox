@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -84,6 +87,39 @@ func TestWorkspaceRuntimeRecoversAmbiguousUploadWhenInstalledRuntimeMatches(t *t
 	}
 	if calls != 2 {
 		t.Fatalf("calls=%d want=2", calls)
+	}
+}
+
+func TestInstalledWorkspaceRuntimeProbeHonorsSharedWorkspaceRoot(t *testing.T) {
+	root := t.TempDir()
+	runtime := []byte("#!/bin/sh\n[ \"$1\" = health ] && printf 'ok\\n'\n")
+	path := filepath.Join(root, "home", "bin", "vmbox-runtime")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, runtime, 0700); err != nil {
+		t.Fatal(err)
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(runtime))
+	matches, err := installedWorkspaceRuntimeMatches(context.Background(), digest, func(ctx context.Context, argv []string, _ provider.ExecOptions) (provider.ExecResult, error) {
+		command := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		command.Env = append(os.Environ(), "VMBOX_WORKSPACE_ROOT="+root)
+		output, runErr := command.CombinedOutput()
+		result := provider.ExecResult{Stdout: string(output)}
+		if runErr != nil {
+			var exit *exec.ExitError
+			if errors.As(runErr, &exit) {
+				result.ExitCode = exit.ExitCode()
+				return result, nil
+			}
+		}
+		return result, runErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matches {
+		t.Fatal("matching runtime under VMBOX_WORKSPACE_ROOT was not accepted")
 	}
 }
 

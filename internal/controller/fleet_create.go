@@ -20,6 +20,11 @@ const workspaceRuntimePath = "/data/home/bin/vmbox-runtime"
 const verifyWorkspaceRuntime = `set -eu
 installed="$1"
 expected="$2"
+root="${VMBOX_WORKSPACE_ROOT:-/data}"
+case "$installed" in
+  /data) installed="$root" ;;
+  /data/*) installed="$root/${installed#/data/}" ;;
+esac
 test -x "$installed"
 test "$(sha256sum "$installed" | cut -d " " -f 1)" = "$expected"
 exec "$installed" health`
