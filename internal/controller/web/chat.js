@@ -933,14 +933,13 @@
  const deleteModal=$('#delete-box-modal'),deleteForm=$('#delete-box-form');let deleteTarget=null;
  function openDeleteModal(box){
   $('#delete-box-text').textContent='Deleting "'+box.name+'" permanently removes the box and its entire workspace volume. Hibernate keeps the volume instead.';
-  deleteForm.elements.confirmation.value='';$('#delete-box-status').textContent='';$('#delete-box-submit').disabled=true;deleteTarget=box;deleteModal.hidden=false;deleteForm.elements.confirmation.focus();
+  $('#delete-box-status').textContent='';$('#delete-box-submit').disabled=false;deleteTarget=box;deleteModal.hidden=false;$('#delete-box-submit').focus();
  }
- deleteForm.addEventListener('input',()=>{$('#delete-box-submit').disabled=!deleteTarget||deleteForm.elements.confirmation.value!==deleteTarget.name});
  deleteForm.onsubmit=async event=>{
   event.preventDefault();
   const submit=$('#delete-box-submit');submit.disabled=true;
   try{
-   await api(boxPath(deleteTarget.id)+'/volume','DELETE',{'Idempotency-Key':crypto.randomUUID()},{confirmation:deleteForm.elements.confirmation.value});
+   await api(boxPath(deleteTarget.id)+'/volume','DELETE',{'Idempotency-Key':crypto.randomUUID()},{confirmation:deleteTarget.name});
    deleteModal.hidden=true;toast('Box "'+deleteTarget.name+'" deleted.');
    if(deleteTarget.id===selected){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;history.replaceState(null,'',location.pathname);closeTakeover()}
    deleteTarget=null;
