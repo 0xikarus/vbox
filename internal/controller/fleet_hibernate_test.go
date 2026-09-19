@@ -22,6 +22,32 @@ type slowHibernateProvider struct {
 	sanitized bool
 }
 
+type detachedHibernateProvider struct {
+	fakeProvider
+	execCalls   int
+	detachCalls int
+	sanitized   bool
+}
+
+func (p *detachedHibernateProvider) Exec(context.Context, string, []string, provider.ExecOptions) (provider.ExecResult, error) {
+	p.execCalls++
+	return provider.ExecResult{ExitCode: 99}, nil
+}
+
+func (*detachedHibernateProvider) AttachedStorage(context.Context, string) (*provider.Storage, error) {
+	return nil, nil
+}
+
+func (p *detachedHibernateProvider) DetachStorage(context.Context, string, provider.Storage) error {
+	p.detachCalls++
+	return nil
+}
+
+func (p *detachedHibernateProvider) SanitizeSlot(context.Context, string) error {
+	p.sanitized = true
+	return nil
+}
+
 func (p *slowHibernateProvider) Exec(context.Context, string, []string, provider.ExecOptions) (provider.ExecResult, error) {
 	close(p.started)
 	<-p.release
@@ -33,8 +59,11 @@ func (p *slowHibernateProvider) DetachStorage(context.Context, string, provider.
 	return nil
 }
 
-func (*slowHibernateProvider) AttachedStorage(context.Context, string) (*provider.Storage, error) {
-	return nil, nil
+func (p *slowHibernateProvider) AttachedStorage(context.Context, string) (*provider.Storage, error) {
+	if p.detached {
+		return nil, nil
+	}
+	return &provider.Storage{ID: "volume-1"}, nil
 }
 
 func (p *slowHibernateProvider) SanitizeSlot(context.Context, string) error {
@@ -177,6 +206,45 @@ func TestCompleteLogicalBoxHibernateWaitsForSlowFlushBeforeDetaching(t *testing.
 	}
 	if !prov.detached || !prov.sanitized {
 		t.Fatalf("detached=%v sanitized=%v", prov.detached, prov.sanitized)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompleteLogicalBoxHibernateFinalizesAnAlreadyDetachedWorkspace(t *testing.T) {
+	store, mock := testStore(t)
+	for _, phase := range []string{"saving-workspace", "sanitizing-compute"} {
+		mock.ExpectExec("UPDATE logical_boxes SET restoration_state").
+			WithArgs("account-a", "box-1", "claim-1", phase).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+	}
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT slot_id::text FROM logical_boxes").
+		WithArgs("account-a", "box-1", int64(3), "fence-1").
+		WillReturnRows(sqlmock.NewRows([]string{"slot_id"}).AddRow("slot-1"))
+	mock.ExpectExec("UPDATE compute_slots SET state='free'").
+		WithArgs("account-a", "slot-1", int64(3), "fence-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5,restoration_state='saved'").
+		WithArgs("account-a", "box-1", int64(3), "fence-1", v1.LogicalBoxHibernated).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
+		WillReturnRows(logicalBoxRowWithSlot(v1.LogicalBoxHibernated, "claude", ""))
+	prov := &detachedHibernateProvider{}
+	server := NewServer(store, provider.NewRegistry(prov))
+	server.WorkerRuntime = []byte("current-runtime")
+	assignment := fleetAssignment{
+		Box:          v1.LogicalBox{ID: "box-1", Name: "research", Provider: "fake", ProviderCredential: "primary", VolumeID: "volume-1", VolumeName: "research-data", AssignmentGeneration: 3},
+		Slot:         v1.ComputeSlot{ID: "slot-1", ServiceID: "service-1"},
+		FencingToken: "fence-1",
+	}
+	if _, err := server.completeLogicalBoxHibernate(context.Background(), Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}, assignment, "claim-1"); err != nil {
+		t.Fatal(err)
+	}
+	if prov.execCalls != 0 || prov.detachCalls != 0 || !prov.sanitized {
+		t.Fatalf("exec=%d detach=%d sanitized=%v", prov.execCalls, prov.detachCalls, prov.sanitized)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
