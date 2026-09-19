@@ -34,6 +34,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    fullDesktopShots++;res.setHeader('Content-Type','image/png');return res.end(thumbnail);
   }
   if(path==='/v1/logical-boxes/builder/messages')return res.end(JSON.stringify([{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}]));
+  if(path==='/v1/logical-boxes/reviewer/sessions/interactive'&&method==='POST')return res.end(JSON.stringify({session:'codex-reviewer'}));
+  if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
   if(path==='/v1/logical-boxes/builder/contacts'){
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
@@ -55,6 +57,10 @@ test('chat details drawer edits the per-box contact graph',async()=>{
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
+  await p.evaluateOnNewDocument(()=>{
+   window.openWorkspaceDesktop=(id,_status,options)=>{window.viewerDesktop={id,root:options.root.id};return()=>{}};
+   window.openWorkspaceTerminal=(id,session,_status,options)=>{window.viewerTerminal={id,session,root:options.root.id};return()=>{}};
+  });
   await p.setViewport({width:420,height:820,deviceScaleFactor:1});
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-app').hidden);
@@ -67,6 +73,16 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),true,selector+' did not close the desktop preview');
   }
   assert.equal(fullDesktopShots>0,true);
+  await p.click('#chat-entries [data-avatar="reviewer"]');
+  await p.waitForFunction(()=>!document.querySelector('#takeover').hidden&&document.querySelector('[data-box-id="reviewer"]').classList.contains('active'),{timeout:5000});
+  await p.waitForFunction(()=>window.viewerDesktop?.id==='reviewer',{timeout:5000});
+  assert.equal(new URL(p.url()).hash,'#box=reviewer');
+  assert.deepEqual(await p.evaluate(()=>window.viewerDesktop),{id:'reviewer',root:'takeover-screen'});
+  await p.click('#takeover-tabs [data-kind="terminal"]');
+  await p.waitForFunction(()=>window.viewerTerminal?.id==='reviewer',{timeout:5000});
+  assert.deepEqual(await p.evaluate(()=>window.viewerTerminal),{id:'reviewer',session:'codex-reviewer',root:'takeover-screen'});
+  await p.click('#takeover-close');await p.waitForFunction(()=>document.querySelector('#takeover').hidden);await p.$eval('[data-box-id="builder"]',element=>element.click());
+  await p.waitForFunction(()=>document.querySelector('[data-box-id="builder"]').classList.contains('active'),{timeout:5000});
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='worker');
