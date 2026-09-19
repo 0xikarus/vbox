@@ -114,6 +114,12 @@ func (s *Server) profileSyncRequest(ctx context.Context, tx *sql.Tx, accountID s
 				return boxruntime.SyncRequest{}, "", "", err
 			}
 		}
+		if err := loginprofile.SetReasoningEffort(ref.Application, profile.Files, ref.ReasoningEffort, ref.Model); err != nil {
+			for _, data := range profile.Files {
+				clear(data)
+			}
+			return boxruntime.SyncRequest{}, "", "", err
+		}
 		names := make([]string, 0, len(profile.Files))
 		for name := range profile.Files {
 			names = append(names, name)

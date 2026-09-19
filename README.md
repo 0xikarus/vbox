@@ -119,6 +119,12 @@ OpenCode profile with a saved OpenRouter or Venice key loads that provider's
 current tool-capable text-model catalog on demand. An exact model ID can also
 be entered in the popup. Claude/Codex suggestions are not account-entitlement
 checks; the saved encrypted profile remains unchanged by a box-specific choice.
+The same popup can set a box-specific reasoning level: Codex writes
+`model_reasoning_effort`, Claude Code writes `effortLevel`, and OpenCode selects a
+model variant for its Build agent. Leave **Default** to retain the profile/model
+setting. OpenCode variant support depends on the selected provider model; Claude
+Haiku has no effort control, and Claude's session-only `max` is not a persistent
+box setting.
 
 Agents can also address each other when the owner grants a contact edge.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`

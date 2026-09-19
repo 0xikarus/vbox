@@ -672,7 +672,7 @@
   for(const profile of profiles.filter(profile=>profile.application==='github'))githubSelect.append(new Option(profile.name,JSON.stringify({application:'github',name:profile.name})));
   githubLabel.append(githubSelect);githubLabel.hidden=githubSelect.options.length===1;
   root.append(profileLabel,modelLabel,githubLabel);
-  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref?.application==='opencode'?()=>api('/v1/login-profiles/opencode/'+encodeURIComponent(ref.name)+'/models'):null)};
+  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setReasoningEffort('');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref?.application==='opencode'?()=>api('/v1/login-profiles/opencode/'+encodeURIComponent(ref.name)+'/models'):null)};
   const populate=()=>{
    const previous=profileSelect.value,app=agentSelect.value;profileSelect.replaceChildren(new Option('None',''));
    const choices=profiles.filter(profile=>profile.application===app);
@@ -745,7 +745,7 @@
   const tools=[...createForm.querySelectorAll('input[name=tool]:checked')].map(i=>i.value);
   const selectedProfile=createForm.elements.loginProfile?.value;
   const profileRef=selectedProfile?JSON.parse(selectedProfile):null;
-  const loginProfiles=profileRef?[{...profileRef,model:(createForm.elements.agentModel?.value||'').trim()}]:[];
+  const loginProfiles=profileRef?[{...profileRef,model:(createForm.elements.agentModel?.value||'').trim(),...(createForm.elements.agentReasoningEffort?.value?{reasoningEffort:createForm.elements.agentReasoningEffort.value}:{})}]:[];
   if(profileRef&&!loginProfiles[0].model){$('#new-box-status').textContent='Choose a model';submit.disabled=false;return}
   const githubProfile=createForm.elements.githubProfile?.value;
   if(githubProfile)loginProfiles.push(JSON.parse(githubProfile));

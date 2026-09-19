@@ -248,6 +248,10 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .model-picker-custom{display:flex;gap:.45rem;margin-top:.7rem;border-top:1px solid #e9edef;padding-top:.7rem}
 .model-picker-exact{flex:1;min-width:0;padding:.5rem;border:1px solid #c6ced4;border-radius:.4rem;font:inherit}
 .model-picker-use-exact{border:0;border-radius:.4rem;background:#00a884;color:#fff;padding:.45rem .7rem;white-space:nowrap;cursor:pointer}
+.model-picker-effort-label{display:block;margin-top:1rem;font-size:.86rem;font-weight:600}
+.model-picker-effort{display:block;width:100%;margin-top:.35rem;padding:.5rem;border:1px solid #c6ced4;border-radius:.4rem;background:#fff;font:inherit}
+.model-picker-effort-note{font-size:.78rem;color:#54656f;margin:.4rem 0 .8rem}
+.model-picker-apply{width:100%;border:0;border-radius:.4rem;background:#00a884;color:#fff;padding:.65rem;font:inherit;cursor:pointer}
 #create-box fieldset.tools{border:1px solid #c6ced4;border-radius:.4rem;padding:.3rem .5rem;margin-bottom:.5rem;display:flex;flex-direction:column;gap:.2rem}
 #create-box fieldset.tools legend{font-size:.78rem;color:#54656f;padding:0 .2rem}
 #create-box fieldset.tools label{display:inline-flex;align-items:center;gap:.4rem;margin:0;font-size:.86rem}

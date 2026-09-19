@@ -57,6 +57,83 @@ func SetModel(application string, files map[string][]byte, model string) error {
 	}
 }
 
+// SetReasoningEffort writes a box-specific setting to the copied profile. An
+// empty choice leaves the uploaded profile default alone. OpenCode calls this
+// setting a model variant; its availability is provider/model-specific.
+func SetReasoningEffort(application string, files map[string][]byte, effort, model string) error {
+	if effort == "" {
+		return nil
+	}
+	if model == "" {
+		return fmt.Errorf("choose a model before choosing reasoning effort")
+	}
+	allowed := map[string]bool{}
+	switch application {
+	case "codex":
+		allowed = map[string]bool{"minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}
+	case "claude":
+		if strings.Contains(strings.ToLower(model), "haiku") {
+			return fmt.Errorf("Claude Haiku does not support reasoning effort")
+		}
+		// Claude Code does not accept max in effortLevel settings. That level
+		// requires a session flag or environment override instead.
+		allowed = map[string]bool{"low": true, "medium": true, "high": true, "xhigh": true}
+	case "opencode":
+		allowed = map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}
+	default:
+		return fmt.Errorf("reasoning effort is supported for Claude, Codex, and OpenCode profiles")
+	}
+	if !allowed[effort] {
+		return fmt.Errorf("unsupported %s reasoning effort %q", application, effort)
+	}
+	switch application {
+	case "codex":
+		files["config.toml"] = setTopLevelTOMLString(files["config.toml"], "model_reasoning_effort", effort)
+		return nil
+	case "claude":
+		return setJSONField(files, "settings.json", "effortLevel", effort, false)
+	case "opencode":
+		name := "opencode.json"
+		jsonc := false
+		if len(files[name]) == 0 && len(files["opencode.jsonc"]) > 0 {
+			name, jsonc = "opencode.jsonc", true
+		}
+		data := files[name]
+		if jsonc {
+			data = normalizeJSONC(data)
+		}
+		config := map[string]json.RawMessage{}
+		if len(data) > 0 && (json.Unmarshal(data, &config) != nil || config == nil) {
+			return fmt.Errorf("%s is invalid; preserved unchanged", name)
+		}
+		var agents map[string]json.RawMessage
+		if len(config["agent"]) > 0 && (json.Unmarshal(config["agent"], &agents) != nil || agents == nil) {
+			return fmt.Errorf("%s agent configuration is invalid; preserved unchanged", name)
+		}
+		if agents == nil {
+			agents = map[string]json.RawMessage{}
+		}
+		var build map[string]json.RawMessage
+		if len(agents["build"]) > 0 && (json.Unmarshal(agents["build"], &build) != nil || build == nil) {
+			return fmt.Errorf("%s build agent configuration is invalid; preserved unchanged", name)
+		}
+		if build == nil {
+			build = map[string]json.RawMessage{}
+		}
+		build["model"], _ = json.Marshal(model)
+		build["variant"], _ = json.Marshal(effort)
+		agents["build"], _ = json.Marshal(build)
+		config["agent"], _ = json.Marshal(agents)
+		encoded, err := json.MarshalIndent(config, "", "  ")
+		if err != nil {
+			return fmt.Errorf("could not set OpenCode model variant")
+		}
+		files[name] = append(encoded, '\n')
+		return nil
+	}
+	return nil
+}
+
 func jsonModel(data []byte) string {
 	var config struct {
 		Model string `json:"model"`
@@ -68,6 +145,10 @@ func jsonModel(data []byte) string {
 }
 
 func setJSONModel(files map[string][]byte, name, model string, jsonc bool) error {
+	return setJSONField(files, name, "model", model, jsonc)
+}
+
+func setJSONField(files map[string][]byte, name, field, value string, jsonc bool) error {
 	config := map[string]json.RawMessage{}
 	data := files[name]
 	if jsonc {
@@ -76,7 +157,7 @@ func setJSONModel(files map[string][]byte, name, model string, jsonc bool) error
 	if len(data) > 0 && (json.Unmarshal(data, &config) != nil || config == nil) {
 		return fmt.Errorf("%s is invalid; preserved unchanged", name)
 	}
-	config["model"], _ = json.Marshal(model)
+	config[field], _ = json.Marshal(value)
 	encoded, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
 		return fmt.Errorf("could not set the agent model")

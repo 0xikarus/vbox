@@ -70,9 +70,14 @@ func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, r
 			if err := loginprofile.SetModel(ref.Application, probe, ref.Model); err != nil {
 				return err
 			}
+			if err := loginprofile.SetReasoningEffort(ref.Application, probe, ref.ReasoningEffort, ref.Model); err != nil {
+				return err
+			}
 			for _, data := range probe {
 				clear(data)
 			}
+		} else if ref.ReasoningEffort != "" {
+			return fmt.Errorf("choose a model before choosing reasoning effort")
 		}
 		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: accountID}, ref.Application, ref.Name)
 		if err != nil {

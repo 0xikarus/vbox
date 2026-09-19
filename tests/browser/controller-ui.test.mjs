@@ -40,7 +40,7 @@ before(async()=>{
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
-  if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash'},{id:'openrouter/google/gemini-test',label:'Gemini test'}]}));
+  if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash',reasoning:false},{id:'openrouter/google/gemini-test',label:'Gemini test',reasoning:true}]}));
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
@@ -82,13 +82,20 @@ test('model choice opens a searchable modal and loads the provider catalog',asyn
  assert.equal(await page.$eval(input,e=>e.type),'hidden');
  await page.click('#create .model-picker-open');
  await page.waitForSelector('dialog.model-picker-dialog[open]');
+ assert.equal(await page.$eval('dialog.model-picker-dialog .model-picker-effort',element=>element.value),'');
  await page.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('OpenRouter live catalog'));
+ assert.equal(await page.$eval('dialog.model-picker-dialog .model-picker-effort',element=>element.disabled),true,'non-reasoning model has no effort choice');
  assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model)),['openrouter/deepseek/deepseek-v4.1-flash','openrouter/google/gemini-test']);
  await page.type('.model-picker-search','gemini');
  assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model)),['openrouter/google/gemini-test']);
  await page.click('dialog.model-picker-dialog .model-picker-option:not([hidden])');
+ assert.equal(await page.$eval(input,e=>e.value),'openrouter/deepseek/deepseek-v4.1-flash','model changes only after applying the popup');
+ assert.equal(await page.$eval('dialog.model-picker-dialog',e=>e.open),true);
+ await page.select('dialog.model-picker-dialog .model-picker-effort','medium');
+ await page.click('dialog.model-picker-dialog .model-picker-apply');
  assert.equal(await page.$eval(input,e=>e.value),'openrouter/google/gemini-test');
  assert.equal(await page.$eval('dialog.model-picker-dialog',e=>e.open),false);
+ assert.equal(await page.$eval('#create input[name=agentReasoningEffort]',e=>e.value),'medium');
  assert.ok(requests.some(request=>request.path==='/v1/login-profiles/opencode/openrouter/models'));
  await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'venice'}));
  await page.click('#create .model-picker-open');
@@ -127,11 +134,13 @@ test('creation offers current Claude and Codex CLI models beyond uploaded profil
  const codex=await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model));
  for(const model of ['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'])assert.ok(codex.includes(model),model+' is offered');
  await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.dataset.model==='gpt-5.6-terra').click());
+ await page.select('dialog.model-picker-dialog .model-picker-effort','high');
+ await page.click('dialog.model-picker-dialog .model-picker-apply');
  assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-terra');
  await page.type('#create input[name=name]','disposable-model-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
  await page.click('#create button[type=submit]');await created;
- assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'codex',name:'personal-codex',model:'gpt-5.6-terra'}]);
+ assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'codex',name:'personal-codex',model:'gpt-5.6-terra',reasoningEffort:'high'}]);
  await page.close();
 });
 test('creation can import one agent profile alongside a GitHub profile',async()=>{

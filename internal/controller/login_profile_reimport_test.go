@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/secrets"
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
@@ -41,9 +42,56 @@ func TestValidateBoxProfileRefsRejectsDuplicateOversizedAndUnavailable(t *testin
 	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "bad\nmodel"}}); err == nil || !strings.Contains(err.Error(), "control characters") {
 		t.Fatalf("invalid model was not rejected before store lookup: %v", err)
 	}
+	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-5.6-sol", ReasoningEffort: "ultra"}}); err == nil || !strings.Contains(err.Error(), "reasoning effort") {
+		t.Fatalf("invalid reasoning effort was not rejected before store lookup: %v", err)
+	}
+	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work", ReasoningEffort: "high"}}); err == nil || !strings.Contains(err.Error(), "choose a model") {
+		t.Fatalf("reasoning effort without model was not rejected: %v", err)
+	}
 	// No encryption envelope: the profile cannot be loaded, so it must be rejected.
 	if err := server.validateBoxProfileRefs(context.Background(), "a", []v1.LoginProfileRef{{Application: "codex", Name: "work"}}); err == nil {
 		t.Fatal("unavailable profile accepted")
+	}
+}
+
+func TestProfileSyncRequestAppliesPerBoxReasoningEffort(t *testing.T) {
+	store, mock := testStore(t)
+	var err error
+	store.Envelope, err = secrets.New(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := v1.SaveLoginProfileRequest{Files: map[string][]byte{
+		"auth.json":   []byte(`{"OPENAI_API_KEY":"synthetic-only"}`),
+		"config.toml": []byte("model = \"gpt-5.6-sol\"\n[projects.x]\ntrust_level = \"trusted\"\n"),
+	}}
+	plain, _ := json.Marshal(profile)
+	sealed, err := store.Envelope.Seal(profileEncryptionScope("a", "codex", "work"), plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT encrypted_value FROM login_profiles").WithArgs("a", "codex", "work").WillReturnRows(sqlmock.NewRows([]string{"encrypted_value"}).AddRow(sealed))
+	tx, err := store.DB.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{Store: store}
+	request, _, _, err := server.profileSyncRequest(context.Background(), tx, "a", []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-5.6-terra", ReasoningEffort: "high"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	for _, file := range request.Files {
+		if file.Path == "/data/home/.codex/config.toml" {
+			got = string(file.Data)
+		}
+	}
+	if !strings.Contains(got, "model = \"gpt-5.6-terra\"") || !strings.Contains(got, "model_reasoning_effort = \"high\"\n[projects.x]") {
+		t.Fatalf("per-box model and effort were not provisioned together: %s", got)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

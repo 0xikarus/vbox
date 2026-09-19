@@ -1,6 +1,8 @@
 package loginprofile
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -32,6 +34,52 @@ func TestValidatePortableCredentials(t *testing.T) {
 				t.Fatalf("valid=%t err=%v", tc.valid, err)
 			}
 		})
+	}
+}
+
+func TestSetReasoningEffortWritesHarnessNativeConfiguration(t *testing.T) {
+	claude := map[string][]byte{"settings.json": []byte(`{"model":"sonnet","permissions":{"defaultMode":"bypassPermissions"}}`)}
+	if err := SetReasoningEffort("claude", claude, "high", "sonnet"); err != nil {
+		t.Fatal(err)
+	}
+	var settings map[string]any
+	if err := json.Unmarshal(claude["settings.json"], &settings); err != nil || settings["effortLevel"] != "high" || settings["model"] != "sonnet" {
+		t.Fatalf("Claude effort was not applied: %s, %v", claude["settings.json"], err)
+	}
+	codex := map[string][]byte{"config.toml": []byte("model = \"gpt-5.6-sol\"\n[projects.x]\ntrust_level = \"trusted\"\n")}
+	if err := SetReasoningEffort("codex", codex, "xhigh", "gpt-5.6-sol"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(codex["config.toml"]), "model_reasoning_effort = \"xhigh\"\n[projects.x]") {
+		t.Fatalf("Codex effort is not top-level: %s", codex["config.toml"])
+	}
+	opencode := map[string][]byte{"opencode.json": []byte(`{"model":"openrouter/openai/gpt-5.4","provider":{"openrouter":{}}}`)}
+	if err := SetReasoningEffort("opencode", opencode, "high", "openrouter/openai/gpt-5.4"); err != nil {
+		t.Fatal(err)
+	}
+	var config map[string]any
+	if err := json.Unmarshal(opencode["opencode.json"], &config); err != nil {
+		t.Fatal(err)
+	}
+	build := config["agent"].(map[string]any)["build"].(map[string]any)
+	if build["model"] != "openrouter/openai/gpt-5.4" || build["variant"] != "high" {
+		t.Fatalf("OpenCode build variant was not applied: %s", opencode["opencode.json"])
+	}
+	jsonc := map[string][]byte{"opencode.jsonc": []byte("{/* comment */\n\"model\":\"venice/test\",\"agent\":{\"build\":{\"permission\":{\"edit\":\"deny\"},},},}\n")}
+	if err := SetReasoningEffort("opencode", jsonc, "low", "venice/test"); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(jsonc["opencode.jsonc"], &config); err != nil {
+		t.Fatal(err)
+	}
+	build = config["agent"].(map[string]any)["build"].(map[string]any)
+	if build["variant"] != "low" || build["permission"].(map[string]any)["edit"] != "deny" {
+		t.Fatalf("OpenCode JSONC build settings were lost: %s", jsonc["opencode.jsonc"])
+	}
+	for _, tc := range []struct{ app, effort, model string }{{"claude", "xhigh", "haiku"}, {"codex", "ultra", "gpt-5.6-sol"}, {"opencode", "bad\nvariant", "openrouter/test"}} {
+		if err := SetReasoningEffort(tc.app, map[string][]byte{}, tc.effort, tc.model); err == nil {
+			t.Fatalf("%s accepted unsupported effort %q", tc.app, tc.effort)
+		}
 	}
 }
 

@@ -20,8 +20,8 @@ func TestOpenCodeCatalogFiltersToolCapableTextModels(t *testing.T) {
 		body     string
 		want     string
 	}{
-		{"openrouter", `{"data":[{"id":"eligible","name":"Eligible","architecture":{"output_modalities":["text"]},"supported_parameters":["tools"]},{"id":"no-tools","architecture":{"output_modalities":["text"]}},{"id":"image","architecture":{"output_modalities":["image"]},"supported_parameters":["tools"]}]}`, "openrouter/eligible"},
-		{"venice", `{"data":[{"id":"eligible","name":"Eligible","type":"text","model_spec":{"capabilities":{"supportsFunctionCalling":true}}},{"id":"offline","type":"text","model_spec":{"offline":true,"capabilities":{"supportsFunctionCalling":true}}},{"id":"no-tools","type":"text"}]}`, "venice/eligible"},
+		{"openrouter", `{"data":[{"id":"eligible","name":"Eligible","architecture":{"output_modalities":["text"]},"supported_parameters":["tools","reasoning"]},{"id":"no-tools","architecture":{"output_modalities":["text"]}},{"id":"image","architecture":{"output_modalities":["image"]},"supported_parameters":["tools"]}]}`, "openrouter/eligible"},
+		{"venice", `{"data":[{"id":"eligible","name":"Eligible","type":"text","model_spec":{"capabilities":{"supportsFunctionCalling":true,"supportsReasoningEffort":true}}},{"id":"offline","type":"text","model_spec":{"offline":true,"capabilities":{"supportsFunctionCalling":true}}},{"id":"no-tools","type":"text"}]}`, "venice/eligible"},
 	} {
 		t.Run(tc.provider, func(t *testing.T) {
 			client := &http.Client{Transport: modelRoundTrip(func(r *http.Request) (*http.Response, error) {
@@ -34,7 +34,7 @@ func TestOpenCodeCatalogFiltersToolCapableTextModels(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(models) != 1 || models[0].ID != tc.want || models[0].Label != "Eligible" {
+			if len(models) != 1 || models[0].ID != tc.want || models[0].Label != "Eligible" || !models[0].Reasoning {
 				t.Fatalf("wrong provider model choices: %+v", models)
 			}
 		})
