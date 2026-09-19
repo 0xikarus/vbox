@@ -109,10 +109,11 @@ func TestFilterManagedAgentSessionsPreservesShells(t *testing.T) {
 	snapshot := TmuxSnapshot{Version: TmuxSnapshotVersion, Sessions: []TmuxSession{
 		{Name: "claude-old", Windows: []TmuxWindow{{Panes: []TmuxPane{{CurrentCommand: "claude", ResumeStrategy: "claude-fresh-conversation"}}}}},
 		{Name: "codex-old", Windows: []TmuxWindow{{Panes: []TmuxPane{{CurrentCommand: "codex", ResumeStrategy: "codex-fresh-conversation"}}}}},
+		{Name: "vmbox-internal-codex-codex-old", Windows: []TmuxWindow{{Panes: []TmuxPane{{CurrentCommand: "node"}}}}},
 		{Name: "shell-keep", ShellFirst: true, Windows: []TmuxWindow{{Panes: []TmuxPane{{CurrentCommand: "bash", ResumeStrategy: "shell"}}}}},
 	}}
 	filtered, removed := filterManagedAgentSessions(snapshot)
-	if removed != 2 || len(filtered.Sessions) != 1 || filtered.Sessions[0].Name != "shell-keep" {
+	if removed != 3 || len(filtered.Sessions) != 1 || filtered.Sessions[0].Name != "shell-keep" {
 		t.Fatalf("filtered snapshot=%+v removed=%d", filtered, removed)
 	}
 }

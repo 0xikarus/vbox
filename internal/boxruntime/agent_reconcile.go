@@ -21,7 +21,14 @@ func managedAgent(value string) bool {
 	}
 }
 
+func managedAgentSessionName(name string) bool {
+	return strings.HasPrefix(name, codexAppServerPrefix)
+}
+
 func managedSnapshotSession(session TmuxSession) bool {
+	if managedAgentSessionName(session.Name) {
+		return true
+	}
 	for _, window := range session.Windows {
 		for _, pane := range window.Panes {
 			if managedAgent(pane.CurrentCommand) || strings.HasSuffix(pane.ResumeStrategy, "-fresh-conversation") && managedAgent(strings.TrimSuffix(pane.ResumeStrategy, "-fresh-conversation")) {
@@ -94,6 +101,14 @@ func ReconcileManagedAgentSessions(ctx context.Context, root, selectedAgent stri
 	}
 	list, _ := tmuxOutput(ctx, "list-sessions", "-F", "#{session_name}")
 	for _, session := range strings.Fields(string(list)) {
+		// Codex uses a companion app-server tmux session whose pane command is
+		// node/codex rather than the interactive Codex command and which has no
+		// task-agent environment marker. It belongs to the named conversation
+		// and must not survive credential or harness reconciliation.
+		if managedAgentSessionName(session) {
+			sessions[session] = true
+			continue
+		}
 		marker, markerErr := tmuxOutput(ctx, "show-environment", "-t", session, taskAgentEnvironment)
 		if markerErr == nil {
 			value := strings.TrimPrefix(strings.TrimSpace(string(marker)), taskAgentEnvironment+"=")
