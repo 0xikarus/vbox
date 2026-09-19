@@ -30,7 +30,7 @@
 <label class="field">preset <select id="create-instructions" name="instructions"><option value="auto">Account default / none</option></select></label>
 <details id="create-instructions-editor" hidden><summary>customize Markdown</summary><label class="field">markdown <textarea id="create-instructions-custom" name="instructionsMarkdown" rows="5" maxlength="65536" readonly></textarea></label><div id="create-instructions-preview" class="md-preview" hidden></div></details>
 </fieldset>
-<div class="form-actions"><button class="primary">create and start box</button></div>
+<div class="form-actions"><button type="submit" class="primary">create and start box</button></div>
 </form></section>
 <section id="profiles" data-owner><h2>saved login profiles</h2><p class="hint">Account-wide credentials, managed by owners. Select one agent profile above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>
 <p class="hint">Upload or refresh profiles through the CLI: <code>vmbox profiles save APPLICATION NAME</code>. Deleting a saved profile leaves credentials already copied into boxes untouched. Pending creations using it may fail.</p></section>

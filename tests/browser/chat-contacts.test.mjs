@@ -35,7 +35,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/logical-boxes'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;creations.push(JSON.parse(body));return res.end(JSON.stringify({id:'created',name:'github-chat-fixture'}))}
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,role:b.id==='builder'?boxRole:'worker'}))));
   if(path==='/v1/tool-presets')return res.end('[]');
-  if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'github',name:'gh-work'}]));
+  if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'github',name:'gh-work'}]));
   if(path==='/v1/controller-defaults')return res.end('{}');
   if(path==='/v1/provider-credentials')return res.end('[]');
   if(path==='/v1/instruction-presets')return res.end(JSON.stringify({defaultName:'',presets:[]}));
@@ -143,9 +143,13 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('#new-box',button=>button.click());
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
   await p.select('#create-box select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
+  await p.click('#create-box .model-picker-toggle');
+  assert.deepEqual(await p.$$eval('#create-box .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent)),['opus','sonnet']);
+  await p.$eval('#create-box input[name=agentModel]',input=>input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true})));
+  assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
   await p.type('#create-box input[name=name]','github-chat-fixture');
-  await p.click('#create-box-submit');
+  await p.$eval('#create-box',form=>form.requestSubmit());
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'sonnet'},{application:'github',name:'gh-work'}]);
   await p.close();
