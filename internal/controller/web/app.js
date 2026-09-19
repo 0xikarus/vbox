@@ -66,18 +66,18 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  const profileLabel=node('label','login profile ');profileLabel.className='field';
  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
  const modelLabel=node('label','model ');modelLabel.className='field';
- const modelInput=document.createElement('input'),modelList=document.createElement('datalist');modelInput.name='agentModel';modelInput.maxLength=200;modelInput.placeholder='Exact CLI model name';modelInput.setAttribute('list','create-model-options');modelList.id='create-model-options';modelLabel.append(modelInput,modelList);
+ const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelInput.placeholder='Search or enter an exact model';modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);
  root.append(profileLabel,modelLabel);
  const populate=()=>{
-  const app=agentSelect.value,previous=profileSelect.value||selected;profileSelect.replaceChildren();modelList.replaceChildren();
+  const app=agentSelect.value,previous=profileSelect.value||selected;profileSelect.replaceChildren();
   const empty=node('option','None');empty.value='';profileSelect.append(empty);
   const choices=profiles.filter(profile=>profile.application===app);
-  for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option);if(profile.model&&!Array.from(modelList.options).some(o=>o.value===profile.model))modelList.append(new Option(profile.model))}
+  for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setOptions(choices.map(profile=>profile.model));
   if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
   root.hidden=app==='shell'||choices.length===0;
   syncModel();
  };
- const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelInput.required=hasProfile;if(hasProfile)modelInput.value=option?.dataset.model||'';else modelInput.value='';modelLabel.hidden=!hasProfile};
+ const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelInput.required=hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelLabel.hidden=!hasProfile};
  profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
  return {profileSelect,modelInput};
 }
