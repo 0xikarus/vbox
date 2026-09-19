@@ -268,9 +268,9 @@ in a table without creating a box or allocating compute. Space or Enter toggles
 each profile's upload checkbox; **Add entry** adds a custom path or GitHub account. There is no
 name prompt: names use the account email/username/ID when available, otherwise
 the source directory, with a suffix for existing names. Claude and Codex uploads
-require an explicit model (prefilled from their local settings when available),
-write it into the saved configuration snapshot, and include it in the profile
-name so boxes with different model defaults remain distinguishable. For scripts,
+offer an optional model (prefilled from their local settings when available).
+Choosing one writes it into the saved configuration snapshot and includes it in
+the profile name; leaving it blank preserves the source configuration. For scripts,
 use `vmbox profiles save APPLICATION NAME --from SOURCE` (`SOURCE` is a local
 directory for Claude/Codex/OpenCode, or `HOST:USER` for GitHub).
 The separate **Add OpenCode API key** action supports OpenRouter and Venice. It
