@@ -134,7 +134,37 @@ func probeInitializedWorkspace(ctx context.Context, prov provider.Provider, serv
 	return nil
 }
 
+func (s *Server) runLogicalBoxCreationOnce(creation logicalBoxCreation, run func() error) error {
+	id := creation.Assignment.Box.ID
+	if id == "" {
+		id = creation.Request.Name
+	}
+	key := creation.AccountID + ":" + id
+	s.mu.Lock()
+	if _, active := s.activeCreations[key]; active {
+		s.mu.Unlock()
+		return nil
+	}
+	if s.activeCreations == nil {
+		s.activeCreations = make(map[string]struct{})
+	}
+	s.activeCreations[key] = struct{}{}
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.activeCreations, key)
+		s.mu.Unlock()
+	}()
+	return run()
+}
+
 func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalBoxCreation) error {
+	return s.runLogicalBoxCreationOnce(creation, func() error {
+		return s.finishLogicalBoxCreationActive(ctx, creation)
+	})
+}
+
+func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation logicalBoxCreation) error {
 	started := time.Now()
 	fail := func(err error) error {
 		_ = s.Store.FailLogicalBoxCreation(ctx, creation, err.Error())
