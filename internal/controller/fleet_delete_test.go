@@ -111,6 +111,37 @@ func TestDurableDeletionPostgres(t *testing.T) {
 		return id, slot
 	}
 	serverFor := func(p *deletionProvider) *Server { return NewServer(store, provider.NewRegistry(p)) }
+	t.Run("failed attaching creation can be cancelled and its volume removed", func(t *testing.T) {
+		id, slot := makeBox(t, "failed-creation", true)
+		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='attaching',failure_reason='provider access check failed' WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+		p := &deletionProvider{attached: &provider.Storage{ID: "volume-" + id}}
+		s := serverFor(p)
+		s.activeCreations[owner.AccountID+":"+id] = struct{}{}
+		if _, err := s.queueLogicalBoxDelete(ctx, owner, id, "failed-creation"); err == nil {
+			t.Fatal("active creation was cancelled while provider work could still be running")
+		}
+		delete(s.activeCreations, owner.AccountID+":"+id)
+		box, err := s.queueLogicalBoxDelete(ctx, owner, id, "failed-creation")
+		if err != nil || box.State != "deleting" {
+			t.Fatalf("cancel failed creation: box=%+v err=%v", box, err)
+		}
+		if err := s.resumeLogicalBoxDelete(ctx, owner, id); err != nil {
+			t.Fatal(err)
+		}
+		if p.deletes.Load() != 1 || p.flushes.Load() != 1 || p.attached != nil {
+			t.Fatalf("failed creation did not safely release its attached volume: deletes=%d flushes=%d attached=%v", p.deletes.Load(), p.flushes.Load(), p.attached)
+		}
+		var count int
+		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM logical_boxes WHERE id=$1`, id).Scan(&count); err != nil || count != 0 {
+			t.Fatal("failed creation was retained", count, err)
+		}
+		var state string
+		if err := store.DB.QueryRowContext(ctx, `SELECT state FROM compute_slots WHERE id=$1`, slot).Scan(&state); err != nil || state != "free" {
+			t.Fatal("slot was not released", state, err)
+		}
+	})
 	t.Run("detached recovery and coworker references", func(t *testing.T) {
 		id, slot := makeBox(t, "retired", true)
 		sibling, _ := makeBox(t, "sibling", false)

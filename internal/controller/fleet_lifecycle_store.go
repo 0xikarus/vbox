@@ -310,7 +310,8 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 	if target == v1.LogicalBoxDeleting && box.State == v1.LogicalBoxDeleting && box.SlotID == "" {
 		return assignment, tx.Commit()
 	}
-	if box.SlotID == "" || (box.State != v1.LogicalBoxRunning && box.State != v1.LogicalBoxDraining && box.State != v1.LogicalBoxHibernating && box.State != v1.LogicalBoxDeleting) {
+	failedCreation := target == v1.LogicalBoxDeleting && box.State == v1.LogicalBoxAttaching && box.FailureReason != "" && box.VolumeID != "" && !pendingVolume(box.VolumeID)
+	if box.SlotID == "" || (!failedCreation && box.State != v1.LogicalBoxRunning && box.State != v1.LogicalBoxDraining && box.State != v1.LogicalBoxHibernating && box.State != v1.LogicalBoxDeleting) {
 		return assignment, fmt.Errorf("logical box %q cannot transition from %s", box.Name, box.State)
 	}
 	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(fencing_token,'') FROM logical_boxes WHERE account_id=$1 AND id=$2", p.AccountID, box.ID).Scan(&assignment.FencingToken); err != nil {
@@ -322,6 +323,9 @@ func (s *Store) BeginLogicalBoxRelease(ctx context.Context, p Principal, id stri
 	}
 	if assignment.FencingToken == "" || slot.AssignmentGeneration != box.AssignmentGeneration {
 		return assignment, fmt.Errorf("logical box assignment is missing a valid fence")
+	}
+	if failedCreation && slot.State != "draining" {
+		return assignment, fmt.Errorf("failed logical box creation has not released its compute claim")
 	}
 	assignment.Slot = slot
 	if check, ok := ctx.Value(idleReleaseCheckKey{}).(idleReleaseCheck); ok {
