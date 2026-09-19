@@ -395,7 +395,7 @@ func (s *Store) PendingGroupDeliveries(ctx context.Context) ([]pendingGroupDeliv
 }
 
 func (s *Store) DirectBoxMessageByKey(ctx context.Context, p Principal, logicalBoxID, key string) (v1.BoxTask, v1.BoxMessage, bool, error) {
-	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,'') FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id JOIN logical_boxes b ON b.id=t.logical_box_id AND b.account_id=t.account_id WHERE m.account_id=$1 AND t.logical_box_id=$2 AND m.idempotency_key IN ($3,$4) AND (b.owner_user_id=$5 OR $6='owner') ORDER BY m.created_at LIMIT 1`, p.AccountID, logicalBoxID, key+":task:initial", key+":message", p.UserID, p.Role))
+	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,'') FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id JOIN logical_boxes b ON b.id=t.logical_box_id AND b.account_id=t.account_id WHERE m.account_id=$1 AND t.logical_box_id=$2 AND m.idempotency_key IN ($3,$4) AND (b.owner_user_id=$5 OR $6='owner') ORDER BY m.created_at LIMIT 1`, p.AccountID, logicalBoxID, key+":task:initial", key+":message", p.UserID, p.Role))
 	if errors.Is(err, sql.ErrNoRows) {
 		return v1.BoxTask{}, v1.BoxMessage{}, false, nil
 	}
