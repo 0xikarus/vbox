@@ -35,6 +35,15 @@
  function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}return()=>{h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return(h^=h>>>16)>>>0;};}
  function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
  const hsl=(h,s,l)=>'hsl('+(((h%360)+360)%360)+' '+s+'% '+l+'%)';
+ function _srgb(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)}
+ function _hslRGB(h,s,l){s/=100;l/=100;const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((((h%360)+360)%360)/60%2-1)),m=l-c/2;let r=0,g=0,b=0;const hh=((h%360)+360)%360;
+  if(hh<60){r=c;g=x}else if(hh<120){r=x;g=c}else if(hh<180){g=c;b=x}else if(hh<240){g=x;b=c}else if(hh<300){r=x;b=c}else{r=c;b=x}
+  return [(r+m)*255,(g+m)*255,(b+m)*255];}
+ function _lum(h,s,l){const [r,g,b]=_hslRGB(h,s,l);return .2126*_srgb(r)+.7152*_srgb(g)+.0722*_srgb(b);}
+ function _ratio(a,b){const hi=Math.max(a,b),lo=Math.min(a,b);return (hi+.05)/(lo+.05);}
+ // Darken a colour until it reaches 4.5:1 against white or a given background.
+ function darkenForWhite(h,s,l){let cur=Math.round(l);while(cur>6&&_ratio(_lum(h,s,cur),1)<4.5)cur--;return cur;}
+ function darkenFor(h,s,l,bgH,bgS,bgL){let cur=Math.round(l);while(cur>6&&_ratio(_lum(h,s,cur),_lum(bgH,bgS,bgL))<4.5)cur--;return cur;}
  const THEME_ADJ=['mossy','sunny','plucky','sleepy','brisk','cosy','fizzy','tiny','bold','minty','wobbly','glossy'];
  const THEME_NOUN=['pebble','mochi','bramble','biscuit','comet','dumpling','clover','pixel','marble','sprout','pudding','ember'];
  const titleCase=w=>w.charAt(0).toUpperCase()+w.slice(1);
@@ -47,11 +56,18 @@
   const font=pick(['"Baloo 2", ui-rounded, system-ui, sans-serif','ui-rounded, "SF Pro Rounded", system-ui, sans-serif','system-ui, -apple-system, "Segoe UI", sans-serif']);
   const radius=Math.round(R(5,10)), radiusSm=Math.max(3,Math.round(radius*.5)), radiusLg=Math.round(radius*1.5)+2;
   const name=titleCase(pick(THEME_ADJ))+' '+pick(THEME_NOUN);
+  // Generated colours are clamped to meet WCAG AA (4.5:1) instead of trusting
+  // a fixed lightness, so every seed yields legible text, not just this one.
+  const accentL=darkenForWhite(accent,sat,42), accentTextL=darkenFor(accent,sat,42,accent,sat,93);
+  const inkSoftL=darkenFor(base,soft,42,base,soft,96);
+  const stateText=(h,s)=>darkenFor(h,s,50,h,s,88);
   const t={bg:hsl(base,soft,96),bg2:hsl(accent,soft,94),surface:'#ffffff',surface2:hsl(base,soft,97),
-   ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,33),line:hsl(base,soft,88),
-   accent:hsl(accent,sat,36),'accent-2':hsl(accent2,sat,40),'accent-ink':'#fff','accent-soft':hsl(accent,sat,93),
+   ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,inkSoftL),line:hsl(base,soft,88),
+   accent:hsl(accent,sat,accentL),'accent-text':hsl(accent,sat,accentTextL),'accent-2':hsl(accent2,sat,40),
+   'accent-ink':'#fff','accent-soft':hsl(accent,sat,93),
    pop:hsl(pop,sat,52),'bubble-out':hsl(accent,sat,84),'bubble-in':'#fff','bubble-in-ink':hsl(base,soft,13),
    danger:hsl(6,72,44),warn:hsl(38,86,36),ok:hsl(150,58,32),
+   'ok-text':hsl(150,58,stateText(150,58)),'danger-text':hsl(6,72,stateText(6,72)),'warn-text':hsl(38,86,stateText(38,86)),
    radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',
    shadow:'none','shadow-pop':'none',
    wall:'none'};
@@ -63,6 +79,7 @@
   const root=document.documentElement.style;
   for(const key in derived.tokens)root.setProperty('--'+key,derived.tokens[key]);
   root.setProperty('--font',derived.font);
+  const themeColor=document.querySelector('meta[name="theme-color"]');if(themeColor)themeColor.setAttribute('content',derived.tokens.bg);
   const seedInput=document.getElementById('variant-seed');
   if(seedInput&&document.activeElement!==seedInput)seedInput.value=theme.seed;
   refreshAccountMascots();
@@ -279,19 +296,28 @@
   }
  }
  const mxLook={x:0,y:0,tx:0,ty:0};
+ const mxReduceMotion=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)');
+ let mxDirty=false;
  addEventListener('pointermove',event=>{
   mxLook.tx=Math.max(-1,Math.min(1,(event.clientX-innerWidth/2)/(innerWidth/2||1)));
   mxLook.ty=Math.max(-1,Math.min(1,(event.clientY-innerHeight/2)/(innerHeight/2||1)));
+  mxDirty=true;
  },{passive:true});
- addEventListener('blur',()=>{mxLook.tx=0;mxLook.ty=0});
+ addEventListener('blur',()=>{mxLook.tx=0;mxLook.ty=0;mxDirty=true});
+ // Eyes only track while the pointer is actually moving (and never under
+ // reduced-motion), instead of doing DOM work every frame forever.
  (function mxFollow(){
-  mxLook.x+=(mxLook.tx-mxLook.x)*.1;mxLook.y+=(mxLook.ty-mxLook.y)*.1;
+  if(mxReduceMotion&&mxReduceMotion.matches){requestAnimationFrame(mxFollow);return}
+  if(!mxDirty){requestAnimationFrame(mxFollow);return}
+  const dx=mxLook.tx-mxLook.x,dy=mxLook.ty-mxLook.y;
+  mxLook.x+=dx*.1;mxLook.y+=dy*.1;
   document.querySelectorAll('.mascot-svg').forEach(svg=>{
    svg.style.setProperty('--mx-look-x',(mxLook.x*7).toFixed(2)+'px');
    svg.style.setProperty('--mx-look-y',(mxLook.y*5).toFixed(2)+'px');
    svg.style.setProperty('--mx-head-x',(mxLook.x*3.5).toFixed(2)+'px');
    svg.style.setProperty('--mx-head-y',(mxLook.y*2.5).toFixed(2)+'px');
   });
+  if(Math.abs(dx)<.002&&Math.abs(dy)<.002)mxDirty=false;
   requestAnimationFrame(mxFollow);
  })();
 
@@ -324,6 +350,7 @@
    return;
   }
   el.append(linkify(text));
+  enhanceMediaLinks(el);
  }
 
  /* ═══════════════════════════════════════════════════════════════════════
@@ -1004,7 +1031,9 @@
   }catch(e){
    statusEl.textContent=e.message;
    if(!inputEl.value)inputEl.value=text;
-   if(!drafts.length){drafts=sentDrafts;renderDrafts();grow()}
+   // Restore the drafts handed to the failed send alongside anything the user
+   // attached meanwhile, so no blob URL is lost or leaked.
+   if(sentDrafts.length){drafts=[...sentDrafts,...drafts].map((draft,index)=>({...draft,number:index+1}));renderDrafts();grow()}
   }
   finally{
    if(pendingSends.delete(boxID)||(showPending&&!settled)){
@@ -1328,7 +1357,7 @@
   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
  }
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
- addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
+ addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
  // Re-push the instructions the box already carries. A replaced worker or a
  // restored hibernation can leave a running box behind its saved config, and
  // re-typing the same Markdown just to trigger a write is a poor way to fix it.
@@ -1368,7 +1397,7 @@
   }catch(e){toast(e.message)}
  }
  const deleteModal=$('#delete-box-modal'),deleteForm=$('#delete-box-form');let deleteTarget=null;
- async function deleteBoxWhenReady(deleteTarget){
+ async function deleteBoxWhenReady(){
   const deadline=Date.now()+5*60*1000,key=crypto.randomUUID();
   for(;;){
    try{return await api(boxPath(deleteTarget.id)+'/volume','DELETE',{'Idempotency-Key':key},{confirmation:deleteTarget.name})}
@@ -1387,7 +1416,7 @@
   event.preventDefault();
   const submit=$('#delete-box-submit'),target=deleteTarget;submit.disabled=true;
   try{
-   await deleteBoxWhenReady(target);
+   await deleteBoxWhenReady();
    deleteModal.hidden=true;toast('Deleting box "'+target.name+'"…');
    if(target.id===selected){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;history.replaceState(null,'',location.pathname);closeTakeover()}
    deleteTarget=null;
@@ -1492,6 +1521,7 @@
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
+ function closeSheets(){document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true})}
  async function presetBody(name){
   if(presetBodyCache.has(name))return presetBodyCache.get(name);
   const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));
@@ -1517,6 +1547,7 @@
   root.append(list);
  }
  async function openPresetsModal(){
+  closeSheets();
   const status=$('#preset-status');status.textContent='';
   $('#presets-modal').hidden=false;
   try{applyInstructionPresets(await api('/v1/instruction-presets'))}catch(e){status.textContent=e.message}
@@ -1613,6 +1644,7 @@
   return parts.join(' · ');
  }
  async function openBoxInstructions(box){
+  closeSheets();
   boxInstructionTarget=box;
   const status=$('#box-instructions-status');status.textContent='Loading…';
   $('#box-instructions-title').textContent='Instructions · '+box.name;
@@ -1653,6 +1685,7 @@
   }catch(e){status.textContent=e.message}
  };
  async function openBoxCredentials(box){
+  closeSheets();
   boxCredentialTarget=box;
   const status=$('#box-credentials-status');status.textContent='Loading…';
   $('#box-credentials-title').textContent='Imported profiles · '+box.name;
@@ -1686,7 +1719,7 @@
  const randomSeed=()=>'0x'+Array.from({length:8},()=>'0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
  $('#variant-dice').onclick=()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new daylight seed.')};
  $('#variant-seed').addEventListener('change',event=>{theme.seed=event.target.value.trim()||DEFAULT_SEED;saveTheme();applyVariant()});
- $('#chat-menu').onclick=()=>{$('#chat-menu-sheet').hidden=false};
+ $('#chat-menu').onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
  applyVariant();
 
