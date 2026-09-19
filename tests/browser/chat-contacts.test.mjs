@@ -150,6 +150,13 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('[data-box-id="builder"]').classList.contains('active'),{timeout:5000});
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
+  const panelLayout=await p.evaluate(()=>{
+   const panel=document.querySelector('#inspect'),header=document.querySelector('#chat-header');
+   return {parent:panel.parentElement.id,panel:panel.getBoundingClientRect().toJSON(),header:header.getBoundingClientRect().toJSON()};
+  });
+  assert.equal(panelLayout.parent,'chat-conversation','details must expand from the viewed chat header');
+  assert.ok(panelLayout.panel.top>=panelLayout.header.bottom-2,'details must appear below the chat header');
+  assert.ok(panelLayout.panel.width>=panelLayout.header.width*.95,'details must span the chat instead of a side drawer');
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='worker');
   assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/worker may message only/);
   await p.type('#inspect-contact-form input[name=contact]','planner');
