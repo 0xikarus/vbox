@@ -3,7 +3,7 @@
  const $=s=>document.querySelector(s);
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle');
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
- let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true;
+ let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
  const previewFetched=new Map();let boxesPending=null;
  let drafts=[],pendingKey='',pendingFingerprint='';
  let instructionPresets={defaultName:'',presets:[]};
@@ -743,6 +743,7 @@
  function followMessages(){stickToBottom=true;requestAnimationFrame(scrollMessagesToBottom)}
  messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120});
  function renderMessages(box){
+  if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
   const follow=stickToBottom;
   messagesEl.replaceChildren();
@@ -838,7 +839,11 @@
    if(id===selected)return;// open conversation refreshes itself
    if(!force&&Date.now()-(previewFetched.get(id)||0)<30000)return;
    const messages=await api(boxPath(id)+'/messages?limit=20');
-   const box=boxes.get(id);if(box){box.messages=messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now())}
+   const box=boxes.get(id);
+   // The box may have been opened (or fully loaded) while the preview was in
+   // flight; never let a 20-message preview overwrite an open conversation.
+   if(!box||id===selected||box.historyLoaded)return;
+   box.messages=messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now());
    summarize(id);
   }));
  }
@@ -862,8 +867,10 @@
  async function refreshMessages(force){
   if(!selected)return;
   const id=selected,box=boxes.get(id);if(!box)return;
+  const epoch=viewEpoch;
   const messages=await api(boxPath(id)+'/messages?limit=50');
-  if(selected!==id||boxes.get(id)!==box)return;
+  // Drop a response that arrives after the user moved to another box.
+  if(epoch!==viewEpoch||selected!==id||boxes.get(id)!==box)return;
   const latest=messages||[];
   if(box.historyLoaded){
    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
@@ -900,6 +907,7 @@
  }
  async function openBox(id){
   if(!boxes.has(id))return;
+  viewEpoch++;
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();messagesEl.dataset.box=id;hideTvPreview()}
