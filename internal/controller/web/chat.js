@@ -442,7 +442,10 @@
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
   wrap.dataset.avatar=box.id;wrap.dataset.state=box.state;
-  const mini=document.createElement('span');mini.className='avatar-mascot';mini.innerHTML=mascotMiniSVG(box.id);wrap.append(mini);
+  const base=document.createElement('span');
+  if(box.state==='running'){base.className='avatar-no-signal';base.textContent='NO SIGNAL'}
+  else{base.className='avatar-mascot';base.innerHTML=mascotMiniSVG(box.id)}
+  wrap.append(base);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
   if(!avatarFresh(cached,box.state))avatarRefresh(box);
@@ -466,6 +469,7 @@
  const tvPreviewScreen=document.createElement('div');tvPreviewScreen.className='tv-preview-screen';
  const tvPreviewImg=document.createElement('img');tvPreviewImg.alt='';tvPreviewImg.hidden=true;
  const tvPreviewLive=document.createElement('div');tvPreviewLive.className='tv-preview-live';
+ const tvPreviewNoSignal=document.createElement('div');tvPreviewNoSignal.className='tv-preview-nosignal';tvPreviewNoSignal.textContent='NO SIGNAL';
  const tvPreviewControls=document.createElement('div');tvPreviewControls.hidden=true;
  const tvPreviewNote=document.createElement('span');tvPreviewNote.className='tv-preview-note';
  const tvTimeline=document.createElement('div');tvTimeline.className='tv-preview-timeline';
@@ -474,7 +478,7 @@
  const tvRange=document.createElement('input');tvRange.type='range';tvRange.min='0';tvRange.max='0';tvRange.value='0';tvRange.setAttribute('aria-label','Desktop replay timeline');
  const tvTime=document.createElement('span');tvTime.className='tv-preview-time';tvTime.textContent='No replay yet';
  tvTimeline.append(tvLiveButton,tvPlayButton,tvRange,tvTime);
- tvPreviewScreen.append(tvPreviewImg,tvPreviewLive);tvPreviewEl.append(tvPreviewScreen,tvPreviewNote,tvTimeline,tvPreviewControls);
+ tvPreviewScreen.append(tvPreviewImg,tvPreviewLive,tvPreviewNoSignal);tvPreviewEl.append(tvPreviewScreen,tvPreviewNote,tvTimeline,tvPreviewControls);
  document.body.append(tvPreviewEl);
  const tvShotCache=new Map(),tvReplayCache=new Map();
  let tvPreviewBox='',tvPreviewConnected=false,tvPreviewDispose=null,tvPreviewHideTimer=0,tvReplayIndex=null,tvReplayURL='',tvReplayRequest=0,tvReplayTimer=0;
@@ -513,7 +517,7 @@
   if(!frames[index])return;
   tvReplayIndex=index;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewConnected=false;tvPreviewLive.classList.remove('connected');
   const request=++tvReplayRequest;
-  tvPreviewImg.hidden=false;tvPreviewNote.textContent='Loading replay frame…';renderTvTimeline();
+  tvPreviewImg.hidden=false;tvPreviewNoSignal.hidden=true;tvPreviewNote.textContent='Loading replay frame…';renderTvTimeline();
   try{
    const response=await fetch(boxPath(boxID)+'/desktop/replay/'+encodeURIComponent(frames[index].id),{credentials:'same-origin',signal:AbortSignal.timeout(15000)});
    if(!response.ok)throw Error(response.status);
@@ -527,9 +531,11 @@
  function tvShotRender(box){
   if(tvReplayIndex!==null)return;
   const cached=tvShotCache.get(box.id);
-  tvPreviewImg.hidden=tvPreviewConnected||!cached?.url;
-  if(cached?.url&&tvPreviewImg.src!==cached.url)tvPreviewImg.src=cached.url;
-  tvPreviewNote.textContent=tvPreviewConnected?'Live · click for Desktop/TMUX control':cached?.url?'Connecting live view… · click for control':'Connecting live view…';
+  const hasShot=!!cached?.url;
+  tvPreviewImg.hidden=tvPreviewConnected||!hasShot;
+  if(hasShot&&tvPreviewImg.src!==cached.url)tvPreviewImg.src=cached.url;
+  tvPreviewNoSignal.hidden=tvPreviewConnected||hasShot;
+  tvPreviewNote.textContent=tvPreviewConnected?'Live · click for Desktop/TMUX control':hasShot?'Connecting live view… · click for control':'No desktop signal · click for Desktop/TMUX control';
  }
  function startTvLive(box){
   if(tvPreviewDispose||typeof window.openWorkspaceDesktop!=='function')return;
@@ -581,7 +587,7 @@
   tvPreviewEl.style.left=left+'px';tvPreviewEl.style.top=top+'px';
  }
  function scheduleHideTvPreview(){clearTimeout(tvPreviewHideTimer);tvPreviewHideTimer=setTimeout(hideTvPreview,250)}
- function hideTvPreview(){clearTimeout(tvPreviewHideTimer);stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewEl.hidden=true;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewLive.classList.remove('connected');tvPreviewConnected=false;tvPreviewBox=''}
+ function hideTvPreview(){clearTimeout(tvPreviewHideTimer);stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewEl.hidden=true;tvPreviewNoSignal.hidden=true;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewLive.classList.remove('connected');tvPreviewConnected=false;tvPreviewBox=''}
  addEventListener('scroll',()=>{if(!tvPreviewEl.matches(':hover')&&!tvPreviewEl.contains(document.activeElement))hideTvPreview()},true);
  addEventListener('resize',hideTvPreview);
 

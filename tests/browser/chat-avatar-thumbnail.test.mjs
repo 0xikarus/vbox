@@ -17,7 +17,7 @@ const modelPickerJS=await readFile('internal/controller/web/model-picker.js','ut
 test('running boxes show their desktop thumbnail in the list and navbar',async()=>{
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const now=new Date().toISOString();
- const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'}];
+ const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'},{id:'ghost',name:'ghost',state:'running',defaultAgent:'claude',provider:'railway',role:'worker'}];
  const messages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:now,updatedAt:now}];
  let thumbnails=0;
  const server=http.createServer(async(req,res)=>{
@@ -30,6 +30,7 @@ test('running boxes show their desktop thumbnail in the list and navbar',async()
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
   if(!path.startsWith('/v1/'))return res.end('');
   if(path.endsWith('/desktop/screenshot')){
+   if(path.includes('/logical-boxes/ghost/')){res.statusCode=409;return res.end('{}')}
    thumbnails++;
    if(req.url.includes('thumbnail=true')){res.setHeader('Content-Type','image/png');return res.end(png)}
    res.statusCode=404;return res.end('{}');
@@ -39,7 +40,7 @@ test('running boxes show their desktop thumbnail in the list and navbar',async()
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
-  if(path==='/v1/logical-boxes/builder/messages')return res.end(JSON.stringify(messages));
+  if(path==='/v1/logical-boxes/builder/messages'||path==='/v1/logical-boxes/ghost/messages')return res.end(JSON.stringify(messages));
   if(path.endsWith('/messages'))return res.end('[]');
   return res.end('{}');
  });
@@ -56,6 +57,9 @@ test('running boxes show their desktop thumbnail in the list and navbar',async()
   await p.waitForFunction(()=>document.querySelector('#chat-header-avatar [data-avatar="builder"] img')?.naturalWidth>=1,{timeout:8000});
   assert.ok(thumbnails>=1,'the controller must have served a desktop thumbnail');
   assert.equal(await p.$eval('#chat-header-name',element=>element.textContent),'builder');
+  // a running box whose desktop is not up falls back to the no-signal tile
+  await p.waitForFunction(()=>document.querySelector('#chat-entries [data-avatar="ghost"] .avatar-no-signal')?.textContent==='NO SIGNAL',{timeout:5000});
+  assert.equal(await p.$eval('#chat-entries [data-avatar="ghost"]',element=>!!element.querySelector('img')),false,'a box with no thumbnail must not show a stale image');
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });
