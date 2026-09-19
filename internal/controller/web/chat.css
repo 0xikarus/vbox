@@ -78,14 +78,9 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #chat-filter::placeholder{color:var(--ink-soft)}
 #chat-entries{list-style:none;margin:0;padding:.15rem .45rem 5.5rem;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
 #chat-entries li{display:flex;gap:.6rem;align-items:center;padding:.55rem .5rem;cursor:pointer;
-  border-radius:var(--radius);border:1px solid transparent;border-left-width:4px;position:relative;transition:background .14s,border-color .14s}
+  border-radius:var(--radius);border:1px solid transparent;position:relative;transition:background .14s,border-color .14s}
 #chat-entries li:hover{background:var(--surface2)}
 #chat-entries li.active{background:var(--surface);border-color:var(--accent);box-shadow:var(--shadow)}
-#chat-entries li[data-state="running"]{border-left-color:var(--ok)}
-#chat-entries li[data-state="failed"]{border-left-color:var(--danger)}
-#chat-entries li[data-state="starting"]{border-left-color:var(--warn)}
-#chat-entries li[data-state="muted"]{border-left-color:var(--line)}
-#chat-entries li.active{border-left-color:var(--accent)}
 .row-state{flex:none;font-size:.62rem;font-weight:800;letter-spacing:.02em;text-transform:uppercase;
   padding:.08rem .36rem;border-radius:var(--radius-sm);color:var(--ink-soft);
   background:color-mix(in srgb,var(--ink-soft) 16%,transparent)}
