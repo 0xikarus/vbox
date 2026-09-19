@@ -21,21 +21,16 @@
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
  /* ═══════════════════════════════════════════════════════════════════════
-    Generated look: one hex seed grows a whole visual identity.
-    The two variants are options, not a shipped toggle: A is a warm
-    daylight scheme, B is a neon midnight scheme. Everything below —
-    hue, saturation, radii, type and the mascot on the sign-in screen —
-    is derived from the seed with the same blockies-style PRNG the
-    mascot uses, so two seeds never look alike.
+    Generated look: one hex seed grows the whole visual identity.
+    The shipped look is daylight. Hue, saturation, radii, type and the
+    mascot on the sign-in screen are all derived from a hex seed with the
+    same blockies-style PRNG the mascot uses, so two seeds never look alike.
+    The seed can be rerolled from the look sheet in the menu.
     ═══════════════════════════════════════════════════════════════════════ */
- const VARIANT_SEEDS={A:'0xe57c2091',B:'0x3a6d94fb'};
- const VARIANT_META={A:{mode:'light',label:'Variant A · daylight'},B:{mode:'dark',label:'Variant B · midnight'}};
+ const DEFAULT_SEED='0xe57c2091';
  const theme=(()=>{let saved={};try{saved=JSON.parse(localStorage.getItem('vmboxChatTheme')||'{}')}catch{}
-  const state={variant:VARIANT_META[saved.variant]?saved.variant:'A',seeds:Object.assign({},VARIANT_SEEDS,saved.seeds||{})};
   const qp=new URLSearchParams(location.search);
-  if(VARIANT_META[qp.get('variant')])state.variant=qp.get('variant');
-  if(qp.get('seed'))state.seeds[state.variant]=qp.get('seed');
-  return state;})();
+  return {seed:String(saved.seed||qp.get('seed')||DEFAULT_SEED)};})();
  const saveTheme=()=>{try{localStorage.setItem('vmboxChatTheme',JSON.stringify(theme))}catch{}};
  function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}return()=>{h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return(h^=h>>>16)>>>0;};}
  function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
@@ -44,7 +39,7 @@
  const THEME_ADJ=['mossy','sunny','plucky','sleepy','brisk','cosy','fizzy','tiny','bold','minty','wobbly','glossy'];
  const THEME_NOUN=['pebble','mochi','bramble','biscuit','comet','dumpling','clover','pixel','marble','sprout','pudding','ember'];
  const titleCase=w=>w.charAt(0).toUpperCase()+w.slice(1);
- function deriveTheme(seed,mode){
+ function deriveTheme(seed){
   const rnd=mulberry32(xmur3(String(seed))());
   const R=(a,b)=>a+rnd()*(b-a), Ri=(a,b)=>Math.floor(R(a,b+1)), pick=arr=>arr[Ri(0,arr.length-1)];
   const base=Ri(0,359), spin=pick([1,-1]);
@@ -53,49 +48,26 @@
   const font=pick(['"Baloo 2", ui-rounded, system-ui, sans-serif','ui-rounded, "SF Pro Rounded", system-ui, sans-serif','system-ui, -apple-system, "Segoe UI", sans-serif']);
   const radius=Math.round(R(12,26)), radiusSm=Math.max(6,Math.round(radius*.5)), radiusLg=Math.round(radius*1.6);
   const name=titleCase(pick(THEME_ADJ))+' '+pick(THEME_NOUN);
-  let t;
-  if(mode==='light'){
-   t={bg:hsl(base,soft,96),bg2:hsl(accent,soft,94),surface:'#ffffff',surface2:hsl(base,soft,97),
-    ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,40),line:hsl(base,soft,88),
-    accent:hsl(accent,sat,36),'accent-2':hsl(accent2,sat,40),'accent-ink':'#fff','accent-soft':hsl(accent,sat,93),
-    pop:hsl(pop,sat,52),'bubble-out':hsl(accent,sat,84),'bubble-in':'#fff','bubble-in-ink':hsl(base,soft,13),
-    danger:hsl(6,72,44),warn:hsl(38,86,36),ok:hsl(150,58,32),
-    radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',
-    shadow:hslA(base,40,40,.13)+' 0 .5rem 1.4rem,'+hslA(base,40,40,.08)+' 0 .12rem .35rem',
-    'shadow-pop':hslA(base,40,30,.22)+' 0 1rem 2.4rem',
-    wall:'radial-gradient(38rem 30rem at 8% -8%,'+hsl(accent,sat,93)+',transparent 62%),radial-gradient(34rem 26rem at 102% 6%,'+hsl(accent,soft,94)+',transparent 66%)'};
-  }else{
-   t={bg:hsl(base,18,9),bg2:hsl(accent,20,12),surface:hsl(base,16,14),surface2:hsl(base,16,18),
-    ink:hsl(base,14,94),'ink-soft':hsl(base,12,64),line:hsl(base,14,24),
-    accent:hsl(accent,sat,52),'accent-2':hsl(accent2,sat,56),'accent-ink':hsl(accent,sat,10),'accent-soft':hsl(accent,sat,20),
-    pop:hsl(pop,sat,62),'bubble-out':hsl(accent,sat,30),'bubble-in':hsl(base,16,18),'bubble-in-ink':hsl(base,14,94),
-    danger:hsl(2,70,60),warn:hsl(40,86,58),ok:hsl(150,55,52),
-    radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',
-    shadow:'hsl(0 0% 0% / .5) 0 .5rem 1.4rem,hsl(0 0% 0% / .4) 0 .12rem .35rem',
-    'shadow-pop':'hsl(0 0% 0% / .65) 0 1rem 2.4rem',
-    wall:'radial-gradient(38rem 30rem at 4% -8%,'+hslA(accent,60,22,.5)+',transparent 62%),radial-gradient(34rem 26rem at 104% 4%,'+hslA(accent2,60,20,.45)+',transparent 64%)'};
-  }
+  const t={bg:hsl(base,soft,96),bg2:hsl(accent,soft,94),surface:'#ffffff',surface2:hsl(base,soft,97),
+   ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,40),line:hsl(base,soft,88),
+   accent:hsl(accent,sat,36),'accent-2':hsl(accent2,sat,40),'accent-ink':'#fff','accent-soft':hsl(accent,sat,93),
+   pop:hsl(pop,sat,52),'bubble-out':hsl(accent,sat,84),'bubble-in':'#fff','bubble-in-ink':hsl(base,soft,13),
+   danger:hsl(6,72,44),warn:hsl(38,86,36),ok:hsl(150,58,32),
+   radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',
+   shadow:hslA(base,40,40,.13)+' 0 .5rem 1.4rem,'+hslA(base,40,40,.08)+' 0 .12rem .35rem',
+   'shadow-pop':hslA(base,40,30,.22)+' 0 1rem 2.4rem',
+   wall:'radial-gradient(38rem 30rem at 8% -8%,'+hsl(accent,sat,93)+',transparent 62%),radial-gradient(34rem 26rem at 102% 6%,'+hsl(accent,soft,94)+',transparent 66%)'};
   return {name,font,base,accent,radius,tokens:t};
  }
- const variantDerived={};
  function applyVariant(){
-  const variant=VARIANT_META[theme.variant]?theme.variant:'A';
-  document.documentElement.dataset.variant=variant;
-  const derived=deriveTheme(theme.seeds[variant],VARIANT_META[variant].mode);
-  variantDerived[variant]=derived;
+  document.documentElement.dataset.variant='A';
+  const derived=deriveTheme(theme.seed);
   const root=document.documentElement.style;
   for(const key in derived.tokens)root.setProperty('--'+key,derived.tokens[key]);
   root.setProperty('--font',derived.font);
-  const toggle=document.getElementById('variant-toggle');
-  if(toggle)toggle.textContent='Variant '+variant;
   const seedInput=document.getElementById('variant-seed');
-  if(seedInput&&document.activeElement!==seedInput)seedInput.value=theme.seeds[variant];
+  if(seedInput&&document.activeElement!==seedInput)seedInput.value=theme.seed;
   refreshAccountMascots();
- }
- function cycleVariant(){
-  theme.variant=theme.variant==='A'?'B':'A';saveTheme();applyVariant();
-  const meta=variantDerived[theme.variant];
-  toast('Variant '+theme.variant+': '+meta.name+'.');
  }
 
  /* ═══════════════════════════════════════════════════════════════════════
@@ -303,7 +275,7 @@
  }
  const accountMascots=[];
  function refreshAccountMascots(){
-  const seed=theme.seeds[theme.variant]||'vmbox';
+  const seed=theme.seed||'vmbox';
   accountMascots.splice(0).forEach(m=>m.destroy&&m.destroy());
   const login=document.getElementById('login-mascot');
   if(login)login.innerHTML=mascotMiniSVG(seed);
@@ -353,11 +325,99 @@
    const root=window.markdownToNodes(text);
    root.querySelectorAll('.md-p').forEach(p=>{const last=p.lastChild;if(last&&last.nodeType===3)last.nodeValue=last.nodeValue.replace(/\n$/,'')});
    linkifyTextNodes(root);
+   enhanceMediaLinks(root);
    el.append(root);
    return;
   }
   el.append(linkify(text));
  }
+
+ /* ═══════════════════════════════════════════════════════════════════════
+    Attachments and media embeds are first-class controls: every image is a
+    real <button> (tabbable, Enter/Space activates) that opens a focus-managed
+    lightbox, and links that point at image/video/audio media are labelled and
+    focusable so keyboard users can activate them too. The lightbox supports
+    image, video and audio and restores focus when it closes.
+    ═══════════════════════════════════════════════════════════════════════ */
+ const MEDIA_IMAGE=/\.(png|jpe?g|gif|webp|avif|svg)$/i;
+ const MEDIA_VIDEO=/\.(mp4|webm|mov|m4v|ogv|avi)$/i;
+ const MEDIA_AUDIO=/\.(mp3|wav|ogg|oga|m4a|aac|flac)$/i;
+ function mediaKind(mediaType,url){
+  const type=(mediaType||'').toLowerCase();
+  if(type.startsWith('video/'))return 'video';
+  if(type.startsWith('audio/'))return 'audio';
+  if(type.startsWith('image/'))return 'image';
+  try{const path=new URL(url,location.href).pathname;
+   if(MEDIA_VIDEO.test(path))return 'video';
+   if(MEDIA_AUDIO.test(path))return 'audio';
+   if(MEDIA_IMAGE.test(path))return 'image';}catch{}
+  return 'image';
+ }
+ const mediaKindLabel=kind=>kind==='video'?'video':kind==='audio'?'audio':'image';
+ const mediaGlyph=kind=>kind==='video'?'▶':kind==='audio'?'♪':'▣';
+ const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaTitle=$('#media-viewer-title'),mediaOpen=$('#media-viewer-open');
+ let mediaReturnFocus=null;
+ function openMediaViewer(url,{kind='image',alt='',label=''}={}){
+  if(!url)return;
+  mediaReturnFocus=document.activeElement;
+  mediaBody.replaceChildren();
+  if(kind==='video'||kind==='audio'){
+   const el=document.createElement(kind);
+   el.src=url;el.controls=true;el.playsInline=true;if(kind==='video')el.autoplay=true;
+   el.setAttribute('aria-label',alt||('Embedded '+mediaKindLabel(kind)));
+   mediaBody.append(el);
+  }else{
+   const img=document.createElement('img');img.src=url;img.alt=alt||'Attachment';mediaBody.append(img);
+  }
+  mediaTitle.textContent=label||alt||(kind==='video'?'Video':kind==='audio'?'Audio':'Image');
+  if(/^https?:/i.test(url)){mediaOpen.hidden=false;mediaOpen.href=url}else{mediaOpen.hidden=true;mediaOpen.removeAttribute('href')}
+  mediaViewer.hidden=false;
+  $('#media-viewer-close').focus();
+ }
+ function closeMediaViewer(){
+  if(mediaViewer.hidden)return;
+  const playing=mediaBody.querySelector('video,audio');
+  if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
+  mediaBody.replaceChildren();mediaViewer.hidden=true;
+  if(mediaReturnFocus&&document.contains(mediaReturnFocus))mediaReturnFocus.focus();
+  mediaReturnFocus=null;
+ }
+ function mediaButton(url,{kind='image',alt='',label=''}={}){
+  const btn=document.createElement('button');btn.type='button';btn.className='media-button';
+  btn.setAttribute('aria-label','Open '+mediaKindLabel(kind)+(label?': '+label:alt?': '+alt:''));
+  if(kind==='image'){
+   const img=document.createElement('img');img.className='chat-image';img.src=url;img.alt=alt||'';img.loading='lazy';btn.append(img);
+  }else{
+   const chip=document.createElement('span');chip.className='media-chip '+kind;
+   const glyph=document.createElement('span');glyph.className='media-glyph';glyph.setAttribute('aria-hidden','true');glyph.textContent=mediaGlyph(kind);
+   const name=document.createElement('span');name.textContent=label||alt||(kind==='video'?'Play video':'Play audio');
+   chip.append(glyph,name);btn.append(chip);
+  }
+  btn.onclick=()=>openMediaViewer(url,{kind,alt,label});
+  return btn;
+ }
+ function enhanceMediaLinks(root){
+  root.querySelectorAll('a[href]').forEach(anchor=>{
+   let path='';try{path=new URL(anchor.getAttribute('href'),location.href).pathname}catch{}
+   if(!MEDIA_IMAGE.test(path)&&!MEDIA_VIDEO.test(path)&&!MEDIA_AUDIO.test(path))return;
+   const kind=mediaKind('',anchor.getAttribute('href'));
+   anchor.classList.add('media-link',kind);
+   anchor.setAttribute('aria-label','Open '+mediaKindLabel(kind)+': '+(anchor.textContent||anchor.getAttribute('href')));
+  });
+ }
+ $('#media-viewer-close').onclick=closeMediaViewer;
+ $('#media-viewer-backdrop').onclick=closeMediaViewer;
+ addEventListener('keydown',event=>{
+  if(mediaViewer.hidden)return;
+  if(event.key==='Escape'){event.preventDefault();closeMediaViewer();return}
+  if(event.key==='Tab'){
+   const focusable=[...mediaViewer.querySelectorAll('button,a[href],video,audio')].filter(el=>!el.hidden);
+   if(!focusable.length)return;
+   const first=focusable[0],last=focusable[focusable.length-1];
+   if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus()}
+   else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
+  }
+ },true);
 
  /* ---------- avatars: desktop preview thumbnails, blob-cached for 60s ---- */
  const avatarCache=new Map(),avatarPending=new Set();
@@ -662,7 +722,7 @@
   renderRichText(text,body);
   row.append(text);
   for(const image of message.images||[]){
-   imageURL(message,image).then(url=>{if(!url)return;const img=document.createElement('img');img.className='chat-image';img.src=url;img.alt='Image '+image.number+' from '+message.direction;row.insertBefore(img,row.querySelector('.meta'))});
+   imageURL(message,image).then(url=>{if(!url)return;const kind=mediaKind(image.mediaType,url);const label='Attachment '+image.number;const btn=mediaButton(url,{kind,alt:label+' from '+message.direction,label});row.insertBefore(btn,row.querySelector('.meta'))});
   }
   const form=questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
@@ -1592,10 +1652,8 @@
 
  /* ---------- generated-look controls ---------- */
  const randomSeed=()=>'0x'+Array.from({length:8},()=>'0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
- $('#variant-toggle').onclick=cycleVariant;
- $('#variant-reroll').onclick=cycleVariant;
- $('#variant-dice').onclick=()=>{theme.seeds[theme.variant]=randomSeed();saveTheme();applyVariant();toast('New seed for variant '+theme.variant+'.')};
- $('#variant-seed').addEventListener('change',event=>{const value=event.target.value.trim()||VARIANT_SEEDS[theme.variant];theme.seeds[theme.variant]=value;saveTheme();applyVariant()});
+ $('#variant-dice').onclick=()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new daylight seed.')};
+ $('#variant-seed').addEventListener('change',event=>{theme.seed=event.target.value.trim()||DEFAULT_SEED;saveTheme();applyVariant()});
  $('#chat-menu').onclick=()=>{$('#chat-menu-sheet').hidden=false};
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
  applyVariant();

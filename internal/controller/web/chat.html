@@ -18,7 +18,6 @@
  <button id="chat-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
  <strong class="brand">vmbox <span>chats</span></strong>
  <span class="spacer"></span>
- <button id="variant-toggle" type="button" title="Switch visual variant">Variant A</button>
  <button id="refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
 </header>
 
@@ -194,11 +193,10 @@
    <button id="logout" type="button" hidden>Log out</button>
   </div>
   <div class="menu-theme">
-   <p class="hint">Variant is derived from a seed. Every seed grows different colours, shapes and a different mascot.</p>
+   <p class="hint">The daylight look is derived from a seed. Every seed grows different colours, shapes and a different mascot.</p>
    <div class="seedrow">
-    <input id="variant-seed" spellcheck="false" aria-label="Variant seed" maxlength="32">
-    <button id="variant-dice" type="button" title="Random seed">🎲</button>
-    <button id="variant-reroll" type="button" title="Switch variant">Switch</button>
+    <input id="variant-seed" spellcheck="false" aria-label="Look seed" maxlength="32">
+    <button id="variant-dice" type="button" title="Roll a new seed">🎲</button>
    </div>
   </div>
  </section>
@@ -208,6 +206,15 @@
 
 <div id="forward-menu" hidden role="menu"></div>
 <div id="chat-toasts" aria-live="polite"></div>
+
+<div id="media-viewer" hidden>
+ <div id="media-viewer-backdrop"></div>
+ <section id="media-viewer-card" role="dialog" aria-modal="true" aria-labelledby="media-viewer-title">
+  <header><strong id="media-viewer-title">Attachment</strong><span class="spacer"></span><button id="media-viewer-close" type="button" aria-label="Close media viewer">×</button></header>
+  <div id="media-viewer-body"></div>
+  <a id="media-viewer-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open original in a new tab</a>
+ </section>
+</div>
 
 </div>
 <script src="/markdown.js" defer></script>

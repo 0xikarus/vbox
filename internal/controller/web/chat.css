@@ -17,7 +17,8 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #chat-shell button,#chat-shell input,#chat-shell select,#chat-shell textarea,#chat-shell label,#chat-shell a{text-transform:none}
 #chat-shell :focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:.4rem}
 
-/* Two generated token sets. Seeds are documented in chat.js (DEFAULT_SEEDS). */
+/* The shipped daylight token set is the fallback; chat.js overwrites these
+   custom properties with values derived from the current hex seed. */
 :root[data-variant="A"]{
   --bg:hsl(58 46% 96%);--bg2:hsl(160 46% 94%);--surface:#fff;--surface2:hsl(58 46% 97%);
   --ink:hsl(58 46% 13%);--ink-soft:hsl(58 30% 42%);--line:hsl(58 46% 88%);
@@ -31,19 +32,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
   --wall:radial-gradient(38rem 30rem at 8% -8%,var(--accent-soft),transparent 62%),
          radial-gradient(34rem 26rem at 102% 6%,var(--bg2),transparent 66%);
 }
-:root[data-variant="B"]{
-  --bg:hsl(85 18% 9%);--bg2:hsl(185 20% 12%);--surface:hsl(85 16% 14%);--surface2:hsl(85 16% 18%);
-  --ink:hsl(85 14% 94%);--ink-soft:hsl(85 12% 64%);--line:hsl(85 14% 24%);
-  --accent:hsl(185 65% 52%);--accent-2:hsl(85 70% 58%);--accent-ink:hsl(185 60% 10%);--accent-soft:hsl(185 60% 20%);
-  --pop:hsl(320 70% 62%);
-  --bubble-out:hsl(185 65% 30%);--bubble-in:hsl(85 16% 18%);--bubble-in-ink:var(--ink);
-  --danger:hsl(2 70% 60%);--warn:hsl(40 86% 58%);--ok:hsl(150 55% 52%);
-  --radius:10px;--radius-sm:6px;--radius-lg:16px;
-  --shadow:0 .5rem 1.4rem hsl(0 0% 0% / .5),0 .12rem .35rem hsl(0 0% 0% / .4);
-  --shadow-pop:0 1rem 2.4rem hsl(0 0% 0% / .65);
-  --wall:radial-gradient(38rem 30rem at 4% -8%,hsl(185 60% 22% / .5),transparent 62%),
-         radial-gradient(34rem 26rem at 104% 4%,hsl(85 60% 20% / .45),transparent 64%);
-}
+:root:not([data-variant]){--bg:hsl(58 46% 96%);--ink:hsl(58 46% 13%);--surface:#fff;--line:hsl(58 46% 88%)}
 
 /* ── app bar ─────────────────────────────────────────────────────────── */
 #chat-top{display:flex;align-items:center;gap:.5rem;flex:none;
@@ -167,6 +156,19 @@ body{max-width:none;margin:0;padding:0;height:100%;
   color:var(--ink-soft);margin-top:.15rem;user-select:none}
 .msg .meta .ticks.failed{color:var(--danger)}
 .msg img.chat-image{display:block;max-width:18rem;max-height:14rem;border-radius:var(--radius-sm);margin:.3rem 0}
+/* every attachment and media embed is a real focusable control */
+.media-button{display:block;max-width:100%;border:0;background:none;padding:0;margin:.3rem 0;cursor:zoom-in;border-radius:var(--radius-sm);text-align:left}
+.media-button img.chat-image{margin:0}
+.media-button:focus-visible{outline:3px solid var(--accent);outline-offset:4px}
+.media-chip{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem .7rem;border:1px solid var(--line);
+  border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font-weight:700}
+.media-chip.video{cursor:pointer}
+.media-glyph{display:inline-flex;align-items:center;justify-content:center;width:1.8rem;height:1.8rem;
+  border-radius:50%;background:var(--accent);color:var(--accent-ink);font-size:.8rem;flex:none}
+.msg .text a.media-link{display:inline-flex;align-items:center;gap:.3rem;font-weight:600}
+.msg .text a.media-link::before{content:'▣';font-size:.85em}
+.msg .text a.media-link.video::before{content:'▶'}
+.msg .text a.media-link.audio::before{content:'♪'}
 .msg .fwd{position:absolute;top:.1rem;right:.1rem;opacity:0;border:0;background:var(--surface);
   color:var(--ink-soft);cursor:pointer;border-radius:50%;width:1.9rem;height:1.9rem;font-size:.95rem;line-height:1;margin:0}
 .msg:hover .fwd,.msg .fwd:focus-visible{opacity:1}
@@ -454,6 +456,19 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .load-older{display:block;margin:.45rem auto 1rem;padding:.5rem .9rem;border:1px solid var(--line);
   border-radius:999px;background:var(--surface);color:var(--accent);font:inherit;font-size:.82rem;font-weight:700;cursor:pointer}
 .load-older:disabled{opacity:.6;cursor:wait}
+
+/* ── media lightbox ─────────────────────────────────────────────────── */
+#media-viewer{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;padding:1rem}
+#media-viewer-backdrop{position:absolute;inset:0;background:color-mix(in srgb,var(--ink) 74%,transparent)}
+#media-viewer-card{position:relative;display:flex;flex-direction:column;width:min(72rem,96vw);max-height:92dvh;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-pop);overflow:hidden}
+#media-viewer header{display:flex;align-items:center;gap:.5rem;padding:.55rem .8rem;background:var(--surface2);font-weight:800;flex:none}
+#media-viewer header .spacer{flex:1}
+#media-viewer-close{border:0;background:none;font-size:1.3rem;color:var(--ink-soft);cursor:pointer;margin:0}
+#media-viewer-body{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;background:var(--bg);overflow:auto;padding:.5rem}
+#media-viewer-body img,#media-viewer-body video{max-width:100%;max-height:calc(92dvh - 6rem);border-radius:var(--radius-sm);display:block}
+#media-viewer-body audio{width:min(34rem,100%)}
+#media-viewer-open{align-self:center;flex:none;margin:.35rem 0 .8rem;font-size:.85rem;font-weight:700;color:var(--accent)}
 
 /* ═══ mascot ═══════════════════════════════════════════════════════════
    A seeded blockies-style companion with a six-mood state machine. The
