@@ -102,6 +102,9 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #chat-composer{display:flex;align-items:flex-end;gap:.45rem;background:#f0f2f5;padding:.5rem .7rem;flex:none;margin:0}
 #chat-composer button{flex:none;border:0;border-radius:50%;width:2.6rem;height:2.6rem;font-size:1.25rem;cursor:pointer;margin:0;background:none;color:#54656f}
 #chat-composer button#send{background:#00a884;color:#fff;font-size:1.05rem}
+#chat-composer button#chat-interrupt{background:#fff;color:#b91c1c;border:1px solid #f0c0c0;font-size:1.05rem;line-height:1}
+#chat-composer button#chat-interrupt:hover{background:#fff1f2}
+#chat-composer button#chat-interrupt:disabled{opacity:.5;cursor:default}
 #chat-composer button#send:disabled{background:#8696a0;cursor:default}
 #chat-input{flex:1;resize:none;border:0;border-radius:.55rem;padding:.55rem .7rem;font:inherit;max-height:9rem;background:#fff}
 #chat-input:focus{outline:none}
@@ -224,7 +227,6 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .typing-dots span:nth-child(3){animation-delay:.36s}
 @keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-.22rem);opacity:1}}
 .preview.processing{color:#075e54}
-#chat-header #chat-interrupt{border-color:#f0c0c0;color:#b91c1c}
 .msg.processing{display:flex;align-items:center;gap:.5rem;color:#667781;font-size:.82rem;padding:.4rem .55rem}
 .typing-dots{display:inline-flex;gap:.28rem}
 .typing-dots span{width:.42rem;height:.42rem;border-radius:50%;background:#8696a0;animation:tdot 1.2s infinite}
@@ -232,7 +234,6 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 .typing-dots span:nth-child(3){animation-delay:.36s}
 @keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-.22rem);opacity:1}}
 .preview.processing{color:#075e54}
-#chat-header #chat-interrupt{border-color:#f0c0c0;color:#b91c1c}
 #create-box input[type=checkbox]{display:inline-block;width:auto;margin:0}
 #create-box .profiles{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.5rem}
 #create-box .profile-field{display:flex;flex-direction:column;font-size:.8rem;color:#54656f}

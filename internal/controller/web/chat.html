@@ -49,7 +49,6 @@
     <div id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></div>
     <span class="spacer"></span>
     <button id="chat-clear-context" type="button" title="Start a new agent context in this chat session">Clear context</button>
-    <button id="chat-interrupt" type="button" title="Interrupt the agent (sends Escape to the primary session, releasing the queue)">Interrupt</button>
     <button id="chat-control" type="button" title="Take control: Desktop or TMUX in a popup">Control</button>
     <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false">Details</button>
     <a id="chat-workspace" href="#">Workspace</a>
@@ -74,6 +73,7 @@
     <button id="attach" type="button" title="Attach images" aria-label="Attach images">+</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message"></textarea>
+    <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
     <button id="send" type="submit" title="Send" aria-label="Send">➤</button>
    </form>
    <p id="chat-status" role="status"></p>
