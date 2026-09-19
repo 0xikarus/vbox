@@ -156,6 +156,40 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, err
 	}
 	selected := reusableBoxTask(tasks, box.State, request.Agent, request.Session)
+	if selected != nil && selected.State == "active" && box.State == v1.LogicalBoxRunning {
+		// The reconciler eventually notices a closed tmux session, but a chat
+		// message must not wait for that sweep. Confirm the session is still
+		// there before filing the message under its task. An uncertain probe is
+		// not permission to launch a second harness beside a live one.
+		assignment, err := s.Store.assignment(ctx, p.AccountID, box.ID)
+		if err != nil {
+			return response, fmt.Errorf("check active chat session: %w", err)
+		}
+		prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
+		if err != nil {
+			return response, fmt.Errorf("check active chat session: %w", err)
+		}
+		missing, err := taskSessionMissing(ctx, prov, assignment.Slot.ServiceID, selected.Session)
+		if err != nil {
+			return response, fmt.Errorf("check active chat session: %w", err)
+		}
+		if missing {
+			if err := s.Store.failMissingTask(ctx, p.AccountID, *selected, assignment.Box); err != nil {
+				return response, fmt.Errorf("retire closed chat session: %w", err)
+			}
+			// A concurrent send may have queued the replacement already. Reuse
+			// it rather than start another copy of the harness.
+			tasks, err = s.Store.ListBoxTasks(ctx, p, box.ID)
+			if err != nil {
+				return response, err
+			}
+			previousID := selected.ID
+			selected = reusableBoxTask(tasks, box.State, request.Agent, request.Session)
+			if selected != nil && selected.ID == previousID {
+				return response, fmt.Errorf("closed chat session could not be retired; retry after reconnecting")
+			}
+		}
+	}
 	if selected == nil {
 		// Codex used to get a fresh session here because a running thread could
 		// not be addressed. It can now, so an existing primary Codex is reused
