@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Called by the opt-in PostgreSQL suite with a disposable hibernated box.
@@ -176,9 +178,10 @@ func testBoxMessageHistoryReturnsMessages(t *testing.T, store *Store, server *Se
 		VALUES($1,$2,$3,$4,'owner','codex','history fixture','active',$5)`, task, owner.AccountID, box, owner.UserID, "history-fixture-"+task); err != nil {
 		t.Fatal(err)
 	}
-	for _, message := range []struct{ direction, body string }{{"user", "history-question"}, {"agent", "history-answer"}} {
-		if _, err := store.DB.Exec(`INSERT INTO box_messages(id,account_id,task_id,direction,body,state,idempotency_key)
-			VALUES($1,$2,$3,$4,$5,'delivered',$6)`, uuid(), owner.AccountID, task, message.direction, message.body, message.direction+"-"+task); err != nil {
+	stamp := time.Now().UTC().Truncate(time.Second)
+	for index, message := range []struct{ direction, body string }{{"user", "history-question"}, {"agent", "history-answer"}, {"user", "history-followup"}, {"agent", "history-result"}} {
+		if _, err := store.DB.Exec(`INSERT INTO box_messages(id,account_id,task_id,direction,body,state,idempotency_key,created_at,updated_at)
+			VALUES($1,$2,$3,$4,$5,'delivered',$6,$7,$7)`, uuid(), owner.AccountID, task, message.direction, message.body, message.direction+"-"+task+"-"+message.body, stamp.Add(time.Duration(index/2)*time.Second)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -190,6 +193,43 @@ func testBoxMessageHistoryReturnsMessages(t *testing.T, store *Store, server *Se
 		if !strings.Contains(response.Body.String(), want) {
 			t.Fatalf("history lost %q: %s", want, response.Body.String())
 		}
+	}
+	page := func(query string) []struct {
+		ID        string    `json:"id"`
+		Text      string    `json:"text"`
+		CreatedAt time.Time `json:"createdAt"`
+	} {
+		request := httptest.NewRequest("GET", "/?"+query, nil)
+		request.SetPathValue("id", box)
+		response := httptest.NewRecorder()
+		server.boxMessageHistory(response, request, owner)
+		if response.Code != 200 {
+			t.Fatalf("paged history failed: %d %s", response.Code, response.Body.String())
+		}
+		var values []struct {
+			ID        string    `json:"id"`
+			Text      string    `json:"text"`
+			CreatedAt time.Time `json:"createdAt"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &values); err != nil {
+			t.Fatal(err)
+		}
+		return values
+	}
+	newest := page("limit=2")
+	if len(newest) != 2 {
+		t.Fatalf("expected bounded newest page, got %d messages", len(newest))
+	}
+	older := page("limit=2&before=" + url.QueryEscape(newest[0].CreatedAt.Format(time.RFC3339Nano)) + "&beforeId=" + url.QueryEscape(newest[0].ID))
+	if len(older) != 2 {
+		t.Fatalf("expected two older messages, got %d", len(older))
+	}
+	seen := map[string]bool{}
+	for _, value := range append(newest, older...) {
+		if seen[value.ID] {
+			t.Fatal("pagination repeated a message")
+		}
+		seen[value.ID] = true
 	}
 	// The fixture task is active, which would make the box look busy to the
 	// idle checks that follow.
