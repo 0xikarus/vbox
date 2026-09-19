@@ -345,7 +345,7 @@
  function followMessages(){stickToBottom=true;requestAnimationFrame(scrollMessagesToBottom)}
  messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120});
  function renderMessages(box){
-  hideTvPreview();
+  if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
   const follow=stickToBottom;
   messagesEl.replaceChildren();
   if(box.hasOlder){const older=document.createElement('button');older.type='button';older.className='load-older';older.textContent=box.historyLoading?'Loading older messages…':'Load older messages';older.disabled=!!box.historyLoading;older.onclick=()=>void loadOlderMessages(box.id);messagesEl.append(older)}

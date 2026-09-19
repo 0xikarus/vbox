@@ -123,6 +123,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    await p.$eval('.tv-preview',e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    await new Promise(resolve=>setTimeout(resolve,200));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' closed while cursor moved into preview');
+   await p.$eval('#refresh',button=>button.click());
+   await new Promise(resolve=>setTimeout(resolve,300));
+   assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' closed during a chat refresh');
    await p.waitForFunction(()=>!document.querySelector('.tv-preview-timeline input').disabled);
    await p.$eval('.tv-preview-timeline input',e=>{e.value='0';e.dispatchEvent(new Event('input',{bubbles:true}))});
    await p.waitForFunction(()=>document.querySelector('.tv-preview-note').textContent.startsWith('Replay'));
