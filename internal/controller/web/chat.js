@@ -49,7 +49,7 @@
   const radius=Math.round(R(12,26)), radiusSm=Math.max(6,Math.round(radius*.5)), radiusLg=Math.round(radius*1.6);
   const name=titleCase(pick(THEME_ADJ))+' '+pick(THEME_NOUN);
   const t={bg:hsl(base,soft,96),bg2:hsl(accent,soft,94),surface:'#ffffff',surface2:hsl(base,soft,97),
-   ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,40),line:hsl(base,soft,88),
+   ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,33),line:hsl(base,soft,88),
    accent:hsl(accent,sat,36),'accent-2':hsl(accent2,sat,40),'accent-ink':'#fff','accent-soft':hsl(accent,sat,93),
    pop:hsl(pop,sat,52),'bubble-out':hsl(accent,sat,84),'bubble-in':'#fff','bubble-in-ink':hsl(base,soft,13),
    danger:hsl(6,72,44),warn:hsl(38,86,36),ok:hsl(150,58,32),
