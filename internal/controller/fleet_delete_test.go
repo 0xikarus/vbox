@@ -28,6 +28,10 @@ type deletionProvider struct {
 	sanitized  atomic.Int32
 }
 
+type sharedDeletionProvider struct{ *deletionProvider }
+
+func (p *sharedDeletionProvider) Name() string { return "shared-worker" }
+
 func (p *deletionProvider) AttachedStorage(context.Context, string) (*provider.Storage, error) {
 	return p.attached, p.inspectErr
 }
@@ -231,6 +235,20 @@ func TestDurableDeletionPostgres(t *testing.T) {
 		}
 		if p.flushes.Load() != 1 || p.deletes.Load() != 1 || p.sanitized.Load() != 1 || p.attached != nil {
 			t.Fatal("incomplete attached-volume deletion")
+		}
+	})
+	t.Run("shared worker deletion does not require a workspace runtime upload", func(t *testing.T) {
+		id, _ := makeBox(t, "shared-delete", true)
+		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET provider='shared-worker' WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+		p := &deletionProvider{attached: &provider.Storage{ID: "volume-" + id}}
+		s := NewServer(store, provider.NewRegistry(&sharedDeletionProvider{p}))
+		if err := s.resumeLogicalBoxDelete(ctx, owner, id); err != nil {
+			t.Fatal(err)
+		}
+		if p.flushes.Load() != 0 || p.deletes.Load() != 1 || p.sanitized.Load() != 1 || p.attached != nil {
+			t.Fatalf("shared deletion must stop through detach without a workspace runtime: flushes=%d deletes=%d sanitized=%d attached=%v", p.flushes.Load(), p.deletes.Load(), p.sanitized.Load(), p.attached)
 		}
 	})
 	t.Run("stale slot generation blocks provider mutations", func(t *testing.T) {
