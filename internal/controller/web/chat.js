@@ -46,7 +46,7 @@
   const accent=(base+spin*Ri(96,168))%360, accent2=(base-spin*Ri(80,150))%360, pop=(accent+spin*Ri(40,90))%360;
   const sat=Ri(52,78), soft=Ri(30,46);
   const font=pick(['"Baloo 2", ui-rounded, system-ui, sans-serif','ui-rounded, "SF Pro Rounded", system-ui, sans-serif','system-ui, -apple-system, "Segoe UI", sans-serif']);
-  const radius=Math.round(R(12,26)), radiusSm=Math.max(6,Math.round(radius*.5)), radiusLg=Math.round(radius*1.6);
+  const radius=Math.round(R(5,10)), radiusSm=Math.max(3,Math.round(radius*.5)), radiusLg=Math.round(radius*1.5)+2;
   const name=titleCase(pick(THEME_ADJ))+' '+pick(THEME_NOUN);
   const t={bg:hsl(base,soft,96),bg2:hsl(accent,soft,94),surface:'#ffffff',surface2:hsl(base,soft,97),
    ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,33),line:hsl(base,soft,88),
