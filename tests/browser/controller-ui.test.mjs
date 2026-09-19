@@ -67,7 +67,7 @@ test('desktop can be selected without Blender and Blender requires it',async()=>
  assert.deepEqual(await page.$eval(desktop,input=>[input.checked,input.disabled]),[true,false]);
  await page.type('#create input[name=name]','disposable-desktop-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button');await created;
+ await page.click('#create button[type=submit]');await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.tools,['desktop']);
  await page.close();
 });
@@ -79,6 +79,8 @@ test('model choice is a searchable popup instead of a browser datalist',async()=
  await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'openrouter'}));
  const input='#create input[name=agentModel]';
  assert.equal(await page.$eval(input,e=>e.hasAttribute('list')),false);
+ await page.click('#create .model-picker-toggle');
+ assert.deepEqual(await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent)),['openrouter/deepseek/deepseek-v4.1-flash','venice/deepseek-v4-1-flash']);
  await page.click(input);await page.$eval(input,e=>{e.value='venice';e.dispatchEvent(new Event('input',{bubbles:true}))});
  await page.waitForSelector('#create .model-picker-options:not([hidden])');
  assert.deepEqual(await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent)),['venice/deepseek-v4-1-flash']);
@@ -95,7 +97,7 @@ test('creation can import one agent profile alongside a GitHub profile',async()=
  await page.select('#profile-choices select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
  await page.type('#create input[name=name]','github-creation-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button');await created;
+ await page.click('#create button[type=submit]');await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash'},{application:'github',name:'gh-work'}]);
  await page.close();
 });
@@ -127,7 +129,7 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · shared-02 · slot 1/);
  const selected=JSON.stringify({provider:'shared-worker',providerCredential:'shared-02'});
  await page.click('#create details summary');
- await page.select('#create-pool',selected);await page.type('#create input[name=name]','comparison-box');await page.click('#create button');
+ await page.select('#create-pool',selected);await page.type('#create input[name=name]','comparison-box');await page.click('#create button[type=submit]');
  await page.waitForFunction(()=>window.poolCreates.length===1);
  const created=await page.evaluate(()=>window.poolCreates[0]);assert.equal(created.provider,'shared-worker');assert.equal(created.providerCredential,'shared-02');
  await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('4 workers · 6 compute slots'));
@@ -156,11 +158,11 @@ test('automatic placement refreshes capacity and prefers a less occupied pool',a
  await page.waitForFunction(()=>document.querySelector('#create-pool').options.length===4);
  assert.equal(await page.$eval('#create-pool',element=>element.value),'');
  assert.equal(await page.$eval('#create details',element=>element.open),false);
- await page.type('#create input[name=name]','auto-box');await page.click('#create button');
+ await page.type('#create input[name=name]','auto-box');await page.click('#create button[type=submit]');
  await page.waitForFunction(()=>window.autoCreates.length===1);
  assert.equal(await page.evaluate(()=>window.autoCreates[0].providerCredential),'shared-02');
  await page.evaluate(()=>{window.capacityMode='full'});
- await page.click('#create button');await page.waitForFunction(()=>window.autoCreates.length===2);
+ await page.click('#create button[type=submit]');await page.waitForFunction(()=>window.autoCreates.length===2);
  assert.equal(await page.evaluate(()=>window.autoCreates[1].providerCredential),'primary');
  await page.close();
 });
@@ -346,7 +348,7 @@ test('new box starts automatically and its row follows startup through the tempo
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#app:not([hidden])');await page.type('#create input[name=name]','automatic');
- await page.click('#create button');await page.waitForSelector('[data-box-id="created-new"]');
+ await page.click('#create button[type=submit]');await page.waitForSelector('[data-box-id="created-new"]');
  await page.evaluate(()=>window.createState='hibernated');
  await page.waitForFunction(()=>document.querySelector('[data-box-id="created-new"] td:nth-child(2)').textContent.includes('starting'),{timeout:12000});
  await page.evaluate(()=>window.createState='running');
@@ -373,7 +375,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.deepEqual(await page.$eval('#create select[name=defaultAgent]',select=>({value:select.value,disabled:select.disabled})),{value:'opencode',disabled:true});
  await page.click('#create-tools input[value=blender]');
  assert.deepEqual(await page.$eval('#create-tools input[value=desktop]',input=>({checked:input.checked,disabled:input.disabled})),{checked:true,disabled:true});
- const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button');await created;
+ const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button[type=submit]');await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'opencode',name:'openrouter'}]);
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['desktop','blender']);
  assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,'opencode');
@@ -438,7 +440,7 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  await page.evaluate(()=>{const area=document.querySelector('#create-instructions-custom');area.value='# House rules\nAlways answer briefly.\nextra';area.dispatchEvent(new Event('input',{bubbles:true}))});
  await page.type('#create input[name=name]','instructions-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button');await created;
+ await page.click('#create button[type=submit]');await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.instructions,{preset:'general',markdown:'# House rules\nAlways answer briefly.\nextra'});
  // Explicit Apply instructions action for an existing box.
  await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Instructions')).click()});

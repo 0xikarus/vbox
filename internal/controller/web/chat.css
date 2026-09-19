@@ -230,7 +230,9 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #create-box .profiles{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.5rem}
 #create-box .profile-field{display:flex;flex-direction:column;font-size:.8rem;color:#54656f}
 .model-picker{display:block;position:relative}
-.model-picker>input{width:100%}
+.model-picker>input{box-sizing:border-box;width:100%;padding-right:2rem}
+.model-picker-toggle{position:absolute;right:.2rem;top:50%;transform:translateY(-50%);border:0;background:transparent;padding:.1rem .35rem;cursor:pointer;color:#54656f}
+.model-picker-toggle:disabled{cursor:default;opacity:.45}
 .model-picker-options{position:absolute;z-index:55;left:0;right:0;top:calc(100% + .15rem);max-height:14rem;overflow:auto;background:#fff;border:1px solid #c6ced4;border-radius:.4rem;box-shadow:0 .35rem 1rem rgba(11,20,26,.25);padding:.2rem}
 .model-picker-option{display:block;width:100%;border:0;border-radius:.3rem;background:#fff;text-align:left;padding:.42rem .55rem;overflow-wrap:anywhere;cursor:pointer}
 .model-picker-option:hover,.model-picker-option.active{background:#dcf8c6;color:#075e54}
