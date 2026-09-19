@@ -696,10 +696,12 @@
  }
  $('#chat-info').onclick=()=>{
   inspectOpen=!inspectOpen;inspect.hidden=!inspectOpen;
+  inspect.classList.toggle('with-contacts',owner);
+  $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
   else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''}
  };
- $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''};
+ $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''};
 
  /* ---------- inspect drawer: per-box contact graph (owner) ---------- */
  const inspectContacts=$('#inspect-contacts');
