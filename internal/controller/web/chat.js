@@ -3,7 +3,8 @@
  const $=s=>document.querySelector(s);
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle');
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set();
- let selected='',owner=false,boxTimer,msgTimer,lastSignature='',stickToBottom=true;
+ let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true;
+ const previewFetched=new Map();let boxesPending=null;
  let drafts=[],pendingKey='',pendingFingerprint='';
  let instructionPresets={defaultName:'',presets:[]};
  const presetBodyCache=new Map();
@@ -162,13 +163,13 @@
    const oldAvatar=row.querySelector('.avatar');
    if(oldAvatar&&oldAvatar.dataset.state===box.state){/* keep the stable avatar node */}
    else{const avatar=avatarNode(box,false,true);if(oldAvatar)oldAvatar.replaceWith(avatar);else row.prepend(avatar)}
-   row.querySelector('time').textContent=box.last?fmtTime(box.last.createdAt):'';
+   const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
    row.querySelector('time').classList.toggle('recent',!!box.unread);
-   const preview=row.querySelector('.preview');preview.textContent=box.streaming?'typing…':box.processing?'processing…':previewText(box.last);preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
+   const preview=row.querySelector('.preview'),nextPreview=box.streaming?'typing…':box.processing?'processing…':previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
    const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=box.unread>99?'99+':box.unread;
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
-  listEl.replaceChildren(...list.map(b=>rows.get(b.id)));
+  const desired=list.map(b=>rows.get(b.id));if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
  }
 
  /* ---------- messages ---------- */
@@ -336,22 +337,27 @@
 
  /* ---------- data loading ---------- */
  const doodle=text=>{const el=$('#chat-loading');$('#chat-loading-text').textContent=text||'';el.hidden=!text;};
- async function loadBoxes(){
+ async function loadBoxes(force=false){
+  if(boxesPending)return boxesPending;
+  boxesPending=fetchBoxes(force).finally(()=>{boxesPending=null});return boxesPending;
+ }
+ async function fetchBoxes(force){
   const values=await api(owner?'/v1/grid-boxes':'/v1/logical-boxes');
   const current=new Map();const alive=new Set();
   for(const b of values||[]){alive.add(b.id);current.set(b.id,{...b,messages:boxes.get(b.id)?.messages||[]})}
-  for(const id of [...boxes.keys()])if(!alive.has(id)){const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);boxes.delete(id);avatarCache.delete(id)}
+  for(const id of [...boxes.keys()])if(!alive.has(id)){const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id)}
   for(const [id,b] of current)boxes.set(id,b);
   if(selected&&!boxes.has(selected)){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
-  await loadPreviews();
+  await loadPreviews(force);
   if(selected)applySeen(selected);
   renderRows();
  }
- async function loadPreviews(){
+ async function loadPreviews(force){
   await Promise.allSettled([...boxes.keys()].map(async id=>{
    if(id===selected)return;// open conversation refreshes itself
+   if(!force&&Date.now()-(previewFetched.get(id)||0)<30000)return;
    const messages=await api(boxPath(id)+'/messages');
-   const box=boxes.get(id);if(box)box.messages=messages||[];
+   const box=boxes.get(id);if(box){box.messages=messages||[];previewFetched.set(id,Date.now())}
    summarize(id);
   }));
  }
@@ -375,7 +381,7 @@
   if(!selected)return;
   const box=boxes.get(selected);if(!box)return;
   const messages=await api(boxPath(selected)+'/messages');
-  box.messages=messages||[];
+  box.messages=messages||[];previewFetched.set(box.id,Date.now());
   const signature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|');
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
@@ -853,21 +859,21 @@
   finally{pushBtn.disabled=false;renderPushState()}
  };
  navigator.serviceWorker?.addEventListener('message',event=>{
-  if(event.data?.type==='vmbox-push'){void refreshMessages();void loadBoxes()}
+  if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void loadBoxes(true)},250)}
   if(event.data?.type==='vmbox-open'&&event.data.url){const url=new URL(event.data.url,location.origin);if(url.hash!==location.hash)location.hash=url.hash}
  });
 
  /* ---------- polling ---------- */
  function schedule(){
   clearTimeout(boxTimer);clearTimeout(msgTimer);
-  boxTimer=setTimeout(tickBoxes,15000);
+  boxTimer=setTimeout(tickBoxes,30000);
   msgTimer=setTimeout(tickMessages,3000);
  }
- async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,15000)}
+ async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden&&selected)await refreshMessages()}catch{}msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(!document.hidden){void tickBoxes();void tickMessages()}});
- filterEl.addEventListener('input',renderRows);
- $('#refresh').onclick=async()=>{try{await loadBoxes();if(selected)await refreshMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages()}});
+ filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
+ $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
  /* ---------- auth ---------- */
  $('#login').onsubmit=async event=>{
@@ -875,14 +881,14 @@
   try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){$('#error').textContent=e.message}
  };
  $('#logout').onclick=async()=>{
-  clearTimeout(boxTimer);clearTimeout(msgTimer);
+  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);
   closeTakeover();
   inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
   for(const url of imageURLs.values())URL.revokeObjectURL(url);imageURLs.clear();
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
-  avatarCache.clear();headerAvatarKey='';
+  avatarCache.clear();previewFetched.clear();headerAvatarKey='';
   for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();
   selected='';lastSignature='';appEl.classList.remove('in-chat');
@@ -900,7 +906,7 @@
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
- addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url)});
+ addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url)});
 
  /* ---------- instruction presets, box instructions, imported profiles ---------- */
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
