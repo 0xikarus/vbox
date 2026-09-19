@@ -58,6 +58,35 @@ func TestWorkspaceRuntimeInstallationIsBounded(t *testing.T) {
 	}
 }
 
+func TestWorkspaceRuntimeRecoversAmbiguousUploadWhenInstalledRuntimeMatches(t *testing.T) {
+	runtime := []byte("current-runtime")
+	digest := fmt.Sprintf("%x", sha256.Sum256(runtime))
+	var calls int
+	err := stageWorkspaceRuntimeWithExec(context.Background(), runtime, func(_ context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+		calls++
+		switch calls {
+		case 1:
+			if options.Stdin == nil || len(argv) < 2 || argv[1] != "put-file" {
+				return provider.ExecResult{}, fmt.Errorf("first call was not the upload: %v", argv)
+			}
+			return provider.ExecResult{}, io.ErrUnexpectedEOF
+		case 2:
+			if options.Stdin != nil || len(argv) < 2 || argv[0] != "sh" || argv[len(argv)-1] != digest {
+				return provider.ExecResult{}, fmt.Errorf("second call was not installed-runtime verification: %v", argv)
+			}
+			return provider.ExecResult{Stdout: "ok\n"}, nil
+		default:
+			return provider.ExecResult{}, fmt.Errorf("unexpected call %d: %v", calls, argv)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls=%d want=2", calls)
+	}
+}
+
 func (p *recordingProvider) Inspect(context.Context, string) (provider.Box, error) {
 	p.operations = append(p.operations, "inspect")
 	if p.inspectErr != nil {
