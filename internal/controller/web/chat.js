@@ -746,6 +746,7 @@
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
   const follow=stickToBottom;
   messagesEl.replaceChildren();
+  messagesEl.dataset.box=box.id;
   if(box.hasOlder){const older=document.createElement('button');older.type='button';older.className='load-older';older.textContent=box.historyLoading?'Loading older messages…':'Load older messages';older.disabled=!!box.historyLoading;older.onclick=()=>void loadOlderMessages(box.id);messagesEl.append(older)}
   let day='';
   for(const message of box.messages||[]){
@@ -899,6 +900,9 @@
  }
  async function openBox(id){
   if(!boxes.has(id))return;
+  // Never show one box's transcript while another is loading: drop the old
+  // messages (and any floating preview) before the new history arrives.
+  if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();messagesEl.dataset.box=id;hideTvPreview()}
   selected=id;lastSignature='';
   followMessages();
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;
@@ -960,20 +964,29 @@
   const send=$('#send');send.disabled=true;
   const showPending=(box.defaultAgent||'shell')!=='shell'&&!/^\/silent(?:\s|$)/.test(text);
   const pendingAt=performance.now();
+  // Clear the composer the moment the message is handed off so typing can
+  // continue immediately. The text and drafts are restored if the send fails.
+  inputEl.value='';grow();
+  const sentDrafts=drafts;drafts=[];renderDrafts();
   // Delivery can finish after a fast MCP reply, so show the outgoing message
   // and existing processing state while the synchronous POST is in flight.
   if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
   let settled=false;
   try{
    const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images});
-   inputEl.value='';grow();for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
+   for(const d of sentDrafts)URL.revokeObjectURL(d.url);
+   pendingKey='';pendingFingerprint='';
    statusEl.textContent=result?.message?.state==='silent'?'Note saved without waking the agent.':'';
    if(showPending&&result?.message?.state!=='silent')await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(performance.now()-pendingAt))));
    pendingSends.delete(boxID);
    if(selected===boxID)await refreshMessages(true);
    else{summarize(boxID);renderRows()}
    settled=true;
-  }catch(e){statusEl.textContent=e.message}
+  }catch(e){
+   statusEl.textContent=e.message;
+   if(!inputEl.value)inputEl.value=text;
+   if(!drafts.length){drafts=sentDrafts;renderDrafts();grow()}
+  }
   finally{
    if(pendingSends.delete(boxID)||(showPending&&!settled)){
     summarize(boxID);
@@ -1438,7 +1451,7 @@
   for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
   for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
-  boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();
+  boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;
   selected='';lastSignature='';appEl.classList.remove('in-chat');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
  };
