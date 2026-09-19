@@ -75,6 +75,9 @@ table.markets tr.row:hover{background:#fafafa}
 #box-list th:nth-child(6){width:19%}
 #box-list td select{width:100%}
 #box-list td .linkbtn{display:inline-block;margin:0 8px 2px 0}
+#box-list td:last-child{min-width:9rem}
+#box-list .restart-action{vertical-align:middle;padding:2px 4px;text-decoration:none}
+#box-list .restart-action svg{display:block}
 
 /* dialogs */
 .modal{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center}

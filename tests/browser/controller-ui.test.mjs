@@ -261,13 +261,14 @@ test('box actions follow state: no resume while creating, resume on failure',asy
  await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
  await page.close();
 });
-test('cost overview loads on demand and reports partial provider coverage',async()=>{
- const page=await browser.newPage();const before=requests.filter(r=>r.path==='/v1/fleet/costs').length;
- await page.goto(base+'/#costs');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#costs:not([hidden])',{visible:true});
- assert.equal(requests.filter(r=>r.path==='/v1/fleet/costs').length,before);assert.match(await page.$eval('#cost-overview',n=>n.textContent),/not been loaded/);
- await page.click('#load-costs');await page.waitForFunction(()=>document.querySelector('#cost-overview').textContent.includes('1 of 2 slots reported'));
- const text=await page.$eval('#cost-overview',n=>n.textContent);assert.match(text,/1\.23/);assert.match(text,/helper ü/);assert.match(text,/Project token cannot read billing/);
- assert.equal(requests.filter(r=>r.path==='/v1/fleet/costs').length,before+1);await page.screenshot({path:'/tmp/vmbox-cost-overview.png',fullPage:true});await page.close();
+test('controller omits costs and renders compact box actions',async()=>{
+ const page=await browser.newPage();await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"]');
+ assert.equal(await page.$('a[href="#costs"],#costs'),null);
+ const actions=await page.$eval('[data-box-id="box-1"] td:last-child',cell=>({text:cell.textContent,labels:[...cell.querySelectorAll('button')].map(button=>button.getAttribute('aria-label')),restart:cell.querySelector('.restart-action')?.innerHTML}));
+ assert.equal(actions.text.includes('Re-sync'),false);
+ assert(actions.labels.includes('Restart box helper ü'));
+ assert.match(actions.restart,/svg/);
+ await page.close();
 });
 test('box link opens separate mobile workspace and reuses shell',async()=>{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
