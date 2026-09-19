@@ -1,24 +1,29 @@
 <!doctype html>
-<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<html lang="en" data-variant="A">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>vmbox chats</title>
-<meta name="theme-color" content="#075e54">
+<meta name="theme-color" content="#f7f4e8">
 <link rel="icon" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
-<link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/xterm.css"><link rel="stylesheet" href="/chat.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/xterm.css">
+<link rel="stylesheet" href="/chat.css">
+</head>
+<body>
 <div id="chat-shell">
 
 <header id="chat-top">
- <strong>vmbox chats</strong>
- <nav><a href="/">Controller</a> · <a href="/grid">Grid</a></nav>
+ <button id="chat-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
+ <strong class="brand">vmbox <span>chats</span></strong>
  <span class="spacer"></span>
- <button id="presets-toggle" type="button" hidden title="Instruction presets">Presets</button>
- <button id="push-toggle" type="button" hidden>Enable notifications</button>
- <button id="refresh" type="button" title="Refresh chats">Refresh</button>
- <button id="logout" type="button" hidden>Log out</button>
+ <button id="refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
 </header>
 
 <form id="login" hidden>
  <section class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+  <div id="login-mascot" class="mascot-host" aria-hidden="true"></div>
   <h2 id="login-title">Log in to vmbox</h2>
   <p>Enter your controller token to continue.</p>
   <label>Controller token <input name="token" type="password" autocomplete="current-password" required autofocus></label>
@@ -29,17 +34,25 @@
 
 <div id="chat-app" hidden>
  <aside id="chat-list">
-  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search boxes…" autocomplete="off"></div>
+  <div id="chat-list-head">
+   <div>
+    <h1>Chats</h1>
+    <p id="chat-list-sub">One chat per agent box</p>
+   </div>
+   <div id="list-mascot" class="mascot-host" aria-hidden="true"></div>
+  </div>
+  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search boxes…" autocomplete="off" aria-label="Search boxes"></div>
   <ul id="chat-entries"></ul>
   <p id="chat-list-empty" hidden>No interactive boxes yet. Create one with the + button below.</p>
   <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
  </aside>
  <main id="chat-main">
   <section id="chat-empty">
-   <div>
+   <div id="chat-empty-mascot" class="mascot-host" aria-hidden="true"></div>
+   <div class="empty-copy">
     <h2>vmbox agent chats</h2>
-    <p>One chat per agent box. Pick a box on the left to read its history, steer the agent, or forward messages between boxes.</p>
-    <p>Avatars show a live desktop preview while a box is running.</p>
+    <p>One chat per agent box. Pick a box to read its history, steer the agent, or forward messages between boxes.</p>
+    <p class="hint">Avatars show a live desktop preview while a box is running.</p>
    </div>
   </section>
   <section id="chat-conversation" hidden>
@@ -47,8 +60,9 @@
     <button id="chat-back" type="button" aria-label="Back to chat list">‹</button>
     <span id="chat-header-avatar"></span>
     <div id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></div>
+    <span id="chat-companion" class="mascot-host" aria-hidden="true"></span>
     <span class="spacer"></span>
-    <button id="chat-clear-context" type="button" title="Start a new agent context in this chat session">Clear context</button>
+    <button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session">Clear</button>
     <button id="chat-control" type="button" title="Take control: Desktop or TMUX in a popup">Control</button>
     <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false">Details</button>
     <a id="chat-workspace" href="#">Workspace</a>
@@ -70,9 +84,9 @@
    <div id="chat-messages" aria-live="polite"></div>
    <div id="chat-image-drafts" hidden></div>
    <form id="chat-composer" autocomplete="off">
-    <button id="attach" type="button" title="Attach images" aria-label="Attach images">+</button>
+    <button id="attach" type="button" title="Attach images" aria-label="Attach images">＋</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif" multiple hidden>
-    <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message"></textarea>
+    <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
     <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
     <button id="send" type="submit" title="Send" aria-label="Send">➤</button>
    </form>
@@ -167,9 +181,49 @@
   <p id="preset-status" role="status"></p>
  </section></div>
 
+<div id="chat-menu-sheet" class="sheet" hidden>
+ <div class="sheet-backdrop" data-close="chat-menu-sheet"></div>
+ <section class="sheet-card menu-card" role="dialog" aria-modal="true">
+  <header><strong>vmbox chats</strong><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
+  <div class="menu-links">
+   <a href="/">Controller</a>
+   <a href="/grid">Grid</a>
+   <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
+   <button id="push-toggle" type="button" hidden>Enable notifications</button>
+   <button id="logout" type="button" hidden>Log out</button>
+  </div>
+  <div class="menu-theme">
+   <p class="hint">The daylight look is derived from a seed. Every seed grows different colours, shapes and a different mascot.</p>
+   <div class="seedrow">
+    <input id="variant-seed" spellcheck="false" aria-label="Look seed" maxlength="32">
+    <button id="variant-dice" type="button" title="Roll a new seed">🎲</button>
+   </div>
+  </div>
+ </section>
+</div>
+
 <div id="row-menu" hidden role="menu"></div>
 
 <div id="forward-menu" hidden role="menu"></div>
 <div id="chat-toasts" aria-live="polite"></div>
 
-</div><script src="/markdown.js" defer></script><script src="/model-picker.js" defer></script><script src="/xterm.js" defer></script><script src="/xterm-fit.js" defer></script><script src="/workspace-terminal.js" defer></script><script src="/novnc.js" defer></script><script src="/workspace-desktop.js" defer></script><script src="/chat.js" defer></script></html>
+<div id="media-viewer" hidden>
+ <div id="media-viewer-backdrop"></div>
+ <section id="media-viewer-card" role="dialog" aria-modal="true" aria-labelledby="media-viewer-title">
+  <header><strong id="media-viewer-title">Attachment</strong><span class="spacer"></span><button id="media-viewer-close" type="button" aria-label="Close media viewer">×</button></header>
+  <div id="media-viewer-body"></div>
+  <a id="media-viewer-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open original in a new tab</a>
+ </section>
+</div>
+
+</div>
+<script src="/markdown.js" defer></script>
+<script src="/model-picker.js" defer></script>
+<script src="/xterm.js" defer></script>
+<script src="/xterm-fit.js" defer></script>
+<script src="/workspace-terminal.js" defer></script>
+<script src="/novnc.js" defer></script>
+<script src="/workspace-desktop.js" defer></script>
+<script src="/chat.js" defer></script>
+</body>
+</html>

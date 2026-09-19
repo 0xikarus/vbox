@@ -106,6 +106,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'processing must end when the agent reply appears');
   await p.type('#chat-input','Quick check');
   await p.click('#send');
+  assert.equal(await p.$eval('#chat-input',element=>element.value),'','the composer must clear as soon as a message is sent');
   await p.waitForFunction(()=>!!document.querySelector('#chat-messages .msg.processing'),{timeout:400});
   assert.deepEqual(await p.$$eval('#chat-messages .msg',rows=>rows.slice(-2).map(row=>({kind:row.classList.contains('user')?'user':'processing',text:row.textContent.includes('Quick check')?'Quick check':''}))),[{kind:'user',text:'Quick check'},{kind:'processing',text:''}]);
   await p.waitForFunction(()=>[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Quick answer'),{timeout:5000});
