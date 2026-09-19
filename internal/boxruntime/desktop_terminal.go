@@ -143,7 +143,7 @@ func RunDesktopTerminal(ctx context.Context, root, assignment, id, incarnation s
 		return err
 	}
 	defer unix.Flock(int(lock.Fd()), unix.LOCK_UN)
-	cmd := exec.CommandContext(ctx, "xterm", "-T", "vmbox managed session", "-geometry", "100x28-24+24", "-fa", "DejaVu Sans Mono", "-fs", "13", "-bg", "#300a24", "-fg", "#eeeeec", "-cr", "#f07746", "-e", "vmbox-runtime", "desktop-terminal-attach", assignment, id, incarnation)
+	cmd := exec.CommandContext(ctx, "xterm", "-T", "vmbox managed session", "-geometry", "72x22-24+24", "-fa", "DejaVu Sans Mono", "-fs", "13", "-bg", "#300a24", "-fg", "#eeeeec", "-cr", "#f07746", "-e", "vmbox-runtime", "desktop-terminal-attach", assignment, id, incarnation)
 	cmd.Env = append(os.Environ(), "DISPLAY="+DesktopDisplay())
 	if err := cmd.Start(); err != nil {
 		return err
