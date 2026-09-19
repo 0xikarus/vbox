@@ -34,7 +34,13 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    if(req.url.includes('thumbnail=true')){res.statusCode=409;return res.end(JSON.stringify({error:'thumbnail offline'}))}
    fullDesktopShots++;res.setHeader('Content-Type','image/png');return res.end(thumbnail);
   }
-  if(path==='/v1/logical-boxes/builder/messages')return res.end(JSON.stringify(builderMessages));
+  if(path==='/v1/logical-boxes/builder/messages'&&method==='GET')return res.end(JSON.stringify(builderMessages));
+  if(path==='/v1/logical-boxes/builder/messages'&&method==='POST'){
+   await new Promise(resolve=>setTimeout(resolve,600));
+   const now=new Date().toISOString();
+   builderMessages=[...builderMessages,{id:'m4',direction:'user',state:'delivered',text:'Quick check',createdAt:now,updatedAt:now},{id:'m5',direction:'agent',state:'delivered',text:'Quick answer',createdAt:now,updatedAt:now}];
+   return res.end(JSON.stringify({message:{state:'delivered'}}));
+  }
   if(path==='/v1/logical-boxes/reviewer/sessions/interactive'&&method==='POST')return res.end(JSON.stringify({session:'codex-reviewer'}));
   if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
@@ -79,6 +85,12 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('[data-box-id="builder"]',element=>element.click());
   await p.waitForFunction(()=>document.querySelector('#chat-messages .msg.agent .text')?.textContent==='Done.'||[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Done.'),{timeout:1500});
   assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'processing must end when the agent reply appears');
+  await p.type('#chat-input','Quick check');
+  await p.click('#send');
+  await p.waitForFunction(()=>!!document.querySelector('#chat-messages .msg.processing'),{timeout:400});
+  assert.deepEqual(await p.$$eval('#chat-messages .msg',rows=>rows.slice(-2).map(row=>({kind:row.classList.contains('user')?'user':'processing',text:row.textContent.includes('Quick check')?'Quick check':''}))),[{kind:'user',text:'Quick check'},{kind:'processing',text:''}]);
+  await p.waitForFunction(()=>[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Quick answer'),{timeout:5000});
+  assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'fast replies must clear the in-flight indicator');
   const beforeListRefresh=requests.filter(r=>r==='GET /v1/grid-boxes').length;
   await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
   await new Promise(resolve=>setTimeout(resolve,650));
