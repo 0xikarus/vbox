@@ -179,18 +179,26 @@ func (s *Server) completeLogicalBoxDelete(ctx context.Context, p Principal, a fl
 			if attached.ID != storage.ID {
 				return fmt.Errorf("slot has another volume attached; deletion refused")
 			}
-			if err := phase("delete-saving-workspace"); err != nil {
-				return err
-			}
-			if err := stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime); err != nil {
-				return err
-			}
-			prepared, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
-			if err != nil {
-				return fmt.Errorf("stop workload and flush: %w", err)
-			}
-			if prepared.ExitCode != 0 {
-				return fmt.Errorf("workspace flush failed; deletion stopped")
+			// A shared worker's detach stops only this workspace's UID-owned
+			// processes before releasing its slot. Deletion discards the volume,
+			// so uploading a workspace runtime and saving a hibernation snapshot
+			// is unnecessary and can strand deletion when the worker is busy.
+			// Dedicated providers still need the in-workspace stop and flush
+			// before their external volume detach.
+			if prov.Name() != "shared-worker" {
+				if err := phase("delete-saving-workspace"); err != nil {
+					return err
+				}
+				if err := stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime); err != nil {
+					return err
+				}
+				prepared, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "prepare-hibernate"}, provider.ExecOptions{})
+				if err != nil {
+					return fmt.Errorf("stop workload and flush: %w", err)
+				}
+				if prepared.ExitCode != 0 {
+					return fmt.Errorf("workspace flush failed; deletion stopped")
+				}
 			}
 			if err := phase("delete-detaching-volume"); err != nil {
 				return err
