@@ -11,7 +11,14 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 #chat-top button:hover{background:rgba(255,255,255,.25)}
 #chat-top button.on{background:#25d366;color:#0b141a}
 #chat-shell>#error{margin:0;padding:.3rem .9rem;background:#fef3c7;color:#7c2d12}
-#login{margin:2rem auto;background:#fff;padding:1.2rem;border-radius:.6rem;max-width:22rem}
+#login{position:fixed;inset:0;z-index:100;margin:0;display:flex;align-items:center;justify-content:center;padding:1rem;background:rgba(11,20,26,.7)}
+#login .login-card{width:min(25rem,100%);padding:1.4rem;background:#fff;border-radius:.8rem;box-shadow:0 1rem 3rem rgba(0,0,0,.4)}
+#login h2{margin:0;font-size:1.2rem;color:#111b21}
+#login p{margin:.35rem 0 1rem;color:#54656f;font-size:.85rem}
+#login label{display:block;font-size:.85rem;color:#54656f}
+#login input{display:block;width:100%;margin:.3rem 0 1rem;padding:.6rem .7rem;border:1px solid #b8c6ca;border-radius:.45rem;font:inherit}
+#login button{width:100%;border:0;border-radius:.45rem;padding:.65rem;background:#008e76;color:#fff;font:inherit;font-weight:600;cursor:pointer}
+#login button:focus-visible,#login input:focus-visible{outline:2px solid #075e54;outline-offset:2px}
 
 #chat-app{flex:1;display:flex;min-height:0}
 #chat-list{flex:0 0 30%;min-width:17rem;max-width:26rem;display:flex;flex-direction:column;background:#fff;border-right:1px solid #d1d7db;min-height:0}

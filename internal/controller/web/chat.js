@@ -13,7 +13,7 @@
 
  async function api(path,method='GET',headers={},body,timeout=60000){
   let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
-  if(r.status===401){$('#login').hidden=false;throw Error('Please log in to the controller.')}
+  if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   return r.status===204?null:r.json();
  }
@@ -898,7 +898,7 @@
    const id=new URLSearchParams(location.hash.slice(1)).get('box');
    if(id&&boxes.has(id))await openBox(id);
    schedule();renderPushState();void syncPushSubscription();
-  }catch(e){$('#error').textContent=e.message;$('#login').hidden=false}
+  }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
  addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url)});
 
