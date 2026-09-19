@@ -70,6 +70,10 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.deepEqual(loginLayout,{position:'fixed',z:100,card:true,modal:'true'});
   await p.evaluate(()=>{document.querySelector('#login').hidden=true});
   await p.evaluate(()=>document.activeElement?.blur());
+  const beforeListRefresh=requests.filter(r=>r==='GET /v1/grid-boxes').length;
+  await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
+  await new Promise(resolve=>setTimeout(resolve,650));
+  assert.equal(requests.filter(r=>r==='GET /v1/grid-boxes').length,beforeListRefresh+1,'push burst should fetch the list once');
   for(const selector of ['#chat-entries [data-avatar="builder"]','#chat-header-avatar [data-avatar="builder"]']){
    await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');
@@ -78,7 +82,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),true,selector+' did not close the desktop preview');
   }
   assert.equal(fullDesktopShots>0,true);
-  await p.click('#chat-entries [data-avatar="reviewer"]');
+  await p.$eval('#chat-entries [data-avatar="reviewer"]',element=>element.click());
   await p.waitForFunction(()=>!document.querySelector('#takeover').hidden&&document.querySelector('[data-box-id="reviewer"]').classList.contains('active'),{timeout:5000});
   assert.equal(new URL(p.url()).hash,'#box=reviewer');
   assert.equal(await p.$eval('#takeover-tabs [data-kind="desktop"]',button=>button.classList.contains('on')),true);
