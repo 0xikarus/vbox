@@ -17,6 +17,21 @@ func pendingVolume(id string) bool { return strings.HasPrefix(id, "pending:") }
 const stagedRuntimePath = "/data/home/bin/.vmbox-runtime-staged"
 const workspaceRuntimePath = "/data/home/bin/vmbox-runtime"
 
+const verifyWorkspaceRuntime = `set -eu
+installed="$1"
+expected="$2"
+test -x "$installed"
+test "$(sha256sum "$installed" | cut -d " " -f 1)" = "$expected"
+exec "$installed" health`
+
+func installedWorkspaceRuntimeMatches(ctx context.Context, digest string, execute func(context.Context, []string, provider.ExecOptions) (provider.ExecResult, error)) (bool, error) {
+	verified, err := execute(ctx, []string{"sh", "-c", verifyWorkspaceRuntime, "vmbox-verify-installed-runtime", workspaceRuntimePath, digest}, provider.ExecOptions{})
+	if err != nil {
+		return false, err
+	}
+	return verified.ExitCode == 0 && strings.TrimSpace(verified.Stdout) == "ok", nil
+}
+
 // stageWorkspaceRuntime keeps a retained volume on the same runtime revision
 // as its controller. The audited base image remains immutable; the current,
 // credential-free binary is streamed with mode 0600 over the selected transport, then verified and
@@ -38,6 +53,12 @@ func stageWorkspaceRuntimeWithExec(ctx context.Context, runtime []byte, execute 
 	digest := fmt.Sprintf("%x", sha256.Sum256(runtime))
 	uploaded, err := execute(ctx, []string{"/usr/local/bin/vmbox-runtime", "put-file", stagedRuntimePath, "0600"}, provider.ExecOptions{Stdin: bytes.NewReader(runtime)})
 	if err != nil {
+		// A previous attempt can finish the atomic install but lose the
+		// transport's final exit frame. Accept this ambiguous result only after
+		// independently proving the installed bytes and their health.
+		if matches, _ := installedWorkspaceRuntimeMatches(ctx, digest, execute); matches {
+			return nil
+		}
 		return fmt.Errorf("stream matching workspace runtime: %w", err)
 	}
 	if uploaded.ExitCode != 0 || strings.TrimSpace(uploaded.Stdout) != digest {
@@ -53,6 +74,9 @@ mv -f -- "$staged" "$installed"
 exec "$installed" health`
 	installed, err := execute(ctx, []string{"sh", "-c", install, "vmbox-install-runtime", stagedRuntimePath, workspaceRuntimePath, digest}, provider.ExecOptions{})
 	if err != nil {
+		if matches, _ := installedWorkspaceRuntimeMatches(ctx, digest, execute); matches {
+			return nil
+		}
 		return fmt.Errorf("install matching workspace runtime: %w", err)
 	}
 	if installed.ExitCode != 0 || strings.TrimSpace(installed.Stdout) != "ok" {
