@@ -108,6 +108,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   official Linux x64 Blender 5.1.2 archive and its SHA-256 in
   `internal/boxruntime/blender_release.go`; the common worker image bundles the
   binary and MCP package under `/opt/vmbox`, linked into each tagged box's home.
+  The image omits Blender's two static embedded-Python link archives; these are
+  build-time artifacts, not needed to run Blender or its Python API. Verify a
+  candidate image with `bash tests/worker-blender-runtime-image.sh IMAGE`.
   Older dedicated images retain the per-home verified download fallback; shared
   workers require the bundled image. Shared MCP listeners use the workspace UID
   as a stable loopback port, and both the add-on and client use that port.

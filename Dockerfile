@@ -75,6 +75,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://download.blender.org/release/Blender5.1/blender-5.1.2-linux-x64.tar.xz -o /tmp/blender.tar.xz \
     && echo 'aaccb355f50183979b698bcce7467103a76261b5fa59f4972295842662a285fb  /tmp/blender.tar.xz' | sha256sum -c - \
     && tar -xJf /tmp/blender.tar.xz --strip-components=1 -C /opt/vmbox/blender-5.1.2 \
+    && rm /opt/vmbox/blender-5.1.2/5.1/python/lib/libpython3.13.a \
+          /opt/vmbox/blender-5.1.2/5.1/python/lib/python3.13/config-3.13-x86_64-linux-gnu/libpython3.13.a \
     && rm /tmp/blender.tar.xz \
     && /opt/vmbox/blender-5.1.2/blender --version | head -1 | grep -Fx 'Blender 5.1.2' \
     && python3 -m venv /opt/vmbox/blender-mcp-1.9.1 \
