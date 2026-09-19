@@ -105,6 +105,17 @@ async function restartBox(b){
 // Box states that are still moving; only show an action the state can satisfy.
 const TRANSIENT_STATES=new Set(['reserved','attaching','hibernating','draining','deleting']);
 function boxPhase(state){if(state==='running')return 'running';if(state==='failed')return 'failed';if(state==='reserved'||state==='attaching')return 'creating';if(state==='deleting')return 'deleting';if(state==='hibernating'||state==='draining')return 'transitioning';return 'stopped'}
+async function deleteBoxWhenReady(box,onWait){
+ const deadline=Date.now()+5*60*1000;
+ for(;;){
+  try{return await api(bp(box.id)+'/volume','DELETE',{confirmation:box.name})}
+  catch(err){
+   if(Date.now()>=deadline||!/creation is still active|cannot transition from (?:attaching|reserved)|has not released its compute claim|workspace flush is active/i.test(err.message))throw err;
+   onWait?.();
+   await new Promise(resolve=>setTimeout(resolve,1500));
+  }
+ }
+}
 // Restore same-tab navigation without storing credentials in JavaScript storage.
 async function restoreLogin(){try{await api('/v1/browser-session');await refresh();$('#login').hidden=true;$('#app').hidden=false}catch{}}
 window.addEventListener('DOMContentLoaded',restoreLogin);
@@ -193,10 +204,9 @@ function renderBoxes(boxes){
   const remove=trashButton('Delete box '+b.name,async()=>{
    if(deletingBoxes.has(b.id)||!confirm('Delete box "'+b.name+'" and its workspace volume? Running processes will stop and all files in the volume will be permanently deleted. This cannot be undone. Shared fleet services and other boxes are kept.'))return;
    const version=epoch;deletingBoxes.add(b.id);remove.disabled=true;remove.title='requesting deletion…';
-   try{await api(bp(b.id)+'/volume','DELETE',{confirmation:b.name});const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}
-   catch(err){if(version===epoch){remove.disabled=false;remove.title=remove.getAttribute('aria-label');throw err}}
-   finally{deletingBoxes.delete(b.id)}
-  });remove.disabled=TRANSIENT_STATES.has(b.state)||deletingBoxes.has(b.id);actions.prepend(remove);
+   try{await deleteBoxWhenReady(b,()=>notice('Waiting for '+b.name+' to finish its current setup step before deleting…'));notice('Deleting '+b.name+'…')}
+   finally{deletingBoxes.delete(b.id);try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch{if(version===epoch)remove.disabled=false}}
+  });remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.prepend(remove);
   const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));row.append(name,status,placement,cell,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
