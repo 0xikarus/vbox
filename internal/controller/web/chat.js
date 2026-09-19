@@ -2,7 +2,7 @@
 (()=>{
  const $=s=>document.querySelector(s);
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle');
- const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set();
+ const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true;
  const previewFetched=new Map();let boxesPending=null;
  let drafts=[],pendingKey='',pendingFingerprint='';
@@ -127,7 +127,9 @@
   box.streaming=ms.some(m=>m.state==='streaming');
   const agent=(box.defaultAgent||'').toLowerCase();
   const last=box.last;
-  box.processing=agent!=='shell'&&!box.streaming&&last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000;
+  const pending=pendingSends.get(id);
+  const replyDuringSend=pending&&ms.slice(pending.messageCount).some(m=>m.direction==='agent');
+  box.processing=agent!=='shell'&&!box.streaming&&((pending&&!replyDuringSend)||(last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000));
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=ms.filter(m=>m.direction!=='user'&&new Date(m.createdAt).getTime()>marker).length;
  }
@@ -279,7 +281,12 @@
    if(label!==day){day=label;const sep=document.createElement('div');sep.className='day-sep';sep.textContent=day;messagesEl.append(sep)}
    messagesEl.append(bubble(box,message));
   }
-  if(!(box.messages||[]).length){const hint=document.createElement('p');hint.className='day-sep';hint.textContent='No messages yet — say hello to '+box.name;messagesEl.append(hint)}
+  const pending=pendingSends.get(box.id);
+  if(pending&&!(box.messages||[]).slice(pending.messageCount).some(m=>m.direction==='user'&&m.text===pending.text)){
+   const row=bubble(box,{id:'pending',direction:'user',state:'delivering',text:pending.text||'📷 Image',createdAt:pending.at,images:[]});
+   row.querySelector('.fwd')?.remove();messagesEl.append(row);
+  }
+  if(!(box.messages||[]).length&&!pending){const hint=document.createElement('p');hint.className='day-sep';hint.textContent='No messages yet — say hello to '+box.name;messagesEl.append(hint)}
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
    const dots=document.createElement('span');dots.className='typing-dots';
@@ -445,18 +452,36 @@
  composer.onsubmit=async event=>{
   event.preventDefault();
   if(!selected)return;
+  const boxID=selected,box=boxes.get(boxID);
   const text=inputEl.value,images=drafts.map(({id,number})=>({id,number}));
   if(!text.trim()&&!images.length)return;
   const fingerprint=text+'\n'+images.map(i=>i.id).join(',');
   if(fingerprint!==pendingFingerprint||!pendingKey){pendingKey=crypto.randomUUID();pendingFingerprint=fingerprint}
   const send=$('#send');send.disabled=true;
+  const showPending=(box.defaultAgent||'shell')!=='shell'&&!/^\/silent(?:\s|$)/.test(text);
+  const pendingAt=performance.now();
+  // Delivery can finish after a fast MCP reply, so show the outgoing message
+  // and existing processing state while the synchronous POST is in flight.
+  if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
+  let settled=false;
   try{
-   const result=await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images});
+   const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images});
    inputEl.value='';grow();for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
    statusEl.textContent=result?.message?.state==='silent'?'Note saved without waking the agent.':'';
-   await refreshMessages(true);
+   if(showPending&&result?.message?.state!=='silent')await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(performance.now()-pendingAt))));
+   pendingSends.delete(boxID);
+   if(selected===boxID)await refreshMessages(true);
+   else{summarize(boxID);renderRows()}
+   settled=true;
   }catch(e){statusEl.textContent=e.message}
-  finally{send.disabled=false}
+  finally{
+   if(pendingSends.delete(boxID)||(showPending&&!settled)){
+    summarize(boxID);
+    if(selected===boxID){renderHeader();renderMessages(box)}
+    renderRows();
+   }
+   send.disabled=false;
+  }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
  addEventListener('hashchange',()=>{const id=new URLSearchParams(location.hash.slice(1)).get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id)});
