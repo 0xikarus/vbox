@@ -147,6 +147,16 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   edits the graph at `/v1/logical-boxes/{id}/contacts` and `/protection`; the
   workspace page and the chat Details drawer are only editors. Entry points:
   `internal/controller/contacts.go`, `internal/boxruntime/contacts.go`.
+- The chat PWA is mobile-first: a single-column app shell with push navigation
+  on phones and a two-pane view from 900px. Its two visual variants (A daylight,
+  B midnight) are not hand-authored themes — each is generated at runtime from a
+  hex seed using the same blockies-style PRNG as the seeded emoji mascot, and
+  drives palette, radii, type and motion. Message bodies render through the
+  injection-safe `markdown.js` (headings, lists, code, quotes, links) with bare
+  URLs still linkified. The mascot's six-mood state machine is wired to real
+  chat signals: a per-box companion and avatar mascots animate working, waiting,
+  happy and angry states. Screenshots live in
+  `docs/chat-ui/screenshots/mobile-first/`.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
