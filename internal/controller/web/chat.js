@@ -275,6 +275,7 @@
   hideTvPreview();
   const follow=stickToBottom;
   messagesEl.replaceChildren();
+  if(box.hasOlder){const older=document.createElement('button');older.type='button';older.className='load-older';older.textContent=box.historyLoading?'Loading older messages…':'Load older messages';older.disabled=!!box.historyLoading;older.onclick=()=>void loadOlderMessages(box.id);messagesEl.append(older)}
   let day='';
   for(const message of box.messages||[]){
    const label=dayLabel(message.createdAt);
@@ -351,7 +352,7 @@
  async function fetchBoxes(force){
   const values=await api(owner?'/v1/grid-boxes':'/v1/logical-boxes');
   const current=new Map();const alive=new Set();
-  for(const b of values||[]){alive.add(b.id);current.set(b.id,{...b,messages:boxes.get(b.id)?.messages||[]})}
+  for(const b of values||[]){const old=boxes.get(b.id);alive.add(b.id);current.set(b.id,Object.assign(old||{messages:[],historyLoaded:false,hasOlder:false,historyLoading:false},b))}
   for(const id of [...boxes.keys()])if(!alive.has(id)){const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id)}
   for(const [id,b] of current)boxes.set(id,b);
   if(selected&&!boxes.has(selected)){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
@@ -363,8 +364,8 @@
   await Promise.allSettled([...boxes.keys()].map(async id=>{
    if(id===selected)return;// open conversation refreshes itself
    if(!force&&Date.now()-(previewFetched.get(id)||0)<30000)return;
-   const messages=await api(boxPath(id)+'/messages');
-   const box=boxes.get(id);if(box){box.messages=messages||[];previewFetched.set(id,Date.now())}
+   const messages=await api(boxPath(id)+'/messages?limit=20');
+   const box=boxes.get(id);if(box){box.messages=messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now())}
    summarize(id);
   }));
  }
@@ -386,9 +387,16 @@
  }
  async function refreshMessages(force){
   if(!selected)return;
-  const box=boxes.get(selected);if(!box)return;
-  const messages=await api(boxPath(selected)+'/messages');
-  box.messages=messages||[];previewFetched.set(box.id,Date.now());
+  const id=selected,box=boxes.get(id);if(!box)return;
+  const messages=await api(boxPath(id)+'/messages?limit=50');
+  if(selected!==id||boxes.get(id)!==box)return;
+  const latest=messages||[];
+  if(box.historyLoaded){
+   const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
+   for(const message of latest)merged.set(message.id,message);
+   box.messages=[...merged.values()].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)||a.id.localeCompare(b.id));
+  }else{box.messages=latest;box.historyLoaded=true;box.hasOlder=latest.length===50}
+  previewFetched.set(box.id,Date.now());
   // The processing bubble must use the state of this response, not the
   // previous poll's state (which can leave it beneath an agent reply).
   applySeen(selected);
@@ -396,6 +404,21 @@
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
   renderRows();renderInspect();
+ }
+ async function loadOlderMessages(id){
+  const box=boxes.get(id);if(!box||selected!==id||!box.hasOlder||box.historyLoading||!box.messages?.length)return;
+  const oldest=box.messages[0],height=messagesEl.scrollHeight,top=messagesEl.scrollTop;
+  box.historyLoading=true;renderMessages(box);
+  try{
+   const query='?limit=50&before='+encodeURIComponent(oldest.createdAt)+'&beforeId='+encodeURIComponent(oldest.id);
+   const older=await api(boxPath(id)+'/messages'+query);
+   if(selected!==id||boxes.get(id)!==box)return;
+   const existing=new Set(box.messages.map(message=>message.id));
+   box.messages=[...(older||[]).filter(message=>!existing.has(message.id)),...box.messages];
+   box.hasOlder=(older||[]).length===50;
+   box.historyLoading=false;lastSignature='';renderMessages(box);
+   requestAnimationFrame(()=>{messagesEl.scrollTop=top+messagesEl.scrollHeight-height});
+  }catch(e){box.historyLoading=false;statusEl.textContent=e.message;renderMessages(box)}
  }
  async function openBox(id){
   if(!boxes.has(id))return;

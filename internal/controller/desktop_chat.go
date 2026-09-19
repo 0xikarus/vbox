@@ -6,12 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
+
+var historyMessageID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 func silentMessage(text string) (string, bool) {
 	if text == "/silent" {
@@ -36,6 +40,25 @@ func (s *Store) boxNote(ctx context.Context, p Principal, box, key string) (v1.B
 }
 
 func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Principal) {
+	limit := 500
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < 1 || parsed > 500 {
+			writeError(w, 400, fmt.Errorf("limit must be between 1 and 500"))
+			return
+		}
+		limit = parsed
+	}
+	var before, beforeID any
+	if raw := r.URL.Query().Get("before"); raw != "" || r.URL.Query().Get("beforeId") != "" {
+		parsed, err := time.Parse(time.RFC3339Nano, raw)
+		id := r.URL.Query().Get("beforeId")
+		if err != nil || !historyMessageID.MatchString(id) {
+			writeError(w, 400, fmt.Errorf("before and beforeId must identify a message"))
+			return
+		}
+		before, beforeID = parsed, id
+	}
 	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		writeError(w, 404, fmt.Errorf("box unavailable"))
@@ -47,7 +70,9 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id FROM (
  SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,'') FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2
  UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at,''::text,''::text FROM box_notes WHERE account_id=$1 AND box_id=$2
- ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id) ORDER BY created_at DESC LIMIT 500`, p.AccountID, box.ID)
+ ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id)
+ WHERE ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::text))
+ ORDER BY created_at DESC,id DESC LIMIT $5`, p.AccountID, box.ID, before, beforeID, limit)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("message history unavailable"))
 		return

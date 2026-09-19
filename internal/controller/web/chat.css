@@ -270,6 +270,8 @@ body{max-width:none;margin:0;padding:0;background:#0b141a;font:16px/1.45 system-
 
 .msg .text a{color:#027eb5;text-decoration:underline;word-break:break-word}
 .msg.user .text a{color:#0b6bb0}
+.load-older{display:block;margin:.45rem auto 1rem;padding:.4rem .8rem;border:1px solid #d1d7db;border-radius:1rem;background:#fff;color:#075e54;font:inherit;font-size:.82rem;cursor:pointer}
+.load-older:disabled{opacity:.6;cursor:wait}
 
 .msg.processing .tv-button{display:inline-flex;align-items:center;justify-content:center;background:none;border:0;padding:.15rem;margin-left:.1rem;color:#54656f;cursor:pointer;border-radius:.35rem}
 .msg.processing .tv-button:hover,.msg.processing .tv-button:focus-visible{background:#e9edef;color:#075e54}
