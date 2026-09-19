@@ -3,9 +3,10 @@ package v1
 import "time"
 
 type LoginProfileRef struct {
-	Application string `json:"application"`
-	Name        string `json:"name"`
-	Model       string `json:"model,omitempty"`
+	Application     string `json:"application"`
+	Name            string `json:"name"`
+	Model           string `json:"model,omitempty"`
+	ReasoningEffort string `json:"reasoningEffort,omitempty"`
 }
 
 // LoginProfile is public metadata. Credential bytes never appear in list responses.

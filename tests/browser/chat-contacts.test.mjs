@@ -156,6 +156,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   const claude=await p.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model));
   for(const model of ['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'])assert.ok(claude.includes(model),model+' is offered');
   await p.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.dataset.model==='haiku').click());
+  assert.equal(await p.$eval('dialog.model-picker-dialog .model-picker-effort',element=>element.disabled),true);
+  await p.click('dialog.model-picker-dialog .model-picker-apply');
   assert.equal(await p.$eval('#create-box input[name=agentModel]',input=>input.value),'haiku');
   await p.click('#create-box .model-picker-open');
   await p.keyboard.press('Escape');

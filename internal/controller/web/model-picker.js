@@ -22,12 +22,13 @@
  const make=(tag,className,text)=>{const element=document.createElement(tag);element.className=className;if(text!==undefined)element.textContent=text;return element};
  const normalize=values=>[...new Map((values||[]).map(value=>{
   const id=String(typeof value==='string'?value:value?.id||'').trim();
-  return [id,{id,label:String(typeof value==='string'?names[id]||id:value?.label||names[id]||id)}];
+  return [id,{id,label:String(typeof value==='string'?names[id]||id:value?.label||names[id]||id),reasoning:typeof value==='object'?value?.reasoning:undefined}];
  }).filter(([id])=>id)).values()];
  function optionsFor(application,profileModels=[]){return [...(suggested[application]||[]),...profileModels]}
  function create(input){
   input.type='hidden';input.required=false;
   const wrapper=make('span','model-picker');input.parentNode.insertBefore(wrapper,input);wrapper.append(input);
+  const effortInput=make('input','model-picker-effort-value');effortInput.type='hidden';effortInput.name='agentReasoningEffort';wrapper.append(effortInput);
   const openButton=make('button','model-picker-open','Choose model');openButton.type='button';openButton.setAttribute('aria-haspopup','dialog');wrapper.append(openButton);
   const dialog=make('dialog','model-picker-dialog');dialog.setAttribute('aria-label','Choose model');
   const header=make('div','model-picker-header');
@@ -41,12 +42,37 @@
   const custom=make('div','model-picker-custom');
   const exact=make('input','model-picker-exact');exact.type='text';exact.maxLength=200;exact.placeholder='Exact model ID';exact.setAttribute('aria-label','Exact model ID');
   const useExact=make('button','model-picker-use-exact','Use exact ID');useExact.type='button';custom.append(exact,useExact);
-  dialog.append(header,source,search,list,empty,custom);document.body.append(dialog);
-  let application='',models=[],fallback=[],loader=null,requestVersion=0;
+  const effortLabel=make('label','model-picker-effort-label','Reasoning');
+  const effort=make('select','model-picker-effort');effort.setAttribute('aria-label','Reasoning level');effortLabel.append(effort);
+  const effortNote=make('p','model-picker-effort-note');
+  const apply=make('button','model-picker-apply','Use model and reasoning');apply.type='button';
+  dialog.append(header,source,search,list,empty,custom,effortLabel,effortNote,apply);document.body.append(dialog);
+  let application='',models=[],fallback=[],loader=null,requestVersion=0,selectedModel='';
   const fallbackSource=()=>application==='claude'?'Documented Claude Code choices · account access checked at launch':application==='codex'?'Documented Codex CLI choices · account access checked at launch':'Saved profile models';
-  const current=()=>input.value.trim();
-  function display(){openButton.textContent=current()||'Choose model';openButton.disabled=input.disabled}
-  function choose(id){input.value=id;display();dialog.close();input.dispatchEvent(new Event('change',{bubbles:true}));openButton.focus()}
+  const current=()=>dialog.open?selectedModel:input.value.trim();
+  function display(){openButton.textContent=(input.value.trim()||'Choose model')+(effortInput.value?' · '+effortInput.value:'');openButton.disabled=input.disabled}
+  function levels(){
+   if(application==='claude'){
+    if(/haiku/i.test(current()))return [];
+    return ['low','medium','high',...(/^(sonnet|opus|best|fable)(\[1m\])?$|(?:sonnet|opus|fable)-(?:5|4-[78])/i.test(current())?['xhigh']:[])];
+   }
+   if(application==='codex')return ['low','medium','high','xhigh',...(/^(gpt-6-astra|gpt-5\.6-sol)$/.test(current())?['max']:[])];
+   if(application==='opencode'){
+    const selected=models.find(model=>model.id===current());
+    if(selected?.reasoning===false)return [];
+    return ['low','medium','high','max'];
+   }
+   return [];
+  }
+  function renderEffort(){
+   const prior=effort.value||effortInput.value;effort.replaceChildren();
+   const defaultChoice=make('option','','Default');defaultChoice.value='';effort.append(defaultChoice);
+   for(const level of levels()){const option=make('option','',level==='xhigh'?'Extra high':level[0].toUpperCase()+level.slice(1));option.value=level;effort.append(option)}
+   effort.value=[...effort.options].some(option=>option.value===prior)?prior:'';
+   effort.disabled=effort.options.length===1;
+   effortNote.textContent=application==='opencode'?(effort.disabled?'Provider reports no reasoning-effort control for this model.':'OpenCode uses model variants; available levels depend on the provider and model.'):effort.disabled?'This model has no configurable reasoning level.':'Default keeps the uploaded profile or model setting.';
+  }
+  function choose(id){selectedModel=id;renderEffort();render()}
   function render(){
    const query=search.value.trim().toLowerCase();list.replaceChildren();let shown=0;
    for(const model of models){
@@ -61,13 +87,13 @@
   async function open(){
    if(input.disabled)return;
    title.textContent='Choose '+({claude:'Claude',codex:'Codex',opencode:'OpenCode'}[application]||'agent')+' model';
-   search.value='';exact.value='';models=normalize([...fallback,current()]);source.textContent=fallbackSource();render();dialog.showModal();search.focus();
+   selectedModel=input.value.trim();search.value='';exact.value='';effort.value=effortInput.value;models=normalize([...fallback,current()]);source.textContent=fallbackSource();renderEffort();render();dialog.showModal();search.focus();
    if(!loader)return;
    const version=++requestVersion;source.textContent='Loading provider models…';
    try{
     const result=await loader();
     if(version!==requestVersion||!dialog.open)return;
-    models=normalize([current(),...(result.models||[])]);source.textContent=result.source||'Provider models';render();
+    models=normalize([current(),...(result.models||[])]);source.textContent=result.source||'Provider models';renderEffort();render();
    }catch(error){if(version===requestVersion&&dialog.open){source.textContent='Could not load provider models: '+error.message+'. Showing saved choices.';models=normalize([...fallback,current()]);render()}}
   }
   openButton.addEventListener('click',open);
@@ -75,6 +101,7 @@
   search.addEventListener('input',render);
   exact.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();useExact.click()}});
   useExact.addEventListener('click',()=>{const id=exact.value.trim();if(id)choose(id);else exact.focus()});
+  apply.addEventListener('click',()=>{input.value=selectedModel;effortInput.value=effort.value;display();input.dispatchEvent(new Event('change',{bubbles:true}));dialog.close();openButton.focus()});
   dialog.addEventListener('keydown',event=>{if(event.key==='Escape')event.stopPropagation()});
   dialog.addEventListener('close',()=>{requestVersion++;openButton.focus()});
   dialog.addEventListener('click',event=>{if(event.target===dialog)dialog.close()});
@@ -84,6 +111,7 @@
    setOptions(values){fallback=values||[];if(!dialog.open)models=normalize([...fallback,current()])},
    setLoader(value){loader=value||null;requestVersion++},
    setValue(value){input.value=value||'';display()},
+   setReasoningEffort(value){effortInput.value=value||'';effort.value=effortInput.value;display()},
    destroy(){requestVersion++;if(dialog.open)dialog.close();dialog.remove()},
    open,
   };

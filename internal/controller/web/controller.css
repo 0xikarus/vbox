@@ -55,6 +55,10 @@ button.primary{padding:4px 12px}
 .model-picker-custom{display:flex;gap:8px;margin-top:12px;border-top:1px solid #ddd;padding-top:12px}
 .model-picker-exact{flex:1;min-width:0;padding:7px}
 .model-picker-use-exact{white-space:nowrap}
+.model-picker-effort-label{display:block;margin-top:14px;font-weight:600}
+.model-picker-effort{display:block;width:100%;margin-top:5px;padding:7px}
+.model-picker-effort-note{font-size:12px;color:#555;margin:6px 0 12px}
+.model-picker-apply{width:100%;padding:9px}
 #create .field{display:block;min-width:0}
 #create .field>input,#create .field>select,#create .field>textarea{width:100%;margin-top:3px}
 #create .form-actions{margin-top:2px}

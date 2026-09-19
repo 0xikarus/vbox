@@ -16,8 +16,9 @@ import (
 )
 
 type profileModelChoice struct {
-	ID    string `json:"id"`
-	Label string `json:"label"`
+	ID        string `json:"id"`
+	Label     string `json:"label"`
+	Reasoning bool   `json:"reasoning"`
 }
 
 type profileModelCatalog struct {
@@ -110,6 +111,7 @@ func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provide
 				Offline      bool `json:"offline"`
 				Capabilities struct {
 					SupportsFunctionCalling bool `json:"supportsFunctionCalling"`
+					SupportsReasoningEffort bool `json:"supportsReasoningEffort"`
 				} `json:"capabilities"`
 			} `json:"model_spec"`
 		} `json:"data"`
@@ -139,7 +141,11 @@ func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provide
 		if label == "" {
 			label = id
 		}
-		models = append(models, profileModelChoice{ID: provider + "/" + id, Label: label})
+		reasoning := containsModelValue(model.SupportedParameters, "reasoning") || containsModelValue(model.SupportedParameters, "reasoning_effort")
+		if provider == "venice" {
+			reasoning = model.ModelSpec.Capabilities.SupportsReasoningEffort
+		}
+		models = append(models, profileModelChoice{ID: provider + "/" + id, Label: label, Reasoning: reasoning})
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 	if len(models) == 0 {
