@@ -129,7 +129,10 @@ func persistentAgentArgv(session, agent string) ([]string, error) {
 		// machine and that sandbox needs namespaces the runtime refuses; OpenCode
 		// gets the same from --auto.
 		return []string{agent, "--remote", codexAppServerURL(session),
-			"-c", "check_for_update_on_startup=false", "--dangerously-bypass-approvals-and-sandbox"}, nil
+			"-c", "check_for_update_on_startup=false",
+			"-c", "suppress_unstable_features_warning=true",
+			"-c", "notice.hide_rate_limit_model_nudge=true",
+			"--dangerously-bypass-approvals-and-sandbox"}, nil
 	case "opencode":
 		return []string{agent, "--auto", "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
 	case "claude":
