@@ -59,7 +59,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			}
 			fields = append(fields, entry.choice)
 			if p.app == "claude" || p.app == "codex" {
-				entry.model = &formField{Label: p.app + " model", Value: detectedProfileModel(p.app, path)}
+				entry.model = &formField{Label: p.app + " model (optional)", Value: detectedProfileModel(p.app, path)}
 				entry.model.When = func() bool { return entry.choice.Value == "Upload" && !entry.saved }
 				fields = append(fields, entry.model)
 			}
@@ -67,7 +67,7 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	}
 	add := &formField{Label: "[ Add entry ]"}
 	add.AddFields = func() []*formField {
-		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "opencode", "github"}}, path: &formField{Label: "Path / HOST:USER"}, model: &formField{Label: "Agent model"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
+		entry := &uploadEntry{application: &formField{Label: "Application", Value: "claude", Choices: []string{"claude", "codex", "opencode", "github"}}, path: &formField{Label: "Path / HOST:USER"}, model: &formField{Label: "Agent model (optional)"}, choice: &formField{Label: "Upload entry", Value: "Upload", Choices: []string{"Skip", "Upload"}}}
 		entry.model.When = func() bool {
 			return (entry.application.Value == "claude" || entry.application.Value == "codex") && entry.choice.Value == "Upload" && !entry.saved
 		}
@@ -124,9 +124,6 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			if app == "claude" || app == "codex" {
 				if entry.model != nil {
 					model = strings.TrimSpace(entry.model.Value)
-				}
-				if model == "" {
-					return fmt.Errorf("enter the %s model for this profile", app)
 				}
 			}
 			base := profileAccountName(app, path)

@@ -76,6 +76,63 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 	}
 }
 
+func TestProfileUploadDialogAllowsClaudeAndCodexWithoutModel(t *testing.T) {
+	for _, tc := range []struct {
+		app, dir, authFile, configFile, config string
+	}{
+		{"claude", ".claude", ".credentials.json", "settings.json", `{}`},
+		{"codex", ".codex", "auth.json", "config.toml", `approval_policy = "never"`},
+	} {
+		t.Run(tc.app, func(t *testing.T) {
+			home := t.TempDir()
+			path := filepath.Join(home, tc.dir)
+			if err := os.Mkdir(path, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(path, tc.authFile), []byte(`{"synthetic":"profile"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(path, tc.configFile), []byte(tc.config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			var uploaded v1.SaveLoginProfileRequest
+			uploads := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodGet && r.URL.Path == "/v1/login-profiles":
+					json.NewEncoder(w).Encode([]v1.LoginProfile{})
+				case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/login-profiles/"+tc.app+"/"):
+					uploads++
+					if err := json.NewDecoder(r.Body).Decode(&uploaded); err != nil {
+						t.Error(err)
+					}
+					json.NewEncoder(w).Encode(v1.LoginProfile{Application: tc.app, Name: profileAccountName(tc.app, path)})
+				default:
+					t.Errorf("unexpected operation %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			a := New()
+			a.Environ = map[string]string{"HOME": home}
+			a.Runner = &procexec.FakeRunner{}
+			a.IsTerminal = func() bool { return true }
+			a.Out, a.Err = &bytes.Buffer{}, &bytes.Buffer{}
+			a.In = strings.NewReader(" \r " + strings.Repeat("\t", 4) + "\r")
+			if err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"}); err != nil {
+				t.Fatal(err)
+			}
+			if uploads != 1 {
+				t.Fatalf("expected upload without a model, got %d uploads", uploads)
+			}
+			if got := string(uploaded.Files[tc.configFile]); got != tc.config {
+				t.Fatalf("model-free profile configuration changed: %q", got)
+			}
+		})
+	}
+}
+
 func TestProfileUploadDialogOffersOpenCodeAPIKeyEntry(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.Path != "/v1/login-profiles" {
