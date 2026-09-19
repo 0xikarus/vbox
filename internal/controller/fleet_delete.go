@@ -19,12 +19,22 @@ func (s *Server) queueLogicalBoxDelete(ctx context.Context, p Principal, id, con
 	if confirmation == "" || confirmation != box.Name {
 		return box, fmt.Errorf("deletion confirmation must exactly match logical box name %q", box.Name)
 	}
+	if box.State == v1.LogicalBoxAttaching {
+		// A failed creation is retried by the reconciler. Serialize its
+		// cancellation with the in-process creation claim, then change its
+		// durable state before another attempt may begin.
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if _, active := s.activeCreations[p.AccountID+":"+box.ID]; active {
+			return box, fmt.Errorf("logical box creation is still active; retry deletion shortly")
+		}
+	}
 	a, err := s.Store.BeginLogicalBoxRelease(ctx, p, box.ID, v1.LogicalBoxDeleting)
 	if err != nil {
 		return box, err
 	}
 	// Do not disturb a worker's claim when the owner repeats the request.
-	_, err = s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET lease_owner=NULL,lease_expires_at=NULL,restoration_state='delete-queued',updated_at=now() WHERE account_id=$1 AND id=$2 AND state='deleting' AND COALESCE(lease_owner,'') NOT LIKE 'delete_%' AND restoration_state NOT LIKE 'delete-%'`, p.AccountID, a.Box.ID)
+	_, err = s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET lease_owner=NULL,lease_expires_at=NULL,restoration_state='delete-queued',updated_at=now() WHERE account_id=$1 AND id=$2 AND state='deleting' AND COALESCE(lease_owner,'') NOT LIKE 'delete_%' AND COALESCE(restoration_state,'') NOT LIKE 'delete-%'`, p.AccountID, a.Box.ID)
 	if err != nil {
 		return box, err
 	}

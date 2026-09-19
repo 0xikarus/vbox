@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
@@ -165,6 +166,15 @@ func (s *Server) finishLogicalBoxCreation(ctx context.Context, creation logicalB
 }
 
 func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation logicalBoxCreation) error {
+	// A reconciler may have read this attaching row immediately before the
+	// owner cancelled it. Never replay provider creation after that transition.
+	var state v1.LogicalBoxState
+	if err := s.Store.DB.QueryRowContext(ctx, `SELECT state FROM logical_boxes WHERE account_id=$1 AND id=$2`, creation.AccountID, creation.Assignment.Box.ID).Scan(&state); err != nil {
+		return err
+	}
+	if state != v1.LogicalBoxAttaching {
+		return nil
+	}
 	started := time.Now()
 	fail := func(err error) error {
 		_ = s.Store.FailLogicalBoxCreation(ctx, creation, err.Error())
