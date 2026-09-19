@@ -38,7 +38,7 @@ Reconnecting refreshes this configuration, including after reassignment.
 - `secret_ensure`, `secret_request`, `typeSecret`: opaque references and status.
 
 Capture reads the worker's mode-0600 Unix VNC socket. There is no public VNC listener
-and no UI-canvas capture. Full screenshots are 1280×800; worker-generated previews
+and no UI-canvas capture. New desktops use 1024×640; worker-generated previews
 are at most 320×200. Preview requests check account and assignment, never allocate
 or start a desktop, and mark retained images stale when capture fails.
 

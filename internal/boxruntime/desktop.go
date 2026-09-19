@@ -20,6 +20,11 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/desktop"
 )
 
+const (
+	defaultDesktopWidth  = 1024
+	defaultDesktopHeight = 640
+)
+
 func desktopSocket(assignment string) string {
 	if WorkspaceRoot() != "/data" {
 		assignment = fmt.Sprintf("%x", sha256.Sum256([]byte(assignment)))[:16]
@@ -195,7 +200,7 @@ func RunDesktop(ctx context.Context, assignment string) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	vnc := exec.CommandContext(ctx, "Xtigervnc", DesktopDisplay(), "-geometry", "1280x800", "-depth", "24", "-rfbport", "-1", "-rfbunixpath", socket, "-rfbunixmode", "0600", "-SecurityTypes", "None", "-AlwaysShared", "-nolisten", "tcp")
+	vnc := exec.CommandContext(ctx, "Xtigervnc", DesktopDisplay(), "-geometry", fmt.Sprintf("%dx%d", defaultDesktopWidth, defaultDesktopHeight), "-depth", "24", "-rfbport", "-1", "-rfbunixpath", socket, "-rfbunixmode", "0600", "-SecurityTypes", "None", "-AlwaysShared", "-nolisten", "tcp")
 	// This process runs inside the vmbox-desktop tmux session, which tmux
 	// destroys as soon as it exits. Anything Xtigervnc wrote to the pane dies
 	// with it, so its diagnosis is captured here and returned instead.
