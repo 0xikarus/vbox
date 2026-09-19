@@ -616,10 +616,11 @@ save under a **new profile name**, then select that profile and retry creation.
 Existing saved profiles are immutable snapshots, not a live sync of local logins.
 
 After transfer, creation checks the selected logins as the unprivileged box user.
-Claude/Codex/OpenCode checks include a brief one-shot provider request (small agent usage
-charges may apply); GitHub checks the selected account with the API and configures
-its HTTPS git credential helper. Failures stop creation rather than claiming the
-box is authenticated. CLI output and credential contents are not included in errors.
+Claude uses `claude auth status --json`; a separate `claude -p` request does not
+gate box creation. Codex and OpenCode also make a brief one-shot provider request
+(small agent usage charges may apply). GitHub checks the selected account with
+the API and configures its HTTPS git credential helper. Failed checks stop
+creation. CLI output and credential contents are not included in errors.
 
 ```bash
 vmbox profiles                         # named Claude/Codex/OpenCode profiles, no secrets

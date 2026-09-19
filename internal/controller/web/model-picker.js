@@ -48,7 +48,7 @@
   const apply=make('button','model-picker-apply','Use model and reasoning');apply.type='button';
   dialog.append(header,source,search,list,empty,custom,effortLabel,effortNote,apply);document.body.append(dialog);
   let application='',models=[],fallback=[],loader=null,requestVersion=0,selectedModel='';
-  const fallbackSource=()=>application==='claude'?'Documented Claude Code choices · account access checked at launch':application==='codex'?'Documented Codex CLI choices · account access checked at launch':'Saved profile models';
+  const fallbackSource=()=>application==='claude'?'Documented Claude Code choices · login checked at creation; model access checked when used':application==='codex'?'Documented Codex CLI choices · account access checked at launch':'Saved profile models';
   const current=()=>dialog.open?selectedModel:input.value.trim();
   function display(){openButton.textContent=(input.value.trim()||'Choose model')+(effortInput.value?' · '+effortInput.value:'');openButton.disabled=input.disabled}
   function levels(){

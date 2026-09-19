@@ -41,17 +41,15 @@ func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, a
 	if !valid {
 		return fmt.Errorf("%s authentication failed inside the box; refresh the local login and save a new profile (credential contents withheld)", app)
 	}
-	// Login status alone can accept revoked credentials. A bounded, read-only
-	// one-shot verifies actual provider access; output is never logged or parsed
-	// for a canned answer. This may consume a small amount of agent usage.
-	if app == "claude" || app == "codex" || app == "opencode" {
+	// Claude's login-status result is enough to provision its interactive TUI.
+	// A one-shot -p request uses a separate path and can fail for a temporary or
+	// model-specific reason even when the imported login is usable in chat.
+	// Codex and OpenCode still verify provider access with a bounded one-shot.
+	if app == "codex" || app == "opencode" {
 		prompt := "Reply briefly to confirm this connection. Do not use tools, read files, or make changes."
-		command := []string{"claude", "-p", prompt}
+		command := []string{"opencode", "run", "--", prompt}
 		if app == "codex" {
 			command = []string{"codex", "exec", "--skip-git-repo-check", prompt}
-		}
-		if app == "opencode" {
-			command = []string{"opencode", "run", "--", prompt}
 		}
 		r, err = p.Exec(ctx, service, command, provider.ExecOptions{})
 		if err != nil || r.ExitCode != 0 {
