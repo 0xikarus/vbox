@@ -518,6 +518,21 @@ CREATE TABLE IF NOT EXISTS box_notes (
  UNIQUE(account_id,idempotency_key)
 );
 
+-- Short-lived, account-scoped desktop replay. Each frame is a bounded JPEG
+-- captured inside the running box, never from a browser VNC canvas.
+CREATE TABLE IF NOT EXISTS desktop_replay_frames (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ captured_at timestamptz NOT NULL,
+ width integer NOT NULL CHECK (width BETWEEN 1 AND 4096),
+ height integer NOT NULL CHECK (height BETWEEN 1 AND 4096),
+ data bytea NOT NULL CHECK (octet_length(data) BETWEEN 1 AND 262144),
+ UNIQUE(box_id,captured_at)
+);
+CREATE INDEX IF NOT EXISTS desktop_replay_frames_recent_idx
+ ON desktop_replay_frames(account_id,box_id,captured_at DESC);
+
 CREATE TABLE IF NOT EXISTS desktop_secret_requests (
  account_id uuid NOT NULL REFERENCES accounts(id),
  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,

@@ -59,8 +59,8 @@
    wrap.classList.add('preview-trigger');wrap.tabIndex=0;wrap.setAttribute('role','button');
    wrap.title='Hover to preview; click for Desktop/TMUX control';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open Desktop or TMUX control');
    const currentBox=()=>boxes.get(box.id)||box;
-   wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=hideTvPreview;
-   wrap.onfocus=()=>showTvPreview(wrap,currentBox());wrap.onblur=hideTvPreview;
+   wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=scheduleHideTvPreview;
+   wrap.onfocus=()=>showTvPreview(wrap,currentBox());wrap.onblur=scheduleHideTvPreview;
    wrap.onclick=event=>{event.stopPropagation();void openBoxControl(currentBox(),'desktop')};
    wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
   }
@@ -69,16 +69,86 @@
 
  /* ---------- TV preview: hover the processing bubble for a bigger view ---- */
  const tvPreviewEl=document.createElement('div');tvPreviewEl.className='tv-preview';tvPreviewEl.hidden=true;
+ const tvPreviewScreen=document.createElement('div');tvPreviewScreen.className='tv-preview-screen';
  const tvPreviewImg=document.createElement('img');tvPreviewImg.alt='';tvPreviewImg.hidden=true;
+ const tvPreviewLive=document.createElement('div');tvPreviewLive.className='tv-preview-live';
+ const tvPreviewControls=document.createElement('div');tvPreviewControls.hidden=true;
  const tvPreviewNote=document.createElement('span');tvPreviewNote.className='tv-preview-note';
- tvPreviewEl.append(tvPreviewImg,tvPreviewNote);
+ const tvTimeline=document.createElement('div');tvTimeline.className='tv-preview-timeline';
+ const tvLiveButton=document.createElement('button');tvLiveButton.type='button';tvLiveButton.textContent='Live';tvLiveButton.title='Return to live desktop';
+ const tvPlayButton=document.createElement('button');tvPlayButton.type='button';tvPlayButton.textContent='▶';tvPlayButton.title='Play the last 30 minutes';
+ const tvRange=document.createElement('input');tvRange.type='range';tvRange.min='0';tvRange.max='0';tvRange.value='0';tvRange.setAttribute('aria-label','Desktop replay timeline');
+ const tvTime=document.createElement('span');tvTime.className='tv-preview-time';tvTime.textContent='No replay yet';
+ tvTimeline.append(tvLiveButton,tvPlayButton,tvRange,tvTime);
+ tvPreviewScreen.append(tvPreviewImg,tvPreviewLive);tvPreviewEl.append(tvPreviewScreen,tvPreviewNote,tvTimeline,tvPreviewControls);
  document.body.append(tvPreviewEl);
- const tvShotCache=new Map();
+ const tvShotCache=new Map(),tvReplayCache=new Map();
+ let tvPreviewBox='',tvPreviewConnected=false,tvPreviewDispose=null,tvPreviewHideTimer=0,tvReplayIndex=null,tvReplayURL='',tvReplayRequest=0,tvReplayTimer=0;
+ tvPreviewEl.onmouseenter=()=>clearTimeout(tvPreviewHideTimer);
+ tvPreviewEl.onmouseleave=scheduleHideTvPreview;
+ tvPreviewEl.onclick=event=>{if(event.target.closest('button,input'))return;const box=boxes.get(tvPreviewBox);if(box)void openBoxControl(box,'desktop')};
+ tvLiveButton.onclick=()=>{stopTvReplay();tvReplayRequest++;tvReplayIndex=null;const box=boxes.get(tvPreviewBox);if(box){tvShotRender(box);startTvLive(box)}renderTvTimeline()};
+ tvPlayButton.onclick=()=>{
+  if(tvReplayTimer){stopTvReplay();return}
+  const frames=tvReplayCache.get(tvPreviewBox)?.frames||[];if(!frames.length)return;
+  void selectTvReplayFrame(tvReplayIndex===null||tvReplayIndex>=frames.length-1?0:tvReplayIndex);
+  tvPlayButton.textContent='Ⅱ';
+  tvReplayTimer=setInterval(()=>{const current=tvReplayCache.get(tvPreviewBox)?.frames||[];if(tvReplayIndex===null||tvReplayIndex>=current.length-1){stopTvReplay();return}void selectTvReplayFrame(tvReplayIndex+1)},750);
+ };
+ tvRange.oninput=()=>{stopTvReplay();void selectTvReplayFrame(Number(tvRange.value))};
+ function stopTvReplay(){clearInterval(tvReplayTimer);tvReplayTimer=0;tvPlayButton.textContent='▶'}
+ function renderTvTimeline(){
+  const frames=tvReplayCache.get(tvPreviewBox)?.frames||[];
+  tvRange.disabled=!frames.length;tvPlayButton.disabled=!frames.length;
+  tvRange.max=String(Math.max(0,frames.length-1));tvRange.value=String(tvReplayIndex===null?Math.max(0,frames.length-1):tvReplayIndex);
+  tvLiveButton.classList.toggle('active',tvReplayIndex===null);
+  const selectedFrame=tvReplayIndex===null?null:frames[tvReplayIndex];
+  tvTime.textContent=selectedFrame?new Date(selectedFrame.capturedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}):frames.length?frames.length+' frames · 30 min':'No replay yet';
+ }
+ async function loadTvReplay(box){
+  const cached=tvReplayCache.get(box.id);
+  if(cached&&Date.now()-cached.at<20000){renderTvTimeline();return}
+  try{
+   const frames=await api(boxPath(box.id)+'/desktop/replay');
+   tvReplayCache.set(box.id,{frames:frames||[],at:Date.now()});
+   if(tvPreviewBox===box.id&&!tvPreviewEl.hidden)renderTvTimeline();
+  }catch{if(tvPreviewBox===box.id)tvTime.textContent='Replay unavailable'}
+ }
+ async function selectTvReplayFrame(index){
+  const boxID=tvPreviewBox,frames=tvReplayCache.get(boxID)?.frames||[];
+  if(!frames[index])return;
+  tvReplayIndex=index;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewConnected=false;tvPreviewLive.classList.remove('connected');
+  const request=++tvReplayRequest;
+  tvPreviewImg.hidden=false;tvPreviewNote.textContent='Loading replay frame…';renderTvTimeline();
+  try{
+   const response=await fetch(boxPath(boxID)+'/desktop/replay/'+encodeURIComponent(frames[index].id),{credentials:'same-origin',signal:AbortSignal.timeout(15000)});
+   if(!response.ok)throw Error(response.status);
+   const blob=await response.blob();
+   if(request!==tvReplayRequest||tvPreviewBox!==boxID||tvPreviewEl.hidden)return;
+   if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);
+   tvReplayURL=URL.createObjectURL(blob);tvPreviewImg.src=tvReplayURL;tvPreviewImg.hidden=false;
+   tvPreviewNote.textContent='Replay · click for Desktop/TMUX control';
+  }catch{if(request===tvReplayRequest)tvPreviewNote.textContent='Replay frame unavailable'}
+ }
  function tvShotRender(box){
+  if(tvReplayIndex!==null)return;
   const cached=tvShotCache.get(box.id);
-  tvPreviewImg.hidden=!cached?.url;
+  tvPreviewImg.hidden=tvPreviewConnected||!cached?.url;
   if(cached?.url&&tvPreviewImg.src!==cached.url)tvPreviewImg.src=cached.url;
-  tvPreviewNote.textContent=cached?.url?'Click for Desktop/TMUX control':'no desktop preview yet';
+  tvPreviewNote.textContent=tvPreviewConnected?'Live · click for Desktop/TMUX control':cached?.url?'Connecting live view… · click for control':'Connecting live view…';
+ }
+ function startTvLive(box){
+  if(tvPreviewDispose||typeof window.openWorkspaceDesktop!=='function')return;
+  const previewID=box.id;
+  tvPreviewDispose=openWorkspaceDesktop(previewID,status=>{
+   if(tvPreviewBox!==previewID||tvPreviewEl.hidden||tvReplayIndex!==null)return;
+   tvPreviewConnected=status==='Desktop connected';
+   tvPreviewLive.classList.toggle('connected',tvPreviewConnected);
+   tvShotRender(box);
+  },{root:tvPreviewLive,controls:tvPreviewControls,viewOnly:true,onDisconnect:()=>{
+   if(tvPreviewBox!==previewID)return;
+   tvPreviewConnected=false;tvPreviewLive.classList.remove('connected');tvShotRender(box);
+  }});
  }
  function tvShotRefresh(box){
   const cached=tvShotCache.get(box.id);
@@ -90,7 +160,7 @@
     const previous=tvShotCache.get(box.id);
     if(previous?.url)URL.revokeObjectURL(previous.url);
     tvShotCache.set(box.id,{url:URL.createObjectURL(blob),at:Date.now()});
-    if(!tvPreviewEl.hidden)tvShotRender(box);
+    if(!tvPreviewEl.hidden&&tvPreviewBox===box.id)tvShotRender(box);
    })
    .catch(()=>tvShotCache.set(box.id,{url:cached?.url||'',at:Date.now()}));
  }
@@ -104,9 +174,11 @@
   return svg;
  }
  function showTvPreview(button,box){
+  clearTimeout(tvPreviewHideTimer);
+  if(tvPreviewBox!==box.id){stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewConnected=false;tvPreviewBox=box.id}
   tvPreviewEl.hidden=false;
   tvPreviewEl.style.width=Math.min(860,window.innerWidth-24)+'px';
-  tvShotRender(box);tvShotRefresh(box);
+  tvShotRender(box);tvShotRefresh(box);renderTvTimeline();void loadTvReplay(box);startTvLive(box);
   const rect=button.getBoundingClientRect(),height=tvPreviewEl.offsetHeight;
   const width=tvPreviewEl.offsetWidth;
   const left=Math.min(Math.max(12,rect.left-8),Math.max(12,window.innerWidth-width-12));
@@ -114,7 +186,8 @@
   if(top<12)top=Math.min(rect.bottom+10,Math.max(12,window.innerHeight-height-12));
   tvPreviewEl.style.left=left+'px';tvPreviewEl.style.top=top+'px';
  }
- function hideTvPreview(){tvPreviewEl.hidden=true}
+ function scheduleHideTvPreview(){clearTimeout(tvPreviewHideTimer);tvPreviewHideTimer=setTimeout(hideTvPreview,250)}
+ function hideTvPreview(){clearTimeout(tvPreviewHideTimer);stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewEl.hidden=true;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewLive.classList.remove('connected');tvPreviewConnected=false;tvPreviewBox=''}
  addEventListener('scroll',hideTvPreview,true);
  addEventListener('resize',hideTvPreview);
 
@@ -296,9 +369,9 @@
    const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview; click for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
    tv.append(tvIcon());
    tv.onmouseenter=()=>showTvPreview(tv,box);
-   tv.onmouseleave=hideTvPreview;
+   tv.onmouseleave=scheduleHideTvPreview;
    tv.onfocus=()=>showTvPreview(tv,box);
-   tv.onblur=hideTvPreview;
+   tv.onblur=scheduleHideTvPreview;
    tv.onclick=()=>void openBoxControl(box,'desktop');
    t.append(dots,label,tv);messagesEl.append(t);
   }
@@ -353,7 +426,7 @@
   const values=await api(owner?'/v1/grid-boxes':'/v1/logical-boxes');
   const current=new Map();const alive=new Set();
   for(const b of values||[]){const old=boxes.get(b.id);alive.add(b.id);current.set(b.id,Object.assign(old||{messages:[],historyLoaded:false,hasOlder:false,historyLoading:false},b))}
-  for(const id of [...boxes.keys()])if(!alive.has(id)){const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id)}
+  for(const id of [...boxes.keys()])if(!alive.has(id)){const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id)}
   for(const [id,b] of current)boxes.set(id,b);
   if(selected&&!boxes.has(selected)){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
   await loadPreviews(force);
@@ -946,7 +1019,7 @@
   for(const url of imageURLs.values())URL.revokeObjectURL(url);imageURLs.clear();
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
-  avatarCache.clear();previewFetched.clear();headerAvatarKey='';
+  avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
   for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();
   selected='';lastSignature='';appEl.classList.remove('in-chat');

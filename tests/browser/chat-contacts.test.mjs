@@ -45,6 +45,11 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    if(req.url.includes('thumbnail=true')){res.statusCode=409;return res.end(JSON.stringify({error:'thumbnail offline'}))}
    fullDesktopShots++;res.setHeader('Content-Type','image/png');return res.end(thumbnail);
   }
+  if(path.endsWith('/desktop/replay'))return res.end(JSON.stringify([
+   {id:'frame-1',capturedAt:new Date(Date.now()-60000).toISOString(),width:1,height:1},
+   {id:'frame-2',capturedAt:new Date(Date.now()-30000).toISOString(),width:1,height:1}
+  ]));
+  if(path.includes('/desktop/replay/')){res.setHeader('Content-Type','image/png');return res.end(thumbnail)}
   if(path==='/v1/logical-boxes/builder/messages'&&method==='GET')return res.end(JSON.stringify(builderMessages));
   if(path==='/v1/logical-boxes/builder/messages'&&method==='POST'){
    await new Promise(resolve=>setTimeout(resolve,600));
@@ -76,7 +81,10 @@ test('chat details drawer edits the per-box contact graph',async()=>{
  try{
   const p=await browser.newPage();
   await p.evaluateOnNewDocument(()=>{
-   window.openWorkspaceDesktop=(id,_status,options)=>{window.viewerDesktop={id,root:options.root.id};return()=>{}};
+   window.openWorkspaceDesktop=(id,onStatus,options)=>{
+    if(options.viewOnly){window.viewerPreview={id,viewOnly:true};setTimeout(()=>onStatus('Desktop connected'),350);return()=>{window.viewerPreviewClosed=true}};
+    window.viewerDesktop={id,root:options.root.id};return()=>{};
+   };
    window.openWorkspaceTerminal=(id,session,_status,options)=>{window.viewerTerminal={id,session,root:options.root.id};return()=>{}};
   });
   await p.setViewport({width:420,height:820,deviceScaleFactor:1});
@@ -110,8 +118,19 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');
    await p.waitForFunction(()=>document.querySelector('.tv-preview img')?.naturalWidth===1);
-   await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseleave')));
-   assert.equal(await p.$eval('.tv-preview',e=>e.hidden),true,selector+' did not close the desktop preview');
+   await p.waitForFunction(()=>window.viewerPreview?.viewOnly===true,{timeout:5000});
+   await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseleave',{relatedTarget:document.querySelector('.tv-preview')})));
+   await p.$eval('.tv-preview',e=>e.dispatchEvent(new MouseEvent('mouseenter')));
+   await new Promise(resolve=>setTimeout(resolve,200));
+   assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' closed while cursor moved into preview');
+   await p.waitForFunction(()=>!document.querySelector('.tv-preview-timeline input').disabled);
+   await p.$eval('.tv-preview-timeline input',e=>{e.value='0';e.dispatchEvent(new Event('input',{bubbles:true}))});
+   await p.waitForFunction(()=>document.querySelector('.tv-preview-note').textContent.startsWith('Replay'));
+   assert.equal(await p.$eval('.tv-preview-timeline input',e=>e.value),'0');
+   await p.$eval('.tv-preview-timeline button',e=>e.click());
+   await p.waitForFunction(()=>document.querySelector('.tv-preview-note').textContent.startsWith('Live'));
+   await p.$eval('.tv-preview',e=>e.dispatchEvent(new MouseEvent('mouseleave')));
+   await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden,{timeout:2000});
   }
   assert.equal(fullDesktopShots>0,true);
   await p.$eval('#chat-entries [data-avatar="reviewer"]',element=>element.click());

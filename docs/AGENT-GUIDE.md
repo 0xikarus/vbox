@@ -129,9 +129,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   bounded image API, numbered references and appended download URLs. Normal text
   paste is not intercepted. URLs expire; never expose their access capability in logs.
 - While an agent is processing, the chat shows a TV button beside the bubble:
-  hovering previews the box desktop at full capture resolution, and clicking
-  opens a large read-only live view of the desktop with a button that switches
-  to the control popup.
+  hovering first shows a worker-captured screenshot, then a view-only VNC
+  stream. The preview stays open while the pointer enters it; clicking opens
+  the Desktop/TMUX control popup. Its timeline replays bounded JPEG frames
+  captured inside running boxes every 30 seconds and retained for 30 minutes
+  in `desktop_replay_frames`; the owner-only endpoints never wake a stopped box.
 - Agent contacts are controller-owned. `box_contacts` holds directed owner-managed
   edges, `box_protection` hides a box from any manager, and `logical_boxes.role`
   (`worker`/`manager`) selects whether the implicit fleet-wide permission applies.
