@@ -17,9 +17,15 @@ import (
 func TestValidateBoxProfileRefsRejectsDuplicateOversizedAndUnavailable(t *testing.T) {
 	s, _ := testStore(t)
 	server := &Server{Store: s}
-	twoProfiles := []v1.LoginProfileRef{{Application: "claude", Name: "work"}, {Application: "codex", Name: "work"}}
-	if err := server.validateBoxProfileRefs(context.Background(), "a", twoProfiles); err == nil || !strings.Contains(err.Error(), "select at most 1 login profile") {
-		t.Fatalf("multiple profile selection was not rejected by the one-profile limit: %v", err)
+	twoAgents := []v1.LoginProfileRef{{Application: "claude", Name: "work"}, {Application: "codex", Name: "work"}}
+	if err := server.validateBoxProfileRefs(context.Background(), "a", twoAgents); err == nil || !strings.Contains(err.Error(), "at most one agent profile") {
+		t.Fatalf("multiple agent profiles were not rejected: %v", err)
+	}
+	if err := validateBoxProfileSelection([]v1.LoginProfileRef{{Application: "claude", Name: "work"}, {Application: "github", Name: "gh-work"}}); err != nil {
+		t.Fatalf("one agent plus one GitHub profile was rejected: %v", err)
+	}
+	if err := validateBoxProfileSelection([]v1.LoginProfileRef{{Application: "github", Name: "work"}, {Application: "github", Name: "personal"}}); err == nil || !strings.Contains(err.Error(), "at most one GitHub profile") {
+		t.Fatalf("multiple GitHub profiles were not rejected: %v", err)
 	}
 	duplicate := []v1.LoginProfileRef{{Application: "claude", Name: "work"}, {Application: "claude", Name: "work"}}
 	if err := server.validateBoxProfileRefs(context.Background(), "a", duplicate); err == nil || !strings.Contains(err.Error(), "twice") {
@@ -41,7 +47,7 @@ func TestValidateBoxProfileRefsRejectsDuplicateOversizedAndUnavailable(t *testin
 	}
 }
 
-func TestCreateLogicalBoxRejectsMultipleLoginProfiles(t *testing.T) {
+func TestCreateLogicalBoxRejectsMultipleAgentProfiles(t *testing.T) {
 	s, _ := testStore(t)
 	server := &Server{Store: s}
 	request := httptest.NewRequest(http.MethodPost, "/v1/logical-boxes", strings.NewReader(`{
@@ -55,7 +61,7 @@ func TestCreateLogicalBoxRejectsMultipleLoginProfiles(t *testing.T) {
 
 	server.createLogicalBoxHandler(response, request, Principal{AccountID: "a", UserID: "u", Role: "owner"})
 
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "select at most 1 login profile") {
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "at most one agent profile") {
 		t.Fatalf("multiple profile creation status=%d body=%s", response.Code, response.Body.String())
 	}
 }
@@ -126,6 +132,12 @@ func TestPutBoxLoginProfilesRejectsInvalidPayload(t *testing.T) {
 func TestSelectedAgentProfileControlsBoxHarness(t *testing.T) {
 	if got := selectedProfileAgent("claude", []v1.LoginProfileRef{{Application: "codex", Name: "work"}}); got != "codex" {
 		t.Fatalf("Codex profile left box on %q", got)
+	}
+	if got := selectedProfileAgent("claude", []v1.LoginProfileRef{{Application: "codex", Name: "work"}, {Application: "github", Name: "gh-work"}}); got != "codex" {
+		t.Fatalf("GitHub profile prevented Codex from selecting the box harness: %q", got)
+	}
+	if got := selectedProfileAgent("claude", []v1.LoginProfileRef{{Application: "github", Name: "gh-work"}, {Application: "codex", Name: "work"}}); got != "codex" {
+		t.Fatalf("profile order changed the selected harness: %q", got)
 	}
 	if got := selectedProfileAgent("opencode", nil); got != "opencode" {
 		t.Fatalf("clearing a profile unexpectedly changed harness to %q", got)

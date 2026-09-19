@@ -8,13 +8,15 @@ const html=await readFile('internal/controller/web/chat.html','utf8');
 const js=await readFile('internal/controller/web/chat.js','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
+const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
+const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 
 // The chat Details drawer edits the same controller-side contact graph as the
 // single-box workspace page (whose non-owner gating is covered in
 // workspace-desktop.test.mjs). This test drives the real page against fixture
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
- let boxRole='worker',protectedBox=false,requests=[],fullDesktopShots=0;
+ let boxRole='worker',protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
  let contacts=[{contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
  let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
@@ -23,12 +25,20 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   const path=req.url.split('?')[0],method=req.method;requests.push(method+' '+path);
   if(path==='/chat')return res.end(html);
   if(path==='/chat.js'){res.setHeader('Content-Type','text/javascript');return res.end(js)}
+  if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
+  if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/chat.css'){res.setHeader('Content-Type','text/css');return res.end(css)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(!path.startsWith('/v1/'))return res.end();
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
+  if(path==='/v1/logical-boxes'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;creations.push(JSON.parse(body));return res.end(JSON.stringify({id:'created',name:'github-chat-fixture'}))}
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,role:b.id==='builder'?boxRole:'worker'}))));
+  if(path==='/v1/tool-presets')return res.end('[]');
+  if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'github',name:'gh-work'}]));
+  if(path==='/v1/controller-defaults')return res.end('{}');
+  if(path==='/v1/provider-credentials')return res.end('[]');
+  if(path==='/v1/instruction-presets')return res.end(JSON.stringify({defaultName:'',presets:[]}));
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path.endsWith('/desktop/screenshot')){
    if(req.url.includes('thumbnail=true')){res.statusCode=409;return res.end(JSON.stringify({error:'thumbnail offline'}))}
@@ -130,6 +140,14 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===1);
   assert.equal(requests.some(r=>r.startsWith('DELETE /v1/logical-boxes/builder/contacts/')),true);
   await (await p.$('#inspect')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await p.$eval('#new-box',button=>button.click());
+  await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
+  await p.select('#create-box select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
+  await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
+  await p.type('#create-box input[name=name]','github-chat-fixture');
+  await p.click('#create-box-submit');
+  await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
+  assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'sonnet'},{application:'github',name:'gh-work'}]);
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });
