@@ -33,7 +33,7 @@ before(async()=>{
    '/v1/fleet/costs':{provider:'railway',providerCredential:'primary',period:'current provider billing period',observedAt:revision,total:{currency:'USD',accrued:1.23,available:true,detail:'Sum of available fleet service costs.'},availableSlotCount:1,unavailableSlotCount:1,slots:[{ordinal:1,state:'occupied',logicalBoxName:'helper ü',cost:{currency:'USD',accrued:1.23,available:true,detail:'Railway service entries'}},{ordinal:2,state:'free',cost:{currency:'USD',available:false,detail:'Project token cannot read billing'}}]},
    '/v1/notifications':[],
    '/v1/whoami':{accountId:'account-1',accountName:'Team'},
-   '/v1/login-profiles':[{application:'claude',name:'personal',model:'opus[1m]',createdAt:revision},{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash',createdAt:revision},{application:'opencode',name:'venice',model:'venice/deepseek-v4-1-flash',createdAt:revision}],
+   '/v1/login-profiles':[{application:'claude',name:'personal',model:'opus[1m]',createdAt:revision},{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash',createdAt:revision},{application:'opencode',name:'venice',model:'venice/deepseek-v4-1-flash',createdAt:revision},{application:'github',name:'gh-work',createdAt:revision}],
    '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
    '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
    '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision},pending:false},
@@ -84,6 +84,19 @@ test('model choice is a searchable popup instead of a browser datalist',async()=
  assert.deepEqual(await page.$$eval('#create .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.textContent)),['venice/deepseek-v4-1-flash']);
  await page.click('#create .model-picker-option:not([hidden])');
  assert.equal(await page.$eval(input,e=>e.value),'venice/deepseek-v4-1-flash');
+ await page.close();
+});
+test('creation can import one agent profile alongside a GitHub profile',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#profile-choices select');
+ await page.select('#create select[name=defaultAgent]','opencode');
+ await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'opencode',name:'openrouter'}));
+ await page.select('#profile-choices select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
+ await page.type('#create input[name=name]','github-creation-fixture');
+ const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
+ await page.click('#create button');await created;
+ assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash'},{application:'github',name:'gh-work'}]);
  await page.close();
 });
 test('worker placement distinguishes shared hosts and creation targets the selected pool',async()=>{

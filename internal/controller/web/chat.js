@@ -667,14 +667,18 @@
   const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
   const modelLabel=document.createElement('label');modelLabel.className='field profile-field';modelLabel.textContent='Model';
   const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelInput.placeholder='Search or enter an exact model';modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);
-  root.append(profileLabel,modelLabel);
+  const githubLabel=document.createElement('label');githubLabel.className='field profile-field';githubLabel.textContent='GitHub profile';
+  const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(new Option('None',''));
+  for(const profile of profiles.filter(profile=>profile.application==='github'))githubSelect.append(new Option(profile.name,JSON.stringify({application:'github',name:profile.name})));
+  githubLabel.append(githubSelect);githubLabel.hidden=githubSelect.options.length===1;
+  root.append(profileLabel,modelLabel,githubLabel);
   const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelInput.required=hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelLabel.hidden=!hasProfile};
   const populate=()=>{
    const previous=profileSelect.value,app=agentSelect.value;profileSelect.replaceChildren(new Option('None',''));
    const choices=profiles.filter(profile=>profile.application===app);
    for(const profile of choices){const option=new Option(profile.name,JSON.stringify({application:profile.application,name:profile.name}));option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setOptions(choices.map(profile=>profile.model));
    if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
-   root.hidden=app==='shell'||choices.length===0;syncModel();
+   profileLabel.hidden=app==='shell'||choices.length===0;root.hidden=profileLabel.hidden&&githubLabel.hidden;syncModel();
   };
   profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
  }
@@ -742,6 +746,8 @@
   const selectedProfile=createForm.elements.loginProfile?.value;
   const profileRef=selectedProfile?JSON.parse(selectedProfile):null;
   const loginProfiles=profileRef?[{...profileRef,model:(createForm.elements.agentModel?.value||'').trim()}]:[];
+  const githubProfile=createForm.elements.githubProfile?.value;
+  if(githubProfile)loginProfiles.push(JSON.parse(githubProfile));
   const setupScript=(createForm.elements.setupScript?.value||'').trim();
   const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
   const poolIndex=(f.pool.value||createForm.dataset.autoPool||'');

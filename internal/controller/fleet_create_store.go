@@ -24,8 +24,8 @@ var errNoCreationSlot = errors.New("no healthy free compute slot is available to
 
 func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, request v1.CreateLogicalBoxRequest) (logicalBoxCreation, error) {
 	request.Normalize()
-	if len(request.LoginProfiles) > maxBoxLoginProfiles {
-		return logicalBoxCreation{}, fmt.Errorf("select at most %d login profile", maxBoxLoginProfiles)
+	if err := validateBoxProfileSelection(request.LoginProfiles); err != nil {
+		return logicalBoxCreation{}, err
 	}
 	request.DefaultAgent = selectedProfileAgent(request.DefaultAgent, request.LoginProfiles)
 	var creation logicalBoxCreation

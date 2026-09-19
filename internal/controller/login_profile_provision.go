@@ -31,10 +31,10 @@ var portableProfilePaths = []string{
 }
 
 func selectedProfileAgent(current string, refs []v1.LoginProfileRef) string {
-	if len(refs) == 1 {
-		switch refs[0].Application {
+	for _, ref := range refs {
+		switch ref.Application {
 		case "codex", "claude", "opencode":
-			return refs[0].Application
+			return ref.Application
 		}
 	}
 	return current

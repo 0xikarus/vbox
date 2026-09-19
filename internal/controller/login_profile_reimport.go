@@ -21,13 +21,10 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
-const maxBoxLoginProfiles = 1
+const maxBoxLoginProfiles = 2
 
-// validateBoxProfileRefs accepts only profiles that exist for the account and
-// validate for their application. Credential bytes are cleared immediately.
-func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, refs []v1.LoginProfileRef) error {
-	// Selection shape is checked before any store read so a malformed request is
-	// rejected on its own terms instead of surfacing as an unavailable profile.
+func validateBoxProfileSelection(refs []v1.LoginProfileRef) error {
+	// A box has one managed harness, but GitHub is an independent credential.
 	seen := map[string]bool{}
 	for _, ref := range refs {
 		key := ref.Application + "/" + ref.Name
@@ -37,7 +34,35 @@ func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, r
 		seen[key] = true
 	}
 	if len(refs) > maxBoxLoginProfiles {
-		return fmt.Errorf("select at most %d login profile", maxBoxLoginProfiles)
+		return fmt.Errorf("select at most one agent profile and one GitHub profile")
+	}
+	var agent, github bool
+	for _, ref := range refs {
+		switch ref.Application {
+		case "github":
+			if github {
+				return fmt.Errorf("select at most one GitHub profile")
+			}
+			github = true
+		case "claude", "codex", "opencode":
+			if agent {
+				return fmt.Errorf("select at most one agent profile")
+			}
+			agent = true
+		default:
+			return fmt.Errorf("unsupported login profile application %q", ref.Application)
+		}
+	}
+	return nil
+}
+
+// validateBoxProfileRefs accepts only profiles that exist for the account and
+// validate for their application. Credential bytes are cleared immediately.
+func (s *Server) validateBoxProfileRefs(ctx context.Context, accountID string, refs []v1.LoginProfileRef) error {
+	// Selection shape is checked before any store read so a malformed request is
+	// rejected on its own terms instead of surfacing as an unavailable profile.
+	if err := validateBoxProfileSelection(refs); err != nil {
+		return err
 	}
 	for _, ref := range refs {
 		if ref.Model != "" {
