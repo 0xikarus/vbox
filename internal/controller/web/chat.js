@@ -415,17 +415,19 @@
 
  /* ---------- avatars: desktop preview thumbnails, blob-cached for 60s ---- */
  const avatarCache=new Map(),avatarPending=new Set();
+ const AVATAR_OK_TTL=60000,AVATAR_RETRY_TTL=8000;
+ const avatarFresh=(cached,state)=>!!cached&&cached.state===state&&Date.now()-cached.at<=(cached.ttl||AVATAR_OK_TTL);
  function avatarRefresh(box){
-  if(box.state!=='running'){avatarCache.set(box.id,{url:null,state:box.state,at:Date.now()});return}
+  if(box.state!=='running'){avatarCache.set(box.id,{url:null,state:box.state,at:Date.now(),ttl:AVATAR_RETRY_TTL});return}
   if(avatarPending.has(box.id))return;
   avatarPending.add(box.id);
   fetch(boxPath(box.id)+'/desktop/screenshot?thumbnail=true',{credentials:'same-origin',signal:AbortSignal.timeout(15000)})
    .then(r=>{if(!r.ok)throw Error(r.status);return r.blob()})
    .then(b=>{
     const old=avatarCache.get(box.id);if(old?.url)URL.revokeObjectURL(old.url);
-    avatarCache.set(box.id,{url:URL.createObjectURL(b),state:'running',at:Date.now()});
+    avatarCache.set(box.id,{url:URL.createObjectURL(b),state:'running',at:Date.now(),ttl:AVATAR_OK_TTL});
    })
-   .catch(()=>avatarCache.set(box.id,{url:null,state:box.state,at:Date.now()}))
+   .catch(()=>avatarCache.set(box.id,{url:null,state:box.state,at:Date.now(),ttl:AVATAR_RETRY_TTL}))
    .finally(()=>{avatarPending.delete(box.id);refreshAvatarNodes(box)});
  }
  function refreshAvatarNodes(box){
@@ -443,7 +445,7 @@
   const mini=document.createElement('span');mini.className='avatar-mascot';mini.innerHTML=mascotMiniSVG(box.id);wrap.append(mini);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
-  if(!cached||cached.state!==box.state||Date.now()-cached.at>60000||box.state!=='running'&&!cached)avatarRefresh(box);
+  if(!avatarFresh(cached,box.state))avatarRefresh(box);
   cached=avatarCache.get(box.id);
   if(cached?.state===box.state&&cached.url){const img=document.createElement('img');img.alt='';img.src=cached.url;wrap.prepend(img)}
   const dot=document.createElement('span');dot.className='dot'+(box.state==='running'?' running':'');wrap.append(dot);
@@ -633,7 +635,11 @@
    if(row.dataset.state!==stateClass)row.dataset.state=stateClass;
    const stateEl=row.querySelector('.row-state');if(stateEl.textContent!==box.state)stateEl.textContent=box.state;
    const oldAvatar=row.querySelector('.avatar');
-   if(oldAvatar&&oldAvatar.dataset.state===box.state){/* keep the stable avatar node */}
+   if(oldAvatar&&oldAvatar.dataset.state===box.state){
+    // Keep the node (its hover wiring and live preview), but still retry a
+    // thumbnail that is stale or failed while the desktop was starting.
+    if(!avatarFresh(avatarCache.get(box.id),box.state))avatarRefresh(box);
+   }
    else{const avatar=avatarNode(box,false,true);if(oldAvatar)oldAvatar.replaceWith(avatar);else row.prepend(avatar)}
    const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
    row.querySelector('time').classList.toggle('recent',!!box.unread);
