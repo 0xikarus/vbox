@@ -382,10 +382,13 @@
   const box=boxes.get(selected);if(!box)return;
   const messages=await api(boxPath(selected)+'/messages');
   box.messages=messages||[];previewFetched.set(box.id,Date.now());
-  const signature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|');
+  // The processing bubble must use the state of this response, not the
+  // previous poll's state (which can leave it beneath an agent reply).
+  applySeen(selected);
+  const signature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|')+'|'+box.processing+'|'+box.streaming;
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
-  applySeen(selected);renderRows();renderInspect();
+  renderRows();renderInspect();
  }
  async function openBox(id){
   if(!boxes.has(id))return;
