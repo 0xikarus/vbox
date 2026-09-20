@@ -18,7 +18,7 @@ test('chat media is clickable and keyboard focusable',async()=>{
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const now=new Date().toISOString();
  const galleryMessages=[
-  {id:'g1',direction:'agent',state:'delivered',text:'Here is the diagram.',images:[{id:'img1',number:1,mediaType:'image/png'}],createdAt:now,updatedAt:now},
+  {id:'g1',direction:'agent',state:'delivered',text:'Here is the diagram.',images:[{id:'img1',number:1,mediaType:'image/png'},{id:'img2',number:2,mediaType:'image/png'}],createdAt:now,updatedAt:now},
   {id:'g2',direction:'agent',state:'delivered',text:'See ![pipeline](https://example.com/pipeline.png) and the clip https://example.com/demo.mp4',createdAt:now,updatedAt:now}
  ];
  const boxes=[{id:'gallery',name:'gallery',state:'running',defaultAgent:'claude',provider:'railway',role:'owner',volumeName:'v1'}];
@@ -36,7 +36,7 @@ test('chat media is clickable and keyboard focusable',async()=>{
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
-  if(path==='/v1/messages/g1/images/img1'){res.setHeader('Content-Type','image/png');return res.end(png)}
+  if(path==='/v1/messages/g1/images/img1'||path==='/v1/messages/g1/images/img2'){res.setHeader('Content-Type','image/png');return res.end(png)}
   if(path==='/v1/logical-boxes/gallery/messages')return res.end(JSON.stringify(galleryMessages));
   if(path.endsWith('/messages'))return res.end('[]');
   return res.end('{}');
@@ -63,6 +63,15 @@ test('chat media is clickable and keyboard focusable',async()=>{
   await p.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
   assert.equal(await p.evaluate(()=>document.activeElement?.id),'media-viewer-close');
   await p.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth>=1,{timeout:3000});
+
+  // step through the box's images (WhatsApp-style): arrows and keyboard
+  assert.equal(await p.$eval('#media-viewer-count',element=>element.textContent),'1 / 2');
+  assert.equal(await p.$eval('#media-viewer-prev',element=>element.disabled),true,'first image cannot go back');
+  await p.keyboard.press('ArrowRight');
+  await p.waitForFunction(()=>document.querySelector('#media-viewer-count')?.textContent==='2 / 2',{timeout:3000});
+  assert.equal(await p.$eval('#media-viewer-next',element=>element.disabled),true,'last image cannot go forward');
+  await p.click('#media-viewer-prev');
+  await p.waitForFunction(()=>document.querySelector('#media-viewer-count')?.textContent==='1 / 2',{timeout:3000});
 
   // Escape closes it and returns focus to the button that opened it
   await p.keyboard.press('Escape');

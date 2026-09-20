@@ -483,6 +483,17 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #media-viewer-body img,#media-viewer-body video{max-width:100%;max-height:88dvh;border-radius:var(--radius-sm);display:block}
 #media-viewer-body audio{width:min(34rem,100%)}
 #media-viewer-open{align-self:center;flex:none;margin:.4rem 0 .8rem;font-size:.85rem;font-weight:700;color:var(--accent-text)}
+#media-viewer-prev,#media-viewer-next{position:absolute;top:50%;transform:translateY(-50%);z-index:2;
+  width:2.8rem;height:2.8rem;border-radius:var(--radius);border:1px solid var(--line);
+  background:color-mix(in srgb,var(--surface) 85%,transparent);color:var(--ink);font-size:1.5rem;line-height:1;
+  cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+#media-viewer-prev{left:.4rem}
+#media-viewer-next{right:.4rem}
+#media-viewer-prev:disabled,#media-viewer-next:disabled{opacity:.35;cursor:default}
+#media-viewer-count{position:absolute;bottom:.45rem;left:50%;transform:translateX(-50%);z-index:2;
+  font-size:.78rem;font-weight:700;color:var(--ink);background:color-mix(in srgb,var(--surface) 82%,transparent);
+  padding:.15rem .55rem;border-radius:var(--radius-sm)}
+.media-missing{color:var(--ink-soft);font-size:.9rem;font-weight:700;padding:2rem}
 
 /* ═══ mascot ═══════════════════════════════════════════════════════════
    A seeded blockies-style companion with a six-mood state machine. The
