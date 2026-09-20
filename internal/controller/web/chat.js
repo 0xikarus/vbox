@@ -1265,7 +1265,7 @@
   $('#inspect-header-state').className=stateClass(box.state);
   $('#inspect-avatar').replaceChildren(avatarNode(box,false));
   $('#inspect-name').textContent=box.name;
-  $('#inspect-subtitle').textContent=agent+' · '+(box.provider||'provider unknown');
+  $('#inspect-subtitle').textContent='';
   const badges=$('#inspect-badges');badges.replaceChildren();
   const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
   badge(box.state,stateClass(box.state));
