@@ -66,17 +66,70 @@
     <a id="chat-workspace" href="#">Workspace</a>
    </header>
    <aside id="inspect" role="region" aria-label="Box details" hidden>
-    <header><strong id="inspect-title">Box details</strong><span class="spacer"></span><button id="inspect-close" type="button" aria-label="Close details">×</button></header>
-    <div id="inspect-summary"><div id="inspect-avatar"></div><dl id="inspect-rows"></dl></div>
-    <section id="inspect-contacts" hidden>
-     <h3>Contacts</h3>
-     <p>Which boxes this agent may message. A manager sees every non-protected box automatically; a worker only has the explicit contacts below. Changes apply immediately and are enforced by the controller.</p>
-     <p>Role <strong id="inspect-contact-role">—</strong> <button id="inspect-toggle-role" type="button">Make manager</button></p>
-     <p><span id="inspect-protection-label">Protection unknown</span> <button id="inspect-toggle-protection" type="button">Protect box</button></p>
-     <ul id="inspect-contact-list"></ul>
-     <form id="inspect-contact-form"><label>Contact box <input name="contact" required maxlength="63" placeholder="box name or id"></label><button>Add contact</button></form>
-     <p id="inspect-contact-status" role="status"></p>
-    </section>
+    <header id="inspect-header">
+     <div id="inspect-header-text"><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
+     <span class="spacer"></span>
+     <button id="inspect-close" type="button" aria-label="Close details">×</button>
+    </header>
+    <div id="inspect-body">
+     <section id="inspect-summary" aria-label="Box overview">
+      <div id="inspect-avatar"></div>
+      <div id="inspect-hero">
+       <h2 id="inspect-name">—</h2>
+       <p id="inspect-subtitle">—</p>
+       <div id="inspect-badges" class="inspect-badges"></div>
+       <div id="inspect-quick-actions" class="inspect-quick"></div>
+      </div>
+      <section class="inspect-block" aria-label="Runtime">
+       <h3>Runtime</h3>
+       <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
+      </section>
+      <section class="inspect-block" aria-label="Activity">
+       <h3>Activity</h3>
+       <dl id="inspect-activity-rows" class="inspect-rows"></dl>
+      </section>
+      <section class="inspect-block" aria-label="Config">
+       <h3>Config</h3>
+       <div id="inspect-config-actions" class="inspect-actions"></div>
+      </section>
+     </section>
+     <section id="inspect-contacts" hidden>
+      <header class="inspect-block-head"><h3>Contacts</h3></header>
+      <p class="inspect-lede">Which boxes this agent may message. A manager sees every non-protected box automatically; a worker only has the explicit contacts below. Changes apply immediately and are enforced by the controller.</p>
+      <div class="contact-policy">
+       <div class="contact-policy-card">
+        <span class="policy-label">Role</span>
+        <strong id="inspect-contact-role">—</strong>
+        <button id="inspect-toggle-role" type="button">Make manager</button>
+       </div>
+       <div class="contact-policy-card">
+        <span class="policy-label">Visibility</span>
+        <span id="inspect-protection-label">Protection unknown</span>
+        <button id="inspect-toggle-protection" type="button">Protect box</button>
+       </div>
+      </div>
+      <div id="inspect-contact-map" class="inspect-block">
+       <h3>Contact map</h3>
+       <div id="inspect-contact-graph" class="contact-graph" role="img" aria-label="Contact map of this box and its explicit contacts">
+        <svg id="inspect-contact-graph-lines" class="contact-graph-lines" aria-hidden="true" preserveAspectRatio="none"></svg>
+        <div id="inspect-contact-graph-nodes" class="contact-graph-nodes"></div>
+       </div>
+      </div>
+      <div class="inspect-block">
+       <h3>Explicit contacts</h3>
+       <ul id="inspect-contact-list"></ul>
+      </div>
+      <div class="inspect-block">
+       <div class="contact-picker-head">
+        <h3>Add from the fleet</h3>
+        <input id="inspect-contact-filter" type="search" placeholder="Filter boxes" autocomplete="off" aria-label="Filter existing boxes">
+       </div>
+       <div id="inspect-contact-candidates" class="contact-candidates"></div>
+      </div>
+      <form id="inspect-contact-form"><label>Add by name or id <input name="contact" required maxlength="63" placeholder="box name or id"></label><button>Add contact</button></form>
+      <p id="inspect-contact-status" role="status"></p>
+     </section>
+    </div>
    </aside>
    <div id="chat-loading" hidden aria-hidden="true"><img src="/loading-doodle.svg" alt=""><p id="chat-loading-text">Loading…</p></div>
    <div id="chat-messages" aria-live="polite"></div>

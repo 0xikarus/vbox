@@ -675,13 +675,11 @@
    let row=rows.get(box.id);
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
-    const chevron=document.createElement('button');chevron.className='row-chevron';chevron.type='button';chevron.textContent='▾';chevron.title='Box actions';
-    chevron.onclick=event=>{event.stopPropagation();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY,top:event.clientY})};
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
     const meta=document.createElement('div');meta.className='chat-meta';
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
-    meta.append(r1,r2);row.prepend(meta);row.append(chevron);
+    meta.append(r1,r2);row.append(meta);
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
@@ -1160,45 +1158,71 @@
  };
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
- const inspect=$('#inspect'),inspectRows=$('#inspect-rows');
+ const inspect=$('#inspect');
  let inspectOpen=false,inspectTimer,controllerPing=null;
  const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
+ const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
+ const fillRows=(target,rows)=>{
+  target.replaceChildren();
+  for(const [dt,dd,cls] of rows){
+   const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
+   t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);target.append(row);
+  }
+ };
  function renderInspect(){
   if(!inspectOpen||!selected)return;
   const box=boxes.get(selected);if(!box)return;
   const msgs=box.messages||[],lastAgent=lastMessage(msgs,'agent'),lastUser=lastMessage(msgs,'user');
   const livePing=boxViewerMetrics.get(box.id)?.ping;
   const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
-  const rows=[
-   ['State',box.state+(box.streaming?' · agent streaming…':''),box.state==='running'?'ok':'alert'],
-   ['Agent',box.defaultAgent||'—'],
+  const agent=box.defaultAgent||'shell';
+  const stateText=box.state+(box.streaming?' · agent streaming…':box.processing?' · agent processing…':'');
+  $('#inspect-title').textContent=box.name;
+  $('#inspect-header-state').textContent=stateText;
+  $('#inspect-header-state').className=stateClass(box.state);
+  $('#inspect-avatar').replaceChildren(avatarNode(box,false));
+  $('#inspect-name').textContent=box.name;
+  $('#inspect-subtitle').textContent=agent+' · '+(box.provider||'provider unknown');
+  const badges=$('#inspect-badges');badges.replaceChildren();
+  const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
+  badge(box.state,stateClass(box.state));
+  badge(agent,'agent');
+  if(box.provider)badge(box.provider);
+  if(box.role)badge(box.role);
+  fillRows($('#inspect-runtime-rows'),[
+   ['State',stateText,stateClass(box.state)],
+   ['Agent',agent],
    ['Provider',box.provider||'—'],
+   ['Messages',msgs.length+' total'],
+  ]);
+  fillRows($('#inspect-activity-rows'),[
    ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
-   ['Box ping (live VNC)',livePing!=null?livePing+' ms':'while the desktop popup is open'],
+   ['Box ping (live VNC)',livePing!=null?livePing+' ms':'opens with the desktop popup'],
    ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
    ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
-   ['Messages',String(msgs.length)],
-  ];
-  $('#inspect-title').textContent=box.name;
-  $('#inspect-avatar').replaceChildren(avatarNode(box,false));
-  inspectRows.replaceChildren();
-  for(const [dt,dd,cls] of rows){
-   const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
-   t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);inspectRows.append(row);
+  ]);
+  const quick=$('#inspect-quick-actions');quick.replaceChildren();
+  const link=document.createElement('a');
+  link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
+  quick.append(link);
+  if(box.state==='running'){
+   const control=document.createElement('button');control.type='button';control.textContent='Control desktop';
+   control.title='Open the live desktop in a popup';control.onclick=()=>void openBoxControl(box,'desktop');quick.append(control);
   }
-  const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd'),link=document.createElement('a');
-  t.textContent='Workspace';link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open full workspace';link.target='_blank';link.rel='noopener';d.append(link);row.append(t,d);inspectRows.append(row);
+  if(box.state==='running'&&agent!=='shell'){
+   const clear=document.createElement('button');clear.type='button';clear.textContent='Clear context';
+   clear.title='Start a fresh agent context for this chat';clear.onclick=()=>$('#chat-clear-context').click();quick.append(clear);
+  }
   // Config the box keeps in sync, editable from the same place it is reported.
-  const actions=document.createElement('div'),at=document.createElement('dt'),ad=document.createElement('dd');
-  at.textContent='Config';ad.className='inspect-actions';
-  const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;ad.append(b)};
+  const actions=$('#inspect-config-actions');actions.replaceChildren();
+  const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;actions.append(b)};
   act('Instructions…','Edit the Markdown instructions synced into this box',()=>void openBoxInstructions(box));
   if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
   if(box.state==='running')act('Re-sync','Re-push the saved config to the running box',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
-  actions.append(at,ad);inspectRows.append(actions);
   maybeLoadInspectContacts(box);
+  if(inspectContactsFor===box.id&&inspectContactCache)renderContactCandidates(box);
  }
  async function samplePing(){
   if(!inspectOpen)return;
@@ -1213,19 +1237,82 @@
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
-  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''}
+  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null}
  };
- $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''};
+ $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null};
 
  /* ---------- inspect drawer: per-box contact graph (owner) ---------- */
  const inspectContacts=$('#inspect-contacts');
- let inspectContactsFor='',inspectProtected=false;
+ let inspectContactsFor='',inspectProtected=false,inspectContactCache=null;
+ const contactView=contact=>{
+  const known=boxes.get(contact.contactBoxId)||{};
+  return {id:contact.contactBoxId||contact.contactName,name:contact.contactName||known.name||'—',state:contact.contactState||known.state||'unknown',role:contact.contactRole||known.role||'worker',defaultAgent:contact.contactAgent||known.defaultAgent||''};
+ };
+ function graphNode(view,{center=false,contact=false}={}){
+  const node=document.createElement('div');node.className='cg-node'+(center?' cg-center':'');
+  node.append(avatarNode(view,true));
+  const label=document.createElement('span');label.className='cg-label';label.textContent=view.name;label.title=view.name;node.append(label);
+  if(contact){const sub=document.createElement('span');sub.className='cg-sub';sub.textContent=(view.role||'worker')+' · '+(view.state||'unknown');node.append(sub)}
+  return node;
+ }
+ // A radial map of the viewed box and its explicit contacts. Contacts beyond
+ // the cap stay in the Explicit contacts list below, so the graph never crowds.
+ function renderContactGraph(box,contacts){
+  const graph=$('#inspect-contact-graph');if(!graph)return;
+  const nodes=$('#inspect-contact-graph-nodes'),svg=$('#inspect-contact-graph-lines');
+  nodes.replaceChildren();svg.replaceChildren();
+  const views=(contacts||[]).slice(0,6).map(contactView);
+  const w=graph.clientWidth||320,h=graph.clientHeight||240,cx=w/2,cy=h/2;
+  const radius=Math.max(40,Math.min(w,h)/2-46);
+  graph.setAttribute('aria-label',box.name+' has '+views.length+' contact'+(views.length===1?'':'s')+' shown in the contact map');
+  svg.setAttribute('viewBox','0 0 '+w+' '+h);
+  const place=(view,dx,dy,opts)=>{const node=graphNode(view,opts);node.style.left=(cx+dx)+'px';node.style.top=(cy+dy)+'px';nodes.append(node)};
+  for(let i=0;i<views.length;i++){
+   const angle=-Math.PI/2+(i/views.length)*Math.PI*2;
+   const dx=Math.cos(angle)*radius,dy=Math.sin(angle)*radius;
+   const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+   line.setAttribute('x1',String(cx));line.setAttribute('y1',String(cy));
+   line.setAttribute('x2',String(cx+dx));line.setAttribute('y2',String(cy+dy));svg.append(line);
+   place(views[i],dx,dy,{contact:true});
+  }
+  place({id:box.id,name:box.name,state:box.state,role:box.role||'worker',defaultAgent:box.defaultAgent||''},0,0,{center:true});
+ }
+ // Every other box in the loaded fleet is one click away from being a contact.
+ function renderContactCandidates(box){
+  const root=$('#inspect-contact-candidates');if(!root)return;
+  const filter=($('#inspect-contact-filter')?.value||'').trim().toLowerCase();
+  const taken=new Set((inspectContactCache||[]).map(c=>c.contactBoxId||c.contactName));
+  const others=[...boxes.values()].filter(b=>b.id!==box.id&&b.state!=='deleting');
+  const available=others.filter(b=>!taken.has(b.id)&&!taken.has(b.name))
+   .filter(b=>!filter||b.name.toLowerCase().includes(filter)||(b.defaultAgent||'').toLowerCase().includes(filter))
+   .sort((a,b)=>a.name.localeCompare(b.name));
+  root.replaceChildren();
+  if(!available.length){
+   const empty=document.createElement('p');empty.className='empty';
+   empty.textContent=!others.length?'No other boxes in this fleet yet.':filter?'No box matches “'+filter+'”.':'Every other box is already a contact.';
+   root.append(empty);return;
+  }
+  for(const candidate of available){
+   const row=document.createElement('div');row.className='contact-candidate';row.dataset.boxId=candidate.id;
+   row.append(avatarNode(candidate,true));
+   const info=document.createElement('div');info.className='contact-info';
+   const name=document.createElement('div');name.className='contact-name';name.textContent=candidate.name;
+   const meta=document.createElement('div');meta.className='contact-meta';meta.textContent=(candidate.role||'worker')+' · '+(candidate.defaultAgent||'agent')+' · '+(candidate.state||'unknown');
+   info.append(name,meta);row.append(info);
+   const add=document.createElement('button');add.type='button';add.textContent='Add';add.title='Add '+candidate.name+' as a contact';
+   add.onclick=async()=>{add.disabled=true;const status=$('#inspect-contact-status');
+    try{await api(boxPath(box.id)+'/contacts','PUT',{},{contact:candidate.id});await loadInspectContacts(box)}
+    catch(e){status.textContent=e.message;add.disabled=false}};
+   row.append(add);root.append(row);
+  }
+ }
  async function loadInspectContacts(box){
   const status=$('#inspect-contact-status'),list=$('#inspect-contact-list');
   status.textContent='Loading…';
   try{
    const [contacts,protection]=await Promise.all([api(boxPath(box.id)+'/contacts'),api(boxPath(box.id)+'/protection')]);
    if(!inspectOpen||selected!==box.id)return;
+   inspectContactCache=contacts||[];
    inspectProtected=!!protection.protected;
    const role=box.role==='manager'?'manager':'worker';
    $('#inspect-contact-role').textContent=role;
@@ -1233,23 +1320,30 @@
    $('#inspect-protection-label').textContent=inspectProtected?'Protected — managers cannot see or message this box':'Not protected';
    $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
    list.replaceChildren();
-   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No explicit contacts.';list.append(empty)}
+   if(!contacts.length){const empty=document.createElement('li');empty.className='empty';empty.textContent='No explicit contacts yet.';list.append(empty)}
    for(const contact of contacts){
     const item=document.createElement('li');
-    item.textContent=contact.contactName+' · '+(contact.contactRole||'worker')+' · '+(contact.contactState||'unknown');
-    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';
+    const info=document.createElement('div');info.className='contact-info';
+    const name=document.createElement('div');name.className='contact-name';name.textContent=contact.contactName;
+    const meta=document.createElement('div');meta.className='contact-meta';meta.textContent=(contact.contactRole||'worker')+' · '+(contact.contactState||'unknown');
+    info.append(name,meta);item.append(info);
+    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';remove.title='Remove '+contact.contactName;
     remove.onclick=async()=>{remove.disabled=true;try{await api(boxPath(box.id)+'/contacts/'+encodeURIComponent(contact.contactName),'DELETE');await loadInspectContacts(box)}catch(e){status.textContent=e.message;remove.disabled=false}};
-    item.append(document.createTextNode(' '),remove);list.append(item);
+    item.append(remove);list.append(item);
    }
+   renderContactGraph(box,contacts);
+   renderContactCandidates(box);
    status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the explicit contacts listed above.';
   }catch(e){status.textContent=e.message}
  }
  function maybeLoadInspectContacts(box){
-  if(!owner){inspectContacts.hidden=true;inspectContactsFor='';return}
+  if(!owner){inspectContacts.hidden=true;inspectContactsFor='';inspectContactCache=null;return}
   inspectContacts.hidden=false;
   if(inspectContactsFor===box.id)return;
-  inspectContactsFor=box.id;void loadInspectContacts(box);
+  inspectContactsFor=box.id;inspectContactCache=null;void loadInspectContacts(box);
  }
+ $('#inspect-contact-filter').oninput=()=>{const box=boxes.get(selected);if(box&&inspectContactsFor===box.id)renderContactCandidates(box)};
+ addEventListener('resize',()=>{const box=boxes.get(selected);if(inspectOpen&&box&&inspectContactsFor===box.id&&inspectContactCache)renderContactGraph(box,inspectContactCache)});
  $('#inspect-contact-form').onsubmit=async event=>{event.preventDefault();const box=boxes.get(selected);if(!box)return;const button=event.target.querySelector('button');button.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:event.target.elements.contact.value.trim()});event.target.reset();await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}finally{button.disabled=false}};
  $('#inspect-toggle-role').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const next=box.role==='manager'?'worker':'manager';try{await api(boxPath(box.id),'PATCH',{}, {defaultAgent:box.defaultAgent||'shell',role:next});box.role=next;await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
@@ -1396,6 +1490,8 @@
    ['Control desktop',()=>{location.hash='box='+box.id;if(box.id!==selected)void openBox(box.id).then(()=>openTakeover('desktop'));else openTakeover('desktop')}],
    ['Instructions…',()=>void openBoxInstructions(box)],
   ];
+  const active=selected&&boxes.get(selected);
+  if(owner&&active&&active.id!==box.id)items.unshift(['Add '+box.name+' as contact',()=>void addContactFromRow(active,box)]);
   if(owner)items.push(['Imported profiles…',()=>void openBoxCredentials(box)]);
   if(box.state==='running')items.push(['Re-sync config',()=>void resyncBox(box)],['Restart box…',()=>void restartBox(box)]);
   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
@@ -1404,6 +1500,15 @@
   rowMenu.hidden=false;
   rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
+ }
+ // Right-clicking another box while a chat is open is the fastest way to make
+ // it a contact of the box the user is looking at.
+ async function addContactFromRow(active,target){
+  try{
+   await api(boxPath(active.id)+'/contacts','PUT',{},{contact:target.id});
+   toast(target.name+' is now a contact of '+active.name+'.');
+   if(inspectOpen&&selected===active.id)await loadInspectContacts(active);
+  }catch(e){toast(e.message||'Could not add that contact')}
  }
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
  addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});

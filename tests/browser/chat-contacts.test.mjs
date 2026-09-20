@@ -17,9 +17,9 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
  let boxRole='worker',protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
- let contacts=[{contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
+ let contacts=[{contactBoxId:'reviewer',contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
  let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
- const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
+ const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'},{id:'planner',name:'planner',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v3',volumeName:'v3'}];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0],method=req.method;requests.push(method+' '+path);
@@ -61,7 +61,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
   if(path==='/v1/logical-boxes/builder/contacts'){
-   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactBoxId:parsed.contact,contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
    return res.end(JSON.stringify(contacts));
   }
   if(path.startsWith('/v1/logical-boxes/builder/contacts/')&&method==='DELETE'){contacts=contacts.filter(c=>c.contactName!==decodeURIComponent(path.split('/').pop()));res.statusCode=204;return res.end()}
@@ -160,10 +160,16 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.ok(panelLayout.panel.width>=panelLayout.header.width*.95,'details must span the chat instead of a side drawer');
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='worker');
   assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/worker may message only/);
-  await p.type('#inspect-contact-form input[name=contact]','planner');
-  await p.$eval('#inspect-contact-form button',e=>e.click());
+  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-graph-nodes .cg-node').length===2);
+  assert.deepEqual(await p.$$eval('#inspect-contact-candidates .contact-candidate',rows=>rows.map(row=>row.dataset.boxId)),['planner'],'the fleet picker lists existing boxes that are not yet contacts');
+  await p.type('#inspect-contact-filter','zzz');
+  await p.waitForFunction(()=>!!document.querySelector('#inspect-contact-candidates .empty'));
+  await p.$eval('#inspect-contact-filter',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
+  await p.waitForFunction(()=>!!document.querySelector('#inspect-contact-candidates .contact-candidate'));
+  await p.$eval('#inspect-contact-candidates .contact-candidate[data-box-id="planner"] button',e=>e.click());
   await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===2);
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/contacts'),true);
+  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-graph-nodes .cg-node').length===3);
   await p.$eval('#inspect-toggle-role',e=>e.click());
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='manager');
   assert.equal(requests.includes('PATCH /v1/logical-boxes/builder'),true);
@@ -173,7 +179,23 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('#inspect-contact-list li button',e=>e.click());
   await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===1);
   assert.equal(requests.some(r=>r.startsWith('DELETE /v1/logical-boxes/builder/contacts/')),true);
-  await (await p.$('#inspect')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  // Capture the whole contacts panel: lift the drawer's scroll clipping so the
+  // graph, list and fleet picker are all visible in the PR screenshot.
+  await p.evaluate(()=>document.activeElement?.blur());
+  await p.setViewport({width:420,height:1600,deviceScaleFactor:1});
+  await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible'});
+  await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
+  await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body');inspect.style.maxHeight='';inspect.style.overflow='';body.style.overflow=''});
+  // Right-clicking another chat row offers to make it a contact of the box in
+  // view; this is the sidebar shortcut that mirrors the contacts page.
+  await p.evaluate(()=>{const row=[...document.querySelectorAll('#chat-entries li')].find(el=>el.dataset.boxId==='reviewer');const rect=row.getBoundingClientRect();row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.left+20,clientY:rect.top+10}))});
+  await p.waitForFunction(()=>[...document.querySelectorAll('#row-menu button')].some(b=>b.textContent==='Add reviewer as contact'));
+  await p.screenshot({path:'docs/chat-ui/screenshots/desktop-chat-row-menu.png'});
+  const putsBefore=requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length;
+  await p.evaluate(()=>[...document.querySelectorAll('#row-menu button')].find(b=>b.textContent==='Add reviewer as contact').click());
+  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===2);
+  assert.equal(requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length,putsBefore+1,'the row menu adds the right-clicked box as a contact');
   await p.$eval('#new-box',button=>button.click());
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
   await p.select('#create-box select[name=defaultAgent]','opencode');

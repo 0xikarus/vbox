@@ -43,7 +43,7 @@ test('an in-flight volume delete cannot be retargeted at another box',async()=>{
  });
  await new Promise(resolve=>server.listen(0,resolve));
  const base='http://127.0.0.1:'+server.address().port;
- const browser=await puppeteer.launch({executablePath:'/snap/bin/chromium',headless:'new',args:['--no-sandbox']});
+  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:'new',args:['--no-sandbox']});
  try{
   const p=await browser.newPage();
   await p.setViewport({width:420,height:900});
@@ -51,7 +51,8 @@ test('an in-flight volume delete cannot be retargeted at another box',async()=>{
   await p.waitForSelector('#chat-entries li',{timeout:8000});
   const openDeleteFor=name=>p.evaluate(boxName=>{
    const row=[...document.querySelectorAll('#chat-entries li')].find(el=>el.textContent.includes(boxName));
-   (row.querySelector('.chevron')||[...row.querySelectorAll('button')].pop()).click();
+   const rect=row.getBoundingClientRect();
+   row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.left+20,clientY:rect.top+10}));
    [...document.querySelectorAll('#row-menu button')].find(b=>b.textContent.startsWith('Delete box')).click();
   },name);
 
