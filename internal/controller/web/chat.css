@@ -161,6 +161,8 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .msg .meta{display:flex;justify-content:flex-end;align-items:center;gap:.3rem;font-size:.7rem;
   color:var(--ink-soft);margin-top:.1rem;user-select:none}
 .msg .meta .ticks.failed{color:var(--danger)}
+.msg .meta .ticks{display:inline-flex;align-items:center;gap:.18rem}
+.msg .meta .ticks svg{width:.85rem;height:.85rem;flex:none}
 .msg img.chat-image{display:block;max-width:18rem;max-height:14rem;border-radius:var(--radius-sm);margin:.25rem 0}
 /* every attachment and media embed is a real focusable control */
 .media-button{display:block;max-width:100%;border:0;background:none;padding:0;margin:.3rem 0;cursor:zoom-in;border-radius:var(--radius-sm);text-align:left}
@@ -287,10 +289,16 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .contact-policy-card button{margin-left:auto;font:inherit;font-size:.72rem;font-weight:700;color:var(--accent-text);
   background:var(--accent-soft);border:1px solid transparent;border-radius:var(--radius-sm);padding:.22rem .45rem;cursor:pointer}
 .contact-policy-card button:hover{border-color:var(--accent)}
-#inspect-contact-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.3rem;max-height:7rem;overflow-y:auto}
-#inspect-contact-list li{display:flex;align-items:center;gap:.4rem;padding:.32rem .5rem;background:var(--bg2);
+#inspect-contact-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.3rem;max-height:11rem;overflow-y:auto}
+#inspect-contact-list li{display:flex;align-items:center;gap:.55rem;padding:.4rem .5rem;background:var(--bg2);
   border:1px solid var(--line);border-radius:var(--radius);min-width:0}
 #inspect-contact-list li.empty{justify-content:center;color:var(--ink-soft);font-style:italic;background:none;border-style:dashed}
+#inspect-contact-list li .avatar{width:2rem;height:2rem;flex:none}
+#inspect-contact-list li .avatar .initials{font-size:.78rem}
+#inspect-contact-list li .chat-meta .name{font-size:.95rem}
+#inspect-contact-list li[data-state="running"] .row-state{color:var(--ok-text);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+#inspect-contact-list li[data-state="failed"] .row-state{color:var(--danger-text);border-color:color-mix(in srgb,var(--danger) 45%,transparent)}
+#inspect-contact-list li[data-state="starting"] .row-state{color:var(--warn-text);border-color:color-mix(in srgb,var(--warn) 50%,transparent)}
 .contact-info{display:flex;flex-direction:column;min-width:0}
 .contact-name{font-size:.88rem;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .contact-meta{font-size:.68rem;color:var(--ink-soft)}
@@ -306,21 +314,11 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #inspect-contacts form button{font:inherit;font-size:.78rem;font-weight:700;background:var(--accent);color:var(--accent-ink);
   border:0;border-radius:var(--radius-sm);padding:.4rem .65rem;cursor:pointer}
 #inspect-contact-status{margin:0;font-size:.74rem;color:var(--ink-soft);line-height:1.35}
-/* ── contact map: the viewed box and its explicit contacts as chips ──── */
-#inspect-contact-map .inspect-block{margin-top:0}
-.contact-graph{border:1px solid var(--line);border-radius:var(--radius);background:var(--bg2);padding:.45rem}
-.contact-graph-nodes{display:flex;align-items:center;flex-wrap:wrap;gap:.35rem .5rem}
-.cg-node{display:flex;align-items:center;gap:.4rem;padding:.24rem .5rem .24rem .28rem;background:var(--surface);
-  border:1px solid var(--line);border-radius:999px;max-width:100%}
-.cg-node .avatar{width:1.5rem;height:1.5rem;flex:none}
-.cg-node .avatar .initials{font-size:.6rem}
-.cg-text{display:flex;flex-direction:column;min-width:0;line-height:1.15}
-.cg-label{font-size:.74rem;font-weight:700;color:var(--ink);max-width:9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cg-sub{font-size:.58rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em}
-.cg-center{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
-.cg-center .avatar{width:1.7rem;height:1.7rem}
-.cg-arrow{color:var(--accent-text);font-weight:800}
-.cg-more{color:var(--ink-soft);font-style:italic;font-size:.72rem}
+/* drag a chat from the sidebar onto the drawer to add it as a contact */
+#chat-entries li.dragging{opacity:.45}
+#inspect.contact-drop{border:2px dashed var(--accent);background:color-mix(in srgb,var(--accent) 8%,var(--surface))}
+#inspect.contact-drop #inspect-contacts::after{content:'Drop a chat to add it as a contact';display:block;
+  text-align:center;color:var(--accent-text);font-weight:700;font-size:.78rem;padding:.4rem}
 /* ── add from the fleet: every other box as a one-click reference ───── */
 .contact-picker-head{display:flex;align-items:center;gap:.5rem;justify-content:space-between}
 .contact-picker-head input{flex:1 1 7rem;max-width:11rem;min-width:0;font:inherit;font-size:.76rem;color:var(--ink);

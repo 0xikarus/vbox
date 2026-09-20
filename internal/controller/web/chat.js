@@ -675,6 +675,15 @@
    let row=rows.get(box.id);
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
+    row.draggable=true;
+    row.addEventListener('dragstart',event=>{
+     if(!owner||!selected||selected===box.id){event.preventDefault();return}
+     event.dataTransfer.setData('application/x-vmbox-box',box.id);
+     event.dataTransfer.setData('text/plain',box.name);
+     event.dataTransfer.effectAllowed='copy';
+     row.classList.add('dragging');
+    });
+    row.addEventListener('dragend',()=>row.classList.remove('dragging'));
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
     const meta=document.createElement('div');meta.className='chat-meta';
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
@@ -707,7 +716,23 @@
 
  /* ---------- messages ---------- */
  const dayLabel=value=>{const d=new Date(value),now=new Date();if(d.toDateString()===now.toDateString())return 'Today';const y=new Date(now);y.setDate(now.getDate()-1);if(d.toDateString()===y.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'})};
- const stateTicks={queued:'🕐',delivering:'✓',delivered:'✓✓',failed:'⚠ failed',ambiguous:'⚠ maybe failed'};
+ const stateTicks={queued:'queued',delivering:'sent',delivered:'delivered',failed:'failed',ambiguous:'maybe failed'};
+ const stateIconName={queued:'clock',delivering:'check',delivered:'check-check',failed:'alert',ambiguous:'help'};
+ // Inline Lucide icons (24x24, currentColor stroke) so delivery state reads as
+ // iconography instead of emoji glyphs.
+ const lucideShapes={
+  clock:[['circle',{cx:'12',cy:'12',r:'10'}],['polyline',{points:'12 6 12 12 16 14'}]],
+  check:[['path',{d:'M20 6 9 17l-5-5'}]],
+  'check-check':[['path',{d:'M18 6 7 17l-5-5'}],['path',{d:'m22 10-7.5 7.5L13 16'}]],
+  alert:[['path',{d:'m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'}],['path',{d:'M12 9v4'}],['path',{d:'M12 17h.01'}]],
+  help:[['circle',{cx:'12',cy:'12',r:'10'}],['path',{d:'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'}],['path',{d:'M12 17h.01'}]],
+ };
+ function lucide(name){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  for(const [key,value] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'2','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'}))svg.setAttribute(key,value);
+  for(const [tag,attrs] of lucideShapes[name]||[]){const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const key in attrs)el.setAttribute(key,attrs[key]);svg.append(el)}
+  return svg;
+ }
  function imageURL(message,image){
   const key=message.id+':'+image.id;
   if(imageURLs.has(key))return Promise.resolve(imageURLs.get(key));
@@ -797,7 +822,14 @@
   const form=questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
-  if(mine&&message.state!=='silent'){const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');ticks.textContent=stateTicks[message.state]||'';meta.append(ticks)}
+  if(mine&&message.state!=='silent'){
+   const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
+   ticks.title=stateTicks[message.state]||'';
+   const icon=stateIconName[message.state];
+   if(icon)ticks.append(lucide(icon));
+   if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'maybe failed'));
+   meta.append(ticks);
+  }
   row.append(meta);
   const fwd=document.createElement('button');fwd.type='button';fwd.className='fwd';fwd.title='Forward to another box';fwd.textContent='↪';
   fwd.onclick=event=>{event.stopPropagation();openForwardMenu(fwd,message)};
@@ -1248,29 +1280,6 @@
   const known=boxes.get(contact.contactBoxId)||{};
   return {id:contact.contactBoxId||contact.contactName,name:contact.contactName||known.name||'—',state:contact.contactState||known.state||'unknown',role:contact.contactRole||known.role||'worker',defaultAgent:contact.contactAgent||known.defaultAgent||''};
  };
- function graphNode(view,{center=false,contact=false}={}){
-  const node=document.createElement('div');node.className='cg-node'+(center?' cg-center':'');
-  node.append(avatarNode(view,true));
-  const text=document.createElement('span');text.className='cg-text';
-  const label=document.createElement('span');label.className='cg-label';label.textContent=view.name;label.title=view.name;text.append(label);
-  if(contact){const sub=document.createElement('span');sub.className='cg-sub';sub.textContent=view.state||'unknown';text.append(sub)}
-  node.append(text);
-  return node;
- }
- // A slim horizontal chain: the viewed box, an arrow, then its explicit
- // contacts as chips. Overflow stays in the Explicit contacts list below.
- function renderContactGraph(box,contacts){
-  const graph=$('#inspect-contact-graph'),nodes=$('#inspect-contact-graph-nodes');
-  if(!graph||!nodes)return;
-  nodes.replaceChildren();
-  const views=(contacts||[]).map(contactView);
-  const shown=views.slice(0,6);
-  nodes.append(graphNode({id:box.id,name:box.name,state:box.state,role:box.role||'worker',defaultAgent:box.defaultAgent||''},{center:true}));
-  if(views.length){const arrow=document.createElement('span');arrow.className='cg-arrow';arrow.textContent='→';arrow.setAttribute('aria-hidden','true');nodes.append(arrow)}
-  for(const view of shown)nodes.append(graphNode(view,{contact:true}));
-  if(views.length>shown.length){const more=document.createElement('span');more.className='cg-more';more.textContent='+'+(views.length-shown.length)+' more';nodes.append(more)}
-  graph.setAttribute('aria-label',box.name+' can message '+views.length+' contact'+(views.length===1?'':'s')+' shown in the contact map');
- }
  // Every other box in the loaded fleet is one click away from being a contact.
  function renderContactCandidates(box){
   const root=$('#inspect-contact-candidates');if(!root)return;
@@ -1314,18 +1323,25 @@
    $('#inspect-protection-label').textContent=inspectProtected?'Protected — managers cannot see or message this box':'Not protected';
    $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
    list.replaceChildren();
-   if(!contacts.length){const empty=document.createElement('li');empty.className='empty';empty.textContent='No explicit contacts yet.';list.append(empty)}
+   if(!contacts.length){const empty=document.createElement('li');empty.className='empty';empty.textContent='No contacts yet — drag a chat here or add one below.';list.append(empty)}
    for(const contact of contacts){
-    const item=document.createElement('li');
-    const info=document.createElement('div');info.className='contact-info';
-    const name=document.createElement('div');name.className='contact-name';name.textContent=contact.contactName;
-    const meta=document.createElement('div');meta.className='contact-meta';meta.textContent=(contact.contactRole||'worker')+' · '+(contact.contactState||'unknown');
-    info.append(name,meta);item.append(info);
-    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';remove.title='Remove '+contact.contactName;
-    remove.onclick=async()=>{remove.disabled=true;try{await api(boxPath(box.id)+'/contacts/'+encodeURIComponent(contact.contactName),'DELETE');await loadInspectContacts(box)}catch(e){status.textContent=e.message;remove.disabled=false}};
+    const view=contactView(contact);
+    const item=document.createElement('li');item.dataset.state=view.state;
+    item.append(avatarNode(view,true));
+    const meta=document.createElement('div');meta.className='chat-meta';
+    const r1=document.createElement('div');r1.className='row1';
+    const name=document.createElement('span');name.className='name';name.textContent=view.name;
+    const role=document.createElement('span');role.className='agent-badge';role.textContent=view.role||'worker';
+    r1.append(name,role);
+    const r2=document.createElement('div');r2.className='row2';
+    const state=document.createElement('span');state.className='row-state';state.textContent=view.state||'unknown';
+    const agent=document.createElement('span');agent.className='agent-badge';agent.textContent=view.defaultAgent||'agent';
+    r2.append(state,agent);
+    meta.append(r1,r2);item.append(meta);
+    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';remove.title='Remove '+view.name;
+    remove.onclick=async()=>{remove.disabled=true;try{await api(boxPath(box.id)+'/contacts/'+encodeURIComponent(view.name),'DELETE');await loadInspectContacts(box)}catch(e){status.textContent=e.message;remove.disabled=false}};
     item.append(remove);list.append(item);
    }
-   renderContactGraph(box,contacts);
    renderContactCandidates(box);
    status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the explicit contacts listed above.';
   }catch(e){status.textContent=e.message}
@@ -1335,6 +1351,23 @@
   inspectContacts.hidden=false;
   if(inspectContactsFor===box.id)return;
   inspectContactsFor=box.id;inspectContactCache=null;void loadInspectContacts(box);
+ }
+ // Dropping a sidebar chat anywhere on the open details drawer makes it a
+ // contact of the box in view, the same edge the fleet picker creates.
+ const draggingBox=event=>!!event.dataTransfer&&[...event.dataTransfer.types].includes('application/x-vmbox-box');
+ async function dropContact(event){
+  inspect.classList.remove('contact-drop');
+  const id=event.dataTransfer?.getData('application/x-vmbox-box');
+  const active=boxes.get(selected),target=boxes.get(id);
+  if(!id||!active||!target||active.id===id)return;
+  event.preventDefault();
+  try{await api(boxPath(active.id)+'/contacts','PUT',{},{contact:target.id});toast(target.name+' is now a contact of '+active.name+'.');await loadInspectContacts(active)}
+  catch(e){$('#inspect-contact-status').textContent=e.message}
+ }
+ for(const target of [inspect,inspectContacts]){
+  target.addEventListener('dragover',event=>{if(!owner||!selected||!draggingBox(event))return;event.preventDefault();event.dataTransfer.dropEffect='copy';inspect.classList.add('contact-drop')});
+  target.addEventListener('dragleave',event=>{if(!target.contains(event.relatedTarget))inspect.classList.remove('contact-drop')});
+  target.addEventListener('drop',event=>void dropContact(event));
  }
  $('#inspect-contact-filter').oninput=()=>{const box=boxes.get(selected);if(box&&inspectContactsFor===box.id)renderContactCandidates(box)};
  $('#inspect-contact-form').onsubmit=async event=>{event.preventDefault();const box=boxes.get(selected);if(!box)return;const button=event.target.querySelector('button');button.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:event.target.elements.contact.value.trim()});event.target.reset();await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}finally{button.disabled=false}};
