@@ -179,14 +179,18 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('#inspect-contact-list li button',e=>e.click());
   await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===1);
   assert.equal(requests.some(r=>r.startsWith('DELETE /v1/logical-boxes/builder/contacts/')),true);
-  // Capture the whole contacts panel: lift the drawer's scroll clipping so the
-  // graph, list and fleet picker are all visible in the PR screenshot.
+  // Capture the contacts panel: lift the drawer's scroll clipping so the graph,
+  // list and fleet picker are all visible, then shoot both the mobile stack and
+  // the two-column desktop drawer for the PR.
   await p.evaluate(()=>document.activeElement?.blur());
-  await p.setViewport({width:420,height:1600,deviceScaleFactor:1});
-  await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible'});
-  await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
-  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
-  await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body');inspect.style.maxHeight='';inspect.style.overflow='';body.style.overflow=''});
+  const liftDrawer=()=>p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body'),conversation=document.querySelector('#chat-conversation');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible';inspect.scrollTop=0;body.scrollTop=0;if(conversation)conversation.scrollTop=0;window.scrollTo(0,0)});
+  const resetDrawer=()=>p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body');inspect.style.maxHeight='';inspect.style.overflow='';body.style.overflow=''});
+  await p.setViewport({width:420,height:1400,deviceScaleFactor:1});
+  await liftDrawer();
+  await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/mobile-chat-contacts.png'});
+  await p.setViewport({width:1440,height:1700,deviceScaleFactor:1});
+  await p.screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await resetDrawer();
   // Right-clicking another chat row offers to make it a contact of the box in
   // view; this is the sidebar shortcut that mirrors the contacts page.
   await p.evaluate(()=>{const row=[...document.querySelectorAll('#chat-entries li')].find(el=>el.dataset.boxId==='reviewer');const rect=row.getBoundingClientRect();row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.left+20,clientY:rect.top+10}))});
@@ -196,6 +200,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.evaluate(()=>[...document.querySelectorAll('#row-menu button')].find(b=>b.textContent==='Add reviewer as contact').click());
   await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===2);
   assert.equal(requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length,putsBefore+1,'the row menu adds the right-clicked box as a contact');
+  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
   await p.$eval('#new-box',button=>button.click());
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
   await p.select('#create-box select[name=defaultAgent]','opencode');
