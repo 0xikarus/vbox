@@ -157,7 +157,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   control: images are buttons that open a focus-managed lightbox (video and audio
   included, focus restored on Escape) with left/right gallery stepping, and
   attached drafts can be inspected before sending. Attachments may be PNG/JPEG/GIF
-  up to 8 MiB or MP4/WebM video up to 100 MiB (`/v1/run-once-images` sniffs the
+  up to 25 MiB or MP4/WebM video up to 100 MiB (`/v1/run-once-images` sniffs the
   container); media is served with range requests so video can seek, and video is
   played from the authenticated same-origin endpoint rather than a blob. Unsent
   composer text is kept per box in local storage, and the transcript remembers its

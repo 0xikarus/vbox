@@ -22,6 +22,11 @@ import (
 	"time"
 )
 
+// maxChatImageBytes caps a single chat image in both directions. It matches
+// the controller's maxImageUpload: a lower cap here would silently refuse an
+// attachment the chat itself accepts.
+const maxChatImageBytes = 25 << 20
+
 type ChatEvent struct {
 	ID       string           `json:"id"`
 	Kind     string           `json:"kind"`
@@ -174,8 +179,8 @@ func loadChatImages(paths []string) ([]ChatEventImage, error) {
 	images := make([]ChatEventImage, 0, len(paths))
 	for _, path := range paths {
 		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 8<<20 {
-			return nil, fmt.Errorf("image file must be a regular file up to 8 MiB")
+		if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > maxChatImageBytes {
+			return nil, fmt.Errorf("image file must be a regular file up to 25 MiB")
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -297,7 +302,7 @@ func StoreChatInbound(home, session string, inbound ChatInbound) error {
 		}
 		cfg, kind, err := imagepkg.DecodeConfig(bytes.NewReader(data))
 		media := map[string]string{"png": "image/png", "jpeg": "image/jpeg", "gif": "image/gif"}[kind]
-		if err != nil || media != image.MediaType || cfg.Width < 1 || cfg.Height < 1 || len(data) > 8<<20 {
+		if err != nil || media != image.MediaType || cfg.Width < 1 || cfg.Height < 1 || len(data) > maxChatImageBytes {
 			return fmt.Errorf("invalid inbound image")
 		}
 		extension := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif"}[media]
@@ -548,8 +553,8 @@ func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound Chat
 }
 
 func validateChatImage(data []byte) (string, error) {
-	if len(data) < 1 || len(data) > 8<<20 {
-		return "", fmt.Errorf("image must be up to 8 MiB")
+	if len(data) < 1 || len(data) > maxChatImageBytes {
+		return "", fmt.Errorf("image must be up to 25 MiB")
 	}
 	config, kind, err := imagepkg.DecodeConfig(bytes.NewReader(data))
 	media := map[string]string{"png": "image/png", "jpeg": "image/jpeg", "gif": "image/gif"}[kind]

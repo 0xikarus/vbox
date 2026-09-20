@@ -16,7 +16,7 @@ func TestValidateRunOnceImage(t *testing.T) {
 	if err != nil || media != "image/png" {
 		t.Fatalf("%s %v", media, err)
 	}
-	for _, data := range [][]byte{nil, []byte("<svg onload='alert(1)'/>"), make([]byte, (8<<20)+1)} {
+	for _, data := range [][]byte{nil, []byte("<svg onload='alert(1)'/>"), make([]byte, (25<<20)+1)} {
 		if _, err := validateRunOnceImage(data); err == nil {
 			t.Fatal("invalid image accepted")
 		}
@@ -34,7 +34,7 @@ func TestValidateRunOnceVideoContainers(t *testing.T) {
 		t.Fatalf("webm: %q %v", media, err)
 	}
 	// An oversized non-video blob is still rejected as an image.
-	if _, err := validateRunOnceImage(make([]byte, (8<<20)+1)); err == nil {
+	if _, err := validateRunOnceImage(make([]byte, (25<<20)+1)); err == nil {
 		t.Fatal("oversized image accepted")
 	}
 }
