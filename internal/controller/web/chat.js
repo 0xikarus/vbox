@@ -1106,6 +1106,7 @@
    const result=await api(boxPath(box.id)+'/messages/clear-context','POST',{'Idempotency-Key':crypto.randomUUID()},{},45000);
    statusEl.textContent='Context cleared. The next message continues in the same visible terminal with fresh context.';
    toast('Context cleared for '+result.agent+'.');
+   if(selected===box.id)try{await refreshMessages(true)}catch(e){statusEl.textContent='Context cleared; chat refresh failed: '+e.message}
   }catch(e){statusEl.textContent=e.message}
   finally{renderHeader()}
  };
