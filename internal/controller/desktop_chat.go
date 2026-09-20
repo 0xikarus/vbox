@@ -156,6 +156,18 @@ func (s *Server) clearBoxContextHandler(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusConflict, fmt.Errorf("could not clear agent context: %s", detail))
 		return
 	}
+	// The reset has completed in the watched harness. Record the visible audit
+	// marker even if the browser disconnected while waiting for the worker.
+	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer recordCancel()
+	if err := s.recordContextClear(recordCtx, p.AccountID, task.ID, task.Agent, resetID); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("agent context cleared, but chat marker could not be saved"))
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]string{"agent": task.Agent, "session": task.Session, "taskId": task.ID})
+}
+
+func (s *Server) recordContextClear(ctx context.Context, accountID, taskID, agent, resetID string) error {
+	return s.Store.AppendSystemBoxMessage(ctx, accountID, taskID, "context cleared · "+agent+" is ready", "context-clear:"+resetID)
 }
