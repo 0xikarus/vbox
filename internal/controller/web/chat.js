@@ -1024,13 +1024,22 @@
   if(!(boxes.get(id).messages||[]).length)doodle('Loading messages…');
   try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{doodle('')}
   if(savedScroll!=null)requestAnimationFrame(()=>{messagesEl.scrollTop=savedScroll});
-  inputEl.focus();
+  // Deliberately do not focus the composer: on phones that pops the keyboard
+  // the moment a chat is opened. Focus follows an explicit tap.
  }
 
  /* ---------- composer ---------- */
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,150)+'px'}
  inputEl.addEventListener('input',()=>{grow();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
- inputEl.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();composer.requestSubmit()}});
+ // On a phone or tablet the soft keyboard's Enter is the only convenient way to
+ // start a new line, so it inserts a newline there; Send is the explicit button.
+ // A hardware keyboard (hover + fine pointer) keeps Enter-to-send.
+ const enterInsertsNewline=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
+ inputEl.addEventListener('keydown',event=>{
+  if(event.key!=='Enter'||event.shiftKey)return;
+  if(enterInsertsNewline())return;
+  event.preventDefault();composer.requestSubmit();
+ });
  function renderDrafts(){
   draftsEl.hidden=!drafts.length;draftsEl.replaceChildren();
   for(const entry of drafts){
