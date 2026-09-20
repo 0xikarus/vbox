@@ -102,8 +102,8 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 			return fmt.Errorf("agent returned invalid image")
 		}
 		used += int64(len(data))
-		if used > 256<<20 {
-			return fmt.Errorf("saved images reached the 256 MiB account storage limit")
+		if used > maxAccountAttachmentBytes {
+			return fmt.Errorf("saved attachments reached the 1 GiB account storage limit")
 		}
 		id := uuid()
 		if _, err = tx.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '7 days')`, id, accountID, media, data, rand.Text()+rand.Text()); err != nil {

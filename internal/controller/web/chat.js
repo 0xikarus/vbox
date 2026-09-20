@@ -4,6 +4,7 @@
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle');
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
+ const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
  let drafts=[],pendingKey='',pendingFingerprint='';
  let instructionPresets={defaultName:'',presets:[]};
@@ -11,6 +12,11 @@
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
+ // Unsent composer text is kept per box so switching chats (or reloading the
+ // page) never loses what you were typing.
+ const inputDrafts=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}')}catch{return{}}})();
+ const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
+ let inputDraftTimer=0;
 
  async function api(path,method='GET',headers={},body,timeout=60000){
   let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
@@ -35,43 +41,24 @@
  function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}return()=>{h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return(h^=h>>>16)>>>0;};}
  function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
  const hsl=(h,s,l)=>'hsl('+(((h%360)+360)%360)+' '+s+'% '+l+'%)';
- function _srgb(v){v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4)}
- function _hslRGB(h,s,l){s/=100;l/=100;const c=(1-Math.abs(2*l-1))*s,x=c*(1-Math.abs((((h%360)+360)%360)/60%2-1)),m=l-c/2;let r=0,g=0,b=0;const hh=((h%360)+360)%360;
-  if(hh<60){r=c;g=x}else if(hh<120){r=x;g=c}else if(hh<180){g=c;b=x}else if(hh<240){g=x;b=c}else if(hh<300){r=x;b=c}else{r=c;b=x}
-  return [(r+m)*255,(g+m)*255,(b+m)*255];}
- function _lum(h,s,l){const [r,g,b]=_hslRGB(h,s,l);return .2126*_srgb(r)+.7152*_srgb(g)+.0722*_srgb(b);}
- function _ratio(a,b){const hi=Math.max(a,b),lo=Math.min(a,b);return (hi+.05)/(lo+.05);}
- // Darken a colour until it reaches 4.5:1 against white or a given background.
- function darkenForWhite(h,s,l){let cur=Math.round(l);while(cur>6&&_ratio(_lum(h,s,cur),1)<4.5)cur--;return cur;}
- function darkenFor(h,s,l,bgH,bgS,bgL){let cur=Math.round(l);while(cur>6&&_ratio(_lum(h,s,cur),_lum(bgH,bgS,bgL))<4.5)cur--;return cur;}
  const THEME_ADJ=['mossy','sunny','plucky','sleepy','brisk','cosy','fizzy','tiny','bold','minty','wobbly','glossy'];
  const THEME_NOUN=['pebble','mochi','bramble','biscuit','comet','dumpling','clover','pixel','marble','sprout','pudding','ember'];
  const titleCase=w=>w.charAt(0).toUpperCase()+w.slice(1);
+ // The shipped scheme is a dark, Discord-like theme. The seed still shapes the
+ // mascot, the corner radii and the type, but the palette is fixed.
+ const DISCORD={bg:'#313338',bg2:'#2b2d31',surface:'#2b2d31',surface2:'#383a40',
+  ink:'#dbdee1','ink-soft':'#a3a6aa',line:'#45474d',
+  accent:'#5865f2','accent-text':'#aab4ff','accent-ink':'#ffffff','accent-soft':'#3b418c',
+  pop:'#eb459e','bubble-out':'#5865f2','bubble-in':'#2b2d31','bubble-in-ink':'#dbdee1',
+  danger:'#f23f42','danger-text':'#ff9a9b',warn:'#f0b232','warn-text':'#f6d16b',ok:'#23a55a','ok-text':'#5bd67f'};
  function deriveTheme(seed){
   const rnd=mulberry32(xmur3(String(seed))());
   const R=(a,b)=>a+rnd()*(b-a), Ri=(a,b)=>Math.floor(R(a,b+1)), pick=arr=>arr[Ri(0,arr.length-1)];
-  const base=Ri(0,359), spin=pick([1,-1]);
-  const accent=(base+spin*Ri(96,168))%360, accent2=(base-spin*Ri(80,150))%360, pop=(accent+spin*Ri(40,90))%360;
-  const sat=Ri(52,78), soft=Ri(30,46);
   const font=pick(['"Baloo 2", ui-rounded, system-ui, sans-serif','ui-rounded, "SF Pro Rounded", system-ui, sans-serif','system-ui, -apple-system, "Segoe UI", sans-serif']);
   const radius=Math.round(R(5,10)), radiusSm=Math.max(3,Math.round(radius*.5)), radiusLg=Math.round(radius*1.5)+2;
   const name=titleCase(pick(THEME_ADJ))+' '+pick(THEME_NOUN);
-  // Generated colours are clamped to meet WCAG AA (4.5:1) instead of trusting
-  // a fixed lightness, so every seed yields legible text, not just this one.
-  const accentL=darkenForWhite(accent,sat,42), accentTextL=darkenFor(accent,sat,42,accent,sat,93);
-  const inkSoftL=darkenFor(base,soft,42,base,soft,96);
-  const stateText=(h,s)=>darkenFor(h,s,50,h,s,88);
-  const t={bg:hsl(base,soft,96),bg2:hsl(accent,soft,94),surface:'#ffffff',surface2:hsl(base,soft,97),
-   ink:hsl(base,soft,13),'ink-soft':hsl(base,soft,inkSoftL),line:hsl(base,soft,88),
-   accent:hsl(accent,sat,accentL),'accent-text':hsl(accent,sat,accentTextL),'accent-2':hsl(accent2,sat,40),
-   'accent-ink':'#fff','accent-soft':hsl(accent,sat,93),
-   pop:hsl(pop,sat,52),'bubble-out':hsl(accent,sat,84),'bubble-in':'#fff','bubble-in-ink':hsl(base,soft,13),
-   danger:hsl(6,72,44),warn:hsl(38,86,36),ok:hsl(150,58,32),
-   'ok-text':hsl(150,58,stateText(150,58)),'danger-text':hsl(6,72,stateText(6,72)),'warn-text':hsl(38,86,stateText(38,86)),
-   radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',
-   shadow:'none','shadow-pop':'none',
-   wall:'none'};
-  return {name,font,base,accent,radius,tokens:t};
+  const t=Object.assign({},DISCORD,{radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',shadow:'none','shadow-pop':'none',wall:'none'});
+  return {name,font,radius,tokens:t};
  }
  function applyVariant(){
   document.documentElement.dataset.variant='A';
@@ -272,25 +259,13 @@
   clearTimer(){for(const t of this.timers)clearTimeout(t);this.timers=[];}
   destroy(){this.clearTimer();if(this.svg)this.svg.remove();this.svg=null;}
  }
- let companion=null,companionBox='';
- const agentSeen=new Map();
- function syncCompanion(box){
-  const host=document.getElementById('chat-companion');if(!host)return;
-  if(!box){if(companion){companion.destroy();companion=null}companionBox='';return}
-  if(companionBox!==box.id){if(companion)companion.destroy();companionBox=box.id;companion=new Mascot(host,box.id);}
-  let mood='idle';
-  if(box.state==='failed')mood='angry';
-  else if(box.streaming||box.processing)mood='working';
-  else if(box.unread>0)mood='happy';
-  if(companion.state!==mood)companion.jump(mood);
- }
  const accountMascots=[];
  function refreshAccountMascots(){
   const seed=theme.seed||'vmbox';
   accountMascots.splice(0).forEach(m=>m.destroy&&m.destroy());
   const login=document.getElementById('login-mascot');
   if(login)login.innerHTML=mascotMiniSVG(seed);
-  for(const id of ['list-mascot','chat-empty-mascot']){
+  for(const id of ['chat-empty-mascot']){
    const host=document.getElementById(id);if(!host)continue;
    accountMascots.push(new Mascot(host,seed));
   }
@@ -375,35 +350,64 @@
   return 'image';
  }
  const mediaKindLabel=kind=>kind==='video'?'video':kind==='audio'?'audio':'image';
+ const mediaEndpoint=(messageID,imageID)=>'/v1/messages/'+encodeURIComponent(messageID)+'/images/'+encodeURIComponent(imageID);
  const mediaGlyph=kind=>kind==='video'?'▶':kind==='audio'?'♪':'▣';
- const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaTitle=$('#media-viewer-title'),mediaOpen=$('#media-viewer-open');
- let mediaReturnFocus=null;
- function openMediaViewer(url,{kind='image',alt='',label=''}={}){
-  if(!url)return;
-  mediaReturnFocus=document.activeElement;
+ const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaOpen=$('#media-viewer-open'),
+  mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count');
+ let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null;
+ function renderMediaItem(url,{kind='image',alt=''}={}){
   mediaBody.replaceChildren();
+  if(!url){const miss=document.createElement('div');miss.className='media-missing';miss.textContent='Attachment unavailable';mediaBody.append(miss);return}
   if(kind==='video'||kind==='audio'){
-   const el=document.createElement(kind);
-   el.src=url;el.controls=true;el.playsInline=true;if(kind==='video')el.autoplay=true;
-   el.setAttribute('aria-label',alt||('Embedded '+mediaKindLabel(kind)));
-   mediaBody.append(el);
+   const el=document.createElement(kind);el.src=url;el.controls=true;el.playsInline=true;if(kind==='video')el.autoplay=true;
+   el.setAttribute('aria-label',alt||('Embedded '+mediaKindLabel(kind)));mediaBody.append(el);
   }else{
    const img=document.createElement('img');img.src=url;img.alt=alt||'Attachment';mediaBody.append(img);
   }
-  mediaTitle.textContent=label||alt||(kind==='video'?'Video':kind==='audio'?'Audio':'Image');
-  if(/^https?:/i.test(url)){mediaOpen.hidden=false;mediaOpen.href=url}else{mediaOpen.hidden=true;mediaOpen.removeAttribute('href')}
+ }
+ async function showMediaAt(index){
+  const item=mediaGallery[index];if(!item)return;
+  mediaIndex=index;
+  let url=item.url;
+  if(!url&&item.messageId){
+   if(item.kind==='video'||item.kind==='audio'){
+    // Point straight at the authenticated endpoint so the browser can range
+    // request and stream instead of buffering a blob.
+    url=mediaEndpoint(item.messageId,item.imageId);
+   }else{
+    const box=boxes.get(selected),m=(box&&box.messages||[]).find(x=>x.id===item.messageId),img=m&&(m.images||[]).find(x=>x.id===item.imageId);
+    if(m&&img)url=await imageURL(m,img);
+   }
+  }
+  renderMediaItem(url,item);
+  if(/^https?:/i.test(url||'')){mediaOpen.hidden=false;mediaOpen.href=url}else{mediaOpen.hidden=true;mediaOpen.removeAttribute('href')}
+  const many=mediaGallery.length>1;
+  mediaPrev.hidden=!many;mediaNext.hidden=!many;
+  mediaPrev.disabled=mediaIndex<=0;mediaNext.disabled=mediaIndex>=mediaGallery.length-1;
+  mediaCount.hidden=!many;mediaCount.textContent=(mediaIndex+1)+' / '+mediaGallery.length;
+ }
+ function openMediaViewer(gallery,index=0){
+  mediaReturnFocus=document.activeElement;
+  mediaGallery=(Array.isArray(gallery)?gallery:(gallery?[gallery]:[])).filter(Boolean);
+  if(!mediaGallery.length)return;
   mediaViewer.hidden=false;
+  void showMediaAt(Math.max(0,Math.min(index,mediaGallery.length-1)));
   $('#media-viewer-close').focus();
  }
  function closeMediaViewer(){
   if(mediaViewer.hidden)return;
   const playing=mediaBody.querySelector('video,audio');
   if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
-  mediaBody.replaceChildren();mediaViewer.hidden=true;
+  mediaBody.replaceChildren();mediaViewer.hidden=true;mediaGallery=[];mediaIndex=0;
   if(mediaReturnFocus&&document.contains(mediaReturnFocus))mediaReturnFocus.focus();
   mediaReturnFocus=null;
  }
- function mediaButton(url,{kind='image',alt='',label=''}={}){
+ function conversationImageGallery(){
+  const list=[],box=boxes.get(selected);
+  for(const m of box&&box.messages||[])for(const img of m.images||[])list.push({messageId:m.id,imageId:img.id,kind:mediaKind(img.mediaType,''),alt:'Attachment '+img.number,label:'Attachment '+img.number});
+  return list;
+ }
+ function mediaButton(url,{kind='image',alt='',label='',messageId='',imageId=''}={}){
   const btn=document.createElement('button');btn.type='button';btn.className='media-button';
   btn.setAttribute('aria-label','Open '+mediaKindLabel(kind)+(label?': '+label:alt?': '+alt:''));
   if(kind==='image'){
@@ -414,7 +418,15 @@
    const name=document.createElement('span');name.textContent=label||alt||(kind==='video'?'Play video':'Play audio');
    chip.append(glyph,name);btn.append(chip);
   }
-  btn.onclick=()=>openMediaViewer(url,{kind,alt,label});
+  btn.onclick=()=>{
+   if(messageId&&imageId){
+    const list=conversationImageGallery();
+    const index=list.findIndex(entry=>entry.messageId===messageId&&entry.imageId===imageId);
+    openMediaViewer(list.length?list:[{url,kind,alt,label}],index<0?0:index);
+   }else{
+    openMediaViewer([{url,kind,alt,label}]);
+   }
+  };
   return btn;
  }
  function enhanceMediaLinks(root){
@@ -428,9 +440,21 @@
  }
  $('#media-viewer-close').onclick=closeMediaViewer;
  $('#media-viewer-backdrop').onclick=closeMediaViewer;
+ mediaPrev.onclick=()=>{if(mediaIndex>0)void showMediaAt(mediaIndex-1)};
+ mediaNext.onclick=()=>{if(mediaIndex<mediaGallery.length-1)void showMediaAt(mediaIndex+1)};
+ let swipeX=0,swipeY=0;
+ mediaBody.addEventListener('touchstart',event=>{const t=event.changedTouches[0];swipeX=t.clientX;swipeY=t.clientY},{passive:true});
+ mediaBody.addEventListener('touchend',event=>{
+  const t=event.changedTouches[0],dx=t.clientX-swipeX,dy=t.clientY-swipeY;
+  if(Math.abs(dx)<=48||Math.abs(dx)<=Math.abs(dy))return;
+  if(dx<0&&mediaIndex<mediaGallery.length-1)void showMediaAt(mediaIndex+1);
+  else if(dx>0&&mediaIndex>0)void showMediaAt(mediaIndex-1);
+ },{passive:true});
  addEventListener('keydown',event=>{
   if(mediaViewer.hidden)return;
   if(event.key==='Escape'){event.preventDefault();closeMediaViewer();return}
+  if(event.key==='ArrowLeft'){event.preventDefault();if(mediaIndex>0)void showMediaAt(mediaIndex-1);return}
+  if(event.key==='ArrowRight'){event.preventDefault();if(mediaIndex<mediaGallery.length-1)void showMediaAt(mediaIndex+1);return}
   if(event.key==='Tab'){
    const focusable=[...mediaViewer.querySelectorAll('button,a[href],video,audio')].filter(el=>!el.hidden);
    if(!focusable.length)return;
@@ -689,7 +713,7 @@
  function imageURL(message,image){
   const key=message.id+':'+image.id;
   if(imageURLs.has(key))return Promise.resolve(imageURLs.get(key));
-  return fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(image.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
+  return fetch(mediaEndpoint(message.id,image.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
    .then(r=>{if(!r.ok)throw Error('image unavailable');return r.blob()}).then(b=>{const url=URL.createObjectURL(b);imageURLs.set(key,url);return url}).catch(()=>null);
  }
  const questionSelections=new Map();// messageId -> Set of picked choices; survives live re-renders
@@ -760,7 +784,17 @@
   renderRichText(text,body);
   row.append(text);
   for(const image of message.images||[]){
-   imageURL(message,image).then(url=>{if(!url)return;const kind=mediaKind(image.mediaType,url);const label='Attachment '+image.number;const btn=mediaButton(url,{kind,alt:label+' from '+message.direction,label});row.insertBefore(btn,row.querySelector('.meta'))});
+   const label='Attachment '+image.number,alt=label+' from '+message.direction;
+   const kind=mediaKind(image.mediaType,'');
+   if(kind==='video'||kind==='audio'){
+    // The chip carries no media of its own and the viewer streams from the
+    // authenticated endpoint, so never buffer a whole clip into a blob here:
+    // a 100 MiB video would download on every transcript render and a slow
+    // link would time out and drop the attachment from the conversation.
+    row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,messageId:message.id,imageId:image.id}));
+    continue;
+   }
+   imageURL(message,image).then(url=>{if(!url)return;const btn=mediaButton(url,{kind:mediaKind(image.mediaType,url),alt,label,messageId:message.id,imageId:image.id});row.insertBefore(btn,row.querySelector('.meta'))});
   }
   const form=questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
@@ -778,8 +812,7 @@
  }
  // A chat opens at its newest message and keeps following output until the
  // reader scrolls away; scrolling back to the bottom resumes following.
- function followMessages(){stickToBottom=true;requestAnimationFrame(scrollMessagesToBottom)}
- messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120});
+ messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;if(selected)scrollMemory.set(selected,messagesEl.scrollTop)});
  function renderMessages(box){
   if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
@@ -900,7 +933,6 @@
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
-  syncCompanion(box);
  }
  async function refreshMessages(force){
   if(!selected)return;
@@ -916,10 +948,6 @@
    box.messages=[...merged.values()].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)||a.id.localeCompare(b.id));
   }else{box.messages=latest;box.historyLoaded=true;box.hasOlder=latest.length===50}
   previewFetched.set(box.id,Date.now());
-  const agentCount=(box.messages||[]).filter(m=>m.direction==='agent').length;
-  const priorAgentCount=agentSeen.get(id);
-  if(priorAgentCount!==undefined&&agentCount>priorAgentCount&&companion&&companionBox===box.id)companion.jump('happy');
-  agentSeen.set(id,agentCount);
   // The processing bubble must use the state of this response, not the
   // previous poll's state (which can leave it beneath an agent reply).
   applySeen(selected);
@@ -950,7 +978,12 @@
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();messagesEl.dataset.box=id;hideTvPreview()}
   selected=id;lastSignature='';
-  followMessages();
+  // Restore where this box was left instead of always jumping to the bottom;
+  // first-time opens (no memory) start at the newest message.
+  const savedScroll=scrollMemory.get(id);
+  stickToBottom=savedScroll==null;
+  const restoredDraft=inputDrafts[id]||'';
+  if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow()}
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;
   appEl.classList.add('in-chat');
   renderHeader();
@@ -960,33 +993,46 @@
   renderInspect();
   if(!(boxes.get(id).messages||[]).length)doodle('Loading messages…');
   try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{doodle('')}
+  if(savedScroll!=null)requestAnimationFrame(()=>{messagesEl.scrollTop=savedScroll});
   inputEl.focus();
  }
 
  /* ---------- composer ---------- */
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,150)+'px'}
- inputEl.addEventListener('input',grow);
+ inputEl.addEventListener('input',()=>{grow();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  inputEl.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();composer.requestSubmit()}});
  function renderDrafts(){
   draftsEl.hidden=!drafts.length;draftsEl.replaceChildren();
   for(const entry of drafts){
    const wrap=document.createElement('span');wrap.className='draft';
-   const img=document.createElement('img');img.src=entry.url;img.alt='Image '+entry.number;
-   const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='Remove image';
+   const open=document.createElement('button');open.type='button';open.className='draft-open';
+   open.setAttribute('aria-label','Inspect attachment '+entry.number);
+   const kind=entry.kind||'image';
+   if(kind==='video'||kind==='audio'){
+    const el=document.createElement(kind);el.src=entry.url;el.muted=true;el.playsInline=true;el.preload='metadata';el.setAttribute('aria-hidden','true');open.append(el);
+   }else{
+    const img=document.createElement('img');img.src=entry.url;img.alt='Attachment '+entry.number;open.append(img);
+   }
+   open.onclick=()=>openMediaViewer([{url:entry.url,kind,alt:'Attachment '+entry.number,label:'Attachment '+entry.number}]);
+   const remove=document.createElement('button');remove.type='button';remove.className='draft-remove';remove.textContent='×';remove.title='Remove attachment';
    remove.onclick=()=>{drafts=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);drafts.forEach((d,i)=>d.number=i+1);renderDrafts()};
-   wrap.append(img,remove);draftsEl.append(wrap);
+   wrap.append(open,remove);draftsEl.append(wrap);
   }
  }
  async function uploadImages(files){
   for(const file of files){
-   if(drafts.length>=8){statusEl.textContent='Attach at most 8 images.';break}
-   if(!['image/png','image/jpeg','image/gif'].includes(file.type)){statusEl.textContent='Choose PNG, JPEG, or GIF images.';continue}
-   if(file.size>8*1024*1024){statusEl.textContent='Each image must be at most 8 MiB.';continue}
+   if(drafts.length>=8){statusEl.textContent='Attach at most 8 files.';break}
+   const isVideo=file.type==='video/mp4'||file.type==='video/webm';
+   const isImage=['image/png','image/jpeg','image/gif'].includes(file.type);
+   if(!isVideo&&!isImage){statusEl.textContent='Choose PNG, JPEG, GIF, MP4 or WebM.';continue}
+   const limitMiB=isVideo?100:8;
+   if(file.size>limitMiB*1024*1024){statusEl.textContent=(isVideo?'Videos':'Images')+' must be at most '+limitMiB+' MiB.';continue}
    try{
-    const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(60000)});
+    const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(120000)});
     let result;try{result=await response.json()}catch{}
-    if(!response.ok)throw Error(result?.error||'Image upload failed.');
-    drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file)});renderDrafts();
+    if(!response.ok)throw Error(result?.error||'Upload failed.');
+    drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type});
+    renderDrafts();
    }catch(e){statusEl.textContent=e.message}
   }
   fileInput.value='';
@@ -1013,6 +1059,7 @@
   // Clear the composer the moment the message is handed off so typing can
   // continue immediately. The text and drafts are restored if the send fails.
   inputEl.value='';grow();
+  if(inputDrafts[boxID]){delete inputDrafts[boxID];saveInputDrafts()}
   const sentDrafts=drafts;drafts=[];renderDrafts();
   // Delivery can finish after a fast MCP reply, so show the outgoing message
   // and existing processing state while the synchronous POST is in flight.
@@ -1031,6 +1078,7 @@
   }catch(e){
    statusEl.textContent=e.message;
    if(!inputEl.value)inputEl.value=text;
+   inputDrafts[boxID]=inputEl.value;saveInputDrafts();
    // Restore the drafts handed to the failed send alongside anything the user
    // attached meanwhile, so no blob URL is lost or leaked.
    if(sentDrafts.length){drafts=[...sentDrafts,...drafts].map((draft,index)=>({...draft,number:index+1}));renderDrafts();grow()}
