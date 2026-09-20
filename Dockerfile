@@ -33,6 +33,7 @@ RUN apt-get update \
       bubblewrap \
       ca-certificates \
       curl \
+      ffmpeg \
       git \
       gh \
       jq \
@@ -121,6 +122,7 @@ RUN set -eux; \
     { \
       printf 'image-version=%s\ncomponents=%s\n' "$VMBOX_IMAGE_VERSION" "$normalized_components"; \
       git --version; gh --version | sed -n '1p'; railway --version; tmux -V; node --version; \
+      ffmpeg -version | sed -n '1p'; ffprobe -version | sed -n '1p'; \
       npm --version; python --version; python3 --version; python3 -m pip --version; pipx --version; uv --version; uvx --version; \
       bun --version; codex --version; claude --version; opencode --version; forge --version | sed -n '1p'; \
       sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-worker-agent /usr/local/bin/vmbox-entrypoint /etc/vmbox/tmux.conf; \
