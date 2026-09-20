@@ -148,16 +148,16 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   workspace page and the chat Details drawer are only editors. Entry points:
   `internal/controller/contacts.go`, `internal/boxruntime/contacts.go`.
 - The chat PWA is mobile-first: a single-column app shell with push navigation
-  on phones and a two-pane view from 900px. Its daylight look is not a
-  hand-authored theme — it is generated at runtime from a hex seed using the
-  same blockies-style PRNG as the seeded emoji mascot, driving palette, radii,
-  type and motion, and the seed can be rerolled from the look sheet. Message
-  bodies render through the injection-safe `markdown.js` (headings, lists, code,
-  quotes, links) with bare URLs still linkified. Every attachment and media
-  embed is a focusable control: images are buttons that open a focus-managed
-  lightbox (video and audio included, focus restored on Escape). The mascot's
-  six-mood state machine is wired to real chat signals: a per-box companion and
-  avatar mascots animate working, waiting, happy and angry states. Screenshots
+  on phones and a two-pane view from 900px. It ships a dark, Discord-like
+  palette; a hex seed still shapes the seeded emoji mascot, the corner radii and
+  the type face, and can be rerolled from the look sheet. Message bodies render
+  through the injection-safe `markdown.js` (headings, lists, code, quotes, links)
+  with bare URLs still linkified. Every attachment and media embed is a focusable
+  control: images are buttons that open a focus-managed lightbox (video and audio
+  included, focus restored on Escape), and attached drafts can be inspected
+  before sending. Unsent composer text is kept per box in local storage, and the
+  transcript remembers its scroll position per box. The seeded mascot is used for
+  box avatars (with a `NO SIGNAL` fallback) and the processing bubble. Screenshots
   live in `docs/chat-ui/screenshots/mobile-first/`.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's

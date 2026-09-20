@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
 <title>vmbox chats</title>
-<meta name="theme-color" content="#f7f4e8">
+<meta name="theme-color" content="#313338">
 <link rel="icon" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/app.css">
@@ -39,12 +39,11 @@
     <h1>Chats</h1>
     <p id="chat-list-sub">One chat per agent box</p>
    </div>
-   <div id="list-mascot" class="mascot-host" aria-hidden="true"></div>
+   <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
   <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search boxes…" autocomplete="off" aria-label="Search boxes"></div>
   <ul id="chat-entries"></ul>
-  <p id="chat-list-empty" hidden>No interactive boxes yet. Create one with the + button below.</p>
-  <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
+  <p id="chat-list-empty" hidden>No interactive boxes yet. Create one with the + button above.</p>
  </aside>
  <main id="chat-main">
   <section id="chat-empty">
@@ -60,7 +59,6 @@
     <button id="chat-back" type="button" aria-label="Back to chat list">‹</button>
     <span id="chat-header-avatar"></span>
     <div id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></div>
-    <span id="chat-companion" class="mascot-host" aria-hidden="true"></span>
     <span class="spacer"></span>
     <button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session">Clear</button>
     <button id="chat-control" type="button" title="Take control: Desktop or TMUX in a popup">Control</button>
@@ -193,7 +191,7 @@
    <button id="logout" type="button" hidden>Log out</button>
   </div>
   <div class="menu-theme">
-   <p class="hint">The daylight look is derived from a seed. Every seed grows different colours, shapes and a different mascot.</p>
+   <p class="hint">Dark theme. The seed shapes the mascot, the corner radii and the type face.</p>
    <div class="seedrow">
     <input id="variant-seed" spellcheck="false" aria-label="Look seed" maxlength="32">
     <button id="variant-dice" type="button" title="Roll a new seed">🎲</button>
@@ -209,8 +207,8 @@
 
 <div id="media-viewer" hidden>
  <div id="media-viewer-backdrop"></div>
- <section id="media-viewer-card" role="dialog" aria-modal="true" aria-labelledby="media-viewer-title">
-  <header><strong id="media-viewer-title">Attachment</strong><span class="spacer"></span><button id="media-viewer-close" type="button" aria-label="Close media viewer">×</button></header>
+ <section id="media-viewer-card" role="dialog" aria-modal="true" aria-label="Attachment preview">
+  <button id="media-viewer-close" type="button" aria-label="Close media viewer">×</button>
   <div id="media-viewer-body"></div>
   <a id="media-viewer-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open original in a new tab</a>
  </section>
