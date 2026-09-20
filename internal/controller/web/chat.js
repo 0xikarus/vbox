@@ -508,8 +508,8 @@
    wrap.title='Hover to preview; click for Desktop/TMUX control';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open Desktop or TMUX control');
    const currentBox=()=>boxes.get(box.id)||box;
    wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=scheduleHideTvPreview;
-   wrap.onfocus=()=>showTvPreview(wrap,currentBox());wrap.onblur=scheduleHideTvPreview;
-   wrap.onclick=event=>{event.stopPropagation();void openBoxControl(currentBox(),'desktop')};
+   wrap.onfocus=()=>{if(!coarsePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview};
+   wrap.onclick=event=>{event.stopPropagation();const box=currentBox();if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(wrap,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
   }
   return wrap;
@@ -641,6 +641,29 @@
  function hideTvPreview(){clearTimeout(tvPreviewHideTimer);stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewEl.hidden=true;tvPreviewNoSignal.hidden=true;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewLive.classList.remove('connected');tvPreviewConnected=false;tvPreviewBox=''}
  addEventListener('scroll',()=>{if(!tvPreviewEl.matches(':hover')&&!tvPreviewEl.contains(document.activeElement))hideTvPreview()},true);
  addEventListener('resize',hideTvPreview);
+ // Touch has no hover. A tap on a preview trigger opens the TV preview, a tap
+ // outside dismisses it, and long-pressing the image must not offer "save as".
+ tvPreviewEl.addEventListener('contextmenu',event=>event.preventDefault());
+ document.addEventListener('touchstart',event=>{
+  if(tvPreviewEl.hidden)return;
+  if(tvPreviewEl.contains(event.target))return;
+  if(event.target.closest?.('.tv-button,.preview-trigger'))return;
+  hideTvPreview();
+ },{passive:true});
+ // A touch-friendly context menu: hold a chat row instead of right-clicking.
+ function bindLongPress(element,handler){
+  let timer=0,startX=0,startY=0,fired=false;
+  const cancel=()=>{clearTimeout(timer);timer=0};
+  element.addEventListener('touchstart',event=>{
+   if(event.touches.length!==1)return;
+   const touch=event.touches[0];startX=touch.clientX;startY=touch.clientY;fired=false;
+   cancel();timer=setTimeout(()=>{fired=true;handler(touch.clientX,touch.clientY)},500);
+  },{passive:true});
+  element.addEventListener('touchmove',event=>{const touch=event.touches[0];if(!touch)return;if(Math.abs(touch.clientX-startX)>12||Math.abs(touch.clientY-startY)>12)cancel()},{passive:true});
+  element.addEventListener('touchend',event=>{cancel();if(fired){fired=false;event.preventDefault();event.stopPropagation()}},{passive:false});
+  element.addEventListener('touchcancel',cancel,{passive:true});
+ }
+ const coarsePointer=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
 
  /* ---------- chat list ---------- */
  const fmtTime=value=>{const d=new Date(value),now=new Date(),sameDay=d.toDateString()===now.toDateString();if(sameDay)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(d.toDateString()===yesterday.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'2-digit',month:'2-digit',year:'numeric'})};
@@ -684,7 +707,8 @@
      row.classList.add('dragging');
     });
     row.addEventListener('dragend',()=>row.classList.remove('dragging'));
-    row.oncontextmenu=event=>{event.preventDefault();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
+    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu(box,{left:x,right:x,bottom:y+4,top:y})});
+    row.oncontextmenu=event=>{event.preventDefault();if(rowMenu.hidden)openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
     const meta=document.createElement('div');meta.className='chat-meta';
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
@@ -868,13 +892,13 @@
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
-   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview; click for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
+   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover or tap to preview; open it for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
    tv.append(tvIcon());
-   tv.onmouseenter=()=>showTvPreview(tv,box);
+   tv.onmouseenter=()=>{if(!coarsePointer())showTvPreview(tv,box)};
    tv.onmouseleave=scheduleHideTvPreview;
-   tv.onfocus=()=>showTvPreview(tv,box);
-   tv.onblur=scheduleHideTvPreview;
-   tv.onclick=()=>void openBoxControl(box,'desktop');
+   tv.onfocus=()=>{if(!coarsePointer())showTvPreview(tv,box)};
+   tv.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview};
+   tv.onclick=()=>{if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(tv,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    t.append(mini,dots,label,tv);messagesEl.append(t);
   }
   if(follow){
@@ -1132,6 +1156,23 @@
   }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
+ // Swipe in from the left edge on a phone to pull the chat list back out.
+ let listSwipe=null;
+ appEl.addEventListener('touchstart',event=>{
+  if(event.touches.length!==1)return;
+  const touch=event.touches[0];
+  listSwipe=touch.clientX<=48?{x:touch.clientX,y:touch.clientY}:null;
+ },{passive:true});
+ appEl.addEventListener('touchmove',event=>{
+  if(!listSwipe)return;
+  const touch=event.touches[0];if(!touch)return;
+  if(touch.clientX-listSwipe.x>60&&Math.abs(touch.clientY-listSwipe.y)<50){
+   listSwipe=null;
+   if(appEl.classList.contains('in-chat')){appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)}
+  }
+ },{passive:true});
+ appEl.addEventListener('touchend',()=>{listSwipe=null},{passive:true});
+ appEl.addEventListener('touchcancel',()=>{listSwipe=null},{passive:true});
  addEventListener('hashchange',()=>{const id=new URLSearchParams(location.hash.slice(1)).get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id)});
 
  /* ---------- takeover popup: VNC/TMUX control ---------- */
