@@ -1251,31 +1251,25 @@
  function graphNode(view,{center=false,contact=false}={}){
   const node=document.createElement('div');node.className='cg-node'+(center?' cg-center':'');
   node.append(avatarNode(view,true));
-  const label=document.createElement('span');label.className='cg-label';label.textContent=view.name;label.title=view.name;node.append(label);
-  if(contact){const sub=document.createElement('span');sub.className='cg-sub';sub.textContent=(view.role||'worker')+' · '+(view.state||'unknown');node.append(sub)}
+  const text=document.createElement('span');text.className='cg-text';
+  const label=document.createElement('span');label.className='cg-label';label.textContent=view.name;label.title=view.name;text.append(label);
+  if(contact){const sub=document.createElement('span');sub.className='cg-sub';sub.textContent=view.state||'unknown';text.append(sub)}
+  node.append(text);
   return node;
  }
- // A radial map of the viewed box and its explicit contacts. Contacts beyond
- // the cap stay in the Explicit contacts list below, so the graph never crowds.
+ // A slim horizontal chain: the viewed box, an arrow, then its explicit
+ // contacts as chips. Overflow stays in the Explicit contacts list below.
  function renderContactGraph(box,contacts){
-  const graph=$('#inspect-contact-graph');if(!graph)return;
-  const nodes=$('#inspect-contact-graph-nodes'),svg=$('#inspect-contact-graph-lines');
-  nodes.replaceChildren();svg.replaceChildren();
-  const views=(contacts||[]).slice(0,6).map(contactView);
-  const w=graph.clientWidth||320,h=graph.clientHeight||240,cx=w/2,cy=h/2;
-  const radius=Math.max(40,Math.min(w,h)/2-46);
-  graph.setAttribute('aria-label',box.name+' has '+views.length+' contact'+(views.length===1?'':'s')+' shown in the contact map');
-  svg.setAttribute('viewBox','0 0 '+w+' '+h);
-  const place=(view,dx,dy,opts)=>{const node=graphNode(view,opts);node.style.left=(cx+dx)+'px';node.style.top=(cy+dy)+'px';nodes.append(node)};
-  for(let i=0;i<views.length;i++){
-   const angle=-Math.PI/2+(i/views.length)*Math.PI*2;
-   const dx=Math.cos(angle)*radius,dy=Math.sin(angle)*radius;
-   const line=document.createElementNS('http://www.w3.org/2000/svg','line');
-   line.setAttribute('x1',String(cx));line.setAttribute('y1',String(cy));
-   line.setAttribute('x2',String(cx+dx));line.setAttribute('y2',String(cy+dy));svg.append(line);
-   place(views[i],dx,dy,{contact:true});
-  }
-  place({id:box.id,name:box.name,state:box.state,role:box.role||'worker',defaultAgent:box.defaultAgent||''},0,0,{center:true});
+  const graph=$('#inspect-contact-graph'),nodes=$('#inspect-contact-graph-nodes');
+  if(!graph||!nodes)return;
+  nodes.replaceChildren();
+  const views=(contacts||[]).map(contactView);
+  const shown=views.slice(0,6);
+  nodes.append(graphNode({id:box.id,name:box.name,state:box.state,role:box.role||'worker',defaultAgent:box.defaultAgent||''},{center:true}));
+  if(views.length){const arrow=document.createElement('span');arrow.className='cg-arrow';arrow.textContent='→';arrow.setAttribute('aria-hidden','true');nodes.append(arrow)}
+  for(const view of shown)nodes.append(graphNode(view,{contact:true}));
+  if(views.length>shown.length){const more=document.createElement('span');more.className='cg-more';more.textContent='+'+(views.length-shown.length)+' more';nodes.append(more)}
+  graph.setAttribute('aria-label',box.name+' can message '+views.length+' contact'+(views.length===1?'':'s')+' shown in the contact map');
  }
  // Every other box in the loaded fleet is one click away from being a contact.
  function renderContactCandidates(box){
@@ -1343,7 +1337,6 @@
   inspectContactsFor=box.id;inspectContactCache=null;void loadInspectContacts(box);
  }
  $('#inspect-contact-filter').oninput=()=>{const box=boxes.get(selected);if(box&&inspectContactsFor===box.id)renderContactCandidates(box)};
- addEventListener('resize',()=>{const box=boxes.get(selected);if(inspectOpen&&box&&inspectContactsFor===box.id&&inspectContactCache)renderContactGraph(box,inspectContactCache)});
  $('#inspect-contact-form').onsubmit=async event=>{event.preventDefault();const box=boxes.get(selected);if(!box)return;const button=event.target.querySelector('button');button.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:event.target.elements.contact.value.trim()});event.target.reset();await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}finally{button.disabled=false}};
  $('#inspect-toggle-role').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const next=box.role==='manager'?'worker':'manager';try{await api(boxPath(box.id),'PATCH',{}, {defaultAgent:box.defaultAgent||'shell',role:next});box.role=next;await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};

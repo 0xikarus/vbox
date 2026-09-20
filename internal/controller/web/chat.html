@@ -95,7 +95,7 @@
      </section>
      <section id="inspect-contacts" hidden>
       <header class="inspect-block-head"><h3>Contacts</h3></header>
-      <p class="inspect-lede">Which boxes this agent may message. A manager sees every non-protected box automatically; a worker only has the explicit contacts below. Changes apply immediately and are enforced by the controller.</p>
+      <p class="inspect-lede">A manager may message every non-protected box; a worker only the explicit contacts below.</p>
       <div class="contact-policy">
        <div class="contact-policy-card">
         <span class="policy-label">Role</span>
@@ -111,7 +111,6 @@
       <div id="inspect-contact-map" class="inspect-block">
        <h3>Contact map</h3>
        <div id="inspect-contact-graph" class="contact-graph" role="img" aria-label="Contact map of this box and its explicit contacts">
-        <svg id="inspect-contact-graph-lines" class="contact-graph-lines" aria-hidden="true" preserveAspectRatio="none"></svg>
         <div id="inspect-contact-graph-nodes" class="contact-graph-nodes"></div>
        </div>
       </div>
@@ -126,7 +125,10 @@
        </div>
        <div id="inspect-contact-candidates" class="contact-candidates"></div>
       </div>
-      <form id="inspect-contact-form"><label>Add by name or id <input name="contact" required maxlength="63" placeholder="box name or id"></label><button>Add contact</button></form>
+      <details id="inspect-contact-manual">
+       <summary>Add by name or id</summary>
+       <form id="inspect-contact-form"><label>Box name or id <input name="contact" required maxlength="63" placeholder="box name or id"></label><button>Add contact</button></form>
+      </details>
       <p id="inspect-contact-status" role="status"></p>
      </section>
     </div>

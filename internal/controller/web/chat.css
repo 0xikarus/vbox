@@ -273,67 +273,71 @@ body{max-width:none;margin:0;padding:0;height:100%;
   border:1px solid var(--line);border-radius:var(--radius-sm);padding:.4rem .7rem;cursor:pointer}
 .inspect-actions button:hover{background:var(--accent-soft);border-color:var(--accent)}
 #inspect-contacts{grid-column:2;grid-row:1;border-left:1px solid var(--line);background:var(--surface);
-  padding:1rem .9rem 1.2rem;font-size:.88rem;overflow-y:auto;display:flex;flex-direction:column;gap:.6rem;min-width:0}
+  padding:.7rem .8rem .8rem;font-size:.84rem;overflow-y:auto;display:flex;flex-direction:column;gap:.45rem;min-width:0}
 #inspect-contacts[hidden]{display:none}
 #inspect:not(.with-contacts) #inspect-contacts{display:none}
+#inspect-contacts .inspect-block{margin-top:.5rem}
 #inspect-contacts .inspect-block-head h3{margin:0;font-size:.7rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft)}
-.inspect-lede{margin:0;color:var(--ink-soft);line-height:1.5}
-.contact-policy{display:grid;gap:.5rem}
-.contact-policy-card{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.55rem .7rem;background:var(--bg2);
+.inspect-lede{margin:0;color:var(--ink-soft);font-size:.8rem;line-height:1.35}
+.contact-policy{display:grid;gap:.35rem}
+.contact-policy-card{display:flex;align-items:center;gap:.45rem;flex-wrap:wrap;padding:.35rem .55rem;background:var(--bg2);
   border:1px solid var(--line);border-radius:var(--radius)}
-.contact-policy-card .policy-label{font-size:.66rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
-.contact-policy-card strong{color:var(--ink)}
-.contact-policy-card button{margin-left:auto;font:inherit;font-size:.78rem;font-weight:700;color:var(--accent-text);
-  background:var(--accent-soft);border:1px solid transparent;border-radius:var(--radius-sm);padding:.3rem .55rem;cursor:pointer}
+.contact-policy-card .policy-label{font-size:.64rem;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)}
+.contact-policy-card strong{color:var(--ink);font-size:.86rem}
+.contact-policy-card button{margin-left:auto;font:inherit;font-size:.72rem;font-weight:700;color:var(--accent-text);
+  background:var(--accent-soft);border:1px solid transparent;border-radius:var(--radius-sm);padding:.22rem .45rem;cursor:pointer}
 .contact-policy-card button:hover{border-color:var(--accent)}
-#inspect-contact-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.4rem;max-height:12rem;overflow-y:auto}
-#inspect-contact-list li{display:flex;align-items:center;gap:.5rem;padding:.5rem .6rem;background:var(--bg2);
+#inspect-contact-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.3rem;max-height:7rem;overflow-y:auto}
+#inspect-contact-list li{display:flex;align-items:center;gap:.4rem;padding:.32rem .5rem;background:var(--bg2);
   border:1px solid var(--line);border-radius:var(--radius);min-width:0}
 #inspect-contact-list li.empty{justify-content:center;color:var(--ink-soft);font-style:italic;background:none;border-style:dashed}
 .contact-info{display:flex;flex-direction:column;min-width:0}
-.contact-name{font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.contact-meta{font-size:.72rem;color:var(--ink-soft)}
-#inspect-contact-list li button{margin-left:auto;flex:none;font:inherit;font-size:.74rem;font-weight:700;color:var(--danger-text);
-  background:none;border:1px solid color-mix(in srgb,var(--danger) 45%,transparent);border-radius:var(--radius-sm);padding:.22rem .5rem;cursor:pointer}
+.contact-name{font-size:.88rem;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.contact-meta{font-size:.68rem;color:var(--ink-soft)}
+#inspect-contact-list li button{margin-left:auto;flex:none;font:inherit;font-size:.72rem;font-weight:700;color:var(--danger-text);
+  background:none;border:1px solid color-mix(in srgb,var(--danger) 45%,transparent);border-radius:var(--radius-sm);padding:.18rem .42rem;cursor:pointer}
 #inspect-contact-list li button:hover{background:color-mix(in srgb,var(--danger) 16%,transparent)}
+#inspect-contact-manual summary{cursor:pointer;font-size:.76rem;font-weight:700;color:var(--ink-soft);padding:.15rem 0}
+#inspect-contact-manual[open] summary{margin-bottom:.35rem}
 #inspect-contacts form{display:flex;gap:.4rem;flex-wrap:wrap;align-items:flex-end}
-#inspect-contacts form label{display:flex;flex-direction:column;gap:.2rem;flex:1 1 9rem;font-size:.8rem;color:var(--ink-soft)}
+#inspect-contacts form label{display:flex;flex-direction:column;gap:.2rem;flex:1 1 9rem;font-size:.78rem;color:var(--ink-soft)}
 #inspect-contacts form input{font:inherit;background:var(--bg2);color:var(--ink);border:1px solid var(--line);
-  border-radius:var(--radius-sm);padding:.42rem .55rem;width:100%}
-#inspect-contacts form button{font:inherit;font-size:.82rem;font-weight:700;background:var(--accent);color:var(--accent-ink);
-  border:0;border-radius:var(--radius-sm);padding:.46rem .75rem;cursor:pointer}
-#inspect-contact-status{margin:0;font-size:.78rem;color:var(--ink-soft);line-height:1.45}
-/* ── contact map: the viewed box and its explicit contacts as a graph ── */
+  border-radius:var(--radius-sm);padding:.36rem .5rem;width:100%}
+#inspect-contacts form button{font:inherit;font-size:.78rem;font-weight:700;background:var(--accent);color:var(--accent-ink);
+  border:0;border-radius:var(--radius-sm);padding:.4rem .65rem;cursor:pointer}
+#inspect-contact-status{margin:0;font-size:.74rem;color:var(--ink-soft);line-height:1.35}
+/* ── contact map: the viewed box and its explicit contacts as chips ──── */
 #inspect-contact-map .inspect-block{margin-top:0}
-.contact-graph{position:relative;height:17rem;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
-  background:radial-gradient(circle at 50% 50%,color-mix(in srgb,var(--accent) 12%,transparent),transparent 62%),var(--bg2)}
-.contact-graph-lines{position:absolute;inset:0;width:100%;height:100%}
-.contact-graph-lines line{stroke:color-mix(in srgb,var(--accent) 50%,var(--line));stroke-width:1.5;vector-effect:non-scaling-stroke}
-.contact-graph-nodes{position:absolute;inset:0}
-.cg-node{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:.15rem;
-  width:4.6rem;text-align:center}
-.cg-node .avatar{width:2.3rem;height:2.3rem}
-.cg-node .avatar .initials{font-size:.78rem}
-.cg-label{font-size:.72rem;font-weight:700;color:var(--ink);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.cg-sub{font-size:.62rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.04em}
-.cg-center .avatar{width:2.9rem;height:2.9rem;box-shadow:0 0 0 2px var(--accent),0 6px 18px rgba(0,0,0,.25)}
-.cg-center .cg-label{font-weight:800}
-.cg-more{color:var(--ink-soft);font-style:italic}
+.contact-graph{border:1px solid var(--line);border-radius:var(--radius);background:var(--bg2);padding:.45rem}
+.contact-graph-nodes{display:flex;align-items:center;flex-wrap:wrap;gap:.35rem .5rem}
+.cg-node{display:flex;align-items:center;gap:.4rem;padding:.24rem .5rem .24rem .28rem;background:var(--surface);
+  border:1px solid var(--line);border-radius:999px;max-width:100%}
+.cg-node .avatar{width:1.5rem;height:1.5rem;flex:none}
+.cg-node .avatar .initials{font-size:.6rem}
+.cg-text{display:flex;flex-direction:column;min-width:0;line-height:1.15}
+.cg-label{font-size:.74rem;font-weight:700;color:var(--ink);max-width:9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cg-sub{font-size:.58rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.03em}
+.cg-center{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.cg-center .avatar{width:1.7rem;height:1.7rem}
+.cg-arrow{color:var(--accent-text);font-weight:800}
+.cg-more{color:var(--ink-soft);font-style:italic;font-size:.72rem}
 /* ── add from the fleet: every other box as a one-click reference ───── */
 .contact-picker-head{display:flex;align-items:center;gap:.5rem;justify-content:space-between}
-.contact-picker-head input{flex:1 1 7rem;max-width:11rem;min-width:0;font:inherit;font-size:.78rem;color:var(--ink);
-  background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.3rem .5rem}
-.contact-candidates{display:flex;flex-direction:column;gap:.35rem;max-height:13rem;overflow-y:auto;margin-top:.45rem}
-.contact-candidate{display:flex;align-items:center;gap:.5rem;padding:.42rem .55rem;background:var(--bg2);
+.contact-picker-head input{flex:1 1 7rem;max-width:11rem;min-width:0;font:inherit;font-size:.76rem;color:var(--ink);
+  background:var(--bg2);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.26rem .45rem}
+.contact-candidates{display:flex;flex-direction:column;gap:.28rem;max-height:8rem;overflow-y:auto;margin-top:.4rem}
+.contact-candidate{display:flex;align-items:center;gap:.45rem;padding:.3rem .45rem;background:var(--bg2);
   border:1px solid var(--line);border-radius:var(--radius);min-width:0}
-.contact-candidate .avatar{width:1.8rem;height:1.8rem;flex:none}
-.contact-candidate .avatar .initials{font-size:.7rem}
+.contact-candidate .avatar{width:1.5rem;height:1.5rem;flex:none}
+.contact-candidate .avatar .initials{font-size:.6rem}
 .contact-candidate .contact-info{flex:1}
-.contact-candidate button{margin-left:auto;flex:none;font:inherit;font-size:.74rem;font-weight:700;color:var(--accent-ink);
-  background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm);padding:.24rem .55rem;cursor:pointer}
+.contact-candidate .contact-name{font-size:.84rem}
+.contact-candidate .contact-meta{font-size:.66rem}
+.contact-candidate button{margin-left:auto;flex:none;font:inherit;font-size:.72rem;font-weight:700;color:var(--accent-ink);
+  background:var(--accent);border:1px solid transparent;border-radius:var(--radius-sm);padding:.2rem .5rem;cursor:pointer}
 .contact-candidate button:hover{filter:brightness(1.08)}
 .contact-candidate button:disabled{opacity:.5;cursor:default}
-.contact-candidates .empty,.contact-candidates .hint{color:var(--ink-soft);font-style:italic;font-size:.78rem;padding:.3rem .1rem}
+.contact-candidates .empty,.contact-candidates .hint{color:var(--ink-soft);font-style:italic;font-size:.76rem;padding:.25rem .1rem}
 
 /* ── processing bubble ───────────────────────────────────────────────── */
 .msg.processing{display:flex;align-items:center;gap:.5rem;color:var(--ink-soft);font-size:.82rem;padding:.4rem .6rem}
