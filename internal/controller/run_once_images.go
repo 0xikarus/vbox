@@ -10,29 +10,59 @@ import (
 	_ "image/png"
 	"io"
 	"net/http"
-	"strconv"
+	"time"
 )
 
+const (
+	maxImageUpload = 8 << 20
+	maxVideoUpload = 100 << 20
+	// maxAccountAttachmentBytes bounds all attachments kept for one account.
+	maxAccountAttachmentBytes = 1 << 30
+)
+
+// sniffVideo recognises the container formats the chat can play inline. MP4
+// and MOV both carry an ISO base-media `ftyp` box; WebM is a Matroska header.
+func sniffVideo(data []byte) string {
+	if len(data) >= 12 && bytes.Equal(data[4:8], []byte("ftyp")) {
+		return "video/mp4"
+	}
+	if len(data) >= 4 && bytes.Equal(data[0:4], []byte{0x1a, 0x45, 0xdf, 0xa3}) {
+		return "video/webm"
+	}
+	return ""
+}
+
+// validateRunOnceImage accepts the image and video formats the chat can show.
+// Images are decoded and bounded; video is matched by container signature.
 func validateRunOnceImage(data []byte) (string, error) {
-	if len(data) == 0 || len(data) > 8<<20 {
-		return "", fmt.Errorf("image must be 1 byte–8 MiB")
+	if len(data) == 0 {
+		return "", fmt.Errorf("attachment is empty")
+	}
+	if media := sniffVideo(data); media != "" {
+		if len(data) > maxVideoUpload {
+			return "", fmt.Errorf("video must be at most 100 MiB")
+		}
+		return media, nil
+	}
+	if len(data) > maxImageUpload {
+		return "", fmt.Errorf("image must be at most 8 MiB")
 	}
 	cfg, kind, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > 40000000 {
-		return "", fmt.Errorf("use PNG, JPEG or GIF up to 40 megapixels")
+		return "", fmt.Errorf("use PNG, JPEG, GIF, MP4 or WebM up to 40 megapixels")
 	}
 	media := map[string]string{"png": "image/png", "jpeg": "image/jpeg", "gif": "image/gif"}[kind]
 	if media == "" {
-		return "", fmt.Errorf("unsupported image format")
+		return "", fmt.Errorf("unsupported attachment format")
 	}
 	return media, nil
 }
 
 func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Principal) {
-	r.Body = http.MaxBytesReader(w, r.Body, 8<<20)
+	r.Body = http.MaxBytesReader(w, r.Body, maxVideoUpload)
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		writeError(w, 413, fmt.Errorf("image exceeds 8 MiB"))
+		writeError(w, 413, fmt.Errorf("attachment exceeds 100 MiB"))
 		return
 	}
 	media, err := validateRunOnceImage(data)
@@ -58,8 +88,8 @@ func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Pr
 		writeError(w, 500, err)
 		return
 	}
-	if used+int64(len(data)) > 256<<20 {
-		writeError(w, 409, fmt.Errorf("saved images reached the 256 MiB account storage limit"))
+	if used+int64(len(data)) > maxAccountAttachmentBytes {
+		writeError(w, 409, fmt.Errorf("saved attachments reached the 1 GiB account storage limit"))
 		return
 	}
 	id := uuid()
@@ -74,7 +104,7 @@ func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Pr
 	writeJSON(w, 201, map[string]string{"id": id})
 }
 
-// Capability grants read access to this image only, never controller access.
+// Capability grants read access to this media only, never controller access.
 func (s *Server) downloadRunOnceImage(w http.ResponseWriter, r *http.Request) {
 	var media string
 	var data []byte
@@ -92,6 +122,6 @@ func (s *Server) downloadRunOnceImage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Referrer-Policy", "no-referrer")
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Write(data)
+	// ServeContent adds Accept-Ranges and answers range requests (video seek).
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
 }

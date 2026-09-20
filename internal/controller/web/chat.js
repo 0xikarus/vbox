@@ -369,8 +369,14 @@
   mediaIndex=index;
   let url=item.url;
   if(!url&&item.messageId){
-   const box=boxes.get(selected),m=(box&&box.messages||[]).find(x=>x.id===item.messageId),img=m&&(m.images||[]).find(x=>x.id===item.imageId);
-   if(m&&img)url=await imageURL(m,img);
+   if(item.kind==='video'||item.kind==='audio'){
+    // Point straight at the authenticated endpoint so the browser can range
+    // request and stream instead of buffering a blob.
+    url='/v1/messages/'+encodeURIComponent(item.messageId)+'/images/'+encodeURIComponent(item.imageId);
+   }else{
+    const box=boxes.get(selected),m=(box&&box.messages||[]).find(x=>x.id===item.messageId),img=m&&(m.images||[]).find(x=>x.id===item.imageId);
+    if(m&&img)url=await imageURL(m,img);
+   }
   }
   renderMediaItem(url,item);
   if(/^https?:/i.test(url||'')){mediaOpen.hidden=false;mediaOpen.href=url}else{mediaOpen.hidden=true;mediaOpen.removeAttribute('href')}
@@ -990,24 +996,32 @@
    const wrap=document.createElement('span');wrap.className='draft';
    const open=document.createElement('button');open.type='button';open.className='draft-open';
    open.setAttribute('aria-label','Inspect attachment '+entry.number);
-   const img=document.createElement('img');img.src=entry.url;img.alt='Attachment '+entry.number;
-   open.append(img);
-   open.onclick=()=>openMediaViewer([{url:entry.url,kind:'image',alt:'Attachment '+entry.number,label:'Attachment '+entry.number}]);
-   const remove=document.createElement('button');remove.type='button';remove.className='draft-remove';remove.textContent='×';remove.title='Remove image';
+   const kind=entry.kind||'image';
+   if(kind==='video'||kind==='audio'){
+    const el=document.createElement(kind);el.src=entry.url;el.muted=true;el.playsInline=true;el.preload='metadata';el.setAttribute('aria-hidden','true');open.append(el);
+   }else{
+    const img=document.createElement('img');img.src=entry.url;img.alt='Attachment '+entry.number;open.append(img);
+   }
+   open.onclick=()=>openMediaViewer([{url:entry.url,kind,alt:'Attachment '+entry.number,label:'Attachment '+entry.number}]);
+   const remove=document.createElement('button');remove.type='button';remove.className='draft-remove';remove.textContent='×';remove.title='Remove attachment';
    remove.onclick=()=>{drafts=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);drafts.forEach((d,i)=>d.number=i+1);renderDrafts()};
    wrap.append(open,remove);draftsEl.append(wrap);
   }
  }
  async function uploadImages(files){
   for(const file of files){
-   if(drafts.length>=8){statusEl.textContent='Attach at most 8 images.';break}
-   if(!['image/png','image/jpeg','image/gif'].includes(file.type)){statusEl.textContent='Choose PNG, JPEG, or GIF images.';continue}
-   if(file.size>8*1024*1024){statusEl.textContent='Each image must be at most 8 MiB.';continue}
+   if(drafts.length>=8){statusEl.textContent='Attach at most 8 files.';break}
+   const isVideo=file.type==='video/mp4'||file.type==='video/webm';
+   const isImage=['image/png','image/jpeg','image/gif'].includes(file.type);
+   if(!isVideo&&!isImage){statusEl.textContent='Choose PNG, JPEG, GIF, MP4 or WebM.';continue}
+   const limitMiB=isVideo?100:8;
+   if(file.size>limitMiB*1024*1024){statusEl.textContent=(isVideo?'Videos':'Images')+' must be at most '+limitMiB+' MiB.';continue}
    try{
-    const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(60000)});
+    const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(120000)});
     let result;try{result=await response.json()}catch{}
-    if(!response.ok)throw Error(result?.error||'Image upload failed.');
-    drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file)});renderDrafts();
+    if(!response.ok)throw Error(result?.error||'Upload failed.');
+    drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type});
+    renderDrafts();
    }catch(e){statusEl.textContent=e.message}
   }
   fileInput.value='';

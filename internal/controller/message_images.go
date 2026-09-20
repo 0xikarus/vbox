@@ -1,14 +1,15 @@
 package controller
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
@@ -196,6 +197,6 @@ func (s *Server) downloadBoxMessageImage(w http.ResponseWriter, r *http.Request,
 	w.Header().Set("Content-Type", media)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Write(data)
+	// ServeContent adds Accept-Ranges and answers range requests (video seek).
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
 }

@@ -154,11 +154,15 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   through the injection-safe `markdown.js` (headings, lists, code, quotes, links)
   with bare URLs still linkified. Every attachment and media embed is a focusable
   control: images are buttons that open a focus-managed lightbox (video and audio
-  included, focus restored on Escape), and attached drafts can be inspected
-  before sending. Unsent composer text is kept per box in local storage, and the
-  transcript remembers its scroll position per box. The seeded mascot is used for
-  box avatars (with a `NO SIGNAL` fallback) and the processing bubble. Screenshots
-  live in `docs/chat-ui/screenshots/mobile-first/`.
+  included, focus restored on Escape) with left/right gallery stepping, and
+  attached drafts can be inspected before sending. Attachments may be PNG/JPEG/GIF
+  up to 8 MiB or MP4/WebM video up to 100 MiB (`/v1/run-once-images` sniffs the
+  container); media is served with range requests so video can seek, and video is
+  played from the authenticated same-origin endpoint rather than a blob. Unsent
+  composer text is kept per box in local storage, and the transcript remembers its
+  scroll position per box. The seeded mascot is used for box avatars (with a
+  `NO SIGNAL` fallback) and the processing bubble. Screenshots live in
+  `docs/chat-ui/screenshots/mobile-first/`.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
