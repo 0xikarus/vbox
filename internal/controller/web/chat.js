@@ -1025,7 +1025,7 @@
    const isVideo=file.type==='video/mp4'||file.type==='video/webm';
    const isImage=['image/png','image/jpeg','image/gif'].includes(file.type);
    if(!isVideo&&!isImage){statusEl.textContent='Choose PNG, JPEG, GIF, MP4 or WebM.';continue}
-   const limitMiB=isVideo?100:8;
+   const limitMiB=isVideo?100:25;
    if(file.size>limitMiB*1024*1024){statusEl.textContent=(isVideo?'Videos':'Images')+' must be at most '+limitMiB+' MiB.';continue}
    try{
     const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(120000)});

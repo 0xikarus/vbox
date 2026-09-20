@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	maxImageUpload = 8 << 20
+	maxImageUpload = 25 << 20
 	maxVideoUpload = 100 << 20
 	// maxAccountAttachmentBytes bounds all attachments kept for one account.
 	maxAccountAttachmentBytes = 1 << 30
@@ -54,7 +54,7 @@ func validateRunOnceImage(data []byte) (string, error) {
 		return media, nil
 	}
 	if len(data) > maxImageUpload {
-		return "", fmt.Errorf("image must be at most 8 MiB")
+		return "", fmt.Errorf("image must be at most 25 MiB")
 	}
 	cfg, kind, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || int64(cfg.Width)*int64(cfg.Height) > 40000000 {
