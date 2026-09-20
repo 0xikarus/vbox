@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
 import {readFile,writeFile,unlink} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import puppeteer from 'puppeteer-core';
 
@@ -20,8 +19,11 @@ test('video attachments play inline and can be uploaded',async()=>{
  const videoBytes=Buffer.concat([Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.alloc(64,7)]);
  const messages=[{id:'m1',direction:'agent',state:'delivered',text:'Here is the clip.',images:[{id:'v1',number:1,mediaType:'video/mp4'}],createdAt:now,updatedAt:now}];
  const boxes=[{id:'gallery',name:'gallery',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'}];
- const webmPath=join(tmpdir(),'vmbox-clip-'+process.pid+'.webm');
+ // A snap-packaged Chromium gets a private /tmp, so a fixture in os.tmpdir()
+ // fails to upload with ERR_FILE_NOT_FOUND. Keep it in the working directory.
+ const webmPath=join(process.cwd(),'vmbox-clip-'+process.pid+'.webm');
  await writeFile(webmPath,videoBytes);
+ let mediaHits=0;
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(html)}
@@ -30,7 +32,7 @@ test('video attachments play inline and can be uploaded',async()=>{
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
-  if(path==='/v1/messages/m1/images/v1'){res.setHeader('Content-Type','video/mp4');return res.end(videoBytes)}
+  if(path==='/v1/messages/m1/images/v1'){mediaHits++;res.setHeader('Content-Type','video/mp4');return res.end(videoBytes)}
   if(path==='/v1/run-once-images'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:'up1'}))}
   if(!path.startsWith('/v1/'))return res.end('');
   if(path.endsWith('/desktop/screenshot')){res.statusCode=409;return res.end('{}')}
@@ -50,6 +52,10 @@ test('video attachments play inline and can be uploaded',async()=>{
   await p.setViewport({width:420,height:900,deviceScaleFactor:1});
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=gallery');
   await p.waitForSelector('.media-button',{timeout:8000});
+  // The chip must draw from the message metadata alone. Buffering the clip into
+  // a blob here would download a 100 MiB video on every render of the transcript
+  // and, past the fetch timeout, drop the attachment from the conversation.
+  assert.equal(mediaHits,0,'rendering a video attachment must not download it');
   await p.$eval('.media-button',el=>el.click());
   await p.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
   const src=await p.$eval('#media-viewer-body video',el=>el.getAttribute('src'));

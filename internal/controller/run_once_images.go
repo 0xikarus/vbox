@@ -20,10 +20,19 @@ const (
 	maxAccountAttachmentBytes = 1 << 30
 )
 
-// sniffVideo recognises the container formats the chat can play inline. MP4
-// and MOV both carry an ISO base-media `ftyp` box; WebM is a Matroska header.
+// mp4Brands are the `ftyp` brands the chat plays as MP4. Stills share the ISO
+// base-media container — HEIC is `heic`, AVIF is `avif` — so the brand has to
+// be checked: without it an AVIF would be stored as video/mp4 and, with
+// nosniff, never render as either.
+var mp4Brands = map[string]bool{
+	"isom": true, "iso2": true, "iso4": true, "iso5": true, "iso6": true,
+	"mp41": true, "mp42": true, "avc1": true, "dash": true, "mmp4": true, "M4V ": true,
+}
+
+// sniffVideo recognises the container formats the chat can play inline: an ISO
+// base-media `ftyp` box with a video brand, or a Matroska/WebM header.
 func sniffVideo(data []byte) string {
-	if len(data) >= 12 && bytes.Equal(data[4:8], []byte("ftyp")) {
+	if len(data) >= 12 && bytes.Equal(data[4:8], []byte("ftyp")) && mp4Brands[string(data[8:12])] {
 		return "video/mp4"
 	}
 	if len(data) >= 4 && bytes.Equal(data[0:4], []byte{0x1a, 0x45, 0xdf, 0xa3}) {

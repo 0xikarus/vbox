@@ -350,6 +350,7 @@
   return 'image';
  }
  const mediaKindLabel=kind=>kind==='video'?'video':kind==='audio'?'audio':'image';
+ const mediaEndpoint=(messageID,imageID)=>'/v1/messages/'+encodeURIComponent(messageID)+'/images/'+encodeURIComponent(imageID);
  const mediaGlyph=kind=>kind==='video'?'▶':kind==='audio'?'♪':'▣';
  const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaOpen=$('#media-viewer-open'),
   mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count');
@@ -372,7 +373,7 @@
    if(item.kind==='video'||item.kind==='audio'){
     // Point straight at the authenticated endpoint so the browser can range
     // request and stream instead of buffering a blob.
-    url='/v1/messages/'+encodeURIComponent(item.messageId)+'/images/'+encodeURIComponent(item.imageId);
+    url=mediaEndpoint(item.messageId,item.imageId);
    }else{
     const box=boxes.get(selected),m=(box&&box.messages||[]).find(x=>x.id===item.messageId),img=m&&(m.images||[]).find(x=>x.id===item.imageId);
     if(m&&img)url=await imageURL(m,img);
@@ -712,7 +713,7 @@
  function imageURL(message,image){
   const key=message.id+':'+image.id;
   if(imageURLs.has(key))return Promise.resolve(imageURLs.get(key));
-  return fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(image.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
+  return fetch(mediaEndpoint(message.id,image.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
    .then(r=>{if(!r.ok)throw Error('image unavailable');return r.blob()}).then(b=>{const url=URL.createObjectURL(b);imageURLs.set(key,url);return url}).catch(()=>null);
  }
  const questionSelections=new Map();// messageId -> Set of picked choices; survives live re-renders
@@ -783,7 +784,17 @@
   renderRichText(text,body);
   row.append(text);
   for(const image of message.images||[]){
-   imageURL(message,image).then(url=>{if(!url)return;const kind=mediaKind(image.mediaType,url);const label='Attachment '+image.number;const btn=mediaButton(url,{kind,alt:label+' from '+message.direction,label,messageId:message.id,imageId:image.id});row.insertBefore(btn,row.querySelector('.meta'))});
+   const label='Attachment '+image.number,alt=label+' from '+message.direction;
+   const kind=mediaKind(image.mediaType,'');
+   if(kind==='video'||kind==='audio'){
+    // The chip carries no media of its own and the viewer streams from the
+    // authenticated endpoint, so never buffer a whole clip into a blob here:
+    // a 100 MiB video would download on every transcript render and a slow
+    // link would time out and drop the attachment from the conversation.
+    row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,messageId:message.id,imageId:image.id}));
+    continue;
+   }
+   imageURL(message,image).then(url=>{if(!url)return;const btn=mediaButton(url,{kind:mediaKind(image.mediaType,url),alt,label,messageId:message.id,imageId:image.id});row.insertBefore(btn,row.querySelector('.meta'))});
   }
   const form=questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';

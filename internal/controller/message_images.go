@@ -120,7 +120,7 @@ func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, 
 		}
 		chatInstruction = s.chatInstruction(chatReference(message), agent, ordinal)
 	}
-	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.id::text,j.ordinal,i.download_token
+	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.id::text,j.ordinal,i.download_token,i.media_type
 		FROM box_message_images j JOIN run_once_images i ON i.id=j.image_id AND i.account_id=j.account_id
 		WHERE j.account_id=$1 AND j.message_id=$2 ORDER BY j.ordinal`, accountID, message.ID)
 	if err != nil {
@@ -130,16 +130,22 @@ func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, 
 	prompt := message.Text
 	count := 0
 	for rows.Next() {
-		var id, token string
+		var id, token, media string
 		var number int
-		if err := rows.Scan(&id, &number, &token); err != nil {
+		if err := rows.Scan(&id, &number, &token, &media); err != nil {
 			return "", err
 		}
 		if count == 0 {
-			prompt += "\n\nAttached images:\n"
+			prompt += "\n\nAttached files:\n"
 		}
 		count++
-		prompt += fmt.Sprintf("[Image %d]: %s/v1/run-once-images/%s?token=%s\n", number, strings.TrimRight(s.PublicURL, "/"), url.PathEscape(id), url.QueryEscape(token))
+		// A video is labelled as one: told "[Image 1]", an agent tries to view
+		// an MP4 as a still and reports the attachment as broken.
+		label := "Image"
+		if strings.HasPrefix(media, "video/") {
+			label = "Video"
+		}
+		prompt += fmt.Sprintf("[%s %d]: %s/v1/run-once-images/%s?token=%s\n", label, number, strings.TrimRight(s.PublicURL, "/"), url.PathEscape(id), url.QueryEscape(token))
 	}
 	if err := rows.Err(); err != nil {
 		return "", err

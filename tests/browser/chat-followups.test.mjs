@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
 import {readFile,writeFile,unlink} from 'node:fs/promises';
-import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import zlib from 'node:zlib';
 import puppeteer from 'puppeteer-core';
@@ -27,7 +26,9 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
  const now=new Date().toISOString();
  const boxes=[{id:'alpha',name:'alpha',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'},{id:'beta',name:'beta',state:'running',defaultAgent:'claude',provider:'railway',role:'worker'}];
  const msgs=id=>[{id:id+'1',direction:'agent',state:'delivered',text:id.toUpperCase()+'-ONLY',createdAt:now,updatedAt:now}];
- const pngPath=join(tmpdir(),'vmbox-draft-'+process.pid+'.png');
+ // A snap-packaged Chromium gets a private /tmp, so a fixture in os.tmpdir()
+ // fails to upload with ERR_FILE_NOT_FOUND. Keep it in the working directory.
+ const pngPath=join(process.cwd(),'vmbox-draft-'+process.pid+'.png');
  await writeFile(pngPath,tinyPNG());
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];

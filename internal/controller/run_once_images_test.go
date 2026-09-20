@@ -38,3 +38,16 @@ func TestValidateRunOnceVideoContainers(t *testing.T) {
 		t.Fatal("oversized image accepted")
 	}
 }
+
+// HEIC and AVIF stills ride in the same ISO base-media container as MP4 and
+// are told apart only by the brand. Accepting them as video/mp4 would store a
+// still that, under nosniff, renders as neither picture nor clip.
+func TestValidateRunOnceRejectsStillISOContainers(t *testing.T) {
+	for _, brand := range []string{"heic", "avif", "mif1", "heix"} {
+		still := append([]byte{0, 0, 0, 0x18}, []byte("ftyp"+brand)...)
+		still = append(still, make([]byte, 32)...)
+		if media, err := validateRunOnceImage(still); err == nil {
+			t.Fatalf("brand %q accepted as %q", brand, media)
+		}
+	}
+}
