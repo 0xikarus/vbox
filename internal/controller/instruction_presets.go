@@ -180,9 +180,26 @@ func (s *Store) resolveInstructionSelection(ctx context.Context, p Principal, se
 // PutInstructionSnapshot records the box's resolved snapshot. applied_at resets
 // so materialization happens on the next attach (or immediately when pushed).
 func (s *Store) PutInstructionSnapshot(ctx context.Context, p Principal, boxID string, resolved v1.InstructionResolution) error {
+	return s.putInstructionSnapshot(ctx, p, boxID, resolved, nil)
+}
+
+// PutNewBoxInstructionSnapshot is used only for newly created volumes. Edits
+// through PutInstructionSnapshot retain this separate generated section.
+func (s *Store) PutNewBoxInstructionSnapshot(ctx context.Context, p Principal, boxID string, resolved v1.InstructionResolution, guidance string) error {
+	return s.putInstructionSnapshot(ctx, p, boxID, resolved, &guidance)
+}
+
+func (s *Store) putInstructionSnapshot(ctx context.Context, p Principal, boxID string, resolved v1.InstructionResolution, guidance *string) error {
 	preset := sql.NullString{}
 	if resolved.Preset != "" {
 		preset = sql.NullString{String: resolved.Preset, Valid: true}
+	}
+	if guidance != nil {
+		_, err := s.DB.ExecContext(ctx, `INSERT INTO box_instruction_snapshots(account_id,box_id,source,preset_name,preset_revision,modified,markdown,tool_guidance,applied_at)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,NULL)
+			ON CONFLICT(account_id,box_id) DO UPDATE SET source=$3,preset_name=$4,preset_revision=$5,modified=$6,markdown=$7,tool_guidance=$8,applied_at=NULL,updated_at=now()`,
+			p.AccountID, boxID, resolved.Source, preset, resolved.PresetRevision, resolved.Modified, resolved.Markdown, *guidance)
+		return err
 	}
 	_, err := s.DB.ExecContext(ctx, `INSERT INTO box_instruction_snapshots(account_id,box_id,source,preset_name,preset_revision,modified,markdown,applied_at)
 		VALUES($1,$2,$3,$4,$5,$6,$7,NULL)
@@ -198,9 +215,9 @@ func (s *Store) InstructionSnapshot(ctx context.Context, p Principal, boxID stri
 	var preset sql.NullString
 	var revision sql.NullInt64
 	var appliedAt sql.NullTime
-	err := s.DB.QueryRowContext(ctx, `SELECT source,COALESCE(preset_name,''),COALESCE(preset_revision,0),modified,markdown,updated_at,applied_at
+	err := s.DB.QueryRowContext(ctx, `SELECT source,COALESCE(preset_name,''),COALESCE(preset_revision,0),modified,markdown,tool_guidance,updated_at,applied_at
 		FROM box_instruction_snapshots WHERE account_id=$1 AND box_id=$2`, p.AccountID, boxID).
-		Scan(&value.Source, &preset, &revision, &value.Modified, &value.Markdown, &value.UpdatedAt, &appliedAt)
+		Scan(&value.Source, &preset, &revision, &value.Modified, &value.Markdown, &value.ToolGuidance, &value.UpdatedAt, &appliedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return value, nil
 	}
@@ -232,9 +249,13 @@ func (s *Server) syncBoxInstructions(ctx context.Context, prov provider.Provider
 		// Boxes that predate this feature carry no row: leave their volume alone.
 		return nil
 	}
+	markdown, err := composeInstructionMarkdown(snapshot.Markdown, snapshot.ToolGuidance)
+	if err != nil {
+		return fmt.Errorf("compose managed instructions: %w", err)
+	}
 	payload, err := json.Marshal(struct {
 		Markdown string `json:"markdown"`
-	}{Markdown: snapshot.Markdown})
+	}{Markdown: markdown})
 	if err != nil {
 		return err
 	}

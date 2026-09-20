@@ -87,6 +87,7 @@ type BoxInstructions struct {
 	PresetRevision int64      `json:"presetRevision,omitempty"`
 	Modified       bool       `json:"modified,omitempty"`
 	Markdown       string     `json:"markdown"`
+	ToolGuidance   string     `json:"-"` // generated for new boxes; never part of the user's editable preset
 	UpdatedAt      time.Time  `json:"updatedAt"`
 	AppliedAt      *time.Time `json:"appliedAt,omitempty"`
 }

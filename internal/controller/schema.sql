@@ -617,11 +617,14 @@ CREATE TABLE IF NOT EXISTS box_instruction_snapshots (
   preset_revision bigint,
   modified boolean NOT NULL DEFAULT false,
   markdown text NOT NULL,
+  tool_guidance text NOT NULL DEFAULT '',
   applied_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id,box_id)
 );
+-- Existing boxes keep empty guidance; only new creations populate this field.
+ALTER TABLE box_instruction_snapshots ADD COLUMN IF NOT EXISTS tool_guidance text NOT NULL DEFAULT '';
 -- A box's role is chosen at creation. A manager holds the fleet-wide contact
 -- permission; a worker starts with no contacts and only explicit edges.
 ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'worker' CHECK (role IN ('worker','manager'));
