@@ -1288,10 +1288,6 @@
   const link=document.createElement('a');
   link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
   quick.append(link);
-  if(box.state==='running'){
-   const control=document.createElement('button');control.type='button';control.textContent='Control desktop';
-   control.title='Open the live desktop in a popup';control.onclick=()=>void openBoxControl(box,'desktop');quick.append(control);
-  }
   if(box.state==='running'&&agent!=='shell'){
    const clear=document.createElement('button');clear.type='button';clear.textContent='Clear context';
    clear.title='Start a fresh agent context for this chat';clear.onclick=()=>$('#chat-clear-context').click();quick.append(clear);
