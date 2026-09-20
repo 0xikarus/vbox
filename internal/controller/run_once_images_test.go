@@ -22,3 +22,19 @@ func TestValidateRunOnceImage(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateRunOnceVideoContainers(t *testing.T) {
+	mp4 := append([]byte{0, 0, 0, 0x18}, []byte("ftypisom")...)
+	mp4 = append(mp4, make([]byte, 32)...)
+	if media, err := validateRunOnceImage(mp4); err != nil || media != "video/mp4" {
+		t.Fatalf("mp4: %q %v", media, err)
+	}
+	webm := append([]byte{0x1a, 0x45, 0xdf, 0xa3}, make([]byte, 32)...)
+	if media, err := validateRunOnceImage(webm); err != nil || media != "video/webm" {
+		t.Fatalf("webm: %q %v", media, err)
+	}
+	// An oversized non-video blob is still rejected as an image.
+	if _, err := validateRunOnceImage(make([]byte, (8<<20)+1)); err == nil {
+		t.Fatal("oversized image accepted")
+	}
+}
