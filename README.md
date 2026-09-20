@@ -658,6 +658,12 @@ At creation, choose **Account default preset / none**, an explicit **None**, a
 named preset, or a custom Markdown copy. The selected Markdown is copied into
 the box as an immutable **snapshot** with preset/version provenance. Editing or
 deleting a preset later never changes boxes that already copied it.
+New boxes also receive a short, generated **Available box tools** reference in
+their agent instructions when Desktop/Chromium, Blender, or Foundry is selected.
+It lists paths only (for example `~/bin/blender` and the Chromium profile path),
+is stored separately from the editable preset snapshot, and is re-applied on
+restore. Existing boxes are not backfilled with this section.
+Selecting **None** skips user Markdown but keeps these selected-tool references.
 
 Existing boxes change only through an explicit **Instructions…** action
 (controller box list and chat box menu): it previews the current snapshot, lets
@@ -665,7 +671,8 @@ you apply None, a preset, or edited/custom Markdown, and reports whether the
 running box accepted it. A running box is updated in place; a stopped box keeps
 the selection pending and applies it during its next start. Agents never restart
 automatically: a new conversation or a restarted agent process reads the new
-instructions, while an already-running session keeps what it loaded.
+instructions, while an already-running session keeps what it loaded. Editing a
+new box's user instructions does not remove its generated tool references.
 
 One canonical per-box file holds the guidance:
 `~/.config/vmbox/instructions.md`. It is linked into each agent's global

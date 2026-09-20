@@ -208,7 +208,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   never written, and re-application on every attach (`sync-instructions` before
   `restore-tools`, plus `RestoreManagedInstructions` inside restore) is
   idempotent. `vmbox-runtime sync-instructions` verifies its payload digest like
-  `sync-files`.
+  `sync-files`. New creations store compact selected-tool path references in a
+  separate `tool_guidance` column and compose them with the user snapshot only
+  when syncing to the box; editing the snapshot preserves the references.
+  Existing rows default to empty guidance and are not backfilled. The generated
+  section is bounded by the runtime's 64 KiB instruction limit before creation.
 
 ## Verification and honest evidence
 
