@@ -1514,10 +1514,41 @@
    await api(boxPath(box.id)+'/desktop','POST',{});
   }
  }
- /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
- const newBoxModal=$('#new-box-modal'),createForm=$('#create-box');
- let extrasLoaded=false;
- function renderCreationProfileChoices(profiles){
+  /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
+  const newBoxModal=$('#new-box-modal'),createForm=$('#create-box'),previewCard=$('#create-preview-card');
+  let extrasLoaded=false,poolChoices=[],autoPoolIndex='';
+  const money=n=>'$'+(n>=0.1?n.toFixed(2):n.toFixed(3));
+  const ctxLabel=n=>n>=1e6?(n/1e6).toFixed(n%1e6?1:0)+'M':n>=1e3?Math.round(n/1e3)+'k':n?'':'';
+  function previewRows(){
+   if(!newBoxModal.hidden&&previewCard){
+    const f=createForm.elements,model=String(f.agentModel?.value||'').trim();
+    const rows=[['Name',f.name.value.trim()||'—'],['Agent',f.defaultAgent.selectedOptions[0]?.textContent||f.defaultAgent.value]];
+    const profile=f.loginProfile?.selectedOptions[0];
+    if(f.loginProfile&&!f.loginProfile.hidden&&profile?.value)rows.push(['Profile',profile.textContent]);
+    if(model)rows.push(['Model',model]);
+    const pickerModel=window.VMBoxModelPicker?.catalog?.().find(entry=>entry.id===model);
+    if(pickerModel?.inputCost)rows.push(['Price',money(pickerModel.inputCost)+' in · '+money(pickerModel.outputCost)+' out / Mtok']);
+    if(pickerModel?.context)rows.push(['Context',ctxLabel(pickerModel.context)+' tokens']);
+    if(f.agentReasoningEffort?.value)rows.push(['Reasoning',f.agentReasoningEffort.value]);
+    if(poolChoices.length){
+     const poolIndex=f.pool?.value??'',pool=poolChoices[Number(poolIndex)]||poolChoices[Number(createForm.dataset.autoPool)];
+     if(pool)rows.push(['Pool',pool.label]);
+    }
+    return rows;
+   }
+   return [];
+  }
+  function renderPreview(){
+   if(!previewCard)return;
+   previewCard.replaceChildren();
+   for(const [key,value] of previewRows()){
+    const row=document.createElement('div');row.className='preview-row';
+    const k=document.createElement('span');k.className='k';k.textContent=key;
+    const v=document.createElement('span');v.className='v';v.textContent=value;
+    row.append(k,v);previewCard.append(row);
+   }
+  }
+  function renderCreationProfileChoices(profiles){
   const root=$('#profile-choices'),agentSelect=createForm.elements.defaultAgent;root._modelPicker?.destroy();root.replaceChildren();
   const profileLabel=document.createElement('label');profileLabel.className='field profile-field';profileLabel.textContent='Login profile';
   const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
@@ -1527,8 +1558,8 @@
   const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(new Option('None',''));
   for(const profile of profiles.filter(profile=>profile.application==='github'))githubSelect.append(new Option(profile.name,JSON.stringify({application:'github',name:profile.name})));
   githubLabel.append(githubSelect);githubLabel.hidden=githubSelect.options.length===1;
-  root.append(profileLabel,modelLabel,githubLabel);
-  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setReasoningEffort('');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref?.application==='opencode'?()=>api('/v1/login-profiles/opencode/'+encodeURIComponent(ref.name)+'/models'):null)};
+   root.append(profileLabel,modelLabel,githubLabel);
+   const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setReasoningEffort('');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref?.application==='opencode'?()=>api('/v1/login-profiles/opencode/'+encodeURIComponent(ref.name)+'/models'):null);renderPreview()};
   const populate=()=>{
    const previous=profileSelect.value,app=agentSelect.value;profileSelect.replaceChildren(new Option('None',''));
    const choices=profiles.filter(profile=>profile.application===app);
@@ -1536,7 +1567,10 @@
    if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
    profileLabel.hidden=app==='shell'||choices.length===0;root.hidden=profileLabel.hidden&&githubLabel.hidden;syncModel();
   };
-  profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
+   profileSelect.addEventListener('change',syncModel);agentSelect.onchange=populate;populate();
+   modelInput.addEventListener('change',renderPreview);
+   createForm.elements.name.addEventListener('input',renderPreview);
+   createForm.elements.defaultAgent.addEventListener('change',renderPreview);
  }
  async function primeBoxExtras(){
   if(extrasLoaded)return;
@@ -1570,6 +1604,8 @@
     option.disabled=!!status&&status.free===0;
     poolSelect.append(option);
    });
+   poolChoices=pools.map((pool,index)=>({pool,label:(poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared').split(' — ')[0])+(index===Number(autoIndex)?' (auto)':'')}));
+   poolSelect.addEventListener('change',renderPreview);
    $('#create-pool-label').hidden=pools.length===0;
    const poolHint=$('#create-pool-status');
    poolHint.hidden=pools.length===0;
@@ -1588,14 +1624,18 @@
    extrasLoaded=true;
   }catch(e){$('#new-box-status').textContent=e.message}
  }
- function openNewBoxModal(){
-  createForm.reset();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
-  void primeBoxExtras();
-  createForm.elements.name.focus();
- }
+  function openNewBoxModal(){
+   createForm.reset();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
+   void primeBoxExtras();
+   createForm.elements.name.focus();
+   renderPreview();
+  }
  $('#new-box').onclick=openNewBoxModal;
  $('#new-box-close').onclick=()=>{newBoxModal.hidden=true};
  $('#new-box-backdrop').onclick=()=>{newBoxModal.hidden=true};
+ newBoxModal.addEventListener('transitionend',renderPreview);
+ document.addEventListener('change',event=>{if(event.target?.name==='agentReasoningEffort'&&!newBoxModal.hidden)renderPreview()});
+ createForm.addEventListener('change',event=>{if(event.target?.name==='disk'&&!newBoxModal.hidden)renderPreview()});
  createForm.onsubmit=async event=>{
   event.preventDefault();
   const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';

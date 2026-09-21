@@ -175,8 +175,13 @@
    <details id="create-instructions-editor" hidden><summary>Customize Markdown</summary>
    <label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label>
    <div id="create-instructions-preview" class="md-preview" hidden></div></details>
-   <button id="create-box-submit">Create and start box</button>
+  <button id="create-box-submit">Create and start box</button>
   </form>
+  <aside class="preview-rail" id="create-preview" aria-label="Launch preview">
+   <h3>Launch preview</h3>
+   <div class="preview-card" id="create-preview-card"></div>
+   <p class="preview-note" id="create-preview-note">Prices come from the provider catalog; pool status refreshes live.</p>
+  </aside>
   <p id="new-box-status" role="status"></p>
  </section>
 </div>
