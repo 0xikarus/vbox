@@ -138,8 +138,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the Desktop/TMUX control popup. Its timeline replays bounded JPEG frames
   captured inside running boxes every 30 seconds and retained for 30 minutes
   in `desktop_replay_frames`; the owner-only endpoints never wake a stopped box.
-- Agent contacts are controller-owned. `box_contacts` holds directed owner-managed
-  edges, `box_protection` hides a box from any manager, and `logical_boxes.role`
+- Agent contacts are controller-owned. `box_contacts` stores each two-way,
+  owner-managed relationship as two directional rows, `box_protection` hides a
+  box from any manager, and `logical_boxes.role`
   (`worker`/`manager`) selects whether the implicit fleet-wide permission applies.
   `GET /v1/agent-desktop/contacts` feeds the `get_contacts` tool; `chat_message`
   and `chat_ask` accept an optional `contact`, and the controller routes it into

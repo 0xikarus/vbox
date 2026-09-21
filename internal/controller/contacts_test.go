@@ -3,9 +3,64 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/DATA-DOG/go-sqlmock"
 )
+
+func contactBoxRows(id, name string) *sqlmock.Rows {
+	return sqlmock.NewRows([]string{"id", "name", "role", "default_agent", "state", "protected"}).
+		AddRow(id, name, "worker", "claude", "running", false)
+}
+
+func TestPutBoxContactCreatesBothDirections(t *testing.T) {
+	store, mock := testStore(t)
+	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}
+	mock.ExpectQuery(`SELECT id::text,account_id::text,owner_user_id::text,name,provider`).WithArgs("account-a", "builder").
+		WillReturnRows(logicalBoxRows("builder-id", "running"))
+	mock.ExpectQuery(`SELECT b.id::text,b.name`).WithArgs("account-a", "reviewer").
+		WillReturnRows(contactBoxRows("reviewer-id", "reviewer"))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`INSERT INTO box_contacts`).
+		WithArgs("account-a", "builder-id", "reviewer-id", nil, nil, "user-a").
+		WillReturnRows(sqlmock.NewRows([]string{"box_id", "contact_box_id", "can_message", "can_receive", "updated_at"}).
+			AddRow("builder-id", "reviewer-id", true, true, time.Now().UTC()))
+	mock.ExpectExec(`INSERT INTO box_contacts`).
+		WithArgs("account-a", "builder-id", "reviewer-id", nil, nil, "user-a").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`INSERT INTO audit_log`).
+		WithArgs("account-a", "user-a", "builder-id", "reviewer-id", "reviewer", false).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if _, err := store.PutBoxContact(context.Background(), p, "builder", v1.PutBoxContactRequest{Contact: "reviewer"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteBoxContactRemovesBothDirections(t *testing.T) {
+	store, mock := testStore(t)
+	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}
+	mock.ExpectQuery(`SELECT id::text,account_id::text,owner_user_id::text,name,provider`).WithArgs("account-a", "builder").
+		WillReturnRows(logicalBoxRows("builder-id", "running"))
+	mock.ExpectQuery(`SELECT b.id::text,b.name`).WithArgs("account-a", "reviewer").
+		WillReturnRows(contactBoxRows("reviewer-id", "reviewer"))
+	mock.ExpectBegin()
+	mock.ExpectExec(`DELETE FROM box_contacts`).WithArgs("account-a", "builder-id", "reviewer-id").
+		WillReturnResult(sqlmock.NewResult(0, 2))
+	mock.ExpectExec(`INSERT INTO audit_log`).WithArgs("account-a", "user-a", "builder-id", "reviewer-id").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := store.DeleteBoxContact(context.Background(), p, "builder", "reviewer"); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func contactCandidateRows(rows ...string) *sqlmock.Rows {
 	result := sqlmock.NewRows([]string{"id", "name", "role", "default_agent", "state"})

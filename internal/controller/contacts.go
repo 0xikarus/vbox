@@ -34,9 +34,9 @@ func (s *Store) contactBox(ctx context.Context, accountID, ref string) (id, name
 	return
 }
 
-// BoxContacts lists the outgoing contact edges of one box. The owner manages
-// these explicit edges; a manager's fleet-wide permission is implicit and is
-// not materialized as rows.
+// BoxContacts lists one box's contacts. Explicit relationships are stored in
+// both directions; a manager's fleet-wide permission is implicit and is not
+// materialized as rows.
 func (s *Store) BoxContacts(ctx context.Context, p Principal, boxRef string) ([]v1.BoxContact, error) {
 	box, err := s.LogicalBox(ctx, p, boxRef)
 	if err != nil {
@@ -62,8 +62,9 @@ func (s *Store) BoxContacts(ctx context.Context, p Principal, boxRef string) ([]
 	return values, rows.Err()
 }
 
-// PutBoxContact creates or updates one explicit edge. Absent booleans default to
-// true on creation and keep their current value on update.
+// PutBoxContact creates or updates both halves of an explicit relationship.
+// Absent booleans default to true on creation and keep their current value on
+// update. The reverse row swaps message/receive permissions.
 func (s *Store) PutBoxContact(ctx context.Context, p Principal, boxRef string, request v1.PutBoxContactRequest) (v1.BoxContact, error) {
 	box, err := s.LogicalBox(ctx, p, boxRef)
 	if err != nil {
@@ -76,8 +77,13 @@ func (s *Store) PutBoxContact(ctx context.Context, p Principal, boxRef string, r
 	if contactID == box.ID {
 		return v1.BoxContact{}, fmt.Errorf("a box cannot be its own contact")
 	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return v1.BoxContact{}, err
+	}
+	defer tx.Rollback()
 	var value v1.BoxContact
-	err = s.DB.QueryRowContext(ctx, `INSERT INTO box_contacts(account_id,box_id,contact_box_id,can_message,can_receive,created_by)
+	err = tx.QueryRowContext(ctx, `INSERT INTO box_contacts(account_id,box_id,contact_box_id,can_message,can_receive,created_by)
 		VALUES($1,$2,$3,COALESCE($4,true),COALESCE($5,true),$6)
 		ON CONFLICT(box_id,contact_box_id) DO UPDATE
 		SET can_message=COALESCE($4,box_contacts.can_message),can_receive=COALESCE($5,box_contacts.can_receive),updated_at=now()
@@ -86,12 +92,18 @@ func (s *Store) PutBoxContact(ctx context.Context, p Principal, boxRef string, r
 	if err != nil {
 		return v1.BoxContact{}, err
 	}
-	value.BoxName, value.ContactName, value.ContactRole = box.Name, contactName, contactRole
-	value.ContactAgent, value.ContactState = contactAgent, contactState
-	if _, err := s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.put','logical_box',$3,jsonb_build_object('contact_box_id',$4::text,'contact_name',$5::text,'protected',$6::bool))`, p.AccountID, p.UserID, box.ID, contactID, contactName, protected); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO box_contacts(account_id,box_id,contact_box_id,can_message,can_receive,created_by)
+		VALUES($1,$3,$2,COALESCE($5,true),COALESCE($4,true),$6)
+		ON CONFLICT(box_id,contact_box_id) DO UPDATE
+		SET can_message=COALESCE($5,box_contacts.can_message),can_receive=COALESCE($4,box_contacts.can_receive),updated_at=now()`, p.AccountID, box.ID, contactID, request.CanMessage, request.CanReceive, p.UserID); err != nil {
 		return v1.BoxContact{}, err
 	}
-	return value, nil
+	value.BoxName, value.ContactName, value.ContactRole = box.Name, contactName, contactRole
+	value.ContactAgent, value.ContactState = contactAgent, contactState
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.put','logical_box',$3,jsonb_build_object('contact_box_id',$4::text,'contact_name',$5::text,'protected',$6::bool,'two_way',true))`, p.AccountID, p.UserID, box.ID, contactID, contactName, protected); err != nil {
+		return v1.BoxContact{}, err
+	}
+	return value, tx.Commit()
 }
 
 func (s *Store) DeleteBoxContact(ctx context.Context, p Principal, boxRef, contactRef string) error {
@@ -103,15 +115,22 @@ func (s *Store) DeleteBoxContact(ctx context.Context, p Principal, boxRef, conta
 	if err != nil {
 		return err
 	}
-	result, err := s.DB.ExecContext(ctx, `DELETE FROM box_contacts WHERE account_id=$1 AND box_id=$2 AND contact_box_id=$3`, p.AccountID, box.ID, contactID)
+	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	if changed, _ := result.RowsAffected(); changed != 1 {
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `DELETE FROM box_contacts WHERE account_id=$1 AND ((box_id=$2 AND contact_box_id=$3) OR (box_id=$3 AND contact_box_id=$2))`, p.AccountID, box.ID, contactID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed == 0 {
 		return fmt.Errorf("contact edge not found")
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.delete','logical_box',$3,jsonb_build_object('contact_box_id',$4::text))`, p.AccountID, p.UserID, box.ID, contactID)
-	return err
+	if _, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.delete','logical_box',$3,jsonb_build_object('contact_box_id',$4::text,'two_way',true))`, p.AccountID, p.UserID, box.ID, contactID); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // ContactEntries returns the addressable contacts of a box. A manager sees every

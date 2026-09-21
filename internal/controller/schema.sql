@@ -629,8 +629,8 @@ ALTER TABLE box_instruction_snapshots ADD COLUMN IF NOT EXISTS tool_guidance tex
 -- permission; a worker starts with no contacts and only explicit edges.
 ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'worker' CHECK (role IN ('worker','manager'));
 
--- Directed, owner-managed contact edges. A box may address another box only
--- while an enabled row exists; the controller re-validates every send.
+-- Two-way, owner-managed contact edges. Each relationship is stored as two
+-- directional rows so the authorization hot path stays a simple lookup.
 CREATE TABLE IF NOT EXISTS box_contacts (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
@@ -645,6 +645,12 @@ CREATE TABLE IF NOT EXISTS box_contacts (
 );
 CREATE INDEX IF NOT EXISTS box_contacts_owner_idx ON box_contacts(account_id, box_id);
 CREATE INDEX IF NOT EXISTS box_contacts_target_idx ON box_contacts(account_id, contact_box_id);
+-- Older controllers created only the requested direction. Complete those
+-- relationships on upgrade, swapping the directional permission flags.
+INSERT INTO box_contacts(account_id,box_id,contact_box_id,can_message,can_receive,created_by,created_at,updated_at)
+SELECT account_id,contact_box_id,box_id,can_receive,can_message,created_by,created_at,updated_at
+FROM box_contacts
+ON CONFLICT(box_id,contact_box_id) DO NOTHING;
 
 -- Owner-designated protected boxes are invisible and unreachable to a manager.
 CREATE TABLE IF NOT EXISTS box_protection (

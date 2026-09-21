@@ -15,11 +15,11 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // single-box workspace page (whose non-owner gating is covered in
 // workspace-desktop.test.mjs). This test drives the real page against fixture
 // APIs and writes the screenshot the PR references.
-test('chat details drawer edits the per-box contact graph',async()=>{
+test('chat details drawer edits the per-box contact list',async()=>{
  let boxRole='worker',protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
- let contacts=[{contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
+ let contacts=[{contactBoxId:'reviewer',contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
  let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
- const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
+ const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'},{id:'planner',name:'planner',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v3',volumeName:'v3'},{id:'auditor',name:'auditor',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v4',volumeName:'v4'}];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0],method=req.method;requests.push(method+' '+path);
@@ -61,7 +61,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
   if(path==='/v1/logical-boxes/builder/contacts'){
-   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactBoxId:parsed.contact,contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
    return res.end(JSON.stringify(contacts));
   }
   if(path.startsWith('/v1/logical-boxes/builder/contacts/')&&method==='DELETE'){contacts=contacts.filter(c=>c.contactName!==decodeURIComponent(path.split('/').pop()));res.statusCode=204;return res.end()}
@@ -80,6 +80,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
+  p.on('dialog',dialog=>dialog.accept());
   await p.evaluateOnNewDocument(()=>{
    window.openWorkspaceDesktop=(id,onStatus,options)=>{
     if(options.viewOnly){window.viewerPreview={id,viewOnly:true};setTimeout(()=>onStatus('Desktop connected'),350);return()=>{window.viewerPreviewClosed=true}};
@@ -115,6 +116,11 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
   await new Promise(resolve=>setTimeout(resolve,650));
   assert.equal(requests.filter(r=>r==='GET /v1/grid-boxes').length,beforeListRefresh+1,'push burst should fetch the list once');
+  await p.mouse.move(0,0);
+  await p.focus('#chat-header-avatar .preview-trigger');
+  await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden);
+  await p.evaluate(()=>document.activeElement.blur());
+  await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden,{timeout:2000});
   for(const selector of ['#chat-entries [data-avatar="builder"]','#chat-header-avatar [data-avatar="builder"]']){
    await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');
@@ -149,6 +155,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.deepEqual(await p.evaluate(()=>window.viewerTerminal),{id:'reviewer',session:'codex-reviewer',root:'takeover-screen'});
   await p.click('#takeover-close');await p.waitForFunction(()=>document.querySelector('#takeover').hidden);await p.$eval('[data-box-id="builder"]',element=>element.click());
   await p.waitForFunction(()=>document.querySelector('[data-box-id="builder"]').classList.contains('active'),{timeout:5000});
+  assert.equal(await p.$eval('#chat-messages .msg.user .ticks svg',e=>!!e),true,'delivery ticks render as inline Lucide icons');
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   const panelLayout=await p.evaluate(()=>{
@@ -160,10 +167,42 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.ok(panelLayout.panel.width>=panelLayout.header.width*.95,'details must span the chat instead of a side drawer');
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='worker');
   assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/worker may message only/);
-  await p.type('#inspect-contact-form input[name=contact]','planner');
-  await p.$eval('#inspect-contact-form button',e=>e.click());
+  assert.equal(await p.$$eval('#inspect-contact-list li',rows=>rows.length),1,'contacts render as a list');
+  assert.deepEqual(await p.$$eval('#inspect-contact-candidates .contact-candidate',rows=>rows.map(row=>row.dataset.boxId)),['auditor','planner'],'the fleet picker lists existing boxes that are not yet contacts');
+  await p.type('#inspect-contact-filter','zzz');
+  await p.waitForFunction(()=>!!document.querySelector('#inspect-contact-candidates .empty'));
+  await p.$eval('#inspect-contact-filter',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
+  await p.waitForFunction(()=>!!document.querySelector('#inspect-contact-candidates .contact-candidate'));
+  await p.evaluate(()=>document.activeElement?.blur());
+  const liftDrawer=()=>p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body'),conversation=document.querySelector('#chat-conversation');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible';inspect.scrollTop=0;body.scrollTop=0;if(conversation)conversation.scrollTop=0;window.scrollTo(0,0)});
+  const resetDrawer=()=>p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body');inspect.style.maxHeight='';inspect.style.overflow='';body.style.overflow=''});
+  await p.setViewport({width:1440,height:1700,deviceScaleFactor:1});
+  await liftDrawer();
+  // Case 1: contacts list + fleet picker with click-to-add.
+  await p.screenshot({path:'docs/chat-ui/screenshots/desktop-chat-fleet-picker.png'});
+  // Case 2: dragging a sidebar chat over the drawer highlights the drop target.
+  await p.evaluate(()=>{
+   const row=[...document.querySelectorAll('#chat-entries li')].find(el=>el.dataset.boxId==='auditor');
+   const dt=new DataTransfer();window.__contactDT=dt;
+   row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,cancelable:true,dataTransfer:dt}));
+   document.querySelector('#inspect').dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:dt}));
+  });
+  await p.waitForFunction(()=>document.querySelector('#inspect').classList.contains('contact-drop'));
+  await p.screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contact-drag.png'});
+  // Case 3: dropping it creates the contact edge and refreshes the list.
+  const putsBefore=requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length;
+  await p.evaluate(()=>document.querySelector('#inspect').dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:window.__contactDT})));
   await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===2);
-  assert.equal(requests.includes('PUT /v1/logical-boxes/builder/contacts'),true);
+  assert.equal(requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length,putsBefore+1,'dragging a chat onto the drawer adds it as a contact');
+  assert.equal(await p.$eval('#inspect',e=>e.classList.contains('contact-drop')),false,'the drop highlight clears');
+  // Case 1b: click Add in the fleet picker.
+  await p.$eval('#inspect-contact-candidates .contact-candidate[data-box-id="planner"] button',e=>e.click());
+  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===3);
+  await p.screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await p.setViewport({width:420,height:1400,deviceScaleFactor:1});
+  await liftDrawer();
+  await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/mobile-chat-contacts.png'});
+  await p.setViewport({width:1440,height:1700,deviceScaleFactor:1});
   await p.$eval('#inspect-toggle-role',e=>e.click());
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='manager');
   assert.equal(requests.includes('PATCH /v1/logical-boxes/builder'),true);
@@ -171,9 +210,18 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('#inspect-protection-label').textContent.startsWith('Protected'));
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/protection'),true);
   await p.$eval('#inspect-contact-list li button',e=>e.click());
-  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===1);
+  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===2);
   assert.equal(requests.some(r=>r.startsWith('DELETE /v1/logical-boxes/builder/contacts/')),true);
-  await (await p.$('#inspect')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await resetDrawer();
+  // Case 4: right-clicking another chat row offers to make it a contact.
+  await p.evaluate(()=>{const row=[...document.querySelectorAll('#chat-entries li')].find(el=>el.dataset.boxId==='reviewer');const rect=row.getBoundingClientRect();row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.left+20,clientY:rect.top+10}))});
+  await p.waitForFunction(()=>[...document.querySelectorAll('#row-menu button')].some(b=>b.textContent==='Add reviewer as a two-way contact'));
+  await p.screenshot({path:'docs/chat-ui/screenshots/desktop-chat-row-menu.png'});
+  const menuPuts=requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length;
+  await p.evaluate(()=>[...document.querySelectorAll('#row-menu button')].find(b=>b.textContent==='Add reviewer as a two-way contact').click());
+  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===3);
+  assert.equal(requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length,menuPuts+1,'the row menu adds the right-clicked box as a contact');
+  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
   await p.$eval('#new-box',button=>button.click());
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
   await p.select('#create-box select[name=defaultAgent]','opencode');
