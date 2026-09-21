@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestChatMessageToolPersistsTextAndImageForController(t *testing.T) {
@@ -169,6 +170,56 @@ func TestDeliverCodexChatUsesVisibleInputReadyTUI(t *testing.T) {
 	}
 }
 
+func TestDeliverCodexChatChunksLongVisibleTUIInput(t *testing.T) {
+	home, root := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	originalTurn, originalCommand, originalSubmit := CodexStartTurn, tmuxCommand, tmuxSubmitPause
+	t.Cleanup(func() {
+		CodexStartTurn, tmuxCommand, tmuxSubmitPause = originalTurn, originalCommand, originalSubmit
+	})
+	CodexStartTurn = func(context.Context, string, string, string, string, []string) error {
+		t.Fatal("input-ready Codex message was sent through the app server")
+		return nil
+	}
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	var chunks []string
+	enters := 0
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) == 0 {
+			return nil, nil
+		}
+		switch args[0] {
+		case "capture-pane":
+			return []byte("OpenAI Codex (v0.155.1)\n› Ask Codex to do anything"), nil
+		case "send-keys":
+			if len(args) >= 5 && args[3] == "-l" {
+				chunks = append(chunks, args[4])
+			} else if args[len(args)-1] == "Enter" {
+				enters++
+			}
+		}
+		return nil, nil
+	}
+	message := strings.Repeat("ab🙂", 16_000)
+	if err := DeliverCodexChat(context.Background(), root, home, "codex-long", ChatInbound{ID: "message-long", Text: message}); err != nil {
+		t.Fatal(err)
+	}
+	if len(chunks) < 2 {
+		t.Fatalf("long message used %d literal-key command; want multiple bounded commands", len(chunks))
+	}
+	for index, chunk := range chunks {
+		if len(chunk) > tmuxLiteralChunkBytes || !utf8.ValidString(chunk) {
+			t.Fatalf("chunk %d has %d bytes and valid UTF-8=%t", index, len(chunk), utf8.ValidString(chunk))
+		}
+	}
+	if got := strings.Join(chunks, ""); got != message {
+		t.Fatalf("chunked message changed: got %d bytes, want %d", len(got), len(message))
+	}
+	if enters != 1 {
+		t.Fatalf("submit keys = %d, want 1", enters)
+	}
+}
+
 func TestNewestCodexThreadDoesNotPinRememberedConversation(t *testing.T) {
 	threads := []any{
 		map[string]any{"id": "new-visible", "recencyAt": float64(200)},
@@ -221,6 +272,55 @@ func TestStartCodexChatPassesInitialMessageAndImagesAsArguments(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "codex-chat", "message-1.json")); !os.IsNotExist(err) {
 		t.Fatalf("initial inbox envelope was retained: %v", err)
+	}
+}
+
+func TestStartCodexChatChunksLongInitialMessageAfterStartup(t *testing.T) {
+	stubRegisteredAgent(t, "codex")
+	stubCodexBackend(t)
+	home, root := t.TempDir(), t.TempDir()
+	originalCommand, originalSettle, originalSubmit := tmuxCommand, agentReadySettlePause, tmuxSubmitPause
+	t.Cleanup(func() {
+		tmuxCommand, agentReadySettlePause, tmuxSubmitPause = originalCommand, originalSettle, originalSubmit
+	})
+	agentReadySettlePause = func(context.Context) error { return nil }
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	message := strings.Repeat("long🙂", 12_000)
+	var chunks []string
+	newSessionIncludedPrompt := false
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		if len(args) == 0 {
+			return nil, nil
+		}
+		switch args[0] {
+		case "has-session":
+			return nil, errors.New("missing")
+		case "capture-pane":
+			return []byte("OpenAI Codex (v0.155.1)\n› Ask Codex to do anything"), nil
+		case "new-session":
+			for _, arg := range args {
+				if arg == message {
+					newSessionIncludedPrompt = true
+				}
+			}
+		case "send-keys":
+			if len(args) >= 5 && args[3] == "-l" {
+				chunks = append(chunks, args[4])
+			}
+		}
+		return nil, nil
+	}
+	if err := StartCodexChat(context.Background(), root, home, "codex-long-start", ChatInbound{ID: "message-long-start", Text: message}); err != nil {
+		t.Fatal(err)
+	}
+	if newSessionIncludedPrompt {
+		t.Fatal("long initial prompt was passed through tmux new-session")
+	}
+	if got := strings.Join(chunks, ""); got != message || len(chunks) < 2 {
+		t.Fatalf("chunked initial prompt has %d bytes in %d chunks, want %d bytes", len(got), len(chunks), len(message))
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "codex-long-start", "message-long-start.json")); !os.IsNotExist(err) {
+		t.Fatalf("delivered initial envelope remained: %v", err)
 	}
 }
 
