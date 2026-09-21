@@ -99,16 +99,25 @@ func ServeDesktopMCPHTTP(ctx context.Context, assignment, home string) error {
 	return nil
 }
 
-func desktopMCPHTTPHandler(assignment, token string) http.Handler {
+func desktopMCPHTTPHandler(assignment, token string, resolvers ...desktopToolPolicyResolver) http.Handler {
+	resolve := desktopToolPolicyResolver(desktopAgentToolPolicy)
+	if len(resolvers) > 0 && resolvers[0] != nil {
+		resolve = resolvers[0]
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(writer http.ResponseWriter, _ *http.Request) {
 		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{"ok": true})
 	})
-	mux.Handle("/tools", desktopMCPAuthorized(token, func(writer http.ResponseWriter, _ *http.Request) {
-		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{"tools": desktopMCPTools()})
+	mux.Handle("/tools", desktopMCPAuthorized(token, func(writer http.ResponseWriter, request *http.Request) {
+		tools, _, err := allowedDesktopMCPTools(request.Context(), assignment, resolve)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
+			return
+		}
+		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{"tools": tools})
 	}))
-	mux.Handle("/tools/", desktopMCPAuthorized(token, desktopMCPCallHandler(assignment)))
-	mux.Handle("/", desktopMCPAuthorized(token, desktopMCPIndexHandler))
+	mux.Handle("/tools/", desktopMCPAuthorized(token, desktopMCPCallHandler(assignment, resolve)))
+	mux.Handle("/", desktopMCPAuthorized(token, desktopMCPIndexHandler(assignment, resolve)))
 	return mux
 }
 
@@ -126,32 +135,47 @@ func desktopMCPAuthorized(token string, next http.HandlerFunc) http.Handler {
 	})
 }
 
-func desktopMCPIndexHandler(writer http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/" {
-		writeDesktopMCPError(writer, http.StatusNotFound, "no such endpoint")
-		return
+func desktopMCPIndexHandler(assignment string, resolve desktopToolPolicyResolver) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/" {
+			writeDesktopMCPError(writer, http.StatusNotFound, "no such endpoint")
+			return
+		}
+		tools, _, err := allowedDesktopMCPTools(request.Context(), assignment, resolve)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
+			return
+		}
+		names := make([]string, 0, len(tools))
+		for _, tool := range tools {
+			names = append(names, tool["name"].(string))
+		}
+		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{
+			"server": "vmbox-desktop",
+			"tools":  names,
+			"usage": map[string]string{
+				"list":    "GET /tools",
+				"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
+				"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
+				"session": "set_busy, chat_message and chat_ask act on the box's agent conversation; name another with an X-Vmbox-Session header",
+			},
+		})
 	}
-	names := make([]string, 0, len(desktopMCPTools()))
-	for _, tool := range desktopMCPTools() {
-		names = append(names, tool["name"].(string))
-	}
-	writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{
-		"server": "vmbox-desktop",
-		"tools":  names,
-		"usage": map[string]string{
-			"list":    "GET /tools",
-			"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
-			"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
-			"session": "set_busy, chat_message and chat_ask act on the box's agent conversation; name another with an X-Vmbox-Session header",
-		},
-	})
 }
 
-func desktopMCPCallHandler(assignment string) http.HandlerFunc {
+func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		name := strings.TrimPrefix(request.URL.Path, "/tools/")
 		if name == "" || strings.Contains(name, "/") {
 			writeDesktopMCPError(writer, http.StatusNotFound, "unknown desktop tool")
+			return
+		}
+		known := false
+		for _, tool := range desktopMCPTools() {
+			known = known || tool["name"] == name
+		}
+		if !known {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "unknown desktop tool")
 			return
 		}
 		query := request.URL.Query()
@@ -167,6 +191,15 @@ func desktopMCPCallHandler(assignment string) http.HandlerFunc {
 		}
 		ctx, cancel := context.WithTimeout(request.Context(), 30*time.Second)
 		defer cancel()
+		_, allowed, err := allowedDesktopMCPTools(ctx, assignment, resolve)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
+			return
+		}
+		if !allowed[name] {
+			writeDesktopMCPError(writer, http.StatusForbidden, "MCP tool is not allowed for this box")
+			return
+		}
 		if desktopMCPChatTools[name] {
 			if session == "" {
 				if session, err = soleAgentConversation(ctx); err != nil {

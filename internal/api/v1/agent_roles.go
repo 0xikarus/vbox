@@ -9,10 +9,20 @@ const (
 	RolePermissionCreateAgentBox  = "create_agent_box"
 	RolePermissionCreateEmail     = "create_email_address"
 	RolePermissionSharedChats     = "shared_chats"
+	RolePermissionMCPTools        = "mcp_tools"
 	ContactScopeNone              = "none"
 	ContactScopeSelected          = "selected"
 	ContactScopeAll               = "all"
 )
+
+var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_history", "set_busy", "chat_message", "chat_ask"}
+
+var OptionalAgentMCPTools = []string{
+	"request_more_time", "queue_followup", "discover_shared_chats", "read_shared_chat", "create_shared_chat",
+	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address", "create_agent_box",
+	"secret_request", "secret_ensure", "typeSecret", "desktop_screenshot", "capture_window", "desktop_move", "desktop_click",
+	"desktop_drag", "desktop_scroll", "desktop_type", "desktop_key",
+}
 
 type RequestMoreTimeGrant struct {
 	Enabled             bool `json:"enabled"`
@@ -49,12 +59,18 @@ type SharedChatsGrant struct {
 	Invite    bool `json:"invite"`
 }
 
+type MCPToolsGrant struct {
+	Enabled      bool     `json:"enabled"`
+	AllowedTools []string `json:"allowedTools"`
+}
+
 type AgentRoleCapabilities struct {
 	RequestMoreTime RequestMoreTimeGrant    `json:"requestMoreTime"`
 	QueueFollowup   QueueFollowupGrant      `json:"queueFollowup"`
 	CreateAgentBox  CreateAgentBoxGrant     `json:"createAgentBox"`
 	CreateEmail     CreateEmailAddressGrant `json:"createEmailAddress"`
 	SharedChats     SharedChatsGrant        `json:"sharedChats"`
+	MCPTools        MCPToolsGrant           `json:"mcpTools"`
 }
 
 type AgentRoleSummary struct {

@@ -19,9 +19,18 @@ is rechecked by the controller at execution time.
   that fact and does not invent an address.
 - `shared_chats`: independent discover, read, subscribe, create, and invite
   grants. Membership is still required to read or post.
+- `mcp_tools`: an exact allow-list for optional coordination, secret, and
+  desktop tools. Core chat, contact, budget visibility, busy-state, and thread
+  history tools remain available. The allow-list is an additional restriction:
+  a selected tool still needs its typed capability grant and limits.
 
 Multiple assigned roles combine additively. Boolean grants are ORed, numeric
 limits use the largest explicit ceiling, and allow-lists are unioned.
+
+The local stdio MCP server and authenticated HTTP tool facade both retrieve the
+effective policy from the controller for tool discovery and again before tool
+execution. Role edits therefore apply without restarting the agent, and an
+unavailable policy fails closed rather than exposing the unfiltered inventory.
 
 ## Runtime and retries
 

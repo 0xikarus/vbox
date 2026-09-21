@@ -74,3 +74,17 @@ func desktopToolJSON(value any) (map[string]any, error) {
 	}
 	return map[string]any{"content": []map[string]any{{"type": "text", "text": string(encoded)}}, "structuredContent": value}, nil
 }
+
+func desktopAgentToolPolicy(ctx context.Context, assignment string) (map[string]bool, error) {
+	var response struct {
+		Tools []string `json:"tools"`
+	}
+	if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/tool-policy", nil, &response); err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]bool, len(response.Tools))
+	for _, name := range response.Tools {
+		allowed[name] = true
+	}
+	return allowed, nil
+}

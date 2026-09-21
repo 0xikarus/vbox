@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -51,16 +52,24 @@ func TestPutRoleAssignmentsRequiresOwner(t *testing.T) {
 }
 
 func TestValidateAgentRoleCapabilitiesUsesExplicitTypesAndBounds(t *testing.T) {
-	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "Release coordinator", Capabilities: v1.AgentRoleCapabilities{CreateAgentBox: v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 2, MaxDiskGiB: 50, AllowedAgents: []string{"codex", "codex", "opencode"}}, RequestMoreTime: v1.RequestMoreTimeGrant{Enabled: true, MaxExtensionMinutes: 30, MaxTotalMinutes: 120}}})
+	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "Release coordinator", Capabilities: v1.AgentRoleCapabilities{CreateAgentBox: v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 2, MaxDiskGiB: 50, AllowedAgents: []string{"codex", "codex", "opencode"}}, RequestMoreTime: v1.RequestMoreTimeGrant{Enabled: true, MaxExtensionMinutes: 30, MaxTotalMinutes: 120}, MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"desktop_click", "desktop_click"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(request.Capabilities.CreateAgentBox.AllowedAgents) != 2 {
 		t.Fatalf("agents=%v", request.Capabilities.CreateAgentBox.AllowedAgents)
 	}
+	if len(request.Capabilities.MCPTools.AllowedTools) != 1 {
+		t.Fatalf("MCP tools=%v", request.Capabilities.MCPTools.AllowedTools)
+	}
 	request.Capabilities.CreateAgentBox.AllowedAgents = []string{"made-up-agent"}
 	if _, err = validateAgentRoleRequest(request); err == nil {
 		t.Fatal("arbitrary agent type accepted")
+	}
+	request.Capabilities.CreateAgentBox.AllowedAgents = []string{"codex"}
+	request.Capabilities.MCPTools.AllowedTools = []string{"shell"}
+	if _, err = validateAgentRoleRequest(request); err == nil {
+		t.Fatal("unknown MCP tool accepted")
 	}
 }
 
@@ -69,16 +78,39 @@ func TestEffectiveAgentCapabilitiesUnionsAssignedRoles(t *testing.T) {
 	moreA, _ := json.Marshal(v1.RequestMoreTimeGrant{Enabled: true, MaxExtensionMinutes: 30, MaxTotalMinutes: 60})
 	moreB, _ := json.Marshal(v1.RequestMoreTimeGrant{Enabled: true, MaxExtensionMinutes: 90, MaxTotalMinutes: 240})
 	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 2, MaxDiskGiB: 50, AllowedAgents: []string{"codex"}, AssignableRoleIDs: []string{"role-a"}})
-	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionRequestMoreTime, moreA).AddRow(v1.RolePermissionRequestMoreTime, moreB).AddRow(v1.RolePermissionCreateAgentBox, boxes))
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"desktop_click"}})
+	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionRequestMoreTime, moreA).AddRow(v1.RolePermissionRequestMoreTime, moreB).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionMCPTools, mcp))
 	capabilities, err := store.EffectiveAgentCapabilities(context.Background(), "account-a", "box-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if capabilities.RequestMoreTime.MaxExtensionMinutes != 90 || capabilities.RequestMoreTime.MaxTotalMinutes != 240 || !capabilities.CreateAgentBox.Enabled {
+	if capabilities.RequestMoreTime.MaxExtensionMinutes != 90 || capabilities.RequestMoreTime.MaxTotalMinutes != 240 || !capabilities.CreateAgentBox.Enabled || !slices.Equal(capabilities.MCPTools.AllowedTools, []string{"desktop_click"}) {
 		t.Fatalf("capabilities=%+v", capabilities)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.T) {
+	store, mock := testStore(t)
+	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 1, MaxDiskGiB: 20, AllowedAgents: []string{"codex"}})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"desktop_click", "desktop_drag", "create_agent_box", "request_more_time"}})
+	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionMCPTools, mcp))
+	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"chat_message", "get_thread_history", "desktop_click", "desktop_drag", "create_agent_box"} {
+		if !slices.Contains(tools, name) {
+			t.Fatalf("expected %s in %v", name, tools)
+		}
+	}
+	if slices.Contains(tools, "request_more_time") {
+		t.Fatalf("allowlist bypassed typed request-more-time permission: %v", tools)
+	}
+	if slices.Contains(tools, "desktop_type") {
+		t.Fatalf("unselected optional tool was advertised: %v", tools)
 	}
 }
 

@@ -72,6 +72,13 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 			result.SharedChats.Subscribe = result.SharedChats.Subscribe || grant.Subscribe
 			result.SharedChats.Create = result.SharedChats.Create || grant.Create
 			result.SharedChats.Invite = result.SharedChats.Invite || grant.Invite
+		case v1.RolePermissionMCPTools:
+			var grant v1.MCPToolsGrant
+			if err := json.Unmarshal(config, &grant); err != nil {
+				return result, err
+			}
+			result.MCPTools.Enabled = result.MCPTools.Enabled || grant.Enabled
+			result.MCPTools.AllowedTools = unionStrings(result.MCPTools.AllowedTools, grant.AllowedTools)
 		}
 	}
 	return result, rows.Err()

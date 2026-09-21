@@ -208,7 +208,13 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.click('#role-contact-boxes input[value="reviewer"]');
   await p.click('#role-editor-form input[name=requestMoreTimeEnabled]');
   await p.click('#role-editor-form input[name=createAgentBoxEnabled]');
+  await p.click('#role-editor-form [data-capability=createAgentBoxEnabled] summary');
   await p.click('#role-editor-form input[name=allowedAgents][value=codex]');
+  await p.$eval('#role-editor-form [data-capability=createAgentBoxEnabled]',element=>element.open=false);
+  await p.click('#role-editor-form .mcp-tool-options summary');
+  await p.click('#role-editor-form input[name=mcpTools][value=desktop_drag]');
+  await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-role-mcp-tools.png'});
+  await p.$eval('#role-editor-form .mcp-tool-options',element=>element.open=false);
   await p.$eval('.role-capabilities',element=>element.scrollIntoView({block:'start'}));
   await (await p.$('#role-editor-modal .role-editor-card')).screenshot({path:'docs/chat-ui/screenshots/chat-role-editor.png'});
   await p.$eval('#role-editor-form',form=>form.requestSubmit());
@@ -216,6 +222,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(agentRoles.at(-1).name,'Release handoff','the exact owner-typed role name must be preserved');
   assert.equal(agentRoles.at(-1).capabilities.requestMoreTime.enabled,true);
   assert.deepEqual(agentRoles.at(-1).capabilities.createAgentBox.allowedAgents,['codex']);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.enabled,true);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('desktop_drag'),false);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('desktop_click'),true);
   await p.click('#role-matrix input[aria-label="Release handoff for reviewer"]');
   await p.click('#save-role-assignments');
   await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');

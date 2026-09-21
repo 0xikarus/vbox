@@ -37,7 +37,7 @@ func desktopMCPHTTPRequest(t *testing.T, handler http.Handler, method, target, t
 // Loopback is shared between boxes on a worker, so an unauthenticated caller
 // must get nothing, not even the tool list.
 func TestDesktopMCPHTTPRequiresToken(t *testing.T) {
-	handler := desktopMCPHTTPHandler("assignment", "secret-token")
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
 	for _, target := range []string{"/", "/tools", "/tools/desktop_screenshot"} {
 		status, body := desktopMCPHTTPRequest(t, handler, http.MethodGet, target, "", "")
 		if status != http.StatusUnauthorized {
@@ -56,14 +56,14 @@ func TestDesktopMCPHTTPRequiresToken(t *testing.T) {
 // Readiness must answer before a caller has the token, so the start-up probe
 // can tell "not listening yet" from "listening".
 func TestDesktopMCPHTTPHealthIsOpen(t *testing.T) {
-	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token"), http.MethodGet, "/health", "", "")
+	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy), http.MethodGet, "/health", "", "")
 	if status != http.StatusOK || body["ok"] != true {
 		t.Fatalf("health returned %d %v", status, body)
 	}
 }
 
 func TestDesktopMCPHTTPListsTheSameToolsAsMCP(t *testing.T) {
-	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token"), http.MethodGet, "/tools", "secret-token", "")
+	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy), http.MethodGet, "/tools", "secret-token", "")
 	if status != http.StatusOK {
 		t.Fatalf("tools returned %d", status)
 	}
@@ -83,8 +83,19 @@ func TestDesktopMCPHTTPListsTheSameToolsAsMCP(t *testing.T) {
 	}
 }
 
+func TestDesktopMCPHTTPRejectsToolOutsideBoxPolicy(t *testing.T) {
+	resolve := func(context.Context, string) (map[string]bool, error) {
+		return map[string]bool{"desktop_screenshot": true}, nil
+	}
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", resolve)
+	status, body := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_click", "secret-token", `{"x":10,"y":20}`)
+	if status != http.StatusForbidden || !strings.Contains(body["error"].(string), "not allowed") {
+		t.Fatalf("disallowed tool returned %d %v", status, body)
+	}
+}
+
 func TestDesktopMCPHTTPRejectsUnknownToolsAndArguments(t *testing.T) {
-	handler := desktopMCPHTTPHandler("assignment", "secret-token")
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
 	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_launch_missiles", "secret-token", `{}`); status != http.StatusBadRequest {
 		t.Fatalf("unknown tool returned %d", status)
 	}
@@ -345,7 +356,7 @@ func TestWithChatSessionOverridesTheHostingSession(t *testing.T) {
 // vmbox_session steers the call; it is not a tool argument.
 func TestDesktopMCPHTTPSessionParameterIsNotAToolArgument(t *testing.T) {
 	stubTmuxSessions(t, map[string]string{"codex-abc123": "codex"})
-	handler := desktopMCPHTTPHandler("assignment", "secret-token")
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
 	status, body := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools/desktop_click?x=1&y=2&vmbox_session=codex-abc123", "secret-token", "")
 	if status == http.StatusBadRequest && strings.Contains(body["error"].(string), "unknown tool argument") {
 		t.Fatalf("vmbox_session was treated as a tool argument: %v", body)

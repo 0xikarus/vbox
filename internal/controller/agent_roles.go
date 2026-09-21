@@ -48,6 +48,7 @@ func validateAgentRoleRequest(request v1.PutAgentRoleRequest) (v1.PutAgentRoleRe
 	request.Capabilities.CreateAgentBox.AssignableRoleIDs = cleanUniqueStrings(request.Capabilities.CreateAgentBox.AssignableRoleIDs)
 	request.Capabilities.CreateEmail.Domains = cleanUniqueStrings(request.Capabilities.CreateEmail.Domains)
 	request.Capabilities.CreateEmail.AddressTypes = cleanUniqueStrings(request.Capabilities.CreateEmail.AddressTypes)
+	request.Capabilities.MCPTools.AllowedTools = cleanUniqueStrings(request.Capabilities.MCPTools.AllowedTools)
 	if grant := request.Capabilities.RequestMoreTime; grant.Enabled && (grant.MaxExtensionMinutes < 1 || grant.MaxExtensionMinutes > 1440 || grant.MaxTotalMinutes < grant.MaxExtensionMinutes || grant.MaxTotalMinutes > 10080) {
 		return request, fmt.Errorf("request-more-time limits must be 1–1440 minutes per request and no more than 10080 minutes total")
 	}
@@ -64,6 +65,18 @@ func validateAgentRoleRequest(request v1.PutAgentRoleRequest) (v1.PutAgentRoleRe
 	}
 	if grant := request.Capabilities.CreateEmail; grant.Enabled && (grant.MaxAddresses < 1 || grant.MaxAddresses > 100 || len(grant.Domains) == 0 || len(grant.AddressTypes) == 0) {
 		return request, fmt.Errorf("create-email-address requires 1–100 addresses, a domain, and an address type")
+	}
+	validTools := map[string]bool{}
+	for _, name := range v1.OptionalAgentMCPTools {
+		validTools[name] = true
+	}
+	for _, name := range request.Capabilities.MCPTools.AllowedTools {
+		if !validTools[name] {
+			return request, fmt.Errorf("unknown optional MCP tool %q", name)
+		}
+	}
+	if !request.Capabilities.MCPTools.Enabled {
+		request.Capabilities.MCPTools.AllowedTools = nil
 	}
 	return request, nil
 }
@@ -157,6 +170,8 @@ func loadRoleCapabilities(ctx context.Context, q interface {
 			target = &role.Capabilities.CreateEmail
 		case v1.RolePermissionSharedChats:
 			target = &role.Capabilities.SharedChats
+		case v1.RolePermissionMCPTools:
+			target = &role.Capabilities.MCPTools
 		default:
 			continue
 		}
@@ -259,6 +274,7 @@ func putAgentRolePermission(ctx context.Context, tx *sql.Tx, accountID, roleID s
 		{v1.RolePermissionCreateAgentBox, request.Capabilities.CreateAgentBox.Enabled, request.Capabilities.CreateAgentBox},
 		{v1.RolePermissionCreateEmail, request.Capabilities.CreateEmail.Enabled, request.Capabilities.CreateEmail},
 		{v1.RolePermissionSharedChats, request.Capabilities.SharedChats.Discover || request.Capabilities.SharedChats.Read || request.Capabilities.SharedChats.Subscribe || request.Capabilities.SharedChats.Create || request.Capabilities.SharedChats.Invite, request.Capabilities.SharedChats},
+		{v1.RolePermissionMCPTools, request.Capabilities.MCPTools.Enabled, request.Capabilities.MCPTools},
 	}
 	for _, permission := range permissions {
 		if !permission.enabled {

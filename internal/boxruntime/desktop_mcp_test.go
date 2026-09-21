@@ -190,7 +190,7 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"shell","arguments":{}}}`,
 	}, "\n")
 	var out bytes.Buffer
-	if err := ServeDesktopMCP(context.Background(), "invalid", strings.NewReader(input), &out); err != nil {
+	if err := serveDesktopMCP(context.Background(), "invalid", strings.NewReader(input), &out, allDesktopToolPolicy); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -216,6 +216,24 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		}
 		if i >= 2 && response.Result["isError"] != true {
 			t.Fatal("invalid call accepted")
+		}
+	}
+}
+
+func TestAllowedDesktopMCPToolsFiltersAdvertisedInventory(t *testing.T) {
+	resolve := func(context.Context, string) (map[string]bool, error) {
+		return map[string]bool{"chat_message": true, "desktop_screenshot": true}, nil
+	}
+	tools, allowed, err := allowedDesktopMCPTools(context.Background(), "assignment", resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 2 || !allowed["chat_message"] || !allowed["desktop_screenshot"] {
+		t.Fatalf("filtered tools=%v allowed=%v", tools, allowed)
+	}
+	for _, tool := range tools {
+		if name := tool["name"].(string); name != "chat_message" && name != "desktop_screenshot" {
+			t.Fatalf("unexpected tool %s", name)
 		}
 	}
 }

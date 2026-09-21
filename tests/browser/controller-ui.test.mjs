@@ -85,12 +85,14 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  await page.click('#role-editor-form input[value=selected]');
  await page.click('#role-contact-boxes input[value="box-2"]');
  await page.click('#role-editor-form input[name=queueFollowupEnabled]');
+ await page.click('#role-editor-form input[name=sharedChatsEnabled]');
  await page.click('#role-editor-form button.primary');
  await page.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Can contact planner'));
  const selectedRole=fixtureRoles.find(role=>role.name==='Can contact planner');
  assert.equal(selectedRole.name,'Can contact planner','the exact owner-typed role name must be preserved');
  assert.deepEqual(selectedRole.contactBoxIds,['box-2']);
  assert.equal(selectedRole.capabilities.queueFollowup.enabled,true);
+ assert.equal(Object.values(selectedRole.capabilities.sharedChats).every(Boolean),true);
  const assignmentSelector=`#role-matrix input[aria-label="Can contact planner for helper ü"]`;
  await page.click(assignmentSelector);
  await page.click('#save-role-assignments');
@@ -100,6 +102,7 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  await page.$eval('a[href="#roles"]',link=>link.click());
  await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-desktop.png')});
  await page.$$eval('#role-matrix .role-heading',buttons=>buttons.find(button=>button.textContent==='Can contact planner').click());
+ await page.setViewport({width:1280,height:1200});
  await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/role-editor.png')});
  await page.click('#role-editor-modal [data-close="role-editor-modal"]');
  await page.setViewport({width:390,height:844});

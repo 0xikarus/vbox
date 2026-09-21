@@ -68,9 +68,37 @@ func desktopMCPTools() []map[string]any {
 	}
 }
 
+type desktopToolPolicyResolver func(context.Context, string) (map[string]bool, error)
+
+func allDesktopToolPolicy(_ context.Context, _ string) (map[string]bool, error) {
+	allowed := map[string]bool{}
+	for _, tool := range desktopMCPTools() {
+		allowed[tool["name"].(string)] = true
+	}
+	return allowed, nil
+}
+
+func allowedDesktopMCPTools(ctx context.Context, assignment string, resolve desktopToolPolicyResolver) ([]map[string]any, map[string]bool, error) {
+	allowed, err := resolve(ctx, assignment)
+	if err != nil {
+		return nil, nil, err
+	}
+	tools := []map[string]any{}
+	for _, tool := range desktopMCPTools() {
+		if allowed[tool["name"].(string)] {
+			tools = append(tools, tool)
+		}
+	}
+	return tools, allowed, nil
+}
+
 // ServeDesktopMCP is a local stdio adapter. stdout contains protocol only; the
 // assignment captured at startup fences every subsequent operation.
 func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer) error {
+	return serveDesktopMCP(ctx, assignment, input, output, desktopAgentToolPolicy)
+}
+
+func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer, resolve desktopToolPolicyResolver) error {
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), 65536)
 	encoder := json.NewEncoder(output)
@@ -118,7 +146,12 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
-			response["result"] = map[string]any{"tools": desktopMCPTools()}
+			tools, _, err := allowedDesktopMCPTools(ctx, assignment, resolve)
+			if err != nil {
+				response["error"] = map[string]any{"code": -32000, "message": "MCP tool policy unavailable"}
+				break
+			}
+			response["result"] = map[string]any{"tools": tools}
 		case "tools/call":
 			var params struct {
 				Name      string          `json:"name"`
@@ -129,7 +162,16 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 				break
 			}
 			callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			result, err := callDesktopTool(callCtx, assignment, params.Name, params.Arguments)
+			_, allowed, policyErr := allowedDesktopMCPTools(callCtx, assignment, resolve)
+			var result map[string]any
+			var err error
+			if policyErr != nil {
+				err = fmt.Errorf("MCP tool policy unavailable")
+			} else if !allowed[params.Name] {
+				err = fmt.Errorf("MCP tool %s is not allowed for this box", params.Name)
+			} else {
+				result, err = callDesktopTool(callCtx, assignment, params.Name, params.Arguments)
+			}
 			cancel()
 			if err != nil {
 				result = map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": err.Error()}}}

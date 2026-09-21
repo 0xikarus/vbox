@@ -135,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agent-desktop/run-budget", s.desktopAgentAuth(s.agentRunBudgetHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/run-budget/extend", s.desktopAgentAuth(s.agentRunBudgetHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/followups", s.desktopAgentAuth(s.agentFollowupHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/tool-policy", s.desktopAgentAuth(s.agentToolPolicyHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/thread-history", s.desktopAgentAuth(s.agentThreadHistoryHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/shared-chats", s.desktopAgentAuth(s.agentSharedChatsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/shared-chats", s.desktopAgentAuth(s.agentSharedChatsHandler))
