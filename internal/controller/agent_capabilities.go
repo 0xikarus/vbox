@@ -53,6 +53,14 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 			result.CreateAgentBox.MaxDiskGiB = max(result.CreateAgentBox.MaxDiskGiB, grant.MaxDiskGiB)
 			result.CreateAgentBox.AllowedAgents = unionStrings(result.CreateAgentBox.AllowedAgents, grant.AllowedAgents)
 			result.CreateAgentBox.AssignableRoleIDs = unionStrings(result.CreateAgentBox.AssignableRoleIDs, grant.AssignableRoleIDs)
+		case v1.RolePermissionManageAgentBoxes:
+			var grant v1.ManageAgentBoxesGrant
+			if err := json.Unmarshal(config, &grant); err != nil {
+				return result, err
+			}
+			result.ManageAgentBoxes.List = result.ManageAgentBoxes.List || grant.List
+			result.ManageAgentBoxes.Inspect = result.ManageAgentBoxes.Inspect || grant.Inspect
+			result.ManageAgentBoxes.Delete = result.ManageAgentBoxes.Delete || grant.Delete
 		case v1.RolePermissionCreateEmail:
 			var grant v1.CreateEmailAddressGrant
 			if err := json.Unmarshal(config, &grant); err != nil {

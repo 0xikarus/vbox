@@ -202,6 +202,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
   await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles.png'});
   await p.click('#create-role');
+  assert.equal(await p.$eval('.msg-actions',element=>getComputedStyle(element).visibility),'hidden','background message actions must not bleed through the role editor');
   await p.type('#role-editor-form input[name=name]','Release handoff');
   await p.type('#role-editor-form textarea[name=description]','May contact the release box');
   await p.click('#role-editor-form input[value=selected]');
@@ -222,6 +223,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
   assert.equal(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) input[name=mcpTools]',inputs=>inputs.every(input=>input.checked)),true);
   await p.$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) .role-capability-options',element=>element.open=false);
+  await p.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
+  assert.deepEqual(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) input[name=mcpTools]',inputs=>inputs.map(input=>input.value)),['list_agent_boxes','get_agent_box','create_agent_box','delete_agent_box']);
+  await p.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) .role-capability-options summary');
   await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-role-mcp-tools.png'});
   await p.$eval('#role-editor-form .mcp-tool-options',element=>element.open=false);
   await p.$eval('.role-capabilities',element=>element.scrollIntoView({block:'start'}));
@@ -235,6 +239,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('drag_mouse'),true);
   assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('click_mouse'),true);
   assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('secret_request'),false);
+  assert.deepEqual(agentRoles.at(-1).capabilities.manageAgentBoxes,{list:true,inspect:true,delete:true});
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('create_agent_box'),true);
   await p.click('#role-matrix input[aria-label="Release handoff for reviewer"]');
   await p.click('#save-role-assignments');
   await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');

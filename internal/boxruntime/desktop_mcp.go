@@ -50,7 +50,10 @@ func desktopMCPTools() []map[string]any {
 		makeTool("invite_to_shared_chat", "Invite an account box to a shared chat. New members start in following mode.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "boxId": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "boxId", "idempotencyKey"),
 		makeTool("send_shared_chat_message", "Post a message or threaded reply to a shared chat. Delivery follows each member's subscription mode.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "parentMessageId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "text", "idempotencyKey"),
 		makeTool("create_email_address", "Provision an email address through the account's configured provider within this box's role grant. Reuse idempotencyKey when retrying.", map[string]any{"domain": map[string]any{"type": "string", "minLength": 1, "maxLength": 253}, "addressType": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "localPart": map[string]any{"type": "string", "maxLength": 64}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "domain", "addressType", "idempotencyKey"),
+		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
+		makeTool("get_agent_box", "Inspect one agent box's safe lifecycle details by ID or exact name. Does not grant terminal or desktop access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box"),
 		makeTool("create_agent_box", "Create an agent box on this box's provider within explicitly granted agent, disk, count, and starting-role limits. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 4096}, "roleIds": map[string]any{"type": "array", "maxItems": 100, "items": map[string]any{"type": "string"}}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
+		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
 		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass contact (from get_contacts) to send a message to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass contact (from get_contacts) to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
@@ -483,6 +486,41 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		var result map[string]any
 		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes", request.IdempotencyKey, map[string]any{"name": request.Name, "agent": request.Agent, "diskGiB": request.DiskGiB, "roleIds": request.RoleIDs}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "list_agent_boxes" {
+		var result []map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/boxes", nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "get_agent_box" {
+		var request struct {
+			Box string `json:"box"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" {
+			return nil, fmt.Errorf("box is required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box), nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "delete_agent_box" {
+		var request struct {
+			Box            string `json:"box"`
+			Confirmation   string `json:"confirmation"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("box, confirmation, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodDelete, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box), request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)

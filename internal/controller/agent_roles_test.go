@@ -95,19 +95,23 @@ func TestEffectiveAgentCapabilitiesUnionsAssignedRoles(t *testing.T) {
 func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.T) {
 	store, mock := testStore(t)
 	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 1, MaxDiskGiB: 20, AllowedAgents: []string{"codex"}})
-	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "create_agent_box", "request_more_time"}})
-	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionMCPTools, mcp))
+	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{List: true, Inspect: true})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "delete_agent_box", "create_agent_box", "request_more_time"}})
+	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionManageAgentBoxes, manage).AddRow(v1.RolePermissionMCPTools, mcp))
 	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "create_agent_box"} {
+	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "create_agent_box"} {
 		if !slices.Contains(tools, name) {
 			t.Fatalf("expected %s in %v", name, tools)
 		}
 	}
 	if slices.Contains(tools, "request_more_time") {
 		t.Fatalf("allowlist bypassed typed request-more-time permission: %v", tools)
+	}
+	if slices.Contains(tools, "delete_agent_box") {
+		t.Fatalf("allowlist bypassed typed delete permission: %v", tools)
 	}
 	if slices.Contains(tools, "type_text") {
 		t.Fatalf("unselected optional tool was advertised: %v", tools)

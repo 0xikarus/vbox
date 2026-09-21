@@ -3,23 +3,25 @@ package v1
 import "time"
 
 const (
-	RolePermissionContacts        = "contacts"
-	RolePermissionRequestMoreTime = "request_more_time"
-	RolePermissionQueueFollowup   = "queue_followup"
-	RolePermissionCreateAgentBox  = "create_agent_box"
-	RolePermissionCreateEmail     = "create_email_address"
-	RolePermissionSharedChats     = "shared_chats"
-	RolePermissionMCPTools        = "mcp_tools"
-	ContactScopeNone              = "none"
-	ContactScopeSelected          = "selected"
-	ContactScopeAll               = "all"
+	RolePermissionContacts         = "contacts"
+	RolePermissionRequestMoreTime  = "request_more_time"
+	RolePermissionQueueFollowup    = "queue_followup"
+	RolePermissionCreateAgentBox   = "create_agent_box"
+	RolePermissionManageAgentBoxes = "manage_agent_boxes"
+	RolePermissionCreateEmail      = "create_email_address"
+	RolePermissionSharedChats      = "shared_chats"
+	RolePermissionMCPTools         = "mcp_tools"
+	ContactScopeNone               = "none"
+	ContactScopeSelected           = "selected"
+	ContactScopeAll                = "all"
 )
 
 var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_history", "set_busy", "chat_message", "chat_ask"}
 
 var OptionalAgentMCPTools = []string{
 	"request_more_time", "queue_followup", "discover_shared_chats", "read_shared_chat", "create_shared_chat",
-	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address", "create_agent_box",
+	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address",
+	"list_agent_boxes", "get_agent_box", "create_agent_box", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
 }
@@ -71,6 +73,14 @@ type CreateAgentBoxGrant struct {
 	AssignableRoleIDs []string `json:"assignableRoleIds"`
 }
 
+// ManageAgentBoxesGrant covers lifecycle inspection and deletion. Creation has
+// its own bounded grant because it carries count, disk, agent, and role limits.
+type ManageAgentBoxesGrant struct {
+	List    bool `json:"list"`
+	Inspect bool `json:"inspect"`
+	Delete  bool `json:"delete"`
+}
+
 type CreateEmailAddressGrant struct {
 	Enabled      bool     `json:"enabled"`
 	MaxAddresses int      `json:"maxAddresses"`
@@ -92,12 +102,13 @@ type MCPToolsGrant struct {
 }
 
 type AgentRoleCapabilities struct {
-	RequestMoreTime RequestMoreTimeGrant    `json:"requestMoreTime"`
-	QueueFollowup   QueueFollowupGrant      `json:"queueFollowup"`
-	CreateAgentBox  CreateAgentBoxGrant     `json:"createAgentBox"`
-	CreateEmail     CreateEmailAddressGrant `json:"createEmailAddress"`
-	SharedChats     SharedChatsGrant        `json:"sharedChats"`
-	MCPTools        MCPToolsGrant           `json:"mcpTools"`
+	RequestMoreTime  RequestMoreTimeGrant    `json:"requestMoreTime"`
+	QueueFollowup    QueueFollowupGrant      `json:"queueFollowup"`
+	CreateAgentBox   CreateAgentBoxGrant     `json:"createAgentBox"`
+	ManageAgentBoxes ManageAgentBoxesGrant   `json:"manageAgentBoxes"`
+	CreateEmail      CreateEmailAddressGrant `json:"createEmailAddress"`
+	SharedChats      SharedChatsGrant        `json:"sharedChats"`
+	MCPTools         MCPToolsGrant           `json:"mcpTools"`
 }
 
 type AgentRoleSummary struct {

@@ -750,6 +750,9 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .msg-actions-menu svg{width:1rem;height:1rem;flex:none}
 .msg.user .msg-more{color:rgba(255,255,255,.78)}
 .msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:rgba(255,255,255,.18);color:#fff}
+/* Message chevrons sit on top of their bubbles. Hide them while an app sheet
+   is open so they cannot visually bleed through a modal backdrop or card. */
+body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 
 /* ── mobile bottom-sheet menus ───────────────────────────────────────── */
 #menu-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:14}

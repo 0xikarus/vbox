@@ -50,6 +50,12 @@ func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bo
 		return capabilities.CreateEmail.Enabled
 	case "create_agent_box":
 		return capabilities.CreateAgentBox.Enabled
+	case "list_agent_boxes":
+		return capabilities.ManageAgentBoxes.List
+	case "get_agent_box":
+		return capabilities.ManageAgentBoxes.Inspect
+	case "delete_agent_box":
+		return capabilities.ManageAgentBoxes.Delete
 	default:
 		return true
 	}

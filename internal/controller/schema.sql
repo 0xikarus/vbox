@@ -771,6 +771,19 @@ CREATE TABLE IF NOT EXISTS agent_box_creations (
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_agent text NOT NULL DEFAULT 'codex';
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_disk_gib bigint NOT NULL DEFAULT 10;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+CREATE TABLE IF NOT EXISTS agent_box_deletions (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  idempotency_key text NOT NULL,
+  target_ref text NOT NULL,
+  confirmation text NOT NULL,
+  target_box_id uuid,
+  target_name text,
+  accepted boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,actor_box_id,idempotency_key)
+);
 CREATE TABLE IF NOT EXISTS agent_email_addresses (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
