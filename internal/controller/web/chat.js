@@ -1635,17 +1635,14 @@
  function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('sheet-mode');menuBackdrop.hidden=true}
  function openRowMenu(box,rect){
   rowMenu.replaceChildren();
+  // Keep the menu small: everything else lives in the Details panel.
   const items=[
    ['Show details',()=>{if(!inspectOpen)$('#chat-info').click()}],
-   ['Control desktop',()=>{location.hash='box='+box.id;if(box.id!==selected)void openBox(box.id).then(()=>openTakeover('desktop'));else openTakeover('desktop')}],
-   ['Instructions…',()=>void openBoxInstructions(box)],
   ];
   const active=selected&&boxes.get(selected);
-  if(owner&&active&&active.id!==box.id)items.unshift(['Add '+box.name+' as a two-way contact',()=>void addContactFromRow(active,box)]);
-  if(owner)items.push(['Imported profiles…',()=>void openBoxCredentials(box)]);
-  if(box.state==='running')items.push(['Re-sync config',()=>void resyncBox(box)],['Restart box…',()=>void restartBox(box)]);
+  if(owner&&active&&active.id!==box.id)items.push(['Add '+box.name+' as a two-way contact',()=>void addContactFromRow(active,box)]);
+  if(box.state==='running')items.push(['Hibernate box',()=>void hibernateBox(box)],['Restart box…',()=>void restartBox(box)]);
   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
-  if(box.state==='running')items.splice(2,0,['Hibernate box',()=>void hibernateBox(box)]);
   for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
   const sheet=coarsePointer()||innerWidth<=640;
   rowMenu.classList.toggle('sheet-mode',sheet);

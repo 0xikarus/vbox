@@ -435,9 +435,9 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #create-box .profile-field{display:flex;flex-direction:column;font-size:.8rem;color:var(--ink-soft)}
 
 #row-menu{position:fixed;z-index:15;background:var(--surface);border:1px solid var(--line);
-  border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.35rem;min-width:12rem}
+  border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.3rem;min-width:10rem}
 #row-menu button{display:flex;align-items:center;gap:.5rem;width:100%;border:0;background:none;
-  color:var(--ink);padding:.55rem .6rem;border-radius:var(--radius-sm);cursor:pointer;font:inherit;text-align:left;margin:0;font-size:.9rem}
+  color:var(--ink);padding:.4rem .5rem;border-radius:var(--radius-sm);cursor:pointer;font:inherit;text-align:left;margin:0;font-size:.84rem}
 #row-menu button:hover{background:var(--accent-soft)}
 #row-menu button.danger{color:var(--danger)}
 #forward-menu{position:fixed;z-index:10;background:var(--surface);border:1px solid var(--line);
@@ -716,7 +716,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #row-menu.sheet-mode{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:15;min-width:0;
   border-radius:var(--radius-lg) var(--radius-lg) 0 0;padding:.5rem .6rem calc(env(safe-area-inset-bottom) + .6rem);
   max-height:72vh;overflow-y:auto}
-#row-menu.sheet-mode button{min-height:2.9rem;font-size:.95rem}
+#row-menu.sheet-mode button{min-height:2.6rem;font-size:.9rem}
 
 /* ── connection / stalled banner ─────────────────────────────────────── */
 #chat-banner{margin:0;padding:.42rem .8rem;background:var(--warn);color:#fff;font-size:.82rem;font-weight:600;text-align:center}
