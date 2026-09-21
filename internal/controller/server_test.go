@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -97,7 +96,7 @@ func (*fakeProvider) Reconcile(_ context.Context, box provider.Box) (provider.Bo
 
 func TestBoxTaskStagesMatchingRuntimeBeforeStartingAgent(t *testing.T) {
 	runtime := []byte("current controller runtime")
-	for agent, command := range map[string]string{"claude": "chat-deliver", "codex": "chat-codex-start", "opencode": ""} {
+	for agent, command := range map[string]string{"claude": "chat-deliver", "codex": "chat-codex-start", "opencode": "chat-opencode-start"} {
 		t.Run(agent, func(t *testing.T) {
 			p := &taskRuntimeProvider{digest: fmt.Sprintf("%x", sha256.Sum256(runtime))}
 			server := NewServer(nil, nil)
@@ -125,12 +124,8 @@ func TestBoxTaskStagesMatchingRuntimeBeforeStartingAgent(t *testing.T) {
 			}
 			if agent == "opencode" {
 				got := p.calls[2]
-				if len(got) != 6 || got[0] != "vmbox-runtime" || got[1] != "tmux-task" || got[2] != task.Session || got[3] != task.Agent || got[4] != message.ID {
-					t.Fatalf("OpenCode initial message was not passed at process startup: %v", got)
-				}
-				prompt, err := base64.RawURLEncoding.DecodeString(got[5])
-				if err != nil || !strings.Contains(string(prompt), message.Text) {
-					t.Fatalf("OpenCode startup prompt=%q err=%v", prompt, err)
+				if len(got) != 3 || got[0] != "vmbox-runtime" || got[1] != command || got[2] != task.Session {
+					t.Fatalf("OpenCode initial message did not use the native startup path: %v", got)
 				}
 				return
 			}

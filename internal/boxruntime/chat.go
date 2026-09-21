@@ -426,6 +426,16 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 	return nil
 }
 
+// StartOpenCodeChat starts OpenCode without a CLI prompt, then submits the
+// initial message through the visible TUI bridge so text and image parts share
+// the same native conversation path as follow-ups.
+func StartOpenCodeChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
+	if err := StartTmuxTask(ctx, root, session, "opencode", inbound.ID, ""); err != nil {
+		return err
+	}
+	return DeliverOpenCodeChat(ctx, home, session, inbound)
+}
+
 func deliverCodexThroughTUI(ctx context.Context, root, session, prompt, eventPath string) error {
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err

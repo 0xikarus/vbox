@@ -100,9 +100,10 @@ Disconnect with **Ctrl-a, then d**. Leave the box running to preserve its proces
 Reconnect with `vmbox work`; hibernation preserves files, not running programs.
 
 The web workspace's **Agent chat** starts the selected managed agent when no
-reusable session exists. OpenCode receives that first message through its native
-startup prompt so it appears in the visible TUI. Later messages enter the running
-client through Codex queue, Claude channel, or OpenCode's loopback API. OpenCode
+reusable session exists. OpenCode starts a bare visible TUI, then receives its
+first message through the same native loopback bridge as later messages,
+including structured image attachments. Later messages enter the running client
+through Codex queue, Claude channel, or OpenCode's loopback API. OpenCode
 sessions auto-approve permission asks by default unless their configuration
 explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
@@ -140,7 +141,7 @@ every send, so the model cannot widen its own reach.
 
 | Feature | Codex | Claude | OpenCode |
 | --- | --- | --- | --- |
-| First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the startup prompt |
+| First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the native visible-TUI bridge |
 | Follow-ups reuse the same native task/thread | Yes | Yes | Yes |
 | **Clear context** keeps the watched session usable | App-server thread + native `/resume` | Respawns Claude with a new channel | Native `/new` |
 | Old process cleanup when a respawn is required | Not applicable | Old Claude tree is terminated | Not applicable |
