@@ -42,7 +42,8 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "claude-order")
-	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-1", Text: "hello"}); err != nil {
+	imageData := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-1", Text: "hello", Images: []ChatEventImage{{Name: "screen.png", MediaType: "image/png", Data: imageData}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,6 +94,19 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 		var notification desktopMCPRequest
 		if json.Unmarshal(second, &notification) != nil || notification.Method != "notifications/claude/channel" {
 			t.Fatalf("second output was not channel notification: %s", second)
+		}
+		var params struct {
+			Content string            `json:"content"`
+			Meta    map[string]string `json:"meta"`
+		}
+		if err := json.Unmarshal(notification.Params, &params); err != nil {
+			t.Fatal(err)
+		}
+		if params.Content != "hello" || params.Meta["image_path"] == "" || params.Meta["file_path"] != "" {
+			t.Fatalf("Claude image attachment was not advertised as image_path: %+v", params)
+		}
+		if _, err := os.Stat(params.Meta["image_path"]); err != nil {
+			t.Fatalf("channel image path is not readable: %v", err)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("channel notification was not emitted after initialize")

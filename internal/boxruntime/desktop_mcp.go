@@ -127,7 +127,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Use chat_message for every user-facing reply; use chat_ask for choices. Busy state is automatic for normal replies; use set_busy for other work. Read ~/.config/vmbox/mcp-tools.md for all vmbox tool calls. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Use chat_message for every user-facing reply; use chat_ask for choices. Busy state is automatic for normal replies; use set_busy for other work. Incoming chat images arrive with an image_path channel attribute; use Read on that path. Read ~/.config/vmbox/mcp-tools.md for all vmbox tool calls. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
@@ -180,12 +180,9 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		_ = os.WriteFile(ready, []byte(owner), 0600)
 		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
 			content := event.Text
+			meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
 			if len(event.Paths) > 0 {
-				content += "\n\nAttached image files:\n" + strings.Join(event.Paths, "\n")
-			}
-			meta := map[string]any{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
-			if len(event.Paths) > 0 {
-				meta["file_path"] = event.Paths[0]
+				meta["image_path"] = event.Paths[0]
 			}
 			if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": content, "meta": meta}}) == nil {
 				_ = os.Remove(path)
