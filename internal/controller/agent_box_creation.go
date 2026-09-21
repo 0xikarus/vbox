@@ -63,19 +63,41 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	reservationID := uuid()
 	roleIDsJSON, _ := json.Marshal(request.RoleIDs)
-	var existingBoxID, requestedName, requestedAgent string
+	var existingBoxID, requestedName, requestedAgent, providerName, credential, region string
 	var requestedDisk int64
 	var requestedRoleIDs []byte
-	err = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &existingBoxID)
+	tx, err := s.Store.DB.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	defer tx.Rollback()
+	// Serialize every quota decision for this creator on the creator row. The
+	// reservation is inserted before this lock is released, so concurrent
+	// requests cannot all observe the same remaining capacity.
+	err = tx.QueryRowContext(r.Context(), `SELECT provider,provider_credential,COALESCE(metadata->>'region','') FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='running' FOR UPDATE`, p.AccountID, creatorID).Scan(&providerName, &credential, &region)
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, 409, fmt.Errorf("creator box is unavailable"))
+		return
+	}
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &existingBoxID)
 	if err == nil {
 		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.RoleIDs, requestedName, requestedAgent, requestedDisk, requestedRoleIDs) {
 			writeError(w, 409, fmt.Errorf("idempotency key was already used with different box parameters"))
 			return
 		}
+		if err := tx.Commit(); err != nil {
+			writeError(w, 500, err)
+			return
+		}
 		if existingBoxID == "" {
 			_ = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND name=$2`, p.AccountID, requestedName).Scan(&existingBoxID)
 			if existingBoxID != "" {
-				_, _ = s.Store.DB.ExecContext(r.Context(), `UPDATE agent_box_creations SET created_box_id=$3 WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID, existingBoxID)
+				_, _ = s.Store.DB.ExecContext(r.Context(), `UPDATE agent_box_creations SET created_box_id=$3,completed_at=COALESCE(completed_at,now()) WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID, existingBoxID)
 			}
 		}
 		if existingBoxID == "" {
@@ -96,7 +118,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	var count int
-	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND created_box_id IS NOT NULL`, p.AccountID, creatorID).Scan(&count); err != nil {
+	if err := tx.QueryRowContext(r.Context(), `SELECT count(*) FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND (created_box_id IS NOT NULL OR completed_at IS NULL)`, p.AccountID, creatorID).Scan(&count); err != nil {
 		writeError(w, 500, err)
 		return
 	}
@@ -104,9 +126,9 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 403, fmt.Errorf("created-box limit reached"))
 		return
 	}
-	err = s.Store.DB.QueryRowContext(r.Context(), `INSERT INTO agent_box_creations(id,account_id,creator_box_id,requested_name,requested_agent,requested_disk_gib,requested_role_ids,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,requested_name`, reservationID, p.AccountID, creatorID, request.Name, request.Agent, request.DiskGiB, string(roleIDsJSON), key).Scan(&reservationID, &requestedName)
+	err = tx.QueryRowContext(r.Context(), `INSERT INTO agent_box_creations(id,account_id,creator_box_id,requested_name,requested_agent,requested_disk_gib,requested_role_ids,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,requested_name`, reservationID, p.AccountID, creatorID, request.Name, request.Agent, request.DiskGiB, string(roleIDsJSON), key).Scan(&reservationID, &requestedName)
 	if errors.Is(err, sql.ErrNoRows) {
-		err = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &existingBoxID)
+		err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &existingBoxID)
 		if err != nil {
 			writeError(w, 409, err)
 			return
@@ -116,10 +138,17 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		if existingBoxID == "" {
+			if err := tx.Commit(); err != nil {
+				writeError(w, 500, err)
+				return
+			}
 			_ = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND name=$2`, p.AccountID, requestedName).Scan(&existingBoxID)
 			if existingBoxID != "" {
-				_, _ = s.Store.DB.ExecContext(r.Context(), `UPDATE agent_box_creations SET created_box_id=$3 WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID, existingBoxID)
+				_, _ = s.Store.DB.ExecContext(r.Context(), `UPDATE agent_box_creations SET created_box_id=$3,completed_at=COALESCE(completed_at,now()) WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID, existingBoxID)
 			}
+		} else if err := tx.Commit(); err != nil {
+			writeError(w, 500, err)
+			return
 		}
 		if existingBoxID != "" {
 			box, loadErr := s.Store.LogicalBox(r.Context(), Principal{AccountID: p.AccountID, UserID: p.UserID, Role: "owner"}, existingBoxID)
@@ -137,10 +166,8 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 409, err)
 		return
 	}
-	var providerName, credential, region string
-	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT provider,provider_credential,region FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='running'`, p.AccountID, creatorID).Scan(&providerName, &credential, &region); err != nil {
-		_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID)
-		writeError(w, 409, fmt.Errorf("creator box is unavailable"))
+	if err := tx.Commit(); err != nil {
+		writeError(w, 500, err)
 		return
 	}
 	owner := Principal{AccountID: p.AccountID, UserID: p.UserID, Role: "owner", Subject: p.Subject}
@@ -160,7 +187,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 409, fmt.Errorf("could not store instruction snapshot"))
 		return
 	}
-	if _, err := s.Store.DB.ExecContext(r.Context(), `UPDATE agent_box_creations SET created_box_id=$3 WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID, creation.Assignment.Box.ID); err != nil {
+	if _, err := s.Store.DB.ExecContext(r.Context(), `UPDATE agent_box_creations SET created_box_id=$3,completed_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID, creation.Assignment.Box.ID); err != nil {
 		writeError(w, 409, err)
 		return
 	}

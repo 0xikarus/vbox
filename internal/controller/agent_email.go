@@ -51,7 +51,20 @@ func (s *Server) agentEmailHandler(w http.ResponseWriter, r *http.Request, p Pri
 	}
 	id := ""
 	var address, providerRef, state, failure, storedType, storedDomain, storedLocalPart string
-	err = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text,COALESCE(address,''),COALESCE(provider_ref,''),state,COALESCE(failure_reason,''),address_type,domain,local_part FROM agent_email_addresses WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, boxID, key).Scan(&id, &address, &providerRef, &state, &failure, &storedType, &storedDomain, &storedLocalPart)
+	tx, err := s.Store.DB.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	defer tx.Rollback()
+	var locked string
+	// The box row is the per-actor quota lock shared by every email request.
+	// Count and reservation insertion therefore happen as one decision.
+	if err := tx.QueryRowContext(r.Context(), `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='running' FOR UPDATE`, p.AccountID, boxID).Scan(&locked); err != nil {
+		writeError(w, 409, fmt.Errorf("creator box is unavailable"))
+		return
+	}
+	err = tx.QueryRowContext(r.Context(), `SELECT id::text,COALESCE(address,''),COALESCE(provider_ref,''),state,COALESCE(failure_reason,''),address_type,domain,local_part FROM agent_email_addresses WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, boxID, key).Scan(&id, &address, &providerRef, &state, &failure, &storedType, &storedDomain, &storedLocalPart)
 	existing := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		writeError(w, 500, err)
@@ -62,6 +75,10 @@ func (s *Server) agentEmailHandler(w http.ResponseWriter, r *http.Request, p Pri
 		return
 	}
 	if existing && state == "ready" {
+		if err := tx.Commit(); err != nil {
+			writeError(w, 500, err)
+			return
+		}
 		w.Header().Set("Idempotency-Replayed", "true")
 		writeJSON(w, 200, map[string]any{"id": id, "address": address, "providerRef": providerRef, "state": state})
 		return
@@ -72,7 +89,7 @@ func (s *Server) agentEmailHandler(w http.ResponseWriter, r *http.Request, p Pri
 	}
 	if !existing {
 		var count int
-		if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT count(*) FROM agent_email_addresses WHERE account_id=$1 AND creator_box_id=$2 AND state<>'failed'`, p.AccountID, boxID).Scan(&count); err != nil {
+		if err := tx.QueryRowContext(r.Context(), `SELECT count(*) FROM agent_email_addresses WHERE account_id=$1 AND creator_box_id=$2 AND state<>'failed'`, p.AccountID, boxID).Scan(&count); err != nil {
 			writeError(w, 500, err)
 			return
 		}
@@ -81,9 +98,9 @@ func (s *Server) agentEmailHandler(w http.ResponseWriter, r *http.Request, p Pri
 			return
 		}
 		id = uuid()
-		err = s.Store.DB.QueryRowContext(r.Context(), `INSERT INTO agent_email_addresses(id,account_id,creator_box_id,address_type,domain,local_part,state,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,'provisioning',$7) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,state`, id, p.AccountID, boxID, request.AddressType, request.Domain, request.LocalPart, key).Scan(&id, &state)
+		err = tx.QueryRowContext(r.Context(), `INSERT INTO agent_email_addresses(id,account_id,creator_box_id,address_type,domain,local_part,state,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,'provisioning',$7) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,state`, id, p.AccountID, boxID, request.AddressType, request.Domain, request.LocalPart, key).Scan(&id, &state)
 		if errors.Is(err, sql.ErrNoRows) {
-			err = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text,address_type,domain,local_part,state FROM agent_email_addresses WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, boxID, key).Scan(&id, &storedType, &storedDomain, &storedLocalPart, &state)
+			err = tx.QueryRowContext(r.Context(), `SELECT id::text,address_type,domain,local_part,state FROM agent_email_addresses WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, boxID, key).Scan(&id, &storedType, &storedDomain, &storedLocalPart, &state)
 			if err == nil && (storedType != request.AddressType || storedDomain != request.Domain || storedLocalPart != request.LocalPart) {
 				err = fmt.Errorf("idempotency key was already used with different email parameters")
 			}
@@ -92,6 +109,10 @@ func (s *Server) agentEmailHandler(w http.ResponseWriter, r *http.Request, p Pri
 			writeError(w, 409, err)
 			return
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		writeError(w, 500, err)
+		return
 	}
 	payload, _ := json.Marshal(map[string]any{"requestId": id, "accountId": p.AccountID, "creatorBoxId": boxID, "domain": request.Domain, "addressType": request.AddressType, "localPart": request.LocalPart})
 	providerRequest, err := http.NewRequestWithContext(r.Context(), http.MethodPost, s.EmailProvisionURL, bytes.NewReader(payload))

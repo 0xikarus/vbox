@@ -190,4 +190,41 @@ func TestNativeAgentRolesPostgres(t *testing.T) {
 	if roleCount != 0 || contactCount != 1 || legacyColumns != 0 {
 		t.Fatalf("retry migration roles=%d contacts=%d legacy role columns=%d", roleCount, contactCount, legacyColumns)
 	}
+	// Simulate upgrading a database from the scalar worker/manager release.
+	// The manager box must retain fleet-wide contact access through an explicit
+	// native role, and reapplying the migration must remain idempotent.
+	if _, err = s.DB.ExecContext(ctx, `ALTER TABLE logical_boxes ADD COLUMN role text NOT NULL DEFAULT 'worker' CHECK (role IN ('worker','manager'))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.DB.ExecContext(ctx, `UPDATE logical_boxes SET role='manager' WHERE id=$1`, boxIDs["sender"]); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var migratedRoles, migratedAssignments, migratedGrants int
+	if err = s.DB.QueryRowContext(ctx, `SELECT count(*) FROM agent_roles WHERE account_id=$1 AND name='Manager'`, p.AccountID).Scan(&migratedRoles); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DB.QueryRowContext(ctx, `SELECT count(*) FROM box_role_assignments a JOIN agent_roles r ON r.id=a.role_id WHERE a.account_id=$1 AND a.box_id=$2 AND r.name='Manager'`, p.AccountID, boxIDs["sender"]).Scan(&migratedAssignments); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DB.QueryRowContext(ctx, `SELECT count(*) FROM agent_role_permissions p JOIN agent_roles r ON r.id=p.role_id WHERE p.account_id=$1 AND r.name='Manager' AND p.permission='all_contacts' AND p.config->>'enabled'='true'`, p.AccountID).Scan(&migratedGrants); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DB.QueryRowContext(ctx, `SELECT count(*) FROM information_schema.columns WHERE table_schema=$1 AND table_name='logical_boxes' AND column_name='role'`, ns).Scan(&legacyColumns); err != nil {
+		t.Fatal(err)
+	}
+	if migratedRoles != 1 || migratedAssignments != 1 || migratedGrants != 1 || legacyColumns != 0 {
+		t.Fatalf("legacy manager migration roles=%d assignments=%d grants=%d legacy columns=%d", migratedRoles, migratedAssignments, migratedGrants, legacyColumns)
+	}
+	if err = s.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.DB.QueryRowContext(ctx, `SELECT count(*) FROM agent_roles WHERE account_id=$1 AND name='Manager'`, p.AccountID).Scan(&migratedRoles); err != nil {
+		t.Fatal(err)
+	}
+	if migratedRoles != 1 {
+		t.Fatalf("retry created %d Manager roles", migratedRoles)
+	}
 }

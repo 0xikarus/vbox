@@ -759,6 +759,7 @@ CREATE TABLE IF NOT EXISTS agent_followups (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  task_id uuid NOT NULL REFERENCES box_tasks(id) ON DELETE CASCADE,
   created_by uuid NOT NULL REFERENCES users(id),
   assignment_generation bigint NOT NULL,
   text text NOT NULL,
@@ -772,6 +773,11 @@ CREATE TABLE IF NOT EXISTS agent_followups (
   UNIQUE(account_id,box_id,idempotency_key)
 );
 ALTER TABLE agent_followups ADD COLUMN IF NOT EXISTS delay_seconds integer NOT NULL DEFAULT 0 CHECK (delay_seconds >= 0);
+-- Upgrades may contain follow-ups created before exact task binding existed.
+-- Keep those rows for audit/history, but never deliver them to a guessed task.
+ALTER TABLE agent_followups ADD COLUMN IF NOT EXISTS task_id uuid REFERENCES box_tasks(id) ON DELETE CASCADE;
+UPDATE agent_followups SET state='canceled',failure_reason='created before exact task binding was available',updated_at=now()
+WHERE task_id IS NULL AND state IN ('queued','delivering');
 CREATE INDEX IF NOT EXISTS agent_followups_due_idx ON agent_followups(state,due_at);
 CREATE TABLE IF NOT EXISTS agent_box_creations (
   id uuid PRIMARY KEY,
@@ -789,6 +795,8 @@ CREATE TABLE IF NOT EXISTS agent_box_creations (
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_agent text NOT NULL DEFAULT 'codex';
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_disk_gib bigint NOT NULL DEFAULT 10;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+UPDATE agent_box_creations SET completed_at=created_at WHERE created_box_id IS NOT NULL AND completed_at IS NULL;
 CREATE TABLE IF NOT EXISTS agent_box_deletions (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
@@ -835,8 +843,43 @@ CREATE TABLE IF NOT EXISTS agent_email_addresses (
 );
 ALTER TABLE agent_email_addresses ADD COLUMN IF NOT EXISTS local_part text NOT NULL DEFAULT '';
 
--- No manager roles are migrated or synthesized. Existing explicit contact rows
--- already represent the send permissions enforced before this migration.
+-- Preserve the legacy manager contract before removing the scalar role. One
+-- editable Manager role is synthesized per affected account, granted the exact
+-- all_contacts capability, and assigned to every legacy manager box. Dynamic
+-- SQL keeps this migration retry-safe after the old column has been dropped.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='logical_boxes' AND column_name='role'
+  ) THEN
+    EXECUTE $migrate$
+      INSERT INTO agent_roles(id,account_id,name,description,created_by)
+      SELECT gen_random_uuid(),legacy.account_id,'Manager','Migrated from the legacy manager box role.',legacy.owner_user_id
+      FROM (
+        SELECT DISTINCT ON (account_id) account_id,owner_user_id
+        FROM logical_boxes WHERE role='manager' ORDER BY account_id,created_at,id
+      ) legacy
+      ON CONFLICT(account_id,name) DO NOTHING
+    $migrate$;
+    EXECUTE $migrate$
+      INSERT INTO agent_role_permissions(account_id,role_id,permission,scope,config)
+      SELECT r.account_id,r.id,'all_contacts','allow','{"enabled":true}'::jsonb
+      FROM agent_roles r
+      WHERE r.name='Manager' AND EXISTS (
+        SELECT 1 FROM logical_boxes b WHERE b.account_id=r.account_id AND b.role='manager'
+      )
+      ON CONFLICT(role_id,permission) DO UPDATE SET scope='allow',config=excluded.config,updated_at=now()
+    $migrate$;
+    EXECUTE $migrate$
+      INSERT INTO box_role_assignments(account_id,box_id,role_id,assigned_by)
+      SELECT b.account_id,b.id,r.id,b.owner_user_id
+      FROM logical_boxes b JOIN agent_roles r ON r.account_id=b.account_id AND r.name='Manager'
+      WHERE b.role='manager'
+      ON CONFLICT(box_id,role_id) DO NOTHING
+    $migrate$;
+  END IF;
+END $$;
 ALTER TABLE logical_boxes DROP COLUMN IF EXISTS role;
 
 -- Owner-designated protected boxes are invisible and unreachable to agents.
