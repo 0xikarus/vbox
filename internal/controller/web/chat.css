@@ -410,11 +410,12 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #new-box-card{display:grid;grid-template-columns:1fr;gap:0}
 #new-box-card>.preview-rail{display:none}
 @media(min-width:56rem){
- #new-box-card{width:min(58rem,94vw);grid-template-columns:1fr 17rem;padding:0}
- #new-box-card>header,#new-box-card>form,#new-box-card>#new-box-status{grid-column:1;padding:1rem}
+ #new-box-card{width:min(58rem,94vw);grid-template-columns:1fr 17rem;grid-template-rows:auto 1fr auto;padding:0}
+ #new-box-card>header,#new-box-card>form,#new-box-card>#new-box-status{grid-column:1;padding:1rem;min-width:0}
  #new-box-card>header{padding-bottom:.4rem}
+ #new-box-card>form{overflow:auto;min-height:0}
  #new-box-card>.preview-rail{display:flex;flex-direction:column;gap:.7rem;grid-column:2;grid-row:1/span 3;
-  border-left:1px solid var(--line);background:var(--bg);padding:1rem;overflow:auto}
+  border-left:1px solid var(--line);background:var(--bg);padding:1rem;overflow:auto;min-height:0}
 }
 .preview-rail h3{margin:0;font-size:.72rem;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em}
 .preview-card{border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);
