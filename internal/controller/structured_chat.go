@@ -186,6 +186,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		if err := s.Store.attachAgentChatImages(ctx, accountID, message.ID, event.Images); err != nil {
 			return "", false, err
 		}
+		if err := s.Store.SetBoxTaskBusy(ctx, accountID, task.ID, false); err != nil {
+			return "", false, err
+		}
 		s.pushAgentReply(ctx, accountID, task, text)
 		return message.ID, false, nil
 	}
@@ -206,6 +209,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		return "", false, err
 	}
 	if err := s.Store.attachAgentChatImages(ctx, accountID, reply.ID, event.Images); err != nil {
+		return "", false, err
+	}
+	if err := s.Store.SetBoxTaskBusy(ctx, accountID, task.ID, false); err != nil {
 		return "", false, err
 	}
 	s.pushAgentReply(ctx, accountID, task, text)

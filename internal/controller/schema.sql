@@ -229,6 +229,10 @@ CREATE TABLE IF NOT EXISTS box_tasks (
 );
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS requested_role text NOT NULL DEFAULT 'user' CHECK (requested_role IN ('owner','user'));
 ALTER TABLE box_tasks ALTER COLUMN requested_role DROP DEFAULT;
+-- NULL means this task predates explicit agent activity reporting. New
+-- deliveries and set_busy calls establish a durable true/false value.
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS agent_busy boolean;
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS agent_busy_updated_at timestamptz;
 CREATE INDEX IF NOT EXISTS box_tasks_reconcile_idx
   ON box_tasks(account_id,state,created_at,id);
 -- One-shot process execution is deliberately separate from historical

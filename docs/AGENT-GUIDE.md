@@ -168,7 +168,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
-  `vmbox-desktop` MCP exposes `chat_message` and `chat_ask`.
+  `vmbox-desktop` MCP exposes `chat_message`, `chat_ask`, and `set_busy`.
+  Submitted prompts mark the active task busy in the controller; replies and
+  questions clear it. `set_busy` is the explicit override for activity outside
+  that request/reply flow. Chat history returns the persisted state in response
+  headers, so the UI does not guess that long-running work ended after ten
+  minutes.
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
   key carried in the envelope) answers one specific message. The controller polls
   each active task's outbox while a chat window is open, from the reconciler, and

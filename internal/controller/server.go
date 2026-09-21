@@ -128,6 +128,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets/{key}/type", s.owner(s.typeDesktopSecret))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets/{key}/confirm", s.owner(s.confirmDesktopSecret))
 	mux.HandleFunc("GET /v1/agent-desktop/contacts", s.desktopAgentAuth(s.agentContactsHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/busy", s.desktopAgentAuth(s.agentBusyHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/type", s.desktopAgentAuth(s.typeDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/ensure", s.desktopAgentAuth(s.ensureAgentDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/request", s.desktopAgentAuth(s.requestDesktopSecret))

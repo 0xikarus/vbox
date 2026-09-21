@@ -24,6 +24,13 @@
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   return r.status===204?null:r.json();
  }
+ async function chatHistory(path){
+  let r;try{r=await fetch(path,{credentials:'same-origin',signal:AbortSignal.timeout(60000)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
+  if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
+  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
+  const rawBusy=r.headers.get('X-Vmbox-Agent-Busy');
+  return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||''};
+ }
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
  /* ═══════════════════════════════════════════════════════════════════════
@@ -676,7 +683,8 @@
   const last=box.last;
   const pending=pendingSends.get(id);
   const replyDuringSend=pending&&ms.slice(pending.messageCount).some(m=>m.direction==='agent');
-  box.processing=agent!=='shell'&&!box.streaming&&((pending&&!replyDuringSend)||(last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000));
+  const inferredBusy=(pending&&!replyDuringSend)||(last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000);
+  box.processing=agent!=='shell'&&!box.streaming&&(box.agentBusy===undefined?inferredBusy:box.agentBusy);
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=ms.filter(m=>m.direction!=='user'&&new Date(m.createdAt).getTime()>marker).length;
  }
@@ -977,14 +985,18 @@
   await Promise.allSettled([...boxes.keys()].map(async id=>{
    if(id===selected)return;// open conversation refreshes itself
    if(!force&&Date.now()-(previewFetched.get(id)||0)<30000)return;
-   const messages=await api(boxPath(id)+'/messages?limit=20');
+   const history=await chatHistory(boxPath(id)+'/messages?limit=20');
    const box=boxes.get(id);
    // The box may have been opened (or fully loaded) while the preview was in
    // flight; never let a 20-message preview overwrite an open conversation.
    if(!box||id===selected||box.historyLoaded)return;
-   box.messages=messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now());
+   applyBusyState(box,history);box.messages=history.messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now());
    summarize(id);
   }));
+ }
+ function applyBusyState(box,history){
+  if(history.busy===null){delete box.agentBusy;delete box.agentBusySince;return}
+  box.agentBusy=history.busy;box.agentBusySince=history.busySince||'';
  }
  function applySeen(id){
   const box=boxes.get(id);if(!box)return;
@@ -1012,17 +1024,20 @@
   if(reconnecting)return setBanner('Reconnecting to the controller…');
   const box=boxes.get(selected);if(!box)return setBanner('');
   const last=[...(box.messages||[])].reverse().find(m=>m.direction==='user');
-  const stalled=box.processing&&last&&(Date.now()-new Date(last.updatedAt||last.createdAt).getTime())>5*60*1000;
-  setBanner(stalled?'Agent has been processing for '+Math.round((Date.now()-new Date(last.updatedAt||last.createdAt).getTime())/60000)+' min — it may be stalled.':'');
+  const started=box.agentBusySince||(last&&(last.updatedAt||last.createdAt));
+  const elapsed=started?Date.now()-new Date(started).getTime():0;
+  const stalled=box.processing&&elapsed>5*60*1000;
+  setBanner(stalled?'Agent has been processing for '+Math.round(elapsed/60000)+' min — it may be stalled.':'');
  }
  async function refreshMessages(force){
   if(!selected)return;
   const id=selected,box=boxes.get(id);if(!box)return;
   const epoch=viewEpoch;
-  const messages=await api(boxPath(id)+'/messages?limit=50');
+  const history=await chatHistory(boxPath(id)+'/messages?limit=50');
   // Drop a response that arrives after the user moved to another box.
   if(epoch!==viewEpoch||selected!==id||boxes.get(id)!==box)return;
-  const latest=messages||[];
+  applyBusyState(box,history);
+  const latest=history.messages||[];
   if(box.historyLoaded){
    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
    for(const message of latest)merged.set(message.id,message);
