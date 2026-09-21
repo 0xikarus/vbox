@@ -151,6 +151,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
   background:var(--bubble-in);color:var(--bubble-in-ink);box-shadow:var(--shadow);position:relative;overflow-wrap:anywhere;line-height:1.5}
 .msg .text{white-space:pre-wrap}
 .msg-parent{display:block;width:100%;border:0;border-left:3px solid var(--accent);border-radius:var(--radius-sm);background:color-mix(in srgb,var(--surface) 72%,transparent);color:var(--ink-soft);padding:.35rem .45rem;margin:0 0 .35rem;text-align:left;font:inherit;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+.agent-origin{display:block;margin-bottom:.3rem;color:var(--muted);font-size:.72rem;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
 .msg-thread{border:0;background:none;color:var(--accent-text);font:inherit;font-size:.7rem;font-weight:800;cursor:pointer;padding:.1rem .25rem;margin-right:auto}
 .msg.user{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:var(--radius-sm)}
 .msg.agent{align-self:flex-start;border-bottom-left-radius:var(--radius-sm)}

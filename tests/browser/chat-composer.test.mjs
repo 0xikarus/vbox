@@ -11,14 +11,24 @@ const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
 
-const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',role:'worker',volumeName:'v1'}];
+const boxes=[
+ {id:'builder',name:'Builder',state:'running',defaultAgent:'claude',provider:'railway',volumeName:'v1'},
+ {id:'research',name:'Research',state:'running',defaultAgent:'codex',provider:'railway',volumeName:'v2'}
+];
 const threadRoot='11111111-1111-4111-8111-111111111111';
 const threadMessages=[
  {id:threadRoot,taskId:'task-1',direction:'user',text:'Should we ship the migration today?',state:'delivered',threadId:threadRoot,createdAt:'2026-09-21T02:00:00Z',updatedAt:'2026-09-21T02:00:00Z'},
  {id:'22222222-2222-4222-8222-222222222222',taskId:'task-1',direction:'agent',text:'Yes — the verification suite is green.',state:'delivered',parentMessageId:threadRoot,threadId:threadRoot,createdAt:'2026-09-21T02:01:00Z',updatedAt:'2026-09-21T02:01:00Z'}
 ];
+const agentThreadRoot='33333333-3333-4333-8333-333333333333';
+const agentThreadMessages=[
+ {id:agentThreadRoot,taskId:'task-agent',direction:'box',senderBoxId:'research',text:'I found three provider options. Can you compare their retry guarantees before we choose one?',state:'delivered',threadId:agentThreadRoot,createdAt:'2026-09-21T10:00:00Z',updatedAt:'2026-09-21T10:00:00Z'},
+ {id:'44444444-4444-4444-8444-444444444444',taskId:'task-agent',direction:'agent',text:'Yes. I’ll compare idempotency, webhook redelivery, and failure recovery, then recommend the safest integration.',state:'delivered',parentMessageId:agentThreadRoot,threadId:agentThreadRoot,createdAt:'2026-09-21T10:01:00Z',updatedAt:'2026-09-21T10:01:00Z'},
+ {id:'55555555-5555-4555-8555-555555555555',taskId:'task-agent',direction:'box',senderBoxId:'research',text:'Please prioritize providers that keep a stable request ID across retries.',state:'delivered',parentMessageId:'44444444-4444-4444-8444-444444444444',threadId:agentThreadRoot,createdAt:'2026-09-21T10:02:00Z',updatedAt:'2026-09-21T10:02:00Z'},
+ {id:'66666666-6666-4666-8666-666666666666',taskId:'task-agent',direction:'agent',text:'Understood. Stable provider-side idempotency will be a hard requirement in the recommendation.',state:'delivered',parentMessageId:'55555555-5555-4555-8555-555555555555',threadId:agentThreadRoot,createdAt:'2026-09-21T10:03:00Z',updatedAt:'2026-09-21T10:03:00Z'}
+];
 
-async function withChat(fn){
+async function withChat(fn,messages=threadMessages){
  const posts=[];
  const server=http.createServer((req,res)=>{
   const path=req.url.split('?')[0];
@@ -38,7 +48,7 @@ async function withChat(fn){
    let body='';req.on('data',chunk=>body+=chunk);
    return req.on('end',()=>{posts.push(JSON.parse(body));res.end(JSON.stringify({message:{state:'delivered'}}))});
   }
-  if(path.endsWith('/messages'))return res.end(JSON.stringify(threadMessages));
+  if(path.endsWith('/messages'))return res.end(JSON.stringify(messages));
   return res.end('{}');
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -103,4 +113,14 @@ test('reply quotes preserve parent identity and open the thread panel',async()=>
   await p.click('.msg.agent .msg-parent');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
   await (await p.$('#thread-panel')).screenshot({path:'docs/chat-ui/screenshots/chat-thread.png'});await p.close();
  });
+});
+
+test('agent-to-agent messages identify their source box and preserve the thread',async()=>{
+ await withChat(async(browser,base)=>{
+  const p=await browser.newPage();await p.setViewport({width:1180,height:820,deviceScaleFactor:1});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg .agent-origin');
+  assert.equal(await p.$eval('.msg .agent-origin',element=>element.textContent),'From Research');
+  await p.screenshot({path:'docs/chat-ui/screenshots/agent-to-agent-conversation.png'});
+  await p.click('.msg-thread');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===4);
+  await p.screenshot({path:'docs/chat-ui/screenshots/agent-to-agent-thread.png'});await p.close();
+ },agentThreadMessages);
 });

@@ -833,7 +833,8 @@
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
   const mine=message.direction==='user';
   row.className='msg '+(mine?'user':'agent')+(message.state==='silent'?' note':'')+(message.state==='streaming'?' streaming':'');
-  if(message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?.direction==='user'?'You: ':'Agent: ')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
+  if(message.direction==='box'){const origin=document.createElement('span');origin.className='agent-origin';origin.textContent='From '+(boxes.get(message.senderBoxId)?.name||'agent box');row.append(origin)}
+  if(message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?messageAuthor(parent)+': ':'')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
   if(message.state==='silent'){const label=document.createElement('span');label.className='note-label';label.textContent='Note · not sent to the agent';row.append(label)}
   if(message.text.startsWith('Forwarded from ')){const mark=document.createElement('span');mark.className='fwd-mark';const end=message.text.indexOf(':\n');mark.textContent=end>0?message.text.slice(0,end+1):'Forwarded';row.append(mark)}
   const text=document.createElement('div');text.className='text';
@@ -882,7 +883,8 @@
   actions.append(toggle,menu);row.append(actions);
   return row;
  }
- function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=(message.direction==='user'?'You: ':'Agent: ')+(message.question?.text||message.text);inputEl.focus()}
+ function messageAuthor(message){return message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent'}
+ function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=messageAuthor(message)+': '+(message.question?.text||message.text);inputEl.focus()}
  function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent=''}
  $('#reply-cancel').onclick=cancelReply;
  $('#thread-close').onclick=()=>{threadPanel.hidden=true;threadMessages.replaceChildren()};
