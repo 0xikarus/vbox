@@ -10,6 +10,7 @@
  let instructionPresets={defaultName:'',presets:[]};
  const presetBodyCache=new Map();
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
+ let agentRoles=[],roleAssignmentDraft=new Map(),roleAssignmentsDirty=false;
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
  // Unsent composer text is kept per box so switching chats (or reloading the
@@ -1294,8 +1295,9 @@
  async function primeBoxExtras(){
   if(extrasLoaded)return;
   try{
-   const [tools,profiles,defaults,providers,presetList]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[]),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);
+   const [tools,profiles,defaults,providers,presetList,roles]=await Promise.all([api('/v1/tool-presets'),api('/v1/login-profiles'),api('/v1/controller-defaults'),api('/v1/provider-credentials').catch(()=>[]),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]})),owner?api('/v1/agent-roles').catch(()=>[]):Promise.resolve([])]);
    applyInstructionPresets(presetList);
+   applyAgentRoles(roles,false);
    const pools=(providers||[]).map(p=>({provider:p.provider,providerCredential:p.name||''}));
    const poolStatuses=await Promise.all(pools.map(async pool=>{
     try{
@@ -1365,6 +1367,7 @@
   if(poolIndex!==''){const pool=JSON.parse(createForm.dataset.pools||'[]')[Number(poolIndex)];if(pool){body.provider=pool.provider;body.providerCredential=pool.providerCredential||''}}
   if(loginProfiles.length)body.loginProfiles=loginProfiles;
   if(tools.length)body.tools=tools;
+  if(owner)body.roleIds=[...$('#create-role-choices').querySelectorAll('input:checked')].map(input=>input.value);
   if(setupScript)body.setupScript=setupScript;
   const instructions=await createInstructionSelection();
   if(instructions)body.instructions=instructions;
@@ -1549,6 +1552,7 @@
   avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
   for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;
+  owner=false;agentRoles=[];roleAssignmentDraft=new Map();roleAssignmentsDirty=false;extrasLoaded=false;closeSheets();renderCreationRoleChoices();
   selected='';lastSignature='';appEl.classList.remove('in-chat');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
  };
@@ -1556,9 +1560,10 @@
   try{
    const who=await api('/v1/whoami');owner=who.role==='owner';
    $('#presets-toggle').hidden=!owner;
+   $('#roles-toggle').hidden=!owner;
    $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;
    doodle('Loading chats…');
-   try{await loadBoxes()}finally{doodle('')}
+   try{const [,roles]=await Promise.all([loadBoxes(),owner?api('/v1/agent-roles').catch(()=>[]):Promise.resolve([])]);applyAgentRoles(roles,true)}finally{doodle('')}
    const id=new URLSearchParams(location.hash.slice(1)).get('box');
    if(id&&boxes.has(id))await openBox(id);
    schedule();renderPushState();void syncPushSubscription();
@@ -1571,6 +1576,95 @@
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
  function closeSheets(){document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true})}
+
+ /* ---------- owner-defined roles ---------- */
+ function roleBoxes(){return [...boxes.values()].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))}
+ function setRoleAssignmentsDirty(dirty){
+  roleAssignmentsDirty=dirty;
+  $('#save-role-assignments').disabled=!dirty;
+  $('#discard-role-assignments').disabled=!dirty;
+  $('#role-status').textContent=dirty?'Unsaved assignment changes.':'';
+ }
+ function syncRoleAssignmentDraft(reset){
+  const currentRoles=new Set(agentRoles.map(role=>role.id));
+  if(reset||!roleAssignmentsDirty){
+   roleAssignmentDraft=new Map(roleBoxes().map(box=>[box.id,(box.roles||[]).map(role=>role.id).filter(id=>currentRoles.has(id))]));
+   setRoleAssignmentsDirty(false);return;
+  }
+  for(const box of roleBoxes()){
+   if(!roleAssignmentDraft.has(box.id))roleAssignmentDraft.set(box.id,(box.roles||[]).map(role=>role.id));
+   roleAssignmentDraft.set(box.id,(roleAssignmentDraft.get(box.id)||[]).filter(id=>currentRoles.has(id)));
+  }
+ }
+ function renderCreationRoleChoices(){
+  const root=$('#create-role-choices'),fieldset=$('#create-roles');if(!root||!fieldset)return;
+  const selected=new Set([...root.querySelectorAll('input:checked')].map(input=>input.value));
+  fieldset.hidden=!owner;root.replaceChildren();
+  if(!agentRoles.length){
+   const empty=mk('p','No roles defined. Define one from the Agent roles menu, or create this box without roles.');empty.className='hint';root.append(empty);return;
+  }
+  for(const role of agentRoles){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='roleIds';input.value=role.id;input.checked=selected.has(role.id);label.append(input,document.createTextNode(role.name));root.append(label)}
+ }
+ function applyAgentRoles(roles,resetDraft=true){
+  agentRoles=Array.isArray(roles)?roles:[];
+  syncRoleAssignmentDraft(resetDraft);
+  renderCreationRoleChoices();
+  renderRoleMatrix();
+ }
+ function roleIDsForBox(boxID){return new Set(roleAssignmentDraft.get(boxID)||[])}
+ function updateRoleAssignment(boxID,roleID,checked){
+  const ids=roleIDsForBox(boxID);checked?ids.add(roleID):ids.delete(roleID);roleAssignmentDraft.set(boxID,[...ids]);setRoleAssignmentsDirty(true);
+  document.querySelectorAll('#role-matrix input[data-box-id="'+CSS.escape(boxID)+'"][data-role-id="'+CSS.escape(roleID)+'"]').forEach(input=>{input.checked=checked});
+ }
+ function roleAssignmentCheckbox(box,role){
+  const input=document.createElement('input');input.type='checkbox';input.checked=roleIDsForBox(box.id).has(role.id);input.dataset.boxId=box.id;input.dataset.roleId=role.id;input.setAttribute('aria-label',role.name+' for '+box.name);input.addEventListener('change',()=>updateRoleAssignment(box.id,role.id,input.checked));return input;
+ }
+ function renderRoleMatrix(){
+  const root=$('#role-matrix');if(!root)return;root.replaceChildren();
+  const query=($('#role-box-search')?.value||'').trim().toLocaleLowerCase(),values=roleBoxes().filter(box=>!query||box.name.toLocaleLowerCase().includes(query));
+  if(!agentRoles.length){const empty=mk('div');empty.className='role-empty';empty.append(mk('p','No roles exist yet. vmbox does not generate role names—define the first exact name yourself.'));const create=mk('button','Define first role');create.type='button';create.className='primary compact';create.onclick=()=>openRoleEditor();empty.append(create);root.append(empty);return}
+  if(!values.length){root.append(mk('p','No boxes match this search.'));return}
+  const wrap=mk('div');wrap.className='role-matrix-wrap';const table=mk('table');table.className='role-matrix';
+  const thead=mk('thead'),head=mk('tr'),boxHead=mk('th','Box');boxHead.className='sticky-box';head.append(boxHead);
+  for(const role of agentRoles){const th=mk('th'),edit=mk('button',role.name);edit.type='button';edit.className='role-heading';edit.title='Edit exact role “'+role.name+'”';edit.onclick=()=>openRoleEditor(role);th.append(edit);head.append(th)}thead.append(head);table.append(thead);
+  const tbody=mk('tbody');for(const box of values){const row=mk('tr'),name=mk('th',box.name);name.scope='row';name.className='sticky-box';row.append(name);for(const role of agentRoles){const cell=mk('td');cell.append(roleAssignmentCheckbox(box,role));row.append(cell)}tbody.append(row)}table.append(tbody);wrap.append(table);
+  const mobile=mk('div');mobile.className='role-mobile';const select=document.createElement('select');select.setAttribute('aria-label','Box to assign roles');for(const box of values)select.append(new Option(box.name,box.id));const checklist=mk('div');checklist.className='role-checklist';const draw=()=>{checklist.replaceChildren();const box=values.find(value=>value.id===select.value);if(!box)return;for(const role of agentRoles){const label=mk('label'),input=roleAssignmentCheckbox(box,role);label.append(input,document.createTextNode(role.name));checklist.append(label)}};select.onchange=draw;draw();mobile.append(select,checklist);root.append(wrap,mobile);
+ }
+ async function refreshRoleData(resetDraft=true){
+  await loadBoxes(true);const roles=await api('/v1/agent-roles');applyAgentRoles(roles,resetDraft);
+ }
+ async function openRolesModal(boxID=''){
+  if(!owner)return;closeSheets();const modal=$('#roles-modal'),status=$('#role-status');modal.hidden=false;status.textContent='Loading roles…';
+  if(boxID&&boxes.has(boxID))$('#role-box-search').value=boxes.get(boxID).name;else $('#role-box-search').value='';
+  try{await refreshRoleData(!roleAssignmentsDirty);status.textContent=roleAssignmentsDirty?'Unsaved assignment changes.':'';renderRoleMatrix()}catch(e){status.textContent=e.message}
+ }
+ function openRoleEditor(role=null){
+  const form=$('#role-editor-form');form.reset();form.elements.id.value=role?.id||'';form.elements.name.value=role?.name||'';form.elements.description.value=role?.description||'';form.elements.contactScope.value=role?.contactScope||'none';
+  $('#role-editor-title').textContent=role?'Edit role · '+role.name:'Define role';$('#delete-role').hidden=!role;$('#role-assigned-count').textContent=role?'Assigned to '+role.assignedBoxCount+' box'+(role.assignedBoxCount===1?'':'es')+'.':'Not assigned yet.';
+  const selectedContacts=new Set(role?.contactBoxIds||[]),root=$('#role-contact-boxes');root.replaceChildren();for(const box of roleBoxes()){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='contactBoxIds';input.value=box.id;input.checked=selectedContacts.has(box.id);label.append(input,document.createTextNode(box.name));root.append(label)}root.hidden=form.elements.contactScope.value!=='selected';$('#role-editor-status').textContent='';$('#role-editor-modal').hidden=false;form.elements.name.focus();
+ }
+ $('#role-box-search').addEventListener('input',renderRoleMatrix);
+ $('#roles-toggle').onclick=()=>void openRolesModal();
+ $('#inspect-edit-roles').onclick=()=>void openRolesModal(selected);
+ $('#create-role').onclick=()=>openRoleEditor();
+ $('#discard-role-assignments').onclick=()=>{syncRoleAssignmentDraft(true);renderRoleMatrix()};
+ $('#save-role-assignments').onclick=async()=>{
+  const status=$('#role-status'),button=$('#save-role-assignments');button.disabled=true;status.textContent='Saving assignments…';
+  try{await api('/v1/agent-role-assignments','PUT',{}, {assignments:roleBoxes().map(box=>({boxId:box.id,roleIds:roleAssignmentDraft.get(box.id)||[]}))});roleAssignmentsDirty=false;await refreshRoleData(true);status.textContent='Assignments saved.';toast('Role assignments saved.');if(selected)renderInspect()}
+  catch(e){status.textContent=e.message;button.disabled=false}
+ };
+ document.querySelectorAll('#role-editor-form input[name=contactScope]').forEach(input=>input.addEventListener('change',()=>{$('#role-contact-boxes').hidden=input.form.elements.contactScope.value!=='selected'}));
+ $('#role-editor-form').onsubmit=async event=>{
+  event.preventDefault();const form=event.currentTarget,f=form.elements,id=f.id.value,name=f.name.value.trim(),status=$('#role-editor-status');if(!name){status.textContent='Type the exact role name you want to define.';return}
+  const body={name,description:f.description.value.trim(),contactScope:f.contactScope.value,contactBoxIds:f.contactScope.value==='selected'?[...form.querySelectorAll('input[name=contactBoxIds]:checked')].map(input=>input.value):[]};status.textContent='Saving role…';
+  try{await api('/v1/agent-roles'+(id?'/'+encodeURIComponent(id):''),id?'PUT':'POST',{},body);$('#role-editor-modal').hidden=true;await refreshRoleData(!roleAssignmentsDirty);$('#role-status').textContent=roleAssignmentsDirty?'Role saved. Unsaved assignment changes remain.':'Role saved.';toast((id?'Updated ':'Defined ')+name+'.')}
+  catch(e){status.textContent=e.message}
+ };
+ $('#delete-role').onclick=async()=>{
+  const form=$('#role-editor-form'),id=form.elements.id.value,name=form.elements.name.value,status=$('#role-editor-status');if(!id||!confirm('Delete the exact role "'+name+'"? Its assignments and grants will be removed. Other roles and manual contact allowances remain effective.'))return;status.textContent='Deleting role…';
+  try{await api('/v1/agent-roles/'+encodeURIComponent(id),'DELETE');$('#role-editor-modal').hidden=true;await refreshRoleData(!roleAssignmentsDirty);$('#role-status').textContent='Role deleted.';toast('Deleted '+name+'.')}
+  catch(e){status.textContent=e.message}
+ };
  async function presetBody(name){
   if(presetBodyCache.has(name))return presetBodyCache.get(name);
   const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));

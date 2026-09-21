@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer-core';
 const root=resolve('internal/controller/web'),requests=[];
 let server,browser,base;
 const revision='2026-09-05T12:00:00Z';
-let fixtureRoles=[{id:'role-all',name:'All contacts',description:'Can contact every eligible box',contactScope:'all',contactBoxIds:[],assignedBoxCount:0,createdAt:revision,updatedAt:revision}],fixtureBoxRoleIds=[];
+let fixtureRoles=[],fixtureBoxRoleIds=[];
 before(async()=>{
  server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://test').pathname;
@@ -71,24 +71,25 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
    if(method!=='GET'||url.pathname!=='/v1/logical-boxes')return response;
    const boxes=await response.json();
    return new Response(JSON.stringify([...boxes,
-    {id:'box-2',name:'planner',state:'running',defaultAgent:'codex',roles:[{id:'role-all',name:'All contacts'}]},
+    {id:'box-2',name:'planner',state:'running',defaultAgent:'codex',roles:[]},
     {id:'box-3',name:'build runner',state:'running',defaultAgent:'claude',roles:[]},
-    {id:'box-4',name:'qa reviewer',state:'hibernated',defaultAgent:'opencode',roles:[{id:'role-all',name:'All contacts'}]}
+    {id:'box-4',name:'qa reviewer',state:'hibernated',defaultAgent:'opencode',roles:[]}
    ]),{status:response.status,headers:response.headers});
   };
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#role-matrix .role-heading');
+ await page.waitForSelector('#role-matrix .role-empty');
  await page.click('#create-role');
- await page.type('#role-editor-form input[name=name]','Selected contacts');
- await page.type('#role-editor-form textarea[name=description]','Can contact chosen boxes');
+ await page.type('#role-editor-form input[name=name]','Can contact planner');
+ await page.type('#role-editor-form textarea[name=description]','Owner-defined contact grant for planner');
  await page.click('#role-editor-form input[value=selected]');
- await page.click('#role-contact-boxes input[value="box-1"]');
+ await page.click('#role-contact-boxes input[value="box-2"]');
  await page.click('#role-editor-form button.primary');
- await page.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Selected contacts'));
- const selectedRole=fixtureRoles.find(role=>role.name==='Selected contacts');
- assert.deepEqual(selectedRole.contactBoxIds,['box-1']);
- const assignmentSelector=`#role-matrix input[aria-label="Selected contacts for helper ü"]`;
+ await page.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Can contact planner'));
+ const selectedRole=fixtureRoles.find(role=>role.name==='Can contact planner');
+ assert.equal(selectedRole.name,'Can contact planner','the exact owner-typed role name must be preserved');
+ assert.deepEqual(selectedRole.contactBoxIds,['box-2']);
+ const assignmentSelector=`#role-matrix input[aria-label="Can contact planner for helper ü"]`;
  await page.click(assignmentSelector);
  await page.click('#save-role-assignments');
  await page.waitForFunction(()=>document.querySelector('#role-status').textContent==='');
@@ -96,7 +97,7 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  await page.setViewport({width:1280,height:900});
  await page.$eval('a[href="#roles"]',link=>link.click());
  await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-desktop.png')});
- await page.$$eval('#role-matrix .role-heading',buttons=>buttons.find(button=>button.textContent==='Selected contacts').click());
+ await page.$$eval('#role-matrix .role-heading',buttons=>buttons.find(button=>button.textContent==='Can contact planner').click());
  await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/role-editor.png')});
  await page.click('#role-editor-modal [data-close="role-editor-modal"]');
  await page.setViewport({width:390,height:844});

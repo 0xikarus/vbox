@@ -724,6 +724,9 @@ someone else's storage. Fleet size is unchanged; the cleaned slot becomes free.
 Legacy coworker adapters and the worker/manager box category have been removed.
 Native owner-defined roles and contact overrides now govern inter-agent access;
 ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
+Role names are exact owner-entered text—none are generated or preinstalled. Owners
+can define roles, edit their contact grants, assign them to boxes, and select
+initial roles during box creation from either the controller or the chat app.
 
 ## Optional tools
 

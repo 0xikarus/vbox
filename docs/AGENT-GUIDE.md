@@ -148,8 +148,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the target's existing native conversation (never a second session) with the
   sender recorded as `box_messages.sender_box_id` and direction `box`. The owner
   edits roles through `/v1/agent-roles` and `/v1/agent-role-assignments`, and
-  connections at `/v1/logical-boxes/{id}/contacts` and `/protection`; the
-  workspace page and the chat Details drawer are only editors. Entry points:
+  connections at `/v1/logical-boxes/{id}/contacts` and `/protection`. Both the
+  controller and chat app expose owner-defined role names, role grants,
+  assignments, and creation-time selection; the workspace page and chat Details
+  drawer expose the per-box connection overrides. Entry points:
   `internal/controller/agent_roles.go`, `internal/controller/contacts.go`,
   `internal/boxruntime/contacts.go`.
 - The chat PWA is mobile-first: a single-column app shell with push navigation

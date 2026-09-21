@@ -231,6 +231,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #inspect-contacts[hidden]{display:none}
 #inspect-contacts h3{margin:.8rem 0 .3rem;font-size:.95rem;color:var(--ink)}
 #inspect-contacts p{margin:.3rem 0}
+.inline-link{border:0;background:none;color:var(--accent-text);font:inherit;padding:0;text-decoration:underline;cursor:pointer}
 #inspect-contact-list{max-height:11rem;overflow-y:auto;margin:.3rem 0;padding-left:1.1rem}
 #inspect-contact-list li{padding:.2rem 0}
 #inspect-contacts form{display:flex;gap:.4rem;flex-wrap:wrap;align-items:flex-end;margin-top:.4rem}
@@ -332,7 +333,9 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #new-box-status,#delete-box-status{margin:.4rem 0 0;font-size:.8rem;color:var(--ink-soft);min-height:1rem}
 #create-box fieldset.tools{border:1px solid var(--line);border-radius:var(--radius-sm);padding:.3rem .5rem;margin-bottom:.5rem;
   display:flex;flex-direction:column;gap:.2rem}
+#create-box fieldset.role-checklist-field{border:1px solid var(--line);border-radius:var(--radius-sm);padding:.45rem .55rem;margin-bottom:.5rem}
 #create-box fieldset.tools legend{font-size:.78rem;color:var(--ink-soft);padding:0 .2rem}
+#create-box fieldset.role-checklist-field legend{font-size:.78rem;color:var(--ink-soft);padding:0 .2rem}
 #create-box fieldset.tools label{display:inline-flex;align-items:center;gap:.4rem;margin:0;font-size:.86rem}
 #create-box .custom-tools{margin-bottom:.5rem}
 #create-box .custom-tools summary{cursor:pointer;font-size:.85rem;color:var(--ink-soft)}
@@ -388,6 +391,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .sheet-card textarea{min-height:6rem}
 .sheet-card .primary{display:block;width:100%;background:var(--accent);color:var(--accent-ink);font-weight:800;
   border:0;border-radius:var(--radius);min-height:2.9rem;padding:.6rem 1.1rem;cursor:pointer}
+.sheet-card .primary.compact{display:inline-block;width:auto;min-height:0;padding:.5rem .8rem}
 .sheet-card #preset-status,.sheet-card #box-instructions-status,.sheet-card #box-credentials-status{
   margin:.4rem 0 0;font-size:.8rem;color:var(--ink-soft);min-height:1rem}
 .preset-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin:.4rem 0}
@@ -414,6 +418,35 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .seedrow button{border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:var(--radius-sm);
   padding:.4rem .6rem;cursor:pointer;font:inherit;font-weight:700}
 .seedrow button:hover{background:var(--accent-soft);border-color:var(--accent)}
+
+/* owner-defined roles in the chat app */
+.roles-card{width:min(62rem,100%)}
+.roles-toolbar{display:flex;align-items:flex-end;gap:.55rem;flex-wrap:wrap;margin:.8rem 0}
+.roles-toolbar label{flex:1 1 15rem;margin:0}
+.role-actions{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;margin-top:.75rem}
+.role-actions>button:not(.primary){border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:var(--radius-sm);padding:.5rem .8rem;font:inherit;font-weight:700;cursor:pointer}
+.role-actions>button.danger{color:var(--danger-text)}
+.role-actions>button:disabled{opacity:.5;cursor:default}
+#role-status,#role-editor-status{min-height:1rem;margin:.45rem 0 0;color:var(--ink-soft);font-size:.8rem}
+.role-matrix-wrap{max-width:100%;overflow:auto;border:1px solid var(--line);border-radius:var(--radius-sm)}
+.role-matrix{width:100%;border-collapse:separate;border-spacing:0;min-width:max-content}
+.role-matrix th,.role-matrix td{padding:.55rem .7rem;border-right:1px solid var(--line);border-bottom:1px solid var(--line);text-align:center;background:var(--surface)}
+.role-matrix tr:last-child th,.role-matrix tr:last-child td{border-bottom:0}
+.role-matrix th:last-child,.role-matrix td:last-child{border-right:0}
+.role-matrix .sticky-box{position:sticky;left:0;z-index:2;text-align:left;min-width:10rem;background:var(--surface2)}
+.role-matrix thead .sticky-box{z-index:3}
+.role-heading{border:0;background:none;color:var(--accent-text);font:inherit;font-weight:800;text-decoration:underline;cursor:pointer;white-space:nowrap;padding:.2rem}
+.role-mobile{display:none;gap:.6rem}
+.role-mobile>select{width:100%;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.55rem}
+.role-checklist{display:grid;gap:.35rem;margin:.45rem 0}
+.role-checklist label{display:flex;align-items:center;gap:.45rem;margin:0;padding:.35rem .45rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2);color:var(--ink)}
+.sheet-card .role-checklist label>input{display:inline-block;width:auto;margin:0;padding:0;flex:none}
+#role-editor-form{display:block;margin:0}
+.role-scope{border:1px solid var(--line);border-radius:var(--radius-sm);padding:.55rem;margin:.65rem 0}
+.role-scope legend{padding:0 .25rem;color:var(--ink-soft);font-size:.8rem;font-weight:700}
+.role-scope label{display:flex;align-items:center;gap:.45rem;margin:.35rem 0;color:var(--ink)}
+.sheet-card .role-scope label>input{display:inline-block;width:auto;margin:0;padding:0;flex:none}
+#role-editor-modal{z-index:50}
 
 /* model picker + load older (kept from the previous chat UI) */
 .model-picker{display:block}
@@ -583,6 +616,9 @@ body{max-width:none;margin:0;padding:0;height:100%;
  #chat-header-avatar .avatar{width:2.6rem;height:2.6rem}
  #chat-header-text strong{font-size:.95rem}
  #chat-info{font-size:.72rem;padding:.3rem .6rem}
+ .roles-card{width:100%}
+ .role-matrix-wrap{display:none}
+ .role-mobile{display:grid}
 }
 @media (max-width:899px){
  #chat-header button#chat-workspace{display:none}

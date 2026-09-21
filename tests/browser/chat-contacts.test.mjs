@@ -17,6 +17,8 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
  let protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
+ let agentRoles=[{id:'role-1',name:'Can contact reviewer',description:'Owner-defined contact grant',contactScope:'selected',contactBoxIds:['reviewer'],assignedBoxCount:1}];
+ let roleAssignments=new Map([['builder',['role-1']],['reviewer',[]]]);
  let contacts=[{contactBoxId:'reviewer',contactName:'reviewer',contactRoles:[],contactState:'running',override:'allow',canMessage:true,reason:'Allowed by an explicit connection override.'}];
  let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
@@ -33,7 +35,12 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/logical-boxes'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;creations.push(JSON.parse(body));return res.end(JSON.stringify({id:'created',name:'github-chat-fixture'}))}
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,roles:b.id==='builder'?[{id:'role-1',name:'Researcher'}]:[]}))));
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,roles:agentRoles.filter(role=>(roleAssignments.get(b.id)||[]).includes(role.id)).map(({id,name})=>({id,name}))}))));
+  if(path==='/v1/agent-roles'&&method==='GET')return res.end(JSON.stringify(agentRoles));
+  if(path==='/v1/agent-roles'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body),role={id:'role-'+(agentRoles.length+1),...parsed,assignedBoxCount:0};agentRoles.push(role);res.statusCode=201;return res.end(JSON.stringify(role))}
+  if(path.startsWith('/v1/agent-roles/')&&method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body),id=decodeURIComponent(path.split('/').pop()),index=agentRoles.findIndex(role=>role.id===id);agentRoles[index]={...agentRoles[index],...parsed};return res.end(JSON.stringify(agentRoles[index]))}
+  if(path.startsWith('/v1/agent-roles/')&&method==='DELETE'){const id=decodeURIComponent(path.split('/').pop());agentRoles=agentRoles.filter(role=>role.id!==id);for(const [boxID,ids] of roleAssignments)roleAssignments.set(boxID,ids.filter(roleID=>roleID!==id));res.statusCode=204;return res.end()}
+  if(path==='/v1/agent-role-assignments'&&method==='PUT'){let body='';for await(const chunk of req)body+=chunk;for(const assignment of JSON.parse(body).assignments)roleAssignments.set(assignment.boxId,assignment.roleIds);for(const role of agentRoles)role.assignedBoxCount=[...roleAssignments.values()].filter(ids=>ids.includes(role.id)).length;res.statusCode=204;return res.end()}
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'opencode',name:'openrouter',model:'openrouter/saved'},{application:'github',name:'gh-work'}]));
   if(path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/live-model',label:'Live model'}]}));
@@ -61,7 +68,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
   if(path==='/v1/logical-boxes/builder/contacts'){
-   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);const contact=contacts.find(c=>c.contactBoxId===parsed.contact||c.contactName===parsed.contact);contact.override=parsed.state;contact.canMessage=parsed.state!=='block';contact.reason=parsed.state==='block'?'Blocked by an explicit connection override.':parsed.state==='inherit'?'Allowed by Researcher.':'Allowed by an explicit connection override.';return res.end(JSON.stringify(contact))}
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);const contact=contacts.find(c=>c.contactBoxId===parsed.contact||c.contactName===parsed.contact);contact.override=parsed.state;contact.canMessage=parsed.state!=='block';contact.reason=parsed.state==='block'?'Blocked by an explicit connection override.':parsed.state==='inherit'?'Allowed by Can contact reviewer.':'Allowed by an explicit connection override.';return res.end(JSON.stringify(contact))}
    return res.end(JSON.stringify(contacts));
   }
   if(path.startsWith('/v1/logical-boxes/builder/contacts/')&&method==='DELETE'){contacts=contacts.filter(c=>c.contactName!==decodeURIComponent(path.split('/').pop()));res.statusCode=204;return res.end()}
@@ -70,9 +77,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    return res.end(JSON.stringify({protected:protectedBox}));
   }
   if(path==='/v1/logical-boxes/builder'){
-   return res.end(JSON.stringify({...boxes[0],roles:[{id:'role-1',name:'Researcher'}]}));
+   return res.end(JSON.stringify({...boxes[0],roles:agentRoles.filter(role=>(roleAssignments.get('builder')||[]).includes(role.id)).map(({id,name})=>({id,name}))}));
   }
-  if(path.startsWith('/v1/logical-boxes/builder'))return res.end(JSON.stringify({...boxes[0],roles:[{id:'role-1',name:'Researcher'}]}));
+  if(path.startsWith('/v1/logical-boxes/builder'))return res.end(JSON.stringify({...boxes[0],roles:agentRoles.filter(role=>(roleAssignments.get('builder')||[]).includes(role.id)).map(({id,name})=>({id,name}))}));
   res.statusCode=404;return res.end('{}');
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -157,7 +164,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(panelLayout.parent,'chat-conversation','details must expand from the viewed chat header');
   assert.ok(panelLayout.panel.top>=panelLayout.header.bottom-2,'details must appear below the chat header');
   assert.ok(panelLayout.panel.width>=panelLayout.header.width*.95,'details must span the chat instead of a side drawer');
-  await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='Researcher');
+  await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='Can contact reviewer');
  assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/Inherit uses assigned roles/);
  await p.select('#inspect-contact-list select','block');
  await p.waitForFunction(()=>{const select=document.querySelector('#inspect-contact-list select');return select.value==='block'&&!select.disabled});
@@ -167,6 +174,31 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('#inspect-protection-label').textContent.startsWith('Protected'));
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/protection'),true);
   await (await p.$('#inspect')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await p.click('#inspect-edit-roles');
+  await p.waitForFunction(()=>!document.querySelector('#roles-modal').hidden&&document.querySelector('#role-matrix .role-heading')?.textContent==='Can contact reviewer');
+  await p.$eval('#role-box-search',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
+  await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
+  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles.png'});
+  await p.click('#create-role');
+  await p.type('#role-editor-form input[name=name]','Release handoff');
+  await p.type('#role-editor-form textarea[name=description]','May contact the release box');
+  await p.click('#role-editor-form input[value=selected]');
+  await p.click('#role-contact-boxes input[value="reviewer"]');
+  await (await p.$('#role-editor-modal .role-editor-card')).screenshot({path:'docs/chat-ui/screenshots/chat-role-editor.png'});
+  await p.$eval('#role-editor-form',form=>form.requestSubmit());
+  await p.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Release handoff'));
+  assert.equal(agentRoles.at(-1).name,'Release handoff','the exact owner-typed role name must be preserved');
+  await p.click('#role-matrix input[aria-label="Release handoff for reviewer"]');
+  await p.click('#save-role-assignments');
+  await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');
+  assert.ok(roleAssignments.get('reviewer').includes(agentRoles.at(-1).id));
+  await p.setViewport({width:390,height:844,deviceScaleFactor:1});
+  assert.equal(await p.$eval('#role-matrix .role-mobile',element=>getComputedStyle(element).display),'grid');
+  assert.equal(await p.$eval('#role-matrix .role-matrix-wrap',element=>getComputedStyle(element).display),'none');
+  await p.waitForFunction(()=>document.querySelector('#chat-toasts').childElementCount===0,{timeout:5000});
+  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles-mobile.png'});
+  await p.click('#roles-modal .roles-card [data-close="roles-modal"]');
+  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
   await p.$eval('#new-box',button=>button.click());
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
   await p.select('#create-box select[name=defaultAgent]','opencode');
@@ -189,10 +221,12 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.keyboard.press('Escape');
   assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
+  await p.click('#create-role-choices input[value="role-1"]');
   await p.type('#create-box input[name=name]','github-chat-fixture');
   await p.$eval('#create-box',form=>form.requestSubmit());
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
+  assert.deepEqual(creations.at(-1).roleIds,['role-1']);
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

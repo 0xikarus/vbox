@@ -35,7 +35,7 @@
 </fieldset>
 <div class="form-actions"><button type="submit" class="primary">create and start box</button></div>
 </form></section>
-<section id="roles" data-owner><h2>agent roles</h2><p class="hint">Assign several roles to each box. Grants combine; explicit connection blocks and protected targets still win.</p>
+<section id="roles" data-owner><h2>agent roles</h2><p class="hint">Roles are defined by you. Type each exact role name and assign any combination to a box. Grants combine; explicit connection blocks and protected targets still win.</p>
 <div class="role-toolbar"><label class="field">search boxes <input id="role-box-search" type="search" placeholder="Filter by box name"></label><button type="button" class="primary" id="create-role">create role</button><button type="button" class="primary" id="save-role-assignments" disabled>save changes</button><button type="button" class="linkbtn" id="discard-role-assignments" disabled>discard</button></div>
 <div id="role-matrix"></div><p id="role-status" role="status"></p></section>
 <section id="profiles" data-owner><h2>saved login profiles</h2><p class="hint">Account-wide credentials, managed by owners. Select one agent profile above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>
@@ -73,7 +73,7 @@
 <div class="backdrop" data-close="role-editor-modal"></div>
 <section class="card role-editor" role="dialog" aria-modal="true" aria-labelledby="role-editor-title">
 <header><strong id="role-editor-title">Create role</strong><button type="button" class="linkbtn" data-close="role-editor-modal" aria-label="Close">×</button></header>
-<form id="role-editor-form"><input name="id" type="hidden"><label class="field">name <input name="name" maxlength="64" required></label><label class="field">description <textarea name="description" maxlength="500" rows="3"></textarea></label>
+<form id="role-editor-form"><input name="id" type="hidden"><label class="field">exact role name <input name="name" maxlength="64" required autocomplete="off" aria-describedby="controller-role-name-hint"></label><p id="controller-role-name-hint" class="hint">Owner-defined text; no role names are generated or reserved.</p><label class="field">description <textarea name="description" maxlength="500" rows="3"></textarea></label>
 <fieldset class="role-scope"><legend>Can contact</legend><label><input type="radio" name="contactScope" value="none" checked> No additional boxes</label><label><input type="radio" name="contactScope" value="selected"> Selected boxes</label><label><input type="radio" name="contactScope" value="all"> All boxes, including future boxes</label></fieldset>
 <div id="role-contact-boxes" class="role-checklist" hidden></div><p id="role-assigned-count" class="hint"></p>
 <div class="form-actions"><button class="primary">save role</button><button type="button" class="linkbtn danger" id="delete-role" hidden>delete role</button></div><p id="role-editor-status" role="status"></p></form>

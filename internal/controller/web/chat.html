@@ -71,7 +71,7 @@
     <section id="inspect-contacts" hidden>
      <h3>Contacts</h3>
      <p>Effective contact access from assigned roles and directional overrides. Changes apply immediately and are rechecked before delivery.</p>
-     <p>Assigned roles: <strong id="inspect-contact-role">None</strong> · <a href="/#roles">edit assignments</a></p>
+     <p>Assigned roles: <strong id="inspect-contact-role">None</strong> · <button id="inspect-edit-roles" class="inline-link" type="button">edit assignments</button></p>
      <p><span id="inspect-protection-label">Protection unknown</span> <button id="inspect-toggle-protection" type="button">Protect box</button></p>
      <ul id="inspect-contact-list"></ul>
      <p id="inspect-contact-status" role="status"></p>
@@ -124,6 +124,10 @@
    <details id="create-instructions-editor" hidden><summary>Customize Markdown</summary>
    <label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label>
    <div id="create-instructions-preview" class="md-preview" hidden></div></details>
+   <fieldset id="create-roles" class="role-checklist-field" hidden><legend>Roles</legend>
+    <p class="hint">Optional owner-defined roles. Names are never generated or predefined.</p>
+    <div id="create-role-choices" class="role-checklist"></div>
+   </fieldset>
    <button id="create-box-submit">Create and start box</button>
   </form>
   <p id="new-box-status" role="status"></p>
@@ -178,6 +182,43 @@
   <p id="preset-status" role="status"></p>
  </section></div>
 
+<div id="roles-modal" class="sheet" hidden>
+ <div class="sheet-backdrop" data-close="roles-modal"></div>
+ <section class="sheet-card roles-card" role="dialog" aria-modal="true" aria-labelledby="roles-title">
+  <header><strong id="roles-title">Agent roles</strong><span class="spacer"></span><button type="button" data-close="roles-modal" aria-label="Close">×</button></header>
+  <p class="hint">Roles are defined by you. Type each role's exact name, choose its contact grant, then assign any combination of roles to boxes.</p>
+  <div class="roles-toolbar">
+   <label>Search boxes <input id="role-box-search" type="search" placeholder="Filter by exact box name" autocomplete="off"></label>
+   <button type="button" id="create-role" class="primary compact">Define role</button>
+  </div>
+  <div id="role-matrix"></div>
+  <div class="role-actions"><button type="button" id="save-role-assignments" class="primary compact" disabled>Save assignments</button><button type="button" id="discard-role-assignments" disabled>Discard</button></div>
+  <p id="role-status" role="status"></p>
+ </section>
+</div>
+
+<div id="role-editor-modal" class="sheet" hidden>
+ <div class="sheet-backdrop" data-close="role-editor-modal"></div>
+ <section class="sheet-card role-editor-card" role="dialog" aria-modal="true" aria-labelledby="role-editor-title">
+  <header><strong id="role-editor-title">Define role</strong><span class="spacer"></span><button type="button" data-close="role-editor-modal" aria-label="Close">×</button></header>
+  <form id="role-editor-form">
+   <input name="id" type="hidden">
+   <label>Exact role name <input name="name" maxlength="64" required autocomplete="off" aria-describedby="role-name-hint"></label>
+   <p id="role-name-hint" class="hint">Owner-defined text; no role names are generated or reserved.</p>
+   <label>Description <textarea name="description" maxlength="500" rows="3"></textarea></label>
+   <fieldset class="role-scope"><legend>Can contact</legend>
+    <label><input type="radio" name="contactScope" value="none" checked> No additional boxes</label>
+    <label><input type="radio" name="contactScope" value="selected"> Selected boxes</label>
+    <label><input type="radio" name="contactScope" value="all"> All boxes, including future boxes</label>
+   </fieldset>
+   <div id="role-contact-boxes" class="role-checklist" hidden></div>
+   <p id="role-assigned-count" class="hint"></p>
+   <div class="role-actions"><button type="submit" class="primary compact">Save role</button><button type="button" id="delete-role" class="danger" hidden>Delete role</button></div>
+   <p id="role-editor-status" role="status"></p>
+  </form>
+ </section>
+</div>
+
 <div id="chat-menu-sheet" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="chat-menu-sheet"></div>
  <section class="sheet-card menu-card" role="dialog" aria-modal="true">
@@ -185,6 +226,7 @@
   <div class="menu-links">
    <a href="/">Controller</a>
    <a href="/grid">Grid</a>
+   <button id="roles-toggle" type="button" hidden>Agent roles</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="push-toggle" type="button" hidden>Enable notifications</button>
    <button id="logout" type="button" hidden>Log out</button>
