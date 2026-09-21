@@ -20,7 +20,7 @@ func TestOpenCodeCatalogFiltersToolCapableTextModels(t *testing.T) {
 		body     string
 		want     string
 	}{
-		{"openrouter", `{"data":[{"id":"eligible","name":"Eligible","architecture":{"output_modalities":["text"]},"supported_parameters":["tools","reasoning"]},{"id":"no-tools","architecture":{"output_modalities":["text"]}},{"id":"image","architecture":{"output_modalities":["image"]},"supported_parameters":["tools"]}]}`, "openrouter/eligible"},
+			{"openrouter", `{"data":[{"id":"eligible","name":"Eligible","context_length":1000000,"pricing":{"prompt":"0.000003","completion":"0.000015"},"architecture":{"output_modalities":["text"],"input_modalities":["text","image"]},"supported_parameters":["tools","reasoning"]},{"id":"no-tools","architecture":{"output_modalities":["text"]}},{"id":"image","architecture":{"output_modalities":["image"]},"supported_parameters":["tools"]}]}`, "openrouter/eligible"},
 		{"venice", `{"data":[{"id":"eligible","name":"Eligible","type":"text","model_spec":{"capabilities":{"supportsFunctionCalling":true,"supportsReasoningEffort":true}}},{"id":"offline","type":"text","model_spec":{"offline":true,"capabilities":{"supportsFunctionCalling":true}}},{"id":"no-tools","type":"text"}]}`, "venice/eligible"},
 	} {
 		t.Run(tc.provider, func(t *testing.T) {
@@ -36,6 +36,9 @@ func TestOpenCodeCatalogFiltersToolCapableTextModels(t *testing.T) {
 			}
 			if len(models) != 1 || models[0].ID != tc.want || models[0].Label != "Eligible" || !models[0].Reasoning {
 				t.Fatalf("wrong provider model choices: %+v", models)
+			}
+			if tc.provider == "openrouter" && (models[0].InputCost != 3 || models[0].OutputCost != 15 || models[0].Context != 1000000) {
+				t.Fatalf("pricing or context not parsed: %+v", models[0])
 			}
 		})
 	}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,9 +17,12 @@ import (
 )
 
 type profileModelChoice struct {
-	ID        string `json:"id"`
-	Label     string `json:"label"`
-	Reasoning bool   `json:"reasoning"`
+	ID        string  `json:"id"`
+	Label     string  `json:"label"`
+	Reasoning bool    `json:"reasoning"`
+	InputCost float64 `json:"inputCost,omitempty"`
+	OutputCost float64 `json:"outputCost,omitempty"`
+	Context   int     `json:"context,omitempty"`
 }
 
 type profileModelCatalog struct {
@@ -104,9 +108,15 @@ func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provide
 			Name                string   `json:"name"`
 			Type                string   `json:"type"`
 			SupportedParameters []string `json:"supported_parameters"`
-			Architecture        struct {
-				OutputModalities []string `json:"output_modalities"`
-			} `json:"architecture"`
+		Architecture        struct {
+			OutputModalities []string `json:"output_modalities"`
+			InputModalities  []string `json:"input_modalities"`
+		} `json:"architecture"`
+		ContextLength int `json:"context_length"`
+		Pricing       struct {
+			Prompt     string `json:"prompt"`
+			Completion string `json:"completion"`
+		} `json:"pricing"`
 			ModelSpec struct {
 				Offline      bool `json:"offline"`
 				Capabilities struct {
@@ -145,7 +155,14 @@ func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provide
 		if provider == "venice" {
 			reasoning = model.ModelSpec.Capabilities.SupportsReasoningEffort
 		}
-		models = append(models, profileModelChoice{ID: provider + "/" + id, Label: label, Reasoning: reasoning})
+		choice := profileModelChoice{ID: provider + "/" + id, Label: label, Reasoning: reasoning, Context: model.ContextLength}
+		if promptCost, err := strconv.ParseFloat(model.Pricing.Prompt, 64); err == nil && promptCost > 0 {
+			choice.InputCost = promptCost * 1e6
+		}
+		if completionCost, err := strconv.ParseFloat(model.Pricing.Completion, 64); err == nil && completionCost > 0 {
+			choice.OutputCost = completionCost * 1e6
+		}
+		models = append(models, choice)
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 	if len(models) == 0 {

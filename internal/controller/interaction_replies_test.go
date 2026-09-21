@@ -132,3 +132,22 @@ func TestUnansweredBoxMessagesExcludesCapturedReplies(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestLegacyCodexImageSchemaFailure(t *testing.T) {
+	for _, detail := range []string{
+		"vmbox-runtime: codex app server: Invalid request: missing field `url`",
+		"codex app server: unknown variant `localImage`",
+	} {
+		if !legacyCodexImageSchemaFailure(provider.ExecResult{ExitCode: 1, Stderr: detail}) {
+			t.Fatalf("legacy schema error %q was not detected", detail)
+		}
+	}
+	for _, result := range []provider.ExecResult{
+		{ExitCode: 0, Stderr: "missing field `url`"},
+		{ExitCode: 1, Stderr: "turn is already running"},
+	} {
+		if legacyCodexImageSchemaFailure(result) {
+			t.Fatalf("unrelated result was treated as a legacy schema error: %+v", result)
+		}
+	}
+}

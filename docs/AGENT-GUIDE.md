@@ -189,8 +189,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   remains a compatibility fallback for clients that do not call the tool. The
   same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
   `type_text`, `press_keys`), so an agent can operate the box's computer.
-- A new OpenCode Agent chat passes its first message with native `--prompt`, then
-  uses the loopback API for follow-ups. Persistent OpenCode and OpenCode one-shot
+- A new OpenCode Agent chat starts a bare TUI, waits for the visible bridge, then
+  submits its first message through the loopback API with structured image parts.
+  Persistent OpenCode and OpenCode one-shot
   tasks start with `--auto`; explicit client deny rules still take precedence.
 - Foundry is a pinned preset. Custom tooling is trusted user-supplied Bash run
   **inside the worker**, with a five-minute deadline, before the task. Persistent

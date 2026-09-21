@@ -28,6 +28,11 @@ type desktopMCPRequest struct {
 	Params  json.RawMessage `json:"params"`
 }
 
+// A chat_message accepts 100,000 bytes of text. JSON escaping can expand that
+// substantially, so the stdio frame limit must be larger than the tool's text
+// limit or valid long replies make Scanner stop without a protocol response.
+const maxDesktopMCPRequestBytes = 1 << 20
+
 func desktopMCPTools() []map[string]any {
 	integer := map[string]any{"type": "integer", "minimum": 0}
 	point := map[string]any{"x": integer, "y": integer}
@@ -103,7 +108,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 
 func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer, resolve desktopToolPolicyResolver) error {
 	scanner := bufio.NewScanner(input)
-	scanner.Buffer(make([]byte, 4096), 65536)
+	scanner.Buffer(make([]byte, 4096), maxDesktopMCPRequestBytes)
 	encoder := json.NewEncoder(output)
 	var outputMu sync.Mutex
 	encode := func(value any) error {
