@@ -2,6 +2,7 @@ package boxruntime
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
@@ -211,9 +212,23 @@ var CodexStartTurn = func(ctx context.Context, session, root, workspace, text st
 	if err != nil {
 		return err
 	}
-	input := codexTurnInput(text, images)
-	if _, err := client.call(ctx, "turn/start", map[string]any{"threadId": thread, "input": input}); err != nil {
+	start := func(input []map[string]any) error {
+		_, err := client.call(ctx, "turn/start", map[string]any{"threadId": thread, "input": input})
 		return err
+	}
+	return codexStartTurnWithFallback(text, images, start)
+}
+
+func codexStartTurnWithFallback(text string, images []string, start func([]map[string]any) error) error {
+	if err := start(codexTurnInput(text, images)); err != nil {
+		if len(images) == 0 || !codexNeedsImageURLFallback(err) {
+			return err
+		}
+		input, inputErr := codexImageURLTurnInput(text, images)
+		if inputErr != nil {
+			return inputErr
+		}
+		return start(input)
 	}
 	return nil
 }
@@ -225,6 +240,35 @@ func codexTurnInput(text string, images []string) []map[string]any {
 		input = append(input, map[string]any{"type": "localImage", "path": path})
 	}
 	return input
+}
+
+// Older app-server releases predate localImage/path and deserialize that shape
+// as image/url, producing "missing field `url`". A rejected request has not
+// started a turn, so retrying with an inline image is safe and keeps retained
+// workers compatible while current releases continue using local filesystem
+// paths without copying image bytes into JSON.
+func codexNeedsImageURLFallback(err error) bool {
+	message := err.Error()
+	return strings.Contains(message, "missing field `url`") || strings.Contains(message, "unknown variant `localImage`")
+}
+
+func codexImageURLTurnInput(text string, images []string) ([]map[string]any, error) {
+	input := []map[string]any{{"type": "text", "text": text}}
+	for _, path := range images {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read Codex image fallback: %w", err)
+		}
+		media, err := validateChatImage(data)
+		if err != nil {
+			return nil, fmt.Errorf("validate Codex image fallback: %w", err)
+		}
+		input = append(input, map[string]any{
+			"type": "image",
+			"url":  "data:" + media + ";base64," + base64.StdEncoding.EncodeToString(data),
+		})
+	}
+	return input, nil
 }
 
 // CodexAppServerReady reports whether the session's app server is accepting
