@@ -81,6 +81,21 @@ func TestDesktopMCPHTTPListsTheSameToolsAsMCP(t *testing.T) {
 			t.Fatalf("%s is missing over HTTP", tool["name"])
 		}
 	}
+	for _, value := range listed {
+		tool, _ := value.(map[string]any)
+		if tool["name"] != "desktop_screenshot" {
+			continue
+		}
+		schema := tool["inputSchema"].(map[string]any)
+		properties := schema["properties"].(map[string]any)
+		output := properties["output"].(map[string]any)
+		if output["default"] != "image" {
+			t.Fatalf("desktop_screenshot default output = %v", output["default"])
+		}
+		if got := output["enum"].([]any); len(got) != 2 || got[0] != "image" || got[1] != "file" {
+			t.Fatalf("desktop_screenshot output enum = %v", got)
+		}
+	}
 }
 
 func TestDesktopMCPHTTPRejectsUnknownToolsAndArguments(t *testing.T) {
@@ -90,6 +105,10 @@ func TestDesktopMCPHTTPRejectsUnknownToolsAndArguments(t *testing.T) {
 	}
 	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools/desktop_click?z=1", "secret-token", ""); status != http.StatusBadRequest {
 		t.Fatalf("unknown argument returned %d", status)
+	}
+	status, body := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_screenshot", "secret-token", `{"output":"path"}`)
+	if status != http.StatusBadRequest || !strings.Contains(body["error"].(string), "image or file") {
+		t.Fatalf("invalid screenshot output returned %d %v", status, body)
 	}
 	status, body := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_click", "secret-token", `{"x":10}`)
 	if status != http.StatusBadRequest || !strings.Contains(body["error"].(string), "y") {

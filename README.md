@@ -409,8 +409,10 @@ applications without restarting VNC or the box.
 New default worker images include a desktop, which opens automatically in the
 interactive web workspace. TMUX remains available in its tab and through the CLI.
 The desktop has Chromium, Terminal and Files launch icons, plus Blender when installed.
-Applications launch when you select them. New interactive shells use `DISPLAY=:99`
-for this shared screen; this does not itself give agents screenshot or mouse tools.
+Applications launch when you select them. New interactive shells use the box's
+`VMBOX_DESKTOP_DISPLAY` for this shared screen (`:99` on dedicated workers; a
+per-workspace display on shared workers); this does not itself give agents
+screenshot or mouse tools.
 Operators can build a shell-only image with `VMBOX_DESKTOP=false`.
 
 On older workers, choose **Enable desktop packages**, then **Start /

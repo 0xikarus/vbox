@@ -102,8 +102,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   are created only when absent; an exact legacy vmbox Terminal icon is refreshed,
   while owner edits survive reconnects. libfm's quick-execute preference allows
   desktop launchers to open without an executable-file prompt; it also applies
-  to other executable files opened through PCManFM. New interactive
-  shells default `DISPLAY` to `:99`; screenshot/input agent tools remain separate.
+  to other executable files opened through PCManFM. New interactive shells use
+  `VMBOX_DESKTOP_DISPLAY`: `:99` is the dedicated-worker fallback, while shared
+  workers assign a distinct display to each workspace. Screenshot/input agent
+  tools remain separate and should be used instead of assuming a display number.
 
 - Blender is an optional preset, including desktop packages. New presets pin the
   official Linux x64 Blender 5.1.2 archive and its SHA-256 in

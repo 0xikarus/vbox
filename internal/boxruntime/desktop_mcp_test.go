@@ -261,6 +261,33 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 	}
 }
 
+func TestSaveDesktopScreenshotUsesPrivateWorkspacePath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
+	want := []byte("png bytes")
+	path, err := saveDesktopScreenshot(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(root, "tmp", "vmbox", "desktop-screenshot.png") {
+		t.Fatalf("unexpected screenshot path %q", path)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("saved screenshot = %q", got)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("screenshot mode = %v", info.Mode().Perm())
+	}
+}
+
 func TestDesktopDoubleClickHasInterClickDelay(t *testing.T) {
 	var events []string
 	var clicks []time.Time
