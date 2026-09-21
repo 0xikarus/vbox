@@ -6,14 +6,16 @@
  let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
  const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
- let drafts=[],pendingKey='',pendingFingerprint='';
+ const attachmentDrafts=new Map();
+ let pendingKey='',pendingFingerprint='';
  let instructionPresets={defaultName:'',presets:[]};
  const presetBodyCache=new Map();
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
  // Unsent composer text is kept per box so switching chats (or reloading the
- // page) never loses what you were typing.
+ // page) never loses what you were typing. Uploaded attachment drafts are also
+ // keyed per box below; their local previews intentionally live only this page.
  const inputDrafts=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}')}catch{return{}}})();
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
@@ -23,6 +25,13 @@
   if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   return r.status===204?null:r.json();
+ }
+ async function chatHistory(path){
+  let r;try{r=await fetch(path,{credentials:'same-origin',signal:AbortSignal.timeout(60000)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
+  if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
+  if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
+  const rawBusy=r.headers.get('X-Vmbox-Agent-Busy');
+  return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||''};
  }
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
@@ -676,7 +685,11 @@
   const last=box.last;
   const pending=pendingSends.get(id);
   const replyDuringSend=pending&&ms.slice(pending.messageCount).some(m=>m.direction==='agent');
-  box.processing=agent!=='shell'&&!box.streaming&&((pending&&!replyDuringSend)||(last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000));
+  const pendingBusy=pending&&!replyDuringSend;
+  const inferredBusy=last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000;
+  // A controller value from the previous poll must not suppress a send that is
+  // currently in flight in this page. Persisted state takes over after it lands.
+  box.processing=agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy));
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=ms.filter(m=>m.direction!=='user'&&new Date(m.createdAt).getTime()>marker).length;
  }
@@ -966,7 +979,11 @@
   const values=await api(owner?'/v1/grid-boxes':'/v1/logical-boxes');
   const current=new Map();const alive=new Set();
   for(const b of values||[]){const old=boxes.get(b.id);alive.add(b.id);current.set(b.id,Object.assign(old||{messages:[],historyLoaded:false,hasOlder:false,historyLoading:false},b))}
-  for(const id of [...boxes.keys()])if(!alive.has(id)){const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id)}
+  for(const id of [...boxes.keys()])if(!alive.has(id)){
+   const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);
+   for(const draft of attachmentDrafts.get(id)||[])URL.revokeObjectURL(draft.url);
+   boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id);attachmentDrafts.delete(id);
+  }
   for(const [id,b] of current)boxes.set(id,b);
   if(selected&&!boxes.has(selected)){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
   await loadPreviews(force);
@@ -977,14 +994,18 @@
   await Promise.allSettled([...boxes.keys()].map(async id=>{
    if(id===selected)return;// open conversation refreshes itself
    if(!force&&Date.now()-(previewFetched.get(id)||0)<30000)return;
-   const messages=await api(boxPath(id)+'/messages?limit=20');
+   const history=await chatHistory(boxPath(id)+'/messages?limit=20');
    const box=boxes.get(id);
    // The box may have been opened (or fully loaded) while the preview was in
    // flight; never let a 20-message preview overwrite an open conversation.
    if(!box||id===selected||box.historyLoaded)return;
-   box.messages=messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now());
+   applyBusyState(box,history);box.messages=history.messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now());
    summarize(id);
   }));
+ }
+ function applyBusyState(box,history){
+  if(history.busy===null){delete box.agentBusy;delete box.agentBusySince;return}
+  box.agentBusy=history.busy;box.agentBusySince=history.busySince||'';
  }
  function applySeen(id){
   const box=boxes.get(id);if(!box)return;
@@ -1012,17 +1033,20 @@
   if(reconnecting)return setBanner('Reconnecting to the controller…');
   const box=boxes.get(selected);if(!box)return setBanner('');
   const last=[...(box.messages||[])].reverse().find(m=>m.direction==='user');
-  const stalled=box.processing&&last&&(Date.now()-new Date(last.updatedAt||last.createdAt).getTime())>5*60*1000;
-  setBanner(stalled?'Agent has been processing for '+Math.round((Date.now()-new Date(last.updatedAt||last.createdAt).getTime())/60000)+' min — it may be stalled.':'');
+  const started=box.agentBusySince||(last&&(last.updatedAt||last.createdAt));
+  const elapsed=started?Date.now()-new Date(started).getTime():0;
+  const stalled=box.processing&&elapsed>5*60*1000;
+  setBanner(stalled?'Agent has been processing for '+Math.round(elapsed/60000)+' min — it may be stalled.':'');
  }
  async function refreshMessages(force){
   if(!selected)return;
   const id=selected,box=boxes.get(id);if(!box)return;
   const epoch=viewEpoch;
-  const messages=await api(boxPath(id)+'/messages?limit=50');
+  const history=await chatHistory(boxPath(id)+'/messages?limit=50');
   // Drop a response that arrives after the user moved to another box.
   if(epoch!==viewEpoch||selected!==id||boxes.get(id)!==box)return;
-  const latest=messages||[];
+  applyBusyState(box,history);
+  const latest=history.messages||[];
   if(box.historyLoaded){
    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
    for(const message of latest)merged.set(message.id,message);
@@ -1064,7 +1088,8 @@
   const savedScroll=scrollMemory.get(id);
   stickToBottom=savedScroll==null;
   const restoredDraft=inputDrafts[id]||'';
-  if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow();updateSendState()}
+  if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow()}
+  renderDrafts();
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;
   appEl.classList.add('in-chat');
   renderHeader();
@@ -1085,6 +1110,7 @@
  const maxComposerHeight=()=>Math.min(150,Math.max(96,innerHeight*0.35));
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
  function updateSendState(){
+  const drafts=attachmentDrafts.get(selected)||[];
   const hasContent=!!inputEl.value.trim()||drafts.length>0;
   const send=$('#send');send.disabled=!hasContent;
   const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
@@ -1109,6 +1135,7 @@
   event.preventDefault();composer.requestSubmit();
  });
  function renderDrafts(){
+  const drafts=attachmentDrafts.get(selected)||[];
   draftsEl.hidden=!drafts.length;draftsEl.replaceChildren();
   for(const entry of drafts){
    const wrap=document.createElement('span');wrap.className='draft';
@@ -1122,14 +1149,16 @@
    }
    open.onclick=()=>openMediaViewer([{url:entry.url,kind,alt:'Attachment '+entry.number,label:'Attachment '+entry.number}]);
    const remove=document.createElement('button');remove.type='button';remove.className='draft-remove';remove.textContent='×';remove.title='Remove attachment';
-   remove.onclick=()=>{drafts=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);drafts.forEach((d,i)=>d.number=i+1);renderDrafts()};
+   remove.onclick=()=>{const remaining=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);remaining.forEach((d,i)=>d.number=i+1);if(remaining.length)attachmentDrafts.set(selected,remaining);else attachmentDrafts.delete(selected);renderDrafts()};
    wrap.append(open,remove);draftsEl.append(wrap);
   }
   updateSendState();
  }
  async function uploadImages(files){
+  const boxID=selected;
+  if(!boxID)return;
   for(const file of files){
-   if(drafts.length>=8){statusEl.textContent='Attach at most 8 files.';break}
+   if((attachmentDrafts.get(boxID)||[]).length>=8){statusEl.textContent='Attach at most 8 files.';break}
    const isVideo=file.type==='video/mp4'||file.type==='video/webm';
    const isImage=['image/png','image/jpeg','image/gif'].includes(file.type);
    if(!isVideo&&!isImage){statusEl.textContent='Choose PNG, JPEG, GIF, MP4 or WebM.';continue}
@@ -1139,8 +1168,13 @@
     const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(120000)});
     let result;try{result=await response.json()}catch{}
     if(!response.ok)throw Error(result?.error||'Upload failed.');
+    // Re-read after the await: another picker/paste may have completed for the
+    // same chat while this upload was in flight.
+    const drafts=attachmentDrafts.get(boxID)||[];
+    if(drafts.length>=8){statusEl.textContent='Attach at most 8 files.';continue}
     drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type});
-    renderDrafts();
+    attachmentDrafts.set(boxID,drafts);
+    if(selected===boxID)renderDrafts();
    }catch(e){statusEl.textContent=e.message}
   }
   fileInput.value='';
@@ -1157,6 +1191,7 @@
   event.preventDefault();
   if(!selected)return;
   const boxID=selected,box=boxes.get(boxID);
+  const drafts=attachmentDrafts.get(boxID)||[];
   const text=inputEl.value,images=drafts.map(({id,number})=>({id,number}));
   if(!text.trim()&&!images.length)return;
   const fingerprint=text+'\n'+images.map(i=>i.id).join(',');
@@ -1168,7 +1203,7 @@
   // continue immediately. The text and drafts are restored if the send fails.
   inputEl.value='';grow();
   if(inputDrafts[boxID]){delete inputDrafts[boxID];saveInputDrafts()}
-  const sentDrafts=drafts;drafts=[];renderDrafts();
+  const sentDrafts=drafts;attachmentDrafts.delete(boxID);renderDrafts();
   // Delivery can finish after a fast MCP reply, so show the outgoing message
   // and existing processing state while the synchronous POST is in flight.
   if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
@@ -1189,7 +1224,7 @@
    inputDrafts[boxID]=inputEl.value;saveInputDrafts();
    // Restore the drafts handed to the failed send alongside anything the user
    // attached meanwhile, so no blob URL is lost or leaked.
-   if(sentDrafts.length){drafts=[...sentDrafts,...drafts].map((draft,index)=>({...draft,number:index+1}));renderDrafts();grow()}
+   if(sentDrafts.length){const restored=[...sentDrafts,...(attachmentDrafts.get(boxID)||[])].map((draft,index)=>({...draft,number:index+1}));attachmentDrafts.set(boxID,restored);if(selected===boxID){renderDrafts();grow()}}
   }
   finally{
    if(pendingSends.delete(boxID)||(showPending&&!settled)){
@@ -1808,7 +1843,8 @@
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
-  for(const d of drafts)URL.revokeObjectURL(d.url);drafts=[];renderDrafts();pendingKey='';pendingFingerprint='';
+  for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
+  attachmentDrafts.clear();renderDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;
   selected='';lastSignature='';appEl.classList.remove('in-chat');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
@@ -1825,7 +1861,7 @@
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
- addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url)});
+ addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url);for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
 
  /* ---------- instruction presets, box instructions, imported profiles ---------- */
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}

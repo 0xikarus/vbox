@@ -107,8 +107,8 @@ sessions auto-approve permission asks by default unless their configuration
 explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
 Agent choice requests render as radio buttons or checkboxes. The managed
-`vmbox-desktop` MCP supplies the structured `chat_message` and `chat_ask`
-tools; `chat_message` works with or without a reply reference. The
+`vmbox-desktop` MCP supplies the structured `chat_message`, `chat_ask`, and
+`set_busy` tools; `chat_message` works with or without a reply reference. The
 same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
 `desktop_type`, `desktop_key`), so agents can operate the box's computer.
 
@@ -144,9 +144,9 @@ every send, so the model cannot widen its own reach.
 | Follow-ups reuse the same native task/thread | Yes | Yes | Yes |
 | **Clear context** keeps the watched session usable | Native `/new` | Respawns Claude with a new channel | Native `/new` |
 | Old process cleanup when a respawn is required | Not applicable | Old Claude tree is terminated | Not applicable |
-| `chat_message`, `chat_ask`, and contact routing | Yes | Yes | Yes |
+| `chat_message`, `chat_ask`, `set_busy`, and contact routing | Yes | Yes | Yes |
 | Desktop screenshot, mouse, keyboard, and typing tools | Yes | Yes | Yes |
-| Box-side HTTP façade with the same 14 tools | Yes | Yes | Yes |
+| Box-side HTTP façade with the same 15 tools | Yes | Yes | Yes |
 | Harness-specific saved profile and per-box model | Yes | Yes | Yes |
 | Agent exchange remains visible in TMUX/VNC | Yes | Yes | Yes |
 

@@ -165,11 +165,13 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		return "", false, fmt.Errorf("unknown structured chat event")
 	}
 	replyTo := ""
+	activityMessageID := ""
 	target, found, err := s.Store.BoxMessageByChatKey(ctx, accountID, task.ID, event.ReplyTo)
 	if err != nil {
 		return "", false, err
 	}
 	if found {
+		activityMessageID = target.ID
 		existing, answered, err := s.Store.AgentBoxMessage(ctx, accountID, target.ID)
 		if err != nil {
 			return "", false, err
@@ -185,6 +187,15 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		}
 		if err := s.Store.attachAgentChatImages(ctx, accountID, message.ID, event.Images); err != nil {
 			return "", false, err
+		}
+		var busyErr error
+		if activityMessageID != "" {
+			busyErr = s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID)
+		} else {
+			busyErr = s.Store.SetBoxTaskBusy(ctx, accountID, task.ID, false)
+		}
+		if busyErr != nil {
+			return "", false, busyErr
 		}
 		s.pushAgentReply(ctx, accountID, task, text)
 		return message.ID, false, nil
@@ -206,6 +217,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		return "", false, err
 	}
 	if err := s.Store.attachAgentChatImages(ctx, accountID, reply.ID, event.Images); err != nil {
+		return "", false, err
+	}
+	if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID); err != nil {
 		return "", false, err
 	}
 	s.pushAgentReply(ctx, accountID, task, text)

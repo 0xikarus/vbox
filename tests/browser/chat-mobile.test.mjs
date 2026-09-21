@@ -18,7 +18,8 @@ const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADEl
 // of the OS "save image" callout, swiping in from the edge pulls the list back,
 // and the details drawer must fit a phone.
 test('mobile gestures: long-press menu, tap preview, swipe list, fitting details',async()=>{
- const now=new Date().toISOString();
+ const now=new Date(Date.now()-11*60*1000).toISOString();
+ let busy=true;
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',role:'worker',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',role:'worker',volumeName:'v2'}];
  const messages=[{id:'u1',direction:'user',state:'delivered',text:'Please work on this.',createdAt:now,updatedAt:now}];
  const server=http.createServer((req,res)=>{
@@ -36,7 +37,10 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path.endsWith('/desktop/screenshot')){res.setHeader('Content-Type','image/png');return res.end(thumbnail)}
   if(path.endsWith('/desktop/replay')){res.setHeader('Content-Type','application/json');return res.end('[]')}
-  if(path==='/v1/logical-boxes/builder/messages'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(messages))}
+  if(path==='/v1/logical-boxes/builder/messages'){
+   res.setHeader('Content-Type','application/json');res.setHeader('X-Vmbox-Agent-Busy',String(busy));res.setHeader('X-Vmbox-Agent-Busy-Since',now);
+   return res.end(JSON.stringify(messages));
+  }
   if(path==='/v1/logical-boxes/builder/contacts'){res.setHeader('Content-Type','application/json');return res.end('[]')}
   if(path==='/v1/logical-boxes/builder/protection'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({protected:false}))}
   if(path.endsWith('/messages')){res.setHeader('Content-Type','application/json');return res.end('[]')}
@@ -68,6 +72,9 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   assert.equal(await p.evaluate(()=>{const el=document.querySelector('.tv-preview');const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(e);return e.defaultPrevented}),true,'long-press on the preview must not offer save-image');
   await p.touchscreen.tap(6,240);
   await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden);
+  busy=false;
+  await p.click('#refresh');
+  await p.waitForFunction(()=>!document.querySelector('.msg.processing'),{timeout:5000});
 
   // Always-visible message actions: the chevron opens Copy / Forward.
   const morePoint=await p.$eval('.msg.user .msg-more',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});

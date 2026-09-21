@@ -98,8 +98,32 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		writeError(w, 500, fmt.Errorf("message images unavailable"))
 		return
 	}
+	if busy, known, updatedAt, busyErr := s.Store.BoxAgentBusy(r.Context(), p.AccountID, box.ID); busyErr == nil && known {
+		w.Header().Set("X-Vmbox-Agent-Busy", strconv.FormatBool(busy))
+		if !updatedAt.IsZero() {
+			w.Header().Set("X-Vmbox-Agent-Busy-Since", updatedAt.UTC().Format(time.RFC3339Nano))
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, values)
+}
+
+// agentBusyHandler accepts activity only for the box bound to the worker's
+// DesktopAgent credential and for one of that box's active chat sessions.
+func (s *Server) agentBusyHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	var request struct {
+		Session string `json:"session"`
+		Busy    *bool  `json:"busy"`
+	}
+	if err := decodeJSON(r, &request); err != nil || request.Busy == nil || !validSessionName(request.Session) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("session and busy are required"))
+		return
+	}
+	if err := s.Store.SetBoxSessionBusy(r.Context(), p.AccountID, r.PathValue("id"), request.Session, *request.Busy); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": request.Session, "busy": *request.Busy})
 }
 
 // clearBoxContextHandler starts a fresh context inside the active chat task's
@@ -169,5 +193,8 @@ func (s *Server) clearBoxContextHandler(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) recordContextClear(ctx context.Context, accountID, taskID, agent, resetID string) error {
-	return s.Store.AppendSystemBoxMessage(ctx, accountID, taskID, "context cleared · "+agent+" is ready", "context-clear:"+resetID)
+	if err := s.Store.AppendSystemBoxMessage(ctx, accountID, taskID, "context cleared · "+agent+" is ready", "context-clear:"+resetID); err != nil {
+		return err
+	}
+	return s.Store.SetBoxTaskBusy(ctx, accountID, taskID, false)
 }

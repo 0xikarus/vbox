@@ -16,7 +16,7 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // workspace-desktop.test.mjs). This test drives the real page against fixture
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact list',async()=>{
- let boxRole='worker',protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
+ let boxRole='worker',protectedBox=false,requests=[],creations=[],fullDesktopShots=0,explicitIdle=false;
  let contacts=[{contactBoxId:'reviewer',contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
  let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'},{id:'planner',name:'planner',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v3',volumeName:'v3'},{id:'auditor',name:'auditor',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v4',volumeName:'v4'}];
@@ -50,7 +50,10 @@ test('chat details drawer edits the per-box contact list',async()=>{
    {id:'frame-2',capturedAt:new Date(Date.now()-30000).toISOString(),width:1,height:1}
   ]));
   if(path.includes('/desktop/replay/')){res.setHeader('Content-Type','image/png');return res.end(thumbnail)}
-  if(path==='/v1/logical-boxes/builder/messages'&&method==='GET')return res.end(JSON.stringify(builderMessages));
+  if(path==='/v1/logical-boxes/builder/messages'&&method==='GET'){
+   if(explicitIdle)res.setHeader('X-Vmbox-Agent-Busy','false');
+   return res.end(JSON.stringify(builderMessages));
+  }
   if(path==='/v1/logical-boxes/builder/messages'&&method==='POST'){
    await new Promise(resolve=>setTimeout(resolve,600));
    const now=new Date().toISOString();
@@ -105,6 +108,9 @@ test('chat details drawer edits the per-box contact list',async()=>{
   await p.$eval('[data-box-id="builder"]',element=>element.click());
   await p.waitForFunction(()=>document.querySelector('#chat-messages .msg.agent .text')?.textContent==='Done.'||[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Done.'),{timeout:1500});
   assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'processing must end when the agent reply appears');
+  explicitIdle=true;
+  await p.click('#refresh');
+  await new Promise(resolve=>setTimeout(resolve,150));
   await p.type('#chat-input','Quick check');
   await p.click('#send');
   assert.equal(await p.$eval('#chat-input',element=>element.value),'','the composer must clear as soon as a message is sent');

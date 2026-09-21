@@ -38,7 +38,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
-  if(path==='/v1/run-once-images'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:'img-1'}))}
+  if(path==='/v1/run-once-images'){await new Promise(resolve=>setTimeout(resolve,250));res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:'img-1'}))}
   if(!path.startsWith('/v1/'))return res.end('');
   if(path.endsWith('/desktop/screenshot')){res.statusCode=409;return res.end('{}')}
   res.setHeader('Content-Type','application/json');
@@ -84,9 +84,19 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   await p.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('ALPHA-ONLY'),{timeout:8000});
   assert.equal(await p.$eval('#chat-input',el=>el.value),'draft for alpha','the box draft survives a reload');
 
-  // an attached image can be inspected before sending
+  // Attachment uploads stay with the box where they started, even when the
+  // user changes active chats before the upload finishes.
   const fileInput=await p.$('#attachments');
   await fileInput.uploadFile(pngPath);
+  await p.$eval('[data-box-id="beta"]',el=>el.click());
+  await p.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('BETA-ONLY'),{timeout:8000});
+  await new Promise(resolve=>setTimeout(resolve,350));
+  assert.equal(await p.$$eval('.draft-open',elements=>elements.length),0,'alpha attachment must not appear in beta');
+  await p.$eval('[data-box-id="alpha"]',el=>el.click());
+  await p.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('ALPHA-ONLY'),{timeout:8000});
+  assert.equal(await p.$$eval('.draft-open',elements=>elements.length),1,'alpha attachment must be restored with alpha');
+
+  // an attached image can be inspected before sending
   await p.waitForSelector('.draft-open',{timeout:8000});
   await p.$eval('.draft-open',el=>el.click());
   await p.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
