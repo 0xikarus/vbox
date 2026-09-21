@@ -110,7 +110,7 @@ func TestDesktopMCPHTTPRejectsUnknownToolsAndArguments(t *testing.T) {
 	if status != http.StatusBadRequest || !strings.Contains(body["error"].(string), "image or file") {
 		t.Fatalf("invalid screenshot output returned %d %v", status, body)
 	}
-	status, body := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_click", "secret-token", `{"x":10}`)
+	status, body = desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_click", "secret-token", `{"x":10}`)
 	if status != http.StatusBadRequest || !strings.Contains(body["error"].(string), "y") {
 		t.Fatalf("missing argument returned %d %v", status, body)
 	}
