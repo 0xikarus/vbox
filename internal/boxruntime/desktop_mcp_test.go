@@ -42,7 +42,11 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "claude-order")
-	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-1", Text: "hello"}); err != nil {
+	imageData := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-1", Text: "hello", Images: []ChatEventImage{{Name: "screen.png", MediaType: "image/png", Data: imageData}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-2", Text: "follow up", Images: []ChatEventImage{{Name: "screen-2.png", MediaType: "image/png", Data: imageData}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -88,14 +92,29 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	if _, err := io.WriteString(write, `{"jsonrpc":"2.0","method":"notifications/initialized"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case second := <-output.lines:
-		var notification desktopMCPRequest
-		if json.Unmarshal(second, &notification) != nil || notification.Method != "notifications/claude/channel" {
-			t.Fatalf("second output was not channel notification: %s", second)
+	for _, wantText := range []string{"hello", "follow up"} {
+		select {
+		case second := <-output.lines:
+			var notification desktopMCPRequest
+			if json.Unmarshal(second, &notification) != nil || notification.Method != "notifications/claude/channel" {
+				t.Fatalf("second output was not channel notification: %s", second)
+			}
+			var params struct {
+				Content string            `json:"content"`
+				Meta    map[string]string `json:"meta"`
+			}
+			if err := json.Unmarshal(notification.Params, &params); err != nil {
+				t.Fatal(err)
+			}
+			if params.Content != wantText || params.Meta["image_path"] == "" || params.Meta["file_path"] != "" {
+				t.Fatalf("Claude image attachment was not advertised as image_path: %+v", params)
+			}
+			if _, err := os.Stat(params.Meta["image_path"]); err != nil {
+				t.Fatalf("channel image path is not readable: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("channel notification for %q was not emitted after initialize", wantText)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("channel notification was not emitted after initialize")
 	}
 
 	cancel()
@@ -258,6 +277,58 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		if i >= 2 && response.Result["isError"] != true {
 			t.Fatal("invalid call accepted")
 		}
+	}
+}
+
+func TestDesktopMCPGuideMatchesAdvertisedTools(t *testing.T) {
+	home := t.TempDir()
+	if err := writeDesktopMCPGuide(home); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, desktopMCPGuidePath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## chat_message", "## type_secret", "## desktop_screenshot", `Schema: `} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("guide missing %q: %s", fragment, text)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("guide mode = %v", info.Mode().Perm())
+	}
+}
+
+func TestSaveDesktopScreenshotUsesPrivateWorkspacePath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
+	want := []byte("png bytes")
+	path, err := saveDesktopScreenshot(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(root, "tmp", "vmbox", "desktop-screenshot.png") {
+		t.Fatalf("unexpected screenshot path %q", path)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("saved screenshot = %q", got)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("screenshot mode = %v", info.Mode().Perm())
 	}
 }
 

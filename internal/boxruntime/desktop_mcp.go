@@ -40,27 +40,50 @@ func desktopMCPTools() []map[string]any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	return []map[string]any{
-		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns each contact's id, name, role, agent, state and whether messaging is allowed. Use a contact id or name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
-		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
-		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass contact (from get_contacts) to send a message to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
-		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass contact (from get_contacts) to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
-		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
-		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
-		makeTool("typeSecret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
-		makeTool("desktop_screenshot", "Capture this box's current desktop as a PNG image. Does not start or wake the desktop.", map[string]any{}),
-		makeTool("capture_window", "Capture the visible screen area of an X11 window as PNG. Defaults to the active window; optionally supply window_id (decimal or 0x hexadecimal). Does not focus or raise windows. Overlapping windows appear in the capture; minimized windows are not supported. Returned x/y offsets map image coordinates to desktop coordinates.", map[string]any{"window_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 10}}),
-		makeTool("desktop_move", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
-		makeTool("desktop_click", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
-		makeTool("desktop_drag", "Drag directly from x/y to toX/toY while holding the left button.", map[string]any{"x": integer, "y": integer, "toX": integer, "toY": integer}, "x", "y", "toX", "toY"),
-		makeTool("desktop_scroll", "Scroll at a coordinate. Text is direction; count is 1–20 wheel steps.", map[string]any{"x": integer, "y": integer, "text": map[string]any{"type": "string", "enum": []string{"up", "down", "left", "right"}}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 20}}, "x", "y", "text"),
-		makeTool("desktop_type", "Type ordinary literal text in the focused application. Use the secret service for credentials.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
-		makeTool("desktop_key", "Press a shortcut: keys contains modifiers and a key, e.g. [ctrl,l] or [Return].", map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
+		makeTool("get_contacts", `List boxes this box may message. Call get_contacts({}); use a returned id/name in chat_message or chat_ask.`, map[string]any{}),
+		makeTool("set_busy", `Set busy state only for work outside normal chat replies. Call set_busy({"busy":true}) or set_busy({"busy":false}).`, map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
+		makeTool("chat_message", `Send one completed reply. Call chat_message({"text":"...","replyTo":"...","files":["/path.png"]}). Use {"contact":"..."} for another box; contact messages cannot include files.`, map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
+		makeTool("chat_ask", `Ask the user to choose. Call chat_ask({"question":"...","choices":["A","B"]}); set multiple:true for multi-select.`, map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
+		makeTool("secret_request", `Request an existing password for the focused HTTPS field. Call secret_request({"key":"..."}); wait, then call again. Never invent one.`, map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
+		makeTool("secret_ensure", `Create/reuse a password for a new account. Call secret_ensure({"key":"...","purpose":"new_account_password"}); never use for an existing account.`, map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
+		makeTool("type_secret", `Fill the focused password field. Call type_secret({"key":"..."}); it does not reveal or submit the password.`, map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
+		makeTool("desktop_screenshot", "Screenshot this box. Call desktop_screenshot({}) for an image, or desktop_screenshot({output:\"file\"}) for a PNG path to pass to chat_message({\"files\":[\"/path.png\"]}).", map[string]any{"output": map[string]any{"type": "string", "enum": []string{"image", "file"}, "default": "image"}}),
+		makeTool("capture_window", `Capture an X11 window. Call capture_window({}) for the active window, or capture_window({"window_id":"0x..."}).`, map[string]any{"window_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 10}}),
+		makeTool("desktop_move", `Move the cursor. Call desktop_move({"x":10,"y":20}).`, point, "x", "y"),
+		makeTool("desktop_click", `Click. Call desktop_click({"x":10,"y":20}); button is 1/2/3 and count is 1/2.`, map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
+		makeTool("desktop_drag", `Drag. Call desktop_drag({"x":10,"y":20,"toX":100,"toY":200}).`, map[string]any{"x": integer, "y": integer, "toX": integer, "toY": integer}, "x", "y", "toX", "toY"),
+		makeTool("desktop_scroll", `Scroll. Call desktop_scroll({"x":10,"y":20,"text":"down","count":1}).`, map[string]any{"x": integer, "y": integer, "text": map[string]any{"type": "string", "enum": []string{"up", "down", "left", "right"}}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 20}}, "x", "y", "text"),
+		makeTool("desktop_type", `Type literal text. Call desktop_type({"text":"hello"}); use the secret tools for passwords.`, map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
+		makeTool("desktop_key", `Press keys. Call desktop_key({"keys":["ctrl","l"]}).`, map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
 	}
+}
+
+const desktopMCPGuidePath = ".config/vmbox/mcp-tools.md"
+
+// writeDesktopMCPGuide gives every managed agent a local, readable tool
+// reference. It is generated from the same schemas advertised over MCP.
+func writeDesktopMCPGuide(home string) error {
+	var guide strings.Builder
+	guide.WriteString("# vmbox-desktop MCP tools\n\n")
+	guide.WriteString("Use the tool directly with the JSON call shown.\n\n")
+	for _, tool := range desktopMCPTools() {
+		name := tool["name"].(string)
+		description := tool["description"].(string)
+		schema, err := json.Marshal(tool["inputSchema"])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&guide, "## %s\n\n%s\n\nSchema: `%s`\n\n", name, description, schema)
+	}
+	return writeTextAtomic(filepath.Join(home, desktopMCPGuidePath), guide.String(), 0600)
 }
 
 // ServeDesktopMCP is a local stdio adapter. stdout contains protocol only; the
 // assignment captured at startup fences every subsequent operation.
 func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer) error {
+	if home, err := os.UserHomeDir(); err == nil {
+		_ = writeDesktopMCPGuide(home)
+	}
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), maxDesktopMCPRequestBytes)
 	encoder := json.NewEncoder(output)
@@ -104,7 +127,7 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose. Busy state is automatic for ordinary request/reply work; use set_busy only to report activity outside that flow. These tools are also reachable over HTTP from inside this box: read ~/.local/share/vmbox/mcp-http.json for the url and token, then POST a JSON object of arguments to {url}/tools/{name} with an Authorization: Bearer header. Use that when a script or background job has to queue a message outside an agent turn."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Use chat_message for every user-facing reply; use chat_ask for choices. Busy state is automatic for normal replies; use set_busy for other work. Incoming chat images arrive with an image_path channel attribute; use Read on that path. Read ~/.config/vmbox/mcp-tools.md for all vmbox tool calls. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
@@ -157,12 +180,9 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		_ = os.WriteFile(ready, []byte(owner), 0600)
 		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
 			content := event.Text
+			meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
 			if len(event.Paths) > 0 {
-				content += "\n\nAttached image files:\n" + strings.Join(event.Paths, "\n")
-			}
-			meta := map[string]any{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
-			if len(event.Paths) > 0 {
-				meta["file_path"] = event.Paths[0]
+				meta["image_path"] = event.Paths[0]
 			}
 			if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": content, "meta": meta}}) == nil {
 				_ = os.Remove(path)
@@ -285,7 +305,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		text := "Private credential requested. Wait for the user's response; do not invent a password."
 		if ready {
-			text = "Private credential is ready. Use typeSecret with the same reference."
+			text = "Private credential is ready. Use type_secret with the same reference."
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}, nil
 	}
@@ -374,7 +394,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to vmbox Agent chat."}}}, nil
 	}
-	if name == "typeSecret" {
+	if name == "type_secret" {
 		var key string
 		if json.Unmarshal(values["key"], &key) != nil {
 			return nil, fmt.Errorf("secret key must be a string")
@@ -404,7 +424,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if created {
 			status = "New password reference saved; pending use."
 		}
-		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use typeSecret with the same key to fill it."}}}, nil
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use type_secret with the same key to fill it."}}}, nil
 	}
 	if name == "capture_window" {
 		var identifier string
@@ -427,9 +447,22 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}}, nil
 	}
 	if name == "desktop_screenshot" {
+		output := "image"
+		if value, ok := values["output"]; ok {
+			if json.Unmarshal(value, &output) != nil || (output != "image" && output != "file") {
+				return nil, fmt.Errorf("output must be image or file")
+			}
+		}
 		var png bytes.Buffer
 		if err := CaptureDesktop(ctx, assignment, &png); err != nil {
 			return nil, fmt.Errorf("desktop capture unavailable; check that this box's desktop is running")
+		}
+		if output == "file" {
+			path, err := saveDesktopScreenshot(png.Bytes())
+			if err != nil {
+				return nil, fmt.Errorf("save desktop capture: %w", err)
+			}
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Screenshot saved to " + path + ". Pass this absolute path to chat_message files when the user should receive it."}}}, nil
 		}
 		return map[string]any{"content": []map[string]any{{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(png.Bytes())}}}, nil
 	}
@@ -445,4 +478,19 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		return nil, err
 	}
 	return map[string]any{"content": []map[string]any{{"type": "text", "text": "Action completed. Capture the screen to inspect its result."}}}, nil
+}
+
+func saveDesktopScreenshot(data []byte) (string, error) {
+	dir := filepath.Join(WorkspaceRoot(), "tmp", "vmbox")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "desktop-screenshot.png")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
