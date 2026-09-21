@@ -142,7 +142,7 @@ func desktopMCPIndexHandler(writer http.ResponseWriter, request *http.Request) {
 			"list":    "GET /tools",
 			"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
 			"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
-			"session": "chat_message and chat_ask post to the box's agent conversation; name another with an X-Vmbox-Session header",
+			"session": "set_busy, chat_message and chat_ask act on the box's agent conversation; name another with an X-Vmbox-Session header",
 		},
 	})
 }
@@ -192,7 +192,7 @@ func desktopMCPCallHandler(assignment string) http.HandlerFunc {
 // facade serves the whole box from one process, so it has to say which
 // conversation rather than letting the writer infer it from its own tmux
 // session, which is the facade's own.
-var desktopMCPChatTools = map[string]bool{"chat_message": true, "chat_ask": true}
+var desktopMCPChatTools = map[string]bool{"set_busy": true, "chat_message": true, "chat_ask": true}
 
 // soleAgentConversation names the box's agent conversation when there is
 // exactly one. With several, the caller has to choose: guessing would post a

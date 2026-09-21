@@ -63,6 +63,28 @@ func TestChatAskPersistsMultipleChoiceQuestion(t *testing.T) {
 	}
 }
 
+func TestSetBusyReportsTheHostingChatSession(t *testing.T) {
+	original := DesktopSetBusy
+	t.Cleanup(func() { DesktopSetBusy = original })
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-chat")
+	var assignment, session string
+	var busy bool
+	DesktopSetBusy = func(_ context.Context, gotAssignment, gotSession string, gotBusy bool) error {
+		assignment, session, busy = gotAssignment, gotSession, gotBusy
+		return nil
+	}
+	result, err := callDesktopTool(context.Background(), "assignment-1", "set_busy", json.RawMessage(`{"busy":true}`))
+	if err != nil || result["isError"] == true {
+		t.Fatalf("set_busy failed: %v %+v", err, result)
+	}
+	if assignment != "assignment-1" || session != "codex-chat" || !busy {
+		t.Fatalf("activity report lost its scope: assignment=%q session=%q busy=%t", assignment, session, busy)
+	}
+	if _, err := callDesktopTool(context.Background(), "assignment-1", "set_busy", json.RawMessage(`{"busy":null}`)); err == nil {
+		t.Fatal("set_busy accepted a missing boolean")
+	}
+}
+
 func TestChatSessionFindsSanitizedMCPThroughProcessTree(t *testing.T) {
 	original := tmuxCommand
 	t.Cleanup(func() { tmuxCommand = original })

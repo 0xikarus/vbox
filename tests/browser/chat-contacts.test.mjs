@@ -16,7 +16,7 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // workspace-desktop.test.mjs). This test drives the real page against fixture
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
- let protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
+ let protectedBox=false,requests=[],creations=[],fullDesktopShots=0,explicitIdle=false;
  let agentRoles=[{id:'role-1',name:'Can contact reviewer',description:'Owner-defined contact grant',contactScope:'selected',contactBoxIds:['reviewer'],assignedBoxCount:1}];
  let roleAssignments=new Map([['builder',['role-1']],['reviewer',[]]]);
  let contacts=[
@@ -61,7 +61,10 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    {id:'frame-2',capturedAt:new Date(Date.now()-30000).toISOString(),width:1,height:1}
   ]));
   if(path.includes('/desktop/replay/')){res.setHeader('Content-Type','image/png');return res.end(thumbnail)}
-  if(path==='/v1/logical-boxes/builder/messages'&&method==='GET')return res.end(JSON.stringify(builderMessages));
+  if(path==='/v1/logical-boxes/builder/messages'&&method==='GET'){
+   if(explicitIdle)res.setHeader('X-Vmbox-Agent-Busy','false');
+   return res.end(JSON.stringify(builderMessages));
+  }
   if(path==='/v1/logical-boxes/builder/messages'&&method==='POST'){
    await new Promise(resolve=>setTimeout(resolve,600));
    const now=new Date().toISOString();
@@ -115,6 +118,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('[data-box-id="builder"]',element=>element.click());
   await p.waitForFunction(()=>document.querySelector('#chat-messages .msg.agent .text')?.textContent==='Done.'||[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Done.'),{timeout:1500});
   assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'processing must end when the agent reply appears');
+  explicitIdle=true;
+  await p.click('#refresh');
+  await new Promise(resolve=>setTimeout(resolve,150));
   await p.type('#chat-input','Quick check');
   await p.click('#send');
   assert.equal(await p.$eval('#chat-input',element=>element.value),'','the composer must clear as soon as a message is sent');
