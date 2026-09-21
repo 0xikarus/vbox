@@ -351,6 +351,38 @@ paths:
     get:
       parameters: [{$ref: '#/components/parameters/ID'}]
       responses: {'200': {description: Logical box, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBox'}}}}}
+  /v1/agent-roles:
+    get:
+      description: Owner-only account role definitions and affected-box counts.
+      responses: {'200': {description: Native roles, content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/AgentRole'}}}}}}
+    post:
+      description: Create an account-scoped native role. Names have no built-in meaning.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PutAgentRole'}}}}
+      responses: {'201': {description: Role created}}
+  /v1/agent-roles/{id}:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Native role}}
+    put:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PutAgentRole'}}}}
+      responses: {'200': {description: Role updated}}
+    delete:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'204': {description: Role, assignments, and grants deleted}}
+  /v1/agent-role-assignments:
+    put:
+      description: Validate and atomically replace role assignments for the listed boxes.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PutRoleAssignments'}}}}
+      responses: {'204': {description: Assignments saved}, '409': {description: Cross-account or invalid reference}}
+  /v1/logical-boxes/{id}/contacts:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Effective contact access with inherit, allow, or block overrides}}
+    put:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PutContactOverride'}}}}
+      responses: {'200': {description: Updated effective contact access}}
   /v1/logical-boxes/{id}/allocate:
     post:
       description: Reserve a free slot or enqueue the logical box when the fleet is full.
@@ -588,6 +620,7 @@ components:
         providerCredential: {type: string}
         region: {type: string}
         defaultAgent: {enum: [shell, claude, codex, opencode]}
+        roleIds: {type: array, items: {type: string, format: uuid}, description: Optional owner-only native role assignments.}
         loginProfiles:
           type: array
           maxItems: 1
@@ -607,6 +640,7 @@ components:
         tools: {type: array, items: {type: string}}
         provider: {type: string}
         providerCredential: {type: string}
+        roles: {type: array, items: {$ref: '#/components/schemas/AgentRoleSummary'}}
         state: {enum: [detached, reserved, attaching, running, draining, hibernating, hibernated, deleting, failed]}
         volumeId: {type: string}
         volumeName: {type: string}
@@ -616,6 +650,49 @@ components:
         failureReason: {type: string}
         createdAt: {type: string, format: date-time}
         updatedAt: {type: string, format: date-time}
+    AgentRoleSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+    PutAgentRole:
+      type: object
+      required: [name, contactScope]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 64}
+        description: {type: string, maxLength: 500}
+        contactScope: {enum: [none, selected, all]}
+        contactBoxIds: {type: array, items: {type: string, format: uuid}}
+    AgentRole:
+      allOf:
+        - {$ref: '#/components/schemas/PutAgentRole'}
+        - type: object
+          required: [id, assignedBoxCount]
+          properties:
+            id: {type: string, format: uuid}
+            assignedBoxCount: {type: integer, minimum: 0}
+            createdAt: {type: string, format: date-time}
+            updatedAt: {type: string, format: date-time}
+    PutRoleAssignments:
+      type: object
+      required: [assignments]
+      properties:
+        assignments:
+          type: array
+          items:
+            type: object
+            required: [boxId, roleIds]
+            properties:
+              boxId: {type: string, format: uuid}
+              roleIds: {type: array, items: {type: string, format: uuid}}
+    PutContactOverride:
+      type: object
+      required: [contact, state]
+      properties:
+        contact: {type: string, description: Target box name or id.}
+        state: {enum: [inherit, allow, block]}
+        twoWay: {type: boolean, default: false}
     CreateBoxTask:
       type: object
       required: [agent, prompt]

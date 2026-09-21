@@ -43,7 +43,7 @@ test('an in-flight volume delete cannot be retargeted at another box',async()=>{
  });
  await new Promise(resolve=>server.listen(0,resolve));
  const base='http://127.0.0.1:'+server.address().port;
- const browser=await puppeteer.launch({executablePath:'/snap/bin/chromium',headless:'new',args:['--no-sandbox']});
+ const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:'new',args:['--no-sandbox']});
  try{
   const p=await browser.newPage();
   await p.setViewport({width:420,height:900});

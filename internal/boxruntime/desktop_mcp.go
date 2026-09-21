@@ -240,11 +240,15 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if state == "" {
 				state = "unknown"
 			}
-			role := contact.Role
-			if role == "" {
-				role = "worker"
+			roleNames := make([]string, 0, len(contact.Roles))
+			for _, role := range contact.Roles {
+				roleNames = append(roleNames, role.Name)
 			}
-			lines = append(lines, fmt.Sprintf("- %s | id %s | role %s | agent %s | %s | message %t | receive %t", contact.Name, contact.ID, role, contact.Agent, state, contact.CanMessage, contact.CanReceive))
+			roles := strings.Join(roleNames, ", ")
+			if roles == "" {
+				roles = "none"
+			}
+			lines = append(lines, fmt.Sprintf("- %s | id %s | roles %s | agent %s | %s | message %t", contact.Name, contact.ID, roles, contact.Agent, state, contact.CanMessage))
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
 	}

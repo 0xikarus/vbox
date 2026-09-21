@@ -1227,21 +1227,20 @@
    const [contacts,protection]=await Promise.all([api(boxPath(box.id)+'/contacts'),api(boxPath(box.id)+'/protection')]);
    if(!inspectOpen||selected!==box.id)return;
    inspectProtected=!!protection.protected;
-   const role=box.role==='manager'?'manager':'worker';
-   $('#inspect-contact-role').textContent=role;
-   $('#inspect-toggle-role').textContent=role==='manager'?'Make worker':'Make manager';
-   $('#inspect-protection-label').textContent=inspectProtected?'Protected — managers cannot see or message this box':'Not protected';
+   $('#inspect-contact-role').textContent=(box.roles||[]).map(role=>role.name).join(', ')||'None';
+   $('#inspect-protection-label').textContent=inspectProtected?'Protected — agents cannot see or message this box':'Not protected';
    $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
    list.replaceChildren();
-   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No explicit contacts.';list.append(empty)}
+   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No other eligible boxes.';list.append(empty)}
    for(const contact of contacts){
     const item=document.createElement('li');
-    item.textContent=contact.contactName+' · '+(contact.contactRole||'worker')+' · '+(contact.contactState||'unknown');
-    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';
-    remove.onclick=async()=>{remove.disabled=true;try{await api(boxPath(box.id)+'/contacts/'+encodeURIComponent(contact.contactName),'DELETE');await loadInspectContacts(box)}catch(e){status.textContent=e.message;remove.disabled=false}};
-    item.append(document.createTextNode(' '),remove);list.append(item);
+    item.append(document.createTextNode(contact.contactName+' · '+(contact.contactRoles||[]).map(role=>role.name).join(', ')+' · '+(contact.contactState||'unknown')+' · '));
+    const select=document.createElement('select');for(const state of ['inherit','allow','block']){const option=document.createElement('option');option.value=state;option.textContent=state;select.append(option)}select.value=contact.override||'inherit';
+    select.onchange=async()=>{select.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:select.value});await loadInspectContacts(box)}catch(e){status.textContent=e.message;select.disabled=false}};
+    const both=document.createElement('button');both.type='button';both.className='linkbtn';both.textContent='Both ways';both.onclick=async()=>{both.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:select.value,twoWay:true});await loadInspectContacts(box)}catch(e){status.textContent=e.message;both.disabled=false}};
+    item.append(select,document.createTextNode(' · '+contact.reason+' '),both);list.append(item);
    }
-   status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the explicit contacts listed above.';
+   status.textContent='Inherit uses assigned roles; Allow adds a manual grant; Block overrides every role grant.';
   }catch(e){status.textContent=e.message}
  }
  function maybeLoadInspectContacts(box){
@@ -1250,8 +1249,6 @@
   if(inspectContactsFor===box.id)return;
   inspectContactsFor=box.id;void loadInspectContacts(box);
  }
- $('#inspect-contact-form').onsubmit=async event=>{event.preventDefault();const box=boxes.get(selected);if(!box)return;const button=event.target.querySelector('button');button.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:event.target.elements.contact.value.trim()});event.target.reset();await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}finally{button.disabled=false}};
- $('#inspect-toggle-role').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const next=box.role==='manager'?'worker':'manager';try{await api(boxPath(box.id),'PATCH',{}, {defaultAgent:box.defaultAgent||'shell',role:next});box.role=next;await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
 
  /* ---------- toasts ---------- */

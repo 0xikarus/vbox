@@ -625,12 +625,10 @@ CREATE TABLE IF NOT EXISTS box_instruction_snapshots (
 );
 -- Existing boxes keep empty guidance; only new creations populate this field.
 ALTER TABLE box_instruction_snapshots ADD COLUMN IF NOT EXISTS tool_guidance text NOT NULL DEFAULT '';
--- A box's role is chosen at creation. A manager holds the fleet-wide contact
--- permission; a worker starts with no contacts and only explicit edges.
-ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'worker' CHECK (role IN ('worker','manager'));
-
--- Directed, owner-managed contact edges. A box may address another box only
--- while an enabled row exists; the controller re-validates every send.
+-- Directed, owner-managed contact overrides. A missing row means inherit,
+-- can_message=true means allow, and can_message=false means block. The legacy
+-- can_receive value was never part of delivery authorization and remains only
+-- so existing rows can be retained without inventing reciprocal permissions.
 CREATE TABLE IF NOT EXISTS box_contacts (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
@@ -646,7 +644,52 @@ CREATE TABLE IF NOT EXISTS box_contacts (
 CREATE INDEX IF NOT EXISTS box_contacts_owner_idx ON box_contacts(account_id, box_id);
 CREATE INDEX IF NOT EXISTS box_contacts_target_idx ON box_contacts(account_id, contact_box_id);
 
--- Owner-designated protected boxes are invisible and unreachable to a manager.
+-- Native agent roles are account scoped and deliberately have no built-in
+-- names. Permission keys are validated by the controller's catalogue. Phase 1
+-- defines only the contacts permission; later phases extend this table rather
+-- than introducing another authorization path.
+CREATE TABLE IF NOT EXISTS agent_roles (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  description text NOT NULL DEFAULT '',
+  created_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,name)
+);
+CREATE TABLE IF NOT EXISTS agent_role_permissions (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  role_id uuid NOT NULL REFERENCES agent_roles(id) ON DELETE CASCADE,
+  permission text NOT NULL,
+  scope text NOT NULL,
+  config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(role_id,permission)
+);
+CREATE INDEX IF NOT EXISTS agent_role_permissions_account_idx ON agent_role_permissions(account_id,role_id);
+CREATE TABLE IF NOT EXISTS agent_role_contact_grants (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  role_id uuid NOT NULL REFERENCES agent_roles(id) ON DELETE CASCADE,
+  contact_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  PRIMARY KEY(role_id,contact_box_id)
+);
+CREATE INDEX IF NOT EXISTS agent_role_contact_grants_account_idx ON agent_role_contact_grants(account_id,role_id);
+CREATE TABLE IF NOT EXISTS box_role_assignments (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  role_id uuid NOT NULL REFERENCES agent_roles(id) ON DELETE CASCADE,
+  assigned_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(box_id,role_id)
+);
+CREATE INDEX IF NOT EXISTS box_role_assignments_account_idx ON box_role_assignments(account_id,box_id);
+
+-- No manager roles are migrated or synthesized. Existing explicit contact rows
+-- already represent the send permissions enforced before this migration.
+ALTER TABLE logical_boxes DROP COLUMN IF EXISTS role;
+
+-- Owner-designated protected boxes are invisible and unreachable to agents.
 CREATE TABLE IF NOT EXISTS box_protection (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,

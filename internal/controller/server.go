@@ -163,6 +163,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/fleet/location", s.owner(s.setFleetLocation))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/resources", s.owner(s.boxResources))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/resources", s.owner(s.setBoxResources))
+	mux.HandleFunc("GET /v1/agent-roles", s.owner(s.agentRolesHandler))
+	mux.HandleFunc("POST /v1/agent-roles", s.owner(s.agentRolesHandler))
+	mux.HandleFunc("GET /v1/agent-roles/{id}", s.owner(s.agentRoleHandler))
+	mux.HandleFunc("PUT /v1/agent-roles/{id}", s.owner(s.agentRoleHandler))
+	mux.HandleFunc("DELETE /v1/agent-roles/{id}", s.owner(s.agentRoleHandler))
+	mux.HandleFunc("PUT /v1/agent-role-assignments", s.owner(s.roleAssignmentsHandler))
 	mux.HandleFunc("GET /v1/inventory", s.auth(s.boxInventoryHandler))
 	mux.HandleFunc("GET /v1/capabilities", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
 		writeJSON(w, 200, map[string]any{"nativeSessions": true, "nativeAttach": p.Role == "owner", "snapshotUpdates": true, "providerEdits": p.Role == "owner", "oneShotTasks": true, "interactiveLaunch": p.Role == "owner"})

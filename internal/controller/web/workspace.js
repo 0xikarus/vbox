@@ -479,7 +479,7 @@ if(importedCredentials){
 
 const contactsPanel=document.querySelector('#box-contacts');
 if(contactsPanel){
- const status=$('#contact-status'),list=$('#contact-list'),roleLabel=$('#contact-role'),toggleRole=$('#contact-toggle-role'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection'),form=$('#contact-form');
+ const status=$('#contact-status'),list=$('#contact-list'),roleLabel=$('#contact-role'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection');
  let protectedBox=false;
  async function loadContacts(){
   if(workspaceRole!=='owner'){contactsPanel.hidden=true;return}
@@ -487,26 +487,23 @@ if(contactsPanel){
   try{
    const [contacts,protection]=await Promise.all([api(bp+'/contacts'),api(bp+'/protection')]);
    protectedBox=!!protection.protected;
-   const role=boxSummary?.role==='manager'?'manager':'worker';
-   roleLabel.textContent=role;
-   toggleRole.textContent=role==='manager'?'Make worker':'Make manager';
-   protectionLabel.textContent=protectedBox?'Protected — managers cannot see or message this box':'Not protected';
+   roleLabel.textContent=(boxSummary?.roles||[]).map(role=>role.name).join(', ')||'None';
+   protectionLabel.textContent=protectedBox?'Protected — agents cannot see or message this box':'Not protected';
    toggleProtection.textContent=protectedBox?'Remove protection':'Protect box';
    list.replaceChildren();
-   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No explicit contacts.';list.append(empty)}
+   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No other eligible boxes.';list.append(empty)}
    for(const contact of contacts){
     const row=document.createElement('li');
-    row.textContent=contact.contactName+' · '+(contact.contactRole||'worker')+' · '+(contact.contactState||'unknown')+' · message '+(contact.canMessage?'yes':'no');
-    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';
-    remove.onclick=async()=>{remove.disabled=true;try{await api(bp+'/contacts/'+encodeURIComponent(contact.contactName),'DELETE');await loadContacts()}catch(e){status.textContent=e.message;remove.disabled=false}};
-    row.append(document.createTextNode(' '),remove);list.append(row);
+    row.append(document.createTextNode(contact.contactName+' · '+(contact.contactRoles||[]).map(role=>role.name).join(', ')+' · '+(contact.contactState||'unknown')+' · '));
+    const select=document.createElement('select');for(const state of ['inherit','allow','block']){const option=document.createElement('option');option.value=state;option.textContent=state;select.append(option)}select.value=contact.override||'inherit';
+    select.onchange=async()=>{select.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:select.value});await loadContacts()}catch(e){status.textContent=e.message;select.disabled=false}};
+    const both=document.createElement('button');both.type='button';both.className='linkbtn';both.textContent='Apply both ways';both.onclick=async()=>{both.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:select.value,twoWay:true});await loadContacts()}catch(e){status.textContent=e.message;both.disabled=false}};
+    row.append(select,document.createTextNode(' · '+contact.reason+' '),both);list.append(row);
    }
-   status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the explicit contacts listed above.';
+   status.textContent='Inherit uses assigned roles; Allow adds a manual grant; Block overrides every role grant.';
   }catch(e){status.textContent=e.message}
  }
  contactsPanel.addEventListener('toggle',()=>{if(contactsPanel.open)void loadContacts()});
- form.onsubmit=async event=>{event.preventDefault();const button=form.querySelector('button');button.disabled=true;try{await api(bp+'/contacts','PUT',{contact:form.elements.contact.value.trim()});form.reset();status.textContent='Contact saved.';await loadContacts()}catch(e){status.textContent=e.message}finally{button.disabled=false}};
- toggleRole.onclick=async()=>{const next=boxSummary?.role==='manager'?'worker':'manager';toggleRole.disabled=true;try{await api(bp,'PATCH',{defaultAgent:boxSummary?.defaultAgent||'shell',role:next});if(boxSummary)boxSummary.role=next;status.textContent='Role saved.';await loadContacts()}catch(e){status.textContent=e.message}finally{toggleRole.disabled=false}};
  toggleProtection.onclick=async()=>{toggleProtection.disabled=true;try{await api(bp+'/protection','PUT',{protected:!protectedBox});status.textContent='Protection saved.';await loadContacts()}catch(e){status.textContent=e.message}finally{toggleProtection.disabled=false}};
  document.querySelector('#logout').addEventListener('click',()=>{contactsPanel.open=false;list.replaceChildren();status.textContent=''});
 }

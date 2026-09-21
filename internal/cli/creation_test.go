@@ -38,6 +38,8 @@ func TestCreationDialogDefersUploadsAndRetainsThemOnRetry(t *testing.T) {
 					json.NewEncoder(w).Encode([]v1.LocationPreset{{ID: "near"}})
 				case "/v1/login-profiles":
 					json.NewEncoder(w).Encode([]v1.LoginProfile{})
+				case "/v1/agent-roles":
+					json.NewEncoder(w).Encode([]v1.AgentRole{})
 				case "/v1/login-profiles/claude/personal":
 					uploads++
 					json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "personal"})
@@ -69,7 +71,7 @@ func TestCreationDialogDefersUploadsAndRetainsThemOnRetry(t *testing.T) {
 			if cancel {
 				keys += "\x03"
 			} else {
-				keys += strings.Repeat("\t", 11) + "\r\r"
+				keys += strings.Repeat("\t", 12) + "\r\r"
 			}
 			a.In = strings.NewReader(keys)
 			err := a.createWorkspace(context.Background(), config.Context{Controller: server.URL}, "test", v1.CreateLogicalBoxRequest{Name: "test", DiskGiB: 10, DefaultAgent: "shell", AllocationRequestKey: "unique"}, creationHibernated, "", true, false, false)

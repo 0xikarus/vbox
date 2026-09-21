@@ -348,12 +348,12 @@ func TestUpdateLogicalBoxPersistsDefaultAgentWithAudit(t *testing.T) {
 		WithArgs("account-a", "box-1", "user-a", "user").
 		WillReturnRows(sqlmock.NewRows([]string{"profiles"}).AddRow([]byte(`[]`)))
 	mock.ExpectExec("UPDATE logical_boxes SET default_agent").
-		WithArgs("account-a", "box-1", "user-a", "user", "codex", "").
+		WithArgs("account-a", "box-1", "user-a", "user", "codex").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRowWithAgent(v1.LogicalBoxRunning, "codex"))
 	mock.ExpectExec("logical_box.settings.update").
-		WithArgs("account-a", "user-a", "box-1", "codex", "worker").
+		WithArgs("account-a", "user-a", "box-1", "codex").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectCommit()
 	box, err := store.UpdateLogicalBox(context.Background(), p, "box-1", v1.UpdateLogicalBoxRequest{DefaultAgent: " CODEX "})

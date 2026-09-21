@@ -84,18 +84,40 @@ table.markets tr.row:hover{background:#fafafa}
 .table-text{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .table-text.muted,.state-note{color:#6b6864}
 .state-note{font-size:12px;margin-top:1px}
-#box-list table.markets{min-width:52rem}
-#box-list th:nth-child(1){width:17%}
-#box-list th:nth-child(2){width:14%}
-#box-list th:nth-child(3){width:21%}
-#box-list th:nth-child(4){width:11%}
-#box-list th:nth-child(5){width:18%}
-#box-list th:nth-child(6){width:19%}
+#box-list table.markets{min-width:58rem}
+#box-list th:nth-child(1){width:15%}
+#box-list th:nth-child(2){width:12%}
+#box-list th:nth-child(3){width:18%}
+#box-list th:nth-child(4){width:10%}
+#box-list th:nth-child(5){width:14%}
+#box-list th:nth-child(6){width:15%}
+#box-list th:nth-child(7){width:16%}
 #box-list td select{width:100%}
 #box-list td .linkbtn{display:inline-block;margin:0 8px 2px 0}
 #box-list td:last-child{min-width:9rem}
 #box-list .restart-action{vertical-align:middle;padding:2px 4px;text-decoration:none}
 #box-list .restart-action svg{display:block}
+
+/* native roles */
+.role-toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:10px 0}
+.role-checklist{display:flex;flex-wrap:wrap;gap:8px 18px;margin:8px 0}
+.role-checklist label{display:inline-flex;align-items:center;gap:6px;color:#111;font-size:13px}
+.role-checklist input{width:auto;margin:0}
+.role-matrix-wrap{max-width:100%;overflow:auto;border:1px solid #e2e2e2}
+.role-matrix{border-collapse:separate;border-spacing:0;min-width:100%}
+.role-matrix th,.role-matrix td{padding:8px 14px;border-right:1px solid #eee;border-bottom:1px solid #eee;text-align:center;white-space:nowrap;background:#fff}
+.role-matrix .sticky-box{position:sticky;left:0;z-index:2;text-align:left;box-shadow:1px 0 #ddd}
+.role-matrix tr:first-child .sticky-box{z-index:3}
+.role-heading{font-weight:700;text-decoration:underline;text-underline-offset:2px}
+.role-mobile{display:none}
+.role-scope{display:grid;gap:8px;border:1px solid #e2e2e2;margin:12px 0;padding:10px}
+.role-scope label{display:flex!important;align-items:center;gap:7px;color:#111}
+.role-scope input{width:auto!important;margin:0}
+.role-editor-modal{justify-content:flex-end;align-items:stretch}
+.role-editor-modal .card{width:min(31rem,94vw);max-height:100vh;border-width:0 0 0 1px;padding:18px}
+.role-editor form{display:block}
+.role-editor .field{display:block}
+.role-editor .field input,.role-editor .field textarea{box-sizing:border-box;width:100%}
 
 /* dialogs */
 .modal{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center}
@@ -119,4 +141,5 @@ table.markets tr.row:hover{background:#fafafa}
  label{display:block}input,textarea{width:100%}
  table.markets{font-size:.85rem}
  .group{padding:4px 8px 10px}
+ .role-matrix-wrap{display:none}.role-mobile{display:grid;gap:10px}.role-mobile select{width:100%}.role-mobile .role-checklist{display:grid}
 }

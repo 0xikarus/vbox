@@ -138,16 +138,20 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the Desktop/TMUX control popup. Its timeline replays bounded JPEG frames
   captured inside running boxes every 30 seconds and retained for 30 minutes
   in `desktop_replay_frames`; the owner-only endpoints never wake a stopped box.
-- Agent contacts are controller-owned. `box_contacts` holds directed owner-managed
-  edges, `box_protection` hides a box from any manager, and `logical_boxes.role`
-  (`worker`/`manager`) selects whether the implicit fleet-wide permission applies.
+- Agent contacts are controller-owned. `agent_roles`, `agent_role_permissions`,
+  `agent_role_contact_grants`, and `box_role_assignments` hold account-scoped
+  owner-defined roles and their selected/all contact grants. `box_contacts` holds
+  directional inherit/allow/block overrides, and `box_protection` excludes a
+  target from every agent grant. There is no built-in worker or manager category.
   `GET /v1/agent-desktop/contacts` feeds the `get_contacts` tool; `chat_message`
   and `chat_ask` accept an optional `contact`, and the controller routes it into
   the target's existing native conversation (never a second session) with the
   sender recorded as `box_messages.sender_box_id` and direction `box`. The owner
-  edits the graph at `/v1/logical-boxes/{id}/contacts` and `/protection`; the
+  edits roles through `/v1/agent-roles` and `/v1/agent-role-assignments`, and
+  connections at `/v1/logical-boxes/{id}/contacts` and `/protection`; the
   workspace page and the chat Details drawer are only editors. Entry points:
-  `internal/controller/contacts.go`, `internal/boxruntime/contacts.go`.
+  `internal/controller/agent_roles.go`, `internal/controller/contacts.go`,
+  `internal/boxruntime/contacts.go`.
 - The chat PWA is mobile-first: a single-column app shell with push navigation
   on phones and a two-pane view from 900px. It ships a dark, Discord-like
   palette; a hex seed still shapes the seeded emoji mascot, the corner radii and

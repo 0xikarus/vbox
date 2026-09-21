@@ -8,6 +8,7 @@ import puppeteer from 'puppeteer-core';
 const root=resolve('internal/controller/web'),requests=[];
 let server,browser,base;
 const revision='2026-09-05T12:00:00Z';
+let fixtureRoles=[{id:'role-all',name:'All contacts',description:'Can contact every eligible box',contactScope:'all',contactBoxIds:[],assignedBoxCount:0,createdAt:revision,updatedAt:revision}],fixtureBoxRoleIds=[];
 before(async()=>{
  server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://test').pathname;
@@ -24,8 +25,9 @@ before(async()=>{
   const values={
    '/v1/tool-presets':[{id:'desktop',name:'Enable desktop',version:'worker packages',description:'Desktop and browser'},{id:'foundry',name:'Foundry',version:'v1.8.1',description:'forge, cast, anvil, chisel'},{id:'blender',name:'Blender',version:'5.1.2',description:'3D editor + desktop + MCP'}],
    '/v1/capabilities':{providerEdits:true,nativeAttach:true},
-   '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude'}],
-   '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running'},
+   '/v1/logical-boxes':[{id:'box-1',name:'helper ü',state:'running',defaultAgent:'claude',roles:fixtureRoles.filter(role=>fixtureBoxRoleIds.includes(role.id)).map(({id,name})=>({id,name}))}],
+   '/v1/logical-boxes/box-1':{id:'box-1',name:'helper ü',state:'running',roles:fixtureRoles.filter(role=>fixtureBoxRoleIds.includes(role.id)).map(({id,name})=>({id,name}))},
+   '/v1/agent-roles':fixtureRoles,
    '/v1/provider-credentials':[{provider:'railway',name:'primary',config:{projectId:'p',environmentId:'e',image:'old'},updatedAt:revision}],
    '/v1/provider-schemas':{providers:{railway:{image:'string'}}},
    '/v1/controller-defaults':{provider:'railway',providerCredential:'primary'},
@@ -47,6 +49,10 @@ before(async()=>{
   if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
   if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/instructions')return res.end(JSON.stringify({...values['/v1/logical-boxes/box-1/instructions'],note:'fixture applied'}));
   if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/login-profiles')return res.end(JSON.stringify({profiles:body.profiles,pending:[],verified:true,note:'fixture applied'}));
+  if(req.method==='POST' && path==='/v1/agent-roles'){const role={id:'role-'+(fixtureRoles.length+1),...body,assignedBoxCount:0,createdAt:revision,updatedAt:revision};fixtureRoles.push(role);res.statusCode=201;return res.end(JSON.stringify(role))}
+  if(req.method==='PUT' && path.startsWith('/v1/agent-roles/')){const id=decodeURIComponent(path.split('/').pop()),index=fixtureRoles.findIndex(role=>role.id===id);fixtureRoles[index]={...fixtureRoles[index],...body};return res.end(JSON.stringify(fixtureRoles[index]))}
+  if(req.method==='DELETE' && path.startsWith('/v1/agent-roles/')){const id=decodeURIComponent(path.split('/').pop());fixtureRoles=fixtureRoles.filter(role=>role.id!==id);fixtureBoxRoleIds=fixtureBoxRoleIds.filter(roleID=>roleID!==id);res.statusCode=204;return res.end()}
+  if(req.method==='PUT' && path==='/v1/agent-role-assignments'){fixtureBoxRoleIds=body.assignments.find(assignment=>assignment.boxId==='box-1')?.roleIds||[];for(const role of fixtureRoles)role.assignedBoxCount=fixtureBoxRoleIds.includes(role.id)?1:0;res.statusCode=204;return res.end()}
   if(req.method==='PUT' && (path==='/v1/instruction-presets-default'||path==='/v1/instruction-presets/general')){res.statusCode=204;return res.end()}
   if(req.method==='POST' && path==='/v1/logical-boxes')return res.end(JSON.stringify({id:'created'}));
   if(req.method==='DELETE' && path==='/v1/login-profiles/claude/personal'){res.statusCode=204;return res.end()}
@@ -56,6 +62,49 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
+test('native roles can be created, assigned in the matrix, and edited on mobile',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;
+  window.fetch=async(path,options={})=>{
+   const response=await original(path,options),url=new URL(path,location.origin),method=options.method||'GET';
+   if(method!=='GET'||url.pathname!=='/v1/logical-boxes')return response;
+   const boxes=await response.json();
+   return new Response(JSON.stringify([...boxes,
+    {id:'box-2',name:'planner',state:'running',defaultAgent:'codex',roles:[{id:'role-all',name:'All contacts'}]},
+    {id:'box-3',name:'build runner',state:'running',defaultAgent:'claude',roles:[]},
+    {id:'box-4',name:'qa reviewer',state:'hibernated',defaultAgent:'opencode',roles:[{id:'role-all',name:'All contacts'}]}
+   ]),{status:response.status,headers:response.headers});
+  };
+ });
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#role-matrix .role-heading');
+ await page.click('#create-role');
+ await page.type('#role-editor-form input[name=name]','Selected contacts');
+ await page.type('#role-editor-form textarea[name=description]','Can contact chosen boxes');
+ await page.click('#role-editor-form input[value=selected]');
+ await page.click('#role-contact-boxes input[value="box-1"]');
+ await page.click('#role-editor-form button.primary');
+ await page.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Selected contacts'));
+ const selectedRole=fixtureRoles.find(role=>role.name==='Selected contacts');
+ assert.deepEqual(selectedRole.contactBoxIds,['box-1']);
+ const assignmentSelector=`#role-matrix input[aria-label="Selected contacts for helper ü"]`;
+ await page.click(assignmentSelector);
+ await page.click('#save-role-assignments');
+ await page.waitForFunction(()=>document.querySelector('#role-status').textContent==='');
+ assert.ok(fixtureBoxRoleIds.includes(selectedRole.id));
+ await page.setViewport({width:1280,height:900});
+ await page.$eval('a[href="#roles"]',link=>link.click());
+ await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-desktop.png')});
+ await page.$$eval('#role-matrix .role-heading',buttons=>buttons.find(button=>button.textContent==='Selected contacts').click());
+ await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/role-editor.png')});
+ await page.click('#role-editor-modal [data-close="role-editor-modal"]');
+ await page.setViewport({width:390,height:844});
+ assert.equal(await page.$eval('.role-mobile',element=>getComputedStyle(element).display),'grid');
+ assert.equal(await page.$eval(assignmentSelector,element=>getComputedStyle(element.closest('.role-matrix-wrap')).display),'none');
+ await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-mobile.png')});
+ await page.close();
+});
 test('desktop is implicit in creation and Blender remains optional',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
@@ -155,7 +204,7 @@ test('creation offers current Claude and Codex CLI models beyond uploaded profil
  assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-terra');
  await page.type('#create input[name=name]','disposable-model-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button[type=submit]');await created;
+ await page.$eval('#create',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'codex',name:'personal-codex',model:'gpt-5.6-terra',reasoningEffort:'high'}]);
  await page.close();
 });
@@ -233,6 +282,7 @@ test('automatic placement refreshes capacity and prefers a less occupied pool',a
  await page.waitForFunction(()=>window.autoCreates.length===1);
  assert.equal(await page.evaluate(()=>window.autoCreates[0].providerCredential),'shared-02');
  await page.evaluate(()=>{window.capacityMode='full'});
+ await page.type('#create input[name=name]','fallback-box');
  await page.click('#create button[type=submit]');await page.waitForFunction(()=>window.autoCreates.length===2);
  assert.equal(await page.evaluate(()=>window.autoCreates[1].providerCredential),'primary');
  await page.close();
@@ -254,7 +304,7 @@ test('box deletion confirms exact identity, prevents repeats and shows asynchron
  page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] button');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
  page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button');
  await page.waitForFunction(()=>document.querySelector('[data-box-id="box-1"]').textContent.includes('delete-detaching-volume'));
- assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),true);assert.equal(await page.$('[data-box-id="box-1"] a'),null);
+ assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),true);assert.equal(await page.$('[data-box-id="box-1"] td:first-child a'),null);
  assert.deepEqual(await page.evaluate(()=>window.deleteCalls),[{path:'/v1/logical-boxes/box-1/volume',body:{confirmation:'helper ü'}}]);
  await page.evaluate(()=>window.deleteState='gone');await page.waitForFunction(()=>!document.querySelector('[data-box-id="box-1"]'),{timeout:10000});
  assert.ok(await page.$('[data-box-id="sibling"]'));assert.deepEqual(errors,[]);await page.close();
@@ -266,7 +316,7 @@ test('mobile box deletion reports a non-transient rejection without replaying de
   window.fetch=async(path,options={})=>{if(path==='/v1/logical-boxes/box-1/volume'&&options.method==='DELETE'){window.deleteCalls++;return new Response(JSON.stringify({error:'Deletion forbidden by policy.'}),{status:409})}return original(path,options)};
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button');
- page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button');await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Deletion forbidden by policy'));
+ page.once('dialog',d=>d.accept());await page.$eval('[data-box-id="box-1"] button',button=>button.click());await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Deletion forbidden by policy'));
  assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),false);assert.equal(await page.evaluate(()=>window.deleteCalls),1);assert.ok(await page.$('[data-box-id="box-1"]'));await page.close();
 });
 test('table previews stay fixed size and tool choices stay compact',async()=>{
@@ -317,7 +367,7 @@ test('rows and the create form lay out in reading order without overlapping valu
  assert.equal(layout.stateStacked,true);
  assert.ok(layout.labelGaps.length&&layout.labelGaps.every(gap=>gap>=8),'tool labels need visible separation: '+layout.labelGaps);
  assert.equal(layout.overflowing,0);
- assert.deepEqual(layout.legends,['1 · box','2 · logins','3 · tools','4 · instructions']);
+ assert.deepEqual(layout.legends,['1 · box','2 · logins','3 · tools','4 · instructions','5 · roles']);
  assert.equal(layout.actionBelowGroups,true);
  await page.close();
 });
@@ -366,7 +416,7 @@ test('delete retries safely while an attaching box is still creating',async()=>{
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('[data-box-id="creating"] button[aria-label="Delete box building"]');
  page.once('dialog',dialog=>dialog.accept());
- await page.click('[data-box-id="creating"] button[aria-label="Delete box building"]');
+ await page.$eval('[data-box-id="creating"] button[aria-label="Delete box building"]',button=>button.click());
  await page.waitForFunction(()=>window.deleteAttempts===2,{timeout:10000});
  await page.waitForFunction(()=>document.querySelector('[data-box-id="creating"] button[aria-label="Delete box building"]')?.disabled);
  await page.close();
@@ -422,7 +472,7 @@ test('index styles ship in a page-scoped sheet, not inline and not in shared app
  // Only the index links controller.css: grid, chat and workspace share app.css
  // and their terminal viewers are sensitive to changes in page geometry.
  for(const other of ['grid.html','chat.html','workspace.html'])assert(!(await readFile(resolve(root,other),'utf8')).includes('controller.css'),other);
- assert(Buffer.byteLength(page)<8192);assert(!/@import|url\(/.test(page));
+ assert(Buffer.byteLength(page)<10240);assert(!/@import|url\(/.test(page));
 });
 test('new box starts automatically and its row follows startup through the temporary saved state',async()=>{
  const page=await browser.newPage();
@@ -464,14 +514,15 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  const edit=requests.findLast(r=>r.method==='PATCH'&&r.path.endsWith('/primary'));assert.equal(edit.revision,revision);assert.deepEqual(edit.body,{config:{image:'new'}});
  await page.waitForNetworkIdle();
  assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles.*opencode.*openrouter/s);
+ await page.select('#create select[name=defaultAgent]','opencode');
  await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'openrouter'}));
  await page.type('#create input[name=name]','profile-box');
  assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
- assert.deepEqual(await page.$eval('#create select[name=defaultAgent]',select=>({value:select.value,disabled:select.disabled})),{value:'opencode',disabled:true});
+ assert.deepEqual(await page.$eval('#create select[name=defaultAgent]',select=>({value:select.value,disabled:select.disabled})),{value:'opencode',disabled:false});
  await page.click('#create-tools input[value=blender]');
  assert.equal(await page.$('#create-tools input[value=desktop]'),null);
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.click('#create button[type=submit]');await created;
- assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'opencode',name:'openrouter'}]);
+ assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash'}]);
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.tools,['desktop','blender']);
  assert.equal(requests.findLast(r=>r.method==='POST').body.defaultAgent,'opencode');
  assert.equal(requests.findLast(r=>r.method==='POST').body.allocateWhenReady,true);
@@ -523,7 +574,7 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  assert.match(await page.$eval('#instruction-list',element=>element.textContent),/general/);
  assert.match(await page.$eval('#instruction-list',element=>element.textContent),/default/);
  // The creation form offers automatic, none, every preset, and a custom copy.
- await page.evaluate(()=>{document.querySelector('#box-instructions-block').open=true});
+ await page.evaluate(()=>{document.querySelector('#create-instructions-editor').open=true});
  assert.deepEqual(await page.$$eval('#create-instructions option',nodes=>nodes.map(node=>node.value)),['auto','none','general','custom']);
  await page.select('#create-instructions','general');
  await page.waitForFunction(()=>document.querySelector('#create-instructions-preview').textContent.includes('House rules'));

@@ -12,13 +12,16 @@ import (
 
 // ContactSummary is one addressable contact as reported by the controller.
 type ContactSummary struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Role       string `json:"role,omitempty"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Roles []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"roles"`
 	Agent      string `json:"agent,omitempty"`
 	State      string `json:"state,omitempty"`
 	CanMessage bool   `json:"canMessage"`
-	CanReceive bool   `json:"canReceive"`
+	Reason     string `json:"reason,omitempty"`
 }
 
 // DesktopContacts fetches the contact directory for this box. The controller

@@ -126,15 +126,16 @@ setting. OpenCode variant support depends on the selected provider model; Claude
 Haiku has no effort control, and Claude's session-only `max` is not a persistent
 box setting.
 
-Agents can also address each other when the owner grants a contact edge.
+Agents can also address each other when the owner grants contact access.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
 accept an optional `contact`; the message is delivered into that box's same
-native conversation and appears in the chat app attributed to its sender. A box
-with the `manager` role (`vmbox new NAME --role manager`) may address every
-non-protected box automatically; a worker only has explicit edges. The owner
-edits the graph per box in the workspace page or the chat Details drawer and can
-mark a box protected. Changes apply immediately and the controller authorizes
-every send, so the model cannot widen its own reach.
+native conversation and appears in the chat app attributed to its sender. Owners
+create account-scoped roles, grant selected-box or all-boxes contact access, and
+assign several roles to a box from the **Roles** page. Individual directional
+connections can inherit those grants, add a manual allow, or explicitly block a
+target. Protected targets and explicit blocks always win. Changes apply
+immediately and the controller reauthorizes every send, so a stale contact list
+cannot widen an agent's reach. A box needs no role to chat with its owner.
 
 ### Agent chat harness parity
 
@@ -720,9 +721,9 @@ background, and resumes interrupted attempts after restart. `vmbox` and
 with a delay; an unexpected attached volume stops deletion rather than deleting
 someone else's storage. Fleet size is unchanged; the cleaned slot becomes free.
 
-Coworker MCP, inter-agent adapters and their CLI/web controls have been removed.
-Ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
-Historical coworker data is retained only for safe cleanup; credentials are revoked.
+Legacy coworker adapters and the worker/manager box category have been removed.
+Native owner-defined roles and contact overrides now govern inter-agent access;
+ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
 
 ## Optional tools
 

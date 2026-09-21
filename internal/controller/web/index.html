@@ -3,7 +3,7 @@
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>vmbox controller</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/controller.css">
 <header class="topbar"><span class="brand">vmbox</span><nav>
-<a href="#boxes" class="on">boxes</a> · <a href="/grid" data-owner hidden>grid</a> · <a href="/chat">chats</a> · <a href="#profiles" data-owner hidden>profiles</a> · <a href="#instructions">instructions</a> · <a href="#providers">providers</a> · <a href="#fleet">capacity</a> · <a href="#notifications" data-owner hidden>notifications</a> <button id="refresh" class="linkbtn">refresh</button><button id="logout" class="linkbtn">log out</button>
+<a href="#boxes" class="on">boxes</a> · <a href="#roles" data-owner hidden>roles</a> · <a href="/grid" data-owner hidden>grid</a> · <a href="/chat">chats</a> · <a href="#profiles" data-owner hidden>profiles</a> · <a href="#instructions">instructions</a> · <a href="#providers">providers</a> · <a href="#fleet">capacity</a> · <a href="#notifications" data-owner hidden>notifications</a> <button id="refresh" class="linkbtn">refresh</button><button id="logout" class="linkbtn">log out</button>
 </nav></header>
 <h1>vmbox controller</h1><p class="sub">manage boxes and credentials here · open a shell with <code>vmbox BOX</code></p>
 <form id="login"><label class="field">controller token <input name="token" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary">log in</button></div></form>
@@ -30,8 +30,14 @@
 <label class="field">preset <select id="create-instructions" name="instructions"><option value="auto">Account default / none</option></select></label>
 <details id="create-instructions-editor" hidden><summary>customize Markdown</summary><label class="field">markdown <textarea id="create-instructions-custom" name="instructionsMarkdown" rows="5" maxlength="65536" readonly></textarea></label><div id="create-instructions-preview" class="md-preview" hidden></div></details>
 </fieldset>
+<fieldset class="group" data-owner><legend>5 · roles</legend>
+<p class="hint">Optional owner-defined roles. A box may have several roles or none.</p><div id="create-role-choices" class="role-checklist"></div>
+</fieldset>
 <div class="form-actions"><button type="submit" class="primary">create and start box</button></div>
 </form></section>
+<section id="roles" data-owner><h2>agent roles</h2><p class="hint">Assign several roles to each box. Grants combine; explicit connection blocks and protected targets still win.</p>
+<div class="role-toolbar"><label class="field">search boxes <input id="role-box-search" type="search" placeholder="Filter by box name"></label><button type="button" class="primary" id="create-role">create role</button><button type="button" class="primary" id="save-role-assignments" disabled>save changes</button><button type="button" class="linkbtn" id="discard-role-assignments" disabled>discard</button></div>
+<div id="role-matrix"></div><p id="role-status" role="status"></p></section>
 <section id="profiles" data-owner><h2>saved login profiles</h2><p class="hint">Account-wide credentials, managed by owners. Select one agent profile above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>
 <p class="hint">Upload or refresh profiles through the CLI: <code>vmbox profiles save APPLICATION NAME</code>. Deleting a saved profile leaves credentials already copied into boxes untouched. Pending creations using it may fail.</p></section>
 <section id="instructions"><h2>instruction presets</h2><div id="instruction-list"></div>
@@ -62,6 +68,15 @@
 <div id="box-credentials-form"></div>
 <div class="form-actions"><button type="button" class="primary" id="box-credentials-apply">apply to box</button><button type="button" class="linkbtn" data-close="box-credentials-modal">cancel</button></div>
 <p id="box-credentials-status" role="status"></p>
+</section></div>
+<div id="role-editor-modal" class="modal role-editor-modal" data-owner hidden>
+<div class="backdrop" data-close="role-editor-modal"></div>
+<section class="card role-editor" role="dialog" aria-modal="true" aria-labelledby="role-editor-title">
+<header><strong id="role-editor-title">Create role</strong><button type="button" class="linkbtn" data-close="role-editor-modal" aria-label="Close">×</button></header>
+<form id="role-editor-form"><input name="id" type="hidden"><label class="field">name <input name="name" maxlength="64" required></label><label class="field">description <textarea name="description" maxlength="500" rows="3"></textarea></label>
+<fieldset class="role-scope"><legend>Can contact</legend><label><input type="radio" name="contactScope" value="none" checked> No additional boxes</label><label><input type="radio" name="contactScope" value="selected"> Selected boxes</label><label><input type="radio" name="contactScope" value="all"> All boxes, including future boxes</label></fieldset>
+<div id="role-contact-boxes" class="role-checklist" hidden></div><p id="role-assigned-count" class="hint"></p>
+<div class="form-actions"><button class="primary">save role</button><button type="button" class="linkbtn danger" id="delete-role" hidden>delete role</button></div><p id="role-editor-status" role="status"></p></form>
 </section></div>
 <p class="hint tiny">vmbox controller · box access is via the CLI or the box workspace</p>
 </main><script src="/markdown.js" defer></script><script src="/model-picker.js" defer></script><script src="/app.js" defer></script></html>

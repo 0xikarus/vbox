@@ -70,11 +70,10 @@
     <div id="inspect-summary"><div id="inspect-avatar"></div><dl id="inspect-rows"></dl></div>
     <section id="inspect-contacts" hidden>
      <h3>Contacts</h3>
-     <p>Which boxes this agent may message. A manager sees every non-protected box automatically; a worker only has the explicit contacts below. Changes apply immediately and are enforced by the controller.</p>
-     <p>Role <strong id="inspect-contact-role">—</strong> <button id="inspect-toggle-role" type="button">Make manager</button></p>
+     <p>Effective contact access from assigned roles and directional overrides. Changes apply immediately and are rechecked before delivery.</p>
+     <p>Assigned roles: <strong id="inspect-contact-role">None</strong> · <a href="/#roles">edit assignments</a></p>
      <p><span id="inspect-protection-label">Protection unknown</span> <button id="inspect-toggle-protection" type="button">Protect box</button></p>
      <ul id="inspect-contact-list"></ul>
-     <form id="inspect-contact-form"><label>Contact box <input name="contact" required maxlength="63" placeholder="box name or id"></label><button>Add contact</button></form>
      <p id="inspect-contact-status" role="status"></p>
     </section>
    </aside>

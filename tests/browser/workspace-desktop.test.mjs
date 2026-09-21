@@ -9,7 +9,7 @@ const script=await readFile('internal/controller/web/workspace.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
  let requests=[],messageHistory=[],messagePayloads=[],interactiveRequests=[],defaultAgent='shell';
- let boxRole='worker',protectedBox=false,contacts=[];
+ let protectedBox=false,contacts=[];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url,method=req.method;
@@ -49,9 +49,9 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   else if(path.endsWith('/secret-requests'))data=[];
   else if(path.endsWith('/sessions/interactive')){let body='';for await(const chunk of req)body+=chunk;interactiveRequests.push(JSON.parse(body));data={session:'shell-test'}}
   else if(path.endsWith('/desktop')&&method==='GET')data={enabled};
-  else if(path==='/v1/logical-boxes/test'){if(method==='PATCH'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);if(parsed.role)boxRole=parsed.role}data={id:'test',name:'Test',state,tools,defaultAgent,role:boxRole}}
+  else if(path==='/v1/logical-boxes/test'){data={id:'test',name:'Test',state,tools,defaultAgent,roles:[{id:'role-1',name:'Builder'}]}}
   else if(path==='/v1/logical-boxes/test/contacts'){
-   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);const contact=contacts.find(c=>c.contactBoxId===parsed.contact||c.contactName===parsed.contact);contact.override=parsed.state;contact.canMessage=parsed.state!=='block';contact.reason=parsed.state==='block'?'Blocked by an explicit connection override.':'Allowed by Builder.';return res.end(JSON.stringify(contact))}
    return res.end(JSON.stringify(contacts));
   }
   else if(path.startsWith('/v1/logical-boxes/test/contacts/')&&method==='DELETE'){contacts=contacts.filter(c=>c.contactName!==decodeURIComponent(path.split('/').pop()));res.statusCode=204;return res.end()}
@@ -207,26 +207,22 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    role='member';const p=await page();await terminalReady(p);assert.equal(requests.some(r=>r.includes('/desktop')),false);assert.deepEqual(await selected(p,'#terminal-tab'),{selected:'true',panel:false});await p.close();role='owner';
   });
   await t.test('contacts panel edits the runtime contact graph and captures a screenshot',async()=>{
-   boxRole='worker';protectedBox=false;contacts=[{contactName:'builder',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
+   protectedBox=false;contacts=[{contactBoxId:'builder',contactName:'builder',contactRoles:[],contactState:'running',override:'inherit',canMessage:true,reason:'Allowed by Builder.'}];
    const p=await page();await p.waitForFunction(()=>!document.querySelector('#connect').disabled);
    await p.waitForFunction(()=>document.querySelector('#box-contacts').hidden===false);
    await p.click('#box-contacts summary');
    await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===1);
-   assert.match(await p.$eval('#contact-status',e=>e.textContent),/worker may message only/);
-   await p.type('#contact-form input[name=contact]','reviewer');await p.click('#contact-form button');
-   await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===2);
+   assert.match(await p.$eval('#contact-status',e=>e.textContent),/Inherit uses assigned roles/);
+   assert.equal(await p.$eval('#contact-role',e=>e.textContent),'Builder');
+   await p.select('#contact-list select','block');
+   await p.waitForFunction(()=>{const select=document.querySelector('#contact-list select');return select.value==='block'&&!select.disabled});
    assert.equal(requests.includes('PUT /v1/logical-boxes/test/contacts'),true);
-   await p.click('#contact-toggle-role');
-   await p.waitForFunction(()=>document.querySelector('#contact-role').textContent==='manager');
-   assert.equal(requests.includes('PATCH /v1/logical-boxes/test'),true);
+   await p.click('#contact-list button');
    await p.click('#contact-toggle-protection');
    await p.waitForFunction(()=>document.querySelector('#contact-protection-label').textContent.startsWith('Protected'));
    assert.equal(requests.includes('PUT /v1/logical-boxes/test/protection'),true);
-   await p.click('#contact-list li button');
-   await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===1);
-   assert.equal(requests.some(r=>r.startsWith('DELETE /v1/logical-boxes/test/contacts/')),true);
    await (await p.$('#box-contacts')).screenshot({path:'docs/chat-ui/screenshots/desktop-box-contacts.png'});
-   await p.close();boxRole='worker';protectedBox=false;contacts=[];
+   await p.close();protectedBox=false;contacts=[];
   });
   await t.test('contacts panel stays hidden for non-owners',async()=>{
    role='member';const p=await page();await terminalReady(p);await p.waitForFunction(()=>document.querySelector('#box-contacts').hidden);assert.equal(requests.some(r=>r.includes('/contacts')||r.includes('/protection')),false);await p.close();role='owner';
