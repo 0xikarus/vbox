@@ -290,12 +290,19 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS chat_key text;
+ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS parent_message_id uuid REFERENCES box_messages(id) ON DELETE SET NULL;
+ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS thread_id uuid;
+-- Historical messages become independent roots. We deliberately do not infer
+-- parentage from timestamps or adjacency because that would fabricate links.
+UPDATE box_messages SET thread_id=id WHERE thread_id IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS box_messages_chat_key_idx
   ON box_messages(account_id,chat_key) WHERE chat_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS box_messages_task_time_idx
   ON box_messages(account_id,task_id,created_at,id);
 CREATE INDEX IF NOT EXISTS box_messages_delivery_idx
   ON box_messages(account_id,state,created_at,id);
+CREATE INDEX IF NOT EXISTS box_messages_thread_time_idx
+  ON box_messages(account_id,thread_id,created_at,id);
 CREATE TABLE IF NOT EXISTS box_message_images (
   message_id uuid NOT NULL REFERENCES box_messages(id) ON DELETE CASCADE,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -312,10 +319,13 @@ CREATE TABLE IF NOT EXISTS chat_groups (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   created_by uuid NOT NULL REFERENCES users(id),
   name text NOT NULL,
+  idempotency_key text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id,name)
 );
+ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS chat_groups_idempotency_idx ON chat_groups(account_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS chat_group_members (
   group_id uuid NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -327,6 +337,8 @@ CREATE TABLE IF NOT EXISTS chat_group_members (
 );
 CREATE INDEX IF NOT EXISTS chat_group_members_box_idx
   ON chat_group_members(account_id,logical_box_id);
+ALTER TABLE chat_group_members ADD COLUMN IF NOT EXISTS subscription_mode text NOT NULL DEFAULT 'following'
+  CHECK (subscription_mode IN ('following','mentions','every_message'));
 CREATE TABLE IF NOT EXISTS chat_group_messages (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -340,6 +352,10 @@ CREATE TABLE IF NOT EXISTS chat_group_messages (
 );
 CREATE INDEX IF NOT EXISTS chat_group_messages_time_idx
   ON chat_group_messages(account_id,group_id,created_at,id);
+ALTER TABLE chat_group_messages ADD COLUMN IF NOT EXISTS parent_message_id uuid REFERENCES chat_group_messages(id) ON DELETE SET NULL;
+ALTER TABLE chat_group_messages ADD COLUMN IF NOT EXISTS thread_id uuid;
+UPDATE chat_group_messages SET thread_id=id WHERE thread_id IS NULL;
+CREATE INDEX IF NOT EXISTS chat_group_messages_thread_idx ON chat_group_messages(account_id,group_id,thread_id,created_at,id);
 CREATE TABLE IF NOT EXISTS chat_group_deliveries (
   message_id uuid NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -658,9 +674,8 @@ FROM box_contacts
 ON CONFLICT(box_id,contact_box_id) DO NOTHING;
 
 -- Native agent roles are account scoped and deliberately have no built-in
--- names. Permission keys are validated by the controller's catalogue. Phase 1
--- defines only the contacts permission; later phases extend this table rather
--- than introducing another authorization path.
+-- names. Permission keys and typed JSON configs are validated by the
+-- controller's catalogue rather than inferred from those names.
 CREATE TABLE IF NOT EXISTS agent_roles (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -697,6 +712,82 @@ CREATE TABLE IF NOT EXISTS box_role_assignments (
   PRIMARY KEY(box_id,role_id)
 );
 CREATE INDEX IF NOT EXISTS box_role_assignments_account_idx ON box_role_assignments(account_id,box_id);
+
+-- Agent-initiated work is durable and fenced to an assignment generation.
+-- The run budget is independent of desktop inactivity and only has a live
+-- deadline while the box is allocated.
+CREATE TABLE IF NOT EXISTS agent_run_budgets (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  assignment_generation bigint NOT NULL,
+  remaining_seconds bigint NOT NULL CHECK (remaining_seconds >= 0),
+  deadline_at timestamptz,
+  extension_seconds bigint NOT NULL DEFAULT 0 CHECK (extension_seconds >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,box_id)
+);
+CREATE INDEX IF NOT EXISTS agent_run_budgets_deadline_idx ON agent_run_budgets(deadline_at) WHERE deadline_at IS NOT NULL;
+CREATE TABLE IF NOT EXISTS agent_run_budget_extensions (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  assignment_generation bigint NOT NULL,
+  idempotency_key text NOT NULL,
+  minutes integer NOT NULL CHECK (minutes > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,box_id,assignment_generation,idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS agent_followups (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  created_by uuid NOT NULL REFERENCES users(id),
+  assignment_generation bigint NOT NULL,
+  text text NOT NULL,
+  delay_seconds integer NOT NULL DEFAULT 0 CHECK (delay_seconds >= 0),
+  due_at timestamptz NOT NULL,
+  state text NOT NULL CHECK (state IN ('queued','delivering','delivered','canceled','failed')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,box_id,idempotency_key)
+);
+ALTER TABLE agent_followups ADD COLUMN IF NOT EXISTS delay_seconds integer NOT NULL DEFAULT 0 CHECK (delay_seconds >= 0);
+CREATE INDEX IF NOT EXISTS agent_followups_due_idx ON agent_followups(state,due_at);
+CREATE TABLE IF NOT EXISTS agent_box_creations (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  creator_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  created_box_id uuid REFERENCES logical_boxes(id) ON DELETE SET NULL,
+  requested_name text NOT NULL,
+  requested_agent text NOT NULL,
+  requested_disk_gib bigint NOT NULL,
+  requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+  idempotency_key text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,creator_box_id,idempotency_key)
+);
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_agent text NOT NULL DEFAULT 'codex';
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_disk_gib bigint NOT NULL DEFAULT 10;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+CREATE TABLE IF NOT EXISTS agent_email_addresses (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  creator_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  address text,
+  provider_ref text,
+  address_type text NOT NULL,
+  domain text NOT NULL,
+  local_part text NOT NULL DEFAULT '',
+  state text NOT NULL CHECK (state IN ('provisioning','ready','failed')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,creator_box_id,idempotency_key)
+);
+ALTER TABLE agent_email_addresses ADD COLUMN IF NOT EXISTS local_part text NOT NULL DEFAULT '';
 
 -- No manager roles are migrated or synthesized. Existing explicit contact rows
 -- already represent the send permissions enforced before this migration.

@@ -211,7 +211,7 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		if i == 0 && response.Result["protocolVersion"] != "2025-11-25" {
 			t.Fatal("version negotiation failed")
 		}
-		if i == 1 && len(response.Result["tools"].([]any)) != 14 {
+		if i == 1 && len(response.Result["tools"].([]any)) != 27 {
 			t.Fatal("tool inventory incomplete")
 		}
 		if i >= 2 && response.Result["isError"] != true {

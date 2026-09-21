@@ -120,6 +120,7 @@
    <div id="chat-loading" hidden aria-hidden="true"><img src="/loading-doodle.svg" alt=""><p id="chat-loading-text">Loading…</p></div>
    <div id="chat-messages" aria-live="polite"></div>
    <div id="chat-image-drafts" hidden></div>
+   <div id="reply-preview" hidden><div><strong>Replying to</strong><span id="reply-preview-text"></span></div><button id="reply-cancel" type="button" aria-label="Cancel reply">×</button></div>
    <form id="chat-composer" autocomplete="off">
     <button id="attach" type="button" title="Attach images" aria-label="Attach images">＋</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
@@ -130,6 +131,10 @@
    <p id="chat-status" role="status"></p>
   </section>
  </main>
+ <aside id="thread-panel" hidden aria-label="Thread">
+  <header><button id="thread-close" type="button" aria-label="Close thread">←</button><div><strong>Thread</strong><span id="thread-count"></span></div></header>
+  <div id="thread-messages"></div>
+ </aside>
 </div>
 
 <div id="takeover" hidden>
@@ -252,6 +257,55 @@
     <label><input type="radio" name="contactScope" value="all"> All boxes, including future boxes</label>
    </fieldset>
    <div id="role-contact-boxes" class="role-checklist" hidden></div>
+   <details class="role-capabilities" open>
+    <summary>Agent capabilities</summary>
+    <p class="hint">Nothing here is implied by the role name. Every capability and limit is explicit.</p>
+    <fieldset class="role-capability">
+     <label class="role-capability-toggle"><input type="checkbox" name="requestMoreTimeEnabled"> Request more run time</label>
+     <div class="role-capability-options" data-capability="requestMoreTimeEnabled">
+      <label>Maximum per request (minutes) <input type="number" name="maxExtensionMinutes" min="1" max="1440" value="60"></label>
+      <label>Maximum total extension (minutes) <input type="number" name="maxTotalMinutes" min="1" max="10080" value="240"></label>
+     </div>
+    </fieldset>
+    <fieldset class="role-capability">
+     <label class="role-capability-toggle"><input type="checkbox" name="queueFollowupEnabled"> Queue follow-up messages</label>
+     <div class="role-capability-options" data-capability="queueFollowupEnabled">
+      <label>Maximum delay (minutes) <input type="number" name="maxDelayMinutes" min="0" max="10080" value="1440"></label>
+      <label>Maximum pending messages <input type="number" name="maxPending" min="1" max="100" value="10"></label>
+     </div>
+    </fieldset>
+    <fieldset class="role-capability">
+     <label class="role-capability-toggle"><input type="checkbox" name="createAgentBoxEnabled"> Create agent boxes</label>
+     <div class="role-capability-options" data-capability="createAgentBoxEnabled">
+      <label>Maximum boxes <input type="number" name="maxBoxes" min="1" max="100" value="3"></label>
+      <label>Maximum disk per box (GiB) <input type="number" name="maxDiskGiB" min="1" max="4096" value="50"></label>
+      <fieldset class="role-inline-checks"><legend>Allowed exact agent types</legend>
+       <label><input type="checkbox" name="allowedAgents" value="codex"> codex</label>
+       <label><input type="checkbox" name="allowedAgents" value="claude"> claude</label>
+       <label><input type="checkbox" name="allowedAgents" value="opencode"> opencode</label>
+      </fieldset>
+      <fieldset class="role-inline-checks"><legend>Roles the created box may start with</legend><div id="role-assignable-roles"></div></fieldset>
+     </div>
+    </fieldset>
+    <fieldset class="role-capability">
+     <label class="role-capability-toggle"><input type="checkbox" name="createEmailAddressEnabled"> Create email addresses</label>
+     <div class="role-capability-options" data-capability="createEmailAddressEnabled">
+      <label>Maximum addresses <input type="number" name="maxAddresses" min="1" max="100" value="3"></label>
+      <label>Allowed domains <input name="emailDomains" placeholder="example.com, agents.example.com" autocomplete="off"></label>
+      <label>Allowed address types <input name="emailAddressTypes" value="alias" placeholder="alias, mailbox" autocomplete="off"></label>
+     </div>
+    </fieldset>
+    <fieldset class="role-capability">
+     <legend>Shared chats</legend>
+     <div class="role-shared-chat-grid">
+      <label><input type="checkbox" name="sharedChatDiscover"> Discover</label>
+      <label><input type="checkbox" name="sharedChatRead"> Read</label>
+      <label><input type="checkbox" name="sharedChatSubscribe"> Subscribe</label>
+      <label><input type="checkbox" name="sharedChatCreate"> Create</label>
+      <label><input type="checkbox" name="sharedChatInvite"> Invite</label>
+     </div>
+    </fieldset>
+   </details>
    <p id="role-assigned-count" class="hint"></p>
    <div class="role-actions"><button type="submit" class="primary compact">Save role</button><button type="button" id="delete-role" class="danger" hidden>Delete role</button></div>
    <p id="role-editor-status" role="status"></p>

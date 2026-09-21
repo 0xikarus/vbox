@@ -124,7 +124,11 @@ func (s *Store) createBoxTaskTransaction(ctx context.Context, p Principal, box v
 		return v1.BoxTask{}, false, err
 	}
 	direction, senderBoxID := boxMessageOrigin(request.SenderBoxID)
-	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key,sender_box_id) VALUES($1,$2,$3,$4,$5,$6,true,'queued',$7,$8,$9)", messageID, p.AccountID, task.ID, p.UserID, direction, request.Prompt, idempotency+":initial", chatMessageKey(), senderBoxID); err != nil {
+	parentID, threadID, err := resolveMessageThread(ctx, tx, p.AccountID, box.ID, messageID, request.ParentMessageID)
+	if err != nil {
+		return v1.BoxTask{}, false, err
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key,sender_box_id,parent_message_id,thread_id) VALUES($1,$2,$3,$4,$5,$6,true,'queued',$7,$8,$9,NULLIF($10,'')::uuid,$11)", messageID, p.AccountID, task.ID, p.UserID, direction, request.Prompt, idempotency+":initial", chatMessageKey(), senderBoxID, parentID, threadID); err != nil {
 		return v1.BoxTask{}, false, err
 	}
 	if err := attachBoxMessageImages(ctx, tx, p.AccountID, messageID, request.Images); err != nil {
@@ -293,7 +297,7 @@ func (s *Store) BoxAgentBusy(ctx context.Context, accountID, boxID string) (busy
 	return value.Bool, true, updatedAt, nil
 }
 
-const boxMessageColumns = "id::text,task_id::text,COALESCE(user_id::text,''),direction,body,state,created_at,updated_at,COALESCE(chat_key,''),COALESCE(sender_box_id::text,'')"
+const boxMessageColumns = "id::text,task_id::text,COALESCE(user_id::text,''),direction,body,state,created_at,updated_at,COALESCE(chat_key,''),COALESCE(sender_box_id::text,''),COALESCE(parent_message_id::text,''),COALESCE(thread_id,id)::text"
 
 const boxMessageSelect = "SELECT " + boxMessageColumns + " FROM box_messages"
 
@@ -310,7 +314,7 @@ func chatMessageKey() string {
 
 func scanBoxMessage(scanner interface{ Scan(...any) error }) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
-	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID)
+	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID, &message.ParentMessageID, &message.ThreadID)
 	decodeBoxMessageQuestion(&message)
 	return message, err
 }
@@ -350,7 +354,8 @@ func (s *Store) InsertAgentBoxMessage(ctx context.Context, accountID, taskID, ev
 	if strings.TrimSpace(text) == "" || len(text) > 100_000 {
 		return v1.BoxMessage{}, false, fmt.Errorf("agent message must contain between 1 and 100000 bytes")
 	}
-	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key) VALUES($1,$2,$3,'agent',$4,false,'delivered',$5) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, uuid(), accountID, taskID, text, "agent-message:"+eventKey))
+	messageID := uuid()
+	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,thread_id) VALUES($1,$2,$3,'agent',$4,false,'delivered',$5,$1) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, messageID, accountID, taskID, text, "agent-message:"+eventKey))
 	if errors.Is(err, sql.ErrNoRows) {
 		existing, lookupErr := scanBoxMessage(s.DB.QueryRowContext(ctx, boxMessageSelect+" WHERE account_id=$1 AND idempotency_key=$2", accountID, "agent-message:"+eventKey))
 		if lookupErr != nil {
@@ -371,6 +376,25 @@ func boxMessageOrigin(senderBoxID string) (string, any) {
 		return "box", senderBoxID
 	}
 	return "user", nil
+}
+
+type messageThreadQuery interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func resolveMessageThread(ctx context.Context, q messageThreadQuery, accountID, boxID, messageID, parentMessageID string) (string, string, error) {
+	parentMessageID = strings.TrimSpace(parentMessageID)
+	if parentMessageID == "" {
+		return "", messageID, nil
+	}
+	var threadID string
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(m.thread_id,m.id)::text FROM box_messages m
+		JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id
+		WHERE m.account_id=$1 AND m.id::text=$2 AND t.logical_box_id=$3`, accountID, parentMessageID, boxID).Scan(&threadID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", fmt.Errorf("parent message is not in this box conversation")
+	}
+	return parentMessageID, threadID, err
 }
 
 func (s *Store) CreateBoxMessage(ctx context.Context, p Principal, taskID, idempotency string, request v1.SendBoxMessageRequest) (v1.BoxMessage, bool, error) {
@@ -394,7 +418,15 @@ func (s *Store) CreateBoxMessage(ctx context.Context, p Principal, taskID, idemp
 	defer tx.Rollback()
 	messageID := uuid()
 	direction, senderBoxID := boxMessageOrigin(request.SenderBoxID)
-	message, err := scanBoxMessage(tx.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key,sender_box_id) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9,$10) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, messageID, p.AccountID, taskID, p.UserID, direction, request.Text, submit, idempotency, chatMessageKey(), senderBoxID))
+	var boxID string
+	if err := tx.QueryRowContext(ctx, `SELECT logical_box_id::text FROM box_tasks WHERE account_id=$1 AND id=$2`, p.AccountID, taskID).Scan(&boxID); err != nil {
+		return v1.BoxMessage{}, false, err
+	}
+	parentID, threadID, err := resolveMessageThread(ctx, tx, p.AccountID, boxID, messageID, request.ParentMessageID)
+	if err != nil {
+		return v1.BoxMessage{}, false, err
+	}
+	message, err := scanBoxMessage(tx.QueryRowContext(ctx, "INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,submit,state,idempotency_key,chat_key,sender_box_id,parent_message_id,thread_id) VALUES($1,$2,$3,$4,$5,$6,$7,'queued',$8,$9,$10,NULLIF($11,'')::uuid,$12) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING "+boxMessageColumns, messageID, p.AccountID, taskID, p.UserID, direction, request.Text, submit, idempotency, chatMessageKey(), senderBoxID, parentID, threadID))
 	if errors.Is(err, sql.ErrNoRows) {
 		if err := tx.Rollback(); err != nil {
 			return v1.BoxMessage{}, false, err
@@ -448,7 +480,7 @@ func (s *Store) UnansweredBoxMessages(ctx context.Context, p Principal, taskID s
 	if _, err := s.BoxTask(ctx, p, taskID); err != nil {
 		return nil, err
 	}
-	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,'')
+	rows, err := s.DB.QueryContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,''),COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text
 		FROM box_messages m
 		WHERE m.account_id=$1 AND m.task_id=$2 AND m.direction='user' AND m.state='delivered' AND m.submit
 		AND NOT EXISTS (
@@ -479,13 +511,13 @@ func (s *Store) UpsertAgentBoxMessage(ctx context.Context, accountID, taskID, re
 	if state != "streaming" && state != "delivered" {
 		return false, fmt.Errorf("agent reply state must be streaming or delivered")
 	}
-	result, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key)
-		VALUES($1,$2,$3,'agent',$4,false,$5,$6)
+	result, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,parent_message_id,thread_id)
+		SELECT $1,$2,$3,'agent',$4,false,$5,$6,target.id,COALESCE(target.thread_id,target.id) FROM box_messages target WHERE target.account_id=$2 AND target.task_id=$3 AND target.id=$7
 		ON CONFLICT(account_id,idempotency_key) DO UPDATE
 		SET body=EXCLUDED.body,state=EXCLUDED.state,failure_reason=NULL,updated_at=now()
 		WHERE box_messages.direction='agent'
 		  AND (box_messages.body IS DISTINCT FROM EXCLUDED.body OR box_messages.state IS DISTINCT FROM EXCLUDED.state)`,
-		uuid(), accountID, taskID, text, state, "agent-reply:"+replyTo)
+		uuid(), accountID, taskID, text, state, "agent-reply:"+replyTo, replyTo)
 	if err != nil {
 		return false, err
 	}
@@ -548,7 +580,7 @@ func (s *Store) FirstQueuedTaskMessage(ctx context.Context, accountID, taskID st
 
 func scanBoxMessageWithSubmit(scanner interface{ Scan(...any) error }, submit *bool) (v1.BoxMessage, error) {
 	var message v1.BoxMessage
-	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID, submit)
+	err := scanner.Scan(&message.ID, &message.TaskID, &message.UserID, &message.Direction, &message.Text, &message.State, &message.CreatedAt, &message.UpdatedAt, &message.ChatKey, &message.SenderBoxID, &message.ParentMessageID, &message.ThreadID, submit)
 	decodeBoxMessageQuestion(&message)
 	return message, err
 }

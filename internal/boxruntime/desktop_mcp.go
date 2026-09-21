@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +39,18 @@ func desktopMCPTools() []map[string]any {
 	}
 	return []map[string]any{
 		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns each contact's id, name, role, agent, state and whether messaging is allowed. Use a contact id or name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("get_run_budget", "Get this box's durable run-time budget. The countdown advances only while the box is allocated and is separate from desktop inactivity.", map[string]any{}),
+		makeTool("request_more_time", "Request a bounded extension to this box's run-time budget. Reuse idempotencyKey when retrying.", map[string]any{"minutes": map[string]any{"type": "integer", "minimum": 1, "maximum": 1440}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "minutes", "idempotencyKey"),
+		makeTool("queue_followup", "Queue a durable follow-up for this running assignment, optionally delayed. It does not wake the box or reset its run-time budget. Reuse idempotencyKey when retrying.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "delaySeconds": map[string]any{"type": "integer", "minimum": 0, "maximum": 604800}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "text", "idempotencyKey"),
+		makeTool("get_thread_history", "Read a paginated direct or shared-chat thread this box already has access to. Pass chatId for a shared-chat thread. A thread reference alone never grants access.", map[string]any{"threadId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "before": map[string]any{"type": "string"}, "beforeId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "threadId"),
+		makeTool("discover_shared_chats", "Discover account shared chats when explicitly granted by an assigned role.", map[string]any{}),
+		makeTool("read_shared_chat", "Read messages in a shared chat where this box is a member.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "chatId"),
+		makeTool("create_shared_chat", "Create a shared chat and join it with every-message subscription. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "idempotencyKey"),
+		makeTool("subscribe_shared_chat", "Set this box's delivery mode: following (no automatic delivery), mentions, or every_message.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "mode": map[string]any{"type": "string", "enum": []string{"following", "mentions", "every_message"}}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "mode", "idempotencyKey"),
+		makeTool("invite_to_shared_chat", "Invite an account box to a shared chat. New members start in following mode.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "boxId": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "boxId", "idempotencyKey"),
+		makeTool("send_shared_chat_message", "Post a message or threaded reply to a shared chat. Delivery follows each member's subscription mode.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "parentMessageId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "text", "idempotencyKey"),
+		makeTool("create_email_address", "Provision an email address through the account's configured provider within this box's role grant. Reuse idempotencyKey when retrying.", map[string]any{"domain": map[string]any{"type": "string", "minLength": 1, "maxLength": 253}, "addressType": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "localPart": map[string]any{"type": "string", "maxLength": 64}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "domain", "addressType", "idempotencyKey"),
+		makeTool("create_agent_box", "Create an agent box on this box's provider within explicitly granted agent, disk, count, and starting-role limits. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 4096}, "roleIds": map[string]any{"type": "array", "maxItems": 100, "items": map[string]any{"type": "string"}}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
 		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass contact (from get_contacts) to send a message to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass contact (from get_contacts) to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
@@ -252,6 +267,183 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			lines = append(lines, fmt.Sprintf("- %s | id %s | roles %s | agent %s | %s | message %t", contact.Name, contact.ID, roles, contact.Agent, state, contact.CanMessage))
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
+	}
+	if name == "get_run_budget" {
+		var budget map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/run-budget", nil, &budget); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(budget)
+	}
+	if name == "request_more_time" {
+		var request struct {
+			Minutes        int    `json:"minutes"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.Minutes < 1 || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("minutes and idempotencyKey are required")
+		}
+		var budget map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/run-budget/extend", request.IdempotencyKey, map[string]any{"minutes": request.Minutes}, &budget); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(budget)
+	}
+	if name == "queue_followup" {
+		var request struct {
+			Text           string `json:"text"`
+			DelaySeconds   int    `json:"delaySeconds"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Text) == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("text and idempotencyKey are required")
+		}
+		var followup map[string]any
+		body := map[string]any{"text": request.Text, "delaySeconds": request.DelaySeconds}
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/followups", request.IdempotencyKey, body, &followup); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(followup)
+	}
+	if name == "get_thread_history" {
+		var request struct {
+			ThreadID string `json:"threadId"`
+			ChatID   string `json:"chatId"`
+			Limit    int    `json:"limit"`
+			Before   string `json:"before"`
+			BeforeID string `json:"beforeId"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ThreadID == "" {
+			return nil, fmt.Errorf("threadId is required")
+		}
+		if request.Limit == 0 {
+			request.Limit = 50
+		}
+		query := "?threadId=" + url.QueryEscape(request.ThreadID) + "&limit=" + strconv.Itoa(request.Limit)
+		if request.ChatID != "" {
+			query += "&chatId=" + url.QueryEscape(request.ChatID)
+		}
+		if request.Before != "" || request.BeforeID != "" {
+			query += "&before=" + url.QueryEscape(request.Before) + "&beforeId=" + url.QueryEscape(request.BeforeID)
+		}
+		var history map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/thread-history"+query, nil, &history); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(history)
+	}
+	if name == "discover_shared_chats" {
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/shared-chats", nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "read_shared_chat" {
+		var request struct {
+			ChatID string `json:"chatId"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" {
+			return nil, fmt.Errorf("chatId is required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/messages", nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "create_shared_chat" {
+		var request struct {
+			Name           string `json:"name"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Name) == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("name and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats", request.IdempotencyKey, map[string]any{"name": request.Name}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "subscribe_shared_chat" {
+		var request struct {
+			ChatID         string `json:"chatId"`
+			Mode           string `json:"mode"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("chatId, mode, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/subscribe", request.IdempotencyKey, map[string]any{"mode": request.Mode}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "invite_to_shared_chat" {
+		var request struct {
+			ChatID         string `json:"chatId"`
+			BoxID          string `json:"boxId"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" || request.BoxID == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("chatId, boxId, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/invite", request.IdempotencyKey, map[string]any{"boxId": request.BoxID}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "send_shared_chat_message" {
+		var request struct {
+			ChatID          string `json:"chatId"`
+			Text            string `json:"text"`
+			ParentMessageID string `json:"parentMessageId"`
+			IdempotencyKey  string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" || strings.TrimSpace(request.Text) == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("chatId, text, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/messages", request.IdempotencyKey, map[string]any{"text": request.Text, "parentMessageId": request.ParentMessageID}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "create_email_address" {
+		var request struct {
+			Domain         string `json:"domain"`
+			AddressType    string `json:"addressType"`
+			LocalPart      string `json:"localPart"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.Domain == "" || request.AddressType == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("domain, addressType, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/email-addresses", request.IdempotencyKey, map[string]any{"domain": request.Domain, "addressType": request.AddressType, "localPart": request.LocalPart}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "create_agent_box" {
+		var request struct {
+			Name           string   `json:"name"`
+			Agent          string   `json:"agent"`
+			DiskGiB        int      `json:"diskGiB"`
+			RoleIDs        []string `json:"roleIds"`
+			IdempotencyKey string   `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.Name == "" || request.Agent == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("name, agent, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes", request.IdempotencyKey, map[string]any{"name": request.Name, "agent": request.Agent, "diskGiB": request.DiskGiB, "roleIds": request.RoleIDs}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
 	}
 	if name == "set_busy" {
 		var request struct {

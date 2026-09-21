@@ -431,12 +431,12 @@ func boxTaskRow(id, state string) *sqlmock.Rows {
 
 func boxMessageRow(id, taskID, userID, direction, body, state string) *sqlmock.Rows {
 	now := time.Now().UTC()
-	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key", "sender_box_id"}).
-		AddRow(id, taskID, userID, direction, body, state, now, now, "", "")
+	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key", "sender_box_id", "parent_message_id", "thread_id"}).
+		AddRow(id, taskID, userID, direction, body, state, now, now, "", "", "", id)
 }
 
 func emptyBoxMessageRows() *sqlmock.Rows {
-	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key", "sender_box_id"})
+	return sqlmock.NewRows([]string{"id", "task_id", "user_id", "direction", "body", "state", "created_at", "updated_at", "chat_key", "sender_box_id", "parent_message_id", "thread_id"})
 }
 
 func boxTaskRowWithSession(id, state, session string) *sqlmock.Rows {

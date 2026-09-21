@@ -1,13 +1,13 @@
 'use strict';
 (()=>{
  const $=s=>document.querySelector(s);
- const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle');
+ const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle'),replyPreview=$('#reply-preview'),threadPanel=$('#thread-panel'),threadMessages=$('#thread-messages');
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
  const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
- let pendingKey='',pendingFingerprint='';
+ let pendingKey='',pendingFingerprint='',replyingTo=null;
  let instructionPresets={defaultName:'',presets:[]};
  const presetBodyCache=new Map();
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
@@ -758,6 +758,7 @@
   'chevron-down':[['path',{d:'m6 9 6 6 6-6'}]],
   copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
+  reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -804,7 +805,7 @@
    if(!selectedChoices.length){statusEl.textContent='Pick at least one option.';return}
    send.disabled=true;
    try{
-    await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text:'Answer to "'+message.question.text+'": '+selectedChoices.join(', ')});
+    await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text:'Answer to "'+message.question.text+'": '+selectedChoices.join(', '),parentMessageId:message.id});
     answeredQuestions.add(message.id);questionSelections.delete(message.id);
     send.textContent='Answer sent';choices.querySelectorAll('button').forEach(c=>{c.disabled=true});
     statusEl.textContent='Selection sent.';await refreshMessages();
@@ -832,6 +833,7 @@
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
   const mine=message.direction==='user';
   row.className='msg '+(mine?'user':'agent')+(message.state==='silent'?' note':'')+(message.state==='streaming'?' streaming':'');
+  if(message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?.direction==='user'?'You: ':'Agent: ')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
   if(message.state==='silent'){const label=document.createElement('span');label.className='note-label';label.textContent='Note · not sent to the agent';row.append(label)}
   if(message.text.startsWith('Forwarded from ')){const mark=document.createElement('span');mark.className='fwd-mark';const end=message.text.indexOf(':\n');mark.textContent=end>0?message.text.slice(0,end+1):'Forwarded';row.append(mark)}
   const text=document.createElement('div');text.className='text';
@@ -853,6 +855,7 @@
   }
   const form=questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
+  const threadSize=(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>1){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
   if(mine&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
@@ -872,10 +875,21 @@
   copy.onclick=async()=>{closeAllMsgActions();try{await navigator.clipboard.writeText(message.question?message.question.text:message.text);toast('Message copied.')}catch{toast('Copy is unavailable here.')}};
   const forward=document.createElement('button');forward.type='button';forward.append(lucide('forward'),Object.assign(document.createElement('span'),{textContent:'Forward…'}));
   forward.onclick=()=>{closeAllMsgActions();openForwardMenu(toggle,message)};
-  menu.append(copy,forward);
+  const reply=document.createElement('button');reply.type='button';reply.append(lucide('reply'),Object.assign(document.createElement('span'),{textContent:'Reply'}));reply.onclick=()=>{closeAllMsgActions();setReply(message)};
+  const viewThread=document.createElement('button');viewThread.type='button';viewThread.textContent='View thread';viewThread.onclick=()=>{closeAllMsgActions();void openThread(message.threadId||message.id)};
+  menu.append(reply,copy,forward,viewThread);
   toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen){menu.hidden=false;toggle.setAttribute('aria-expanded','true')}};
   actions.append(toggle,menu);row.append(actions);
   return row;
+ }
+ function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=(message.direction==='user'?'You: ':'Agent: ')+(message.question?.text||message.text);inputEl.focus()}
+ function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent=''}
+ $('#reply-cancel').onclick=cancelReply;
+ $('#thread-close').onclick=()=>{threadPanel.hidden=true;threadMessages.replaceChildren()};
+ async function openThread(threadID){
+  if(!selected||!threadID)return;threadPanel.hidden=false;threadMessages.replaceChildren(mk('p','Loading thread…'));
+  try{const result=await chatHistory(boxPath(selected)+'/messages?limit=100&threadId='+encodeURIComponent(threadID)),box=boxes.get(selected);threadMessages.replaceChildren();$('#thread-count').textContent=result.messages.length+' message'+(result.messages.length===1?'':'s');for(const message of result.messages)threadMessages.append(bubble({...box,messages:result.messages},message))}
+  catch(e){threadMessages.replaceChildren(mk('p',e.message))}
  }
  function closeAllMsgActions(){for(const menu of messagesEl.querySelectorAll('.msg-actions-menu'))menu.hidden=true;for(const toggle of messagesEl.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
  document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
@@ -1074,7 +1088,7 @@
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();messagesEl.dataset.box=id;hideTvPreview()}
-  selected=id;lastSignature='';
+  if(selected!==id)cancelReply();selected=id;lastSignature='';
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
   const savedScroll=scrollMemory.get(id);
@@ -1184,9 +1198,9 @@
   if(!selected)return;
   const boxID=selected,box=boxes.get(boxID);
   const drafts=attachmentDrafts.get(boxID)||[];
-  const text=inputEl.value,images=drafts.map(({id,number})=>({id,number}));
+  const text=inputEl.value,images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo;
   if(!text.trim()&&!images.length)return;
-  const fingerprint=text+'\n'+images.map(i=>i.id).join(',');
+  const fingerprint=text+'\n'+images.map(i=>i.id).join(',')+'\n'+(replyTarget?.id||'');
   if(fingerprint!==pendingFingerprint||!pendingKey){pendingKey=crypto.randomUUID();pendingFingerprint=fingerprint}
   const send=$('#send');send.disabled=true;
   const showPending=(box.defaultAgent||'shell')!=='shell'&&!/^\/silent(?:\s|$)/.test(text);
@@ -1201,9 +1215,9 @@
   if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
   let settled=false;
   try{
-   const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images});
+   const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images,parentMessageId:replyTarget?.id||''});
    for(const d of sentDrafts)URL.revokeObjectURL(d.url);
-   pendingKey='';pendingFingerprint='';
+   pendingKey='';pendingFingerprint='';if(replyingTo?.id===replyTarget?.id)cancelReply();
    statusEl.textContent=result?.message?.state==='silent'?'Note saved without waking the agent.':'';
    if(showPending&&result?.message?.state!=='silent')await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(performance.now()-pendingAt))));
    pendingSends.delete(boxID);
@@ -1212,7 +1226,7 @@
    settled=true;
   }catch(e){
    statusEl.textContent=e.message;
-   if(!inputEl.value)inputEl.value=text;
+   if(!inputEl.value)inputEl.value=text;if(!replyingTo&&replyTarget)setReply(replyTarget);
    inputDrafts[boxID]=inputEl.value;saveInputDrafts();
    // Restore the drafts handed to the failed send alongside anything the user
    // attached meanwhile, so no blob URL is lost or leaked.
@@ -1851,10 +1865,20 @@
   try{await refreshRoleData(!roleAssignmentsDirty);status.textContent=roleAssignmentsDirty?'Unsaved assignment changes.':'';renderRoleMatrix()}catch(e){status.textContent=e.message}
  }
  function openRoleEditor(role=null){
-  const form=$('#role-editor-form');form.reset();form.elements.id.value=role?.id||'';form.elements.name.value=role?.name||'';form.elements.description.value=role?.description||'';form.elements.contactScope.value=role?.contactScope||'none';
+  const form=$('#role-editor-form'),cap=role?.capabilities||{};form.reset();form.elements.id.value=role?.id||'';form.elements.name.value=role?.name||'';form.elements.description.value=role?.description||'';form.elements.contactScope.value=role?.contactScope||'none';
+  const set=(name,value)=>{if(value!==undefined&&value!==null)form.elements[name].value=String(value)},check=(name,value)=>{form.elements[name].checked=!!value};
+  check('requestMoreTimeEnabled',cap.requestMoreTime?.enabled);set('maxExtensionMinutes',cap.requestMoreTime?.maxExtensionMinutes);set('maxTotalMinutes',cap.requestMoreTime?.maxTotalMinutes);
+  check('queueFollowupEnabled',cap.queueFollowup?.enabled);set('maxDelayMinutes',cap.queueFollowup?.maxDelayMinutes);set('maxPending',cap.queueFollowup?.maxPending);
+  check('createAgentBoxEnabled',cap.createAgentBox?.enabled);set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);
+  const allowedAgents=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=allowedAgents.has(input.value));
+  check('createEmailAddressEnabled',cap.createEmailAddress?.enabled);set('maxAddresses',cap.createEmailAddress?.maxAddresses);set('emailDomains',(cap.createEmailAddress?.domains||[]).join(', '));set('emailAddressTypes',(cap.createEmailAddress?.addressTypes||[]).join(', '));
+  check('sharedChatDiscover',cap.sharedChats?.discover);check('sharedChatRead',cap.sharedChats?.read);check('sharedChatSubscribe',cap.sharedChats?.subscribe);check('sharedChatCreate',cap.sharedChats?.create);check('sharedChatInvite',cap.sharedChats?.invite);
   $('#role-editor-title').textContent=role?'Edit role · '+role.name:'Define role';$('#delete-role').hidden=!role;$('#role-assigned-count').textContent=role?'Assigned to '+role.assignedBoxCount+' box'+(role.assignedBoxCount===1?'':'es')+'.':'Not assigned yet.';
   const selectedContacts=new Set(role?.contactBoxIds||[]),root=$('#role-contact-boxes');root.replaceChildren();for(const box of roleBoxes()){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='contactBoxIds';input.value=box.id;input.checked=selectedContacts.has(box.id);label.append(input,document.createTextNode(box.name));root.append(label)}root.hidden=form.elements.contactScope.value!=='selected';$('#role-editor-status').textContent='';$('#role-editor-modal').hidden=false;form.elements.name.focus();
+  const assignable=new Set(cap.createAgentBox?.assignableRoleIds||[]),assignableRoot=$('#role-assignable-roles');assignableRoot.replaceChildren();for(const candidate of agentRoles){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='assignableRoleIds';input.value=candidate.id;input.checked=assignable.has(candidate.id);label.append(input,document.createTextNode(candidate.name));assignableRoot.append(label)}
+  syncRoleCapabilityOptions(form);
  }
+ function syncRoleCapabilityOptions(form=$('#role-editor-form')){form.querySelectorAll('.role-capability-options[data-capability]').forEach(root=>root.hidden=!form.elements[root.dataset.capability].checked)}
  $('#role-box-search').addEventListener('input',renderRoleMatrix);
  $('#roles-toggle').onclick=()=>void openRolesModal();
  $('#inspect-edit-roles').onclick=()=>void openRolesModal(selected);
@@ -1866,9 +1890,11 @@
   catch(e){status.textContent=e.message;button.disabled=false}
  };
  document.querySelectorAll('#role-editor-form input[name=contactScope]').forEach(input=>input.addEventListener('change',()=>{$('#role-contact-boxes').hidden=input.form.elements.contactScope.value!=='selected'}));
+ document.querySelectorAll('#role-editor-form .role-capability-toggle input').forEach(input=>input.addEventListener('change',()=>syncRoleCapabilityOptions(input.form)));
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,f=form.elements,id=f.id.value,name=f.name.value.trim(),status=$('#role-editor-status');if(!name){status.textContent='Type the exact role name you want to define.';return}
-  const body={name,description:f.description.value.trim(),contactScope:f.contactScope.value,contactBoxIds:f.contactScope.value==='selected'?[...form.querySelectorAll('input[name=contactBoxIds]:checked')].map(input=>input.value):[]};status.textContent='Saving role…';
+  const csv=value=>value.split(',').map(item=>item.trim()).filter(Boolean),num=name=>Number.parseInt(f[name].value,10)||0;
+  const body={name,description:f.description.value.trim(),contactScope:f.contactScope.value,contactBoxIds:f.contactScope.value==='selected'?[...form.querySelectorAll('input[name=contactBoxIds]:checked')].map(input=>input.value):[],capabilities:{requestMoreTime:{enabled:f.requestMoreTimeEnabled.checked,maxExtensionMinutes:num('maxExtensionMinutes'),maxTotalMinutes:num('maxTotalMinutes')},queueFollowup:{enabled:f.queueFollowupEnabled.checked,maxDelayMinutes:num('maxDelayMinutes'),maxPending:num('maxPending')},createAgentBox:{enabled:f.createAgentBoxEnabled.checked,maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value),assignableRoleIds:[...form.querySelectorAll('input[name=assignableRoleIds]:checked')].map(input=>input.value)},createEmailAddress:{enabled:f.createEmailAddressEnabled.checked,maxAddresses:num('maxAddresses'),domains:csv(f.emailDomains.value),addressTypes:csv(f.emailAddressTypes.value)},sharedChats:{discover:f.sharedChatDiscover.checked,read:f.sharedChatRead.checked,subscribe:f.sharedChatSubscribe.checked,create:f.sharedChatCreate.checked,invite:f.sharedChatInvite.checked}}};status.textContent='Saving role…';
   try{await api('/v1/agent-roles'+(id?'/'+encodeURIComponent(id):''),id?'PUT':'POST',{},body);$('#role-editor-modal').hidden=true;await refreshRoleData(!roleAssignmentsDirty);$('#role-status').textContent=roleAssignmentsDirty?'Role saved. Unsaved assignment changes remain.':'Role saved.';toast((id?'Updated ':'Defined ')+name+'.')}
   catch(e){status.textContent=e.message}
  };

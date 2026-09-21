@@ -12,6 +12,11 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
 
 const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',role:'worker',volumeName:'v1'}];
+const threadRoot='11111111-1111-4111-8111-111111111111';
+const threadMessages=[
+ {id:threadRoot,taskId:'task-1',direction:'user',text:'Should we ship the migration today?',state:'delivered',threadId:threadRoot,createdAt:'2026-09-21T02:00:00Z',updatedAt:'2026-09-21T02:00:00Z'},
+ {id:'22222222-2222-4222-8222-222222222222',taskId:'task-1',direction:'agent',text:'Yes — the verification suite is green.',state:'delivered',parentMessageId:threadRoot,threadId:threadRoot,createdAt:'2026-09-21T02:01:00Z',updatedAt:'2026-09-21T02:01:00Z'}
+];
 
 async function withChat(fn){
  const posts=[];
@@ -33,7 +38,7 @@ async function withChat(fn){
    let body='';req.on('data',chunk=>body+=chunk);
    return req.on('end',()=>{posts.push(JSON.parse(body));res.end(JSON.stringify({message:{state:'delivered'}}))});
   }
-  if(path.endsWith('/messages'))return res.end('[]');
+  if(path.endsWith('/messages'))return res.end(JSON.stringify(threadMessages));
   return res.end('{}');
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -87,5 +92,15 @@ test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
   await new Promise(resolve=>setTimeout(resolve,100));
   assert.equal(await p.$eval('#send',button=>button.disabled),true,'Send must return to disabled after the composer clears');
   await p.close();
+ });
+});
+
+test('reply quotes preserve parent identity and open the thread panel',async()=>{
+ await withChat(async(browser,base,posts)=>{
+  const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg.agent .msg-parent');
+  await p.click('.msg.user .msg-more');await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent==='Reply').click());
+  assert.equal(await p.$eval('#reply-preview',element=>element.hidden),false);await p.type('#chat-input','Ship it.');await p.keyboard.press('Enter');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
+  await p.click('.msg.agent .msg-parent');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
+  await (await p.$('#thread-panel')).screenshot({path:'docs/chat-ui/screenshots/chat-thread.png'});await p.close();
  });
 });

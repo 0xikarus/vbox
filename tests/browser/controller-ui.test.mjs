@@ -84,11 +84,13 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  await page.type('#role-editor-form textarea[name=description]','Owner-defined contact grant for planner');
  await page.click('#role-editor-form input[value=selected]');
  await page.click('#role-contact-boxes input[value="box-2"]');
+ await page.click('#role-editor-form input[name=queueFollowupEnabled]');
  await page.click('#role-editor-form button.primary');
  await page.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Can contact planner'));
  const selectedRole=fixtureRoles.find(role=>role.name==='Can contact planner');
  assert.equal(selectedRole.name,'Can contact planner','the exact owner-typed role name must be preserved');
  assert.deepEqual(selectedRole.contactBoxIds,['box-2']);
+ assert.equal(selectedRole.capabilities.queueFollowup.enabled,true);
  const assignmentSelector=`#role-matrix input[aria-label="Can contact planner for helper ü"]`;
  await page.click(assignmentSelector);
  await page.click('#save-role-assignments');

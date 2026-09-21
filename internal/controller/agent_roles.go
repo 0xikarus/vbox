@@ -44,7 +44,42 @@ func validateAgentRoleRequest(request v1.PutAgentRoleRequest) (v1.PutAgentRoleRe
 	default:
 		return request, fmt.Errorf("contactScope must be none, selected, or all")
 	}
+	request.Capabilities.CreateAgentBox.AllowedAgents = cleanUniqueStrings(request.Capabilities.CreateAgentBox.AllowedAgents)
+	request.Capabilities.CreateAgentBox.AssignableRoleIDs = cleanUniqueStrings(request.Capabilities.CreateAgentBox.AssignableRoleIDs)
+	request.Capabilities.CreateEmail.Domains = cleanUniqueStrings(request.Capabilities.CreateEmail.Domains)
+	request.Capabilities.CreateEmail.AddressTypes = cleanUniqueStrings(request.Capabilities.CreateEmail.AddressTypes)
+	if grant := request.Capabilities.RequestMoreTime; grant.Enabled && (grant.MaxExtensionMinutes < 1 || grant.MaxExtensionMinutes > 1440 || grant.MaxTotalMinutes < grant.MaxExtensionMinutes || grant.MaxTotalMinutes > 10080) {
+		return request, fmt.Errorf("request-more-time limits must be 1–1440 minutes per request and no more than 10080 minutes total")
+	}
+	if grant := request.Capabilities.QueueFollowup; grant.Enabled && (grant.MaxDelayMinutes < 0 || grant.MaxDelayMinutes > 10080 || grant.MaxPending < 1 || grant.MaxPending > 100) {
+		return request, fmt.Errorf("queued-follow-up limits must be at most 10080 minutes delay and 1–100 pending messages")
+	}
+	if grant := request.Capabilities.CreateAgentBox; grant.Enabled && (grant.MaxBoxes < 1 || grant.MaxBoxes > 100 || grant.MaxDiskGiB < 1 || grant.MaxDiskGiB > 4096 || len(grant.AllowedAgents) == 0) {
+		return request, fmt.Errorf("create-agent-box requires 1–100 boxes, 1–4096 GiB, and at least one exact agent type")
+	}
+	for _, agent := range request.Capabilities.CreateAgentBox.AllowedAgents {
+		if agent != "codex" && agent != "claude" && agent != "opencode" {
+			return request, fmt.Errorf("allowed agent types must be codex, claude, or opencode")
+		}
+	}
+	if grant := request.Capabilities.CreateEmail; grant.Enabled && (grant.MaxAddresses < 1 || grant.MaxAddresses > 100 || len(grant.Domains) == 0 || len(grant.AddressTypes) == 0) {
+		return request, fmt.Errorf("create-email-address requires 1–100 addresses, a domain, and an address type")
+	}
 	return request, nil
+}
+
+func cleanUniqueStrings(values []string) []string {
+	seen := map[string]bool{}
+	clean := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		clean = append(clean, value)
+	}
+	return clean
 }
 
 func scanAgentRole(scanner interface{ Scan(...any) error }) (v1.AgentRole, error) {
@@ -85,6 +120,62 @@ func loadRoleContactIDs(ctx context.Context, q interface {
 	return rows.Err()
 }
 
+func loadRoleCapabilities(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, accountID string, roles []v1.AgentRole) error {
+	if len(roles) == 0 {
+		return nil
+	}
+	rows, err := q.QueryContext(ctx, `SELECT role_id::text,permission,config FROM agent_role_permissions WHERE account_id=$1 AND permission<>'contacts' ORDER BY role_id,permission`, accountID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	byID := map[string]*v1.AgentRole{}
+	for i := range roles {
+		byID[roles[i].ID] = &roles[i]
+	}
+	for rows.Next() {
+		var roleID, permission string
+		var config []byte
+		if err := rows.Scan(&roleID, &permission, &config); err != nil {
+			return err
+		}
+		role := byID[roleID]
+		if role == nil {
+			continue
+		}
+		var target any
+		switch permission {
+		case v1.RolePermissionRequestMoreTime:
+			target = &role.Capabilities.RequestMoreTime
+		case v1.RolePermissionQueueFollowup:
+			target = &role.Capabilities.QueueFollowup
+		case v1.RolePermissionCreateAgentBox:
+			target = &role.Capabilities.CreateAgentBox
+		case v1.RolePermissionCreateEmail:
+			target = &role.Capabilities.CreateEmail
+		case v1.RolePermissionSharedChats:
+			target = &role.Capabilities.SharedChats
+		default:
+			continue
+		}
+		if err := json.Unmarshal(config, target); err != nil {
+			return fmt.Errorf("decode %s permission for role %s: %w", permission, roleID, err)
+		}
+	}
+	return rows.Err()
+}
+
+func loadAgentRoleDetails(ctx context.Context, q interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}, accountID string, roles []v1.AgentRole) error {
+	if err := loadRoleContactIDs(ctx, q, accountID, roles); err != nil {
+		return err
+	}
+	return loadRoleCapabilities(ctx, q, accountID, roles)
+}
+
 func (s *Store) AgentRoles(ctx context.Context, p Principal) ([]v1.AgentRole, error) {
 	rows, err := s.DB.QueryContext(ctx, agentRoleSelect+` WHERE r.account_id=$1 ORDER BY lower(r.name),r.id`, p.AccountID)
 	if err != nil {
@@ -102,7 +193,7 @@ func (s *Store) AgentRoles(ctx context.Context, p Principal) ([]v1.AgentRole, er
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	return roles, loadRoleContactIDs(ctx, s.DB, p.AccountID, roles)
+	return roles, loadAgentRoleDetails(ctx, s.DB, p.AccountID, roles)
 }
 
 func (s *Store) AgentRole(ctx context.Context, p Principal, id string) (v1.AgentRole, error) {
@@ -114,7 +205,7 @@ func (s *Store) AgentRole(ctx context.Context, p Principal, id string) (v1.Agent
 		return role, err
 	}
 	roles := []v1.AgentRole{role}
-	if err := loadRoleContactIDs(ctx, s.DB, p.AccountID, roles); err != nil {
+	if err := loadAgentRoleDetails(ctx, s.DB, p.AccountID, roles); err != nil {
 		return role, err
 	}
 	return roles[0], nil
@@ -137,6 +228,15 @@ func putAgentRolePermission(ctx context.Context, tx *sql.Tx, accountID, roleID s
 	if err := validateRoleContactBoxes(ctx, tx, accountID, request.ContactBoxIDs); err != nil {
 		return err
 	}
+	for _, assignableRoleID := range request.Capabilities.CreateAgentBox.AssignableRoleIDs {
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_roles WHERE account_id=$1 AND id::text=$2)`, accountID, assignableRoleID).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("assignable role %q not found in this account", assignableRoleID)
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO agent_role_permissions(account_id,role_id,permission,scope) VALUES($1,$2,'contacts',$3)
 		ON CONFLICT(role_id,permission) DO UPDATE SET scope=excluded.scope,config='{}'::jsonb,updated_at=now()`, accountID, roleID, request.ContactScope); err != nil {
 		return err
@@ -146,6 +246,33 @@ func putAgentRolePermission(ctx context.Context, tx *sql.Tx, accountID, roleID s
 	}
 	for _, boxID := range request.ContactBoxIDs {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO agent_role_contact_grants(account_id,role_id,contact_box_id) VALUES($1,$2,$3)`, accountID, roleID, boxID); err != nil {
+			return err
+		}
+	}
+	permissions := []struct {
+		name    string
+		enabled bool
+		config  any
+	}{
+		{v1.RolePermissionRequestMoreTime, request.Capabilities.RequestMoreTime.Enabled, request.Capabilities.RequestMoreTime},
+		{v1.RolePermissionQueueFollowup, request.Capabilities.QueueFollowup.Enabled, request.Capabilities.QueueFollowup},
+		{v1.RolePermissionCreateAgentBox, request.Capabilities.CreateAgentBox.Enabled, request.Capabilities.CreateAgentBox},
+		{v1.RolePermissionCreateEmail, request.Capabilities.CreateEmail.Enabled, request.Capabilities.CreateEmail},
+		{v1.RolePermissionSharedChats, request.Capabilities.SharedChats.Discover || request.Capabilities.SharedChats.Read || request.Capabilities.SharedChats.Subscribe || request.Capabilities.SharedChats.Create || request.Capabilities.SharedChats.Invite, request.Capabilities.SharedChats},
+	}
+	for _, permission := range permissions {
+		if !permission.enabled {
+			if _, err := tx.ExecContext(ctx, `DELETE FROM agent_role_permissions WHERE account_id=$1 AND role_id=$2 AND permission=$3`, accountID, roleID, permission.name); err != nil {
+				return err
+			}
+			continue
+		}
+		config, err := json.Marshal(permission.config)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO agent_role_permissions(account_id,role_id,permission,scope,config) VALUES($1,$2,$3,'allow',$4::jsonb)
+			ON CONFLICT(role_id,permission) DO UPDATE SET scope='allow',config=excluded.config,updated_at=now()`, accountID, roleID, permission.name, string(config)); err != nil {
 			return err
 		}
 	}

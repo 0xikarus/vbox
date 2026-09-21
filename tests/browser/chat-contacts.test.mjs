@@ -206,10 +206,16 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.type('#role-editor-form textarea[name=description]','May contact the release box');
   await p.click('#role-editor-form input[value=selected]');
   await p.click('#role-contact-boxes input[value="reviewer"]');
+  await p.click('#role-editor-form input[name=requestMoreTimeEnabled]');
+  await p.click('#role-editor-form input[name=createAgentBoxEnabled]');
+  await p.click('#role-editor-form input[name=allowedAgents][value=codex]');
+  await p.$eval('.role-capabilities',element=>element.scrollIntoView({block:'start'}));
   await (await p.$('#role-editor-modal .role-editor-card')).screenshot({path:'docs/chat-ui/screenshots/chat-role-editor.png'});
   await p.$eval('#role-editor-form',form=>form.requestSubmit());
   await p.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Release handoff'));
   assert.equal(agentRoles.at(-1).name,'Release handoff','the exact owner-typed role name must be preserved');
+  assert.equal(agentRoles.at(-1).capabilities.requestMoreTime.enabled,true);
+  assert.deepEqual(agentRoles.at(-1).capabilities.createAgentBox.allowedAgents,['codex']);
   await p.click('#role-matrix input[aria-label="Release handoff for reviewer"]');
   await p.click('#save-role-assignments');
   await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');
