@@ -173,7 +173,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   questions clear it. `set_busy` is the explicit override for activity outside
   that request/reply flow. Chat history returns the persisted state in response
   headers, so the UI does not guess that long-running work ended after ten
-  minutes.
+  minutes. Automatic clears are tied to the submitted message, so a late reply
+  cannot hide a newer prompt that is still being processed.
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
   key carried in the envelope) answers one specific message. The controller polls
   each active task's outbox while a chat window is open, from the reconciler, and

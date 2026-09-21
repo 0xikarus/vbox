@@ -62,9 +62,21 @@ func TestBoxAgentBusyDistinguishesExplicitAndLegacyState(t *testing.T) {
 
 func TestDeliveredUserMessageMarksItsAgentBusy(t *testing.T) {
 	store, mock := testStore(t)
-	mock.ExpectExec(`WITH message AS`).WithArgs("account-a", "message-a", "delivered", "").
+	mock.ExpectExec(`(?s)WITH message AS.*RETURNING id,task_id,direction,submit.*agent_busy_message_id=message.id`).WithArgs("account-a", "message-a", "delivered", "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := store.SetBoxMessageState(context.Background(), "account-a", "message-a", "delivered", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOlderReplyDoesNotClearNewerBusyGeneration(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectExec(`UPDATE box_tasks SET agent_busy=false`).WithArgs("account-a", "task-a", "message-a").
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	if err := store.SetBoxTaskIdleForMessage(context.Background(), "account-a", "task-a", "message-a"); err != nil {
 		t.Fatal(err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

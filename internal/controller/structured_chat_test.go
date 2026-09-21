@@ -81,7 +81,7 @@ func TestPullStructuredAgentReplyDrainsExpiredEventBeforeMatchingReply(t *testin
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
 		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))
-	mock.ExpectExec("UPDATE box_tasks SET agent_busy").WithArgs("account-a", "task-1", false).
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	server := chatTestServer(store)
@@ -111,8 +111,8 @@ func TestApplyChatEventKeepsAnsweredReplyAsOwnMessage(t *testing.T) {
 	mock.ExpectQuery("INSERT INTO box_messages").
 		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "duplicate", "agent-message:e9").
 		WillReturnRows(boxMessageRow("message-dup", "task-1", "", "agent", "duplicate", "delivered"))
-	mock.ExpectExec("UPDATE box_tasks SET agent_busy").WithArgs("account-a", "task-1", false).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	server := chatTestServer(store)
 	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", Agent: "claude", Session: "claude-1"}

@@ -221,8 +221,9 @@ AND b.id=t.logical_box_id AND b.state='running' AND b.slot_id=$3 AND b.assignmen
 
 func (s *Store) SetBoxTaskState(ctx context.Context, accountID, id, state, failure string) error {
 	result, err := s.DB.ExecContext(ctx, `UPDATE box_tasks SET state=$3,failure_reason=NULLIF($4,''),updated_at=now(),
-		agent_busy=CASE WHEN $3='active' AND agent<>'shell' THEN true WHEN $3<>'active' THEN NULL ELSE agent_busy END,
-		agent_busy_updated_at=CASE WHEN $3='active' AND agent<>'shell' THEN now() WHEN $3<>'active' THEN NULL ELSE agent_busy_updated_at END
+		agent_busy=CASE WHEN $3='active' AND agent<>'shell' THEN COALESCE(agent_busy,true) WHEN $3<>'active' THEN NULL ELSE agent_busy END,
+		agent_busy_updated_at=CASE WHEN $3='active' AND agent<>'shell' AND agent_busy IS NULL THEN now() WHEN $3<>'active' THEN NULL ELSE agent_busy_updated_at END,
+		agent_busy_message_id=CASE WHEN $3<>'active' THEN NULL ELSE agent_busy_message_id END
 		WHERE account_id=$1 AND id=$2`, accountID, id, state, failure)
 	if err != nil {
 		return err
@@ -235,7 +236,7 @@ func (s *Store) SetBoxTaskState(ctx context.Context, accountID, id, state, failu
 
 // SetBoxTaskBusy records explicit activity for one active managed-agent task.
 func (s *Store) SetBoxTaskBusy(ctx context.Context, accountID, taskID string, busy bool) error {
-	result, err := s.DB.ExecContext(ctx, `UPDATE box_tasks SET agent_busy=$3,agent_busy_updated_at=now()
+	result, err := s.DB.ExecContext(ctx, `UPDATE box_tasks SET agent_busy=$3,agent_busy_updated_at=now(),agent_busy_message_id=NULL
 		WHERE account_id=$1 AND id=$2 AND agent<>'shell' AND (state='active' OR NOT $3)`, accountID, taskID, busy)
 	if err != nil {
 		return err
@@ -246,9 +247,18 @@ func (s *Store) SetBoxTaskBusy(ctx context.Context, accountID, taskID string, bu
 	return nil
 }
 
+// SetBoxTaskIdleForMessage clears activity only when messageID is still the
+// newest submitted prompt. A reply to an older prompt is a successful no-op:
+// the agent may already be processing a newer message on the same task.
+func (s *Store) SetBoxTaskIdleForMessage(ctx context.Context, accountID, taskID, messageID string) error {
+	_, err := s.DB.ExecContext(ctx, `UPDATE box_tasks SET agent_busy=false,agent_busy_updated_at=now(),agent_busy_message_id=NULL
+		WHERE account_id=$1 AND id=$2 AND agent<>'shell' AND agent_busy_message_id=$3`, accountID, taskID, messageID)
+	return err
+}
+
 // SetBoxSessionBusy is the assignment-scoped form used by the desktop agent.
 func (s *Store) SetBoxSessionBusy(ctx context.Context, accountID, boxID, session string, busy bool) error {
-	result, err := s.DB.ExecContext(ctx, `UPDATE box_tasks SET agent_busy=$4,agent_busy_updated_at=now()
+	result, err := s.DB.ExecContext(ctx, `UPDATE box_tasks SET agent_busy=$4,agent_busy_updated_at=now(),agent_busy_message_id=NULL
 		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'`, accountID, boxID, session, busy)
 	if err != nil {
 		return err
@@ -515,8 +525,8 @@ func (s *Store) ClaimBoxMessage(ctx context.Context, accountID, id string) (bool
 func (s *Store) SetBoxMessageState(ctx context.Context, accountID, id, state, failure string) error {
 	_, err := s.DB.ExecContext(ctx, `WITH message AS (
 		UPDATE box_messages SET state=$3,failure_reason=NULLIF($4,''),updated_at=now()
-		WHERE account_id=$1 AND id=$2 RETURNING task_id,direction,submit
-	) UPDATE box_tasks task SET agent_busy=true,agent_busy_updated_at=now()
+		WHERE account_id=$1 AND id=$2 RETURNING id,task_id,direction,submit
+	) UPDATE box_tasks task SET agent_busy=true,agent_busy_updated_at=now(),agent_busy_message_id=message.id
 	FROM message WHERE task.account_id=$1 AND task.id=message.task_id AND task.agent<>'shell'
 	AND $3='delivered' AND message.submit AND message.direction IN ('user','box')`, accountID, id, state, failure)
 	return err

@@ -233,6 +233,9 @@ ALTER TABLE box_tasks ALTER COLUMN requested_role DROP DEFAULT;
 -- deliveries and set_busy calls establish a durable true/false value.
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS agent_busy boolean;
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS agent_busy_updated_at timestamptz;
+-- Identifies the submitted message which most recently set busy. Correlated
+-- replies only clear that generation, so a late reply cannot hide newer work.
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS agent_busy_message_id uuid;
 CREATE INDEX IF NOT EXISTS box_tasks_reconcile_idx
   ON box_tasks(account_id,state,created_at,id);
 -- One-shot process execution is deliberately separate from historical
