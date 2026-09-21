@@ -20,10 +20,6 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 		for _, name := range capabilities.MCPTools.AllowedTools {
 			selected[name] = true
 		}
-	} else {
-		for _, name := range v1.OptionalAgentMCPTools {
-			selected[name] = true
-		}
 	}
 	allowed := append([]string(nil), v1.BasicAgentMCPTools...)
 	for _, name := range v1.OptionalAgentMCPTools {

@@ -9,10 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
 
 type lineCapture struct {
@@ -185,8 +188,8 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"desktop_click","arguments":{"x":5}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"desktop_screenshot","arguments":{"action":"shell"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"click_mouse","arguments":{"x":5}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"take_screenshot","arguments":{"action":"shell"}}}`,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"shell","arguments":{}}}`,
 	}, "\n")
 	var out bytes.Buffer
@@ -222,19 +225,32 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 
 func TestAllowedDesktopMCPToolsFiltersAdvertisedInventory(t *testing.T) {
 	resolve := func(context.Context, string) (map[string]bool, error) {
-		return map[string]bool{"chat_message": true, "desktop_screenshot": true}, nil
+		return map[string]bool{"chat_message": true, "take_screenshot": true}, nil
 	}
 	tools, allowed, err := allowedDesktopMCPTools(context.Background(), "assignment", resolve)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tools) != 2 || !allowed["chat_message"] || !allowed["desktop_screenshot"] {
+	if len(tools) != 2 || !allowed["chat_message"] || !allowed["take_screenshot"] {
 		t.Fatalf("filtered tools=%v allowed=%v", tools, allowed)
 	}
 	for _, tool := range tools {
-		if name := tool["name"].(string); name != "chat_message" && name != "desktop_screenshot" {
+		if name := tool["name"].(string); name != "chat_message" && name != "take_screenshot" {
 			t.Fatalf("unexpected tool %s", name)
 		}
+	}
+}
+
+func TestDesktopMCPInventoryMatchesRolePolicyNames(t *testing.T) {
+	want := append(append([]string{}, v1.BasicAgentMCPTools...), v1.OptionalAgentMCPTools...)
+	got := make([]string, 0, len(desktopMCPTools()))
+	for _, tool := range desktopMCPTools() {
+		got = append(got, tool["name"].(string))
+	}
+	slices.Sort(want)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("desktop MCP names=%v; role policy names=%v", got, want)
 	}
 }
 

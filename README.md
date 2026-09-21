@@ -109,8 +109,8 @@ dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
 Agent choice requests render as radio buttons or checkboxes. The managed
 `vmbox-desktop` MCP supplies the structured `chat_message`, `chat_ask`, and
 `set_busy` tools; `chat_message` works with or without a reply reference. The
-same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
-`desktop_type`, `desktop_key`), so agents can operate the box's computer.
+same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
+`type_text`, `press_keys`), so agents can operate the box's computer.
 
 The controller and chat creation forms filter saved profiles to the selected
 harness and prefill the model stored in that profile. **Choose model** opens a

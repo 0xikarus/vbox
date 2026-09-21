@@ -212,7 +212,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.click('#role-editor-form input[name=allowedAgents][value=codex]');
   await p.$eval('#role-editor-form [data-capability=createAgentBoxEnabled]',element=>element.open=false);
   await p.click('#role-editor-form .mcp-tool-options summary');
-  await p.click('#role-editor-form input[name=mcpTools][value=desktop_drag]');
+  assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.title),/privately/);
+  await p.click('#role-editor-form input[name=mcpTools][value=click_mouse]');
   await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-role-mcp-tools.png'});
   await p.$eval('#role-editor-form .mcp-tool-options',element=>element.open=false);
   await p.$eval('.role-capabilities',element=>element.scrollIntoView({block:'start'}));
@@ -223,8 +224,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(agentRoles.at(-1).capabilities.requestMoreTime.enabled,true);
   assert.deepEqual(agentRoles.at(-1).capabilities.createAgentBox.allowedAgents,['codex']);
   assert.equal(agentRoles.at(-1).capabilities.mcpTools.enabled,true);
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('desktop_drag'),false);
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('desktop_click'),true);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('drag_mouse'),false);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('click_mouse'),true);
   await p.click('#role-matrix input[aria-label="Release handoff for reviewer"]');
   await p.click('#save-role-assignments');
   await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');

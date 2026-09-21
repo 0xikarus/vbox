@@ -52,7 +52,7 @@ func TestPutRoleAssignmentsRequiresOwner(t *testing.T) {
 }
 
 func TestValidateAgentRoleCapabilitiesUsesExplicitTypesAndBounds(t *testing.T) {
-	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "Release coordinator", Capabilities: v1.AgentRoleCapabilities{CreateAgentBox: v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 2, MaxDiskGiB: 50, AllowedAgents: []string{"codex", "codex", "opencode"}}, RequestMoreTime: v1.RequestMoreTimeGrant{Enabled: true, MaxExtensionMinutes: 30, MaxTotalMinutes: 120}, MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"desktop_click", "desktop_click"}}}})
+	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "Release coordinator", Capabilities: v1.AgentRoleCapabilities{CreateAgentBox: v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 2, MaxDiskGiB: 50, AllowedAgents: []string{"codex", "codex", "opencode"}}, RequestMoreTime: v1.RequestMoreTimeGrant{Enabled: true, MaxExtensionMinutes: 30, MaxTotalMinutes: 120}, MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"desktop_click", "click_mouse"}}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestEffectiveAgentCapabilitiesUnionsAssignedRoles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if capabilities.RequestMoreTime.MaxExtensionMinutes != 90 || capabilities.RequestMoreTime.MaxTotalMinutes != 240 || !capabilities.CreateAgentBox.Enabled || !slices.Equal(capabilities.MCPTools.AllowedTools, []string{"desktop_click"}) {
+	if capabilities.RequestMoreTime.MaxExtensionMinutes != 90 || capabilities.RequestMoreTime.MaxTotalMinutes != 240 || !capabilities.CreateAgentBox.Enabled || !slices.Equal(capabilities.MCPTools.AllowedTools, []string{"click_mouse"}) {
 		t.Fatalf("capabilities=%+v", capabilities)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -95,13 +95,13 @@ func TestEffectiveAgentCapabilitiesUnionsAssignedRoles(t *testing.T) {
 func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.T) {
 	store, mock := testStore(t)
 	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 1, MaxDiskGiB: 20, AllowedAgents: []string{"codex"}})
-	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"desktop_click", "desktop_drag", "create_agent_box", "request_more_time"}})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "create_agent_box", "request_more_time"}})
 	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionMCPTools, mcp))
 	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"chat_message", "get_thread_history", "desktop_click", "desktop_drag", "create_agent_box"} {
+	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "create_agent_box"} {
 		if !slices.Contains(tools, name) {
 			t.Fatalf("expected %s in %v", name, tools)
 		}
@@ -109,8 +109,20 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	if slices.Contains(tools, "request_more_time") {
 		t.Fatalf("allowlist bypassed typed request-more-time permission: %v", tools)
 	}
-	if slices.Contains(tools, "desktop_type") {
+	if slices.Contains(tools, "type_text") {
 		t.Fatalf("unselected optional tool was advertised: %v", tools)
+	}
+}
+
+func TestEffectiveAgentToolNamesDefaultsOptionalToolsToDenied(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}))
+	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(tools, v1.BasicAgentMCPTools) {
+		t.Fatalf("tools without an optional grant=%v", tools)
 	}
 }
 

@@ -27,15 +27,15 @@ Reconnecting refreshes this configuration, including after reassignment.
 
 `vmbox-runtime desktop-mcp` provides:
 
-- `desktop_screenshot`: PNG image content captured inside the worker.
+- `take_screenshot`: PNG image content captured inside the worker.
 - `capture_window`: PNG of the active window's visible screen area, or a supplied
   `window_id` string (decimal or `0x` hexadecimal X11 ID). Returns desktop x/y
   offsets for subsequent clicks. Does not raise/focus windows or wake the desktop;
   overlapping windows remain visible, off-screen portions are clipped, and minimized
   windows are unsupported. Use `{}` for the active window.
-- `desktop_move`, `desktop_click`, `desktop_drag`, `desktop_scroll`,
-  `desktop_type`, `desktop_key`: bounded coordinates and literal input.
-- `secret_ensure`, `secret_request`, `typeSecret`: opaque references and status.
+- `move_mouse`, `click_mouse`, `drag_mouse`, `scroll_mouse`,
+  `type_text`, `press_keys`: bounded coordinates and literal input.
+- `generate_password`, `secret_request`, `type_secret`: opaque references and status.
 
 Capture reads the worker's mode-0600 Unix VNC socket. There is no public VNC listener
 and no UI-canvas capture. New desktops use 1024×640; worker-generated previews
@@ -93,7 +93,7 @@ retains Chromium's other supported storage between sessions.
 ## Secrets and private requests
 
 References bind an encrypted value to account, box and HTTPS origin.
-`secret_ensure(key,purpose="new_account_password")` durably creates an idempotent
+`generate_password(key,purpose="new_account_password")` durably creates an idempotent
 password reference before use. Default length is 24; optional length/alphabet
 constraints are validated. A retry retains the original value. Creation/filling
 leave the entry pending; “Mark accepted by site” explicitly confirms metadata.
@@ -103,7 +103,7 @@ supplies or cancels it outside chat. Fulfillment saves the password and sends on
 a reference/status to the same active task. Submitting a credential never wakes a
 sleeping box. It cannot silently replace an existing named secret.
 
-`typeSecret(key)` resolves after the tool call and transports the value only over
+`type_secret(key)` resolves after the tool call and transports the value only over
 private stdin to the worker. The CDP bridge checks the focused, visible, editable
 password field's exact HTTPS origin, object identity and focus again before entry.
 It neither submits nor copies to clipboard. Wrong origins, changed focus, stale

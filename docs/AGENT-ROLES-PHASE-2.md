@@ -22,7 +22,8 @@ is rechecked by the controller at execution time.
 - `mcp_tools`: an exact allow-list for optional coordination, secret, and
   desktop tools. Core chat, contact, budget visibility, busy-state, and thread
   history tools remain available. The allow-list is an additional restriction:
-  a selected tool still needs its typed capability grant and limits.
+  a selected tool still needs its typed capability grant and limits. Optional
+  tools default to denied when no assigned role explicitly grants them.
 
 Multiple assigned roles combine additively. Boolean grants are ORed, numeric
 limits use the largest explicit ceiling, and allow-lists are unioned.

@@ -20,8 +20,35 @@ var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_
 var OptionalAgentMCPTools = []string{
 	"request_more_time", "queue_followup", "discover_shared_chats", "read_shared_chat", "create_shared_chat",
 	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address", "create_agent_box",
-	"secret_request", "secret_ensure", "typeSecret", "desktop_screenshot", "capture_window", "desktop_move", "desktop_click",
-	"desktop_drag", "desktop_scroll", "desktop_type", "desktop_key",
+	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
+	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
+}
+
+// CanonicalAgentMCPToolName translates names emitted by the pre-merge role UI
+// to the concise snake_case public names. It keeps saved review data usable
+// without continuing to advertise the old names.
+func CanonicalAgentMCPToolName(name string) string {
+	switch name {
+	case "secret_ensure":
+		return "generate_password"
+	case "typeSecret":
+		return "type_secret"
+	case "desktop_screenshot":
+		return "take_screenshot"
+	case "desktop_move":
+		return "move_mouse"
+	case "desktop_click":
+		return "click_mouse"
+	case "desktop_drag":
+		return "drag_mouse"
+	case "desktop_scroll":
+		return "scroll_mouse"
+	case "desktop_type":
+		return "type_text"
+	case "desktop_key":
+		return "press_keys"
+	}
+	return name
 }
 
 type RequestMoreTimeGrant struct {

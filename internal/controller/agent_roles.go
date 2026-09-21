@@ -48,7 +48,7 @@ func validateAgentRoleRequest(request v1.PutAgentRoleRequest) (v1.PutAgentRoleRe
 	request.Capabilities.CreateAgentBox.AssignableRoleIDs = cleanUniqueStrings(request.Capabilities.CreateAgentBox.AssignableRoleIDs)
 	request.Capabilities.CreateEmail.Domains = cleanUniqueStrings(request.Capabilities.CreateEmail.Domains)
 	request.Capabilities.CreateEmail.AddressTypes = cleanUniqueStrings(request.Capabilities.CreateEmail.AddressTypes)
-	request.Capabilities.MCPTools.AllowedTools = cleanUniqueStrings(request.Capabilities.MCPTools.AllowedTools)
+	request.Capabilities.MCPTools.AllowedTools = canonicalAgentMCPTools(request.Capabilities.MCPTools.AllowedTools)
 	if grant := request.Capabilities.RequestMoreTime; grant.Enabled && (grant.MaxExtensionMinutes < 1 || grant.MaxExtensionMinutes > 1440 || grant.MaxTotalMinutes < grant.MaxExtensionMinutes || grant.MaxTotalMinutes > 10080) {
 		return request, fmt.Errorf("request-more-time limits must be 1–1440 minutes per request and no more than 10080 minutes total")
 	}
@@ -93,6 +93,14 @@ func cleanUniqueStrings(values []string) []string {
 		clean = append(clean, value)
 	}
 	return clean
+}
+
+func canonicalAgentMCPTools(values []string) []string {
+	canonical := make([]string, 0, len(values))
+	for _, value := range values {
+		canonical = append(canonical, v1.CanonicalAgentMCPToolName(strings.TrimSpace(value)))
+	}
+	return cleanUniqueStrings(canonical)
 }
 
 func scanAgentRole(scanner interface{ Scan(...any) error }) (v1.AgentRole, error) {
@@ -177,6 +185,9 @@ func loadRoleCapabilities(ctx context.Context, q interface {
 		}
 		if err := json.Unmarshal(config, target); err != nil {
 			return fmt.Errorf("decode %s permission for role %s: %w", permission, roleID, err)
+		}
+		if permission == v1.RolePermissionMCPTools {
+			role.Capabilities.MCPTools.AllowedTools = canonicalAgentMCPTools(role.Capabilities.MCPTools.AllowedTools)
 		}
 	}
 	return rows.Err()

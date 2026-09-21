@@ -113,7 +113,7 @@ func (s *Server) desktopSecretRequests(w http.ResponseWriter, r *http.Request, p
 			if task := reusableBoxTask(tasks, box.State, box.DefaultAgent, ""); task != nil && task.State == "active" {
 				text := "Private credential request " + key + " was " + status + "."
 				if status == "fulfilled" {
-					text += " Use typeSecret with that reference; no password is included in chat."
+					text += " Use type_secret with that reference; no password is included in chat."
 				}
 				if message, _, e := s.Store.CreateBoxMessage(r.Context(), p, task.ID, "secret-request:"+box.ID+":"+key+":"+status, v1.SendBoxMessageRequest{Text: text}); e == nil && message.State == "queued" {
 					_ = s.deliverBoxMessage(r.Context(), p, *task, message, true)

@@ -55,16 +55,16 @@ func desktopMCPTools() []map[string]any {
 		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass contact (from get_contacts) to send a message to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass contact (from get_contacts) to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
-		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
-		makeTool("typeSecret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
-		makeTool("desktop_screenshot", "Capture this box's current desktop as a PNG image. Does not start or wake the desktop.", map[string]any{}),
+		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
+		makeTool("type_secret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
+		makeTool("take_screenshot", "Capture this box's current desktop as a PNG image. Does not start or wake the desktop.", map[string]any{}),
 		makeTool("capture_window", "Capture the visible screen area of an X11 window as PNG. Defaults to the active window; optionally supply window_id (decimal or 0x hexadecimal). Does not focus or raise windows. Overlapping windows appear in the capture; minimized windows are not supported. Returned x/y offsets map image coordinates to desktop coordinates.", map[string]any{"window_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 10}}),
-		makeTool("desktop_move", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
-		makeTool("desktop_click", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
-		makeTool("desktop_drag", "Drag directly from x/y to toX/toY while holding the left button.", map[string]any{"x": integer, "y": integer, "toX": integer, "toY": integer}, "x", "y", "toX", "toY"),
-		makeTool("desktop_scroll", "Scroll at a coordinate. Text is direction; count is 1–20 wheel steps.", map[string]any{"x": integer, "y": integer, "text": map[string]any{"type": "string", "enum": []string{"up", "down", "left", "right"}}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 20}}, "x", "y", "text"),
-		makeTool("desktop_type", "Type ordinary literal text in the focused application. Use the secret service for credentials.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
-		makeTool("desktop_key", "Press a shortcut: keys contains modifiers and a key, e.g. [ctrl,l] or [Return].", map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
+		makeTool("move_mouse", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
+		makeTool("click_mouse", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
+		makeTool("drag_mouse", "Drag directly from x/y to toX/toY while holding the left button.", map[string]any{"x": integer, "y": integer, "toX": integer, "toY": integer}, "x", "y", "toX", "toY"),
+		makeTool("scroll_mouse", "Scroll at a coordinate. Text is direction; count is 1–20 wheel steps.", map[string]any{"x": integer, "y": integer, "text": map[string]any{"type": "string", "enum": []string{"up", "down", "left", "right"}}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 20}}, "x", "y", "text"),
+		makeTool("type_text", "Type ordinary literal text in the focused application. Use the secret service for credentials.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
+		makeTool("press_keys", "Press a shortcut: keys contains modifiers and a key, e.g. [ctrl,l] or [Return].", map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
 	}
 }
 
@@ -518,7 +518,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		text := "Private credential requested. Wait for the user's response; do not invent a password."
 		if ready {
-			text = "Private credential is ready. Use typeSecret with the same reference."
+			text = "Private credential is ready. Use type_secret with the same reference."
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}, nil
 	}
@@ -607,7 +607,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to vmbox Agent chat."}}}, nil
 	}
-	if name == "typeSecret" {
+	if name == "type_secret" {
 		var key string
 		if json.Unmarshal(values["key"], &key) != nil {
 			return nil, fmt.Errorf("secret key must be a string")
@@ -617,7 +617,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Password inserted. Form not submitted."}}}, nil
 	}
-	if name == "secret_ensure" {
+	if name == "generate_password" {
 		var key, purpose string
 		if json.Unmarshal(values["key"], &key) != nil || json.Unmarshal(values["purpose"], &purpose) != nil || purpose != "new_account_password" {
 			return nil, fmt.Errorf("provide a reference and new_account_password purpose")
@@ -637,7 +637,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if created {
 			status = "New password reference saved; pending use."
 		}
-		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use typeSecret with the same key to fill it."}}}, nil
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use type_secret with the same key to fill it."}}}, nil
 	}
 	if name == "capture_window" {
 		var identifier string
@@ -659,7 +659,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(captured.Bytes())},
 		}}, nil
 	}
-	if name == "desktop_screenshot" {
+	if name == "take_screenshot" {
 		var png bytes.Buffer
 		if err := CaptureDesktop(ctx, assignment, &png); err != nil {
 			return nil, fmt.Errorf("desktop capture unavailable; check that this box's desktop is running")
@@ -670,7 +670,14 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 	if err := json.Unmarshal(args, &action); err != nil {
 		return nil, fmt.Errorf("invalid desktop arguments")
 	}
-	action.Action = strings.TrimPrefix(name, "desktop_")
+	action.Action = map[string]string{
+		"move_mouse":   "move",
+		"click_mouse":  "click",
+		"drag_mouse":   "drag",
+		"scroll_mouse": "scroll",
+		"type_text":    "type",
+		"press_keys":   "key",
+	}[name]
 	if action.Action == "click" && action.Count > 2 {
 		return nil, fmt.Errorf("click count must be 1 or 2")
 	}

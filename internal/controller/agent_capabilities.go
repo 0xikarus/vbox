@@ -78,7 +78,7 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 				return result, err
 			}
 			result.MCPTools.Enabled = result.MCPTools.Enabled || grant.Enabled
-			result.MCPTools.AllowedTools = unionStrings(result.MCPTools.AllowedTools, grant.AllowedTools)
+			result.MCPTools.AllowedTools = unionStrings(result.MCPTools.AllowedTools, canonicalAgentMCPTools(grant.AllowedTools))
 		}
 	}
 	return result, rows.Err()
