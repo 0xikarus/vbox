@@ -211,14 +211,20 @@ var CodexStartTurn = func(ctx context.Context, session, root, workspace, text st
 	if err != nil {
 		return err
 	}
-	input := []map[string]any{{"type": "text", "text": text}}
-	for _, path := range images {
-		input = append(input, map[string]any{"type": "image", "path": path})
-	}
+	input := codexTurnInput(text, images)
 	if _, err := client.call(ctx, "turn/start", map[string]any{"threadId": thread, "input": input}); err != nil {
 		return err
 	}
 	return nil
+}
+
+func codexTurnInput(text string, images []string) []map[string]any {
+	input := []map[string]any{{"type": "text", "text": text}}
+	for _, path := range images {
+		// App-server distinguishes localImage/path from the image/url variant.
+		input = append(input, map[string]any{"type": "localImage", "path": path})
+	}
+	return input
 }
 
 // CodexAppServerReady reports whether the session's app server is accepting
