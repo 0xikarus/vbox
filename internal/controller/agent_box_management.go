@@ -20,15 +20,20 @@ type agentManagedBox struct {
 	State         v1.LogicalBoxState    `json:"state"`
 	DefaultAgent  string                `json:"defaultAgent"`
 	Roles         []v1.AgentRoleSummary `json:"roles"`
+	Tags          []string              `json:"tags"`
 	FailureReason string                `json:"failureReason,omitempty"`
 	CreatedAt     time.Time             `json:"createdAt,omitempty"`
 	UpdatedAt     time.Time             `json:"updatedAt,omitempty"`
 }
 
-func safeAgentManagedBox(box v1.LogicalBox) agentManagedBox {
+func safeAgentManagedBox(box v1.LogicalBox, tags ...[]string) agentManagedBox {
+	labels := []string{}
+	if len(tags) > 0 {
+		labels = tags[0]
+	}
 	return agentManagedBox{
 		ID: box.ID, Name: box.Name, State: box.State, DefaultAgent: box.DefaultAgent,
-		Roles: box.Roles, FailureReason: box.FailureReason, CreatedAt: box.CreatedAt, UpdatedAt: box.UpdatedAt,
+		Roles: box.Roles, Tags: labels, FailureReason: box.FailureReason, CreatedAt: box.CreatedAt, UpdatedAt: box.UpdatedAt,
 	}
 }
 
@@ -87,7 +92,12 @@ func (s *Server) agentBoxesHandler(w http.ResponseWriter, r *http.Request, p Pri
 	}
 	result := make([]agentManagedBox, 0, len(boxes))
 	for _, box := range boxes {
-		result = append(result, safeAgentManagedBox(box))
+		tags, err := s.Store.BoxTags(r.Context(), ownerPrincipal(p), box.ID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		result = append(result, safeAgentManagedBox(box, tags))
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -107,7 +117,12 @@ func (s *Server) agentBoxHandler(w http.ResponseWriter, r *http.Request, p Princ
 		writeError(w, http.StatusNotFound, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, safeAgentManagedBox(box))
+	tags, err := s.Store.BoxTags(r.Context(), ownerPrincipal(p), box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, safeAgentManagedBox(box, tags))
 }
 
 func (s *Server) agentBoxRestartHandler(w http.ResponseWriter, r *http.Request, p Principal) {

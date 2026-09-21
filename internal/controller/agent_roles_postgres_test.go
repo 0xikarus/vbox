@@ -54,15 +54,18 @@ func TestNativeAgentRolesPostgres(t *testing.T) {
 	if _, err = s.DB.ExecContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,state,volume_id,volume_name) VALUES($1,$2,$3,'foreign','railway','running','foreign-volume','foreign-volume')`, foreignBox, q.AccountID, q.UserID); err != nil {
 		t.Fatal(err)
 	}
-	foreignRole, err := s.CreateAgentRole(ctx, q, v1.PutAgentRoleRequest{Name: "Foreign role", ContactScope: v1.ContactScopeAll})
+	foreignRole, err := s.CreateAgentRole(ctx, q, v1.PutAgentRoleRequest{Name: "Foreign role", Capabilities: v1.AgentRoleCapabilities{AllContacts: v1.AllContactsGrant{Enabled: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	role, err := s.CreateAgentRole(ctx, p, v1.PutAgentRoleRequest{Name: "Selected contacts", Description: "Can message the selected boxes", ContactScope: v1.ContactScopeSelected, ContactBoxIDs: []string{boxIDs["target"]}})
+	role, err := s.CreateAgentRole(ctx, p, v1.PutAgentRoleRequest{Name: "Normal", Description: "Uses direct contacts"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err = s.PutRoleAssignments(ctx, p, v1.PutRoleAssignmentsRequest{Assignments: []v1.BoxRoleAssignment{{BoxID: boxIDs["sender"], RoleIDs: []string{role.ID}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.PutBoxContact(ctx, p, boxIDs["sender"], v1.PutBoxContactRequest{Contact: boxIDs["target"], State: "allow"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernated' WHERE id=$1`, boxIDs["target"]); err != nil {
@@ -112,11 +115,11 @@ func TestNativeAgentRolesPostgres(t *testing.T) {
 	if err = s.SetBoxProtection(ctx, p, boxIDs["target"], false); err != nil {
 		t.Fatal(err)
 	}
-	role, err = s.UpdateAgentRole(ctx, p, role.ID, v1.PutAgentRoleRequest{Name: "All contacts", ContactScope: v1.ContactScopeAll})
+	role, err = s.UpdateAgentRole(ctx, p, role.ID, v1.PutAgentRoleRequest{Name: "Manager", Capabilities: v1.AgentRoleCapabilities{AllContacts: v1.AllContactsGrant{Enabled: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	backupRole, err := s.CreateAgentRole(ctx, p, v1.PutAgentRoleRequest{Name: "Backup contact grant", ContactScope: v1.ContactScopeAll})
+	backupRole, err := s.CreateAgentRole(ctx, p, v1.PutAgentRoleRequest{Name: "Backup manager", Capabilities: v1.AgentRoleCapabilities{AllContacts: v1.AllContactsGrant{Enabled: true}}})
 	if err != nil {
 		t.Fatal(err)
 	}

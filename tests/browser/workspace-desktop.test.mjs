@@ -9,7 +9,7 @@ const script=await readFile('internal/controller/web/workspace.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
  let requests=[],messageHistory=[],messagePayloads=[],interactiveRequests=[],defaultAgent='shell';
- let protectedBox=false,contacts=[];
+ let protectedBox=false,contacts=[],tags=['backend'];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url,method=req.method;
@@ -58,6 +58,10 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   else if(path==='/v1/logical-boxes/test/protection'){
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;protectedBox=!!JSON.parse(body).protected}
    return res.end(JSON.stringify({protected:protectedBox}));
+  }
+  else if(path==='/v1/logical-boxes/test/tags'){
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;tags=JSON.parse(body).tags}
+   return res.end(JSON.stringify({tags}));
   }
   else if(path.endsWith('/resources'))data={slotId:'slot-test',assignmentGeneration:7,resources:{cpu:2,memoryMiB:12288},message:'Limits submitted. No restart requested.'};
   else if(path.endsWith('/connection'))data={connection:{transport:connectionTransport,endpoint:connectionTransport==='openssh'?'instance@ssh.railway.com':'service-id',metadata:{vmboxRegion:'europe-west4'}}};
@@ -212,12 +216,12 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    await p.waitForFunction(()=>document.querySelector('#box-contacts').hidden===false);
    await p.click('#box-contacts summary');
    await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===1);
-   assert.match(await p.$eval('#contact-status',e=>e.textContent),/Inherit uses assigned roles/);
+   assert.match(await p.$eval('#contact-status',e=>e.textContent),/direct contacts/);
    assert.equal(await p.$eval('#contact-role',e=>e.textContent),'Builder');
-   await p.select('#contact-list select','block');
-   await p.waitForFunction(()=>{const select=document.querySelector('#contact-list select');return select.value==='block'&&!select.disabled});
+   assert.equal(await p.$eval('#box-tags',e=>e.textContent),'backend');
+   await p.click('#contact-list input[type=checkbox]');
+   await p.waitForFunction(()=>{const checkbox=document.querySelector('#contact-list input[type=checkbox]');return checkbox.checked&&!checkbox.disabled});
    assert.equal(requests.includes('PUT /v1/logical-boxes/test/contacts'),true);
-   await p.click('#contact-list button');
    await p.click('#contact-toggle-protection');
    await p.waitForFunction(()=>document.querySelector('#contact-protection-label').textContent.startsWith('Protected'));
    assert.equal(requests.includes('PUT /v1/logical-boxes/test/protection'),true);

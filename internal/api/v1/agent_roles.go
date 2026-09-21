@@ -3,7 +3,7 @@ package v1
 import "time"
 
 const (
-	RolePermissionContacts         = "contacts"
+	RolePermissionAllContacts      = "all_contacts"
 	RolePermissionRequestMoreTime  = "request_more_time"
 	RolePermissionQueueFollowup    = "queue_followup"
 	RolePermissionCreateAgentBox   = "create_agent_box"
@@ -11,9 +11,6 @@ const (
 	RolePermissionCreateEmail      = "create_email_address"
 	RolePermissionSharedChats      = "shared_chats"
 	RolePermissionMCPTools         = "mcp_tools"
-	ContactScopeNone               = "none"
-	ContactScopeSelected           = "selected"
-	ContactScopeAll                = "all"
 )
 
 var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_history", "set_busy", "chat_message", "chat_ask"}
@@ -21,7 +18,7 @@ var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_
 var OptionalAgentMCPTools = []string{
 	"request_more_time", "queue_followup", "discover_shared_chats", "read_shared_chat", "create_shared_chat",
 	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address",
-	"list_agent_boxes", "get_agent_box", "create_agent_box", "restart_agent_box", "delete_agent_box",
+	"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
 }
@@ -65,6 +62,12 @@ type QueueFollowupGrant struct {
 	MaxPending      int  `json:"maxPending"`
 }
 
+// AllContactsGrant lets get_contacts discover every eligible box. Without it,
+// a box sees only destinations in its own direct contact list.
+type AllContactsGrant struct {
+	Enabled bool `json:"enabled"`
+}
+
 type CreateAgentBoxGrant struct {
 	Enabled           bool     `json:"enabled"`
 	MaxBoxes          int      `json:"maxBoxes"`
@@ -73,11 +76,12 @@ type CreateAgentBoxGrant struct {
 	AssignableRoleIDs []string `json:"assignableRoleIds"`
 }
 
-// ManageAgentBoxesGrant covers lifecycle inspection and deletion. Creation has
-// its own bounded grant because it carries count, disk, agent, and role limits.
+// ManageAgentBoxesGrant covers safe inspection, metadata labels, restart, and
+// deletion. Creation has its own bounded grant because it carries limits.
 type ManageAgentBoxesGrant struct {
 	List    bool `json:"list"`
 	Inspect bool `json:"inspect"`
+	Tag     bool `json:"tag"`
 	Restart bool `json:"restart"`
 	Delete  bool `json:"delete"`
 }
@@ -103,6 +107,7 @@ type MCPToolsGrant struct {
 }
 
 type AgentRoleCapabilities struct {
+	AllContacts      AllContactsGrant        `json:"allContacts"`
 	RequestMoreTime  RequestMoreTimeGrant    `json:"requestMoreTime"`
 	QueueFollowup    QueueFollowupGrant      `json:"queueFollowup"`
 	CreateAgentBox   CreateAgentBoxGrant     `json:"createAgentBox"`
@@ -123,8 +128,6 @@ type AgentRole struct {
 	ID               string                `json:"id"`
 	Name             string                `json:"name"`
 	Description      string                `json:"description,omitempty"`
-	ContactScope     string                `json:"contactScope"`
-	ContactBoxIDs    []string              `json:"contactBoxIds"`
 	Capabilities     AgentRoleCapabilities `json:"capabilities"`
 	AssignedBoxCount int                   `json:"assignedBoxCount"`
 	CreatedAt        time.Time             `json:"createdAt,omitempty"`
@@ -132,11 +135,9 @@ type AgentRole struct {
 }
 
 type PutAgentRoleRequest struct {
-	Name          string                `json:"name"`
-	Description   string                `json:"description,omitempty"`
-	ContactScope  string                `json:"contactScope"`
-	ContactBoxIDs []string              `json:"contactBoxIds,omitempty"`
-	Capabilities  AgentRoleCapabilities `json:"capabilities"`
+	Name         string                `json:"name"`
+	Description  string                `json:"description,omitempty"`
+	Capabilities AgentRoleCapabilities `json:"capabilities"`
 }
 
 type BoxRoleAssignment struct {

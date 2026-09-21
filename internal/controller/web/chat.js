@@ -1425,11 +1425,12 @@
   const status=$('#inspect-contact-status'),list=$('#inspect-contact-list');
   status.textContent='Loading…';
   try{
-   const [contacts,protection]=await Promise.all([api(boxPath(box.id)+'/contacts'),api(boxPath(box.id)+'/protection')]);
+   const [contacts,protection,tagResult]=await Promise.all([api(boxPath(box.id)+'/contacts'),api(boxPath(box.id)+'/protection'),api(boxPath(box.id)+'/tags')]);
    if(!inspectOpen||selected!==box.id)return;
    inspectContactCache=contacts||[];
    inspectProtected=!!protection.protected;
    $('#inspect-contact-role').textContent=(box.roles||[]).map(role=>role.name).join(', ')||'None';
+   $('#inspect-tags').textContent=(tagResult.tags||[]).join(', ')||'None';
    $('#inspect-protection-label').textContent=inspectProtected?'Protected — agents cannot see or message this box':'Not protected';
    $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
    list.replaceChildren();
@@ -1449,14 +1450,13 @@
     r2.append(state,agent);
     const reason=document.createElement('span');reason.className='contact-reason';reason.textContent=contact.reason||'';
     meta.append(r1,r2,reason);item.append(meta);
-    const access=document.createElement('div');access.className='contact-access';
-    const select=document.createElement('select');for(const state of ['inherit','allow','block']){const option=document.createElement('option');option.value=state;option.textContent=state;select.append(option)}select.value=contact.override||'inherit';
-    select.setAttribute('aria-label','Contact access from '+box.name+' to '+view.name);
-    select.onchange=async()=>{select.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:select.value});await loadInspectContacts(box)}catch(e){status.textContent=e.message;select.disabled=false}};
-    const both=document.createElement('button');both.type='button';both.className='linkbtn';both.textContent='Both ways';both.onclick=async()=>{both.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:select.value,twoWay:true});await loadInspectContacts(box)}catch(e){status.textContent=e.message;both.disabled=false}};
-    access.append(select,both);item.append(access);list.append(item);
+    const access=document.createElement('label');access.className='contact-access';
+    const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=contact.override==='allow';checkbox.setAttribute('aria-label','Direct contact from '+box.name+' to '+view.name);
+    const label=document.createElement('span');label.textContent='Contact';
+    checkbox.onchange=async()=>{checkbox.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:checkbox.checked?'allow':'inherit'});await loadInspectContacts(box)}catch(e){status.textContent=e.message;checkbox.disabled=false}};
+    access.append(checkbox,label);item.append(access);list.append(item);
    }
-   status.textContent='Inherit uses assigned roles; Allow adds a manual grant; Block overrides every role grant.';
+   status.textContent='Checked boxes are direct contacts. All contacts roles bypass this list; protected boxes remain hidden.';
   }catch(e){status.textContent=e.message}
  }
  function maybeLoadInspectContacts(box){
@@ -1466,6 +1466,7 @@
   inspectContactsFor=box.id;inspectContactCache=null;void loadInspectContacts(box);
  }
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
+ $('#inspect-edit-tags').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const current=$('#inspect-tags').textContent==='None'?'':$('#inspect-tags').textContent;const value=prompt('Labels for '+box.name+' (comma separated)',current);if(value===null)return;try{await api(boxPath(box.id)+'/tags','PUT',{}, {tags:value.split(',').map(tag=>tag.trim()).filter(Boolean)});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
 
  /* ---------- toasts ---------- */
  function toast(text,actionLabel,onAction){
@@ -1908,8 +1909,9 @@
   try{await refreshRoleData(!roleAssignmentsDirty);status.textContent=roleAssignmentsDirty?'Unsaved assignment changes.':'';renderRoleMatrix()}catch(e){status.textContent=e.message}
  }
  function openRoleEditor(role=null){
-  const form=$('#role-editor-form'),cap=role?.capabilities||{};form.reset();form.elements.id.value=role?.id||'';form.elements.name.value=role?.name||'';form.elements.description.value=role?.description||'';form.elements.contactScope.value=role?.contactScope||'none';
+  const form=$('#role-editor-form'),cap=role?.capabilities||{};form.reset();form.elements.id.value=role?.id||'';form.elements.name.value=role?.name||'';form.elements.description.value=role?.description||'';
   const set=(name,value)=>{if(value!==undefined&&value!==null)form.elements[name].value=String(value)},check=(name,value)=>{form.elements[name].checked=!!value};
+  check('allContactsEnabled',cap.allContacts?.enabled);
   check('requestMoreTimeEnabled',cap.requestMoreTime?.enabled);set('maxExtensionMinutes',cap.requestMoreTime?.maxExtensionMinutes);set('maxTotalMinutes',cap.requestMoreTime?.maxTotalMinutes);
   check('queueFollowupEnabled',cap.queueFollowup?.enabled);set('maxDelayMinutes',cap.queueFollowup?.maxDelayMinutes);set('maxPending',cap.queueFollowup?.maxPending);
   check('createAgentBoxEnabled',cap.createAgentBox?.enabled);set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);
@@ -1918,7 +1920,7 @@
   check('sharedChatDiscover',cap.sharedChats?.discover);check('sharedChatRead',cap.sharedChats?.read);check('sharedChatSubscribe',cap.sharedChats?.subscribe);check('sharedChatCreate',cap.sharedChats?.create);check('sharedChatInvite',cap.sharedChats?.invite);check('sharedChatsEnabled',Object.values(cap.sharedChats||{}).some(Boolean));
   const mcpInputs=[...form.querySelectorAll('input[name=mcpTools]')],allowedMCP=new Set(cap.mcpTools?.enabled?(cap.mcpTools.allowedTools||[]):[]);mcpInputs.forEach(input=>input.checked=allowedMCP.has(input.value));
   $('#role-editor-title').textContent=role?'Edit role · '+role.name:'Define role';$('#delete-role').hidden=!role;$('#role-assigned-count').textContent=role?'Assigned to '+role.assignedBoxCount+' box'+(role.assignedBoxCount===1?'':'es')+'.':'Not assigned yet.';
-  const selectedContacts=new Set(role?.contactBoxIds||[]),root=$('#role-contact-boxes');root.replaceChildren();for(const box of roleBoxes()){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='contactBoxIds';input.value=box.id;input.checked=selectedContacts.has(box.id);label.append(input,document.createTextNode(box.name));root.append(label)}root.hidden=form.elements.contactScope.value!=='selected';$('#role-editor-status').textContent='';$('#role-editor-modal').hidden=false;form.elements.name.focus();
+  $('#role-editor-status').textContent='';$('#role-editor-modal').hidden=false;form.elements.name.focus();
   const assignable=new Set(cap.createAgentBox?.assignableRoleIds||[]),assignableRoot=$('#role-assignable-roles');assignableRoot.replaceChildren();for(const candidate of agentRoles){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='assignableRoleIds';input.value=candidate.id;input.checked=assignable.has(candidate.id);label.append(input,document.createTextNode(candidate.name));assignableRoot.append(label)}
   form.querySelectorAll('.role-capability-options').forEach(details=>details.open=false);syncRoleCapabilityOptions(form);syncMCPToolGroups(form);
  }
@@ -1930,26 +1932,25 @@
  $('#roles-toggle').onclick=()=>void openRolesModal();
  $('#inspect-edit-roles').onclick=()=>void openRolesModal(selected);
  $('#create-role').onclick=()=>openRoleEditor();
- $('#setup-team-roles').onclick=async()=>{const status=$('#role-status');if(!confirm('Create the editable Manager and Normal team roles? Manager can manage box lifecycles and create boxes with Normal; Normal can use the computer and communicate with the team.'))return;status.textContent='Creating team roles…';try{await api('/v1/agent-role-presets/team','POST',{},{});await refreshRoleData(true);status.textContent='Manager and Normal roles created.';toast('Team roles created.')}catch(e){status.textContent=e.message}};
+ $('#setup-team-roles').onclick=async()=>{const status=$('#role-status');if(!confirm('Create the editable Manager and Normal team roles? Manager gets All contacts, labels, and box lifecycle tools; Normal gets Computer use and its direct contacts.'))return;status.textContent='Creating team roles…';try{await api('/v1/agent-role-presets/team','POST',{},{});await refreshRoleData(true);status.textContent='Manager and Normal roles created.';toast('Team roles created.')}catch(e){status.textContent=e.message}};
  $('#discard-role-assignments').onclick=()=>{syncRoleAssignmentDraft(true);renderRoleMatrix()};
  $('#save-role-assignments').onclick=async()=>{
   const status=$('#role-status'),button=$('#save-role-assignments');button.disabled=true;status.textContent='Saving assignments…';
   try{await api('/v1/agent-role-assignments','PUT',{}, {assignments:roleBoxes().map(box=>({boxId:box.id,roleIds:roleAssignmentDraft.get(box.id)||[]}))});roleAssignmentsDirty=false;await refreshRoleData(true);status.textContent='Assignments saved.';toast('Role assignments saved.');if(selected)renderInspect()}
   catch(e){status.textContent=e.message;button.disabled=false}
  };
- document.querySelectorAll('#role-editor-form input[name=contactScope]').forEach(input=>input.addEventListener('change',()=>{$('#role-contact-boxes').hidden=input.form.elements.contactScope.value!=='selected'}));
  document.querySelectorAll('#role-editor-form .role-capability-toggle input').forEach(input=>input.addEventListener('change',()=>changeRoleCapability(input)));
  document.querySelectorAll('#role-editor-form .mcp-tool-group-toggle').forEach(input=>input.addEventListener('change',()=>changeMCPToolGroup(input)));
  document.querySelectorAll('#role-editor-form input[name=mcpTools]').forEach(input=>input.addEventListener('change',()=>syncMCPToolGroups(input.form)));
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,f=form.elements,id=f.id.value,name=f.name.value.trim(),status=$('#role-editor-status');if(!name){status.textContent='Type the exact role name you want to define.';return}
   const csv=value=>value.split(',').map(item=>item.trim()).filter(Boolean),num=name=>Number.parseInt(f[name].value,10)||0,allowedTools=[...form.querySelectorAll('input[name=mcpTools]:checked')].map(input=>input.value),hasTool=name=>allowedTools.includes(name);
-  const body={name,description:f.description.value.trim(),contactScope:f.contactScope.value,contactBoxIds:f.contactScope.value==='selected'?[...form.querySelectorAll('input[name=contactBoxIds]:checked')].map(input=>input.value):[],capabilities:{requestMoreTime:{enabled:f.requestMoreTimeEnabled.checked,maxExtensionMinutes:num('maxExtensionMinutes'),maxTotalMinutes:num('maxTotalMinutes')},queueFollowup:{enabled:f.queueFollowupEnabled.checked,maxDelayMinutes:num('maxDelayMinutes'),maxPending:num('maxPending')},createAgentBox:{enabled:f.createAgentBoxEnabled.checked,maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value),assignableRoleIds:[...form.querySelectorAll('input[name=assignableRoleIds]:checked')].map(input=>input.value)},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box'),restart:hasTool('restart_agent_box'),delete:hasTool('delete_agent_box')},createEmailAddress:{enabled:f.createEmailAddressEnabled.checked,maxAddresses:num('maxAddresses'),domains:csv(f.emailDomains.value),addressTypes:csv(f.emailAddressTypes.value)},sharedChats:{discover:f.sharedChatsEnabled.checked&&f.sharedChatDiscover.checked,read:f.sharedChatsEnabled.checked&&f.sharedChatRead.checked,subscribe:f.sharedChatsEnabled.checked&&f.sharedChatSubscribe.checked,create:f.sharedChatsEnabled.checked&&f.sharedChatCreate.checked,invite:f.sharedChatsEnabled.checked&&f.sharedChatInvite.checked},mcpTools:{enabled:true,allowedTools}}};status.textContent='Saving role…';
+  const body={name,description:f.description.value.trim(),capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},requestMoreTime:{enabled:f.requestMoreTimeEnabled.checked,maxExtensionMinutes:num('maxExtensionMinutes'),maxTotalMinutes:num('maxTotalMinutes')},queueFollowup:{enabled:f.queueFollowupEnabled.checked,maxDelayMinutes:num('maxDelayMinutes'),maxPending:num('maxPending')},createAgentBox:{enabled:f.createAgentBoxEnabled.checked,maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value),assignableRoleIds:[...form.querySelectorAll('input[name=assignableRoleIds]:checked')].map(input=>input.value)},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box'),tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box'),delete:hasTool('delete_agent_box')},createEmailAddress:{enabled:f.createEmailAddressEnabled.checked,maxAddresses:num('maxAddresses'),domains:csv(f.emailDomains.value),addressTypes:csv(f.emailAddressTypes.value)},sharedChats:{discover:f.sharedChatsEnabled.checked&&f.sharedChatDiscover.checked,read:f.sharedChatsEnabled.checked&&f.sharedChatRead.checked,subscribe:f.sharedChatsEnabled.checked&&f.sharedChatSubscribe.checked,create:f.sharedChatsEnabled.checked&&f.sharedChatCreate.checked,invite:f.sharedChatsEnabled.checked&&f.sharedChatInvite.checked},mcpTools:{enabled:true,allowedTools}}};status.textContent='Saving role…';
   try{await api('/v1/agent-roles'+(id?'/'+encodeURIComponent(id):''),id?'PUT':'POST',{},body);$('#role-editor-modal').hidden=true;await refreshRoleData(!roleAssignmentsDirty);$('#role-status').textContent=roleAssignmentsDirty?'Role saved. Unsaved assignment changes remain.':'Role saved.';toast((id?'Updated ':'Defined ')+name+'.')}
   catch(e){status.textContent=e.message}
  };
  $('#delete-role').onclick=async()=>{
-  const form=$('#role-editor-form'),id=form.elements.id.value,name=form.elements.name.value,status=$('#role-editor-status');if(!id||!confirm('Delete the exact role "'+name+'"? Its assignments and grants will be removed. Other roles and manual contact allowances remain effective.'))return;status.textContent='Deleting role…';
+  const form=$('#role-editor-form'),id=form.elements.id.value,name=form.elements.name.value,status=$('#role-editor-status');if(!id||!confirm('Delete the exact role "'+name+'"? Its assignments and grants will be removed. Direct contact lists remain unchanged.'))return;status.textContent='Deleting role…';
   try{await api('/v1/agent-roles/'+encodeURIComponent(id),'DELETE');$('#role-editor-modal').hidden=true;await refreshRoleData(!roleAssignmentsDirty);$('#role-status').textContent='Role deleted.';toast('Deleted '+name+'.')}
   catch(e){status.textContent=e.message}
  };

@@ -32,20 +32,20 @@ func (s *Store) contactBox(ctx context.Context, accountID, ref string) (id, name
 	return
 }
 
-func effectiveAccess(protected bool, override sql.NullBool, roleName string) (bool, string) {
+func effectiveAccess(protected bool, override sql.NullBool, allContacts bool) (bool, string) {
 	if protected {
 		return false, "Blocked because the target is protected."
 	}
 	if override.Valid && !override.Bool {
-		return false, "Blocked by an explicit connection override."
+		return false, "Blocked by a legacy explicit contact override."
 	}
 	if override.Valid && override.Bool {
-		return true, "Allowed by an explicit connection override."
+		return true, "Included in this box's direct contact list."
 	}
-	if roleName != "" {
-		return true, "Allowed by " + roleName + "."
+	if allContacts {
+		return true, "Allowed by the All contacts capability."
 	}
-	return false, "No role or manual connection grants access."
+	return false, "Not in this box's direct contact list."
 }
 
 // contactViews is the shared read model for owner views and agent discovery.
@@ -57,13 +57,10 @@ func (s *Store) contactViews(ctx context.Context, accountID, senderBoxID string)
 	rows, err := s.DB.QueryContext(ctx, `SELECT ($2::uuid)::text,$3::text,t.id::text,t.name,t.default_agent,t.state,
 		EXISTS(SELECT 1 FROM box_protection bp WHERE bp.account_id=t.account_id AND bp.box_id=t.id),
 		c.can_message,c.updated_at,
-		COALESCE((SELECT r.name FROM box_role_assignments a
-			JOIN agent_roles r ON r.id=a.role_id AND r.account_id=a.account_id
-			JOIN agent_role_permissions rp ON rp.role_id=r.id AND rp.account_id=r.account_id AND rp.permission='contacts'
-			WHERE a.account_id=$1 AND a.box_id=$2::uuid AND
-				(rp.scope='all' OR (rp.scope='selected' AND EXISTS(
-					SELECT 1 FROM agent_role_contact_grants g WHERE g.account_id=a.account_id AND g.role_id=r.id AND g.contact_box_id=t.id)))
-			ORDER BY lower(r.name),r.id LIMIT 1),''),
+		EXISTS(SELECT 1 FROM box_role_assignments a
+			JOIN agent_role_permissions rp ON rp.role_id=a.role_id AND rp.account_id=a.account_id
+			WHERE a.account_id=$1 AND a.box_id=$2::uuid AND rp.permission='all_contacts'
+				AND COALESCE((rp.config->>'enabled')::boolean,false)),
 		COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id::text,'name',r.name) ORDER BY lower(r.name),r.id)
 			FROM box_role_assignments a JOIN agent_roles r ON r.id=a.role_id AND r.account_id=a.account_id
 			WHERE a.account_id=t.account_id AND a.box_id=t.id),'[]'::jsonb)
@@ -80,9 +77,9 @@ func (s *Store) contactViews(ctx context.Context, accountID, senderBoxID string)
 		var value v1.BoxContact
 		var override sql.NullBool
 		var updated sql.NullTime
-		var roleName string
+		var allContacts bool
 		var roles []byte
-		if err := rows.Scan(&value.BoxID, &value.BoxName, &value.ContactBoxID, &value.ContactName, &value.ContactAgent, &value.ContactState, &value.Protected, &override, &updated, &roleName, &roles); err != nil {
+		if err := rows.Scan(&value.BoxID, &value.BoxName, &value.ContactBoxID, &value.ContactName, &value.ContactAgent, &value.ContactState, &value.Protected, &override, &updated, &allContacts, &roles); err != nil {
 			return nil, err
 		}
 		value.Override = "inherit"
@@ -93,7 +90,7 @@ func (s *Store) contactViews(ctx context.Context, accountID, senderBoxID string)
 				value.Override = "block"
 			}
 		}
-		value.CanMessage, value.Reason = effectiveAccess(value.Protected, override, roleName)
+		value.CanMessage, value.Reason = effectiveAccess(value.Protected, override, allContacts)
 		if updated.Valid {
 			value.UpdatedAt = updated.Time
 		}
@@ -194,7 +191,7 @@ func (s *Store) ContactEntries(ctx context.Context, accountID, boxID string) ([]
 	return values, nil
 }
 
-// AuthorizeBoxMessage re-evaluates roles and overrides for every delivery.
+// AuthorizeBoxMessage re-evaluates direct contacts and All contacts for every delivery.
 func (s *Store) AuthorizeBoxMessage(ctx context.Context, accountID, senderBoxID, targetBoxID string) error {
 	if senderBoxID == "" || targetBoxID == "" || senderBoxID == targetBoxID {
 		return fmt.Errorf("a contact must be a different box")
@@ -213,17 +210,15 @@ func (s *Store) AuthorizeBoxMessage(ctx context.Context, accountID, senderBoxID,
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	var roleName string
-	err = s.DB.QueryRowContext(ctx, `SELECT r.name FROM box_role_assignments a
-		JOIN agent_roles r ON r.id=a.role_id AND r.account_id=a.account_id
-		JOIN agent_role_permissions p ON p.role_id=r.id AND p.account_id=r.account_id AND p.permission='contacts'
-		WHERE a.account_id=$1 AND a.box_id=$2 AND (p.scope='all' OR (p.scope='selected' AND EXISTS(
-			SELECT 1 FROM agent_role_contact_grants g WHERE g.account_id=a.account_id AND g.role_id=r.id AND g.contact_box_id=$3)))
-		ORDER BY lower(r.name),r.id LIMIT 1`, accountID, senderBoxID, targetBoxID).Scan(&roleName)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+	var allContacts bool
+	err = s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM box_role_assignments a
+		JOIN agent_role_permissions p ON p.role_id=a.role_id AND p.account_id=a.account_id
+		WHERE a.account_id=$1 AND a.box_id=$2 AND p.permission='all_contacts'
+			AND COALESCE((p.config->>'enabled')::boolean,false))`, accountID, senderBoxID).Scan(&allContacts)
+	if err != nil {
 		return err
 	}
-	allowed, reason := effectiveAccess(protected, override, roleName)
+	allowed, reason := effectiveAccess(protected, override, allContacts)
 	if !allowed {
 		return errors.New(reason)
 	}

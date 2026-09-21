@@ -322,7 +322,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .contact-name{font-size:.88rem;font-weight:700;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .contact-meta{font-size:.68rem;color:var(--ink-soft)}
 #inspect-contact-list li .contact-info{flex:1}
-.contact-access{display:flex;align-items:center;gap:.35rem;flex:none}
+.contact-access{display:flex;align-items:center;gap:.35rem;flex:none;font-size:.75rem;font-weight:700;color:var(--ink-soft);cursor:pointer}
 .contact-access select{font:inherit;font-size:.72rem;color:var(--ink);background:var(--surface);border:1px solid var(--line);
   border-radius:var(--radius-sm);padding:.22rem .35rem;max-width:7.5rem}
 .contact-access button{flex:none;font:inherit;font-size:.7rem;font-weight:700;color:var(--accent-text);background:var(--accent-soft);

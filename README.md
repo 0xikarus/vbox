@@ -127,14 +127,13 @@ setting. OpenCode variant support depends on the selected provider model; Claude
 Haiku has no effort control, and Claude's session-only `max` is not a persistent
 box setting.
 
-Agents can also address each other when the owner grants contact access.
+Agents can also address each other through owner-managed direct contacts.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
 accept an optional `contact`; the message is delivered into that box's same
 native conversation and appears in the chat app attributed to its sender. Owners
-create account-scoped roles, grant selected-box or all-boxes contact access, and
-assign several roles to a box from the **Roles** page. Individual directional
-connections can inherit those grants, add a manual allow, or explicitly block a
-target. Protected targets and explicit blocks always win. Changes apply
+choose each box's directional direct contacts. A role may add the explicit
+**All contacts** capability, which makes `get_contacts` return every eligible
+box instead. Protected targets always stay hidden. Changes apply
 immediately and the controller reauthorizes every send, so a stale contact list
 cannot widen an agent's reach. A box needs no role to chat with its owner.
 
@@ -726,11 +725,13 @@ with a delay; an unexpected attached volume stops deletion rather than deleting
 someone else's storage. Fleet size is unchanged; the cleaned slot becomes free.
 
 Legacy coworker adapters and the worker/manager box category have been removed.
-Native owner-defined roles and contact overrides now govern inter-agent access;
+Native editable roles and direct contact lists now govern agent capabilities;
 ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
-Role names are exact owner-entered text—none are generated or preinstalled. Owners
-can define roles, edit their contact grants, assign them to boxes, and select
-initial roles during box creation from either the controller or the chat app.
+The optional team preset creates editable **Manager** and **Normal** roles:
+Manager gets All contacts plus safe box lifecycle and metadata-label tools,
+while Normal gets computer-use tools and relies on its box's direct contacts.
+Owners may rename or replace them, assign roles to boxes, and select initial
+roles during box creation from either the controller or the chat app.
 
 ## Optional tools
 

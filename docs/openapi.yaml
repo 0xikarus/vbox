@@ -378,11 +378,19 @@ paths:
   /v1/logical-boxes/{id}/contacts:
     get:
       parameters: [{$ref: '#/components/parameters/ID'}]
-      responses: {'200': {description: Effective contact access with inherit, allow, or block overrides}}
+      responses: {'200': {description: Direct-contact choices and effective access after All contacts and protection are applied}}
     put:
       parameters: [{$ref: '#/components/parameters/ID'}]
       requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PutContactOverride'}}}}
       responses: {'200': {description: Updated effective contact access}}
+  /v1/logical-boxes/{id}/tags:
+    get:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses: {'200': {description: Plain metadata labels for the box}}
+    put:
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [tags], properties: {tags: {type: array, maxItems: 20, items: {type: string, minLength: 1, maxLength: 32}}}}}}}
+      responses: {'200': {description: Labels replaced}}
   /v1/logical-boxes/{id}/allocate:
     post:
       description: Reserve a free slot or enqueue the logical box when the fleet is full.
@@ -658,12 +666,22 @@ components:
         name: {type: string}
     PutAgentRole:
       type: object
-      required: [name, contactScope]
+      required: [name, capabilities]
       properties:
         name: {type: string, minLength: 1, maxLength: 64}
         description: {type: string, maxLength: 500}
-        contactScope: {enum: [none, selected, all]}
-        contactBoxIds: {type: array, items: {type: string, format: uuid}}
+        capabilities:
+          type: object
+          description: Typed capability grants. Names never authorize behavior.
+          properties:
+            allContacts:
+              type: object
+              properties: {enabled: {type: boolean}}
+            mcpTools:
+              type: object
+              properties:
+                enabled: {type: boolean}
+                allowedTools: {type: array, items: {type: string}}
     AgentRole:
       allOf:
         - {$ref: '#/components/schemas/PutAgentRole'}

@@ -696,13 +696,6 @@ CREATE TABLE IF NOT EXISTS agent_role_permissions (
   PRIMARY KEY(role_id,permission)
 );
 CREATE INDEX IF NOT EXISTS agent_role_permissions_account_idx ON agent_role_permissions(account_id,role_id);
-CREATE TABLE IF NOT EXISTS agent_role_contact_grants (
-  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-  role_id uuid NOT NULL REFERENCES agent_roles(id) ON DELETE CASCADE,
-  contact_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
-  PRIMARY KEY(role_id,contact_box_id)
-);
-CREATE INDEX IF NOT EXISTS agent_role_contact_grants_account_idx ON agent_role_contact_grants(account_id,role_id);
 CREATE TABLE IF NOT EXISTS box_role_assignments (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
@@ -712,6 +705,31 @@ CREATE TABLE IF NOT EXISTS box_role_assignments (
   PRIMARY KEY(box_id,role_id)
 );
 CREATE INDEX IF NOT EXISTS box_role_assignments_account_idx ON box_role_assignments(account_id,box_id);
+
+-- Migrate the first role/contact design into the simpler model once. Selected
+-- role grants become direct contacts for boxes currently assigned that role;
+-- all-scope grants become the explicit all_contacts capability. Existing
+-- per-box rows win so an owner-authored block is never widened by migration.
+DO $$
+BEGIN
+  IF to_regclass('agent_role_contact_grants') IS NOT NULL THEN
+    EXECUTE $migrate$
+      INSERT INTO box_contacts(account_id,box_id,contact_box_id,can_message,can_receive,created_by)
+      SELECT a.account_id,a.box_id,g.contact_box_id,true,true,a.assigned_by
+      FROM box_role_assignments a
+      JOIN agent_role_permissions p ON p.account_id=a.account_id AND p.role_id=a.role_id
+        AND p.permission='contacts' AND p.scope='selected'
+      JOIN agent_role_contact_grants g ON g.account_id=a.account_id AND g.role_id=a.role_id
+      ON CONFLICT(box_id,contact_box_id) DO NOTHING
+    $migrate$;
+    INSERT INTO agent_role_permissions(account_id,role_id,permission,scope,config)
+      SELECT account_id,role_id,'all_contacts','allow','{"enabled":true}'::jsonb
+      FROM agent_role_permissions WHERE permission='contacts' AND scope='all'
+      ON CONFLICT(role_id,permission) DO UPDATE SET scope='allow',config=excluded.config,updated_at=now();
+    DELETE FROM agent_role_permissions WHERE permission='contacts';
+    DROP TABLE agent_role_contact_grants;
+  END IF;
+END $$;
 
 -- Agent-initiated work is durable and fenced to an assignment generation.
 -- The run budget is independent of desktop inactivity and only has a live

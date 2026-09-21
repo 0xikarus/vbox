@@ -479,31 +479,31 @@ if(importedCredentials){
 
 const contactsPanel=document.querySelector('#box-contacts');
 if(contactsPanel){
- const status=$('#contact-status'),list=$('#contact-list'),roleLabel=$('#contact-role'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection');
+ const status=$('#contact-status'),list=$('#contact-list'),roleLabel=$('#contact-role'),tagLabel=$('#box-tags'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection');
  let protectedBox=false;
  async function loadContacts(){
   if(workspaceRole!=='owner'){contactsPanel.hidden=true;return}
   contactsPanel.hidden=false;status.textContent='Loading…';
   try{
-   const [contacts,protection]=await Promise.all([api(bp+'/contacts'),api(bp+'/protection')]);
+   const [contacts,protection,tagResult]=await Promise.all([api(bp+'/contacts'),api(bp+'/protection'),api(bp+'/tags')]);
    protectedBox=!!protection.protected;
    roleLabel.textContent=(boxSummary?.roles||[]).map(role=>role.name).join(', ')||'None';
+   tagLabel.textContent=(tagResult.tags||[]).join(', ')||'None';
    protectionLabel.textContent=protectedBox?'Protected — agents cannot see or message this box':'Not protected';
    toggleProtection.textContent=protectedBox?'Remove protection':'Protect box';
    list.replaceChildren();
    if(!contacts.length){const empty=document.createElement('li');empty.textContent='No other eligible boxes.';list.append(empty)}
    for(const contact of contacts){
     const row=document.createElement('li');
-    row.append(document.createTextNode(contact.contactName+' · '+(contact.contactRoles||[]).map(role=>role.name).join(', ')+' · '+(contact.contactState||'unknown')+' · '));
-    const select=document.createElement('select');for(const state of ['inherit','allow','block']){const option=document.createElement('option');option.value=state;option.textContent=state;select.append(option)}select.value=contact.override||'inherit';
-    select.onchange=async()=>{select.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:select.value});await loadContacts()}catch(e){status.textContent=e.message;select.disabled=false}};
-    const both=document.createElement('button');both.type='button';both.className='linkbtn';both.textContent='Apply both ways';both.onclick=async()=>{both.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:select.value,twoWay:true});await loadContacts()}catch(e){status.textContent=e.message;both.disabled=false}};
-    row.append(select,document.createTextNode(' · '+contact.reason+' '),both);list.append(row);
+    const label=document.createElement('label'),checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=contact.override==='allow';checkbox.setAttribute('aria-label','Direct contact with '+contact.contactName);
+    checkbox.onchange=async()=>{checkbox.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:checkbox.checked?'allow':'inherit'});await loadContacts()}catch(e){status.textContent=e.message;checkbox.disabled=false}};
+    label.append(checkbox,document.createTextNode(' '+contact.contactName+' · '+(contact.contactRoles||[]).map(role=>role.name).join(', ')+' · '+(contact.contactState||'unknown')+' · '+contact.reason));row.append(label);list.append(row);
    }
-   status.textContent='Inherit uses assigned roles; Allow adds a manual grant; Block overrides every role grant.';
+   status.textContent='Checked boxes are direct contacts. All contacts roles bypass this list; protected boxes remain hidden.';
   }catch(e){status.textContent=e.message}
  }
  contactsPanel.addEventListener('toggle',()=>{if(contactsPanel.open)void loadContacts()});
  toggleProtection.onclick=async()=>{toggleProtection.disabled=true;try{await api(bp+'/protection','PUT',{protected:!protectedBox});status.textContent='Protection saved.';await loadContacts()}catch(e){status.textContent=e.message}finally{toggleProtection.disabled=false}};
+ $('#edit-box-tags').onclick=async()=>{const current=tagLabel.textContent==='None'?'':tagLabel.textContent,value=prompt('Labels for this box (comma separated)',current);if(value===null)return;try{await api(bp+'/tags','PUT',{tags:value.split(',').map(tag=>tag.trim()).filter(Boolean)});await loadContacts()}catch(e){status.textContent=e.message}};
  document.querySelector('#logout').addEventListener('click',()=>{contactsPanel.open=false;list.replaceChildren();status.textContent=''});
 }

@@ -11,17 +11,13 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
-func TestValidateAgentRoleRequestNormalizesContactScope(t *testing.T) {
-	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "  Researcher  ", Description: "  Finds sources  ", ContactScope: "SELECTED", ContactBoxIDs: []string{"box-a", "box-a", ""}})
+func TestValidateAgentRoleRequestNormalizesRoleText(t *testing.T) {
+	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "  Researcher  ", Description: "  Finds sources  "})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if request.Name != "Researcher" || request.Description != "Finds sources" || request.ContactScope != "selected" || len(request.ContactBoxIDs) != 1 {
+	if request.Name != "Researcher" || request.Description != "Finds sources" {
 		t.Fatalf("normalized request=%+v", request)
-	}
-	request, err = validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "All", ContactScope: "all", ContactBoxIDs: []string{"ignored"}})
-	if err != nil || len(request.ContactBoxIDs) != 0 {
-		t.Fatalf("all-scope request=%+v err=%v", request, err)
 	}
 }
 
@@ -79,10 +75,10 @@ func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 		t.Fatal(err)
 	}
 	computerTools := []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
-	if normal.Name != "Normal" || normal.ContactScope != v1.ContactScopeAll || !normal.Capabilities.MCPTools.Enabled || !slices.Equal(normal.Capabilities.MCPTools.AllowedTools, computerTools) {
+	if normal.Name != "Normal" || normal.Capabilities.AllContacts.Enabled || !normal.Capabilities.MCPTools.Enabled || !slices.Equal(normal.Capabilities.MCPTools.AllowedTools, computerTools) {
 		t.Fatalf("normal preset=%+v", normal)
 	}
-	if manager.Name != "Manager" || manager.ContactScope != v1.ContactScopeAll {
+	if manager.Name != "Manager" || !manager.Capabilities.AllContacts.Enabled {
 		t.Fatalf("manager preset=%+v", manager)
 	}
 	create := manager.Capabilities.CreateAgentBox
@@ -90,10 +86,10 @@ func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 		t.Fatalf("manager create grant=%+v", create)
 	}
 	manage := manager.Capabilities.ManageAgentBoxes
-	if !manage.List || !manage.Inspect || !manage.Restart || !manage.Delete {
+	if !manage.List || !manage.Inspect || !manage.Tag || !manage.Restart || !manage.Delete {
 		t.Fatalf("manager lifecycle grant=%+v", manage)
 	}
-	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "restart_agent_box", "delete_agent_box"} {
+	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "delete_agent_box"} {
 		if !slices.Contains(manager.Capabilities.MCPTools.AllowedTools, tool) {
 			t.Fatalf("manager preset lacks %s: %+v", tool, manager)
 		}
@@ -122,14 +118,14 @@ func TestEffectiveAgentCapabilitiesUnionsAssignedRoles(t *testing.T) {
 func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.T) {
 	store, mock := testStore(t)
 	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 1, MaxDiskGiB: 20, AllowedAgents: []string{"codex"}})
-	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{List: true, Inspect: true})
-	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "restart_agent_box", "delete_agent_box", "create_agent_box", "request_more_time"}})
+	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{List: true, Inspect: true, Tag: true})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "set_agent_box_tags", "restart_agent_box", "delete_agent_box", "create_agent_box", "request_more_time"}})
 	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionManageAgentBoxes, manage).AddRow(v1.RolePermissionMCPTools, mcp))
 	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "create_agent_box"} {
+	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "set_agent_box_tags", "create_agent_box"} {
 		if !slices.Contains(tools, name) {
 			t.Fatalf("expected %s in %v", name, tools)
 		}

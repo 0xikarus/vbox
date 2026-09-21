@@ -15,7 +15,7 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 	var result v1.AgentRoleCapabilities
 	rows, err := s.DB.QueryContext(ctx, `SELECT p.permission,p.config FROM box_role_assignments a
 		JOIN agent_role_permissions p ON p.account_id=a.account_id AND p.role_id=a.role_id
-		WHERE a.account_id=$1 AND a.box_id=$2 AND p.scope='allow' AND p.permission<>'contacts'`, accountID, boxID)
+		WHERE a.account_id=$1 AND a.box_id=$2 AND p.scope='allow'`, accountID, boxID)
 	if err != nil {
 		return result, err
 	}
@@ -27,6 +27,12 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 			return result, err
 		}
 		switch permission {
+		case v1.RolePermissionAllContacts:
+			var grant v1.AllContactsGrant
+			if err := json.Unmarshal(config, &grant); err != nil {
+				return result, err
+			}
+			result.AllContacts.Enabled = result.AllContacts.Enabled || grant.Enabled
 		case v1.RolePermissionRequestMoreTime:
 			var grant v1.RequestMoreTimeGrant
 			if err := json.Unmarshal(config, &grant); err != nil {
@@ -60,6 +66,7 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 			}
 			result.ManageAgentBoxes.List = result.ManageAgentBoxes.List || grant.List
 			result.ManageAgentBoxes.Inspect = result.ManageAgentBoxes.Inspect || grant.Inspect
+			result.ManageAgentBoxes.Tag = result.ManageAgentBoxes.Tag || grant.Tag
 			result.ManageAgentBoxes.Restart = result.ManageAgentBoxes.Restart || grant.Restart
 			result.ManageAgentBoxes.Delete = result.ManageAgentBoxes.Delete || grant.Delete
 		case v1.RolePermissionCreateEmail:
