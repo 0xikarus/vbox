@@ -1,6 +1,7 @@
 package boxruntime
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -109,6 +110,46 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	}
 }
 
+func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-long-reply")
+	text := strings.Repeat("<", 100_000)
+	request, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "chat_message",
+			"arguments": map[string]any{"text": text},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request) <= bufio.MaxScanTokenSize {
+		t.Fatalf("test request is only %d bytes; it does not exercise the old scanner limit", len(request))
+	}
+	var output bytes.Buffer
+	if err := ServeDesktopMCP(context.Background(), "assignment", strings.NewReader(string(request)+"\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("invalid MCP response %q: %v", output.String(), err)
+	}
+	if _, failed := response["error"]; failed {
+		t.Fatalf("maximum-size chat reply was rejected: %v", response)
+	}
+	event, found, err := PullChatEvent(home, "codex-long-reply")
+	if err != nil || !found {
+		t.Fatalf("long chat event unavailable: found=%t err=%v", found, err)
+	}
+	if event.Text != text {
+		t.Fatalf("stored reply has %d bytes, want %d", len(event.Text), len(text))
+	}
+}
+
 func TestClaudeChannelOldProcessCannotRemoveReplacementReadiness(t *testing.T) {
 	home := t.TempDir()
 	dir := claudeChannelReadyDir(home)
@@ -211,7 +252,7 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		if i == 0 && response.Result["protocolVersion"] != "2025-11-25" {
 			t.Fatal("version negotiation failed")
 		}
-		if i == 1 && len(response.Result["tools"].([]any)) != 14 {
+		if i == 1 && len(response.Result["tools"].([]any)) != len(desktopMCPTools()) {
 			t.Fatal("tool inventory incomplete")
 		}
 		if i >= 2 && response.Result["isError"] != true {

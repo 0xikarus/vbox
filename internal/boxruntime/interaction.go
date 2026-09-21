@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
@@ -17,6 +18,11 @@ import (
 var ErrAmbiguousMessage = errors.New("message delivery is ambiguous and will not be replayed automatically")
 
 const taskAgentEnvironment = "VMBOX_TASK_AGENT"
+
+// tmux rejects individual commands around 16 KiB with "command too long".
+// Keep literal-key commands comfortably below that limit; splitting only at
+// UTF-8 boundaries preserves the exact prompt seen by the TUI.
+const tmuxLiteralChunkBytes = 8 * 1024
 
 func validateTmuxToken(kind, value string) error {
 	if value == "" || len(value) > 128 {
@@ -243,6 +249,65 @@ func DeliverTmuxKeys(ctx context.Context, root, session, messageID string, keys 
 	return nil
 }
 
+// deliverTmuxLiteral sends text as literal key events instead of bracketed
+// paste. Codex ignores tmux bracketed paste, and one send-keys command cannot
+// carry a long chat message, so the text is delivered in bounded chunks.
+func deliverTmuxLiteral(ctx context.Context, root, session, messageID, text string) error {
+	if err := validateTmuxToken("session", session); err != nil {
+		return err
+	}
+	if err := validateTmuxToken("message ID", messageID); err != nil {
+		return err
+	}
+	if text == "" || len(text) > 140_000 {
+		return fmt.Errorf("literal terminal input must contain between 1 and 140000 bytes")
+	}
+	directory := filepath.Join(root, "messages")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return err
+	}
+	pending := filepath.Join(directory, messageID+".pending")
+	delivered := filepath.Join(directory, messageID+".delivered")
+	if _, err := os.Stat(delivered); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	file, err := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if errors.Is(err, os.ErrExist) {
+		return ErrAmbiguousMessage
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = fmt.Fprintf(file, "%s\n", time.Now().UTC().Format(time.RFC3339Nano)); err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	for len(text) > 0 {
+		end := min(len(text), tmuxLiteralChunkBytes)
+		for end < len(text) && end > 0 && !utf8.RuneStart(text[end]) {
+			end--
+		}
+		if end == 0 {
+			_, end = utf8.DecodeRuneInString(text)
+		}
+		if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "-l", text[:end]); err != nil {
+			return ErrAmbiguousMessage
+		}
+		text = text[end:]
+	}
+	if err := os.Rename(pending, delivered); err != nil {
+		return ErrAmbiguousMessage
+	}
+	return nil
+}
+
 // ResetAgentContext starts a fresh conversation in the existing watched tmux
 // session. Codex and OpenCode expose native commands. Claude channels have no
 // control/reset notification, so Claude is respawned without --resume and the
@@ -257,7 +322,18 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 	switch agent {
 	case "claude":
 		return resetClaudeContext(ctx, root, session, messageID)
-	case "codex", "opencode":
+	case "codex":
+		if err := waitForCodexAppServerReady(ctx, session); err != nil {
+			return err
+		}
+		if err := deliverTmuxLiteral(ctx, root, session, messageID+"-command", "/new"); err != nil {
+			return err
+		}
+		if err := tmuxSubmitPause(ctx); err != nil {
+			return err
+		}
+		return DeliverTmuxKeys(ctx, root, session, messageID+"-submit", []string{"Enter"})
+	case "opencode":
 		// Continue below.
 	default:
 		return fmt.Errorf("unsupported context reset agent %q", agent)
@@ -272,6 +348,27 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		return err
 	}
 	return DeliverTmuxInput(ctx, root, session, messageID+"-submit", "\r", false)
+}
+
+func waitForCodexAppServerReady(ctx context.Context, session string) error {
+	deadline := time.NewTimer(agentReadyTimeout)
+	defer deadline.Stop()
+	for {
+		ready, err := CodexAppServerReady(ctx, session)
+		if err != nil {
+			return err
+		}
+		if ready {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-deadline.C:
+			return fmt.Errorf("codex task session API did not become ready")
+		case <-time.After(agentReadyPollInterval):
+		}
+	}
 }
 
 func resetClaudeContext(ctx context.Context, root, session, messageID string) error {

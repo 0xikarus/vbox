@@ -496,26 +496,34 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 }
 
 func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
-	originalCommand, originalProbe, originalPause := tmuxCommand, openCodeReadyProbe, tmuxSubmitPause
+	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, tmuxSubmitPause
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, tmuxSubmitPause = originalCommand, originalProbe, originalPause
+		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalPause
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
+	CodexAppServerReady = func(context.Context, string) (bool, error) { return true, nil }
 	tmuxSubmitPause = func(context.Context) error { return nil }
 	for _, test := range []struct {
-		agent, ready, command string
+		agent string
+		want  []string
 	}{
-		{agent: "codex", ready: "OpenAI Codex\n›", command: "/new"},
-		{agent: "opencode", command: "/new"},
+		{agent: "codex", want: []string{"/new", "Enter"}},
+		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 				if len(args) > 0 && args[0] == "capture-pane" {
-					return []byte(test.ready), nil
+					if test.agent == "codex" {
+						t.Fatal("Codex reset screen-scraped the TUI instead of probing its app server")
+					}
+					return nil, nil
 				}
 				if len(args) > 0 && args[0] == "load-buffer" {
 					inputs = append(inputs, stdin)
+				}
+				if len(args) > 0 && args[0] == "send-keys" {
+					inputs = append(inputs, args[len(args)-1])
 				}
 				return nil, nil
 			}
@@ -523,13 +531,13 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			if err := ResetAgentContext(context.Background(), root, test.agent+"-session", test.agent, "reset-message"); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(inputs, []string{test.command, "\r"}) {
+			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("terminal inputs = %q", inputs)
 			}
 			if err := ResetAgentContext(context.Background(), root, test.agent+"-session", test.agent, "reset-message"); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(inputs, []string{test.command, "\r"}) {
+			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("idempotent retry replayed terminal input: %q", inputs)
 			}
 		})

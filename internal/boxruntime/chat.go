@@ -362,26 +362,31 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	if json.Unmarshal(data, &event) != nil {
 		return fmt.Errorf("invalid inbound chat event")
 	}
-	prompt := inbound.Text
-	if len(event.Paths) > 0 {
-		prompt += "\n\nAttached images are available as local files:\n"
-		for index, image := range event.Paths {
-			prompt += fmt.Sprintf("[Image %d]: %s\n", index+1, image)
-		}
-		prompt += "\nInspect the referenced images as message data before responding."
-	}
+	prompt := codexChatPrompt(event.Text, event.Paths)
 	// A blank conversation created by /new does not exist in the app server's
 	// thread/list until its first prompt. If the visible TUI is ready, type there
 	// so it remains the authority for which thread the user is watching. While a
 	// turn is running the pane is not input-ready, and app-server delivery safely
 	// queues into that already-materialized current thread.
 	if codexTUIInputReady(ctx, session) {
-		return deliverCodexThroughTUI(ctx, session, prompt, path)
+		return deliverCodexThroughTUI(ctx, root, session, prompt, path)
 	}
 	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), prompt, event.Paths); err != nil {
 		return err
 	}
 	return os.Remove(path)
+}
+
+func codexChatPrompt(text string, paths []string) string {
+	prompt := text
+	if len(paths) > 0 {
+		prompt += "\n\nAttached images are available as local files:\n"
+		for index, image := range paths {
+			prompt += fmt.Sprintf("[Image %d]: %s\n", index+1, image)
+		}
+		prompt += "\nInspect the referenced images as message data before responding."
+	}
+	return prompt
 }
 
 func codexTUIInputReady(ctx context.Context, session string) bool {
@@ -390,8 +395,8 @@ func codexTUIInputReady(ctx context.Context, session string) bool {
 }
 
 // StartCodexChat starts a new interactive Codex session with the first Agent
-// chat message in Codex's supported process arguments. Later messages prefer
-// the input-ready TUI and use the shared app server while a turn is running.
+// chat message in Codex's supported process arguments. A prompt too large for
+// one tmux command is typed into the ready TUI in bounded chunks instead.
 func StartCodexChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
 	if err := StoreChatInbound(home, session, inbound); err != nil {
 		return err
@@ -409,14 +414,19 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 	if err != nil {
 		return err
 	}
-	for _, path := range event.Paths {
-		argv = append(argv, "-i", path)
+	longPrompt := len(codexChatPrompt(event.Text, event.Paths)) > tmuxLiteralChunkBytes
+	if !longPrompt {
+		for _, path := range event.Paths {
+			argv = append(argv, "-i", path)
+		}
+		argv = append(argv, event.Text)
 	}
-	argv = append(argv, event.Text)
 	// The initial message is already in argv. Removing its inbox envelope before
 	// launch prevents any native message consumer from seeing it a second time.
-	if err := os.Remove(eventPath); err != nil {
-		return err
+	if !longPrompt {
+		if err := os.Remove(eventPath); err != nil {
+			return err
+		}
 	}
 	created, err := startTmuxTaskSession(ctx, root, session, "codex", argv)
 	if err != nil {
@@ -427,22 +437,33 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 		// refusing and leaving the message undelivered.
 		return DeliverCodexChat(ctx, root, home, session, inbound)
 	}
+	if longPrompt {
+		if err := waitForAgentReady(ctx, session, "codex"); err != nil {
+			return err
+		}
+		if err := settleAgentReadiness(ctx, session, "codex"); err != nil {
+			return err
+		}
+		return deliverCodexThroughTUI(ctx, root, session, codexChatPrompt(event.Text, event.Paths), eventPath)
+	}
 	return nil
 }
 
-func deliverCodexThroughTUI(ctx context.Context, session, prompt, eventPath string) error {
+func deliverCodexThroughTUI(ctx context.Context, root, session, prompt, eventPath string) error {
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err
 	}
 	// Codex 0.155 ignores tmux bracketed paste, which DeliverTmuxInput uses and
-	// Claude accepts, so the text is sent as literal keys instead.
-	if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "-l", prompt); err != nil {
+	// Claude accepts, so the text is sent as literal keys instead. Chunking is
+	// required because tmux rejects an individual command around 16 KiB.
+	eventID := strings.TrimSuffix(filepath.Base(eventPath), filepath.Ext(eventPath))
+	if err := deliverTmuxLiteral(ctx, root, session, "codex-chat-"+eventID, prompt); err != nil {
 		return err
 	}
 	if err := tmuxSubmitPause(ctx); err != nil {
 		return err
 	}
-	if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Enter"); err != nil {
+	if err := DeliverTmuxKeys(ctx, root, session, "codex-chat-submit-"+eventID, []string{"Enter"}); err != nil {
 		return err
 	}
 	return os.Remove(eventPath)
