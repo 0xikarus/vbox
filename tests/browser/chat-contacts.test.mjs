@@ -116,6 +116,11 @@ test('chat details drawer edits the per-box contact list',async()=>{
   await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
   await new Promise(resolve=>setTimeout(resolve,650));
   assert.equal(requests.filter(r=>r==='GET /v1/grid-boxes').length,beforeListRefresh+1,'push burst should fetch the list once');
+  await p.mouse.move(0,0);
+  await p.focus('#chat-header-avatar .preview-trigger');
+  await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden);
+  await p.evaluate(()=>document.activeElement.blur());
+  await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden,{timeout:2000});
   for(const selector of ['#chat-entries [data-avatar="builder"]','#chat-header-avatar [data-avatar="builder"]']){
    await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');

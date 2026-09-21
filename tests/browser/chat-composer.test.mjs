@@ -62,6 +62,8 @@ test('mobile Enter inserts a newline and opening a chat does not focus the compo
   await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts.length,1,'the Send button still sends on mobile');
   assert.equal(posts[0].text,'first line\nsecond line');
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(await p.$eval('#send',button=>button.disabled),true,'Send must return to disabled after the composer clears');
   await p.close();
  });
 });
@@ -82,6 +84,8 @@ test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
   await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts.length,1,'desktop Enter must send');
   assert.equal(posts[0].text,'hello\nworld');
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.equal(await p.$eval('#send',button=>button.disabled),true,'Send must return to disabled after the composer clears');
   await p.close();
  });
 });

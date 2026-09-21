@@ -508,7 +508,7 @@
    wrap.title='Hover to preview; click for Desktop/TMUX control';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open Desktop or TMUX control');
    const currentBox=()=>boxes.get(box.id)||box;
    wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=scheduleHideTvPreview;
-   wrap.onfocus=()=>{if(!coarsePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview};
+   wrap.onfocus=()=>{if(!coarsePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
    wrap.onclick=event=>{event.stopPropagation();const box=currentBox();if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(wrap,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
   }
@@ -911,7 +911,7 @@
    tv.onmouseenter=()=>{if(!coarsePointer())showTvPreview(tv,box)};
    tv.onmouseleave=scheduleHideTvPreview;
    tv.onfocus=()=>{if(!coarsePointer())showTvPreview(tv,box)};
-   tv.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview};
+   tv.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
    tv.onclick=()=>{if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(tv,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    t.append(mini,dots,label,tv);messagesEl.append(t);
   }
@@ -1197,7 +1197,7 @@
     if(selected===boxID){renderHeader();renderMessages(box)}
     renderRows();
    }
-   send.disabled=false;
+   updateSendState();
   }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
