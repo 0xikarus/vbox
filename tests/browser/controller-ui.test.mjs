@@ -86,6 +86,8 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  await page.click('#role-contact-boxes input[value="box-2"]');
  await page.click('#role-editor-form input[name=queueFollowupEnabled]');
  await page.click('#role-editor-form input[name=sharedChatsEnabled]');
+ await page.click('#role-editor-form .mcp-tool-options summary');
+ await page.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
  await page.click('#role-editor-form button.primary');
  await page.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Can contact planner'));
  const selectedRole=fixtureRoles.find(role=>role.name==='Can contact planner');
@@ -93,6 +95,8 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  assert.deepEqual(selectedRole.contactBoxIds,['box-2']);
  assert.equal(selectedRole.capabilities.queueFollowup.enabled,true);
  assert.equal(Object.values(selectedRole.capabilities.sharedChats).every(Boolean),true);
+ assert.equal(selectedRole.capabilities.mcpTools.allowedTools.includes('press_keys'),true);
+ assert.equal(selectedRole.capabilities.mcpTools.allowedTools.includes('secret_request'),false);
  const assignmentSelector=`#role-matrix input[aria-label="Can contact planner for helper ü"]`;
  await page.click(assignmentSelector);
  await page.click('#save-role-assignments');

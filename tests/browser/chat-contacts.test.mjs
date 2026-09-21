@@ -213,7 +213,15 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('#role-editor-form [data-capability=createAgentBoxEnabled]',element=>element.open=false);
   await p.click('#role-editor-form .mcp-tool-options summary');
   assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.title),/privately/);
-  await p.click('#role-editor-form input[name=mcpTools][value=click_mouse]');
+  await p.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
+  assert.equal(await p.$eval('#role-editor-form .mcp-tool-group-toggle[value=computer_use]',input=>input.checked),true);
+  assert.equal(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) input[name=mcpTools]',inputs=>inputs.every(input=>input.checked)),true);
+  await p.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) .role-capability-options summary');
+  await p.click('#role-editor-form input[name=mcpTools][value=drag_mouse]');
+  assert.equal(await p.$eval('#role-editor-form .mcp-tool-group-toggle[value=computer_use]',input=>input.indeterminate),true);
+  await p.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
+  assert.equal(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) input[name=mcpTools]',inputs=>inputs.every(input=>input.checked)),true);
+  await p.$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) .role-capability-options',element=>element.open=false);
   await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-role-mcp-tools.png'});
   await p.$eval('#role-editor-form .mcp-tool-options',element=>element.open=false);
   await p.$eval('.role-capabilities',element=>element.scrollIntoView({block:'start'}));
@@ -224,8 +232,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(agentRoles.at(-1).capabilities.requestMoreTime.enabled,true);
   assert.deepEqual(agentRoles.at(-1).capabilities.createAgentBox.allowedAgents,['codex']);
   assert.equal(agentRoles.at(-1).capabilities.mcpTools.enabled,true);
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('drag_mouse'),false);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('drag_mouse'),true);
   assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('click_mouse'),true);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('secret_request'),false);
   await p.click('#role-matrix input[aria-label="Release handoff for reviewer"]');
   await p.click('#save-role-assignments');
   await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');

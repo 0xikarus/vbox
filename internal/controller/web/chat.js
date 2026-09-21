@@ -1879,10 +1879,12 @@
   $('#role-editor-title').textContent=role?'Edit role · '+role.name:'Define role';$('#delete-role').hidden=!role;$('#role-assigned-count').textContent=role?'Assigned to '+role.assignedBoxCount+' box'+(role.assignedBoxCount===1?'':'es')+'.':'Not assigned yet.';
   const selectedContacts=new Set(role?.contactBoxIds||[]),root=$('#role-contact-boxes');root.replaceChildren();for(const box of roleBoxes()){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='contactBoxIds';input.value=box.id;input.checked=selectedContacts.has(box.id);label.append(input,document.createTextNode(box.name));root.append(label)}root.hidden=form.elements.contactScope.value!=='selected';$('#role-editor-status').textContent='';$('#role-editor-modal').hidden=false;form.elements.name.focus();
   const assignable=new Set(cap.createAgentBox?.assignableRoleIds||[]),assignableRoot=$('#role-assignable-roles');assignableRoot.replaceChildren();for(const candidate of agentRoles){const label=mk('label'),input=document.createElement('input');input.type='checkbox';input.name='assignableRoleIds';input.value=candidate.id;input.checked=assignable.has(candidate.id);label.append(input,document.createTextNode(candidate.name));assignableRoot.append(label)}
-  form.querySelectorAll('.role-capability-options').forEach(details=>details.open=false);syncRoleCapabilityOptions(form);
+  form.querySelectorAll('.role-capability-options').forEach(details=>details.open=false);syncRoleCapabilityOptions(form);syncMCPToolGroups(form);
  }
  function syncRoleCapabilityOptions(form=$('#role-editor-form')){form.querySelectorAll('.role-capability-options[data-capability]').forEach(root=>root.hidden=!form.elements[root.dataset.capability].checked)}
  function changeRoleCapability(input){if(input.name==='sharedChatsEnabled'&&input.checked&&!['sharedChatDiscover','sharedChatRead','sharedChatSubscribe','sharedChatCreate','sharedChatInvite'].some(name=>input.form.elements[name].checked)){for(const name of ['sharedChatDiscover','sharedChatRead','sharedChatSubscribe','sharedChatCreate','sharedChatInvite'])input.form.elements[name].checked=true}syncRoleCapabilityOptions(input.form)}
+ function syncMCPToolGroups(form=$('#role-editor-form')){for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
+ function changeMCPToolGroup(toggle){for(const input of toggle.closest('.mcp-tool-group').querySelectorAll('input[name=mcpTools]'))input.checked=toggle.checked;syncMCPToolGroups(toggle.form)}
  $('#role-box-search').addEventListener('input',renderRoleMatrix);
  $('#roles-toggle').onclick=()=>void openRolesModal();
  $('#inspect-edit-roles').onclick=()=>void openRolesModal(selected);
@@ -1895,6 +1897,8 @@
  };
  document.querySelectorAll('#role-editor-form input[name=contactScope]').forEach(input=>input.addEventListener('change',()=>{$('#role-contact-boxes').hidden=input.form.elements.contactScope.value!=='selected'}));
  document.querySelectorAll('#role-editor-form .role-capability-toggle input').forEach(input=>input.addEventListener('change',()=>changeRoleCapability(input)));
+ document.querySelectorAll('#role-editor-form .mcp-tool-group-toggle').forEach(input=>input.addEventListener('change',()=>changeMCPToolGroup(input)));
+ document.querySelectorAll('#role-editor-form input[name=mcpTools]').forEach(input=>input.addEventListener('change',()=>syncMCPToolGroups(input.form)));
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,f=form.elements,id=f.id.value,name=f.name.value.trim(),status=$('#role-editor-status');if(!name){status.textContent='Type the exact role name you want to define.';return}
   const csv=value=>value.split(',').map(item=>item.trim()).filter(Boolean),num=name=>Number.parseInt(f[name].value,10)||0;

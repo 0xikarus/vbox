@@ -23,7 +23,10 @@ is rechecked by the controller at execution time.
   desktop tools. Core chat, contact, budget visibility, busy-state, and thread
   history tools remain available. The allow-list is an additional restriction:
   a selected tool still needs its typed capability grant and limits. Optional
-  tools default to denied when no assigned role explicitly grants them.
+  tools default to denied when no assigned role explicitly grants them. The UI
+  provides Coordination, Passwords, and Computer use group toggles while saving
+  the resulting exact per-tool list; individual tools remain independently
+  adjustable.
 
 Multiple assigned roles combine additively. Boolean grants are ORed, numeric
 limits use the largest explicit ceiling, and allow-lists are unioned.
