@@ -27,7 +27,7 @@ const (
 )
 
 func (s *Server) chatInboundPayload(ctx context.Context, accountID string, task v1.BoxTask, message v1.BoxMessage) ([]byte, error) {
-	text, err := s.boxMessagePrompt(ctx, accountID, task.Agent, message)
+	text, err := s.boxMessageNativePrompt(ctx, accountID, task.Agent, message)
 	if err != nil {
 		return nil, err
 	}
@@ -37,7 +37,7 @@ func (s *Server) chatInboundPayload(ctx context.Context, accountID string, task 
 	}
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.media_type,i.data
 		FROM box_message_images j JOIN run_once_images i ON i.id=j.image_id AND i.account_id=j.account_id
-		WHERE j.account_id=$1 AND j.message_id=$2 ORDER BY j.ordinal`, accountID, message.ID)
+		WHERE j.account_id=$1 AND j.message_id=$2 AND i.media_type LIKE 'image/%' ORDER BY j.ordinal`, accountID, message.ID)
 	if err != nil {
 		return nil, err
 	}

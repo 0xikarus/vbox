@@ -362,36 +362,13 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	if json.Unmarshal(data, &event) != nil {
 		return fmt.Errorf("invalid inbound chat event")
 	}
-	prompt := codexChatPrompt(event.Text, event.Paths)
-	// A blank conversation created by /new does not exist in the app server's
-	// thread/list until its first prompt. If the visible TUI is ready, type there
-	// so it remains the authority for which thread the user is watching. While a
-	// turn is running the pane is not input-ready, and app-server delivery safely
-	// queues into that already-materialized current thread.
-	if codexTUIInputReady(ctx, session) {
-		return deliverCodexThroughTUI(ctx, root, session, prompt, path)
-	}
-	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), prompt, event.Paths); err != nil {
+	// Follow-ups all use the same native app-server path. This keeps ordinary
+	// text and structured images ordered on one thread without screen-scraping or
+	// typing prompts into tmux.
+	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), event.Text, event.Paths); err != nil {
 		return err
 	}
 	return os.Remove(path)
-}
-
-func codexChatPrompt(text string, paths []string) string {
-	prompt := text
-	if len(paths) > 0 {
-		prompt += "\n\nAttached images are available as local files:\n"
-		for index, image := range paths {
-			prompt += fmt.Sprintf("[Image %d]: %s\n", index+1, image)
-		}
-		prompt += "\nInspect the referenced images as message data before responding."
-	}
-	return prompt
-}
-
-func codexTUIInputReady(ctx context.Context, session string) bool {
-	content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
-	return err == nil && agentInputReady("codex", string(content))
 }
 
 // StartCodexChat starts a new interactive Codex session with the first Agent
@@ -414,11 +391,11 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 	if err != nil {
 		return err
 	}
-	longPrompt := len(codexChatPrompt(event.Text, event.Paths)) > tmuxLiteralChunkBytes
+	longPrompt := len(event.Text) > tmuxLiteralChunkBytes
+	for _, path := range event.Paths {
+		argv = append(argv, "-i", path)
+	}
 	if !longPrompt {
-		for _, path := range event.Paths {
-			argv = append(argv, "-i", path)
-		}
 		argv = append(argv, event.Text)
 	}
 	// The initial message is already in argv. Removing its inbox envelope before
@@ -444,7 +421,7 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 		if err := settleAgentReadiness(ctx, session, "codex"); err != nil {
 			return err
 		}
-		return deliverCodexThroughTUI(ctx, root, session, codexChatPrompt(event.Text, event.Paths), eventPath)
+		return deliverCodexThroughTUI(ctx, root, session, event.Text, eventPath)
 	}
 	return nil
 }

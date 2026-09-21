@@ -496,9 +496,9 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 }
 
 func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
-	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, tmuxSubmitPause
+	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalPause
+		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
 	CodexAppServerReady = func(context.Context, string) (bool, error) { return true, nil }
@@ -507,10 +507,15 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 		agent string
 		want  []string
 	}{
-		{agent: "codex", want: []string{"/new", "Enter"}},
+		{agent: "codex", want: []string{"/resume thread-new", "Enter"}},
 		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
+			freshThreads := 0
+			CodexStartFreshThread = func(context.Context, string, string, string) (string, error) {
+				freshThreads++
+				return "thread-new", nil
+			}
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 				if len(args) > 0 && args[0] == "capture-pane" {
@@ -539,6 +544,9 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			}
 			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("idempotent retry replayed terminal input: %q", inputs)
+			}
+			if test.agent == "codex" && freshThreads != 1 {
+				t.Fatalf("fresh app-server threads = %d, want 1", freshThreads)
 			}
 		})
 	}

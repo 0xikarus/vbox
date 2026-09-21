@@ -103,6 +103,17 @@ func (s *Server) contactChatInstruction(messageRef, senderID, senderName, agent 
 }
 
 func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
+	return s.boxMessagePromptWithLinks(ctx, accountID, agent, message, true)
+}
+
+// boxMessageNativePrompt omits image download links because native harness
+// delivery carries those images as structured message parts. Non-image files
+// still need their capability URL until the native chat envelope supports them.
+func (s *Server) boxMessageNativePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {
+	return s.boxMessagePromptWithLinks(ctx, accountID, agent, message, false)
+}
+
+func (s *Server) boxMessagePromptWithLinks(ctx context.Context, accountID, agent string, message v1.BoxMessage, includeImageLinks bool) (string, error) {
 	if s.Store == nil || s.Store.DB == nil {
 		if message.SenderBoxID != "" {
 			return message.Text + s.contactChatInstruction(chatReference(message), message.SenderBoxID, "", agent), nil
@@ -134,6 +145,9 @@ func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, 
 		var number int
 		if err := rows.Scan(&id, &number, &token, &media); err != nil {
 			return "", err
+		}
+		if !includeImageLinks && strings.HasPrefix(media, "image/") {
+			continue
 		}
 		if count == 0 {
 			prompt += "\n\nAttached files:\n"

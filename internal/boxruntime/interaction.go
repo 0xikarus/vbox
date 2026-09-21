@@ -326,7 +326,24 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		if err := waitForCodexAppServerReady(ctx, session); err != nil {
 			return err
 		}
-		if err := deliverTmuxLiteral(ctx, root, session, messageID+"-command", "/new"); err != nil {
+		resetThreadPath := filepath.Join(root, "chat", "codex-reset-threads", messageID)
+		threadID := ""
+		if data, err := os.ReadFile(resetThreadPath); err == nil {
+			threadID = strings.TrimSpace(string(data))
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+		if threadID == "" {
+			var err error
+			threadID, err = CodexStartFreshThread(ctx, session, root, WorkspaceDirectory())
+			if err != nil {
+				return err
+			}
+			if err := writeTextAtomic(resetThreadPath, threadID+"\n", 0600); err != nil {
+				return err
+			}
+		}
+		if err := deliverTmuxLiteral(ctx, root, session, messageID+"-command", "/resume "+threadID); err != nil {
 			return err
 		}
 		if err := tmuxSubmitPause(ctx); err != nil {

@@ -142,7 +142,7 @@ every send, so the model cannot widen its own reach.
 | --- | --- | --- | --- |
 | First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the startup prompt |
 | Follow-ups reuse the same native task/thread | Yes | Yes | Yes |
-| **Clear context** keeps the watched session usable | Native `/new` | Respawns Claude with a new channel | Native `/new` |
+| **Clear context** keeps the watched session usable | App-server thread + native `/resume` | Respawns Claude with a new channel | Native `/new` |
 | Old process cleanup when a respawn is required | Not applicable | Old Claude tree is terminated | Not applicable |
 | `chat_message`, `chat_ask`, `set_busy`, and contact routing | Yes | Yes | Yes |
 | Desktop screenshot, mouse, keyboard, and typing tools | Yes | Yes | Yes |
@@ -151,6 +151,9 @@ every send, so the model cannot widen its own reach.
 | Agent exchange remains visible in TMUX/VNC | Yes | Yes | Yes |
 
 Codex and OpenCode clear their model context without killing a healthy TUI.
+Codex creates the fresh thread through app-server and resumes the watched TUI
+onto that exact thread so later API-delivered prompts cannot fall back to the
+previous conversation.
 Claude has no equivalent channel reset, so clearing it replaces the Claude
 process and waits for the new channel before accepting another chat message.
 

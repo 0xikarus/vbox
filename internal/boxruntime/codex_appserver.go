@@ -199,6 +199,30 @@ func rememberCodexThread(root, session, id string) error {
 	return writeTextAtomic(codexThreadFile(root, session), id+"\n", 0600)
 }
 
+// CodexStartFreshThread creates the empty thread used after Clear context. The
+// TUI is then resumed onto this id before another message is accepted, keeping
+// app-server delivery and the watched terminal on the same conversation.
+var CodexStartFreshThread = func(ctx context.Context, session, root, workspace string) (string, error) {
+	client, err := dialCodexAppServer(ctx, session)
+	if err != nil {
+		return "", err
+	}
+	defer client.Close()
+	started, err := client.call(ctx, "thread/start", map[string]any{"cwd": workspace})
+	if err != nil {
+		return "", err
+	}
+	thread, _ := started["thread"].(map[string]any)
+	id, _ := thread["id"].(string)
+	if id == "" {
+		return "", fmt.Errorf("codex app server returned no thread")
+	}
+	if err := rememberCodexThread(root, session, id); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
 // CodexStartTurn sends one message to the thread the terminal is showing and
 // waits for the turn to finish, so a caller learns the agent actually accepted
 // it rather than only that a keystroke was written.
@@ -244,9 +268,9 @@ func codexTurnInput(text string, images []string) []map[string]any {
 
 // Older app-server releases predate localImage/path and deserialize that shape
 // as image/url, producing "missing field `url`". A rejected request has not
-// started a turn, so retrying with an inline image is safe and keeps retained
-// workers compatible while current releases continue using local filesystem
-// paths without copying image bytes into JSON.
+// started a turn, so retrying with the older structured image item is safe and
+// keeps retained workers compatible. The data URL is the item's byte transport;
+// it is not inserted into the text prompt.
 func codexNeedsImageURLFallback(err error) bool {
 	message := err.Error()
 	return strings.Contains(message, "missing field `url`") || strings.Contains(message, "unknown variant `localImage`")
