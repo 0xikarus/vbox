@@ -67,7 +67,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("type_secret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
-		makeTool("take_screenshot", "Capture this box's current desktop as a PNG image. Does not start or wake the desktop.", map[string]any{}),
+		makeTool("take_screenshot", "Capture this box's current desktop as a PNG image. Use output=file for a private PNG path that can be passed to chat_message files. Does not start or wake the desktop.", map[string]any{"output": map[string]any{"type": "string", "enum": []string{"image", "file"}, "default": "image"}}),
 		makeTool("capture_window", "Capture the visible screen area of an X11 window as PNG. Defaults to the active window; optionally supply window_id (decimal or 0x hexadecimal). Does not focus or raise windows. Overlapping windows appear in the capture; minimized windows are not supported. Returned x/y offsets map image coordinates to desktop coordinates.", map[string]any{"window_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 10}}),
 		makeTool("move_mouse", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
 		makeTool("click_mouse", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
@@ -102,9 +102,32 @@ func allowedDesktopMCPTools(ctx context.Context, assignment string, resolve desk
 	return tools, allowed, nil
 }
 
+const desktopMCPGuidePath = ".config/vmbox/mcp-tools.md"
+
+// writeDesktopMCPGuide gives every managed agent a local, readable tool
+// reference. It is generated from the same schemas advertised over MCP.
+func writeDesktopMCPGuide(home string) error {
+	var guide strings.Builder
+	guide.WriteString("# vmbox-desktop MCP tools\n\n")
+	guide.WriteString("Use the tool directly with the JSON call shown.\n\n")
+	for _, tool := range desktopMCPTools() {
+		name := tool["name"].(string)
+		description := tool["description"].(string)
+		schema, err := json.Marshal(tool["inputSchema"])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&guide, "## %s\n\n%s\n\nSchema: `%s`\n\n", name, description, schema)
+	}
+	return writeTextAtomic(filepath.Join(home, desktopMCPGuidePath), guide.String(), 0600)
+}
+
 // ServeDesktopMCP is a local stdio adapter. stdout contains protocol only; the
 // assignment captured at startup fences every subsequent operation.
 func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer) error {
+	if home, err := os.UserHomeDir(); err == nil {
+		_ = writeDesktopMCPGuide(home)
+	}
 	return serveDesktopMCP(ctx, assignment, input, output, desktopAgentToolPolicy)
 }
 
@@ -152,7 +175,7 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose. Busy state is automatic for ordinary request/reply work; use set_busy only to report activity outside that flow. These tools are also reachable over HTTP from inside this box: read ~/.local/share/vmbox/mcp-http.json for the url and token, then POST a JSON object of arguments to {url}/tools/{name} with an Authorization: Bearer header. A script can POST {\"text\":\"...\"} to promptUrl from that file to deliver a user message to this already-running agent conversation; it never wakes a stopped box. Use the HTTP façade when a script or background job needs to act outside an agent turn."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message once for every user-facing reply and chat_ask for choices. Busy state is automatic for normal replies; use set_busy only for other work. Incoming chat images arrive with an image_path channel attribute; read that path. Read ~/.config/vmbox/mcp-tools.md for every exact vmbox tool call. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token. A script can POST {\"text\":\"...\"} to promptUrl to deliver a user message to this already-running agent conversation; it never wakes a stopped box."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
@@ -219,12 +242,9 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		_ = os.WriteFile(ready, []byte(owner), 0600)
 		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
 			content := event.Text
+			meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
 			if len(event.Paths) > 0 {
-				content += "\n\nAttached image files:\n" + strings.Join(event.Paths, "\n")
-			}
-			meta := map[string]any{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
-			if len(event.Paths) > 0 {
-				meta["file_path"] = event.Paths[0]
+				meta["image_path"] = event.Paths[0]
 			}
 			if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": content, "meta": meta}}) == nil {
 				_ = os.Remove(path)
@@ -734,9 +754,22 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}}, nil
 	}
 	if name == "take_screenshot" {
+		output := "image"
+		if value, ok := values["output"]; ok {
+			if json.Unmarshal(value, &output) != nil || (output != "image" && output != "file") {
+				return nil, fmt.Errorf("output must be image or file")
+			}
+		}
 		var png bytes.Buffer
 		if err := CaptureDesktop(ctx, assignment, &png); err != nil {
 			return nil, fmt.Errorf("desktop capture unavailable; check that this box's desktop is running")
+		}
+		if output == "file" {
+			path, err := saveDesktopScreenshot(png.Bytes())
+			if err != nil {
+				return nil, fmt.Errorf("save desktop capture: %w", err)
+			}
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Screenshot saved to " + path + ". Pass this absolute path to chat_message files when the user should receive it."}}}, nil
 		}
 		return map[string]any{"content": []map[string]any{{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(png.Bytes())}}}, nil
 	}
@@ -759,4 +792,19 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		return nil, err
 	}
 	return map[string]any{"content": []map[string]any{{"type": "text", "text": "Action completed. Capture the screen to inspect its result."}}}, nil
+}
+
+func saveDesktopScreenshot(data []byte) (string, error) {
+	dir := filepath.Join(WorkspaceRoot(), "tmp", "vmbox")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "desktop-screenshot.png")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return "", err
+	}
+	return path, nil
 }

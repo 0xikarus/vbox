@@ -17,7 +17,10 @@ func newBoxToolGuidance(tools []string) string {
 	}
 	var lines []string
 	if selected["desktop"] || selected["blender"] {
-		lines = append(lines, "- Chromium: `chromium` · profile `~/.config/vmbox/chromium` · display `:99`.")
+		lines = append(lines, "- Chromium: `chromium` · profile `~/.config/vmbox/chromium` · display `$VMBOX_DESKTOP_DISPLAY` (usually `:99`).")
+	}
+	if selected["desktop"] {
+		lines = append(lines, "- vmbox MCP: read `~/.config/vmbox/mcp-tools.md` for all tool calls and JSON examples.")
 	}
 	if selected["blender"] {
 		lines = append(lines, "- Blender: `~/bin/blender` · Blender MCP.")

@@ -43,6 +43,10 @@ func TestNewBoxToolGuidanceFollowsSelectedOptions(t *testing.T) {
 	if !strings.Contains(blender, "~/bin/blender") || !strings.Contains(blender, "Chromium") || !strings.Contains(blender, "~/.config/vmbox/chromium") {
 		t.Fatalf("Blender must include Blender and desktop guidance: %q", blender)
 	}
+	desktop := newBoxToolGuidance([]string{"desktop"})
+	if !strings.Contains(desktop, "~/.config/vmbox/mcp-tools.md") {
+		t.Fatalf("desktop guidance must point agents at the MCP guide: %q", desktop)
+	}
 	all := newBoxToolGuidance([]string{"foundry", "blender", "desktop"})
 	for _, name := range []string{"Chromium", "Blender", "Foundry"} {
 		if n := strings.Count(all, name+":"); n != 1 {

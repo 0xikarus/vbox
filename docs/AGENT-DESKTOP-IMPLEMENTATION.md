@@ -27,7 +27,8 @@ Reconnecting refreshes this configuration, including after reassignment.
 
 `vmbox-runtime desktop-mcp` provides:
 
-- `take_screenshot`: PNG image content captured inside the worker.
+- `take_screenshot`: PNG image content captured inside the worker, or a private
+  file path with `{"output":"file"}` for attachment through `chat_message`.
 - `capture_window`: PNG of the active window's visible screen area, or a supplied
   `window_id` string (decimal or `0x` hexadecimal X11 ID). Returns desktop x/y
   offsets for subsequent clicks. Does not raise/focus windows or wake the desktop;

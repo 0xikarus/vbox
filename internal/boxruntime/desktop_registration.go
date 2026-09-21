@@ -36,6 +36,9 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	if err := os.MkdirAll(lockDir, 0700); err != nil {
 		return err
 	}
+	if err := writeDesktopMCPGuide(home); err != nil {
+		return fmt.Errorf("write desktop MCP guide: %w", err)
+	}
 	lock, err := os.OpenFile(filepath.Join(lockDir, "mcp-registration.lock"), os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return err
