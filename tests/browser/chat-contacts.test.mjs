@@ -80,6 +80,7 @@ test('chat details drawer edits the per-box contact list',async()=>{
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
+  p.on('dialog',dialog=>dialog.accept());
   await p.evaluateOnNewDocument(()=>{
    window.openWorkspaceDesktop=(id,onStatus,options)=>{
     if(options.viewOnly){window.viewerPreview={id,viewOnly:true};setTimeout(()=>onStatus('Desktop connected'),350);return()=>{window.viewerPreviewClosed=true}};
@@ -209,10 +210,10 @@ test('chat details drawer edits the per-box contact list',async()=>{
   await resetDrawer();
   // Case 4: right-clicking another chat row offers to make it a contact.
   await p.evaluate(()=>{const row=[...document.querySelectorAll('#chat-entries li')].find(el=>el.dataset.boxId==='reviewer');const rect=row.getBoundingClientRect();row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.left+20,clientY:rect.top+10}))});
-  await p.waitForFunction(()=>[...document.querySelectorAll('#row-menu button')].some(b=>b.textContent==='Add reviewer as contact'));
+  await p.waitForFunction(()=>[...document.querySelectorAll('#row-menu button')].some(b=>b.textContent==='Add reviewer as a two-way contact'));
   await p.screenshot({path:'docs/chat-ui/screenshots/desktop-chat-row-menu.png'});
   const menuPuts=requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length;
-  await p.evaluate(()=>[...document.querySelectorAll('#row-menu button')].find(b=>b.textContent==='Add reviewer as contact').click());
+  await p.evaluate(()=>[...document.querySelectorAll('#row-menu button')].find(b=>b.textContent==='Add reviewer as a two-way contact').click());
   await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===3);
   assert.equal(requests.filter(r=>r==='PUT /v1/logical-boxes/builder/contacts').length,menuPuts+1,'the row menu adds the right-clicked box as a contact');
   await p.setViewport({width:420,height:820,deviceScaleFactor:1});

@@ -750,6 +750,9 @@
   'check-check':[['path',{d:'M18 6 7 17l-5-5'}],['path',{d:'m22 10-7.5 7.5L13 16'}]],
   alert:[['path',{d:'m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'}],['path',{d:'M12 9v4'}],['path',{d:'M12 17h.01'}]],
   help:[['circle',{cx:'12',cy:'12',r:'10'}],['path',{d:'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'}],['path',{d:'M12 17h.01'}]],
+  'chevron-down':[['path',{d:'m6 9 6 6 6-6'}]],
+  copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
+  forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -855,11 +858,22 @@
    meta.append(ticks);
   }
   row.append(meta);
-  const fwd=document.createElement('button');fwd.type='button';fwd.className='fwd';fwd.title='Forward to another box';fwd.textContent='↪';
-  fwd.onclick=event=>{event.stopPropagation();openForwardMenu(fwd,message)};
-  row.append(fwd);
+  // Always-visible actions (hover-only controls are invisible on touch): the
+  // chevron reveals Copy / Forward for this message, WhatsApp style.
+  const actions=document.createElement('div');actions.className='msg-actions';
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='msg-more';toggle.setAttribute('aria-label','Message actions');toggle.setAttribute('aria-expanded','false');toggle.append(lucide('chevron-down'));
+  const menu=document.createElement('div');menu.className='msg-actions-menu';menu.hidden=true;
+  const copy=document.createElement('button');copy.type='button';copy.append(lucide('copy'),Object.assign(document.createElement('span'),{textContent:'Copy'}));
+  copy.onclick=async()=>{closeAllMsgActions();try{await navigator.clipboard.writeText(message.question?message.question.text:message.text);toast('Message copied.')}catch{toast('Copy is unavailable here.')}};
+  const forward=document.createElement('button');forward.type='button';forward.append(lucide('forward'),Object.assign(document.createElement('span'),{textContent:'Forward…'}));
+  forward.onclick=()=>{closeAllMsgActions();openForwardMenu(toggle,message)};
+  menu.append(copy,forward);
+  toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen){menu.hidden=false;toggle.setAttribute('aria-expanded','true')}};
+  actions.append(toggle,menu);row.append(actions);
   return row;
  }
+ function closeAllMsgActions(){for(const menu of messagesEl.querySelectorAll('.msg-actions-menu'))menu.hidden=true;for(const toggle of messagesEl.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
+ document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
  function scrollMessagesToBottom(){
   messagesEl.scrollTop=messagesEl.scrollHeight;
   requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
@@ -987,6 +1001,19 @@
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
+  updateBanner();
+ }
+ // One banner for the two things that silently confuse people: a dropped
+ // connection, and an agent that looks stuck on the last request.
+ const chatBanner=$('#chat-banner');
+ let reconnecting=false,bannerShown='';
+ function setBanner(text){if(text===bannerShown)return;bannerShown=text;chatBanner.textContent=text;chatBanner.hidden=!text}
+ function updateBanner(){
+  if(reconnecting)return setBanner('Reconnecting to the controller…');
+  const box=boxes.get(selected);if(!box)return setBanner('');
+  const last=[...(box.messages||[])].reverse().find(m=>m.direction==='user');
+  const stalled=box.processing&&last&&(Date.now()-new Date(last.updatedAt||last.createdAt).getTime())>5*60*1000;
+  setBanner(stalled?'Agent has been processing for '+Math.round((Date.now()-new Date(last.updatedAt||last.createdAt).getTime())/60000)+' min — it may be stalled.':'');
  }
  async function refreshMessages(force){
   if(!selected)return;
@@ -1037,7 +1064,7 @@
   const savedScroll=scrollMemory.get(id);
   stickToBottom=savedScroll==null;
   const restoredDraft=inputDrafts[id]||'';
-  if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow()}
+  if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow();updateSendState()}
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;
   appEl.classList.add('in-chat');
   renderHeader();
@@ -1053,8 +1080,25 @@
  }
 
  /* ---------- composer ---------- */
- function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,150)+'px'}
- inputEl.addEventListener('input',()=>{grow();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ // Grow the composer with the text like WhatsApp, up to a viewport-aware cap so
+ // it never eats the transcript on a phone.
+ const maxComposerHeight=()=>Math.min(150,Math.max(96,innerHeight*0.35));
+ function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
+ function updateSendState(){
+  const hasContent=!!inputEl.value.trim()||drafts.length>0;
+  const send=$('#send');send.disabled=!hasContent;
+  const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
+  send.setAttribute('aria-label',label);
+  send.title=label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line');
+ }
+ inputEl.addEventListener('input',()=>{grow();updateSendState();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ let composerHintShown=false;
+ inputEl.addEventListener('focus',()=>{
+  if(composerHintShown)return;composerHintShown=true;
+  try{if(localStorage.getItem('vmbox.composerHint')==='1')return;localStorage.setItem('vmbox.composerHint','1')}catch{}
+  statusEl.textContent=enterInsertsNewline()?'Tap Send to send; Enter starts a new line.':'Enter sends; Shift+Enter adds a new line.';
+  setTimeout(()=>{if(/^(Enter sends|Tap Send)/.test(statusEl.textContent))statusEl.textContent=''},5000);
+ });
  // On a phone or tablet the soft keyboard's Enter is the only convenient way to
  // start a new line, so it inserts a newline there; Send is the explicit button.
  // A hardware keyboard (hover + fine pointer) keeps Enter-to-send.
@@ -1081,6 +1125,7 @@
    remove.onclick=()=>{drafts=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);drafts.forEach((d,i)=>d.number=i+1);renderDrafts()};
    wrap.append(open,remove);draftsEl.append(wrap);
   }
+  updateSendState();
  }
  async function uploadImages(files){
   for(const file of files){
@@ -1318,14 +1363,39 @@
   else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null}
  };
  $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null};
+ // Collapsible details sections, remembered per browser.
+ const foldKey='vmbox.inspectFold';
+ let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
+ document.querySelectorAll('#inspect-summary .inspect-fold').forEach(node=>{
+  const key=node.dataset.fold;
+  if(key in foldState)node.open=!!foldState[key];
+  node.addEventListener('toggle',()=>{foldState[key]=node.open;try{localStorage.setItem(foldKey,JSON.stringify(foldState))}catch{}});
+ });
 
  /* ---------- inspect drawer: per-box contact graph (owner) ---------- */
  const inspectContacts=$('#inspect-contacts');
  let inspectContactsFor='',inspectProtected=false,inspectContactCache=null;
- const contactView=contact=>{
-  const known=boxes.get(contact.contactBoxId)||{};
-  return {id:contact.contactBoxId||contact.contactName,name:contact.contactName||known.name||'—',state:contact.contactState||known.state||'unknown',role:contact.contactRole||known.role||'worker',defaultAgent:contact.contactAgent||known.defaultAgent||''};
- };
+  const contactView=contact=>{
+   const known=boxes.get(contact.contactBoxId)||{};
+   return {id:contact.contactBoxId||contact.contactName,name:contact.contactName||known.name||'—',state:contact.contactState||known.state||'unknown',role:contact.contactRole||known.role||'worker',defaultAgent:contact.contactAgent||known.defaultAgent||''};
+  };
+  const refreshContacts=async active=>{if(inspectOpen&&selected===active.id)await loadInspectContacts(active)};
+  // Contacts are two-way: one edge lets both boxes message each other. Adds and
+  // removes stay reversible with an Undo so a stray tap can't break the graph.
+  async function addContact(active,target){
+   await api(boxPath(active.id)+'/contacts','PUT',{},{contact:target.id});
+   await refreshContacts(active);
+   toast(target.name+' and '+active.name+' are now contacts.','Undo',async()=>{
+    try{await api(boxPath(active.id)+'/contacts/'+encodeURIComponent(target.name),'DELETE');await refreshContacts(active);toast('Contact removed.')}catch(e){toast(e.message)}
+   });
+  }
+  async function removeContact(active,view){
+   await api(boxPath(active.id)+'/contacts/'+encodeURIComponent(view.name),'DELETE');
+   await refreshContacts(active);
+   toast(view.name+' removed from '+active.name+'.','Undo',async()=>{
+    try{await api(boxPath(active.id)+'/contacts','PUT',{},{contact:view.id||view.name});await refreshContacts(active);toast('Contact restored.')}catch(e){toast(e.message)}
+   });
+  }
  // Every other box in the loaded fleet is one click away from being a contact.
  function renderContactCandidates(box){
   const root=$('#inspect-contact-candidates');if(!root)return;
@@ -1348,10 +1418,9 @@
    const name=document.createElement('div');name.className='contact-name';name.textContent=candidate.name;
    const meta=document.createElement('div');meta.className='contact-meta';meta.textContent=(candidate.role||'worker')+' · '+(candidate.defaultAgent||'agent')+' · '+(candidate.state||'unknown');
    info.append(name,meta);row.append(info);
-   const add=document.createElement('button');add.type='button';add.textContent='Add';add.title='Add '+candidate.name+' as a contact';
+   const add=document.createElement('button');add.type='button';add.textContent='Add';add.title='Add '+candidate.name+' as a two-way contact';
    add.onclick=async()=>{add.disabled=true;const status=$('#inspect-contact-status');
-    try{await api(boxPath(box.id)+'/contacts','PUT',{},{contact:candidate.id});await loadInspectContacts(box)}
-    catch(e){status.textContent=e.message;add.disabled=false}};
+    try{await addContact(box,candidate)}catch(e){status.textContent=e.message;add.disabled=false}};
    row.append(add);root.append(row);
   }
  }
@@ -1385,11 +1454,14 @@
     r2.append(state,agent);
     meta.append(r1,r2);item.append(meta);
     const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';remove.title='Remove '+view.name;
-    remove.onclick=async()=>{remove.disabled=true;try{await api(boxPath(box.id)+'/contacts/'+encodeURIComponent(view.name),'DELETE');await loadInspectContacts(box)}catch(e){status.textContent=e.message;remove.disabled=false}};
+    remove.onclick=async()=>{
+     if(!confirm('Remove '+view.name+' as a contact of '+box.name+'?'))return;
+     remove.disabled=true;try{await removeContact(box,view)}catch(e){status.textContent=e.message;remove.disabled=false}
+    };
     item.append(remove);list.append(item);
    }
    renderContactCandidates(box);
-   status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the explicit contacts listed above.';
+   status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the contacts above; every contact is two-way.';
   }catch(e){status.textContent=e.message}
  }
  function maybeLoadInspectContacts(box){
@@ -1407,7 +1479,7 @@
   const active=boxes.get(selected),target=boxes.get(id);
   if(!id||!active||!target||active.id===id)return;
   event.preventDefault();
-  try{await api(boxPath(active.id)+'/contacts','PUT',{},{contact:target.id});toast(target.name+' is now a contact of '+active.name+'.');await loadInspectContacts(active)}
+  try{await addContact(active,target)}
   catch(e){$('#inspect-contact-status').textContent=e.message}
  }
  for(const target of [inspect,inspectContacts]){
@@ -1416,12 +1488,18 @@
   target.addEventListener('drop',event=>void dropContact(event));
  }
  $('#inspect-contact-filter').oninput=()=>{const box=boxes.get(selected);if(box&&inspectContactsFor===box.id)renderContactCandidates(box)};
- $('#inspect-contact-form').onsubmit=async event=>{event.preventDefault();const box=boxes.get(selected);if(!box)return;const button=event.target.querySelector('button');button.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:event.target.elements.contact.value.trim()});event.target.reset();await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}finally{button.disabled=false}};
+ $('#inspect-contact-form').onsubmit=async event=>{event.preventDefault();const box=boxes.get(selected);if(!box)return;const button=event.target.querySelector('button');const value=event.target.elements.contact.value.trim();if(!value)return;button.disabled=true;try{await addContact(box,{id:value,name:value});event.target.reset()}catch(e){$('#inspect-contact-status').textContent=e.message}finally{button.disabled=false}};
  $('#inspect-toggle-role').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const next=box.role==='manager'?'worker':'manager';try{await api(boxPath(box.id),'PATCH',{}, {defaultAgent:box.defaultAgent||'shell',role:next});box.role=next;await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
 
  /* ---------- toasts ---------- */
- function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#chat-toasts').append(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},3200);}
+ function toast(text,actionLabel,onAction){
+  const el=document.createElement('div');el.className='toast';el.append(Object.assign(document.createElement('span'),{textContent:text}));
+  if(actionLabel){const button=document.createElement('button');button.type='button';button.className='toast-action';button.textContent=actionLabel;
+   button.onclick=()=>{el.remove();onAction?.()};el.append(button)}
+  $('#chat-toasts').append(el);
+  setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},actionLabel?6000:3200);
+ }
 
  /* The desktop stream attaches to a running desktop and never starts one, so a
     reload (or any box whose desktop is not up yet) has to start it first. A
@@ -1553,8 +1631,8 @@
  };
 
  /* ---------- row menu / hibernate / delete ---------- */
- const rowMenu=$('#row-menu');
- function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren()}
+ const rowMenu=$('#row-menu'),menuBackdrop=$('#menu-backdrop');
+ function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('sheet-mode');menuBackdrop.hidden=true}
  function openRowMenu(box,rect){
   rowMenu.replaceChildren();
   const items=[
@@ -1563,24 +1641,30 @@
    ['Instructions…',()=>void openBoxInstructions(box)],
   ];
   const active=selected&&boxes.get(selected);
-  if(owner&&active&&active.id!==box.id)items.unshift(['Add '+box.name+' as contact',()=>void addContactFromRow(active,box)]);
+  if(owner&&active&&active.id!==box.id)items.unshift(['Add '+box.name+' as a two-way contact',()=>void addContactFromRow(active,box)]);
   if(owner)items.push(['Imported profiles…',()=>void openBoxCredentials(box)]);
   if(box.state==='running')items.push(['Re-sync config',()=>void resyncBox(box)],['Restart box…',()=>void restartBox(box)]);
   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
   if(box.state==='running')items.splice(2,0,['Hibernate box',()=>void hibernateBox(box)]);
   for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
+  const sheet=coarsePointer()||innerWidth<=640;
+  rowMenu.classList.toggle('sheet-mode',sheet);
   rowMenu.hidden=false;
-  rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
-  rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
+  if(sheet){
+   menuBackdrop.hidden=false;
+   try{navigator.vibrate?.(10)}catch{}
+   rowMenu.style.left=rowMenu.style.top='';
+  }else{
+   rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
+   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
+  }
  }
+ menuBackdrop.onclick=closeRowMenu;
  // Right-clicking another box while a chat is open is the fastest way to make
  // it a contact of the box the user is looking at.
  async function addContactFromRow(active,target){
-  try{
-   await api(boxPath(active.id)+'/contacts','PUT',{},{contact:target.id});
-   toast(target.name+' is now a contact of '+active.name+'.');
-   if(inspectOpen&&selected===active.id)await loadInspectContacts(active);
-  }catch(e){toast(e.message||'Could not add that contact')}
+  try{await addContact(active,target)}
+  catch(e){toast(e.message||'Could not add that contact')}
  }
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
  addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
@@ -1708,7 +1792,7 @@
   msgTimer=setTimeout(tickMessages,3000);
  }
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
- async function tickMessages(){try{if(!document.hidden&&selected)await refreshMessages()}catch{}msgTimer=setTimeout(tickMessages,3000)}
+ async function tickMessages(){try{if(!document.hidden&&selected)await refreshMessages();reconnecting=false}catch(e){reconnecting=!!selected}updateBanner();msgTimer=setTimeout(tickMessages,3000)}
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages()}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};

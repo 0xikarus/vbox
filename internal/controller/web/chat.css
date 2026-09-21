@@ -213,8 +213,8 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #chat-composer button#send{background:var(--accent);color:var(--accent-ink);font-size:1.05rem}
 #chat-composer button#chat-interrupt{background:var(--surface);color:var(--danger);border:1px solid var(--danger);font-size:1rem;line-height:1}
 #chat-composer button#chat-interrupt:disabled,#chat-composer button#send:disabled{opacity:.45;cursor:default}
-#chat-input{flex:1;resize:none;border:1px solid var(--line);border-radius:var(--radius);
-  padding:.55rem .75rem;font:inherit;max-height:9rem;background:var(--bg);color:var(--ink);min-height:2.8rem;line-height:1.45}
+#chat-input{flex:1;resize:none;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius);
+  padding:.55rem .75rem;font:inherit;max-height:35vh;overflow-y:auto;background:var(--bg);color:var(--ink);min-height:2.8rem;line-height:1.45}
 #chat-input:focus{outline:none;border-color:var(--accent)}
 #chat-status{margin:0;padding:0 .7rem .15rem;font-size:.78rem;color:var(--ink-soft);min-height:.95rem}
 #chat-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -685,3 +685,52 @@ body{max-width:none;margin:0;padding:0;height:100%;
  .sheet{align-items:center}
  .sheet-card{border-radius:var(--radius-lg)}
 }
+
+/* ── collapsible details sections ────────────────────────────────────── */
+.inspect-fold summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:.4rem;min-height:1.7rem}
+.inspect-fold summary::-webkit-details-marker{display:none}
+.inspect-fold summary::after{content:'';width:.5rem;height:.5rem;border-right:2px solid var(--ink-soft);
+  border-bottom:2px solid var(--ink-soft);transform:rotate(-45deg);transition:transform .15s;margin-left:.15rem}
+.inspect-fold[open] summary::after{transform:rotate(45deg)}
+.inspect-fold summary h3{margin:0}
+
+/* ── always-visible message actions (touch friendly) ─────────────────── */
+.msg-actions{position:relative;display:inline-flex;align-items:center;margin-left:.3rem}
+.msg-more{border:0;background:none;color:var(--ink-soft);cursor:pointer;padding:.15rem;border-radius:.3rem;
+  display:inline-flex;min-width:1.6rem;min-height:1.6rem;align-items:center;justify-content:center}
+.msg-more:hover,.msg-more[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent-text)}
+.msg-more svg{width:1rem;height:1rem}
+.msg-actions-menu{position:absolute;top:100%;right:0;z-index:12;display:flex;flex-direction:column;min-width:9rem;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-pop);
+  padding:.25rem;margin-top:.2rem}
+.msg-actions-menu button{display:flex;align-items:center;gap:.5rem;border:0;background:none;color:var(--ink);
+  font:inherit;font-size:.85rem;text-align:left;padding:.45rem .5rem;border-radius:var(--radius-sm);cursor:pointer;min-height:2.6rem}
+.msg-actions-menu button:hover{background:var(--accent-soft)}
+.msg-actions-menu svg{width:1rem;height:1rem;flex:none}
+.msg.user .msg-more{color:rgba(255,255,255,.78)}
+.msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:rgba(255,255,255,.18);color:#fff}
+
+/* ── mobile bottom-sheet menus ───────────────────────────────────────── */
+#menu-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:14}
+#menu-backdrop[hidden]{display:none}
+#row-menu.sheet-mode{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:15;min-width:0;
+  border-radius:var(--radius-lg) var(--radius-lg) 0 0;padding:.5rem .6rem calc(env(safe-area-inset-bottom) + .6rem);
+  max-height:72vh;overflow-y:auto}
+#row-menu.sheet-mode button{min-height:2.9rem;font-size:.95rem}
+
+/* ── connection / stalled banner ─────────────────────────────────────── */
+#chat-banner{margin:0;padding:.42rem .8rem;background:var(--warn);color:#fff;font-size:.82rem;font-weight:600;text-align:center}
+#chat-banner[hidden]{display:none}
+
+/* ── toast with an inline action ─────────────────────────────────────── */
+.toast{display:flex;align-items:center;gap:.6rem}
+.toast-action{border:0;background:none;color:var(--accent-text);font:inherit;font-weight:800;cursor:pointer;padding:.1rem .2rem}
+.toast-action:hover{text-decoration:underline}
+
+@media (prefers-reduced-motion:reduce){
+ *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}
+}
+/* Toast bodies are click-through so they never cover the composer or buttons;
+   only the inline action (e.g. Undo) is interactive. */
+#chat-toasts .toast{pointer-events:none}
+#chat-toasts .toast .toast-action{pointer-events:auto}

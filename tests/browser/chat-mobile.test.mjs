@@ -69,6 +69,15 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.touchscreen.tap(6,240);
   await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden);
 
+  // Always-visible message actions: the chevron opens Copy / Forward.
+  const morePoint=await p.$eval('.msg.user .msg-more',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
+  await p.touchscreen.tap(morePoint.x,morePoint.y);
+  await p.waitForFunction(()=>!document.querySelector('.msg-actions-menu').hidden);
+  assert.equal(await p.$eval('.msg-actions-menu',el=>['Copy','Forward…'].every(label=>el.textContent.includes(label))),true,'message actions expose Copy and Forward');
+  await p.screenshot({path:'docs/chat-ui/screenshots/mobile-chat-message-actions.png'});
+  await p.touchscreen.tap(6,300);
+  await p.waitForFunction(()=>document.querySelector('.msg-actions-menu').hidden);
+
   // The details drawer must fit one column on a phone.
   await p.$eval('#chat-info',el=>el.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);

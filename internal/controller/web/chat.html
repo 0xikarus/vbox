@@ -65,6 +65,7 @@
     <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false">Details</button>
     <a id="chat-workspace" href="#">Workspace</a>
    </header>
+   <div id="chat-banner" hidden role="status"></div>
    <aside id="inspect" role="region" aria-label="Box details" hidden>
     <header id="inspect-header">
      <div id="inspect-header-text"><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
@@ -80,22 +81,22 @@
        <div id="inspect-badges" class="inspect-badges"></div>
        <div id="inspect-quick-actions" class="inspect-quick"></div>
       </div>
-      <section class="inspect-block" aria-label="Runtime">
-       <h3>Runtime</h3>
+      <details class="inspect-block inspect-fold" data-fold="runtime" open>
+       <summary><h3>Runtime</h3></summary>
        <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
-      </section>
-      <section class="inspect-block" aria-label="Activity">
-       <h3>Activity</h3>
+      </details>
+      <details class="inspect-block inspect-fold" data-fold="activity" open>
+       <summary><h3>Activity</h3></summary>
        <dl id="inspect-activity-rows" class="inspect-rows"></dl>
-      </section>
-      <section class="inspect-block" aria-label="Config">
-       <h3>Config</h3>
+      </details>
+      <details class="inspect-block inspect-fold" data-fold="config" open>
+       <summary><h3>Config</h3></summary>
        <div id="inspect-config-actions" class="inspect-actions"></div>
-      </section>
+      </details>
      </section>
      <section id="inspect-contacts" hidden>
       <header class="inspect-block-head"><h3>Contacts</h3></header>
-      <p class="inspect-lede">A manager may message every non-protected box; a worker only the explicit contacts below. Drag a chat in from the sidebar, or add one from the fleet.</p>
+      <p class="inspect-lede">A manager may message every non-protected box; a worker only the explicit contacts below. Contacts are two-way — drag a chat in from the sidebar, or add one from the fleet.</p>
       <div class="contact-policy">
        <div class="contact-policy-card">
         <span class="policy-label">Role</span>
@@ -135,7 +136,7 @@
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
     <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
-    <button id="send" type="submit" title="Send" aria-label="Send">➤</button>
+    <button id="send" type="submit" title="Send" aria-label="Send" disabled>➤</button>
    </form>
    <p id="chat-status" role="status"></p>
   </section>
@@ -249,6 +250,7 @@
  </section>
 </div>
 
+<div id="menu-backdrop" hidden></div>
 <div id="row-menu" hidden role="menu"></div>
 
 <div id="forward-menu" hidden role="menu"></div>
