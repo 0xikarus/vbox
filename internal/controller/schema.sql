@@ -784,6 +784,21 @@ CREATE TABLE IF NOT EXISTS agent_box_deletions (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id,actor_box_id,idempotency_key)
 );
+CREATE TABLE IF NOT EXISTS agent_box_restarts (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  target_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  target_ref text NOT NULL,
+  target_name text NOT NULL,
+  confirmation text NOT NULL,
+  idempotency_key text NOT NULL,
+  state text NOT NULL DEFAULT 'requested' CHECK (state IN ('requested','hibernating','allocating','complete','failed')),
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,actor_box_id,idempotency_key)
+);
 CREATE TABLE IF NOT EXISTS agent_email_addresses (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,

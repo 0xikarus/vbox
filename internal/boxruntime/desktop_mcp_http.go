@@ -63,7 +63,8 @@ func EnsureDesktopMCPToken(home string) (string, error) {
 }
 
 func writeDesktopMCPEndpoint(home, assignment, token string) error {
-	encoded, err := json.MarshalIndent(map[string]string{"url": desktopMCPHTTPURL(assignment), "token": token}, "", "  ")
+	url := desktopMCPHTTPURL(assignment)
+	encoded, err := json.MarshalIndent(map[string]string{"url": url, "promptUrl": url + "/prompt", "token": token}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -116,6 +117,7 @@ func desktopMCPHTTPHandler(assignment, token string, resolvers ...desktopToolPol
 		}
 		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{"tools": tools})
 	}))
+	mux.Handle("/prompt", desktopMCPAuthorized(token, localAgentPromptHandler()))
 	mux.Handle("/tools/", desktopMCPAuthorized(token, desktopMCPCallHandler(assignment, resolve)))
 	mux.Handle("/", desktopMCPAuthorized(token, desktopMCPIndexHandler(assignment, resolve)))
 	return mux
@@ -156,10 +158,82 @@ func desktopMCPIndexHandler(assignment string, resolve desktopToolPolicyResolver
 			"usage": map[string]string{
 				"list":    "GET /tools",
 				"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
+				"prompt":  "POST /prompt with {\"text\":\"...\"} to deliver a user message to the running agent conversation",
 				"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
-				"session": "set_busy, chat_message and chat_ask act on the box's agent conversation; name another with an X-Vmbox-Session header",
+				"session": "prompt, set_busy, chat_message and chat_ask target the sole agent conversation; name another with an X-Vmbox-Session header",
 			},
 		})
+	}
+}
+
+func localAgentPromptHandler() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			writeDesktopMCPError(writer, http.StatusMethodNotAllowed, "use POST")
+			return
+		}
+		var input struct {
+			Text    string `json:"text"`
+			Session string `json:"session,omitempty"`
+		}
+		decoder := json.NewDecoder(io.LimitReader(request.Body, 1<<20))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || strings.TrimSpace(input.Text) == "" || len(input.Text) > 140_000 {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "send one JSON object with non-empty text up to 140000 bytes")
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "send one JSON object with non-empty text up to 140000 bytes")
+			return
+		}
+		session := strings.TrimSpace(request.Header.Get("X-Vmbox-Session"))
+		if session == "" {
+			session = strings.TrimSpace(input.Session)
+		} else if input.Session != "" && input.Session != session {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "session body and X-Vmbox-Session disagree")
+			return
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Minute)
+		defer cancel()
+		var err error
+		if session == "" {
+			session, err = soleAgentConversation(ctx)
+			if err != nil {
+				writeDesktopMCPError(writer, http.StatusConflict, err.Error())
+				return
+			}
+		}
+		if err := validateTmuxToken("session", session); err != nil {
+			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", session, taskAgentEnvironment)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusConflict, "agent conversation is not running")
+			return
+		}
+		agent := strings.TrimPrefix(strings.TrimSpace(string(marker)), taskAgentEnvironment+"=")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusInternalServerError, "box home is unavailable")
+			return
+		}
+		inbound := ChatInbound{ID: ID("local_"), Text: input.Text}
+		switch agent {
+		case "codex":
+			err = DeliverCodexChat(ctx, New("").Root, home, session, inbound)
+		case "claude":
+			err = StoreChatInbound(home, session, inbound)
+		case "opencode":
+			err = DeliverOpenCodeChat(ctx, home, session, inbound)
+		default:
+			err = fmt.Errorf("session is not a managed agent conversation")
+		}
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusConflict, err.Error())
+			return
+		}
+		writeDesktopMCPJSON(writer, http.StatusAccepted, map[string]any{"accepted": true, "session": session, "messageId": inbound.ID})
 	}
 }
 

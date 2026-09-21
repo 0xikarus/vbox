@@ -73,6 +73,33 @@ func TestValidateAgentRoleCapabilitiesUsesExplicitTypesAndBounds(t *testing.T) {
 	}
 }
 
+func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
+	normal, manager, err := teamRolePresetRequests("normal-role-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	computerTools := []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
+	if normal.Name != "Normal" || normal.ContactScope != v1.ContactScopeAll || !normal.Capabilities.MCPTools.Enabled || !slices.Equal(normal.Capabilities.MCPTools.AllowedTools, computerTools) {
+		t.Fatalf("normal preset=%+v", normal)
+	}
+	if manager.Name != "Manager" || manager.ContactScope != v1.ContactScopeAll {
+		t.Fatalf("manager preset=%+v", manager)
+	}
+	create := manager.Capabilities.CreateAgentBox
+	if !create.Enabled || create.MaxBoxes != 3 || create.MaxDiskGiB != 50 || !slices.Equal(create.AllowedAgents, []string{"codex", "claude", "opencode"}) || !slices.Equal(create.AssignableRoleIDs, []string{"normal-role-id"}) {
+		t.Fatalf("manager create grant=%+v", create)
+	}
+	manage := manager.Capabilities.ManageAgentBoxes
+	if !manage.List || !manage.Inspect || !manage.Restart || !manage.Delete {
+		t.Fatalf("manager lifecycle grant=%+v", manage)
+	}
+	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "restart_agent_box", "delete_agent_box"} {
+		if !slices.Contains(manager.Capabilities.MCPTools.AllowedTools, tool) {
+			t.Fatalf("manager preset lacks %s: %+v", tool, manager)
+		}
+	}
+}
+
 func TestEffectiveAgentCapabilitiesUnionsAssignedRoles(t *testing.T) {
 	store, mock := testStore(t)
 	moreA, _ := json.Marshal(v1.RequestMoreTimeGrant{Enabled: true, MaxExtensionMinutes: 30, MaxTotalMinutes: 60})
@@ -96,7 +123,7 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	store, mock := testStore(t)
 	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 1, MaxDiskGiB: 20, AllowedAgents: []string{"codex"}})
 	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{List: true, Inspect: true})
-	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "delete_agent_box", "create_agent_box", "request_more_time"}})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "restart_agent_box", "delete_agent_box", "create_agent_box", "request_more_time"}})
 	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionManageAgentBoxes, manage).AddRow(v1.RolePermissionMCPTools, mcp))
 	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
 	if err != nil {
@@ -112,6 +139,9 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	}
 	if slices.Contains(tools, "delete_agent_box") {
 		t.Fatalf("allowlist bypassed typed delete permission: %v", tools)
+	}
+	if slices.Contains(tools, "restart_agent_box") {
+		t.Fatalf("allowlist bypassed typed restart permission: %v", tools)
 	}
 	if slices.Contains(tools, "type_text") {
 		t.Fatalf("unselected optional tool was advertised: %v", tools)

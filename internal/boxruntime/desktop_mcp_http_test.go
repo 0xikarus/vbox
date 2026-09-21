@@ -38,7 +38,7 @@ func desktopMCPHTTPRequest(t *testing.T, handler http.Handler, method, target, t
 // must get nothing, not even the tool list.
 func TestDesktopMCPHTTPRequiresToken(t *testing.T) {
 	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
-	for _, target := range []string{"/", "/tools", "/tools/take_screenshot"} {
+	for _, target := range []string{"/", "/tools", "/tools/take_screenshot", "/prompt"} {
 		status, body := desktopMCPHTTPRequest(t, handler, http.MethodGet, target, "", "")
 		if status != http.StatusUnauthorized {
 			t.Fatalf("%s without a token returned %d", target, status)
@@ -50,6 +50,60 @@ func TestDesktopMCPHTTPRequiresToken(t *testing.T) {
 	status, _ := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools", "wrong-token", "")
 	if status != http.StatusUnauthorized {
 		t.Fatalf("a wrong token returned %d", status)
+	}
+}
+
+func TestDesktopMCPHTTPPromptDeliversToRunningClaudeConversation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "list-sessions -F #{session_name}":
+			return []byte("agent-session\n"), nil
+		case "show-environment -t agent-session " + taskAgentEnvironment:
+			return []byte(taskAgentEnvironment + "=claude\n"), nil
+		default:
+			return nil, fmt.Errorf("unexpected tmux command: %v", args)
+		}
+	}
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
+	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"run the local check"}`)
+	if status != http.StatusAccepted || response["accepted"] != true || response["session"] != "agent-session" {
+		t.Fatalf("prompt returned %d %v", status, response)
+	}
+	inbound, _, found, err := nextChatInbound(home, "agent-session")
+	if err != nil || !found || inbound.Text != "run the local check" {
+		t.Fatalf("inbound=%+v found=%v err=%v", inbound, found, err)
+	}
+}
+
+func TestDesktopMCPHTTPPromptRejectsNonRunningAndAmbiguousInput(t *testing.T) {
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	tmuxCommand = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, fmt.Errorf("no tmux server")
+	}
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
+	for name, body := range map[string]string{
+		"empty":    `{"text":""}`,
+		"unknown":  `{"text":"hello","wake":true}`,
+		"trailing": `{"text":"hello"}{"text":"again"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			status, _ := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", body)
+			if status != http.StatusBadRequest {
+				t.Fatalf("invalid prompt returned %d", status)
+			}
+		})
+	}
+	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"hello"}`)
+	if status != http.StatusConflict || !strings.Contains(response["error"].(string), "no agent conversation") {
+		t.Fatalf("non-running prompt returned %d %v", status, response)
+	}
+	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/prompt", "secret-token", ""); status != http.StatusMethodNotAllowed {
+		t.Fatalf("GET prompt returned %d", status)
 	}
 }
 
@@ -181,7 +235,7 @@ func TestWriteDesktopMCPEndpointDescribesTheFacade(t *testing.T) {
 	if err := json.Unmarshal(data, &endpoint); err != nil {
 		t.Fatal(err)
 	}
-	if endpoint["url"] != desktopMCPHTTPURL("assignment") || endpoint["token"] != "secret-token" {
+	if endpoint["url"] != desktopMCPHTTPURL("assignment") || endpoint["promptUrl"] != desktopMCPHTTPURL("assignment")+"/prompt" || endpoint["token"] != "secret-token" {
 		t.Fatalf("endpoint file is %v", endpoint)
 	}
 }

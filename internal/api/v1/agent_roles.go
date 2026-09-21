@@ -21,7 +21,7 @@ var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_
 var OptionalAgentMCPTools = []string{
 	"request_more_time", "queue_followup", "discover_shared_chats", "read_shared_chat", "create_shared_chat",
 	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address",
-	"list_agent_boxes", "get_agent_box", "create_agent_box", "delete_agent_box",
+	"list_agent_boxes", "get_agent_box", "create_agent_box", "restart_agent_box", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
 }
@@ -78,6 +78,7 @@ type CreateAgentBoxGrant struct {
 type ManageAgentBoxesGrant struct {
 	List    bool `json:"list"`
 	Inspect bool `json:"inspect"`
+	Restart bool `json:"restart"`
 	Delete  bool `json:"delete"`
 }
 

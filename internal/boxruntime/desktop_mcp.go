@@ -58,6 +58,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
 		makeTool("get_agent_box", "Inspect one agent box's safe lifecycle details by ID or exact name. Does not grant terminal or desktop access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box"),
 		makeTool("create_agent_box", "Create an agent box on this box's provider within explicitly granted agent, disk, count, and starting-role limits. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 4096}, "roleIds": map[string]any{"type": "array", "maxItems": 100, "items": map[string]any{"type": "string"}}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
+		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
 		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass contact (from get_contacts) to send a message to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
@@ -150,7 +151,7 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose. Busy state is automatic for ordinary request/reply work; use set_busy only to report activity outside that flow. These tools are also reachable over HTTP from inside this box: read ~/.local/share/vmbox/mcp-http.json for the url and token, then POST a JSON object of arguments to {url}/tools/{name} with an Authorization: Bearer header. Use that when a script or background job has to queue a message outside an agent turn."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose. Busy state is automatic for ordinary request/reply work; use set_busy only to report activity outside that flow. These tools are also reachable over HTTP from inside this box: read ~/.local/share/vmbox/mcp-http.json for the url and token, then POST a JSON object of arguments to {url}/tools/{name} with an Authorization: Bearer header. A script can POST {\"text\":\"...\"} to promptUrl from that file to deliver a user message to this already-running agent conversation; it never wakes a stopped box. Use the HTTP façade when a script or background job needs to act outside an agent turn."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
@@ -526,6 +527,21 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		var result map[string]any
 		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodDelete, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box), request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "restart_agent_box" {
+		var request struct {
+			Box            string `json:"box"`
+			Confirmation   string `json:"confirmation"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("box, confirmation, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/restart", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)

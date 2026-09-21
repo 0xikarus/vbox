@@ -60,6 +60,7 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 			}
 			result.ManageAgentBoxes.List = result.ManageAgentBoxes.List || grant.List
 			result.ManageAgentBoxes.Inspect = result.ManageAgentBoxes.Inspect || grant.Inspect
+			result.ManageAgentBoxes.Restart = result.ManageAgentBoxes.Restart || grant.Restart
 			result.ManageAgentBoxes.Delete = result.ManageAgentBoxes.Delete || grant.Delete
 		case v1.RolePermissionCreateEmail:
 			var grant v1.CreateEmailAddressGrant

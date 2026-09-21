@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -53,6 +54,22 @@ func validateAgentBoxDeletion(actorID string, box v1.LogicalBox, protected bool,
 	return nil
 }
 
+func validateAgentBoxRestart(actorID string, box v1.LogicalBox, protected bool, confirmation string) error {
+	if box.ID == actorID {
+		return fmt.Errorf("an agent box cannot restart itself")
+	}
+	if confirmation != box.Name {
+		return fmt.Errorf("restart confirmation must exactly match logical box name %q", box.Name)
+	}
+	if protected {
+		return fmt.Errorf("protected boxes cannot be restarted by an agent")
+	}
+	if box.State != v1.LogicalBoxRunning {
+		return fmt.Errorf("box is %s; only a running box can be restarted", box.State)
+	}
+	return nil
+}
+
 func (s *Server) agentBoxesHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	capabilities, err := s.Store.EffectiveAgentCapabilities(r.Context(), p.AccountID, agentBoxID(p))
 	if err != nil {
@@ -91,6 +108,139 @@ func (s *Server) agentBoxHandler(w http.ResponseWriter, r *http.Request, p Princ
 		return
 	}
 	writeJSON(w, http.StatusOK, safeAgentManagedBox(box))
+}
+
+func (s *Server) agentBoxRestartHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	actorID := agentBoxID(p)
+	capabilities, err := s.Store.EffectiveAgentCapabilities(r.Context(), p.AccountID, actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := requireCapability(capabilities.ManageAgentBoxes.Restart, "restart_agent_box"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	key, err := requireIdempotency(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var request struct {
+		Confirmation string `json:"confirmation"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	targetRef := strings.TrimSpace(r.PathValue("box"))
+	request.Confirmation = strings.TrimSpace(request.Confirmation)
+	if targetRef == "" || request.Confirmation == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("box and exact name confirmation are required"))
+		return
+	}
+	var recordID, savedRef, savedConfirmation, targetID, targetName, state string
+	err = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text,target_ref,confirmation,target_box_id::text,target_name,state FROM agent_box_restarts WHERE account_id=$1 AND actor_box_id=$2 AND idempotency_key=$3`, p.AccountID, actorID, key).Scan(&recordID, &savedRef, &savedConfirmation, &targetID, &targetName, &state)
+	if err == nil {
+		if savedRef != targetRef || savedConfirmation != request.Confirmation {
+			writeError(w, http.StatusConflict, fmt.Errorf("idempotency key was already used for a different restart request"))
+			return
+		}
+		if state != "complete" {
+			s.startAgentBoxRestart(ownerPrincipal(p), recordID, targetID)
+		}
+		writeJSON(w, http.StatusAccepted, map[string]any{"id": targetID, "name": targetName, "state": state})
+		return
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	owner := ownerPrincipal(p)
+	box, err := s.Store.LogicalBox(r.Context(), owner, targetRef)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	protected, err := s.Store.BoxProtection(r.Context(), owner, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := validateAgentBoxRestart(actorID, box, protected, request.Confirmation); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	recordID = uuid()
+	result, err := s.Store.DB.ExecContext(r.Context(), `INSERT INTO agent_box_restarts(id,account_id,actor_box_id,target_box_id,target_ref,target_name,confirmation,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT(account_id,actor_box_id,idempotency_key) DO NOTHING`, recordID, p.AccountID, actorID, box.ID, targetRef, box.Name, request.Confirmation, key)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if inserted, _ := result.RowsAffected(); inserted != 1 {
+		writeError(w, http.StatusConflict, fmt.Errorf("restart request raced with another use of this idempotency key; retry it"))
+		return
+	}
+	s.startAgentBoxRestart(owner, recordID, box.ID)
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": box.ID, "name": box.Name, "state": "requested"})
+}
+
+func (s *Server) startAgentBoxRestart(p Principal, recordID, boxID string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
+		defer cancel()
+		fail := func(err error) {
+			_, _ = s.Store.DB.ExecContext(context.Background(), `UPDATE agent_box_restarts SET state='failed',failure_reason=$3,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, recordID, err.Error())
+			s.Logger.Warn("agent box restart stopped", "box", boxID, "error", err)
+		}
+		var phase string
+		if err := s.Store.DB.QueryRowContext(ctx, `SELECT state FROM agent_box_restarts WHERE account_id=$1 AND id=$2`, p.AccountID, recordID).Scan(&phase); err != nil {
+			fail(err)
+			return
+		}
+		if phase == "complete" {
+			return
+		}
+		box, err := s.Store.LogicalBox(ctx, p, boxID)
+		if err != nil {
+			fail(err)
+			return
+		}
+		if phase == "allocating" && box.State == v1.LogicalBoxRunning {
+			_, _ = s.Store.DB.ExecContext(ctx, `UPDATE agent_box_restarts SET state='complete',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, recordID)
+			return
+		}
+		if box.State == v1.LogicalBoxRunning {
+			if _, err := s.Store.DB.ExecContext(ctx, `UPDATE agent_box_restarts SET state='hibernating',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, recordID); err != nil {
+				fail(err)
+				return
+			}
+			if _, err := s.Store.BeginLogicalBoxRelease(ctx, p, box.ID, v1.LogicalBoxHibernating); err != nil {
+				fail(err)
+				return
+			}
+		}
+		if err := s.resumeLogicalBoxHibernate(ctx, p, box.ID); err != nil {
+			fail(err)
+			return
+		}
+		if _, err := s.Store.DB.ExecContext(ctx, `UPDATE agent_box_restarts SET state='allocating',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, recordID); err != nil {
+			fail(err)
+			return
+		}
+		allocation, err := s.Store.ReserveAllocation(ctx, p, box.ID, "agent-restart-"+recordID, "agent-restart", 0)
+		if err != nil {
+			fail(err)
+			return
+		}
+		if (allocation.State == "reserved" || allocation.State == "attaching") && allocation.IdempotencyKey == "agent-restart-"+recordID {
+			if err := s.activateAllocation(ctx, p.AccountID, allocation, allocation.State == "attaching"); err != nil {
+				fail(err)
+				return
+			}
+		}
+		_, _ = s.Store.DB.ExecContext(ctx, `UPDATE agent_box_restarts SET state='complete',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, recordID)
+	}()
 }
 
 func (s *Server) agentBoxDeleteHandler(w http.ResponseWriter, r *http.Request, p Principal) {

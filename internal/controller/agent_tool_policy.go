@@ -54,6 +54,8 @@ func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bo
 		return capabilities.ManageAgentBoxes.List
 	case "get_agent_box":
 		return capabilities.ManageAgentBoxes.Inspect
+	case "restart_agent_box":
+		return capabilities.ManageAgentBoxes.Restart
 	case "delete_agent_box":
 		return capabilities.ManageAgentBoxes.Delete
 	default:

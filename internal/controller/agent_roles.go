@@ -285,7 +285,7 @@ func putAgentRolePermission(ctx context.Context, tx *sql.Tx, accountID, roleID s
 		{v1.RolePermissionRequestMoreTime, request.Capabilities.RequestMoreTime.Enabled, request.Capabilities.RequestMoreTime},
 		{v1.RolePermissionQueueFollowup, request.Capabilities.QueueFollowup.Enabled, request.Capabilities.QueueFollowup},
 		{v1.RolePermissionCreateAgentBox, request.Capabilities.CreateAgentBox.Enabled, request.Capabilities.CreateAgentBox},
-		{v1.RolePermissionManageAgentBoxes, request.Capabilities.ManageAgentBoxes.List || request.Capabilities.ManageAgentBoxes.Inspect || request.Capabilities.ManageAgentBoxes.Delete, request.Capabilities.ManageAgentBoxes},
+		{v1.RolePermissionManageAgentBoxes, request.Capabilities.ManageAgentBoxes.List || request.Capabilities.ManageAgentBoxes.Inspect || request.Capabilities.ManageAgentBoxes.Restart || request.Capabilities.ManageAgentBoxes.Delete, request.Capabilities.ManageAgentBoxes},
 		{v1.RolePermissionCreateEmail, request.Capabilities.CreateEmail.Enabled, request.Capabilities.CreateEmail},
 		{v1.RolePermissionSharedChats, request.Capabilities.SharedChats.Discover || request.Capabilities.SharedChats.Read || request.Capabilities.SharedChats.Subscribe || request.Capabilities.SharedChats.Create || request.Capabilities.SharedChats.Invite, request.Capabilities.SharedChats},
 		{v1.RolePermissionMCPTools, request.Capabilities.MCPTools.Enabled, request.Capabilities.MCPTools},
@@ -336,6 +336,84 @@ func (s *Store) CreateAgentRole(ctx context.Context, p Principal, request v1.Put
 		return v1.AgentRole{}, err
 	}
 	return s.AgentRole(ctx, p, id)
+}
+
+// CreateTeamRolePreset atomically defines a small, editable two-role team. The
+// names are ordinary owner-visible role names; authorization remains entirely
+// in the explicit grants stored below.
+func (s *Store) CreateTeamRolePreset(ctx context.Context, p Principal) ([]v1.AgentRole, error) {
+	if p.Role != "owner" {
+		return nil, fmt.Errorf("only an account owner may manage roles")
+	}
+	normalID, managerID := uuid(), uuid()
+	normal, manager, err := teamRolePresetRequests(normalID)
+	if err != nil {
+		return nil, err
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var existing int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM agent_roles WHERE account_id=$1 AND name IN ('Manager','Normal')`, p.AccountID).Scan(&existing); err != nil {
+		return nil, err
+	}
+	if existing != 0 {
+		return nil, fmt.Errorf("Manager or Normal already exists; edit the existing role instead")
+	}
+	for _, value := range []struct {
+		id      string
+		request v1.PutAgentRoleRequest
+	}{{normalID, normal}, {managerID, manager}} {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO agent_roles(id,account_id,name,description,created_by) VALUES($1,$2,$3,$4,$5)`, value.id, p.AccountID, value.request.Name, value.request.Description, p.UserID); err != nil {
+			return nil, err
+		}
+		if err := putAgentRolePermission(ctx, tx, p.AccountID, value.id, value.request); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'agent_role.create','agent_role',$3,jsonb_build_object('name',$4::text,'contact_scope',$5::text,'preset','team'::text))`, p.AccountID, p.UserID, value.id, value.request.Name, value.request.ContactScope); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	roles, err := s.AgentRoles(ctx, p)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]v1.AgentRole, 0, 2)
+	for _, role := range roles {
+		if role.ID == managerID || role.ID == normalID {
+			result = append(result, role)
+		}
+	}
+	return result, nil
+}
+
+func teamRolePresetRequests(normalID string) (v1.PutAgentRoleRequest, v1.PutAgentRoleRequest, error) {
+	computerTools := []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
+	normal, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{
+		Name: "Normal", Description: "Team member: can communicate with the team and use this box's computer.", ContactScope: v1.ContactScopeAll,
+		Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: computerTools}},
+	})
+	if err != nil {
+		return v1.PutAgentRoleRequest{}, v1.PutAgentRoleRequest{}, err
+	}
+	managerTools := []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "restart_agent_box", "delete_agent_box"}
+	manager, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{
+		Name: "Manager", Description: "Team manager: can communicate with the team and manage agent-box lifecycles.", ContactScope: v1.ContactScopeAll,
+		Capabilities: v1.AgentRoleCapabilities{
+			CreateAgentBox:   v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 3, MaxDiskGiB: 50, AllowedAgents: []string{"codex", "claude", "opencode"}, AssignableRoleIDs: []string{normalID}},
+			ManageAgentBoxes: v1.ManageAgentBoxesGrant{List: true, Inspect: true, Restart: true, Delete: true},
+			MCPTools:         v1.MCPToolsGrant{Enabled: true, AllowedTools: managerTools},
+		},
+	})
+	if err != nil {
+		return v1.PutAgentRoleRequest{}, v1.PutAgentRoleRequest{}, err
+	}
+	return normal, manager, nil
 }
 
 func (s *Store) UpdateAgentRole(ctx context.Context, p Principal, id string, request v1.PutAgentRoleRequest) (v1.AgentRole, error) {
@@ -496,6 +574,15 @@ func (s *Server) agentRolesHandler(w http.ResponseWriter, r *http.Request, p Pri
 		return
 	}
 	writeJSON(w, http.StatusCreated, role)
+}
+
+func (s *Server) teamRolePresetHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	roles, err := s.Store.CreateTeamRolePreset(r.Context(), p)
+	if err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, roles)
 }
 
 func (s *Server) agentRoleHandler(w http.ResponseWriter, r *http.Request, p Principal) {
