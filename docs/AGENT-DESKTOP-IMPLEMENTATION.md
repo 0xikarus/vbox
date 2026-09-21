@@ -35,7 +35,7 @@ Reconnecting refreshes this configuration, including after reassignment.
   windows are unsupported. Use `{}` for the active window.
 - `desktop_move`, `desktop_click`, `desktop_drag`, `desktop_scroll`,
   `desktop_type`, `desktop_key`: bounded coordinates and literal input.
-- `secret_ensure`, `secret_request`, `typeSecret`: opaque references and status.
+- `secret_ensure`, `secret_request`, `type_secret`: opaque references and status.
 
 Capture reads the worker's mode-0600 Unix VNC socket. There is no public VNC listener
 and no UI-canvas capture. New desktops use 1024×640; worker-generated previews
@@ -103,7 +103,7 @@ supplies or cancels it outside chat. Fulfillment saves the password and sends on
 a reference/status to the same active task. Submitting a credential never wakes a
 sleeping box. It cannot silently replace an existing named secret.
 
-`typeSecret(key)` resolves after the tool call and transports the value only over
+`type_secret(key)` resolves after the tool call and transports the value only over
 private stdin to the worker. The CDP bridge checks the focused, visible, editable
 password field's exact HTTPS origin, object identity and focus again before entry.
 It neither submits nor copies to clipboard. Wrong origins, changed focus, stale

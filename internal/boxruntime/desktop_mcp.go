@@ -58,9 +58,32 @@ func desktopMCPTools() []map[string]any {
 	}
 }
 
+const desktopMCPGuidePath = ".config/vmbox/mcp-tools.md"
+
+// writeDesktopMCPGuide gives every managed agent a local, readable tool
+// reference. It is generated from the same schemas advertised over MCP.
+func writeDesktopMCPGuide(home string) error {
+	var guide strings.Builder
+	guide.WriteString("# vmbox-desktop MCP tools\n\n")
+	guide.WriteString("Use the tool directly with the JSON call shown.\n\n")
+	for _, tool := range desktopMCPTools() {
+		name := tool["name"].(string)
+		description := tool["description"].(string)
+		schema, err := json.Marshal(tool["inputSchema"])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&guide, "## %s\n\n%s\n\nSchema: `%s`\n\n", name, description, schema)
+	}
+	return writeTextAtomic(filepath.Join(home, desktopMCPGuidePath), guide.String(), 0600)
+}
+
 // ServeDesktopMCP is a local stdio adapter. stdout contains protocol only; the
 // assignment captured at startup fences every subsequent operation.
 func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer) error {
+	if home, err := os.UserHomeDir(); err == nil {
+		_ = writeDesktopMCPGuide(home)
+	}
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 4096), maxDesktopMCPRequestBytes)
 	encoder := json.NewEncoder(output)
@@ -285,7 +308,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		text := "Private credential requested. Wait for the user's response; do not invent a password."
 		if ready {
-			text = "Private credential is ready. Use typeSecret with the same reference."
+			text = "Private credential is ready. Use type_secret with the same reference."
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}, nil
 	}
@@ -374,7 +397,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to vmbox Agent chat."}}}, nil
 	}
-	if name == "typeSecret" {
+	if name == "type_secret" {
 		var key string
 		if json.Unmarshal(values["key"], &key) != nil {
 			return nil, fmt.Errorf("secret key must be a string")
@@ -404,7 +427,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if created {
 			status = "New password reference saved; pending use."
 		}
-		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use typeSecret with the same key to fill it."}}}, nil
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use type_secret with the same key to fill it."}}}, nil
 	}
 	if name == "capture_window" {
 		var identifier string

@@ -127,7 +127,7 @@ configuration. Shell remains a visible terminal mode, not an MCP agent client.
 | `desktop_scroll` | Scroll by a bounded amount at a screen position. |
 | `desktop_drag` | Drag from one coordinate to another. |
 | `browser_load_state` | Load a user-provided browser-state reference into the box's browser, subject to origin and box scope. Return status, not cookies or tokens. |
-| `typeSecret("secret_key")` | Resolve an authorized secret reference and enter it into a verified destination without returning the value to the agent. |
+| `type_secret("secret_key")` | Resolve an authorized secret reference and enter it into a verified destination without returning the value to the agent. |
 
 Tools operate on the same screen the user sees, without requiring an open viewer.
 Input must be validated, execution bounded, and errors actionable. Calls must
@@ -206,7 +206,7 @@ secret_ensure(key="secretForPageN", purpose="new_account_password")
     → reuse an authorized existing binding, or generate a password if absent
     → encrypt and durably save it in the secret manager before entry
     → return only the reference and created/existing status
-typeSecret("secretForPageN")
+type_secret("secretForPageN")
     → insert the saved value into the approved field
     → return status only
 ```
@@ -225,7 +225,7 @@ reuse the same saved password, not generate a replacement. A conflicting origin 
 binding returns a clear error. Generation never overwrites an existing credential;
 password rotation is a separate explicit operation. The same reference can fill
 password and confirmation fields. It must not generate a new password merely
-because an existing-account login fails or a key was mistyped in `typeSecret`.
+because an existing-account login fails or a key was mistyped in `type_secret`.
 
 Show generated entries in the user's manager with site, label, creator, creation
 time, allowed scope, and status. Mark newly generated credentials as pending use
@@ -241,7 +241,7 @@ password when the task needs an existing account's actual credential. Both paths
 use the same encryption, scope checks, sanitized results, and audit metadata.
 
 The initial release uses the agreed practical contract: the agent calls
-`typeSecret(key)`, the runtime resolves and inserts the value during tool execution,
+`type_secret(key)`, the runtime resolves and inserts the value during tool execution,
 and the response contains status only. Stronger isolation from unrestricted
 shell/browser access is not an initial-release prerequisite. The additional
 isolation discussion below limits future security claims rather than blocking
@@ -253,7 +253,7 @@ grant access by account, box, and permitted destination. The agent may see an
 authorized key such as `work_password`, but never receives a value from the secret
 tool. Do not provide an agent-facing read-secret operation.
 
-For example, `typeSecret("work_password")` requests entry of that secret. A trusted
+For example, `type_secret("work_password")` requests entry of that secret. A trusted
 component resolves the reference and inserts the value directly into the approved
 browser field. Return only success or a sanitized error. Keep plaintext out of
 tool arguments/results, transcripts, logs, command-line arguments, environment
