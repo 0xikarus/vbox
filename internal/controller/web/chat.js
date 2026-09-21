@@ -509,8 +509,8 @@
    wrap.title='Hover to preview; click for Desktop/TMUX control';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open Desktop or TMUX control');
    const currentBox=()=>boxes.get(box.id)||box;
    wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=scheduleHideTvPreview;
-   wrap.onfocus=()=>showTvPreview(wrap,currentBox());wrap.onblur=scheduleHideTvPreview;
-   wrap.onclick=event=>{event.stopPropagation();void openBoxControl(currentBox(),'desktop')};
+   wrap.onfocus=()=>{if(!coarsePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
+   wrap.onclick=event=>{event.stopPropagation();const box=currentBox();if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(wrap,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
   }
   return wrap;
@@ -642,6 +642,29 @@
  function hideTvPreview(){clearTimeout(tvPreviewHideTimer);stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewEl.hidden=true;tvPreviewNoSignal.hidden=true;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewLive.classList.remove('connected');tvPreviewConnected=false;tvPreviewBox=''}
  addEventListener('scroll',()=>{if(!tvPreviewEl.matches(':hover')&&!tvPreviewEl.contains(document.activeElement))hideTvPreview()},true);
  addEventListener('resize',hideTvPreview);
+ // Touch has no hover. A tap on a preview trigger opens the TV preview, a tap
+ // outside dismisses it, and long-pressing the image must not offer "save as".
+ tvPreviewEl.addEventListener('contextmenu',event=>event.preventDefault());
+ document.addEventListener('touchstart',event=>{
+  if(tvPreviewEl.hidden)return;
+  if(tvPreviewEl.contains(event.target))return;
+  if(event.target.closest?.('.tv-button,.preview-trigger'))return;
+  hideTvPreview();
+ },{passive:true});
+ // A touch-friendly context menu: hold a chat row instead of right-clicking.
+ function bindLongPress(element,handler){
+  let timer=0,startX=0,startY=0,fired=false;
+  const cancel=()=>{clearTimeout(timer);timer=0};
+  element.addEventListener('touchstart',event=>{
+   if(event.touches.length!==1)return;
+   const touch=event.touches[0];startX=touch.clientX;startY=touch.clientY;fired=false;
+   cancel();timer=setTimeout(()=>{fired=true;handler(touch.clientX,touch.clientY)},500);
+  },{passive:true});
+  element.addEventListener('touchmove',event=>{const touch=event.touches[0];if(!touch)return;if(Math.abs(touch.clientX-startX)>12||Math.abs(touch.clientY-startY)>12)cancel()},{passive:true});
+  element.addEventListener('touchend',event=>{cancel();if(fired){fired=false;event.preventDefault();event.stopPropagation()}},{passive:false});
+  element.addEventListener('touchcancel',cancel,{passive:true});
+ }
+ const coarsePointer=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
 
  /* ---------- chat list ---------- */
  const fmtTime=value=>{const d=new Date(value),now=new Date(),sameDay=d.toDateString()===now.toDateString();if(sameDay)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(d.toDateString()===yesterday.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'2-digit',month:'2-digit',year:'numeric'})};
@@ -676,13 +699,12 @@
    let row=rows.get(box.id);
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
-    const chevron=document.createElement('button');chevron.className='row-chevron';chevron.type='button';chevron.textContent='▾';chevron.title='Box actions';
-    chevron.onclick=event=>{event.stopPropagation();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY,top:event.clientY})};
-    row.oncontextmenu=event=>{event.preventDefault();openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
+    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu(box,{left:x,right:x,bottom:y+4,top:y})});
+    row.oncontextmenu=event=>{event.preventDefault();if(rowMenu.hidden)openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
     const meta=document.createElement('div');meta.className='chat-meta';
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
-    meta.append(r1,r2);row.prepend(meta);row.append(chevron);
+    meta.append(r1,r2);row.append(meta);
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
@@ -710,7 +732,26 @@
 
  /* ---------- messages ---------- */
  const dayLabel=value=>{const d=new Date(value),now=new Date();if(d.toDateString()===now.toDateString())return 'Today';const y=new Date(now);y.setDate(now.getDate()-1);if(d.toDateString()===y.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'})};
- const stateTicks={queued:'🕐',delivering:'✓',delivered:'✓✓',failed:'⚠ failed',ambiguous:'⚠ maybe failed'};
+ const stateTicks={queued:'queued',delivering:'sent',delivered:'delivered',failed:'failed',ambiguous:'maybe failed'};
+ const stateIconName={queued:'clock',delivering:'check',delivered:'check-check',failed:'alert',ambiguous:'help'};
+ // Inline Lucide icons (24x24, currentColor stroke) so delivery state reads as
+ // iconography instead of emoji glyphs.
+ const lucideShapes={
+  clock:[['circle',{cx:'12',cy:'12',r:'10'}],['polyline',{points:'12 6 12 12 16 14'}]],
+  check:[['path',{d:'M20 6 9 17l-5-5'}]],
+  'check-check':[['path',{d:'M18 6 7 17l-5-5'}],['path',{d:'m22 10-7.5 7.5L13 16'}]],
+  alert:[['path',{d:'m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'}],['path',{d:'M12 9v4'}],['path',{d:'M12 17h.01'}]],
+  help:[['circle',{cx:'12',cy:'12',r:'10'}],['path',{d:'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'}],['path',{d:'M12 17h.01'}]],
+  'chevron-down':[['path',{d:'m6 9 6 6 6-6'}]],
+  copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
+  forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
+ };
+ function lucide(name){
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  for(const [key,value] of Object.entries({viewBox:'0 0 24 24',fill:'none',stroke:'currentColor','stroke-width':'2','stroke-linecap':'round','stroke-linejoin':'round','aria-hidden':'true'}))svg.setAttribute(key,value);
+  for(const [tag,attrs] of lucideShapes[name]||[]){const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const key in attrs)el.setAttribute(key,attrs[key]);svg.append(el)}
+  return svg;
+ }
  function imageURL(message,image){
   const key=message.id+':'+image.id;
   if(imageURLs.has(key))return Promise.resolve(imageURLs.get(key));
@@ -800,13 +841,31 @@
   const form=questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
-  if(mine&&message.state!=='silent'){const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');ticks.textContent=stateTicks[message.state]||'';meta.append(ticks)}
+  if(mine&&message.state!=='silent'){
+   const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
+   ticks.title=stateTicks[message.state]||'';
+   const icon=stateIconName[message.state];
+   if(icon)ticks.append(lucide(icon));
+   if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'maybe failed'));
+   meta.append(ticks);
+  }
   row.append(meta);
-  const fwd=document.createElement('button');fwd.type='button';fwd.className='fwd';fwd.title='Forward to another box';fwd.textContent='↪';
-  fwd.onclick=event=>{event.stopPropagation();openForwardMenu(fwd,message)};
-  row.append(fwd);
+  // Always-visible actions (hover-only controls are invisible on touch): the
+  // chevron reveals Copy / Forward for this message, WhatsApp style.
+  const actions=document.createElement('div');actions.className='msg-actions';
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='msg-more';toggle.setAttribute('aria-label','Message actions');toggle.setAttribute('aria-expanded','false');toggle.append(lucide('chevron-down'));
+  const menu=document.createElement('div');menu.className='msg-actions-menu';menu.hidden=true;
+  const copy=document.createElement('button');copy.type='button';copy.append(lucide('copy'),Object.assign(document.createElement('span'),{textContent:'Copy'}));
+  copy.onclick=async()=>{closeAllMsgActions();try{await navigator.clipboard.writeText(message.question?message.question.text:message.text);toast('Message copied.')}catch{toast('Copy is unavailable here.')}};
+  const forward=document.createElement('button');forward.type='button';forward.append(lucide('forward'),Object.assign(document.createElement('span'),{textContent:'Forward…'}));
+  forward.onclick=()=>{closeAllMsgActions();openForwardMenu(toggle,message)};
+  menu.append(copy,forward);
+  toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen){menu.hidden=false;toggle.setAttribute('aria-expanded','true')}};
+  actions.append(toggle,menu);row.append(actions);
   return row;
  }
+ function closeAllMsgActions(){for(const menu of messagesEl.querySelectorAll('.msg-actions-menu'))menu.hidden=true;for(const toggle of messagesEl.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
+ document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
  function scrollMessagesToBottom(){
   messagesEl.scrollTop=messagesEl.scrollHeight;
   requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
@@ -839,13 +898,13 @@
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
-   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover to preview; click for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
+   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover or tap to preview; open it for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
    tv.append(tvIcon());
-   tv.onmouseenter=()=>showTvPreview(tv,box);
+   tv.onmouseenter=()=>{if(!coarsePointer())showTvPreview(tv,box)};
    tv.onmouseleave=scheduleHideTvPreview;
-   tv.onfocus=()=>showTvPreview(tv,box);
-   tv.onblur=scheduleHideTvPreview;
-   tv.onclick=()=>void openBoxControl(box,'desktop');
+   tv.onfocus=()=>{if(!coarsePointer())showTvPreview(tv,box)};
+   tv.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
+   tv.onclick=()=>{if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(tv,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    t.append(mini,dots,label,tv);messagesEl.append(t);
   }
   if(follow){
@@ -934,6 +993,19 @@
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
+  updateBanner();
+ }
+ // One banner for the two things that silently confuse people: a dropped
+ // connection, and an agent that looks stuck on the last request.
+ const chatBanner=$('#chat-banner');
+ let reconnecting=false,bannerShown='';
+ function setBanner(text){if(text===bannerShown)return;bannerShown=text;chatBanner.textContent=text;chatBanner.hidden=!text}
+ function updateBanner(){
+  if(reconnecting)return setBanner('Reconnecting to the controller…');
+  const box=boxes.get(selected);if(!box)return setBanner('');
+  const last=[...(box.messages||[])].reverse().find(m=>m.direction==='user');
+  const stalled=box.processing&&last&&(Date.now()-new Date(last.updatedAt||last.createdAt).getTime())>5*60*1000;
+  setBanner(stalled?'Agent has been processing for '+Math.round((Date.now()-new Date(last.updatedAt||last.createdAt).getTime())/60000)+' min — it may be stalled.':'');
  }
  async function refreshMessages(force){
   if(!selected)return;
@@ -984,7 +1056,7 @@
   const savedScroll=scrollMemory.get(id);
   stickToBottom=savedScroll==null;
   const restoredDraft=inputDrafts[id]||'';
-  if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow()}
+  if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow();updateSendState()}
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;
   appEl.classList.add('in-chat');
   renderHeader();
@@ -995,13 +1067,39 @@
   if(!(boxes.get(id).messages||[]).length)doodle('Loading messages…');
   try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{doodle('')}
   if(savedScroll!=null)requestAnimationFrame(()=>{messagesEl.scrollTop=savedScroll});
-  inputEl.focus();
+  // Deliberately do not focus the composer: on phones that pops the keyboard
+  // the moment a chat is opened. Focus follows an explicit tap.
  }
 
  /* ---------- composer ---------- */
- function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,150)+'px'}
- inputEl.addEventListener('input',()=>{grow();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
- inputEl.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();composer.requestSubmit()}});
+ // Grow the composer with the text like WhatsApp, up to a viewport-aware cap so
+ // it never eats the transcript on a phone.
+ const maxComposerHeight=()=>Math.min(150,Math.max(96,innerHeight*0.35));
+ function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
+ function updateSendState(){
+  const hasContent=!!inputEl.value.trim()||drafts.length>0;
+  const send=$('#send');send.disabled=!hasContent;
+  const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
+  send.setAttribute('aria-label',label);
+  send.title=label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line');
+ }
+ inputEl.addEventListener('input',()=>{grow();updateSendState();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ let composerHintShown=false;
+ inputEl.addEventListener('focus',()=>{
+  if(composerHintShown)return;composerHintShown=true;
+  try{if(localStorage.getItem('vmbox.composerHint')==='1')return;localStorage.setItem('vmbox.composerHint','1')}catch{}
+  statusEl.textContent=enterInsertsNewline()?'Tap Send to send; Enter starts a new line.':'Enter sends; Shift+Enter adds a new line.';
+  setTimeout(()=>{if(/^(Enter sends|Tap Send)/.test(statusEl.textContent))statusEl.textContent=''},5000);
+ });
+ // On a phone or tablet the soft keyboard's Enter is the only convenient way to
+ // start a new line, so it inserts a newline there; Send is the explicit button.
+ // A hardware keyboard (hover + fine pointer) keeps Enter-to-send.
+ const enterInsertsNewline=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
+ inputEl.addEventListener('keydown',event=>{
+  if(event.key!=='Enter'||event.shiftKey)return;
+  if(enterInsertsNewline())return;
+  event.preventDefault();composer.requestSubmit();
+ });
  function renderDrafts(){
   draftsEl.hidden=!drafts.length;draftsEl.replaceChildren();
   for(const entry of drafts){
@@ -1019,6 +1117,7 @@
    remove.onclick=()=>{drafts=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);drafts.forEach((d,i)=>d.number=i+1);renderDrafts()};
    wrap.append(open,remove);draftsEl.append(wrap);
   }
+  updateSendState();
  }
  async function uploadImages(files){
   for(const file of files){
@@ -1090,10 +1189,27 @@
     if(selected===boxID){renderHeader();renderMessages(box)}
     renderRows();
    }
-   send.disabled=false;
+   updateSendState();
   }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
+ // Swipe in from the left edge on a phone to pull the chat list back out.
+ let listSwipe=null;
+ appEl.addEventListener('touchstart',event=>{
+  if(event.touches.length!==1)return;
+  const touch=event.touches[0];
+  listSwipe=touch.clientX<=48?{x:touch.clientX,y:touch.clientY}:null;
+ },{passive:true});
+ appEl.addEventListener('touchmove',event=>{
+  if(!listSwipe)return;
+  const touch=event.touches[0];if(!touch)return;
+  if(touch.clientX-listSwipe.x>60&&Math.abs(touch.clientY-listSwipe.y)<50){
+   listSwipe=null;
+   if(appEl.classList.contains('in-chat')){appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)}
+  }
+ },{passive:true});
+ appEl.addEventListener('touchend',()=>{listSwipe=null},{passive:true});
+ appEl.addEventListener('touchcancel',()=>{listSwipe=null},{passive:true});
  addEventListener('hashchange',()=>{const id=new URLSearchParams(location.hash.slice(1)).get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id)});
 
  /* ---------- takeover popup: VNC/TMUX control ---------- */
@@ -1161,44 +1277,65 @@
  };
 
  /* ---------- inspect drawer: ping / activity per box ---------- */
- const inspect=$('#inspect'),inspectRows=$('#inspect-rows');
+ const inspect=$('#inspect');
  let inspectOpen=false,inspectTimer,controllerPing=null;
  const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
+ const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
+ const fillRows=(target,rows)=>{
+  target.replaceChildren();
+  for(const [dt,dd,cls] of rows){
+   const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
+   t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);target.append(row);
+  }
+ };
  function renderInspect(){
   if(!inspectOpen||!selected)return;
   const box=boxes.get(selected);if(!box)return;
   const msgs=box.messages||[],lastAgent=lastMessage(msgs,'agent'),lastUser=lastMessage(msgs,'user');
   const livePing=boxViewerMetrics.get(box.id)?.ping;
   const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
-  const rows=[
-   ['State',box.state+(box.streaming?' · agent streaming…':''),box.state==='running'?'ok':'alert'],
-   ['Agent',box.defaultAgent||'—'],
+  const agent=box.defaultAgent||'shell';
+  const stateText=box.state+(box.streaming?' · agent streaming…':box.processing?' · agent processing…':'');
+  $('#inspect-title').textContent=box.name;
+  $('#inspect-header-state').textContent=stateText;
+  $('#inspect-header-state').className=stateClass(box.state);
+  $('#inspect-avatar').replaceChildren(avatarNode(box,false));
+  $('#inspect-name').textContent=box.name;
+  $('#inspect-subtitle').textContent='';
+  const badges=$('#inspect-badges');badges.replaceChildren();
+  const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
+  badge(box.state,stateClass(box.state));
+  badge(agent,'agent');
+  if(box.provider)badge(box.provider);
+  for(const role of box.roles||[])badge(role.name);
+  fillRows($('#inspect-runtime-rows'),[
+   ['State',stateText,stateClass(box.state)],
+   ['Agent',agent],
    ['Provider',box.provider||'—'],
+   ['Messages',msgs.length+' total'],
+  ]);
+  fillRows($('#inspect-activity-rows'),[
    ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
-   ['Box ping (live VNC)',livePing!=null?livePing+' ms':'while the desktop popup is open'],
+   ['Box ping (live VNC)',livePing!=null?livePing+' ms':'opens with the desktop popup'],
    ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
    ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
-   ['Messages',String(msgs.length)],
-  ];
-  $('#inspect-title').textContent=box.name;
-  $('#inspect-avatar').replaceChildren(avatarNode(box,false));
-  inspectRows.replaceChildren();
-  for(const [dt,dd,cls] of rows){
-   const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
-   t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);inspectRows.append(row);
+  ]);
+  const quick=$('#inspect-quick-actions');quick.replaceChildren();
+  const link=document.createElement('a');
+  link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
+  quick.append(link);
+  if(box.state==='running'&&agent!=='shell'){
+   const clear=document.createElement('button');clear.type='button';clear.textContent='Clear context';
+   clear.title='Start a fresh agent context for this chat';clear.onclick=()=>$('#chat-clear-context').click();quick.append(clear);
   }
-  const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd'),link=document.createElement('a');
-  t.textContent='Workspace';link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open full workspace';link.target='_blank';link.rel='noopener';d.append(link);row.append(t,d);inspectRows.append(row);
   // Config the box keeps in sync, editable from the same place it is reported.
-  const actions=document.createElement('div'),at=document.createElement('dt'),ad=document.createElement('dd');
-  at.textContent='Config';ad.className='inspect-actions';
-  const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;ad.append(b)};
+  const actions=$('#inspect-config-actions');actions.replaceChildren();
+  const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;actions.append(b)};
   act('Instructions…','Edit the Markdown instructions synced into this box',()=>void openBoxInstructions(box));
   if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
   if(box.state==='running')act('Re-sync','Re-push the saved config to the running box',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
-  actions.append(at,ad);inspectRows.append(actions);
   maybeLoadInspectContacts(box);
  }
  async function samplePing(){
@@ -1214,46 +1351,79 @@
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
-  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''}
+  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null}
  };
- $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor=''};
+ $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null};
+ // Collapsible details sections, remembered per browser.
+ const foldKey='vmbox.inspectFold';
+ let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
+ document.querySelectorAll('#inspect-summary .inspect-fold').forEach(node=>{
+  const key=node.dataset.fold;
+  if(key in foldState)node.open=!!foldState[key];
+  node.addEventListener('toggle',()=>{foldState[key]=node.open;try{localStorage.setItem(foldKey,JSON.stringify(foldState))}catch{}});
+ });
 
  /* ---------- inspect drawer: per-box contact graph (owner) ---------- */
  const inspectContacts=$('#inspect-contacts');
- let inspectContactsFor='',inspectProtected=false;
+ let inspectContactsFor='',inspectProtected=false,inspectContactCache=null;
+ const contactView=contact=>{
+  const known=boxes.get(contact.contactBoxId)||{};
+  return {id:contact.contactBoxId||contact.contactName,name:contact.contactName||known.name||'—',state:contact.contactState||known.state||'unknown',roles:contact.contactRoles||known.roles||[],defaultAgent:contact.contactAgent||known.defaultAgent||''};
+ };
  async function loadInspectContacts(box){
   const status=$('#inspect-contact-status'),list=$('#inspect-contact-list');
   status.textContent='Loading…';
   try{
    const [contacts,protection]=await Promise.all([api(boxPath(box.id)+'/contacts'),api(boxPath(box.id)+'/protection')]);
    if(!inspectOpen||selected!==box.id)return;
+   inspectContactCache=contacts||[];
    inspectProtected=!!protection.protected;
    $('#inspect-contact-role').textContent=(box.roles||[]).map(role=>role.name).join(', ')||'None';
    $('#inspect-protection-label').textContent=inspectProtected?'Protected — agents cannot see or message this box':'Not protected';
    $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
    list.replaceChildren();
-   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No other eligible boxes.';list.append(empty)}
+   if(!contacts.length){const empty=document.createElement('li');empty.className='empty';empty.textContent='No other eligible boxes.';list.append(empty)}
    for(const contact of contacts){
-    const item=document.createElement('li');
-    item.append(document.createTextNode(contact.contactName+' · '+(contact.contactRoles||[]).map(role=>role.name).join(', ')+' · '+(contact.contactState||'unknown')+' · '));
+    const view=contactView(contact);
+    const item=document.createElement('li');item.dataset.state=view.state;
+    item.append(avatarNode(view,true));
+    const meta=document.createElement('div');meta.className='chat-meta';
+    const r1=document.createElement('div');r1.className='row1';
+    const name=document.createElement('span');name.className='name';name.textContent=view.name;
+    const roles=document.createElement('span');roles.className='agent-badge';roles.textContent=view.roles.map(role=>role.name).join(', ')||'No roles';
+    r1.append(name,roles);
+    const r2=document.createElement('div');r2.className='row2';
+    const state=document.createElement('span');state.className='row-state';state.textContent=view.state;
+    const agent=document.createElement('span');agent.className='agent-badge';agent.textContent=view.defaultAgent||'agent';
+    r2.append(state,agent);
+    const reason=document.createElement('span');reason.className='contact-reason';reason.textContent=contact.reason||'';
+    meta.append(r1,r2,reason);item.append(meta);
+    const access=document.createElement('div');access.className='contact-access';
     const select=document.createElement('select');for(const state of ['inherit','allow','block']){const option=document.createElement('option');option.value=state;option.textContent=state;select.append(option)}select.value=contact.override||'inherit';
+    select.setAttribute('aria-label','Contact access from '+box.name+' to '+view.name);
     select.onchange=async()=>{select.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:select.value});await loadInspectContacts(box)}catch(e){status.textContent=e.message;select.disabled=false}};
     const both=document.createElement('button');both.type='button';both.className='linkbtn';both.textContent='Both ways';both.onclick=async()=>{both.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:select.value,twoWay:true});await loadInspectContacts(box)}catch(e){status.textContent=e.message;both.disabled=false}};
-    item.append(select,document.createTextNode(' · '+contact.reason+' '),both);list.append(item);
+    access.append(select,both);item.append(access);list.append(item);
    }
    status.textContent='Inherit uses assigned roles; Allow adds a manual grant; Block overrides every role grant.';
   }catch(e){status.textContent=e.message}
  }
  function maybeLoadInspectContacts(box){
-  if(!owner){inspectContacts.hidden=true;inspectContactsFor='';return}
+  if(!owner){inspectContacts.hidden=true;inspectContactsFor='';inspectContactCache=null;return}
   inspectContacts.hidden=false;
   if(inspectContactsFor===box.id)return;
-  inspectContactsFor=box.id;void loadInspectContacts(box);
+  inspectContactsFor=box.id;inspectContactCache=null;void loadInspectContacts(box);
  }
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
 
  /* ---------- toasts ---------- */
- function toast(text){const el=document.createElement('div');el.className='toast';el.textContent=text;$('#chat-toasts').append(el);setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},3200);}
+ function toast(text,actionLabel,onAction){
+  const el=document.createElement('div');el.className='toast';el.append(Object.assign(document.createElement('span'),{textContent:text}));
+  if(actionLabel){const button=document.createElement('button');button.type='button';button.className='toast-action';button.textContent=actionLabel;
+   button.onclick=()=>{el.remove();onAction?.()};el.append(button)}
+  $('#chat-toasts').append(el);
+  setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400)},actionLabel?6000:3200);
+ }
 
  /* The desktop stream attaches to a running desktop and never starts one, so a
     reload (or any box whose desktop is not up yet) has to start it first. A
@@ -1387,24 +1557,30 @@
  };
 
  /* ---------- row menu / hibernate / delete ---------- */
- const rowMenu=$('#row-menu');
- function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren()}
+ const rowMenu=$('#row-menu'),menuBackdrop=$('#menu-backdrop');
+ function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('sheet-mode');menuBackdrop.hidden=true}
  function openRowMenu(box,rect){
   rowMenu.replaceChildren();
+  // Keep the menu small: everything else lives in the Details panel.
   const items=[
    ['Show details',()=>{if(!inspectOpen)$('#chat-info').click()}],
-   ['Control desktop',()=>{location.hash='box='+box.id;if(box.id!==selected)void openBox(box.id).then(()=>openTakeover('desktop'));else openTakeover('desktop')}],
-   ['Instructions…',()=>void openBoxInstructions(box)],
   ];
-  if(owner)items.push(['Imported profiles…',()=>void openBoxCredentials(box)]);
-  if(box.state==='running')items.push(['Re-sync config',()=>void resyncBox(box)],['Restart box…',()=>void restartBox(box)]);
+  if(box.state==='running')items.push(['Hibernate box',()=>void hibernateBox(box)],['Restart box…',()=>void restartBox(box)]);
   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
-  if(box.state==='running')items.splice(2,0,['Hibernate box',()=>void hibernateBox(box)]);
   for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
+  const sheet=coarsePointer()||innerWidth<=640;
+  rowMenu.classList.toggle('sheet-mode',sheet);
   rowMenu.hidden=false;
-  rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
-  rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
+  if(sheet){
+   menuBackdrop.hidden=false;
+   try{navigator.vibrate?.(10)}catch{}
+   rowMenu.style.left=rowMenu.style.top='';
+  }else{
+   rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
+   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
+  }
  }
+ menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
  addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
  // Re-push the instructions the box already carries. A replaced worker or a
@@ -1531,7 +1707,7 @@
   msgTimer=setTimeout(tickMessages,3000);
  }
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
- async function tickMessages(){try{if(!document.hidden&&selected)await refreshMessages()}catch{}msgTimer=setTimeout(tickMessages,3000)}
+ async function tickMessages(){try{if(!document.hidden&&selected)await refreshMessages();reconnecting=false}catch(e){reconnecting=!!selected}updateBanner();msgTimer=setTimeout(tickMessages,3000)}
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages()}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};

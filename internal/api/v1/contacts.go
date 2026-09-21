@@ -2,7 +2,7 @@ package v1
 
 import "time"
 
-// BoxContact is one directed contact edge between two boxes of an account.
+// BoxContact describes one destination and the sender's effective access to it.
 type BoxContact struct {
 	BoxID        string             `json:"boxId"`
 	BoxName      string             `json:"boxName"`

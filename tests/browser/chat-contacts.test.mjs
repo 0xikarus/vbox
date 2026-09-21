@@ -11,7 +11,7 @@ const appcss=await readFile('internal/controller/web/app.css','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 
-// The chat Details drawer edits the same controller-side contact graph as the
+// The chat Details drawer edits the same controller-side contact access graph as the
 // single-box workspace page (whose non-owner gating is covered in
 // workspace-desktop.test.mjs). This test drives the real page against fixture
 // APIs and writes the screenshot the PR references.
@@ -19,9 +19,13 @@ test('chat details drawer edits the per-box contact graph',async()=>{
  let protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
  let agentRoles=[{id:'role-1',name:'Can contact reviewer',description:'Owner-defined contact grant',contactScope:'selected',contactBoxIds:['reviewer'],assignedBoxCount:1}];
  let roleAssignments=new Map([['builder',['role-1']],['reviewer',[]]]);
- let contacts=[{contactBoxId:'reviewer',contactName:'reviewer',contactRoles:[],contactState:'running',override:'allow',canMessage:true,reason:'Allowed by an explicit connection override.'}];
+ let contacts=[
+  {contactBoxId:'reviewer',contactName:'reviewer',contactRoles:[],contactState:'running',contactAgent:'codex',override:'allow',canMessage:true,reason:'Allowed by an explicit connection override.'},
+  {contactBoxId:'planner',contactName:'planner',contactRoles:[],contactState:'running',contactAgent:'claude',override:'inherit',canMessage:false,reason:'No role or explicit connection allows this message.'},
+  {contactBoxId:'auditor',contactName:'auditor',contactRoles:[],contactState:'running',contactAgent:'codex',override:'block',canMessage:false,reason:'Blocked by an explicit connection override.'},
+ ];
  let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
- const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
+ const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'},{id:'planner',name:'planner',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v3',volumeName:'v3'},{id:'auditor',name:'auditor',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v4',volumeName:'v4'}];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0],method=req.method;requests.push(method+' '+path);
@@ -86,6 +90,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
+  p.on('dialog',dialog=>dialog.accept());
   await p.evaluateOnNewDocument(()=>{
    window.openWorkspaceDesktop=(id,onStatus,options)=>{
     if(options.viewOnly){window.viewerPreview={id,viewOnly:true};setTimeout(()=>onStatus('Desktop connected'),350);return()=>{window.viewerPreviewClosed=true}};
@@ -121,6 +126,11 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
   await new Promise(resolve=>setTimeout(resolve,650));
   assert.equal(requests.filter(r=>r==='GET /v1/grid-boxes').length,beforeListRefresh+1,'push burst should fetch the list once');
+  await p.mouse.move(0,0);
+  await p.focus('#chat-header-avatar .preview-trigger');
+  await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden);
+  await p.evaluate(()=>document.activeElement.blur());
+  await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden,{timeout:2000});
   for(const selector of ['#chat-entries [data-avatar="builder"]','#chat-header-avatar [data-avatar="builder"]']){
    await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');
@@ -155,6 +165,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.deepEqual(await p.evaluate(()=>window.viewerTerminal),{id:'reviewer',session:'codex-reviewer',root:'takeover-screen'});
   await p.click('#takeover-close');await p.waitForFunction(()=>document.querySelector('#takeover').hidden);await p.$eval('[data-box-id="builder"]',element=>element.click());
   await p.waitForFunction(()=>document.querySelector('[data-box-id="builder"]').classList.contains('active'),{timeout:5000});
+  assert.equal(await p.$eval('#chat-messages .msg.user .ticks svg',e=>!!e),true,'delivery ticks render as inline Lucide icons');
+  await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   const panelLayout=await p.evaluate(()=>{
@@ -165,15 +177,19 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.ok(panelLayout.panel.top>=panelLayout.header.bottom-2,'details must appear below the chat header');
   assert.ok(panelLayout.panel.width>=panelLayout.header.width*.95,'details must span the chat instead of a side drawer');
   await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='Can contact reviewer');
- assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/Inherit uses assigned roles/);
- await p.select('#inspect-contact-list select','block');
- await p.waitForFunction(()=>{const select=document.querySelector('#inspect-contact-list select');return select.value==='block'&&!select.disabled});
+  assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/Inherit uses assigned roles/);
+  assert.equal(await p.$$eval('#inspect-contact-list li',rows=>rows.length),3,'every eligible box renders with its effective access');
+  await p.select('#inspect-contact-list select','block');
+  await p.waitForFunction(()=>{const select=document.querySelector('#inspect-contact-list select');return select.value==='block'&&!select.disabled});
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/contacts'),true);
   await p.$eval('#inspect-contact-list button',e=>e.click());
   await p.$eval('#inspect-toggle-protection',e=>e.click());
   await p.waitForFunction(()=>document.querySelector('#inspect-protection-label').textContent.startsWith('Protected'));
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/protection'),true);
   await (await p.$('#inspect')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await p.setViewport({width:420,height:1200,deviceScaleFactor:1});
+  await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body'),contacts=document.querySelector('#inspect-contacts');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible';contacts.style.overflow='visible'});
+  await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/mobile-chat-contacts.png'});
   await p.click('#inspect-edit-roles');
   await p.waitForFunction(()=>!document.querySelector('#roles-modal').hidden&&document.querySelector('#role-matrix .role-heading')?.textContent==='Can contact reviewer');
   await p.$eval('#role-box-search',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});

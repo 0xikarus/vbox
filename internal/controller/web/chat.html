@@ -65,17 +65,57 @@
     <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false">Details</button>
     <a id="chat-workspace" href="#">Workspace</a>
    </header>
+   <div id="chat-banner" hidden role="status"></div>
    <aside id="inspect" role="region" aria-label="Box details" hidden>
-    <header><strong id="inspect-title">Box details</strong><span class="spacer"></span><button id="inspect-close" type="button" aria-label="Close details">×</button></header>
-    <div id="inspect-summary"><div id="inspect-avatar"></div><dl id="inspect-rows"></dl></div>
-    <section id="inspect-contacts" hidden>
-     <h3>Contacts</h3>
-     <p>Effective contact access from assigned roles and directional overrides. Changes apply immediately and are rechecked before delivery.</p>
-     <p>Assigned roles: <strong id="inspect-contact-role">None</strong> · <button id="inspect-edit-roles" class="inline-link" type="button">edit assignments</button></p>
-     <p><span id="inspect-protection-label">Protection unknown</span> <button id="inspect-toggle-protection" type="button">Protect box</button></p>
-     <ul id="inspect-contact-list"></ul>
-     <p id="inspect-contact-status" role="status"></p>
-    </section>
+    <header id="inspect-header">
+     <div id="inspect-header-text"><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
+     <span class="spacer"></span>
+     <button id="inspect-close" type="button" aria-label="Close details">×</button>
+    </header>
+    <div id="inspect-body">
+     <section id="inspect-summary" aria-label="Box overview">
+      <div id="inspect-avatar"></div>
+      <div id="inspect-hero">
+       <h2 id="inspect-name">—</h2>
+       <p id="inspect-subtitle">—</p>
+       <div id="inspect-badges" class="inspect-badges"></div>
+       <div id="inspect-quick-actions" class="inspect-quick"></div>
+      </div>
+      <details class="inspect-block inspect-fold" data-fold="runtime" open>
+       <summary><h3>Runtime</h3></summary>
+       <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
+      </details>
+      <details class="inspect-block inspect-fold" data-fold="activity" open>
+       <summary><h3>Activity</h3></summary>
+       <dl id="inspect-activity-rows" class="inspect-rows"></dl>
+      </details>
+      <details class="inspect-block inspect-fold" data-fold="config" open>
+       <summary><h3>Config</h3></summary>
+       <div id="inspect-config-actions" class="inspect-actions"></div>
+      </details>
+     </section>
+     <section id="inspect-contacts" hidden>
+     <header class="inspect-block-head"><h3>Contacts</h3></header>
+      <p class="inspect-lede">Effective access from assigned roles and directional overrides. Changes apply immediately and are rechecked before delivery.</p>
+      <div class="contact-policy">
+       <div class="contact-policy-card">
+        <span class="policy-label">Assigned roles</span>
+        <strong id="inspect-contact-role">None</strong>
+        <button id="inspect-edit-roles" type="button">Edit assignments</button>
+       </div>
+       <div class="contact-policy-card">
+        <span class="policy-label">Visibility</span>
+        <span id="inspect-protection-label">Protection unknown</span>
+        <button id="inspect-toggle-protection" type="button">Protect box</button>
+       </div>
+      </div>
+      <div class="inspect-block">
+       <h3>Contact access</h3>
+       <ul id="inspect-contact-list"></ul>
+      </div>
+      <p id="inspect-contact-status" role="status"></p>
+     </section>
+    </div>
    </aside>
    <div id="chat-loading" hidden aria-hidden="true"><img src="/loading-doodle.svg" alt=""><p id="chat-loading-text">Loading…</p></div>
    <div id="chat-messages" aria-live="polite"></div>
@@ -85,7 +125,7 @@
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
     <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
-    <button id="send" type="submit" title="Send" aria-label="Send">➤</button>
+    <button id="send" type="submit" title="Send" aria-label="Send" disabled>➤</button>
    </form>
    <p id="chat-status" role="status"></p>
   </section>
@@ -241,6 +281,7 @@
  </section>
 </div>
 
+<div id="menu-backdrop" hidden></div>
 <div id="row-menu" hidden role="menu"></div>
 
 <div id="forward-menu" hidden role="menu"></div>

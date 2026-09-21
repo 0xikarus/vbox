@@ -643,6 +643,12 @@ CREATE TABLE IF NOT EXISTS box_contacts (
 );
 CREATE INDEX IF NOT EXISTS box_contacts_owner_idx ON box_contacts(account_id, box_id);
 CREATE INDEX IF NOT EXISTS box_contacts_target_idx ON box_contacts(account_id, contact_box_id);
+-- Older controllers created only the requested direction. Complete those
+-- relationships on upgrade, swapping the directional permission flags.
+INSERT INTO box_contacts(account_id,box_id,contact_box_id,can_message,can_receive,created_by,created_at,updated_at)
+SELECT account_id,contact_box_id,box_id,can_receive,can_message,created_by,created_at,updated_at
+FROM box_contacts
+ON CONFLICT(box_id,contact_box_id) DO NOTHING;
 
 -- Native agent roles are account scoped and deliberately have no built-in
 -- names. Permission keys are validated by the controller's catalogue. Phase 1

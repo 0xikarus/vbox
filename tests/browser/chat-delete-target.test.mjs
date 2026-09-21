@@ -51,7 +51,8 @@ test('an in-flight volume delete cannot be retargeted at another box',async()=>{
   await p.waitForSelector('#chat-entries li',{timeout:8000});
   const openDeleteFor=name=>p.evaluate(boxName=>{
    const row=[...document.querySelectorAll('#chat-entries li')].find(el=>el.textContent.includes(boxName));
-   (row.querySelector('.chevron')||[...row.querySelectorAll('button')].pop()).click();
+   const rect=row.getBoundingClientRect();
+   row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:rect.left+20,clientY:rect.top+10}));
    [...document.querySelectorAll('#row-menu button')].find(b=>b.textContent.startsWith('Delete box')).click();
   },name);
 
