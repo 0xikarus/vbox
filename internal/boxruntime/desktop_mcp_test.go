@@ -261,6 +261,31 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 	}
 }
 
+func TestDesktopMCPGuideMatchesAdvertisedTools(t *testing.T) {
+	home := t.TempDir()
+	if err := writeDesktopMCPGuide(home); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, desktopMCPGuidePath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## chat_message", "## type_secret", "## desktop_screenshot", `Schema: `} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("guide missing %q: %s", fragment, text)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("guide mode = %v", info.Mode().Perm())
+	}
+}
+
 func TestSaveDesktopScreenshotUsesPrivateWorkspacePath(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
