@@ -161,8 +161,11 @@ func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov
 	if task.Agent == "codex" {
 		return s.deliverNativeAgentChat(ctx, prov, serviceID, accountID, "chat-codex-start", task, message)
 	}
+	if task.Agent == "opencode" {
+		return s.deliverNativeAgentChat(ctx, prov, serviceID, accountID, "chat-opencode-start", task, message)
+	}
 	text := ""
-	if task.Agent == "shell" || task.Agent == "opencode" {
+	if task.Agent == "shell" {
 		var err error
 		text, err = s.boxMessagePrompt(ctx, accountID, task.Agent, message)
 		if err != nil {
@@ -171,7 +174,7 @@ func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov
 	}
 	prompt := base64.RawURLEncoding.EncodeToString([]byte(text))
 	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
-	if err != nil || result.ExitCode != 0 || task.Agent == "shell" || task.Agent == "opencode" {
+	if err != nil || result.ExitCode != 0 || task.Agent == "shell" {
 		return result, err
 	}
 	command := map[string]string{"claude": "chat-deliver"}[task.Agent]
