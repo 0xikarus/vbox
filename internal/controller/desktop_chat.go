@@ -72,9 +72,6 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		writeError(w, 404, fmt.Errorf("box unavailable"))
 		return
 	}
-	drainCtx, cancelDrain := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
-	s.drainBoxChat(drainCtx, p, box)
-	cancelDrain()
 	// History is a read path. Outbox polling can involve a worker/provider
 	// round-trip, so never hold the chat switch open waiting for it. The
 	// reconciler and reply watcher also drain the same outbox; this best-effort
