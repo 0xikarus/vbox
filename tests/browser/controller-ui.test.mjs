@@ -108,7 +108,7 @@ test('native roles can be created, assigned per box, and edited on mobile',async
  await page.$$eval('#role-assignments .role-heading',buttons=>buttons.find(button=>button.textContent==='Normal').click());
  await page.setViewport({width:1280,height:1200});
  await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/role-editor.png')});
- await page.click('#role-editor-modal [data-close="role-editor-modal"]');
+ await page.click('#role-editor-modal header [data-close="role-editor-modal"]');
  await page.setViewport({width:390,height:844});
  assert.equal(await page.$('#role-assignments table'),null,'assignments should not fall back to a matrix on mobile');
  assert.equal(await page.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
