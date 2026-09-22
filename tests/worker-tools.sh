@@ -23,5 +23,8 @@ docker run --rm --name "vmbox-tools-disposable-$$" \
     npm --version
     npx --version
     bun -e "console.log(\"bun \" + Bun.version)"
+    ffmpeg -hide_banner -version | sed -n "1p"
+    ffprobe -hide_banner -version | sed -n "1p"
+    ffmpeg -hide_banner -loglevel error -f lavfi -i color=c=black:s=32x32:d=0.1 -frames:v 1 -f null -
     printf "Worker development tools verified offline as UID %s\n" "$(id -u)"
   '

@@ -29,10 +29,10 @@
 <button id="load-browser-imports" type="button">Load saved imports</button><ul id="browser-import-list"></ul><p id="browser-import-status" role="status"></p>
 <p>Apply requires a running Chromium browser and resumed agent input. Removing an import does not sign out existing browser sessions.</p></details>
 <details id="box-contacts" hidden><summary>Contacts</summary>
-<p>Which boxes this agent may message. A manager sees every non-protected box automatically; a worker only has the explicit contacts below. Changes apply immediately and are enforced by the controller.</p>
-<p>Role <strong id="contact-role">—</strong> <button id="contact-toggle-role" type="button">Make manager</button> · <span id="contact-protection-label">Protection unknown</span> <button id="contact-toggle-protection" type="button">Protect box</button></p>
+<p>Choose this box's direct contacts. A role with <strong>All contacts</strong> makes every eligible box available instead.</p>
+<p>Assigned roles: <strong id="contact-role">None</strong> · <a href="/#roles">edit assignments</a></p>
+<p>Labels: <strong id="box-tags">None</strong> <button id="edit-box-tags" type="button">Edit labels</button> · <span id="contact-protection-label">Protection unknown</span> <button id="contact-toggle-protection" type="button">Protect box</button></p>
 <ul id="contact-list"></ul>
-<form id="contact-form"><label>Contact box <input name="contact" required maxlength="63" placeholder="box name or id"></label><button>Add contact</button></form>
 <p id="contact-status" role="status"></p></details>
 <details id="box-settings" hidden><summary>CPU, RAM &amp; connection</summary>
 <p>Limits belong to the assigned compute slot. They do not follow the workspace to another slot. Changing limits can affect cost; reducing RAM can terminate applications.</p>

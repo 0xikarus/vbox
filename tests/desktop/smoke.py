@@ -72,7 +72,7 @@ try:
             {'jsonrpc':'2.0','id':1,'method':'initialize','params':{'protocolVersion':'2025-06-18'}},
             {'jsonrpc':'2.0','method':'notifications/initialized'},
             {'jsonrpc':'2.0','id':2,'method':'tools/list'},
-            {'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'desktop_screenshot','arguments':{}}},
+            {'jsonrpc':'2.0','id':3,'method':'tools/call','params':{'name':'take_screenshot','arguments':{}}},
         ]
         output = worker(name, 'vmbox-runtime', 'desktop-mcp', data=('\n'.join(map(json.dumps,messages))+'\n').encode()).stdout
         replies = [json.loads(line) for line in output.splitlines()]

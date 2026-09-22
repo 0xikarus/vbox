@@ -11,15 +11,21 @@ const appcss=await readFile('internal/controller/web/app.css','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 
-// The chat Details drawer edits the same controller-side contact graph as the
+// The chat Details drawer edits the same controller-side contact access graph as the
 // single-box workspace page (whose non-owner gating is covered in
 // workspace-desktop.test.mjs). This test drives the real page against fixture
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
- let boxRole='worker',protectedBox=false,requests=[],creations=[],fullDesktopShots=0;
- let contacts=[{contactName:'reviewer',contactRole:'worker',contactState:'running',canMessage:true,canReceive:true}];
+ let protectedBox=false,requests=[],creations=[],fullDesktopShots=0,explicitIdle=false,tags=['backend','priority'];
+ let agentRoles=[];
+ let roleAssignments=new Map([['builder',[]],['reviewer',[]]]);
+ let contacts=[
+  {contactBoxId:'reviewer',contactName:'reviewer',contactRoles:[],contactState:'running',contactAgent:'codex',override:'allow',canMessage:true,reason:"Included in this box's direct contact list."},
+  {contactBoxId:'planner',contactName:'planner',contactRoles:[],contactState:'running',contactAgent:'claude',override:'inherit',canMessage:false,reason:"Not in this box's direct contact list."},
+  {contactBoxId:'auditor',contactName:'auditor',contactRoles:[],contactState:'running',contactAgent:'codex',override:'block',canMessage:false,reason:'Blocked by an explicit connection override.'},
+ ];
  let builderMessages=[{id:'m1',direction:'agent',state:'delivered',text:'Ready.',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()}];
- const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'}];
+ const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v1',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v2',volumeName:'v2'},{id:'planner',name:'planner',state:'running',defaultAgent:'claude',provider:'railway',volumeId:'v3',volumeName:'v3'},{id:'auditor',name:'auditor',state:'running',defaultAgent:'codex',provider:'railway',volumeId:'v4',volumeName:'v4'}];
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0],method=req.method;requests.push(method+' '+path);
@@ -33,7 +39,17 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/logical-boxes'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;creations.push(JSON.parse(body));return res.end(JSON.stringify({id:'created',name:'github-chat-fixture'}))}
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,role:b.id==='builder'?boxRole:'worker'}))));
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,roles:agentRoles.filter(role=>(roleAssignments.get(b.id)||[]).includes(role.id)).map(({id,name})=>({id,name}))}))));
+  if(path==='/v1/agent-roles'&&method==='GET')return res.end(JSON.stringify(agentRoles));
+  if(path==='/v1/agent-roles'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body),role={id:'role-'+(agentRoles.length+1),...parsed,assignedBoxCount:0};agentRoles.push(role);res.statusCode=201;return res.end(JSON.stringify(role))}
+  if(path==='/v1/agent-role-presets/team'&&method==='POST'){
+   const normal={id:'role-normal',name:'Normal',description:"Team member: can use this box's computer and message its direct contacts.",capabilities:{allContacts:{enabled:false}},assignedBoxCount:0};
+   const manager={id:'role-manager',name:'Manager',description:'Team manager: can see every contact, label boxes, and manage agent-box lifecycles.',capabilities:{allContacts:{enabled:true}},assignedBoxCount:0};
+   agentRoles.push(normal,manager);res.statusCode=201;return res.end(JSON.stringify([normal,manager]));
+  }
+  if(path.startsWith('/v1/agent-roles/')&&method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body),id=decodeURIComponent(path.split('/').pop()),index=agentRoles.findIndex(role=>role.id===id);agentRoles[index]={...agentRoles[index],...parsed};return res.end(JSON.stringify(agentRoles[index]))}
+  if(path.startsWith('/v1/agent-roles/')&&method==='DELETE'){const id=decodeURIComponent(path.split('/').pop());agentRoles=agentRoles.filter(role=>role.id!==id);for(const [boxID,ids] of roleAssignments)roleAssignments.set(boxID,ids.filter(roleID=>roleID!==id));res.statusCode=204;return res.end()}
+  if(path==='/v1/agent-role-assignments'&&method==='PUT'){let body='';for await(const chunk of req)body+=chunk;for(const assignment of JSON.parse(body).assignments)roleAssignments.set(assignment.boxId,assignment.roleIds);for(const role of agentRoles)role.assignedBoxCount=[...roleAssignments.values()].filter(ids=>ids.includes(role.id)).length;res.statusCode=204;return res.end()}
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'opencode',name:'openrouter',model:'openrouter/saved'},{application:'github',name:'gh-work'}]));
   if(path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/live-model',label:'Live model'}]}));
@@ -50,7 +66,10 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    {id:'frame-2',capturedAt:new Date(Date.now()-30000).toISOString(),width:1,height:1}
   ]));
   if(path.includes('/desktop/replay/')){res.setHeader('Content-Type','image/png');return res.end(thumbnail)}
-  if(path==='/v1/logical-boxes/builder/messages'&&method==='GET')return res.end(JSON.stringify(builderMessages));
+  if(path==='/v1/logical-boxes/builder/messages'&&method==='GET'){
+   if(explicitIdle)res.setHeader('X-Vmbox-Agent-Busy','false');
+   return res.end(JSON.stringify(builderMessages));
+  }
   if(path==='/v1/logical-boxes/builder/messages'&&method==='POST'){
    await new Promise(resolve=>setTimeout(resolve,600));
    const now=new Date().toISOString();
@@ -61,7 +80,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
   if(path==='/v1/logical-boxes/builder/contacts'){
-   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);contacts=contacts.filter(c=>c.contactName!==parsed.contact);const created={contactName:parsed.contact,contactRole:'worker',contactState:'running',canMessage:true,canReceive:true};contacts.push(created);return res.end(JSON.stringify(created))}
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);const contact=contacts.find(c=>c.contactBoxId===parsed.contact||c.contactName===parsed.contact);contact.override=parsed.state;contact.canMessage=parsed.state==='allow';contact.reason=parsed.state==='allow'?"Included in this box's direct contact list.":"Not in this box's direct contact list.";return res.end(JSON.stringify(contact))}
    return res.end(JSON.stringify(contacts));
   }
   if(path.startsWith('/v1/logical-boxes/builder/contacts/')&&method==='DELETE'){contacts=contacts.filter(c=>c.contactName!==decodeURIComponent(path.split('/').pop()));res.statusCode=204;return res.end()}
@@ -69,17 +88,21 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;protectedBox=!!JSON.parse(body).protected}
    return res.end(JSON.stringify({protected:protectedBox}));
   }
-  if(path==='/v1/logical-boxes/builder'){
-   if(method==='PATCH'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);if(parsed.role)boxRole=parsed.role}
-   return res.end(JSON.stringify({...boxes[0],role:boxRole}));
+  if(path==='/v1/logical-boxes/builder/tags'){
+   if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;tags=JSON.parse(body).tags}
+   return res.end(JSON.stringify({tags}));
   }
-  if(path.startsWith('/v1/logical-boxes/builder'))return res.end(JSON.stringify({...boxes[0],role:boxRole}));
+  if(path==='/v1/logical-boxes/builder'){
+   return res.end(JSON.stringify({...boxes[0],roles:agentRoles.filter(role=>(roleAssignments.get('builder')||[]).includes(role.id)).map(({id,name})=>({id,name}))}));
+  }
+  if(path.startsWith('/v1/logical-boxes/builder'))return res.end(JSON.stringify({...boxes[0],roles:agentRoles.filter(role=>(roleAssignments.get('builder')||[]).includes(role.id)).map(({id,name})=>({id,name}))}));
   res.statusCode=404;return res.end('{}');
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
+  p.on('dialog',dialog=>dialog.accept());
   await p.evaluateOnNewDocument(()=>{
    window.openWorkspaceDesktop=(id,onStatus,options)=>{
     if(options.viewOnly){window.viewerPreview={id,viewOnly:true};setTimeout(()=>onStatus('Desktop connected'),350);return()=>{window.viewerPreviewClosed=true}};
@@ -104,8 +127,12 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('[data-box-id="builder"]',element=>element.click());
   await p.waitForFunction(()=>document.querySelector('#chat-messages .msg.agent .text')?.textContent==='Done.'||[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Done.'),{timeout:1500});
   assert.equal(await p.$eval('#chat-messages',element=>!!element.querySelector('.msg.processing')),false,'processing must end when the agent reply appears');
+  explicitIdle=true;
+  await p.click('#refresh');
+  await new Promise(resolve=>setTimeout(resolve,150));
   await p.type('#chat-input','Quick check');
   await p.click('#send');
+  assert.equal(await p.$eval('#chat-input',element=>element.value),'','the composer must clear as soon as a message is sent');
   await p.waitForFunction(()=>!!document.querySelector('#chat-messages .msg.processing'),{timeout:400});
   assert.deepEqual(await p.$$eval('#chat-messages .msg',rows=>rows.slice(-2).map(row=>({kind:row.classList.contains('user')?'user':'processing',text:row.textContent.includes('Quick check')?'Quick check':''}))),[{kind:'user',text:'Quick check'},{kind:'processing',text:''}]);
   await p.waitForFunction(()=>[...document.querySelectorAll('#chat-messages .msg.agent .text')].some(e=>e.textContent==='Quick answer'),{timeout:5000});
@@ -114,6 +141,11 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.evaluate(()=>{for(let i=0;i<5;i++)navigator.serviceWorker?.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push'}}))});
   await new Promise(resolve=>setTimeout(resolve,650));
   assert.equal(requests.filter(r=>r==='GET /v1/grid-boxes').length,beforeListRefresh+1,'push burst should fetch the list once');
+  await p.mouse.move(0,0);
+  await p.focus('#chat-header-avatar .preview-trigger');
+  await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden);
+  await p.evaluate(()=>document.activeElement.blur());
+  await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden,{timeout:2000});
   for(const selector of ['#chat-entries [data-avatar="builder"]','#chat-header-avatar [data-avatar="builder"]']){
    await p.$eval(selector,e=>e.dispatchEvent(new MouseEvent('mouseenter')));
    assert.equal(await p.$eval('.tv-preview',e=>e.hidden),false,selector+' did not open the desktop preview');
@@ -148,6 +180,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.deepEqual(await p.evaluate(()=>window.viewerTerminal),{id:'reviewer',session:'codex-reviewer',root:'takeover-screen'});
   await p.click('#takeover-close');await p.waitForFunction(()=>document.querySelector('#takeover').hidden);await p.$eval('[data-box-id="builder"]',element=>element.click());
   await p.waitForFunction(()=>document.querySelector('[data-box-id="builder"]').classList.contains('active'),{timeout:5000});
+  assert.equal(await p.$eval('#chat-messages .msg.user .ticks svg',e=>!!e),true,'delivery ticks render as inline Lucide icons');
+  await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   const panelLayout=await p.evaluate(()=>{
@@ -157,22 +191,83 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(panelLayout.parent,'chat-conversation','details must expand from the viewed chat header');
   assert.ok(panelLayout.panel.top>=panelLayout.header.bottom-2,'details must appear below the chat header');
   assert.ok(panelLayout.panel.width>=panelLayout.header.width*.95,'details must span the chat instead of a side drawer');
-  await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='worker');
-  assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/worker may message only/);
-  await p.type('#inspect-contact-form input[name=contact]','planner');
-  await p.$eval('#inspect-contact-form button',e=>e.click());
-  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===2);
+  await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='None'&&document.querySelector('#inspect-tags').textContent.includes('backend'));
+  assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/direct contacts/);
+  assert.equal(await p.$$eval('#inspect-contact-list li',rows=>rows.length),3,'every eligible box renders with its effective access');
+  await p.click('#inspect-contact-list li:nth-child(2) input[type=checkbox]');
+  await p.waitForFunction(()=>{const checkbox=document.querySelector('#inspect-contact-list li:nth-child(2) input[type=checkbox]');return checkbox.checked&&!checkbox.disabled});
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/contacts'),true);
-  await p.$eval('#inspect-toggle-role',e=>e.click());
-  await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='manager');
-  assert.equal(requests.includes('PATCH /v1/logical-boxes/builder'),true);
   await p.$eval('#inspect-toggle-protection',e=>e.click());
   await p.waitForFunction(()=>document.querySelector('#inspect-protection-label').textContent.startsWith('Protected'));
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/protection'),true);
-  await p.$eval('#inspect-contact-list li button',e=>e.click());
-  await p.waitForFunction(()=>document.querySelectorAll('#inspect-contact-list li').length===1);
-  assert.equal(requests.some(r=>r.startsWith('DELETE /v1/logical-boxes/builder/contacts/')),true);
   await (await p.$('#inspect')).screenshot({path:'docs/chat-ui/screenshots/desktop-chat-contacts.png'});
+  await p.setViewport({width:420,height:1200,deviceScaleFactor:1});
+  await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body'),contacts=document.querySelector('#inspect-contacts');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible';contacts.style.overflow='visible'});
+  await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/mobile-chat-contacts.png'});
+  await p.click('#inspect-edit-roles');
+  await p.waitForFunction(()=>!document.querySelector('#roles-modal').hidden&&document.querySelector('#role-assignments .role-empty'));
+  await p.$eval('#role-box-search',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
+  await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
+  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles.png'});
+  await p.click('#setup-team-roles');
+  await p.waitForFunction(()=>[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Manager')&&[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Normal'));
+  assert.equal(requests.includes('POST /v1/agent-role-presets/team'),true);
+  assert.equal(await p.$eval('#setup-team-roles',button=>button.hidden),true,'the preset action must disappear once either exact preset role exists');
+  await p.click('#role-assignments .role-assignment-card[data-role-box-id="builder"] .role-assignment-toggle');
+  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-team-roles.png'});
+  await p.click('#create-role');
+  assert.equal(await p.$eval('.msg-actions',element=>getComputedStyle(element).visibility),'hidden','background message actions must not bleed through the role editor');
+  await p.type('#role-editor-form input[name=name]','Release handoff');
+  await p.type('#role-editor-form textarea[name=description]','Release coordination tools');
+  await p.click('#role-editor-form input[name=requestMoreTimeEnabled]');
+  await p.click('#role-editor-form input[name=createAgentBoxEnabled]');
+  await p.click('#role-editor-form [data-capability=createAgentBoxEnabled] summary');
+  await p.click('#role-editor-form input[name=allowedAgents][value=codex]');
+  await p.$eval('#role-editor-form [data-capability=createAgentBoxEnabled]',element=>element.open=false);
+  await p.click('#role-editor-form .mcp-tool-options summary');
+  assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.title),/privately/);
+  assert.match(await p.$eval('#role-editor-form label:has(input[value=create_agent_box])',element=>element.title),/startup instructions/);
+  await p.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
+  assert.equal(await p.$eval('#role-editor-form .mcp-tool-group-toggle[value=computer_use]',input=>input.checked),true);
+  assert.equal(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) input[name=mcpTools]',inputs=>inputs.every(input=>input.checked)),true);
+  await p.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) .role-capability-options summary');
+  await p.click('#role-editor-form input[name=mcpTools][value=drag_mouse]');
+  assert.equal(await p.$eval('#role-editor-form .mcp-tool-group-toggle[value=computer_use]',input=>input.indeterminate),true);
+  await p.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
+  assert.equal(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) input[name=mcpTools]',inputs=>inputs.every(input=>input.checked)),true);
+  await p.$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) .role-capability-options',element=>element.open=false);
+  await p.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
+  assert.deepEqual(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) input[name=mcpTools]',inputs=>inputs.map(input=>input.value)),['list_agent_boxes','get_agent_box','create_agent_box','set_agent_box_tags','restart_agent_box','delete_agent_box']);
+  await p.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) .role-capability-options summary');
+  await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-role-mcp-tools.png'});
+  await p.$eval('#role-editor-form .mcp-tool-options',element=>element.open=false);
+  await p.$eval('.role-capabilities',element=>element.scrollIntoView({block:'start'}));
+  await (await p.$('#role-editor-modal .role-editor-card')).screenshot({path:'docs/chat-ui/screenshots/chat-role-editor.png'});
+  await p.$eval('#role-editor-form',form=>form.requestSubmit());
+  await p.waitForFunction(()=>[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Release handoff'));
+  assert.equal(agentRoles.at(-1).name,'Release handoff','the exact owner-typed role name must be preserved');
+  assert.equal(agentRoles.at(-1).capabilities.requestMoreTime.enabled,true);
+  assert.deepEqual(agentRoles.at(-1).capabilities.createAgentBox.allowedAgents,['codex']);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.enabled,true);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('drag_mouse'),true);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('click_mouse'),true);
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('secret_request'),false);
+  assert.deepEqual(agentRoles.at(-1).capabilities.manageAgentBoxes,{list:true,inspect:true,tag:true,restart:true,delete:true});
+  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('create_agent_box'),true);
+  await p.click('#role-assignments .role-assignment-card[data-role-box-id="reviewer"] .role-assignment-toggle');
+  await p.click('#role-assignments input[aria-label="Release handoff for reviewer"]');
+  await p.click('#save-role-assignments');
+  await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');
+  assert.ok(roleAssignments.get('reviewer').includes(agentRoles.at(-1).id));
+  await p.setViewport({width:390,height:844,deviceScaleFactor:1});
+  assert.equal(await p.$('#role-assignments table'),null,'assignments should not fall back to a matrix on mobile');
+  assert.equal(await p.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
+  assert.equal(await p.$eval('#role-assignments .role-assignment-card[data-role-box-id="reviewer"]',element=>element.getBoundingClientRect().width>350),true);
+  await p.waitForFunction(()=>document.querySelector('#chat-toasts').childElementCount===0,{timeout:5000});
+  await p.$eval('#roles-modal .roles-card',element=>element.scrollTop=0);
+  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles-mobile.png'});
+  await p.click('#roles-modal .roles-card [data-close="roles-modal"]');
+  await p.setViewport({width:420,height:820,deviceScaleFactor:1});
   await p.$eval('#new-box',button=>button.click());
   await p.waitForSelector('#create-box select[name=loginProfile]',{timeout:5000});
   await p.select('#create-box select[name=defaultAgent]','opencode');
@@ -195,10 +290,12 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.keyboard.press('Escape');
   assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
+  await p.click('#create-role-choices input[value="'+agentRoles.at(-1).id+'"]');
   await p.type('#create-box input[name=name]','github-chat-fixture');
   await p.$eval('#create-box',form=>form.requestSubmit());
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
+  assert.deepEqual(creations.at(-1).roleIds,[agentRoles.at(-1).id]);
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

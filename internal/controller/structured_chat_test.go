@@ -70,15 +70,19 @@ func TestPullStructuredAgentReplyDrainsExpiredEventBeforeMatchingReply(t *testin
 	mock.ExpectQuery("INSERT INTO box_messages").
 		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "late note", "agent-message:e1").
 		WillReturnRows(boxMessageRow("message-late", "task-1", "", "agent", "late note", "delivered"))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy").WithArgs("account-a", "task-1", false).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1", "chat-key-1").
 		WillReturnRows(boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "delivered"))
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
 		WillReturnRows(emptyBoxMessageRows())
 	mock.ExpectExec("INSERT INTO box_messages").
-		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1", "message-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
 		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	server := chatTestServer(store)
 	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", Agent: "claude", Session: "claude-1"}
@@ -107,6 +111,8 @@ func TestApplyChatEventKeepsAnsweredReplyAsOwnMessage(t *testing.T) {
 	mock.ExpectQuery("INSERT INTO box_messages").
 		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "duplicate", "agent-message:e9").
 		WillReturnRows(boxMessageRow("message-dup", "task-1", "", "agent", "duplicate", "delivered"))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").
+		WillReturnResult(sqlmock.NewResult(0, 0))
 
 	server := chatTestServer(store)
 	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", Agent: "claude", Session: "claude-1"}
@@ -127,6 +133,8 @@ func TestApplyChatEventStoresUncorrelatedMessage(t *testing.T) {
 	mock.ExpectQuery("INSERT INTO box_messages").
 		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "status update", "agent-message:e3").
 		WillReturnRows(boxMessageRow("message-3", "task-1", "", "agent", "status update", "delivered"))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy").WithArgs("account-a", "task-1", false).
+		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	server := chatTestServer(store)
 	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", Agent: "claude", Session: "claude-1"}

@@ -63,7 +63,8 @@ func EnsureDesktopMCPToken(home string) (string, error) {
 }
 
 func writeDesktopMCPEndpoint(home, assignment, token string) error {
-	encoded, err := json.MarshalIndent(map[string]string{"url": desktopMCPHTTPURL(assignment), "token": token}, "", "  ")
+	url := desktopMCPHTTPURL(assignment)
+	encoded, err := json.MarshalIndent(map[string]string{"url": url, "promptUrl": url + "/prompt", "token": token}, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -99,16 +100,26 @@ func ServeDesktopMCPHTTP(ctx context.Context, assignment, home string) error {
 	return nil
 }
 
-func desktopMCPHTTPHandler(assignment, token string) http.Handler {
+func desktopMCPHTTPHandler(assignment, token string, resolvers ...desktopToolPolicyResolver) http.Handler {
+	resolve := desktopToolPolicyResolver(desktopAgentToolPolicy)
+	if len(resolvers) > 0 && resolvers[0] != nil {
+		resolve = resolvers[0]
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", func(writer http.ResponseWriter, _ *http.Request) {
 		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{"ok": true})
 	})
-	mux.Handle("/tools", desktopMCPAuthorized(token, func(writer http.ResponseWriter, _ *http.Request) {
-		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{"tools": desktopMCPTools()})
+	mux.Handle("/tools", desktopMCPAuthorized(token, func(writer http.ResponseWriter, request *http.Request) {
+		tools, _, err := allowedDesktopMCPTools(request.Context(), assignment, resolve)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
+			return
+		}
+		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{"tools": tools})
 	}))
-	mux.Handle("/tools/", desktopMCPAuthorized(token, desktopMCPCallHandler(assignment)))
-	mux.Handle("/", desktopMCPAuthorized(token, desktopMCPIndexHandler))
+	mux.Handle("/prompt", desktopMCPAuthorized(token, localAgentPromptHandler()))
+	mux.Handle("/tools/", desktopMCPAuthorized(token, desktopMCPCallHandler(assignment, resolve)))
+	mux.Handle("/", desktopMCPAuthorized(token, desktopMCPIndexHandler(assignment, resolve)))
 	return mux
 }
 
@@ -126,32 +137,119 @@ func desktopMCPAuthorized(token string, next http.HandlerFunc) http.Handler {
 	})
 }
 
-func desktopMCPIndexHandler(writer http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/" {
-		writeDesktopMCPError(writer, http.StatusNotFound, "no such endpoint")
-		return
+func desktopMCPIndexHandler(assignment string, resolve desktopToolPolicyResolver) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/" {
+			writeDesktopMCPError(writer, http.StatusNotFound, "no such endpoint")
+			return
+		}
+		tools, _, err := allowedDesktopMCPTools(request.Context(), assignment, resolve)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
+			return
+		}
+		names := make([]string, 0, len(tools))
+		for _, tool := range tools {
+			names = append(names, tool["name"].(string))
+		}
+		writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{
+			"server": "vmbox-desktop",
+			"tools":  names,
+			"usage": map[string]string{
+				"list":    "GET /tools",
+				"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
+				"prompt":  "POST /prompt with {\"text\":\"...\"} to deliver a user message to the running agent conversation",
+				"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
+				"session": "prompt, set_busy, chat_message and chat_ask target the sole agent conversation; name another with an X-Vmbox-Session header",
+			},
+		})
 	}
-	names := make([]string, 0, len(desktopMCPTools()))
-	for _, tool := range desktopMCPTools() {
-		names = append(names, tool["name"].(string))
-	}
-	writeDesktopMCPJSON(writer, http.StatusOK, map[string]any{
-		"server": "vmbox-desktop",
-		"tools":  names,
-		"usage": map[string]string{
-			"list":    "GET /tools",
-			"call":    "POST /tools/{name} with a JSON object of arguments, or GET /tools/{name}?argument=value",
-			"auth":    "Authorization: Bearer <token from ~/.local/share/vmbox/mcp-http.json>",
-			"session": "chat_message and chat_ask post to the box's agent conversation; name another with an X-Vmbox-Session header",
-		},
-	})
 }
 
-func desktopMCPCallHandler(assignment string) http.HandlerFunc {
+func localAgentPromptHandler() http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			writeDesktopMCPError(writer, http.StatusMethodNotAllowed, "use POST")
+			return
+		}
+		var input struct {
+			Text    string `json:"text"`
+			Session string `json:"session,omitempty"`
+		}
+		decoder := json.NewDecoder(io.LimitReader(request.Body, 1<<20))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&input); err != nil || strings.TrimSpace(input.Text) == "" || len(input.Text) > 140_000 {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "send one JSON object with non-empty text up to 140000 bytes")
+			return
+		}
+		if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "send one JSON object with non-empty text up to 140000 bytes")
+			return
+		}
+		session := strings.TrimSpace(request.Header.Get("X-Vmbox-Session"))
+		if session == "" {
+			session = strings.TrimSpace(input.Session)
+		} else if input.Session != "" && input.Session != session {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "session body and X-Vmbox-Session disagree")
+			return
+		}
+		ctx, cancel := context.WithTimeout(request.Context(), 2*time.Minute)
+		defer cancel()
+		var err error
+		if session == "" {
+			session, err = soleAgentConversation(ctx)
+			if err != nil {
+				writeDesktopMCPError(writer, http.StatusConflict, err.Error())
+				return
+			}
+		}
+		if err := validateTmuxToken("session", session); err != nil {
+			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		marker, err := tmuxCommand(ctx, "", "show-environment", "-t", session, taskAgentEnvironment)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusConflict, "agent conversation is not running")
+			return
+		}
+		agent := strings.TrimPrefix(strings.TrimSpace(string(marker)), taskAgentEnvironment+"=")
+		home, err := os.UserHomeDir()
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusInternalServerError, "box home is unavailable")
+			return
+		}
+		inbound := ChatInbound{ID: ID("local_"), Text: input.Text}
+		switch agent {
+		case "codex":
+			err = DeliverCodexChat(ctx, New("").Root, home, session, inbound)
+		case "claude":
+			err = StoreChatInbound(home, session, inbound)
+		case "opencode":
+			err = DeliverOpenCodeChat(ctx, home, session, inbound)
+		default:
+			err = fmt.Errorf("session is not a managed agent conversation")
+		}
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusConflict, err.Error())
+			return
+		}
+		writeDesktopMCPJSON(writer, http.StatusAccepted, map[string]any{"accepted": true, "session": session, "messageId": inbound.ID})
+	}
+}
+
+func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		name := strings.TrimPrefix(request.URL.Path, "/tools/")
 		if name == "" || strings.Contains(name, "/") {
 			writeDesktopMCPError(writer, http.StatusNotFound, "unknown desktop tool")
+			return
+		}
+		known := false
+		for _, tool := range desktopMCPTools() {
+			known = known || tool["name"] == name
+		}
+		if !known {
+			writeDesktopMCPError(writer, http.StatusBadRequest, "unknown desktop tool")
 			return
 		}
 		query := request.URL.Query()
@@ -167,6 +265,15 @@ func desktopMCPCallHandler(assignment string) http.HandlerFunc {
 		}
 		ctx, cancel := context.WithTimeout(request.Context(), 30*time.Second)
 		defer cancel()
+		_, allowed, err := allowedDesktopMCPTools(ctx, assignment, resolve)
+		if err != nil {
+			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
+			return
+		}
+		if !allowed[name] {
+			writeDesktopMCPError(writer, http.StatusForbidden, "MCP tool is not allowed for this box")
+			return
+		}
 		if desktopMCPChatTools[name] {
 			if session == "" {
 				if session, err = soleAgentConversation(ctx); err != nil {
@@ -192,7 +299,7 @@ func desktopMCPCallHandler(assignment string) http.HandlerFunc {
 // facade serves the whole box from one process, so it has to say which
 // conversation rather than letting the writer infer it from its own tmux
 // session, which is the facade's own.
-var desktopMCPChatTools = map[string]bool{"chat_message": true, "chat_ask": true}
+var desktopMCPChatTools = map[string]bool{"set_busy": true, "chat_message": true, "chat_ask": true}
 
 // soleAgentConversation names the box's agent conversation when there is
 // exactly one. With several, the caller has to choose: guessing would post a

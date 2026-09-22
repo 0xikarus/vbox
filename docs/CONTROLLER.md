@@ -10,8 +10,8 @@ the same controller for box access.
 
 Codex, Claude, and OpenCode are supported for persistent managed sessions,
 Agent chat, desktop MCP registration, and encrypted saved profiles.
-OpenCode starts with `--auto`; its first Agent-chat message is a native startup
-prompt and later messages use its loopback session API.
+OpenCode starts with `--auto`; its first Agent-chat message waits for the visible
+TUI bridge and uses the same loopback native prompt path as later messages.
 
 Required operator configuration:
 

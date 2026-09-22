@@ -161,8 +161,11 @@ func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov
 	if task.Agent == "codex" {
 		return s.deliverNativeAgentChat(ctx, prov, serviceID, accountID, "chat-codex-start", task, message)
 	}
+	if task.Agent == "opencode" {
+		return s.deliverNativeAgentChat(ctx, prov, serviceID, accountID, "chat-opencode-start", task, message)
+	}
 	text := ""
-	if task.Agent == "shell" || task.Agent == "opencode" {
+	if task.Agent == "shell" {
 		var err error
 		text, err = s.boxMessagePrompt(ctx, accountID, task.Agent, message)
 		if err != nil {
@@ -171,7 +174,7 @@ func (s *Server) startBoxTaskRuntime(ctx context.Context, accountID string, prov
 	}
 	prompt := base64.RawURLEncoding.EncodeToString([]byte(text))
 	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "tmux-task", task.Session, task.Agent, message.ID, prompt}, provider.ExecOptions{})
-	if err != nil || result.ExitCode != 0 || task.Agent == "shell" || task.Agent == "opencode" {
+	if err != nil || result.ExitCode != 0 || task.Agent == "shell" {
 		return result, err
 	}
 	command := map[string]string{"claude": "chat-deliver"}[task.Agent]
@@ -222,6 +225,17 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		encoded := base64.RawURLEncoding.EncodeToString([]byte(text))
 		result, execErr = prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit), "true"}, provider.ExecOptions{})
 	}
+	if task.Agent == "codex" && submit && execErr == nil && legacyCodexImageSchemaFailure(result) {
+		// A retained workspace can keep an older runtime after the controller is
+		// deployed. This schema rejection happens before Codex starts a turn, so
+		// atomically stage the matching runtime and retry the same message once.
+		if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+			detail := "update workspace runtime after legacy Codex image rejection: " + err.Error()
+			_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
+			return fmt.Errorf("%s", detail)
+		}
+		result, execErr = s.deliverNativeAgentChat(ctx, prov, assignment.Slot.ServiceID, p.AccountID, "chat-codex", task, message)
+	}
 	if execErr != nil {
 		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "ambiguous", execErr.Error())
 		return fmt.Errorf("message delivery is ambiguous; inspect the terminal before retrying: %w", execErr)
@@ -236,6 +250,14 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	}
 	s.watchAgentReply(p.AccountID, task, message)
 	return nil
+}
+
+func legacyCodexImageSchemaFailure(result provider.ExecResult) bool {
+	if result.ExitCode == 0 {
+		return false
+	}
+	detail := result.Stderr
+	return strings.Contains(detail, "missing field `url`") || strings.Contains(detail, "unknown variant `localImage`")
 }
 
 func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {

@@ -192,6 +192,27 @@ func TestInstructionPresetsPostgres(t *testing.T) {
 	if err = s.PutInstructionSnapshot(ctx, p, box, resolved); err != nil {
 		t.Fatal(err)
 	}
+	// New boxes carry a generated section separately from the user's snapshot.
+	// Editing their instructions must retain it; old boxes above stay empty.
+	newBox := uuid()
+	if _, err = s.DB.ExecContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,state,volume_id,volume_name) VALUES($1,$2,$3,'new-instructions-box','railway','hibernated','vol-2','vol-2')`, newBox, p.AccountID, p.UserID); err != nil {
+		t.Fatal(err)
+	}
+	guidance := newBoxToolGuidance([]string{"desktop", "blender"})
+	if err = s.PutNewBoxInstructionSnapshot(ctx, p, newBox, resolved, guidance); err != nil {
+		t.Fatal(err)
+	}
+	newSnapshot, err := s.InstructionSnapshot(ctx, p, newBox)
+	if err != nil || newSnapshot.Markdown != "# first" || newSnapshot.ToolGuidance != guidance {
+		t.Fatalf("new box guidance must be separate: %v %+v", err, newSnapshot)
+	}
+	if err = s.PutInstructionSnapshot(ctx, p, newBox, v1.InstructionResolution{Source: "custom", Markdown: "# revised"}); err != nil {
+		t.Fatal(err)
+	}
+	newSnapshot, err = s.InstructionSnapshot(ctx, p, newBox)
+	if err != nil || newSnapshot.Markdown != "# revised" || newSnapshot.ToolGuidance != guidance {
+		t.Fatalf("box edit must preserve generated guidance: %v %+v", err, newSnapshot)
+	}
 	// editing the preset bumps the revision but must not touch the box snapshot
 	if _, _, err = s.PutInstructionPreset(ctx, p, "general", v1.PutInstructionPresetRequest{Markdown: "# second version"}); err != nil {
 		t.Fatal(err)

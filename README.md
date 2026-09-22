@@ -103,17 +103,18 @@ Disconnect with **Ctrl-a, then d**. Leave the box running to preserve its proces
 Reconnect with `vmbox work`; hibernation preserves files, not running programs.
 
 The web workspace's **Agent chat** starts the selected managed agent when no
-reusable session exists. OpenCode receives that first message through its native
-startup prompt so it appears in the visible TUI. Later messages enter the running
-client through Codex queue, Claude channel, or OpenCode's loopback API. OpenCode
+reusable session exists. OpenCode starts a bare visible TUI, then receives its
+first message through the same native loopback bridge as later messages,
+including structured image attachments. Later messages enter the running client
+through Codex queue, Claude channel, or OpenCode's loopback API. OpenCode
 sessions auto-approve permission asks by default unless their configuration
 explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
 Agent choice requests render as radio buttons or checkboxes. The managed
-`vmbox-desktop` MCP supplies the structured `chat_message` and `chat_ask`
-tools; `chat_message` works with or without a reply reference. The
-same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
-`desktop_type`, `desktop_key`), so agents can operate the box's computer.
+`vmbox-desktop` MCP supplies the structured `chat_message`, `chat_ask`, and
+`set_busy` tools; `chat_message` works with or without a reply reference. The
+same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
+`type_text`, `press_keys`), so agents can operate the box's computer.
 
 The controller and chat creation forms filter saved profiles to the selected
 harness and prefill the model stored in that profile. **Choose model** opens a
@@ -129,31 +130,34 @@ setting. OpenCode variant support depends on the selected provider model; Claude
 Haiku has no effort control, and Claude's session-only `max` is not a persistent
 box setting.
 
-Agents can also address each other when the owner grants a contact edge.
+Agents can also address each other through owner-managed direct contacts.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
 accept an optional `contact`; the message is delivered into that box's same
-native conversation and appears in the chat app attributed to its sender. A box
-with the `manager` role (`vmbox new NAME --role manager`) may address every
-non-protected box automatically; a worker only has explicit edges. The owner
-edits the graph per box in the workspace page or the chat Details drawer and can
-mark a box protected. Changes apply immediately and the controller authorizes
-every send, so the model cannot widen its own reach.
+native conversation and appears in the chat app attributed to its sender. Owners
+choose each box's directional direct contacts. A role may add the explicit
+**All contacts** capability, which makes `get_contacts` return every eligible
+box instead. Protected targets always stay hidden. Changes apply
+immediately and the controller reauthorizes every send, so a stale contact list
+cannot widen an agent's reach. A box needs no role to chat with its owner.
 
 ### Agent chat harness parity
 
 | Feature | Codex | Claude | OpenCode |
 | --- | --- | --- | --- |
-| First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the startup prompt |
+| First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the native visible-TUI bridge |
 | Follow-ups reuse the same native task/thread | Yes | Yes | Yes |
-| **Clear context** keeps the watched session usable | Native `/new` | Respawns Claude with a new channel | Native `/new` |
+| **Clear context** keeps the watched session usable | App-server thread + native `/resume` | Respawns Claude with a new channel | Native `/new` |
 | Old process cleanup when a respawn is required | Not applicable | Old Claude tree is terminated | Not applicable |
-| `chat_message`, `chat_ask`, and contact routing | Yes | Yes | Yes |
+| `chat_message`, `chat_ask`, `set_busy`, and contact routing | Yes | Yes | Yes |
 | Desktop screenshot, mouse, keyboard, and typing tools | Yes | Yes | Yes |
-| Box-side HTTP façade with the same 14 tools | Yes | Yes | Yes |
+| Box-side HTTP façade with the same 15 tools | Yes | Yes | Yes |
 | Harness-specific saved profile and per-box model | Yes | Yes | Yes |
 | Agent exchange remains visible in TMUX/VNC | Yes | Yes | Yes |
 
 Codex and OpenCode clear their model context without killing a healthy TUI.
+Codex creates the fresh thread through app-server and resumes the watched TUI
+onto that exact thread so later API-delivered prompts cannot fall back to the
+previous conversation.
 Claude has no equivalent channel reset, so clearing it replaces the Claude
 process and waits for the new channel before accepting another chat message.
 
@@ -408,8 +412,10 @@ applications without restarting VNC or the box.
 New default worker images include a desktop, which opens automatically in the
 interactive web workspace. TMUX remains available in its tab and through the CLI.
 The desktop has Chromium, Terminal and Files launch icons, plus Blender when installed.
-Applications launch when you select them. New interactive shells use `DISPLAY=:99`
-for this shared screen; this does not itself give agents screenshot or mouse tools.
+Applications launch when you select them. New interactive shells use the box's
+`VMBOX_DESKTOP_DISPLAY` for this shared screen (`:99` on dedicated workers; a
+per-workspace display on shared workers); this does not itself give agents
+screenshot or mouse tools.
 Operators can build a shell-only image with `VMBOX_DESKTOP=false`.
 
 On older workers, choose **Enable desktop packages**, then **Start /
@@ -661,6 +667,12 @@ At creation, choose **Account default preset / none**, an explicit **None**, a
 named preset, or a custom Markdown copy. The selected Markdown is copied into
 the box as an immutable **snapshot** with preset/version provenance. Editing or
 deleting a preset later never changes boxes that already copied it.
+New boxes also receive a short, generated **Available box tools** reference in
+their agent instructions when Desktop/Chromium, Blender, or Foundry is selected.
+It lists paths only (for example `~/bin/blender` and the Chromium profile path),
+is stored separately from the editable preset snapshot, and is re-applied on
+restore. Existing boxes are not backfilled with this section.
+Selecting **None** skips user Markdown but keeps these selected-tool references.
 
 Existing boxes change only through an explicit **Instructions…** action
 (controller box list and chat box menu): it previews the current snapshot, lets
@@ -668,7 +680,8 @@ you apply None, a preset, or edited/custom Markdown, and reports whether the
 running box accepted it. A running box is updated in place; a stopped box keeps
 the selection pending and applies it during its next start. Agents never restart
 automatically: a new conversation or a restarted agent process reads the new
-instructions, while an already-running session keeps what it loaded.
+instructions, while an already-running session keeps what it loaded. Editing a
+new box's user instructions does not remove its generated tool references.
 
 One canonical per-box file holds the guidance:
 `~/.config/vmbox/instructions.md`. It is linked into each agent's global
@@ -716,9 +729,14 @@ background, and resumes interrupted attempts after restart. `vmbox` and
 with a delay; an unexpected attached volume stops deletion rather than deleting
 someone else's storage. Fleet size is unchanged; the cleaned slot becomes free.
 
-Coworker MCP, inter-agent adapters and their CLI/web controls have been removed.
-Ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
-Historical coworker data is retained only for safe cleanup; credentials are revoked.
+Legacy coworker adapters and the worker/manager box category have been removed.
+Native editable roles and direct contact lists now govern agent capabilities;
+ordinary multi-box shell access, saved login profiles and one-shot tasks remain.
+The optional team preset creates editable **Manager** and **Normal** roles:
+Manager gets All contacts plus safe box lifecycle and metadata-label tools,
+while Normal gets computer-use tools and relies on its box's direct contacts.
+Owners may rename or replace them, assign roles to boxes, and select initial
+roles during box creation from either the controller or the chat app.
 
 ## Optional tools
 

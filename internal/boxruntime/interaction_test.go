@@ -1,9 +1,14 @@
 package boxruntime
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"os"
@@ -403,14 +408,50 @@ func TestStartTmuxTaskCanStartAgentWithoutTerminalPrompt(t *testing.T) {
 	}
 }
 
-func TestStartTmuxTaskPassesOpenCodeInitialPromptAsArgument(t *testing.T) {
+func TestStartOpenCodeChatStartsBareAndSubmitsStructuredPrompt(t *testing.T) {
 	stubRegisteredAgent(t, "opencode")
-	originalCommand, originalProbe, originalSettle := tmuxCommand, openCodeReadyProbe, agentReadySettlePause
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	originalCommand, originalProbe, originalSettle, originalVisible, originalTransport := tmuxCommand, openCodeReadyProbe, agentReadySettlePause, openCodeVisibleClient, http.DefaultTransport
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, agentReadySettlePause = originalCommand, originalProbe, originalSettle
+		tmuxCommand, openCodeReadyProbe, agentReadySettlePause, openCodeVisibleClient, http.DefaultTransport = originalCommand, originalProbe, originalSettle, originalVisible, originalTransport
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
 	agentReadySettlePause = func(context.Context) error { return nil }
+	openCodeVisibleClient = func(context.Context, string, string) (*http.Client, error) { return &http.Client{}, nil }
+	var encoded bytes.Buffer
+	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	canvas.Set(0, 0, color.RGBA{R: 80, G: 20, B: 180, A: 255})
+	if err := png.Encode(&encoded, canvas); err != nil {
+		t.Fatal(err)
+	}
+	submitted := false
+	http.DefaultTransport = openCodeTestTransport(func(request *http.Request) (*http.Response, error) {
+		if request.URL.Path != "/prompt" || request.Method != http.MethodPost {
+			t.Fatalf("unexpected OpenCode request: %s %s", request.Method, request.URL.Path)
+		}
+		var payload struct {
+			Parts []struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				MIME     string `json:"mime"`
+				Filename string `json:"filename"`
+				URL      string `json:"url"`
+			} `json:"parts"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if len(payload.Parts) != 2 || payload.Parts[0].Type != "text" || payload.Parts[0].Text != "inspect this" {
+			t.Fatalf("wrong OpenCode prompt parts: %+v", payload.Parts)
+		}
+		file := payload.Parts[1]
+		if file.Type != "file" || file.MIME != "image/png" || file.Filename != "image-1.png" || !strings.HasPrefix(file.URL, "data:image/png;base64,") {
+			t.Fatalf("wrong OpenCode image part: %+v", file)
+		}
+		submitted = true
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"sessionID":"session-1"}`)), Header: make(http.Header)}, nil
+	})
 	var calls []string
 	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 		calls = append(calls, strings.Join(args, "\n"))
@@ -422,12 +463,16 @@ func TestStartTmuxTaskPassesOpenCodeInitialPromptAsArgument(t *testing.T) {
 		}
 		return nil, nil
 	}
-	if err := StartTmuxTask(context.Background(), t.TempDir(), "opencode-start", "opencode", "message-start", "first message"); err != nil {
+	inbound := ChatInbound{ID: "message-start", Text: "inspect this", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
+	if err := StartOpenCodeChat(context.Background(), t.TempDir(), home, "opencode-start", inbound); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
-	if !strings.Contains(joined, "opencode\n--auto\n--hostname\n127.0.0.1") || !strings.Contains(joined, "--prompt\nfirst message") {
+	if !strings.Contains(joined, "opencode\n--auto\n--hostname\n127.0.0.1") || strings.Contains(joined, "--prompt") {
 		t.Fatalf("OpenCode startup arguments were incomplete: %v", calls)
+	}
+	if !submitted {
+		t.Fatal("OpenCode initial prompt was not submitted through the visible bridge")
 	}
 }
 
@@ -496,26 +541,39 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 }
 
 func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
-	originalCommand, originalProbe, originalPause := tmuxCommand, openCodeReadyProbe, tmuxSubmitPause
+	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, tmuxSubmitPause = originalCommand, originalProbe, originalPause
+		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
+	CodexAppServerReady = func(context.Context, string) (bool, error) { return true, nil }
 	tmuxSubmitPause = func(context.Context) error { return nil }
 	for _, test := range []struct {
-		agent, ready, command string
+		agent string
+		want  []string
 	}{
-		{agent: "codex", ready: "OpenAI Codex\n›", command: "/new"},
-		{agent: "opencode", command: "/new"},
+		{agent: "codex", want: []string{"/resume thread-new", "Enter"}},
+		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
+			freshThreads := 0
+			CodexStartFreshThread = func(context.Context, string, string, string) (string, error) {
+				freshThreads++
+				return "thread-new", nil
+			}
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 				if len(args) > 0 && args[0] == "capture-pane" {
-					return []byte(test.ready), nil
+					if test.agent == "codex" {
+						t.Fatal("Codex reset screen-scraped the TUI instead of probing its app server")
+					}
+					return nil, nil
 				}
 				if len(args) > 0 && args[0] == "load-buffer" {
 					inputs = append(inputs, stdin)
+				}
+				if len(args) > 0 && args[0] == "send-keys" {
+					inputs = append(inputs, args[len(args)-1])
 				}
 				return nil, nil
 			}
@@ -523,14 +581,17 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			if err := ResetAgentContext(context.Background(), root, test.agent+"-session", test.agent, "reset-message"); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(inputs, []string{test.command, "\r"}) {
+			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("terminal inputs = %q", inputs)
 			}
 			if err := ResetAgentContext(context.Background(), root, test.agent+"-session", test.agent, "reset-message"); err != nil {
 				t.Fatal(err)
 			}
-			if !reflect.DeepEqual(inputs, []string{test.command, "\r"}) {
+			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("idempotent retry replayed terminal input: %q", inputs)
+			}
+			if test.agent == "codex" && freshThreads != 1 {
+				t.Fatalf("fresh app-server threads = %d, want 1", freshThreads)
 			}
 		})
 	}

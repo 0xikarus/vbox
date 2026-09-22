@@ -379,7 +379,7 @@ if(messageForm){
  let timer,pendingKey='',pendingText='',draftImages=[],messageURLs=[];const status=document.querySelector('#agent-message-status'),imageInput=messageForm.elements.images,imageDraft=document.querySelector('#agent-image-draft');
  const clearMessageURLs=()=>{for(const value of messageURLs)URL.revokeObjectURL(value);messageURLs=[]};
  const renderDraft=()=>{imageDraft.replaceChildren();for(const entry of draftImages){const row=document.createElement('p'),image=document.createElement('img'),remove=document.createElement('button');image.src=entry.url;image.alt='Image '+entry.number;remove.type='button';remove.textContent='Remove';remove.onclick=()=>{draftImages=draftImages.filter(value=>value!==entry);URL.revokeObjectURL(entry.url);draftImages.forEach((value,index)=>value.number=index+1);renderDraft()};row.append(image,remove);imageDraft.append(row)}};
- const uploadImages=async files=>{if(!files.length)return;const button=messageForm.querySelector('button');button.disabled=true;try{for(const file of files){if(draftImages.length>=8)throw Error('Attach at most 8 images.');if(!['image/png','image/jpeg','image/gif'].includes(file.type))throw Error('Choose PNG, JPEG, or GIF images.');if(file.size>8*1024*1024)throw Error('Each image must be at most 8 MiB.');const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(60000)});let result;try{result=await response.json()}catch{}if(!response.ok)throw Error(result?.error||'Image upload failed.');draftImages.push({id:result.id,number:draftImages.length+1,url:URL.createObjectURL(file)});renderDraft()}}catch(e){status.textContent=e.message}finally{button.disabled=false;imageInput.value=''}};
+ const uploadImages=async files=>{if(!files.length)return;const button=messageForm.querySelector('button');button.disabled=true;try{for(const file of files){if(draftImages.length>=8)throw Error('Attach at most 8 images.');if(!['image/png','image/jpeg','image/gif'].includes(file.type))throw Error('Choose PNG, JPEG, or GIF images.');if(file.size>25*1024*1024)throw Error('Each image must be at most 25 MiB.');const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(60000)});let result;try{result=await response.json()}catch{}if(!response.ok)throw Error(result?.error||'Image upload failed.');draftImages.push({id:result.id,number:draftImages.length+1,url:URL.createObjectURL(file)});renderDraft()}}catch(e){status.textContent=e.message}finally{button.disabled=false;imageInput.value=''}};
  imageInput.onchange=()=>void uploadImages([...imageInput.files]);
  messageForm.addEventListener('paste',event=>{const files=[...(event.clipboardData?.items||[])].filter(item=>item.kind==='file'&&item.type.startsWith('image/')).map(item=>item.getAsFile()).filter(Boolean);if(files.length){event.preventDefault();void uploadImages(files)}});
  messageForm.addEventListener('dragover',event=>{if([...(event.dataTransfer?.types||[])].includes('Files'))event.preventDefault()});
@@ -479,34 +479,31 @@ if(importedCredentials){
 
 const contactsPanel=document.querySelector('#box-contacts');
 if(contactsPanel){
- const status=$('#contact-status'),list=$('#contact-list'),roleLabel=$('#contact-role'),toggleRole=$('#contact-toggle-role'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection'),form=$('#contact-form');
+ const status=$('#contact-status'),list=$('#contact-list'),roleLabel=$('#contact-role'),tagLabel=$('#box-tags'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection');
  let protectedBox=false;
  async function loadContacts(){
   if(workspaceRole!=='owner'){contactsPanel.hidden=true;return}
   contactsPanel.hidden=false;status.textContent='Loading…';
   try{
-   const [contacts,protection]=await Promise.all([api(bp+'/contacts'),api(bp+'/protection')]);
+   const [contacts,protection,tagResult]=await Promise.all([api(bp+'/contacts'),api(bp+'/protection'),api(bp+'/tags')]);
    protectedBox=!!protection.protected;
-   const role=boxSummary?.role==='manager'?'manager':'worker';
-   roleLabel.textContent=role;
-   toggleRole.textContent=role==='manager'?'Make worker':'Make manager';
-   protectionLabel.textContent=protectedBox?'Protected — managers cannot see or message this box':'Not protected';
+   roleLabel.textContent=(boxSummary?.roles||[]).map(role=>role.name).join(', ')||'None';
+   tagLabel.textContent=(tagResult.tags||[]).join(', ')||'None';
+   protectionLabel.textContent=protectedBox?'Protected — agents cannot see or message this box':'Not protected';
    toggleProtection.textContent=protectedBox?'Remove protection':'Protect box';
    list.replaceChildren();
-   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No explicit contacts.';list.append(empty)}
+   if(!contacts.length){const empty=document.createElement('li');empty.textContent='No other eligible boxes.';list.append(empty)}
    for(const contact of contacts){
     const row=document.createElement('li');
-    row.textContent=contact.contactName+' · '+(contact.contactRole||'worker')+' · '+(contact.contactState||'unknown')+' · message '+(contact.canMessage?'yes':'no');
-    const remove=document.createElement('button');remove.type='button';remove.className='linkbtn';remove.textContent='Remove';
-    remove.onclick=async()=>{remove.disabled=true;try{await api(bp+'/contacts/'+encodeURIComponent(contact.contactName),'DELETE');await loadContacts()}catch(e){status.textContent=e.message;remove.disabled=false}};
-    row.append(document.createTextNode(' '),remove);list.append(row);
+    const label=document.createElement('label'),checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=contact.override==='allow';checkbox.setAttribute('aria-label','Direct contact with '+contact.contactName);
+    checkbox.onchange=async()=>{checkbox.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:checkbox.checked?'allow':'inherit'});await loadContacts()}catch(e){status.textContent=e.message;checkbox.disabled=false}};
+    label.append(checkbox,document.createTextNode(' '+contact.contactName+' · '+(contact.contactRoles||[]).map(role=>role.name).join(', ')+' · '+(contact.contactState||'unknown')+' · '+contact.reason));row.append(label);list.append(row);
    }
-   status.textContent=role==='manager'?'A manager may message every non-protected box even without explicit contacts.':'A worker may message only the explicit contacts listed above.';
+   status.textContent='Checked boxes are direct contacts. All contacts roles bypass this list; protected boxes remain hidden.';
   }catch(e){status.textContent=e.message}
  }
  contactsPanel.addEventListener('toggle',()=>{if(contactsPanel.open)void loadContacts()});
- form.onsubmit=async event=>{event.preventDefault();const button=form.querySelector('button');button.disabled=true;try{await api(bp+'/contacts','PUT',{contact:form.elements.contact.value.trim()});form.reset();status.textContent='Contact saved.';await loadContacts()}catch(e){status.textContent=e.message}finally{button.disabled=false}};
- toggleRole.onclick=async()=>{const next=boxSummary?.role==='manager'?'worker':'manager';toggleRole.disabled=true;try{await api(bp,'PATCH',{defaultAgent:boxSummary?.defaultAgent||'shell',role:next});if(boxSummary)boxSummary.role=next;status.textContent='Role saved.';await loadContacts()}catch(e){status.textContent=e.message}finally{toggleRole.disabled=false}};
  toggleProtection.onclick=async()=>{toggleProtection.disabled=true;try{await api(bp+'/protection','PUT',{protected:!protectedBox});status.textContent='Protection saved.';await loadContacts()}catch(e){status.textContent=e.message}finally{toggleProtection.disabled=false}};
+ $('#edit-box-tags').onclick=async()=>{const current=tagLabel.textContent==='None'?'':tagLabel.textContent,value=prompt('Labels for this box (comma separated)',current);if(value===null)return;try{await api(bp+'/tags','PUT',{tags:value.split(',').map(tag=>tag.trim()).filter(Boolean)});await loadContacts()}catch(e){status.textContent=e.message}};
  document.querySelector('#logout').addEventListener('click',()=>{contactsPanel.open=false;list.replaceChildren();status.textContent=''});
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -40,6 +41,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 	acceptedSettings := ""
 	var fields []*formField
 	var profiles []creationProfileFields
+	roleFields := map[string]*formField{}
 	tools := toolFields(request.Tools)
 	setup := &formField{Label: "Custom install commands (optional)", Value: request.SetupScript}
 	name := &formField{Label: "Name", Value: request.Name}
@@ -90,6 +92,23 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			fields = append(fields, r)
 		}
 		fields = append(fields, disk)
+		var roles []v1.AgentRole
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/agent-roles", nil, &roles, nil); err != nil {
+			return err
+		}
+		selectedRoles := map[string]bool{}
+		for _, id := range request.RoleIDs {
+			selectedRoles[id] = true
+		}
+		for _, role := range roles {
+			value := "Skip"
+			if selectedRoles[role.ID] {
+				value = "Assign"
+			}
+			field := &formField{Label: "Role · " + role.Name, Value: value, Choices: []string{"Skip", "Assign"}, Checkbox: true}
+			roleFields[role.ID] = field
+			fields = append(fields, field)
+		}
 		if !noProfiles {
 			var saved []v1.LoginProfile
 			if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/login-profiles", nil, &saved, nil); err != nil {
@@ -137,6 +156,13 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 				return fmt.Errorf("disk must be a whole number of GiB")
 			}
 			request.DiskGiB = size
+			request.RoleIDs = nil
+			for roleID, field := range roleFields {
+				if field.Value == "Assign" {
+					request.RoleIDs = append(request.RoleIDs, roleID)
+				}
+			}
+			sort.Strings(request.RoleIDs)
 			request.Region = regionFields[providerField.Value].Value
 			if request.Region == "Any available" {
 				request.Region = ""
@@ -165,7 +191,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 					profileSettings = append(profileSettings, path, p.name.Value)
 				}
 			}
-			encoded, _ := json.Marshal([]any{request.Name, request.Provider, request.ProviderCredential, request.Region, request.DiskGiB, mode, startCLI, request.LoginProfiles, profileSettings})
+			encoded, _ := json.Marshal([]any{request.Name, request.Provider, request.ProviderCredential, request.Region, request.DiskGiB, mode, startCLI, request.LoginProfiles, request.RoleIDs, profileSettings})
 			return string(encoded)
 		}
 		if acceptedSettings != "" && acceptedSettings != settings() {

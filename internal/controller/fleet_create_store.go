@@ -48,8 +48,8 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	if !validAgent(request.DefaultAgent) {
 		return creation, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
 	}
-	if !v1.ValidBoxRole(request.Role) {
-		return creation, fmt.Errorf("role must be worker or manager")
+	if len(request.RoleIDs) > 0 && p.Role != "owner" {
+		return creation, fmt.Errorf("only an account owner may assign roles during box creation")
 	}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -112,9 +112,12 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		return creation, fmt.Errorf("compute slot reservation lost a concurrent race")
 	}
 	placeholder := "pending:" + id
-	box := v1.LogicalBox{ID: id, AccountID: p.AccountID, OwnerUserID: p.UserID, Name: request.Name, Provider: request.Provider, ProviderCredential: request.ProviderCredential, DefaultAgent: request.DefaultAgent, Role: request.Role, State: v1.LogicalBoxAttaching, VolumeID: placeholder, VolumeName: "pending:" + request.Name, SlotID: slot.ID, AssignmentGeneration: generation, LeaseOwner: leaseOwner, LeaseExpiresAt: &expires, RestorationState: "creation-reserved"}
-	_, err = tx.ExecContext(ctx, "INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,role,state,volume_id,volume_name,slot_id,assignment_generation,lease_owner,lease_expires_at,fencing_token,restoration_state,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,$17,'attaching',$8,$9,$10,$11,$12,$13,$14,$15,$16)", box.ID, p.AccountID, p.UserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.VolumeID, box.VolumeName, slot.ID, generation, leaseOwner, expires, fence, box.RestorationState, metadata, box.Role)
+	box := v1.LogicalBox{ID: id, AccountID: p.AccountID, OwnerUserID: p.UserID, Name: request.Name, Provider: request.Provider, ProviderCredential: request.ProviderCredential, DefaultAgent: request.DefaultAgent, Roles: []v1.AgentRoleSummary{}, State: v1.LogicalBoxAttaching, VolumeID: placeholder, VolumeName: "pending:" + request.Name, SlotID: slot.ID, AssignmentGeneration: generation, LeaseOwner: leaseOwner, LeaseExpiresAt: &expires, RestorationState: "creation-reserved"}
+	_, err = tx.ExecContext(ctx, "INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,state,volume_id,volume_name,slot_id,assignment_generation,lease_owner,lease_expires_at,fencing_token,restoration_state,metadata) VALUES($1,$2,$3,$4,$5,$6,$7,'attaching',$8,$9,$10,$11,$12,$13,$14,$15,$16)", box.ID, p.AccountID, p.UserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.VolumeID, box.VolumeName, slot.ID, generation, leaseOwner, expires, fence, box.RestorationState, metadata)
 	if err != nil {
+		return creation, err
+	}
+	if err := assignInitialRoles(ctx, tx, p, box.ID, request.RoleIDs); err != nil {
 		return creation, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -230,7 +233,7 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 			return nil, err
 		}
 		allocate := value.allocate
-		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Role: assignment.Box.Role, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
+		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
 		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
 		result[len(result)-1].Request.Tools = stored.Tools
 		result[len(result)-1].Request.SetupScript = stored.SetupScript

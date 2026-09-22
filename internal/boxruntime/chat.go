@@ -22,6 +22,11 @@ import (
 	"time"
 )
 
+// maxChatImageBytes caps a single chat image in both directions. It matches
+// the controller's maxImageUpload: a lower cap here would silently refuse an
+// attachment the chat itself accepts.
+const maxChatImageBytes = 25 << 20
+
 type ChatEvent struct {
 	ID       string           `json:"id"`
 	Kind     string           `json:"kind"`
@@ -45,9 +50,11 @@ type ChatQuestion struct {
 }
 
 type ChatInbound struct {
-	ID     string           `json:"id"`
-	Text   string           `json:"text"`
-	Images []ChatEventImage `json:"images,omitempty"`
+	ID              string           `json:"id"`
+	Text            string           `json:"text"`
+	ParentMessageID string           `json:"parentMessageId,omitempty"`
+	ThreadID        string           `json:"threadId,omitempty"`
+	Images          []ChatEventImage `json:"images,omitempty"`
 }
 
 type chatInboundFile struct {
@@ -174,8 +181,8 @@ func loadChatImages(paths []string) ([]ChatEventImage, error) {
 	images := make([]ChatEventImage, 0, len(paths))
 	for _, path := range paths {
 		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > 8<<20 {
-			return nil, fmt.Errorf("image file must be a regular file up to 8 MiB")
+		if err != nil || !info.Mode().IsRegular() || info.Size() < 1 || info.Size() > maxChatImageBytes {
+			return nil, fmt.Errorf("image file must be a regular file up to 25 MiB")
 		}
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -297,7 +304,7 @@ func StoreChatInbound(home, session string, inbound ChatInbound) error {
 		}
 		cfg, kind, err := imagepkg.DecodeConfig(bytes.NewReader(data))
 		media := map[string]string{"png": "image/png", "jpeg": "image/jpeg", "gif": "image/gif"}[kind]
-		if err != nil || media != image.MediaType || cfg.Width < 1 || cfg.Height < 1 || len(data) > 8<<20 {
+		if err != nil || media != image.MediaType || cfg.Width < 1 || cfg.Height < 1 || len(data) > maxChatImageBytes {
 			return fmt.Errorf("invalid inbound image")
 		}
 		extension := map[string]string{"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif"}[media]
@@ -357,36 +364,18 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	if json.Unmarshal(data, &event) != nil {
 		return fmt.Errorf("invalid inbound chat event")
 	}
-	prompt := inbound.Text
-	if len(event.Paths) > 0 {
-		prompt += "\n\nAttached images are available as local files:\n"
-		for index, image := range event.Paths {
-			prompt += fmt.Sprintf("[Image %d]: %s\n", index+1, image)
-		}
-		prompt += "\nInspect the referenced images as message data before responding."
-	}
-	// A blank conversation created by /new does not exist in the app server's
-	// thread/list until its first prompt. If the visible TUI is ready, type there
-	// so it remains the authority for which thread the user is watching. While a
-	// turn is running the pane is not input-ready, and app-server delivery safely
-	// queues into that already-materialized current thread.
-	if codexTUIInputReady(ctx, session) {
-		return deliverCodexThroughTUI(ctx, session, prompt, path)
-	}
-	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), prompt, event.Paths); err != nil {
+	// Follow-ups all use the same native app-server path. This keeps ordinary
+	// text and structured images ordered on one thread without screen-scraping or
+	// typing prompts into tmux.
+	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), event.Text, event.Paths); err != nil {
 		return err
 	}
 	return os.Remove(path)
 }
 
-func codexTUIInputReady(ctx context.Context, session string) bool {
-	content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-S", "-80", "-t", session)
-	return err == nil && agentInputReady("codex", string(content))
-}
-
 // StartCodexChat starts a new interactive Codex session with the first Agent
-// chat message in Codex's supported process arguments. Later messages prefer
-// the input-ready TUI and use the shared app server while a turn is running.
+// chat message in Codex's supported process arguments. A prompt too large for
+// one tmux command is typed into the ready TUI in bounded chunks instead.
 func StartCodexChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
 	if err := StoreChatInbound(home, session, inbound); err != nil {
 		return err
@@ -404,14 +393,19 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 	if err != nil {
 		return err
 	}
+	longPrompt := len(event.Text) > tmuxLiteralChunkBytes
 	for _, path := range event.Paths {
 		argv = append(argv, "-i", path)
 	}
-	argv = append(argv, event.Text)
+	if !longPrompt {
+		argv = append(argv, event.Text)
+	}
 	// The initial message is already in argv. Removing its inbox envelope before
 	// launch prevents any native message consumer from seeing it a second time.
-	if err := os.Remove(eventPath); err != nil {
-		return err
+	if !longPrompt {
+		if err := os.Remove(eventPath); err != nil {
+			return err
+		}
 	}
 	created, err := startTmuxTaskSession(ctx, root, session, "codex", argv)
 	if err != nil {
@@ -422,22 +416,43 @@ func StartCodexChat(ctx context.Context, root, home, session string, inbound Cha
 		// refusing and leaving the message undelivered.
 		return DeliverCodexChat(ctx, root, home, session, inbound)
 	}
+	if longPrompt {
+		if err := waitForAgentReady(ctx, session, "codex"); err != nil {
+			return err
+		}
+		if err := settleAgentReadiness(ctx, session, "codex"); err != nil {
+			return err
+		}
+		return deliverCodexThroughTUI(ctx, root, session, event.Text, eventPath)
+	}
 	return nil
 }
 
-func deliverCodexThroughTUI(ctx context.Context, session, prompt, eventPath string) error {
+// StartOpenCodeChat starts OpenCode without a CLI prompt, then submits the
+// initial message through the visible TUI bridge so text and image parts share
+// the same native conversation path as follow-ups.
+func StartOpenCodeChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
+	if err := StartTmuxTask(ctx, root, session, "opencode", inbound.ID, ""); err != nil {
+		return err
+	}
+	return DeliverOpenCodeChat(ctx, home, session, inbound)
+}
+
+func deliverCodexThroughTUI(ctx context.Context, root, session, prompt, eventPath string) error {
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err
 	}
 	// Codex 0.155 ignores tmux bracketed paste, which DeliverTmuxInput uses and
-	// Claude accepts, so the text is sent as literal keys instead.
-	if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "-l", prompt); err != nil {
+	// Claude accepts, so the text is sent as literal keys instead. Chunking is
+	// required because tmux rejects an individual command around 16 KiB.
+	eventID := strings.TrimSuffix(filepath.Base(eventPath), filepath.Ext(eventPath))
+	if err := deliverTmuxLiteral(ctx, root, session, "codex-chat-"+eventID, prompt); err != nil {
 		return err
 	}
 	if err := tmuxSubmitPause(ctx); err != nil {
 		return err
 	}
-	if _, err := tmuxCommand(ctx, "", "send-keys", "-t", session, "Enter"); err != nil {
+	if err := DeliverTmuxKeys(ctx, root, session, "codex-chat-submit-"+eventID, []string{"Enter"}); err != nil {
 		return err
 	}
 	return os.Remove(eventPath)
@@ -548,8 +563,8 @@ func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound Chat
 }
 
 func validateChatImage(data []byte) (string, error) {
-	if len(data) < 1 || len(data) > 8<<20 {
-		return "", fmt.Errorf("image must be up to 8 MiB")
+	if len(data) < 1 || len(data) > maxChatImageBytes {
+		return "", fmt.Errorf("image must be up to 25 MiB")
 	}
 	config, kind, err := imagepkg.DecodeConfig(bytes.NewReader(data))
 	media := map[string]string{"png": "image/png", "jpeg": "image/jpeg", "gif": "image/gif"}[kind]

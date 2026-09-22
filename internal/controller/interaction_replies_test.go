@@ -72,14 +72,14 @@ func TestAgentChatDoesNotReadRepliesFromTerminalOutput(t *testing.T) {
 func TestUpsertAgentBoxMessageStreamsAndFinalizesCorrelatedReply(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectExec("INSERT INTO box_messages").
-		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "working", "streaming", "agent-reply:message-1").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "working", "streaming", "agent-reply:message-1", "message-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	changed, err := store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "working", "streaming")
 	if err != nil || !changed {
 		t.Fatalf("streamed=%v err=%v", changed, err)
 	}
 	mock.ExpectExec("INSERT INTO box_messages").
-		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1", "message-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	changed, err = store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "answer", "delivered")
 	if err != nil || !changed {
@@ -130,5 +130,24 @@ func TestUnansweredBoxMessagesExcludesCapturedReplies(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLegacyCodexImageSchemaFailure(t *testing.T) {
+	for _, detail := range []string{
+		"vmbox-runtime: codex app server: Invalid request: missing field `url`",
+		"codex app server: unknown variant `localImage`",
+	} {
+		if !legacyCodexImageSchemaFailure(provider.ExecResult{ExitCode: 1, Stderr: detail}) {
+			t.Fatalf("legacy schema error %q was not detected", detail)
+		}
+	}
+	for _, result := range []provider.ExecResult{
+		{ExitCode: 0, Stderr: "missing field `url`"},
+		{ExitCode: 1, Stderr: "turn is already running"},
+	} {
+		if legacyCodexImageSchemaFailure(result) {
+			t.Fatalf("unrelated result was treated as a legacy schema error: %+v", result)
+		}
 	}
 }

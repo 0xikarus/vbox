@@ -75,12 +75,17 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 400, err)
 		return
 	}
+	toolGuidance := newBoxToolGuidance(request.Tools)
+	if _, err := composeInstructionMarkdown(resolvedInstructions.Markdown, toolGuidance); err != nil {
+		writeError(w, 400, fmt.Errorf("selected instructions and tool guidance: %w", err))
+		return
+	}
 	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), p, request)
 	if err != nil {
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	if err := s.Store.PutInstructionSnapshot(r.Context(), p, creation.Assignment.Box.ID, resolvedInstructions); err != nil {
+	if err := s.Store.PutNewBoxInstructionSnapshot(r.Context(), p, creation.Assignment.Box.ID, resolvedInstructions, toolGuidance); err != nil {
 		writeError(w, http.StatusConflict, fmt.Errorf("could not store the instruction snapshot"))
 		return
 	}

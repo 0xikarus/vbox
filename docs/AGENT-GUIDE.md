@@ -23,8 +23,9 @@ delete a shared fleet service when asked to delete a logical box.
 
 ## Code map
 
-`Dockerfile` preinstalls Python/pip/venv/pipx, pinned uv/uvx, Node/npm/npx and
-default-component Bun. Version probes are recorded in the image manifest. Run
+`Dockerfile` preinstalls Python/pip/venv/pipx, pinned uv/uvx, Node/npm/npx,
+default-component Bun, and FFmpeg/ffprobe. Version probes are recorded in the
+image manifest. Run
 `bash tests/worker-tools.sh IMAGE` to verify these tools and offline virtualenv
 creation as the workspace user in a disposable container. New image builds do
 not upgrade existing workers or shared hosts; rollout is a separate operation.
@@ -101,8 +102,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   are created only when absent; an exact legacy vmbox Terminal icon is refreshed,
   while owner edits survive reconnects. libfm's quick-execute preference allows
   desktop launchers to open without an executable-file prompt; it also applies
-  to other executable files opened through PCManFM. New interactive
-  shells default `DISPLAY` to `:99`; screenshot/input agent tools remain separate.
+  to other executable files opened through PCManFM. New interactive shells use
+  `VMBOX_DESKTOP_DISPLAY`: `:99` is the dedicated-worker fallback, while shared
+  workers assign a distinct display to each workspace. Screenshot/input agent
+  tools remain separate and should be used instead of assuming a display number.
 
 - Blender is an optional preset, including desktop packages. New presets pin the
   official Linux x64 Blender 5.1.2 archive and its SHA-256 in
@@ -137,20 +140,49 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the Desktop/TMUX control popup. Its timeline replays bounded JPEG frames
   captured inside running boxes every 30 seconds and retained for 30 minutes
   in `desktop_replay_frames`; the owner-only endpoints never wake a stopped box.
-- Agent contacts are controller-owned. `box_contacts` holds directed owner-managed
-  edges, `box_protection` hides a box from any manager, and `logical_boxes.role`
-  (`worker`/`manager`) selects whether the implicit fleet-wide permission applies.
+- Agent contacts are controller-owned. `agent_roles`, `agent_role_permissions`,
+  and `box_role_assignments` hold account-scoped editable tool bundles. A role
+  may add the explicit `all_contacts` capability. Otherwise `box_contacts` is
+  the box's directional direct-contact list. `box_protection` excludes a target
+  from every contact list. The optional preset creates editable Manager and
+  Normal roles; authorization still comes from their capabilities, never names.
   `GET /v1/agent-desktop/contacts` feeds the `get_contacts` tool; `chat_message`
   and `chat_ask` accept an optional `contact`, and the controller routes it into
   the target's existing native conversation (never a second session) with the
   sender recorded as `box_messages.sender_box_id` and direction `box`. The owner
-  edits the graph at `/v1/logical-boxes/{id}/contacts` and `/protection`; the
-  workspace page and the chat Details drawer are only editors. Entry points:
-  `internal/controller/contacts.go`, `internal/boxruntime/contacts.go`.
+  edits roles through `/v1/agent-roles` and `/v1/agent-role-assignments`, and
+  direct contacts at `/v1/logical-boxes/{id}/contacts`, metadata labels at
+  `/tags`, and protection at `/protection`. Both the controller and chat app
+  expose editable roles, assignments, and creation-time selection; the workspace
+  page and chat Details drawer expose each box's direct contacts and labels. Entry points:
+  `internal/controller/agent_roles.go`, `internal/controller/contacts.go`,
+  `internal/boxruntime/contacts.go`.
+- The chat PWA is mobile-first: a single-column app shell with push navigation
+  on phones and a two-pane view from 900px. It ships a dark, Discord-like
+  palette; a hex seed still shapes the seeded emoji mascot, the corner radii and
+  the type face, and can be rerolled from the look sheet. Message bodies render
+  through the injection-safe `markdown.js` (headings, lists, code, quotes, links)
+  with bare URLs still linkified. Every attachment and media embed is a focusable
+  control: images are buttons that open a focus-managed lightbox (video and audio
+  included, focus restored on Escape) with left/right gallery stepping, and
+  attached drafts can be inspected before sending. Attachments may be PNG/JPEG/GIF
+  up to 25 MiB or MP4/WebM video up to 100 MiB (`/v1/run-once-images` sniffs the
+  container); media is served with range requests so video can seek, and video is
+  played from the authenticated same-origin endpoint rather than a blob. Unsent
+  composer text is kept per box in local storage, and the transcript remembers its
+  scroll position per box. The seeded mascot is used for box avatars (with a
+  `NO SIGNAL` fallback) and the processing bubble. Screenshots live in
+  `docs/chat-ui/screenshots/mobile-first/`.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Follow-ups use `codex queue`, Claude's
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
-  `vmbox-desktop` MCP exposes `chat_message` and `chat_ask`.
+  `vmbox-desktop` MCP exposes `chat_message`, `chat_ask`, and `set_busy`.
+  Submitted prompts mark the active task busy in the controller; replies and
+  questions clear it. `set_busy` is the explicit override for activity outside
+  that request/reply flow. Chat history returns the persisted state in response
+  headers, so the UI does not guess that long-running work ended after ten
+  minutes. Automatic clears are tied to the submitted message, so a late reply
+  cannot hide a newer prompt that is still being processed.
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
   key carried in the envelope) answers one specific message. The controller polls
   each active task's outbox while a chat window is open, from the reconciler, and
@@ -158,10 +190,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   A late or repeated reply whose message is already answered is stored as its own
   agent message, so the outbox can never head-of-line block. Terminal capture
   remains a compatibility fallback for clients that do not call the tool. The
-  same MCP exposes the desktop tools (`desktop_screenshot`, `desktop_click`,
-  `desktop_type`, `desktop_key`), so an agent can operate the box's computer.
-- A new OpenCode Agent chat passes its first message with native `--prompt`, then
-  uses the loopback API for follow-ups. Persistent OpenCode and OpenCode one-shot
+  same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
+  `type_text`, `press_keys`), so an agent can operate the box's computer.
+- A new OpenCode Agent chat starts a bare TUI, waits for the visible bridge, then
+  submits its first message through the loopback API with structured image parts.
+  Persistent OpenCode and OpenCode one-shot
   tasks start with `--auto`; explicit client deny rules still take precedence.
 - Foundry is a pinned preset. Custom tooling is trusted user-supplied Bash run
   **inside the worker**, with a five-minute deadline, before the task. Persistent
@@ -191,7 +224,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   never written, and re-application on every attach (`sync-instructions` before
   `restore-tools`, plus `RestoreManagedInstructions` inside restore) is
   idempotent. `vmbox-runtime sync-instructions` verifies its payload digest like
-  `sync-files`.
+  `sync-files`. New creations store compact selected-tool path references in a
+  separate `tool_guidance` column and compose them with the user snapshot only
+  when syncing to the box; editing the snapshot preserves the references.
+  Existing rows default to empty guidance and are not backfilled. The generated
+  section is bounded by the runtime's 64 KiB instruction limit before creation.
 
 ## Verification and honest evidence
 

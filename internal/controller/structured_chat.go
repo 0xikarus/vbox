@@ -27,17 +27,17 @@ const (
 )
 
 func (s *Server) chatInboundPayload(ctx context.Context, accountID string, task v1.BoxTask, message v1.BoxMessage) ([]byte, error) {
-	text, err := s.boxMessagePrompt(ctx, accountID, task.Agent, message)
+	text, err := s.boxMessageNativePrompt(ctx, accountID, task.Agent, message)
 	if err != nil {
 		return nil, err
 	}
-	inbound := boxruntime.ChatInbound{ID: message.ID, Text: text}
+	inbound := boxruntime.ChatInbound{ID: message.ID, Text: text, ParentMessageID: message.ParentMessageID, ThreadID: message.ThreadID}
 	if s.Store == nil || s.Store.DB == nil {
 		return json.Marshal(inbound)
 	}
 	rows, err := s.Store.DB.QueryContext(ctx, `SELECT i.media_type,i.data
 		FROM box_message_images j JOIN run_once_images i ON i.id=j.image_id AND i.account_id=j.account_id
-		WHERE j.account_id=$1 AND j.message_id=$2 ORDER BY j.ordinal`, accountID, message.ID)
+		WHERE j.account_id=$1 AND j.message_id=$2 AND i.media_type LIKE 'image/%' ORDER BY j.ordinal`, accountID, message.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -102,8 +102,8 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 			return fmt.Errorf("agent returned invalid image")
 		}
 		used += int64(len(data))
-		if used > 256<<20 {
-			return fmt.Errorf("saved images reached the 256 MiB account storage limit")
+		if used > maxAccountAttachmentBytes {
+			return fmt.Errorf("saved attachments reached the 1 GiB account storage limit")
 		}
 		id := uuid()
 		if _, err = tx.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '7 days')`, id, accountID, media, data, rand.Text()+rand.Text()); err != nil {
@@ -165,11 +165,13 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		return "", false, fmt.Errorf("unknown structured chat event")
 	}
 	replyTo := ""
+	activityMessageID := ""
 	target, found, err := s.Store.BoxMessageByChatKey(ctx, accountID, task.ID, event.ReplyTo)
 	if err != nil {
 		return "", false, err
 	}
 	if found {
+		activityMessageID = target.ID
 		existing, answered, err := s.Store.AgentBoxMessage(ctx, accountID, target.ID)
 		if err != nil {
 			return "", false, err
@@ -185,6 +187,15 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		}
 		if err := s.Store.attachAgentChatImages(ctx, accountID, message.ID, event.Images); err != nil {
 			return "", false, err
+		}
+		var busyErr error
+		if activityMessageID != "" {
+			busyErr = s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID)
+		} else {
+			busyErr = s.Store.SetBoxTaskBusy(ctx, accountID, task.ID, false)
+		}
+		if busyErr != nil {
+			return "", false, busyErr
 		}
 		s.pushAgentReply(ctx, accountID, task, text)
 		return message.ID, false, nil
@@ -206,6 +217,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		return "", false, err
 	}
 	if err := s.Store.attachAgentChatImages(ctx, accountID, reply.ID, event.Images); err != nil {
+		return "", false, err
+	}
+	if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID); err != nil {
 		return "", false, err
 	}
 	s.pushAgentReply(ctx, accountID, task, text)
@@ -291,7 +305,7 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 		return reject("contact messages do not support images yet")
 	}
 	ref := strings.TrimSpace(event.Contact)
-	targetID, targetName, _, targetAgent, targetState, protected, err := s.Store.contactBox(ctx, accountID, ref)
+	targetID, targetName, targetAgent, targetState, protected, err := s.Store.contactBox(ctx, accountID, ref)
 	if err != nil {
 		return reject("unknown contact")
 	}

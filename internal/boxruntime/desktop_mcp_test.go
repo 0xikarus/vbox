@@ -1,6 +1,7 @@
 package boxruntime
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,16 +10,41 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
 
 type lineCapture struct {
 	mu    sync.Mutex
 	data  []byte
 	lines chan []byte
+}
+
+func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
+	for _, tool := range desktopMCPTools() {
+		if tool["name"] != "create_agent_box" {
+			continue
+		}
+		schema, ok := tool["inputSchema"].(map[string]any)
+		if !ok {
+			t.Fatalf("input schema=%T", tool["inputSchema"])
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("properties=%T", schema["properties"])
+		}
+		instructions, ok := properties["instructions"].(map[string]any)
+		if !ok || instructions["type"] != "string" || instructions["maxLength"] != v1.MaxInstructionMarkdownBytes {
+			t.Fatalf("instructions schema=%#v", instructions)
+		}
+		return
+	}
+	t.Fatal("create_agent_box tool is missing")
 }
 
 func (c *lineCapture) Write(p []byte) (int, error) {
@@ -41,7 +67,11 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "claude-order")
-	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-1", Text: "hello"}); err != nil {
+	imageData := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-1", Text: "hello", Images: []ChatEventImage{{Name: "screen.png", MediaType: "image/png", Data: imageData}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := StoreChatInbound(home, "claude-order", ChatInbound{ID: "message-2", Text: "follow up", Images: []ChatEventImage{{Name: "screen-2.png", MediaType: "image/png", Data: imageData}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -87,14 +117,29 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	if _, err := io.WriteString(write, `{"jsonrpc":"2.0","method":"notifications/initialized"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case second := <-output.lines:
-		var notification desktopMCPRequest
-		if json.Unmarshal(second, &notification) != nil || notification.Method != "notifications/claude/channel" {
-			t.Fatalf("second output was not channel notification: %s", second)
+	for _, wantText := range []string{"hello", "follow up"} {
+		select {
+		case second := <-output.lines:
+			var notification desktopMCPRequest
+			if json.Unmarshal(second, &notification) != nil || notification.Method != "notifications/claude/channel" {
+				t.Fatalf("second output was not channel notification: %s", second)
+			}
+			var params struct {
+				Content string            `json:"content"`
+				Meta    map[string]string `json:"meta"`
+			}
+			if err := json.Unmarshal(notification.Params, &params); err != nil {
+				t.Fatal(err)
+			}
+			if params.Content != wantText || params.Meta["image_path"] == "" || params.Meta["file_path"] != "" {
+				t.Fatalf("Claude image attachment was not advertised as image_path: %+v", params)
+			}
+			if _, err := os.Stat(params.Meta["image_path"]); err != nil {
+				t.Fatalf("channel image path is not readable: %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("channel notification for %q was not emitted after initialize", wantText)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("channel notification was not emitted after initialize")
 	}
 
 	cancel()
@@ -106,6 +151,46 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("MCP server did not stop")
+	}
+}
+
+func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-long-reply")
+	text := strings.Repeat("<", 100_000)
+	request, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "chat_message",
+			"arguments": map[string]any{"text": text},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(request) <= bufio.MaxScanTokenSize {
+		t.Fatalf("test request is only %d bytes; it does not exercise the old scanner limit", len(request))
+	}
+	var output bytes.Buffer
+	if err := ServeDesktopMCP(context.Background(), "assignment", strings.NewReader(string(request)+"\n"), &output); err != nil {
+		t.Fatal(err)
+	}
+	var response map[string]any
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("invalid MCP response %q: %v", output.String(), err)
+	}
+	if _, failed := response["error"]; failed {
+		t.Fatalf("maximum-size chat reply was rejected: %v", response)
+	}
+	event, found, err := PullChatEvent(home, "codex-long-reply")
+	if err != nil || !found {
+		t.Fatalf("long chat event unavailable: found=%t err=%v", found, err)
+	}
+	if event.Text != text {
+		t.Fatalf("stored reply has %d bytes, want %d", len(event.Text), len(text))
 	}
 }
 
@@ -185,12 +270,12 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25"}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"desktop_click","arguments":{"x":5}}}`,
-		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"desktop_screenshot","arguments":{"action":"shell"}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"click_mouse","arguments":{"x":5}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"take_screenshot","arguments":{"action":"shell"}}}`,
 		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"shell","arguments":{}}}`,
 	}, "\n")
 	var out bytes.Buffer
-	if err := ServeDesktopMCP(context.Background(), "invalid", strings.NewReader(input), &out); err != nil {
+	if err := serveDesktopMCP(context.Background(), "invalid", strings.NewReader(input), &out, allDesktopToolPolicy); err != nil {
 		t.Fatal(err)
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
@@ -211,12 +296,95 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		if i == 0 && response.Result["protocolVersion"] != "2025-11-25" {
 			t.Fatal("version negotiation failed")
 		}
-		if i == 1 && len(response.Result["tools"].([]any)) != 14 {
+		if i == 1 && len(response.Result["tools"].([]any)) != len(desktopMCPTools()) {
 			t.Fatal("tool inventory incomplete")
 		}
 		if i >= 2 && response.Result["isError"] != true {
 			t.Fatal("invalid call accepted")
 		}
+	}
+}
+
+func TestAllowedDesktopMCPToolsFiltersAdvertisedInventory(t *testing.T) {
+	resolve := func(context.Context, string) (map[string]bool, error) {
+		return map[string]bool{"chat_message": true, "take_screenshot": true}, nil
+	}
+	tools, allowed, err := allowedDesktopMCPTools(context.Background(), "assignment", resolve)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 2 || !allowed["chat_message"] || !allowed["take_screenshot"] {
+		t.Fatalf("filtered tools=%v allowed=%v", tools, allowed)
+	}
+	for _, tool := range tools {
+		if name := tool["name"].(string); name != "chat_message" && name != "take_screenshot" {
+			t.Fatalf("unexpected tool %s", name)
+		}
+	}
+}
+
+func TestDesktopMCPInventoryMatchesRolePolicyNames(t *testing.T) {
+	want := append(append([]string{}, v1.BasicAgentMCPTools...), v1.OptionalAgentMCPTools...)
+	got := make([]string, 0, len(desktopMCPTools()))
+	for _, tool := range desktopMCPTools() {
+		got = append(got, tool["name"].(string))
+	}
+	slices.Sort(want)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
+		t.Fatalf("desktop MCP names=%v; role policy names=%v", got, want)
+	}
+}
+
+func TestDesktopMCPGuideMatchesAdvertisedTools(t *testing.T) {
+	home := t.TempDir()
+	if err := writeDesktopMCPGuide(home); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, desktopMCPGuidePath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## chat_message", "## type_secret", "## take_screenshot", `Schema: `} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("guide missing %q: %s", fragment, text)
+		}
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("guide mode = %v", info.Mode().Perm())
+	}
+}
+
+func TestSaveDesktopScreenshotUsesPrivateWorkspacePath(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
+	want := []byte("png bytes")
+	path, err := saveDesktopScreenshot(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != filepath.Join(root, "tmp", "vmbox", "desktop-screenshot.png") {
+		t.Fatalf("unexpected screenshot path %q", path)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("saved screenshot = %q", got)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Fatalf("screenshot mode = %v", info.Mode().Perm())
 	}
 }
 

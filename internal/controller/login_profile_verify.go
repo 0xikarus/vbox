@@ -47,7 +47,9 @@ func verifyProvisionedLogin(ctx context.Context, p provider.Provider, service, a
 	// Codex and OpenCode still verify provider access with a bounded one-shot.
 	if app == "codex" || app == "opencode" {
 		prompt := "Reply briefly to confirm this connection. Do not use tools, read files, or make changes."
-		command := []string{"opencode", "run", "--", prompt}
+		// This short provider preflight is not the managed chat session. Provider
+		// exec has no interactive permission prompt, so use non-interactive mode.
+		command := []string{"opencode", "run", "--auto", "--", prompt}
 		if app == "codex" {
 			command = []string{"codex", "exec", "--skip-git-repo-check", prompt}
 		}

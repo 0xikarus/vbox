@@ -28,10 +28,11 @@ type BoxInventory struct {
 }
 
 type DirectBoxMessageRequest struct {
-	Text    string               `json:"text"`
-	Agent   string               `json:"agent,omitempty"`
-	Session string               `json:"session,omitempty"`
-	Images  []BoxMessageImageRef `json:"images,omitempty"`
+	Text            string               `json:"text"`
+	Agent           string               `json:"agent,omitempty"`
+	Session         string               `json:"session,omitempty"`
+	Images          []BoxMessageImageRef `json:"images,omitempty"`
+	ParentMessageID string               `json:"parentMessageId,omitempty"`
 	// SenderBoxID marks an inter-box message; controller-set only.
 	SenderBoxID string `json:"-"`
 }
@@ -55,10 +56,11 @@ type PutChatGroupMemberRequest struct {
 }
 
 type ChatGroupMember struct {
-	LogicalBoxID string `json:"logicalBoxId"`
-	BoxName      string `json:"boxName"`
-	Agent        string `json:"agent"`
-	CanReceive   bool   `json:"canReceive"`
+	LogicalBoxID     string `json:"logicalBoxId"`
+	BoxName          string `json:"boxName"`
+	Agent            string `json:"agent"`
+	CanReceive       bool   `json:"canReceive"`
+	SubscriptionMode string `json:"subscriptionMode,omitempty"`
 }
 
 type ChatGroup struct {
@@ -73,6 +75,7 @@ type SendGroupMessageRequest struct {
 	Text            string   `json:"text"`
 	RecipientBoxIDs []string `json:"recipientBoxIds,omitempty"`
 	SourceBoxID     string   `json:"sourceBoxId,omitempty"`
+	ParentMessageID string   `json:"parentMessageId,omitempty"`
 }
 
 type GroupMessageDelivery struct {
@@ -86,12 +89,14 @@ type GroupMessageDelivery struct {
 }
 
 type GroupMessage struct {
-	ID            string                 `json:"id"`
-	GroupID       string                 `json:"groupId"`
-	UserID        string                 `json:"userId"`
-	SourceBoxID   string                 `json:"sourceBoxId,omitempty"`
-	SourceBoxName string                 `json:"sourceBoxName,omitempty"`
-	Text          string                 `json:"text"`
-	Deliveries    []GroupMessageDelivery `json:"deliveries"`
-	CreatedAt     time.Time              `json:"createdAt"`
+	ID              string                 `json:"id"`
+	GroupID         string                 `json:"groupId"`
+	UserID          string                 `json:"userId"`
+	SourceBoxID     string                 `json:"sourceBoxId,omitempty"`
+	SourceBoxName   string                 `json:"sourceBoxName,omitempty"`
+	Text            string                 `json:"text"`
+	ParentMessageID string                 `json:"parentMessageId,omitempty"`
+	ThreadID        string                 `json:"threadId"`
+	Deliveries      []GroupMessageDelivery `json:"deliveries"`
+	CreatedAt       time.Time              `json:"createdAt"`
 }

@@ -59,6 +59,14 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		}
 		before, beforeID = parsed, id
 	}
+	var threadID any
+	if raw := r.URL.Query().Get("threadId"); raw != "" {
+		if !historyMessageID.MatchString(raw) {
+			writeError(w, 400, fmt.Errorf("threadId must identify a thread"))
+			return
+		}
+		threadID = raw
+	}
 	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		writeError(w, 404, fmt.Errorf("box unavailable"))
@@ -67,12 +75,22 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 	drainCtx, cancelDrain := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
 	s.drainBoxChat(drainCtx, p, box)
 	cancelDrain()
-	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id FROM (
- SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,'') FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2
- UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at,''::text,''::text FROM box_notes WHERE account_id=$1 AND box_id=$2
- ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id)
+	// History is a read path. Outbox polling can involve a worker/provider
+	// round-trip, so never hold the chat switch open waiting for it. The
+	// reconciler and reply watcher also drain the same outbox; this best-effort
+	// pass merely makes newly arrived replies visible soon after a read.
+	go func() {
+		drainCtx, cancelDrain := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelDrain()
+		s.drainBoxChat(drainCtx, p, box)
+	}()
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id,parent_message_id,thread_id FROM (
+ SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,''),COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2
+	 UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at,''::text,''::text,''::text,id::text FROM box_notes WHERE account_id=$1 AND box_id=$2
+	 ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id,parent_message_id,thread_id)
  WHERE ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::text))
- ORDER BY created_at DESC,id DESC LIMIT $5`, p.AccountID, box.ID, before, beforeID, limit)
+	 AND ($6::uuid IS NULL OR thread_id=$6::text)
+ ORDER BY created_at DESC,id DESC LIMIT $5`, p.AccountID, box.ID, before, beforeID, limit, threadID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("message history unavailable"))
 		return
@@ -98,8 +116,32 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		writeError(w, 500, fmt.Errorf("message images unavailable"))
 		return
 	}
+	if busy, known, updatedAt, busyErr := s.Store.BoxAgentBusy(r.Context(), p.AccountID, box.ID); busyErr == nil && known {
+		w.Header().Set("X-Vmbox-Agent-Busy", strconv.FormatBool(busy))
+		if !updatedAt.IsZero() {
+			w.Header().Set("X-Vmbox-Agent-Busy-Since", updatedAt.UTC().Format(time.RFC3339Nano))
+		}
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, values)
+}
+
+// agentBusyHandler accepts activity only for the box bound to the worker's
+// DesktopAgent credential and for one of that box's active chat sessions.
+func (s *Server) agentBusyHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	var request struct {
+		Session string `json:"session"`
+		Busy    *bool  `json:"busy"`
+	}
+	if err := decodeJSON(r, &request); err != nil || request.Busy == nil || !validSessionName(request.Session) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("session and busy are required"))
+		return
+	}
+	if err := s.Store.SetBoxSessionBusy(r.Context(), p.AccountID, r.PathValue("id"), request.Session, *request.Busy); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": request.Session, "busy": *request.Busy})
 }
 
 // clearBoxContextHandler starts a fresh context inside the active chat task's
@@ -156,6 +198,21 @@ func (s *Server) clearBoxContextHandler(w http.ResponseWriter, r *http.Request, 
 		writeError(w, http.StatusConflict, fmt.Errorf("could not clear agent context: %s", detail))
 		return
 	}
+	// The reset has completed in the watched harness. Record the visible audit
+	// marker even if the browser disconnected while waiting for the worker.
+	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer recordCancel()
+	if err := s.recordContextClear(recordCtx, p.AccountID, task.ID, task.Agent, resetID); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("agent context cleared, but chat marker could not be saved"))
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, map[string]string{"agent": task.Agent, "session": task.Session, "taskId": task.ID})
+}
+
+func (s *Server) recordContextClear(ctx context.Context, accountID, taskID, agent, resetID string) error {
+	if err := s.Store.AppendSystemBoxMessage(ctx, accountID, taskID, "context cleared · "+agent+" is ready", "context-clear:"+resetID); err != nil {
+		return err
+	}
+	return s.Store.SetBoxTaskBusy(ctx, accountID, taskID, false)
 }

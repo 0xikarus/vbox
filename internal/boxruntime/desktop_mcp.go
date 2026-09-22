@@ -9,12 +9,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/secrets"
 )
 
@@ -24,6 +28,11 @@ type desktopMCPRequest struct {
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
 }
+
+// A chat_message accepts 100,000 bytes of text. JSON escaping can expand that
+// substantially, so the stdio frame limit must be larger than the tool's text
+// limit or valid long replies make Scanner stop without a protocol response.
+const maxDesktopMCPRequestBytes = 1 << 20
 
 func desktopMCPTools() []map[string]any {
 	integer := map[string]any{"type": "integer", "minimum": 0}
@@ -36,27 +45,96 @@ func desktopMCPTools() []map[string]any {
 	}
 	return []map[string]any{
 		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns each contact's id, name, role, agent, state and whether messaging is allowed. Use a contact id or name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("get_run_budget", "Get this box's durable run-time budget. The countdown advances only while the box is allocated and is separate from desktop inactivity.", map[string]any{}),
+		makeTool("request_more_time", "Request a bounded extension to this box's run-time budget. Reuse idempotencyKey when retrying.", map[string]any{"minutes": map[string]any{"type": "integer", "minimum": 1, "maximum": 1440}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "minutes", "idempotencyKey"),
+		makeTool("queue_followup", "Queue a durable follow-up for this running assignment, optionally delayed. It does not wake the box or reset its run-time budget. Reuse idempotencyKey when retrying.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "delaySeconds": map[string]any{"type": "integer", "minimum": 0, "maximum": 604800}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "text", "idempotencyKey"),
+		makeTool("get_thread_history", "Read a paginated direct or shared-chat thread this box already has access to. Pass chatId for a shared-chat thread. A thread reference alone never grants access.", map[string]any{"threadId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "before": map[string]any{"type": "string"}, "beforeId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "threadId"),
+		makeTool("discover_shared_chats", "Discover account shared chats when explicitly granted by an assigned role.", map[string]any{}),
+		makeTool("read_shared_chat", "Read messages in a shared chat where this box is a member.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "chatId"),
+		makeTool("create_shared_chat", "Create a shared chat and join it with every-message subscription. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "idempotencyKey"),
+		makeTool("subscribe_shared_chat", "Set this box's delivery mode: following (no automatic delivery), mentions, or every_message.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "mode": map[string]any{"type": "string", "enum": []string{"following", "mentions", "every_message"}}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "mode", "idempotencyKey"),
+		makeTool("invite_to_shared_chat", "Invite an account box to a shared chat. New members start in following mode.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "boxId": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "boxId", "idempotencyKey"),
+		makeTool("send_shared_chat_message", "Post a message or threaded reply to a shared chat. Delivery follows each member's subscription mode.", map[string]any{"chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "parentMessageId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "chatId", "text", "idempotencyKey"),
+		makeTool("create_email_address", "Provision an email address through the account's configured provider within this box's role grant. Reuse idempotencyKey when retrying.", map[string]any{"domain": map[string]any{"type": "string", "minLength": 1, "maxLength": 253}, "addressType": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "localPart": map[string]any{"type": "string", "maxLength": 64}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "domain", "addressType", "idempotencyKey"),
+		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
+		makeTool("get_agent_box", "Inspect one agent box's safe lifecycle details by ID or exact name. Does not grant terminal or desktop access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box"),
+		makeTool("create_agent_box", "Create an agent box on this box's provider within explicitly granted agent, disk, count, and starting-role limits. Optional instructions become that agent's managed startup instructions. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 4096}, "roleIds": map[string]any{"type": "array", "maxItems": 100, "items": map[string]any{"type": "string"}}, "instructions": map[string]any{"type": "string", "maxLength": v1.MaxInstructionMarkdownBytes, "description": "Managed Markdown instructions given to the new agent at startup."}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
+		makeTool("set_agent_box_tags", "Replace an agent box's plain metadata tags. Tags are labels only and never grant contact or tool access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 32}}}, "box", "tags"),
+		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
+		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
+		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
 		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass contact (from get_contacts) to send a message to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass contact (from get_contacts) to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
-		makeTool("secret_ensure", "Create or reuse an encrypted password reference for a new account on the current password field's HTTPS origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
-		makeTool("typeSecret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
-		makeTool("desktop_screenshot", "Capture this box's current desktop as a PNG image. Does not start or wake the desktop.", map[string]any{}),
+		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
+		makeTool("type_secret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
+		makeTool("take_screenshot", "Capture this box's current desktop as a PNG image. Use output=file for a private PNG path that can be passed to chat_message files. Does not start or wake the desktop.", map[string]any{"output": map[string]any{"type": "string", "enum": []string{"image", "file"}, "default": "image"}}),
 		makeTool("capture_window", "Capture the visible screen area of an X11 window as PNG. Defaults to the active window; optionally supply window_id (decimal or 0x hexadecimal). Does not focus or raise windows. Overlapping windows appear in the capture; minimized windows are not supported. Returned x/y offsets map image coordinates to desktop coordinates.", map[string]any{"window_id": map[string]any{"type": "string", "minLength": 1, "maxLength": 10}}),
-		makeTool("desktop_move", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
-		makeTool("desktop_click", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
-		makeTool("desktop_drag", "Drag directly from x/y to toX/toY while holding the left button.", map[string]any{"x": integer, "y": integer, "toX": integer, "toY": integer}, "x", "y", "toX", "toY"),
-		makeTool("desktop_scroll", "Scroll at a coordinate. Text is direction; count is 1–20 wheel steps.", map[string]any{"x": integer, "y": integer, "text": map[string]any{"type": "string", "enum": []string{"up", "down", "left", "right"}}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 20}}, "x", "y", "text"),
-		makeTool("desktop_type", "Type ordinary literal text in the focused application. Use the secret service for credentials.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
-		makeTool("desktop_key", "Press a shortcut: keys contains modifiers and a key, e.g. [ctrl,l] or [Return].", map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
+		makeTool("move_mouse", "Move the cursor smoothly to a screen coordinate.", point, "x", "y"),
+		makeTool("click_mouse", "Move to a coordinate and click. Button: 1 left, 2 middle, 3 right. Count 2 sends a double-click with a brief inter-click delay.", map[string]any{"x": integer, "y": integer, "button": map[string]any{"type": "integer", "minimum": 1, "maximum": 3}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 2}}, "x", "y"),
+		makeTool("drag_mouse", "Drag directly from x/y to toX/toY while holding the left button.", map[string]any{"x": integer, "y": integer, "toX": integer, "toY": integer}, "x", "y", "toX", "toY"),
+		makeTool("scroll_mouse", "Scroll at a coordinate. Text is direction; count is 1–20 wheel steps.", map[string]any{"x": integer, "y": integer, "text": map[string]any{"type": "string", "enum": []string{"up", "down", "left", "right"}}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 20}}, "x", "y", "text"),
+		makeTool("type_text", "Type ordinary literal text in the focused application. Use the secret service for credentials.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
+		makeTool("press_keys", "Press a shortcut: keys contains modifiers and a key, e.g. [ctrl,l] or [Return].", map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
 	}
+}
+
+type desktopToolPolicyResolver func(context.Context, string) (map[string]bool, error)
+
+func allDesktopToolPolicy(_ context.Context, _ string) (map[string]bool, error) {
+	allowed := map[string]bool{}
+	for _, tool := range desktopMCPTools() {
+		allowed[tool["name"].(string)] = true
+	}
+	return allowed, nil
+}
+
+func allowedDesktopMCPTools(ctx context.Context, assignment string, resolve desktopToolPolicyResolver) ([]map[string]any, map[string]bool, error) {
+	allowed, err := resolve(ctx, assignment)
+	if err != nil {
+		return nil, nil, err
+	}
+	tools := []map[string]any{}
+	for _, tool := range desktopMCPTools() {
+		if allowed[tool["name"].(string)] {
+			tools = append(tools, tool)
+		}
+	}
+	return tools, allowed, nil
+}
+
+const desktopMCPGuidePath = ".config/vmbox/mcp-tools.md"
+
+// writeDesktopMCPGuide gives every managed agent a local, readable tool
+// reference. It is generated from the same schemas advertised over MCP.
+func writeDesktopMCPGuide(home string) error {
+	var guide strings.Builder
+	guide.WriteString("# vmbox-desktop MCP tools\n\n")
+	guide.WriteString("Use the tool directly with the JSON call shown.\n\n")
+	for _, tool := range desktopMCPTools() {
+		name := tool["name"].(string)
+		description := tool["description"].(string)
+		schema, err := json.Marshal(tool["inputSchema"])
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(&guide, "## %s\n\n%s\n\nSchema: `%s`\n\n", name, description, schema)
+	}
+	return writeTextAtomic(filepath.Join(home, desktopMCPGuidePath), guide.String(), 0600)
 }
 
 // ServeDesktopMCP is a local stdio adapter. stdout contains protocol only; the
 // assignment captured at startup fences every subsequent operation.
 func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer) error {
+	if home, err := os.UserHomeDir(); err == nil {
+		_ = writeDesktopMCPGuide(home)
+	}
+	return serveDesktopMCP(ctx, assignment, input, output, desktopAgentToolPolicy)
+}
+
+func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, output io.Writer, resolve desktopToolPolicyResolver) error {
 	scanner := bufio.NewScanner(input)
-	scanner.Buffer(make([]byte, 4096), 65536)
+	scanner.Buffer(make([]byte, 4096), maxDesktopMCPRequestBytes)
 	encoder := json.NewEncoder(output)
 	var outputMu sync.Mutex
 	encode := func(value any) error {
@@ -98,11 +176,16 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
 			}
-			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message for every response the user should receive; pass replyTo to answer a specific message. Use chat_ask when the user must choose. These tools are also reachable over HTTP from inside this box: read ~/.local/share/vmbox/mcp-http.json for the url and token, then POST a JSON object of arguments to {url}/tools/{name} with an Authorization: Bearer header. Use that when a script or background job has to queue a message outside an agent turn."}
+			response["result"] = map[string]any{"protocolVersion": version, "capabilities": map[string]any{"tools": map[string]any{}, "experimental": map[string]any{"claude/channel": map[string]any{}}}, "serverInfo": map[string]any{"name": "vmbox-desktop", "version": "0.2.0"}, "instructions": "Messages from vmbox Agent chat arrive as channel messages. Use chat_message once for every user-facing reply and chat_ask for choices. Busy state is automatic for normal replies; use set_busy only for other work. Incoming chat images arrive with an image_path channel attribute; read that path. Read ~/.config/vmbox/mcp-tools.md for every exact vmbox tool call. HTTP tools: read ~/.local/share/vmbox/mcp-http.json, then POST JSON to {url}/tools/{name} with its Bearer token. A script can POST {\"text\":\"...\"} to promptUrl to deliver a user message to this already-running agent conversation; it never wakes a stopped box."}
 		case "ping":
 			response["result"] = map[string]any{}
 		case "tools/list":
-			response["result"] = map[string]any{"tools": desktopMCPTools()}
+			tools, _, err := allowedDesktopMCPTools(ctx, assignment, resolve)
+			if err != nil {
+				response["error"] = map[string]any{"code": -32000, "message": "MCP tool policy unavailable"}
+				break
+			}
+			response["result"] = map[string]any{"tools": tools}
 		case "tools/call":
 			var params struct {
 				Name      string          `json:"name"`
@@ -113,7 +196,16 @@ func ServeDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 				break
 			}
 			callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			result, err := callDesktopTool(callCtx, assignment, params.Name, params.Arguments)
+			_, allowed, policyErr := allowedDesktopMCPTools(callCtx, assignment, resolve)
+			var result map[string]any
+			var err error
+			if policyErr != nil {
+				err = fmt.Errorf("MCP tool policy unavailable")
+			} else if !allowed[params.Name] {
+				err = fmt.Errorf("MCP tool %s is not allowed for this box", params.Name)
+			} else {
+				result, err = callDesktopTool(callCtx, assignment, params.Name, params.Arguments)
+			}
 			cancel()
 			if err != nil {
 				result = map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": err.Error()}}}
@@ -151,12 +243,9 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		_ = os.WriteFile(ready, []byte(owner), 0600)
 		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
 			content := event.Text
+			meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
 			if len(event.Paths) > 0 {
-				content += "\n\nAttached image files:\n" + strings.Join(event.Paths, "\n")
-			}
-			meta := map[string]any{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
-			if len(event.Paths) > 0 {
-				meta["file_path"] = event.Paths[0]
+				meta["image_path"] = event.Paths[0]
 			}
 			if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": content, "meta": meta}}) == nil {
 				_ = os.Remove(path)
@@ -240,13 +329,279 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if state == "" {
 				state = "unknown"
 			}
-			role := contact.Role
-			if role == "" {
-				role = "worker"
+			roleNames := make([]string, 0, len(contact.Roles))
+			for _, role := range contact.Roles {
+				roleNames = append(roleNames, role.Name)
 			}
-			lines = append(lines, fmt.Sprintf("- %s | id %s | role %s | agent %s | %s | message %t | receive %t", contact.Name, contact.ID, role, contact.Agent, state, contact.CanMessage, contact.CanReceive))
+			roles := strings.Join(roleNames, ", ")
+			if roles == "" {
+				roles = "none"
+			}
+			lines = append(lines, fmt.Sprintf("- %s | id %s | roles %s | agent %s | %s | message %t", contact.Name, contact.ID, roles, contact.Agent, state, contact.CanMessage))
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
+	}
+	if name == "get_run_budget" {
+		var budget map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/run-budget", nil, &budget); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(budget)
+	}
+	if name == "request_more_time" {
+		var request struct {
+			Minutes        int    `json:"minutes"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.Minutes < 1 || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("minutes and idempotencyKey are required")
+		}
+		var budget map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/run-budget/extend", request.IdempotencyKey, map[string]any{"minutes": request.Minutes}, &budget); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(budget)
+	}
+	if name == "queue_followup" {
+		var request struct {
+			Text           string `json:"text"`
+			DelaySeconds   int    `json:"delaySeconds"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Text) == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("text and idempotencyKey are required")
+		}
+		var followup map[string]any
+		body := map[string]any{"text": request.Text, "delaySeconds": request.DelaySeconds}
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/followups", request.IdempotencyKey, body, &followup); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(followup)
+	}
+	if name == "get_thread_history" {
+		var request struct {
+			ThreadID string `json:"threadId"`
+			ChatID   string `json:"chatId"`
+			Limit    int    `json:"limit"`
+			Before   string `json:"before"`
+			BeforeID string `json:"beforeId"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ThreadID == "" {
+			return nil, fmt.Errorf("threadId is required")
+		}
+		if request.Limit == 0 {
+			request.Limit = 50
+		}
+		query := "?threadId=" + url.QueryEscape(request.ThreadID) + "&limit=" + strconv.Itoa(request.Limit)
+		if request.ChatID != "" {
+			query += "&chatId=" + url.QueryEscape(request.ChatID)
+		}
+		if request.Before != "" || request.BeforeID != "" {
+			query += "&before=" + url.QueryEscape(request.Before) + "&beforeId=" + url.QueryEscape(request.BeforeID)
+		}
+		var history map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/thread-history"+query, nil, &history); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(history)
+	}
+	if name == "discover_shared_chats" {
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/shared-chats", nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "read_shared_chat" {
+		var request struct {
+			ChatID string `json:"chatId"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" {
+			return nil, fmt.Errorf("chatId is required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/messages", nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "create_shared_chat" {
+		var request struct {
+			Name           string `json:"name"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Name) == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("name and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats", request.IdempotencyKey, map[string]any{"name": request.Name}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "subscribe_shared_chat" {
+		var request struct {
+			ChatID         string `json:"chatId"`
+			Mode           string `json:"mode"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("chatId, mode, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/subscribe", request.IdempotencyKey, map[string]any{"mode": request.Mode}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "invite_to_shared_chat" {
+		var request struct {
+			ChatID         string `json:"chatId"`
+			BoxID          string `json:"boxId"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" || request.BoxID == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("chatId, boxId, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/invite", request.IdempotencyKey, map[string]any{"boxId": request.BoxID}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "send_shared_chat_message" {
+		var request struct {
+			ChatID          string `json:"chatId"`
+			Text            string `json:"text"`
+			ParentMessageID string `json:"parentMessageId"`
+			IdempotencyKey  string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.ChatID == "" || strings.TrimSpace(request.Text) == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("chatId, text, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/shared-chats/"+url.PathEscape(request.ChatID)+"/messages", request.IdempotencyKey, map[string]any{"text": request.Text, "parentMessageId": request.ParentMessageID}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "create_email_address" {
+		var request struct {
+			Domain         string `json:"domain"`
+			AddressType    string `json:"addressType"`
+			LocalPart      string `json:"localPart"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.Domain == "" || request.AddressType == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("domain, addressType, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/email-addresses", request.IdempotencyKey, map[string]any{"domain": request.Domain, "addressType": request.AddressType, "localPart": request.LocalPart}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "create_agent_box" {
+		var request struct {
+			Name           string   `json:"name"`
+			Agent          string   `json:"agent"`
+			DiskGiB        int      `json:"diskGiB"`
+			RoleIDs        []string `json:"roleIds"`
+			Instructions   string   `json:"instructions"`
+			IdempotencyKey string   `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.Name == "" || request.Agent == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("name, agent, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes", request.IdempotencyKey, map[string]any{"name": request.Name, "agent": request.Agent, "diskGiB": request.DiskGiB, "roleIds": request.RoleIDs, "instructions": request.Instructions}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "list_agent_boxes" {
+		var result []map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/boxes", nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "get_agent_box" {
+		var request struct {
+			Box string `json:"box"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" {
+			return nil, fmt.Errorf("box is required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box), nil, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "set_agent_box_tags" {
+		var request struct {
+			Box  string   `json:"box"`
+			Tags []string `json:"tags"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Tags == nil {
+			return nil, fmt.Errorf("box and tags are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodPut, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/tags", map[string]any{"tags": request.Tags}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "delete_agent_box" {
+		var request struct {
+			Box            string `json:"box"`
+			Confirmation   string `json:"confirmation"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("box, confirmation, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodDelete, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box), request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "restart_agent_box" {
+		var request struct {
+			Box            string `json:"box"`
+			Confirmation   string `json:"confirmation"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("box, confirmation, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/restart", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "set_busy" {
+		var request struct {
+			Busy *bool `json:"busy"`
+		}
+		if json.Unmarshal(args, &request) != nil || request.Busy == nil {
+			return nil, fmt.Errorf("busy must be true or false")
+		}
+		session, err := chatSession(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := DesktopSetBusy(ctx, assignment, session, *request.Busy); err != nil {
+			return nil, err
+		}
+		state := "idle"
+		if *request.Busy {
+			state = "busy"
+		}
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Agent activity is now " + state + "."}}}, nil
 	}
 	if name == "secret_request" {
 		var key string
@@ -259,7 +614,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		text := "Private credential requested. Wait for the user's response; do not invent a password."
 		if ready {
-			text = "Private credential is ready. Use typeSecret with the same reference."
+			text = "Private credential is ready. Use type_secret with the same reference."
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": text}}}, nil
 	}
@@ -348,7 +703,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to vmbox Agent chat."}}}, nil
 	}
-	if name == "typeSecret" {
+	if name == "type_secret" {
 		var key string
 		if json.Unmarshal(values["key"], &key) != nil {
 			return nil, fmt.Errorf("secret key must be a string")
@@ -358,7 +713,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Password inserted. Form not submitted."}}}, nil
 	}
-	if name == "secret_ensure" {
+	if name == "generate_password" {
 		var key, purpose string
 		if json.Unmarshal(values["key"], &key) != nil || json.Unmarshal(values["purpose"], &purpose) != nil || purpose != "new_account_password" {
 			return nil, fmt.Errorf("provide a reference and new_account_password purpose")
@@ -378,7 +733,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if created {
 			status = "New password reference saved; pending use."
 		}
-		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use typeSecret with the same key to fill it."}}}, nil
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": status + " Use type_secret with the same key to fill it."}}}, nil
 	}
 	if name == "capture_window" {
 		var identifier string
@@ -400,10 +755,23 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(captured.Bytes())},
 		}}, nil
 	}
-	if name == "desktop_screenshot" {
+	if name == "take_screenshot" {
+		output := "image"
+		if value, ok := values["output"]; ok {
+			if json.Unmarshal(value, &output) != nil || (output != "image" && output != "file") {
+				return nil, fmt.Errorf("output must be image or file")
+			}
+		}
 		var png bytes.Buffer
 		if err := CaptureDesktop(ctx, assignment, &png); err != nil {
 			return nil, fmt.Errorf("desktop capture unavailable; check that this box's desktop is running")
+		}
+		if output == "file" {
+			path, err := saveDesktopScreenshot(png.Bytes())
+			if err != nil {
+				return nil, fmt.Errorf("save desktop capture: %w", err)
+			}
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Screenshot saved to " + path + ". Pass this absolute path to chat_message files when the user should receive it."}}}, nil
 		}
 		return map[string]any{"content": []map[string]any{{"type": "image", "mimeType": "image/png", "data": base64.StdEncoding.EncodeToString(png.Bytes())}}}, nil
 	}
@@ -411,7 +779,14 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 	if err := json.Unmarshal(args, &action); err != nil {
 		return nil, fmt.Errorf("invalid desktop arguments")
 	}
-	action.Action = strings.TrimPrefix(name, "desktop_")
+	action.Action = map[string]string{
+		"move_mouse":   "move",
+		"click_mouse":  "click",
+		"drag_mouse":   "drag",
+		"scroll_mouse": "scroll",
+		"type_text":    "type",
+		"press_keys":   "key",
+	}[name]
 	if action.Action == "click" && action.Count > 2 {
 		return nil, fmt.Errorf("click count must be 1 or 2")
 	}
@@ -419,4 +794,19 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		return nil, err
 	}
 	return map[string]any{"content": []map[string]any{{"type": "text", "text": "Action completed. Capture the screen to inspect its result."}}}, nil
+}
+
+func saveDesktopScreenshot(data []byte) (string, error) {
+	dir := filepath.Join(WorkspaceRoot(), "tmp", "vmbox")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "desktop-screenshot.png")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		return "", err
+	}
+	if err := os.Chmod(path, 0600); err != nil {
+		return "", err
+	}
+	return path, nil
 }
