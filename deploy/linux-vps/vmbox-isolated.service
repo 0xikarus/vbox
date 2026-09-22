@@ -1,0 +1,19 @@
+[Unit]
+Description=vmbox isolated container supervisor
+Requires=docker.service vmbox-container-firewall.service
+After=docker.service vmbox-container-firewall.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/vmbox/isolated-worker.env
+ExecStart=/usr/local/bin/vmbox-shared-worker-isolated
+Restart=on-failure
+RestartSec=5
+UMask=0077
+MemoryMax=512M
+TasksMax=256
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

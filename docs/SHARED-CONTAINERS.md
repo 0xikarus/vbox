@@ -1,5 +1,8 @@
 # Host-managed shared-worker containers
 
+For installation, TLS, controller enrollment and operations, follow the
+[Linux VPS setup guide](LINUX-VPS-SETUP.md).
+
 `VMBOX_SHARED_ISOLATION=container` is an opt-in Linux Docker-host runtime.
 The supervisor runs on the host as root; agents start as their workspace user
 in separate containers and have passwordless sudo inside their own container.
@@ -8,7 +11,8 @@ Do not place the Docker socket in an agent container.
 Set `VMBOX_SHARED_CONTAINER_IMAGE` to a locally pulled digest-pinned normal
 desktop worker image, `VMBOX_SHARED_ROOT` to an absolute host data directory,
 and the usual account, token and slot variables. Bind the supervisor to loopback
-with `VMBOX_SHARED_BIND=127.0.0.1` behind an authenticated HTTPS proxy.
+with `VMBOX_SHARED_BIND=127.0.0.1` behind an HTTPS proxy; the supervisor validates
+the worker bearer token on API requests.
 Install `scripts/shared-container-firewall.sh` as a boot service after Docker
 and before the supervisor. Startup refuses a missing firewall or cgroup v2.
 The firewall uses the `vb` bridge prefix reserved for these containers.

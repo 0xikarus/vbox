@@ -1,0 +1,6 @@
+server {
+    listen 80;
+    server_name YOUR_PUBLIC_IP;
+    location /.well-known/acme-challenge/ { root /var/lib/vmbox-acme; }
+    location / { return 301 https://YOUR_PUBLIC_IP$request_uri; }
+}
