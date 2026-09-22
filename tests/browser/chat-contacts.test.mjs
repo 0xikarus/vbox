@@ -17,8 +17,7 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
  let protectedBox=false,requests=[],creations=[],fullDesktopShots=0,explicitIdle=false,tags=['backend','priority'];
- let agentRoles=[];
- let roleAssignments=new Map([['builder',[]],['reviewer',[]]]);
+ const directPolicies=new Map();
  let contacts=[
   {contactBoxId:'reviewer',contactName:'reviewer',contactRoles:[],contactState:'running',contactAgent:'codex',override:'allow',canMessage:true,reason:"Included in this box's direct contact list."},
   {contactBoxId:'planner',contactName:'planner',contactRoles:[],contactState:'running',contactAgent:'claude',override:'inherit',canMessage:false,reason:"Not in this box's direct contact list."},
@@ -39,17 +38,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/logical-boxes'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;creations.push(JSON.parse(body));return res.end(JSON.stringify({id:'created',name:'github-chat-fixture'}))}
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes.map(b=>({...b,roles:agentRoles.filter(role=>(roleAssignments.get(b.id)||[]).includes(role.id)).map(({id,name})=>({id,name}))}))));
-  if(path==='/v1/agent-roles'&&method==='GET')return res.end(JSON.stringify(agentRoles));
-  if(path==='/v1/agent-roles'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body),role={id:'role-'+(agentRoles.length+1),...parsed,assignedBoxCount:0};agentRoles.push(role);res.statusCode=201;return res.end(JSON.stringify(role))}
-  if(path==='/v1/agent-role-presets/team'&&method==='POST'){
-   const normal={id:'role-normal',name:'Normal',description:"Team member: can use this box's computer and message its direct contacts.",capabilities:{allContacts:{enabled:false}},assignedBoxCount:0};
-   const manager={id:'role-manager',name:'Manager',description:'Team manager: can see every contact, label boxes, and manage agent-box lifecycles.',capabilities:{allContacts:{enabled:true}},assignedBoxCount:0};
-   agentRoles.push(normal,manager);res.statusCode=201;return res.end(JSON.stringify([normal,manager]));
-  }
-  if(path.startsWith('/v1/agent-roles/')&&method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body),id=decodeURIComponent(path.split('/').pop()),index=agentRoles.findIndex(role=>role.id===id);agentRoles[index]={...agentRoles[index],...parsed};return res.end(JSON.stringify(agentRoles[index]))}
-  if(path.startsWith('/v1/agent-roles/')&&method==='DELETE'){const id=decodeURIComponent(path.split('/').pop());agentRoles=agentRoles.filter(role=>role.id!==id);for(const [boxID,ids] of roleAssignments)roleAssignments.set(boxID,ids.filter(roleID=>roleID!==id));res.statusCode=204;return res.end()}
-  if(path==='/v1/agent-role-assignments'&&method==='PUT'){let body='';for await(const chunk of req)body+=chunk;for(const assignment of JSON.parse(body).assignments)roleAssignments.set(assignment.boxId,assignment.roleIds);for(const role of agentRoles)role.assignedBoxCount=[...roleAssignments.values()].filter(ids=>ids.includes(role.id)).length;res.statusCode=204;return res.end()}
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
+  const policyMatch=path.match(/^\/v1\/logical-boxes\/([^/]+)\/agent-policy$/);
+  if(policyMatch){const boxID=decodeURIComponent(policyMatch[1]),box=boxes.find(value=>value.id===boxID);if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;directPolicies.set(boxID,JSON.parse(body))}return res.end(JSON.stringify({boxId:boxID,boxName:box?.name||boxID,...(directPolicies.get(boxID)||{capabilities:{}})}))}
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'opencode',name:'openrouter',model:'openrouter/saved'},{application:'github',name:'gh-work'}]));
   if(path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/live-model',label:'Live model'}]}));
@@ -92,10 +83,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;tags=JSON.parse(body).tags}
    return res.end(JSON.stringify({tags}));
   }
-  if(path==='/v1/logical-boxes/builder'){
-   return res.end(JSON.stringify({...boxes[0],roles:agentRoles.filter(role=>(roleAssignments.get('builder')||[]).includes(role.id)).map(({id,name})=>({id,name}))}));
-  }
-  if(path.startsWith('/v1/logical-boxes/builder'))return res.end(JSON.stringify({...boxes[0],roles:agentRoles.filter(role=>(roleAssignments.get('builder')||[]).includes(role.id)).map(({id,name})=>({id,name}))}));
+  if(path==='/v1/logical-boxes/builder')return res.end(JSON.stringify(boxes[0]));
+  if(path.startsWith('/v1/logical-boxes/builder'))return res.end(JSON.stringify(boxes[0]));
   res.statusCode=404;return res.end('{}');
  });
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
@@ -191,11 +180,12 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(panelLayout.parent,'chat-conversation','details must expand from the viewed chat header');
   assert.ok(panelLayout.panel.top>=panelLayout.header.bottom-2,'details must appear below the chat header');
   assert.ok(panelLayout.panel.width>=panelLayout.header.width*.95,'details must span the chat instead of a side drawer');
-  await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent==='None'&&document.querySelector('#inspect-tags').textContent.includes('backend'));
-  assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/direct contacts/);
+  await p.waitForFunction(()=>document.querySelector('#inspect-contact-role').textContent.includes('directly')&&document.querySelector('#inspect-tags').textContent.includes('backend'));
+  assert.match(await p.$eval('#inspect-contact-status',e=>e.textContent),/contact directly/);
   assert.equal(await p.$$eval('#inspect-contact-list li',rows=>rows.length),3,'every eligible box renders with its effective access');
-  await p.click('#inspect-contact-list li:nth-child(2) input[type=checkbox]');
-  await p.waitForFunction(()=>{const checkbox=document.querySelector('#inspect-contact-list li:nth-child(2) input[type=checkbox]');return checkbox.checked&&!checkbox.disabled});
+  assert.equal(await p.$eval('#inspect-contact-list li:nth-child(2) button',button=>button.textContent),'Add contact');
+  await p.click('#inspect-contact-list li:nth-child(2) button');
+  await p.waitForFunction(()=>document.querySelector('#inspect-contact-list li:nth-child(2) button').textContent==='Remove contact');
   assert.equal(requests.includes('PUT /v1/logical-boxes/builder/contacts'),true);
   await p.$eval('#inspect-toggle-protection',e=>e.click());
   await p.waitForFunction(()=>document.querySelector('#inspect-protection-label').textContent.startsWith('Protected'));
@@ -205,25 +195,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.evaluate(()=>{const inspect=document.querySelector('#inspect'),body=document.querySelector('#inspect-body'),contacts=document.querySelector('#inspect-contacts');inspect.style.maxHeight='none';inspect.style.overflow='visible';body.style.overflow='visible';contacts.style.overflow='visible'});
   await (await p.$('#inspect-contacts')).screenshot({path:'docs/chat-ui/screenshots/mobile-chat-contacts.png'});
   await p.click('#inspect-edit-roles');
-  await p.waitForFunction(()=>!document.querySelector('#roles-modal').hidden&&document.querySelector('#role-assignments .role-empty'));
-  await p.$eval('#role-box-search',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
-  await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
-  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles.png'});
-  await p.click('#setup-team-roles');
-  await p.waitForFunction(()=>[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Manager')&&[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Normal'));
-  assert.equal(requests.includes('POST /v1/agent-role-presets/team'),true);
-  assert.equal(await p.$eval('#setup-team-roles',button=>button.hidden),true,'the preset action must disappear once either exact preset role exists');
-  await p.click('#role-assignments .role-assignment-card[data-role-box-id="builder"] .role-assignment-toggle');
-  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-team-roles.png'});
-  await p.click('#create-role');
-  assert.equal(await p.$eval('.msg-actions',element=>getComputedStyle(element).visibility),'hidden','background message actions must not bleed through the role editor');
-  await p.type('#role-editor-form input[name=name]','Release handoff');
-  await p.type('#role-editor-form textarea[name=description]','Release coordination tools');
-  await p.click('#role-editor-form input[name=requestMoreTimeEnabled]');
-  await p.click('#role-editor-form input[name=createAgentBoxEnabled]');
-  await p.click('#role-editor-form [data-capability=createAgentBoxEnabled] summary');
-  await p.click('#role-editor-form input[name=allowedAgents][value=codex]');
-  await p.$eval('#role-editor-form [data-capability=createAgentBoxEnabled]',element=>element.open=false);
+  await p.waitForFunction(()=>!document.querySelector('#role-editor-modal').hidden&&document.querySelector('#role-editor-title').textContent.includes('builder'));
   await p.click('#role-editor-form .mcp-tool-options summary');
   assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.title),/privately/);
   assert.match(await p.$eval('#role-editor-form label:has(input[value=create_agent_box])',element=>element.title),/startup instructions/);
@@ -239,33 +211,31 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
   assert.deepEqual(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) input[name=mcpTools]',inputs=>inputs.map(input=>input.value)),['list_agent_boxes','get_agent_box','create_agent_box','set_agent_box_tags','restart_agent_box','delete_agent_box']);
   await p.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) .role-capability-options summary');
-  await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-role-mcp-tools.png'});
+  await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-permission-mcp-tools.png'});
   await p.$eval('#role-editor-form .mcp-tool-options',element=>element.open=false);
   await p.$eval('.role-capabilities',element=>element.scrollIntoView({block:'start'}));
-  await (await p.$('#role-editor-modal .role-editor-card')).screenshot({path:'docs/chat-ui/screenshots/chat-role-editor.png'});
+  await (await p.$('#role-editor-modal .role-editor-card')).screenshot({path:'docs/chat-ui/screenshots/chat-permission-editor.png'});
   await p.$eval('#role-editor-form',form=>form.requestSubmit());
-  await p.waitForFunction(()=>[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Release handoff'));
-  assert.equal(agentRoles.at(-1).name,'Release handoff','the exact owner-typed role name must be preserved');
-  assert.equal(agentRoles.at(-1).capabilities.requestMoreTime.enabled,true);
-  assert.deepEqual(agentRoles.at(-1).capabilities.createAgentBox.allowedAgents,['codex']);
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.enabled,true);
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('drag_mouse'),true);
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('click_mouse'),true);
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('secret_request'),false);
-  assert.deepEqual(agentRoles.at(-1).capabilities.manageAgentBoxes,{list:true,inspect:true,tag:true,restart:true,delete:true});
-  assert.equal(agentRoles.at(-1).capabilities.mcpTools.allowedTools.includes('create_agent_box'),true);
-  await p.click('#role-assignments .role-assignment-card[data-role-box-id="reviewer"] .role-assignment-toggle');
-  await p.click('#role-assignments input[aria-label="Release handoff for reviewer"]');
-  await p.click('#save-role-assignments');
-  await p.waitForFunction(()=>document.querySelector('#role-status').textContent==='Assignments saved.');
-  assert.ok(roleAssignments.get('reviewer').includes(agentRoles.at(-1).id));
+  await p.waitForFunction(()=>document.querySelector('#role-editor-status').textContent.startsWith('Saved.'));
+  const saved=directPolicies.get('builder').capabilities;
+  assert.equal(saved.mcpTools.enabled,true);
+  assert.equal(saved.mcpTools.allowedTools.includes('drag_mouse'),true);
+  assert.equal(saved.mcpTools.allowedTools.includes('click_mouse'),true);
+  assert.equal(saved.mcpTools.allowedTools.includes('secret_request'),false);
+  assert.deepEqual(saved.manageAgentBoxes,{list:true,inspect:true,tag:true,restart:true,delete:true});
+  assert.equal(saved.mcpTools.allowedTools.includes('create_agent_box'),true);
+  await p.click('#role-editor-modal [data-close="role-editor-modal"]');
+  await p.$eval('#roles-toggle',button=>button.click());
+  await p.waitForFunction(()=>!document.querySelector('#roles-modal').hidden&&document.querySelectorAll('#role-assignments .role-assignment-card').length===4);
+  await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
+  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-permissions.png'});
   await p.setViewport({width:390,height:844,deviceScaleFactor:1});
-  assert.equal(await p.$('#role-assignments table'),null,'assignments should not fall back to a matrix on mobile');
+  assert.equal(await p.$('#role-assignments table'),null,'permissions should not fall back to a matrix on mobile');
   assert.equal(await p.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
   assert.equal(await p.$eval('#role-assignments .role-assignment-card[data-role-box-id="reviewer"]',element=>element.getBoundingClientRect().width>350),true);
   await p.waitForFunction(()=>document.querySelector('#chat-toasts').childElementCount===0,{timeout:5000});
   await p.$eval('#roles-modal .roles-card',element=>element.scrollTop=0);
-  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles-mobile.png'});
+  await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-permissions-mobile.png'});
   await p.click('#roles-modal .roles-card [data-close="roles-modal"]');
   await p.setViewport({width:420,height:820,deviceScaleFactor:1});
   await p.$eval('#new-box',button=>button.click());
@@ -290,12 +260,11 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.keyboard.press('Escape');
   assert.equal(await p.$eval('#new-box-modal',modal=>modal.hidden),false,'closing model choices must not close the box form');
   await p.select('#create-box select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
-  await p.click('#create-role-choices input[value="'+agentRoles.at(-1).id+'"]');
   await p.type('#create-box input[name=name]','github-chat-fixture');
   await p.$eval('#create-box',form=>form.requestSubmit());
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
-  assert.deepEqual(creations.at(-1).roleIds,[agentRoles.at(-1).id]);
+  assert.equal('roleIds' in creations.at(-1),false,'new boxes do not inherit a role bundle');
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

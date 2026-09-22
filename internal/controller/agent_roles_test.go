@@ -115,6 +115,28 @@ func TestEffectiveAgentCapabilitiesUnionsAssignedRoles(t *testing.T) {
 	}
 }
 
+func TestEffectiveAgentCapabilitiesPrefersDirectBoxPolicy(t *testing.T) {
+	store, mock := testStore(t)
+	want := v1.AgentRoleCapabilities{
+		AllContacts: v1.AllContactsGrant{Enabled: true},
+		MCPTools:    v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"desktop_click", "press_keys"}},
+	}
+	raw, _ := json.Marshal(want)
+	mock.ExpectQuery("agent_box_policy").WithArgs("account-a", "box-a").
+		WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow("agent_box_policy", raw))
+
+	capabilities, err := store.EffectiveAgentCapabilities(context.Background(), "account-a", "box-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !capabilities.AllContacts.Enabled || !slices.Equal(capabilities.MCPTools.AllowedTools, []string{"click_mouse", "press_keys"}) {
+		t.Fatalf("capabilities=%+v", capabilities)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.T) {
 	store, mock := testStore(t)
 	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 1, MaxDiskGiB: 20, AllowedAgents: []string{"codex"}})

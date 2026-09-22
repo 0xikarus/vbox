@@ -234,6 +234,9 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #thread-count{font-size:.72rem;color:var(--ink-soft)}
 #thread-messages{display:flex;flex-direction:column;gap:.4rem;overflow:auto;padding:.75rem;flex:1}
 #thread-messages .msg{max-width:92%}
+#thread-composer{display:flex;align-items:flex-end;gap:.45rem;padding:.65rem;border-top:1px solid var(--line);background:var(--surface)}
+#thread-composer textarea{flex:1;min-height:2.4rem;max-height:8rem;resize:vertical;border:1px solid var(--line);border-radius:.55rem;background:var(--bg);color:var(--ink);padding:.55rem .65rem;font:inherit}
+#thread-composer button{border:0;border-radius:.5rem;background:var(--accent);color:white;padding:.6rem .8rem;font:inherit;font-weight:700;cursor:pointer}
 #chat-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:.3rem;background:color-mix(in srgb,var(--bg) 88%,transparent);z-index:9;text-align:center;
   color:var(--accent-text);font-size:.85rem;font-weight:700}
@@ -555,6 +558,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .role-capabilities{margin:.8rem 0;border:1px solid var(--line);border-radius:var(--radius-sm);padding:.55rem .65rem}
 .role-capabilities>h3{margin:.1rem 0;font-size:1rem;color:var(--ink)}
 .role-capability{border:1px solid var(--line);border-radius:var(--radius-sm);padding:.55rem;margin:.55rem 0;background:var(--surface2)}
+.role-capability:has(> .role-capability-toggle input[name=requestMoreTimeEnabled]),.role-capability:has(> .role-capability-toggle input[name=queueFollowupEnabled]),.role-capability:has(> .role-capability-toggle input[name=createAgentBoxEnabled]),.role-capability:has(> .role-capability-toggle input[name=createEmailAddressEnabled]),.role-capability:has(> .role-capability-toggle input[name=sharedChatsEnabled]){display:none}
 .role-capability-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:.8rem;margin:0!important;color:var(--ink)}
 .role-capability-toggle>span{display:grid;gap:.12rem;min-width:0}.role-capability-toggle strong{font-size:.9rem}.role-capability-toggle small{color:var(--ink-soft);font-size:.75rem;font-weight:400;line-height:1.3}
 .sheet-card .role-capability-toggle>input,.sheet-card .role-inline-checks input,.sheet-card .role-shared-chat-grid input{display:inline-block;width:auto;margin:0;padding:0;flex:none}

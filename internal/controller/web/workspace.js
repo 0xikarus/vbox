@@ -479,7 +479,7 @@ if(importedCredentials){
 
 const contactsPanel=document.querySelector('#box-contacts');
 if(contactsPanel){
- const status=$('#contact-status'),list=$('#contact-list'),roleLabel=$('#contact-role'),tagLabel=$('#box-tags'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection');
+ const status=$('#contact-status'),list=$('#contact-list'),tagLabel=$('#box-tags'),protectionLabel=$('#contact-protection-label'),toggleProtection=$('#contact-toggle-protection');
  let protectedBox=false;
  async function loadContacts(){
   if(workspaceRole!=='owner'){contactsPanel.hidden=true;return}
@@ -487,19 +487,18 @@ if(contactsPanel){
   try{
    const [contacts,protection,tagResult]=await Promise.all([api(bp+'/contacts'),api(bp+'/protection'),api(bp+'/tags')]);
    protectedBox=!!protection.protected;
-   roleLabel.textContent=(boxSummary?.roles||[]).map(role=>role.name).join(', ')||'None';
    tagLabel.textContent=(tagResult.tags||[]).join(', ')||'None';
    protectionLabel.textContent=protectedBox?'Protected — agents cannot see or message this box':'Not protected';
    toggleProtection.textContent=protectedBox?'Remove protection':'Protect box';
    list.replaceChildren();
    if(!contacts.length){const empty=document.createElement('li');empty.textContent='No other eligible boxes.';list.append(empty)}
    for(const contact of contacts){
-    const row=document.createElement('li');
-    const label=document.createElement('label'),checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=contact.override==='allow';checkbox.setAttribute('aria-label','Direct contact with '+contact.contactName);
-    checkbox.onchange=async()=>{checkbox.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:checkbox.checked?'allow':'inherit'});await loadContacts()}catch(e){status.textContent=e.message;checkbox.disabled=false}};
-    label.append(checkbox,document.createTextNode(' '+contact.contactName+' · '+(contact.contactRoles||[]).map(role=>role.name).join(', ')+' · '+(contact.contactState||'unknown')+' · '+contact.reason));row.append(label);list.append(row);
+    const row=document.createElement('li'),label=document.createElement('span'),access=document.createElement('button'),added=contact.override==='allow';
+    label.textContent=contact.contactName+' · '+(contact.contactState||'unknown')+' · '+contact.reason;access.type='button';access.textContent=added?'Remove contact':'Add contact';access.setAttribute('aria-label',(added?'Remove ':'Add ')+contact.contactName+(added?' from':' to')+' contacts');
+    access.onclick=async()=>{access.disabled=true;try{await api(bp+'/contacts','PUT',{contact:contact.contactBoxId,state:added?'inherit':'allow'});await loadContacts()}catch(e){status.textContent=e.message;access.disabled=false}};
+    row.append(label,document.createTextNode(' '),access);list.append(row);
    }
-   status.textContent='Checked boxes are direct contacts. All contacts roles bypass this list; protected boxes remain hidden.';
+   status.textContent='Direct contacts are available through get_contacts. All contacts is managed in this box’s permissions; protected boxes remain hidden.';
   }catch(e){status.textContent=e.message}
  }
  contactsPanel.addEventListener('toggle',()=>{if(contactsPanel.open)void loadContacts()});

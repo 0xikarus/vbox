@@ -217,11 +217,11 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    await p.waitForFunction(()=>document.querySelector('#box-contacts').hidden===false);
    await p.click('#box-contacts summary');
    await p.waitForFunction(()=>document.querySelectorAll('#contact-list li').length===1);
-   assert.match(await p.$eval('#contact-status',e=>e.textContent),/direct contacts/);
-   assert.equal(await p.$eval('#contact-role',e=>e.textContent),'Builder');
+   assert.match(await p.$eval('#contact-status',e=>e.textContent),/Direct contacts/);
+   assert.equal(await p.$('#contact-role'),null,'workspace contacts no longer expose role bundles');
    assert.equal(await p.$eval('#box-tags',e=>e.textContent),'backend');
-   await p.click('#contact-list input[type=checkbox]');
-   await p.waitForFunction(()=>{const checkbox=document.querySelector('#contact-list input[type=checkbox]');return checkbox.checked&&!checkbox.disabled});
+   await p.click('#contact-list button');
+   await p.waitForFunction(()=>document.querySelector('#contact-list button').textContent==='Remove contact');
    assert.equal(requests.includes('PUT /v1/logical-boxes/test/contacts'),true);
    await p.click('#contact-toggle-protection');
    await p.waitForFunction(()=>document.querySelector('#contact-protection-label').textContent.startsWith('Protected'));

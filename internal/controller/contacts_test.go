@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
@@ -101,6 +102,25 @@ func TestContactEntriesIncludesAuthorizedSleepingContactAndExplanation(t *testin
 	}
 	if len(entries) != 1 || entries[0].State != "hibernated" || !strings.Contains(entries[0].Reason, "All contacts") || len(entries[0].Roles) != 1 {
 		t.Fatalf("entries=%+v", entries)
+	}
+}
+
+func TestShortContactIDsStayCompactAndResolvePrefixCollisions(t *testing.T) {
+	views := []v1.BoxContact{
+		{ContactBoxID: "abcdef12-3456-4000-8000-000000000001", CanMessage: true},
+		{ContactBoxID: "abcdef12-9456-4000-8000-000000000002", CanMessage: true},
+		{ContactBoxID: "12345678-3456-4000-8000-000000000003", CanMessage: true},
+		{ContactBoxID: "ffffffff-ffff-4000-8000-000000000004", CanMessage: false},
+	}
+	got := shortContactIDs(views)
+	if got[views[0].ContactBoxID] != "abcdef123" || got[views[1].ContactBoxID] != "abcdef129" {
+		t.Fatalf("colliding eight-character prefixes were not safely extended: %v", got)
+	}
+	if got[views[2].ContactBoxID] != "123456783" {
+		t.Fatalf("all visible handles should use one predictable length: %v", got)
+	}
+	if _, ok := got[views[3].ContactBoxID]; ok {
+		t.Fatalf("an unavailable contact received a handle: %v", got)
 	}
 }
 

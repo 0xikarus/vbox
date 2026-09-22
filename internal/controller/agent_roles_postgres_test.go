@@ -85,7 +85,7 @@ func TestNativeAgentRolesPostgres(t *testing.T) {
 		t.Fatalf("assigned role summaries=%+v", senderRoles)
 	}
 	entries, err := s.ContactEntries(ctx, p.AccountID, boxIDs["sender"])
-	if err != nil || len(entries) != 1 || entries[0].ID != boxIDs["target"] {
+	if err != nil || len(entries) != 1 || entries[0].ID != strings.ReplaceAll(boxIDs["target"], "-", "")[:8] || entries[0].Name != "target" {
 		t.Fatalf("selected contacts=%+v err=%v", entries, err)
 	}
 	if err = s.AuthorizeBoxMessage(ctx, p.AccountID, boxIDs["sender"], boxIDs["target"]); err == nil || !strings.Contains(err.Error(), "hibernated") {

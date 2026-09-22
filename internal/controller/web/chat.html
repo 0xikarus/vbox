@@ -96,12 +96,12 @@
      </section>
      <section id="inspect-contacts" hidden>
      <header class="inspect-block-head"><h3>Contacts</h3></header>
-      <p class="inspect-lede">Choose this box's direct contacts. A role with <strong>All contacts</strong> makes every eligible box available instead.</p>
+      <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> in its MCP permissions makes every eligible box available instead.</p>
       <div class="contact-policy">
        <div class="contact-policy-card">
-        <span class="policy-label">Assigned roles</span>
-        <strong id="inspect-contact-role">None</strong>
-       <button id="inspect-edit-roles" type="button">Edit assignments</button>
+        <span class="policy-label">MCP access</span>
+        <strong id="inspect-contact-role">Configured per box</strong>
+       <button id="inspect-edit-roles" type="button">Edit permissions</button>
        </div>
        <div class="contact-policy-card">
         <span class="policy-label">Labels</span>
@@ -137,8 +137,9 @@
   </section>
  </main>
  <aside id="thread-panel" hidden aria-label="Thread">
-  <header><button id="thread-close" type="button" aria-label="Close thread">←</button><div><strong>Thread</strong><span id="thread-count"></span></div></header>
-  <div id="thread-messages"></div>
+ <header><button id="thread-close" type="button" aria-label="Close thread">←</button><div><strong>Thread</strong><span id="thread-count"></span></div></header>
+ <div id="thread-messages"></div>
+ <form id="thread-composer"><textarea name="text" rows="1" maxlength="100000" placeholder="Reply in thread" aria-label="Reply in thread" required></textarea><button type="submit">Send</button></form>
  </aside>
 </div>
 
@@ -174,10 +175,6 @@
    <details id="create-instructions-editor" hidden><summary>Customize Markdown</summary>
    <label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label>
    <div id="create-instructions-preview" class="md-preview" hidden></div></details>
-   <fieldset id="create-roles" class="role-checklist-field" hidden><legend>Roles</legend>
-    <p class="hint">Optional owner-defined roles. Names are never generated or predefined.</p>
-    <div id="create-role-choices" class="role-checklist"></div>
-   </fieldset>
    <button id="create-box-submit">Create and start box</button>
   </form>
   <aside class="preview-rail" id="create-preview" aria-label="Launch preview">
@@ -240,15 +237,12 @@
 <div id="roles-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="roles-modal"></div>
  <section class="sheet-card roles-card" role="dialog" aria-modal="true" aria-labelledby="roles-title">
-  <header><strong id="roles-title">Agent roles</strong><span class="spacer"></span><button type="button" data-close="roles-modal" aria-label="Close">×</button></header>
-  <p class="hint">Roles are editable tool bundles. Define them once, then choose the roles attached to each box.</p>
+  <header><strong id="roles-title">Agent permissions</strong><span class="spacer"></span><button type="button" data-close="roles-modal" aria-label="Close">×</button></header>
+  <p class="hint">Permissions belong directly to each box. Choose a box to control its optional MCP tools and contact reach.</p>
   <div class="roles-toolbar">
    <label>Search boxes <input id="role-box-search" type="search" placeholder="Filter boxes by name" autocomplete="off"></label>
-   <button type="button" id="create-role" class="primary compact">Define role</button>
-   <button type="button" id="setup-team-roles">Set up Manager + Normal</button>
   </div>
   <div id="role-assignments"></div>
-  <div class="role-actions"><button type="button" id="save-role-assignments" class="primary compact" disabled>Save role changes</button><button type="button" id="discard-role-assignments" disabled>Discard</button></div>
   <p id="role-status" role="status"></p>
  </section>
 </div>
@@ -256,15 +250,13 @@
 <div id="role-editor-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="role-editor-modal"></div>
  <section class="sheet-card role-editor-card" role="dialog" aria-modal="true" aria-labelledby="role-editor-title">
-  <header><strong id="role-editor-title">Define role</strong><span class="spacer"></span><button type="button" data-close="role-editor-modal" aria-label="Close">×</button></header>
+  <header><strong id="role-editor-title">Agent permissions</strong><span class="spacer"></span><button type="button" data-close="role-editor-modal" aria-label="Close">×</button></header>
   <form id="role-editor-form">
    <input name="id" type="hidden">
-   <label>Exact role name <input name="name" maxlength="64" required autocomplete="off" aria-describedby="role-name-hint"></label>
-   <p id="role-name-hint" class="hint">Owner-defined text; no role names are generated or reserved.</p>
-   <label>Description <textarea name="description" maxlength="500" rows="3"></textarea></label>
+   <input name="name" type="hidden"><textarea name="description" hidden></textarea>
    <section class="role-capabilities" aria-labelledby="role-permissions-title">
     <h3 id="role-permissions-title">Permissions</h3>
-    <p class="hint">Choose what boxes with this role may do. Role names never grant access by themselves.</p>
+    <p class="hint">Choose exactly what this box may do. Core chat, contacts discovery, run budget, and thread history stay available.</p>
     <fieldset class="role-capability">
      <label class="role-capability-toggle"><span><strong>All contacts</strong><small>Make every eligible box available through get_contacts. Otherwise, only the box's direct contacts are returned.</small></span><input type="checkbox" name="allContactsEnabled" aria-label="Allow all contacts"></label>
     </fieldset>
@@ -292,7 +284,7 @@
        <label><input type="checkbox" name="allowedAgents" value="claude"> claude</label>
        <label><input type="checkbox" name="allowedAgents" value="opencode"> opencode</label>
       </fieldset>
-      <fieldset class="role-inline-checks"><legend>Roles the created box may start with</legend><div id="role-assignable-roles"></div></fieldset>
+      <div id="role-assignable-roles" hidden></div>
      </div></details>
     </fieldset>
     <fieldset class="role-capability">
@@ -314,10 +306,10 @@
      </div></details>
     </fieldset>
     <fieldset class="role-capability">
-     <div class="role-capability-toggle"><span><strong>MCP tools</strong><small>Choose which optional tools this role adds. Core chat and history tools stay available.</small></span></div>
+     <div class="role-capability-toggle"><span><strong>MCP tools</strong><small>Choose which optional tools this box receives. Changes sync automatically to a running agent.</small></span></div>
      <details class="role-capability-options mcp-tool-options"><summary>Choose allowed tools</summary><div class="mcp-tool-groups">
       <fieldset class="role-capability mcp-tool-group"><label class="role-capability-toggle" title="Allow or deny every coordination tool in this group."><span><strong>Coordination</strong><small>Manage the run, collaborate, and create connected resources.</small></span><input type="checkbox" class="mcp-tool-group-toggle" value="coordination" aria-label="Allow all coordination tools"></label><details class="role-capability-options"><summary>Customize 9 tools</summary><div class="role-inline-checks">
-       <label title="Extend this box's current run within its role limits."><input type="checkbox" name="mcpTools" value="request_more_time"> request_more_time</label><label title="Schedule a message for the current running task."><input type="checkbox" name="mcpTools" value="queue_followup"> queue_followup</label><label title="List shared chats this box is allowed to discover."><input type="checkbox" name="mcpTools" value="discover_shared_chats"> discover_shared_chats</label><label title="Read messages from a shared chat this box has joined."><input type="checkbox" name="mcpTools" value="read_shared_chat"> read_shared_chat</label><label title="Create and join a new shared chat."><input type="checkbox" name="mcpTools" value="create_shared_chat"> create_shared_chat</label><label title="Choose which shared-chat messages are delivered automatically."><input type="checkbox" name="mcpTools" value="subscribe_shared_chat"> subscribe_shared_chat</label><label title="Invite another permitted box to a shared chat."><input type="checkbox" name="mcpTools" value="invite_to_shared_chat"> invite_to_shared_chat</label><label title="Post a message or reply to a joined shared chat."><input type="checkbox" name="mcpTools" value="send_shared_chat_message"> send_shared_chat_message</label><label title="Provision an email address through the configured provider."><input type="checkbox" name="mcpTools" value="create_email_address"> create_email_address</label>
+       <label title="Extend this box's current run within its configured limits."><input type="checkbox" name="mcpTools" value="request_more_time"> request_more_time</label><label title="Schedule a message for the current running task."><input type="checkbox" name="mcpTools" value="queue_followup"> queue_followup</label><label title="List shared chats this box is allowed to discover."><input type="checkbox" name="mcpTools" value="discover_shared_chats"> discover_shared_chats</label><label title="Read messages from a shared chat this box has joined."><input type="checkbox" name="mcpTools" value="read_shared_chat"> read_shared_chat</label><label title="Create and join a new shared chat."><input type="checkbox" name="mcpTools" value="create_shared_chat"> create_shared_chat</label><label title="Choose which shared-chat messages are delivered automatically."><input type="checkbox" name="mcpTools" value="subscribe_shared_chat"> subscribe_shared_chat</label><label title="Invite another permitted box to a shared chat."><input type="checkbox" name="mcpTools" value="invite_to_shared_chat"> invite_to_shared_chat</label><label title="Post a message or reply to a joined shared chat."><input type="checkbox" name="mcpTools" value="send_shared_chat_message"> send_shared_chat_message</label><label title="Provision an email address through the configured provider."><input type="checkbox" name="mcpTools" value="create_email_address"> create_email_address</label>
       </div></details></fieldset><fieldset class="role-capability mcp-tool-group"><label class="role-capability-toggle" title="Allow or deny every agent-box lifecycle tool in this group."><span><strong>Admin work</strong><small>List, inspect, create, label, restart, and delete agent boxes.</small></span><input type="checkbox" class="mcp-tool-group-toggle" value="admin_work" aria-label="Allow all admin-work tools"></label><details class="role-capability-options"><summary>Customize 6 tools</summary><div class="role-inline-checks">
        <label title="List safe lifecycle summaries for agent boxes; no terminal or desktop access."><input type="checkbox" name="mcpTools" value="list_agent_boxes"> list_agent_boxes</label><label title="Inspect safe lifecycle details for one agent box; no terminal or desktop access."><input type="checkbox" name="mcpTools" value="get_agent_box"> get_agent_box</label><label title="Create another agent box within the separate Create agents limits, optionally with managed startup instructions."><input type="checkbox" name="mcpTools" value="create_agent_box"> create_agent_box</label><label title="Replace the plain metadata labels on another box; tags never grant access."><input type="checkbox" name="mcpTools" value="set_agent_box_tags"> set_agent_box_tags</label><label title="Hibernate and start another unprotected box again; running sessions end."><input type="checkbox" name="mcpTools" value="restart_agent_box"> restart_agent_box</label><label title="Permanently delete another unprotected box after exact-name confirmation."><input type="checkbox" name="mcpTools" value="delete_agent_box"> delete_agent_box</label>
       </div></details></fieldset><fieldset class="role-capability mcp-tool-group"><label class="role-capability-toggle" title="Allow or deny every password tool in this group."><span><strong>Passwords</strong><small>Request, generate, and securely fill passwords.</small></span><input type="checkbox" class="mcp-tool-group-toggle" value="passwords" aria-label="Allow all password tools"></label><details class="role-capability-options"><summary>Customize 3 tools</summary><div class="role-inline-checks">
@@ -328,8 +320,8 @@
      </div></details>
     </fieldset>
    </section>
-   <p id="role-assigned-count" class="hint"></p>
-   <div class="role-actions"><button type="submit" class="primary compact">Save role</button><button type="button" id="delete-role" class="danger" hidden>Delete role</button></div>
+   <p id="role-assigned-count" class="hint">Changes sync automatically.</p>
+   <div class="role-actions"><button type="submit" class="primary compact">Save permissions</button><button type="button" id="delete-role" hidden></button></div>
    <p id="role-editor-status" role="status"></p>
   </form>
  </section>
@@ -342,7 +334,7 @@
   <div class="menu-links">
    <a href="/">Controller</a>
    <a href="/grid">Grid</a>
-   <button id="roles-toggle" type="button" hidden>Agent roles</button>
+   <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="push-toggle" type="button" hidden>Enable notifications</button>
    <button id="logout" type="button" hidden>Log out</button>

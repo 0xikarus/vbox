@@ -37,7 +37,7 @@ func effectiveAccess(protected bool, override sql.NullBool, allContacts bool) (b
 		return false, "Blocked because the target is protected."
 	}
 	if override.Valid && !override.Bool {
-		return false, "Blocked by a legacy explicit contact override."
+		return false, "Blocked by an explicit contact rule."
 	}
 	if override.Valid && override.Bool {
 		return true, "Included in this box's direct contact list."
@@ -57,10 +57,11 @@ func (s *Store) contactViews(ctx context.Context, accountID, senderBoxID string)
 	rows, err := s.DB.QueryContext(ctx, `SELECT ($2::uuid)::text,$3::text,t.id::text,t.name,t.default_agent,t.state,
 		EXISTS(SELECT 1 FROM box_protection bp WHERE bp.account_id=t.account_id AND bp.box_id=t.id),
 		c.can_message,c.updated_at,
-		EXISTS(SELECT 1 FROM box_role_assignments a
+		COALESCE((SELECT (d.capabilities->'allContacts'->>'enabled')::boolean FROM agent_box_policies d
+			WHERE d.account_id=$1 AND d.box_id=$2::uuid), EXISTS(SELECT 1 FROM box_role_assignments a
 			JOIN agent_role_permissions rp ON rp.role_id=a.role_id AND rp.account_id=a.account_id
 			WHERE a.account_id=$1 AND a.box_id=$2::uuid AND rp.permission='all_contacts'
-				AND COALESCE((rp.config->>'enabled')::boolean,false)),
+				AND COALESCE((rp.config->>'enabled')::boolean,false))),
 		COALESCE((SELECT jsonb_agg(jsonb_build_object('id',r.id::text,'name',r.name) ORDER BY lower(r.name),r.id)
 			FROM box_role_assignments a JOIN agent_roles r ON r.id=a.role_id AND r.account_id=a.account_id
 			WHERE a.account_id=t.account_id AND a.box_id=t.id),'[]'::jsonb)
@@ -182,13 +183,62 @@ func (s *Store) ContactEntries(ctx context.Context, accountID, boxID string) ([]
 		return nil, err
 	}
 	values := []v1.ContactEntry{}
+	shortIDs := shortContactIDs(views)
 	for _, view := range views {
 		if !view.CanMessage {
 			continue
 		}
-		values = append(values, v1.ContactEntry{ID: view.ContactBoxID, Name: view.ContactName, Roles: view.ContactRoles, Agent: view.ContactAgent, State: view.ContactState, CanMessage: true, Reason: view.Reason})
+		values = append(values, v1.ContactEntry{ID: shortIDs[view.ContactBoxID], Name: view.ContactName, Roles: view.ContactRoles, Agent: view.ContactAgent, State: view.ContactState, CanMessage: true, Reason: view.Reason})
 	}
 	return values, nil
+}
+
+// shortContactIDs keeps internal UUIDs out of agent context. Eight hexadecimal
+// characters are normally enough; if two visible contacts share that prefix,
+// extend every ID just far enough to keep all handles unambiguous.
+func shortContactIDs(views []v1.BoxContact) map[string]string {
+	compact := make(map[string]string, len(views))
+	maxLength := 0
+	for _, view := range views {
+		if !view.CanMessage {
+			continue
+		}
+		value := strings.ReplaceAll(strings.ToLower(view.ContactBoxID), "-", "")
+		if value == "" {
+			value = view.ContactBoxID
+		}
+		compact[view.ContactBoxID] = value
+		if len(value) > maxLength {
+			maxLength = len(value)
+		}
+	}
+	length := 8
+	for length < maxLength {
+		seen, collision := map[string]bool{}, false
+		for _, value := range compact {
+			id := value
+			if len(id) > length {
+				id = id[:length]
+			}
+			if seen[id] {
+				collision = true
+				break
+			}
+			seen[id] = true
+		}
+		if !collision {
+			break
+		}
+		length++
+	}
+	result := make(map[string]string, len(compact))
+	for full, value := range compact {
+		if len(value) > length {
+			value = value[:length]
+		}
+		result[full] = value
+	}
+	return result
 }
 
 // AuthorizeBoxMessage re-evaluates direct contacts and All contacts for every delivery.
@@ -214,7 +264,8 @@ func (s *Store) AuthorizeBoxMessage(ctx context.Context, accountID, senderBoxID,
 	err = s.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM box_role_assignments a
 		JOIN agent_role_permissions p ON p.role_id=a.role_id AND p.account_id=a.account_id
 		WHERE a.account_id=$1 AND a.box_id=$2 AND p.permission='all_contacts'
-			AND COALESCE((p.config->>'enabled')::boolean,false))`, accountID, senderBoxID).Scan(&allContacts)
+			AND COALESCE((p.config->>'enabled')::boolean,false)) OR COALESCE((SELECT (d.capabilities->'allContacts'->>'enabled')::boolean
+			FROM agent_box_policies d WHERE d.account_id=$1 AND d.box_id=$2),false)`, accountID, senderBoxID).Scan(&allContacts)
 	if err != nil {
 		return err
 	}

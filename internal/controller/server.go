@@ -187,6 +187,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/resources", s.owner(s.setBoxResources))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/tags", s.owner(s.boxTagsHandler))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/tags", s.owner(s.boxTagsHandler))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/agent-policy", s.owner(s.agentBoxPolicyHandler))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/agent-policy", s.owner(s.agentBoxPolicyHandler))
 	mux.HandleFunc("GET /v1/agent-roles", s.owner(s.agentRolesHandler))
 	mux.HandleFunc("POST /v1/agent-roles", s.owner(s.agentRolesHandler))
 	mux.HandleFunc("POST /v1/agent-role-presets/team", s.owner(s.teamRolePresetHandler))

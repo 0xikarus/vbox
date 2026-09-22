@@ -12,12 +12,8 @@ import (
 
 // ContactSummary is one addressable contact as reported by the controller.
 type ContactSummary struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Roles []struct {
-		ID   string `json:"id"`
-		Name string `json:"name"`
-	} `json:"roles"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
 	Agent      string `json:"agent,omitempty"`
 	State      string `json:"state,omitempty"`
 	CanMessage bool   `json:"canMessage"`
@@ -74,21 +70,27 @@ func validateContactRef(value string) error {
 	return nil
 }
 
-// requireContact rejects a send before it reaches the outbox when the controller
+// resolveContact rejects a send before it reaches the outbox when the controller
 // does not list the target. The controller still re-validates when it drains the
 // event, so a revoked edge cannot be bypassed by a stale in-box check.
-func requireContact(ctx context.Context, assignment, ref string) error {
+func resolveContact(ctx context.Context, assignment, ref string) (string, error) {
 	contacts, err := DesktopContacts(ctx, assignment)
 	if err != nil {
-		return err
+		return "", err
 	}
+	return resolveContactFromList(contacts, ref)
+}
+
+func resolveContactFromList(contacts []ContactSummary, ref string) (string, error) {
 	for _, contact := range contacts {
 		if contact.ID == ref || strings.EqualFold(contact.Name, ref) {
 			if !contact.CanMessage {
-				return fmt.Errorf("messaging contact %q is not permitted", ref)
+				return "", fmt.Errorf("messaging contact %q is not permitted", ref)
 			}
-			return nil
+			// The controller accepts exact box names. Normalize both short IDs and
+			// case-insensitive names to that canonical value before enqueueing.
+			return contact.Name, nil
 		}
 	}
-	return fmt.Errorf("contact %q is not in your contact list; call get_contacts first", ref)
+	return "", fmt.Errorf("contact %q is not in your contact list; call get_contacts first", ref)
 }
