@@ -2,10 +2,12 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -88,6 +90,62 @@ func reusableBoxTask(tasks []v1.BoxTask, boxState v1.LogicalBoxState, agent, ses
 	return nil
 }
 
+// discoverOpenCodeSession closes the race between visible TUI startup and the
+// primarySession metadata write. A single fenced OpenCode session is safe to
+// reuse; ambiguity fails closed so chat never forks another TUI.
+func (s *Server) discoverOpenCodeSession(ctx context.Context, p Principal, box v1.LogicalBox) (string, error) {
+	a, err := s.Store.assignment(ctx, p.AccountID, box.ID)
+	if err != nil {
+		return "", err
+	}
+	prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		return "", err
+	}
+	if box.Provider == "shared-worker" {
+		if err := s.recoverSharedWorkspace(ctx, a, prov); err != nil {
+			return "", err
+		}
+	}
+	for attempt := 0; attempt < 5; attempt++ {
+		result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "native-sessions", nativeFence(a)}, provider.ExecOptions{})
+		if err != nil || result.ExitCode != 0 {
+			if err != nil {
+				return "", err
+			}
+			return "", fmt.Errorf("OpenCode session inventory unavailable")
+		}
+		var inventory v1.SessionInventory
+		if err := json.Unmarshal([]byte(result.Stdout), &inventory); err != nil {
+			return "", fmt.Errorf("invalid OpenCode session inventory: %w", err)
+		}
+		if inventory.State != "live" || inventory.Assignment != nativeFence(a) || inventory.Partial {
+			return "", fmt.Errorf("OpenCode session inventory unavailable")
+		}
+		selected := ""
+		for _, session := range inventory.Sessions {
+			if session.Partial || !validSessionName(session.Name) || !strings.HasPrefix(session.Name, "opencode-") {
+				continue
+			}
+			if selected != "" {
+				return "", fmt.Errorf("multiple OpenCode sessions are running; select one before sending")
+			}
+			selected = session.Name
+		}
+		if selected != "" || attempt == 4 {
+			return selected, nil
+		}
+		timer := time.NewTimer(250 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return "", ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return "", nil
+}
+
 func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempotency string, request v1.DirectBoxMessageRequest) (v1.DirectBoxMessageResponse, error) {
 	var response v1.DirectBoxMessageResponse
 	box, err := s.Store.LogicalBox(ctx, p, boxID)
@@ -149,6 +207,12 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		}
 		if agent == request.Agent && validSessionName(name) {
 			request.Session = name
+		}
+		if request.Session == "" && request.Agent == "opencode" && len(s.WorkerRuntime) > 0 {
+			request.Session, err = s.discoverOpenCodeSession(ctx, p, box)
+			if err != nil {
+				return response, fmt.Errorf("discover visible OpenCode session: %w", err)
+			}
 		}
 	}
 	tasks, err := s.Store.ListBoxTasks(ctx, p, box.ID)
