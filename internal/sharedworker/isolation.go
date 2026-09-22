@@ -19,6 +19,7 @@ const (
 	IsolationTierUID IsolationTier = "uid"
 	// IsolationTierNamespace adds a per-exec user, mount and PID namespace.
 	IsolationTierNamespace IsolationTier = "namespace"
+	IsolationTierContainer IsolationTier = "container"
 )
 
 // IsolationMode is the operator request. It is distinct from the tier that was
@@ -29,6 +30,7 @@ const (
 	IsolationModeUID       IsolationMode = "uid"
 	IsolationModeNamespace IsolationMode = "namespace"
 	IsolationModeAuto      IsolationMode = "auto"
+	IsolationModeContainer IsolationMode = "container"
 )
 
 // Capabilities records which namespace primitives the probe observed working.
@@ -57,10 +59,12 @@ func ParseIsolationMode(value string) (IsolationMode, error) {
 		return IsolationModeUID, nil
 	case IsolationModeNamespace:
 		return IsolationModeNamespace, nil
+	case IsolationModeContainer:
+		return IsolationModeContainer, nil
 	case IsolationModeAuto:
 		return IsolationModeAuto, nil
 	default:
-		return "", errors.New("VMBOX_SHARED_ISOLATION must be uid, namespace or auto")
+		return "", errors.New("VMBOX_SHARED_ISOLATION must be uid, namespace, container or auto")
 	}
 }
 
@@ -118,11 +122,20 @@ func (s IsolationStatus) Metadata() map[string]string {
 	if reason == "" && tier == IsolationTierUID {
 		reason = "namespace isolation not active"
 	}
-	return map[string]string{
+	metadata := map[string]string{
 		"isolationTier":   string(tier),
 		"isolationMode":   string(mode),
 		"isolationReason": reason,
 	}
+	if tier == IsolationTierContainer {
+		metadata["resource.memoryBytes"] = "2147483648"
+		metadata["resource.cpuCores"] = "1"
+		metadata["resource.pids"] = "512"
+		metadata["resource.enforcement"] = "docker-cgroup-v2"
+		metadata["privilege.containerSudo"] = "true"
+		metadata["filesystem.systemPersistence"] = "container-lifetime"
+	}
+	return metadata
 }
 
 // workloadPaths is the path layout as seen inside the box. The uid tier exposes
