@@ -37,6 +37,9 @@ Ask your controller administrator for its HTTPS URL and your login token.
 If you are setting up the controller itself, start with the
 [operator setup guide](docs/CONTROLLER.md).
 
+To add isolated agent containers on your own Linux server, follow the
+[Linux VPS setup guide](docs/LINUX-VPS-SETUP.md).
+
 ```bash
 vmbox context add team --controller https://YOUR-CONTROLLER
 vmbox context use team

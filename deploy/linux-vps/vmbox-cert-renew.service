@@ -1,0 +1,8 @@
+[Unit]
+Description=Renew vmbox worker HTTPS certificate
+After=network-online.target nginx.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vmbox/certbot/bin/certbot renew --quiet --deploy-hook "/usr/bin/systemctl reload nginx"

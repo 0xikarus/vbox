@@ -133,8 +133,8 @@ func TestDisposableTwoSlotIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedTier := os.Getenv("VMBOX_TEST_SHARED_EXPECT_TIER")
-	if expectedTier != "" && expectedTier != "uid" && expectedTier != "namespace" {
-		t.Fatalf("VMBOX_TEST_SHARED_EXPECT_TIER must be uid or namespace, got %q", expectedTier)
+	if expectedTier != "" && expectedTier != "uid" && expectedTier != "namespace" && expectedTier != "container" {
+		t.Fatalf("VMBOX_TEST_SHARED_EXPECT_TIER must be uid, namespace or container, got %q", expectedTier)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -237,7 +237,7 @@ if ls /data/.shared-worker >/dev/null 2>&1; then exit 1; fi
 test ! -e /tmp/isolation-sibling-marker
 test ! -e /run/isolation-sibling-marker`, "isolation-test", siblingHome)
 
-	if tier == "namespace" {
+	if tier == "namespace" || tier == "container" {
 		execute(0, "sh", "-c", `set -eu
 test ! -w /usr
 test ! -w /etc

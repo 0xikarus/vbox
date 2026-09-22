@@ -18,6 +18,7 @@ type LinuxRuntime struct {
 	Root      string
 	Binary    string
 	Isolation IsolationStatus
+	Container *ContainerRuntime
 }
 
 // ConfigureIsolation probes the host when a namespace tier is requested and
@@ -48,7 +49,7 @@ func (r *LinuxRuntime) isolationTier() IsolationTier { return r.IsolationStatus(
 
 // Isolated reports whether the namespace tier is in force.
 func (r *LinuxRuntime) Isolated() bool {
-	return r.isolationTier() == IsolationTierNamespace
+	return r.Container != nil || r.isolationTier() == IsolationTierNamespace
 }
 
 func validateWorkspace(workspace Workspace) error {
@@ -65,6 +66,9 @@ func (r *LinuxRuntime) workspaceRoot(workspace Workspace) string {
 func workspaceUser(workspace Workspace) string { return "vmw" + strconv.Itoa(workspace.UID) }
 
 func (r *LinuxRuntime) Prepare(ctx context.Context, workspace Workspace) error {
+	if r.Container != nil {
+		return r.Container.Prepare(ctx, workspace)
+	}
 	if err := validateWorkspace(workspace); err != nil {
 		return err
 	}
@@ -154,6 +158,9 @@ func (r *LinuxRuntime) Prepare(ctx context.Context, workspace Workspace) error {
 }
 
 func (r *LinuxRuntime) Command(ctx context.Context, workspace Workspace, argv []string) (*exec.Cmd, error) {
+	if r.Container != nil {
+		return r.Container.Command(ctx, workspace, argv)
+	}
 	if err := validateWorkspace(workspace); err != nil {
 		return nil, err
 	}
@@ -196,6 +203,9 @@ func (r *LinuxRuntime) Command(ctx context.Context, workspace Workspace, argv []
 }
 
 func (r *LinuxRuntime) Stop(ctx context.Context, workspace Workspace) error {
+	if r.Container != nil {
+		return r.Container.Stop(ctx, workspace)
+	}
 	if err := validateWorkspace(workspace); err != nil {
 		return err
 	}
@@ -255,6 +265,9 @@ func (r *LinuxRuntime) Stop(ctx context.Context, workspace Workspace) error {
 }
 
 func (r *LinuxRuntime) Delete(ctx context.Context, workspace Workspace) error {
+	if r.Container != nil {
+		return r.Container.Delete(ctx, workspace)
+	}
 	if err := validateWorkspace(workspace); err != nil {
 		return err
 	}

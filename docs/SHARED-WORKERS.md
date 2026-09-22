@@ -1,5 +1,9 @@
 # Shared workers
 
+For host-managed, container-per-box isolation with container-local sudo, see
+[Linux VPS setup](LINUX-VPS-SETUP.md) and [the container runtime](SHARED-CONTAINERS.md).
+The UID and bubblewrap modes documented below remain available separately.
+
 `shared-worker` is an opt-in provider for trusted boxes belonging to one account.
 One Linux worker hosts N logical compute slots, each running at most one box.
 Existing Railway and Docker providers are unchanged. This is process hosting,

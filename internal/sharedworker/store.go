@@ -145,6 +145,20 @@ func Open(root, account string, capacity int, runtime Runtime) (*Store, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	for _, workspace := range store.state.Workspaces {
+		if linux, ok := store.Runtime.(*LinuxRuntime); ok && linux.Container != nil {
+			active := false
+			for _, slot := range store.state.Slots {
+				if slot.WorkspaceID == workspace.ID && slot.State == provider.StateRunning {
+					active = true
+				}
+			}
+			if !active {
+				if err := linux.Container.Stop(ctx, workspace); err != nil {
+					return nil, err
+				}
+				continue
+			}
+		}
 		if err := store.Runtime.Prepare(ctx, workspace); err != nil {
 			return nil, fmt.Errorf("recover workspace %s: %w", workspace.ID, err)
 		}

@@ -1,0 +1,14 @@
+[Unit]
+Description=Network boundary for isolated vmbox containers
+Requires=docker.service
+After=docker.service
+PartOf=docker.service
+Before=vmbox-isolated.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vmbox-container-firewall
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target docker.service

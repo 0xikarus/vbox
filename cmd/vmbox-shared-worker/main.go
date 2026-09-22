@@ -37,7 +37,18 @@ func run() error {
 		return err
 	}
 	runtime := &sharedworker.LinuxRuntime{Root: root, Binary: "/usr/local/bin/vmbox-runtime"}
-	status := runtime.ConfigureIsolation(context.Background(), mode)
+	var status sharedworker.IsolationStatus
+	if mode == sharedworker.IsolationModeContainer {
+		container, err := sharedworker.NewContainerRuntime(root, os.Getenv("VMBOX_SHARED_CONTAINER_IMAGE"))
+		if err != nil {
+			return err
+		}
+		runtime.Container = container
+		runtime.Isolation = sharedworker.IsolationStatus{Mode: mode, Tier: sharedworker.IsolationTierContainer}
+		status = runtime.Isolation
+	} else {
+		status = runtime.ConfigureIsolation(context.Background(), mode)
+	}
 	log.Printf("shared worker isolation: tier=%s mode=%s reason=%s", status.Tier, status.Mode, status.Reason)
 	store, err := sharedworker.Open(root, os.Getenv("VMBOX_SHARED_ACCOUNT_ID"), capacity, runtime)
 	if err != nil {
@@ -52,7 +63,7 @@ func run() error {
 	if port == "" {
 		port = "8080"
 	}
-	server := &http.Server{Addr: ":" + port, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: os.Getenv("VMBOX_SHARED_BIND") + ":" + port, Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
 	done := make(chan error, 1)
