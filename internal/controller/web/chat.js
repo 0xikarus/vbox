@@ -1212,6 +1212,11 @@
   inputEl.value='';grow();
   if(inputDrafts[boxID]){delete inputDrafts[boxID];saveInputDrafts()}
   const sentDrafts=drafts;attachmentDrafts.delete(boxID);renderDrafts();
+  // Sending is an explicit jump to the live edge of the conversation. Even
+  // if the reader had scrolled up, reveal their outgoing bubble and follow the
+  // reply from here; passive inbound refreshes still preserve a scrolled-up
+  // reading position.
+  stickToBottom=true;scrollMemory.delete(boxID);
   // Delivery can finish after a fast MCP reply, so show the outgoing message
   // and existing processing state while the synchronous POST is in flight.
   if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
