@@ -56,10 +56,10 @@ Do not mount that socket into an agent container.
 ## 2. Build the supervisor and install service definitions
 
 Check out a reviewed revision containing `internal/sharedworker/container_linux.go`.
-Until this feature is merged, the branch is `feat/kvm-container-isolation`.
+The commands below use `main`; pin a reviewed commit for repeatable deployments.
 
 ```sh
-git clone --branch feat/kvm-container-isolation https://github.com/0xikarus/vmbox-service.git /opt/vmbox-service
+git clone --branch main https://github.com/0xikarus/vmbox-service.git /opt/vmbox-service
 cd /opt/vmbox-service
 GOTOOLCHAIN=auto go build -buildvcs=false -trimpath \
   -o /usr/local/bin/vmbox-shared-worker-isolated ./cmd/vmbox-shared-worker
