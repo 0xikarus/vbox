@@ -50,3 +50,16 @@ func TestClaudeCreationDoesNotRequireOneShotCompletion(t *testing.T) {
 		t.Fatalf("Claude creation must only check login status, got commands %v", p.commands)
 	}
 }
+
+func TestOpenCodeCreationUsesNonInteractiveRun(t *testing.T) {
+	p := &loginCheckProvider{result: provider.ExecResult{ExitCode: 0}}
+	if err := verifyProvisionedLogin(context.Background(), p, "service", "opencode", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.commands) != 2 {
+		t.Fatalf("OpenCode creation must check auth and provider access, got commands %v", p.commands)
+	}
+	if got := strings.Join(p.commands[1], " "); got != "opencode run --auto -- Reply briefly to confirm this connection. Do not use tools, read files, or make changes." {
+		t.Fatalf("OpenCode provider check must use non-interactive mode, got %q", got)
+	}
+}
