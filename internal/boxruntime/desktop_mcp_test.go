@@ -25,6 +25,28 @@ type lineCapture struct {
 	lines chan []byte
 }
 
+func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
+	for _, tool := range desktopMCPTools() {
+		if tool["name"] != "create_agent_box" {
+			continue
+		}
+		schema, ok := tool["inputSchema"].(map[string]any)
+		if !ok {
+			t.Fatalf("input schema=%T", tool["inputSchema"])
+		}
+		properties, ok := schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("properties=%T", schema["properties"])
+		}
+		instructions, ok := properties["instructions"].(map[string]any)
+		if !ok || instructions["type"] != "string" || instructions["maxLength"] != v1.MaxInstructionMarkdownBytes {
+			t.Fatalf("instructions schema=%#v", instructions)
+		}
+		return
+	}
+	t.Fatal("create_agent_box tool is missing")
+}
+
 func (c *lineCapture) Write(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

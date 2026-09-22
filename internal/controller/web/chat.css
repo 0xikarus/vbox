@@ -531,17 +531,22 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .role-catalog-items{display:flex;gap:.4rem;flex-wrap:wrap}
 .role-heading{border:1px solid var(--accent);border-radius:999px;background:var(--accent-soft);color:var(--accent-text);font:inherit;font-size:.78rem;font-weight:800;cursor:pointer;white-space:nowrap;padding:.3rem .65rem}
 .role-heading:hover{filter:brightness(1.08)}
-.role-assignment-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(22rem,100%),1fr));align-items:start;gap:.6rem}
-.role-assignment-card{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2);overflow:hidden}
-.role-assignment-summary{display:flex;align-items:center;gap:.65rem;padding:.65rem}
-.role-assignment-identity{display:grid;min-width:8rem}.role-assignment-identity strong{color:var(--ink);font-size:.95rem}.role-assignment-identity span{color:var(--ink-soft);font-size:.72rem}
-.role-assignment-current{display:flex;align-items:center;gap:.3rem;flex:1;flex-wrap:wrap;min-width:0}
+.role-assignment-heading{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin:.85rem .1rem .5rem}.role-assignment-heading strong{color:var(--ink);font-size:1rem}.role-assignment-heading span{color:var(--ink-soft);font-size:.78rem}
+.role-assignment-list{display:grid;grid-template-columns:minmax(0,1fr);gap:.55rem}
+.role-assignment-card{border:1px solid var(--line);border-left:3px solid color-mix(in srgb,var(--accent) 72%,var(--line));border-radius:var(--radius-sm);background:var(--surface2);box-shadow:0 2px 7px rgba(0,0,0,.12);overflow:hidden}
+.role-assignment-card.is-open{border-color:color-mix(in srgb,var(--accent) 75%,var(--line));border-left-color:var(--accent)}
+.role-assignment-summary{display:grid;grid-template-columns:auto minmax(8rem,.8fr) minmax(9rem,1fr) auto;align-items:center;gap:.7rem;padding:.75rem}
+.role-box-mark{display:grid;place-items:center;width:2.15rem;height:2.15rem;border:1px solid color-mix(in srgb,var(--accent) 65%,var(--line));border-radius:.55rem;background:var(--accent-soft);color:var(--accent-text);font-size:.88rem;font-weight:900}
+.role-assignment-identity{display:grid;gap:.12rem;min-width:0}.role-assignment-identity>small,.role-current-label{color:var(--ink-soft);font-size:.62rem;font-weight:850;letter-spacing:.08em;text-transform:uppercase}.role-assignment-identity>strong{overflow:hidden;color:var(--ink);font-size:1rem;text-overflow:ellipsis;white-space:nowrap}
+.role-box-meta{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}.role-agent-badge,.role-state-badge{display:inline-flex;align-items:center;border-radius:999px;padding:.1rem .38rem;font-size:.66rem;font-weight:750}.role-agent-badge{background:var(--surface);color:var(--ink-soft)}.role-state-badge{color:var(--ink-soft)}.role-state-badge:before{content:'';width:.38rem;height:.38rem;margin-right:.28rem;border-radius:999px;background:#5cbf7b}.role-assignment-card[data-state="hibernated"] .role-state-badge:before,.role-assignment-card[data-state="stopped"] .role-state-badge:before{background:var(--ink-soft)}
+.role-assignment-current{display:grid;gap:.25rem;min-width:0}.role-current-pills{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;min-width:0}
 .role-pill{display:inline-flex;align-items:center;max-width:100%;border:1px solid color-mix(in srgb,var(--accent) 60%,var(--line));border-radius:999px;background:var(--accent-soft);color:var(--accent-text);padding:.2rem .5rem;font-size:.72rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .role-pill.empty{border-color:var(--line);background:var(--surface);color:var(--ink-soft);font-weight:600}
-.role-assignment-toggle{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:inherit;font-size:.76rem;font-weight:800;padding:.38rem .6rem;cursor:pointer;white-space:nowrap}
+.role-assignment-toggle{border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent-text);font:inherit;font-size:.76rem;font-weight:850;padding:.42rem .65rem;cursor:pointer;white-space:nowrap}
 .role-assignment-toggle:hover{border-color:var(--accent);background:var(--accent-soft)}
-.role-assignment-editor{display:grid;gap:.4rem;padding:.6rem;border-top:1px solid var(--line);background:var(--bg)}
+.role-assignment-editor{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(15rem,100%),1fr));gap:.45rem;padding:.65rem;border-top:1px solid var(--line);background:var(--bg)}
 .role-assignment-editor[hidden]{display:none}
+.role-assignment-editor-head{display:grid;grid-column:1/-1;gap:.08rem;margin:.05rem .1rem .2rem}.role-assignment-editor-head strong{color:var(--ink);font-size:.82rem}.role-assignment-editor-head span{color:var(--ink-soft);font-size:.72rem}
 .role-assignment-editor label{display:flex!important;align-items:flex-start;gap:.5rem;margin:0!important;padding:.45rem .5rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);cursor:pointer}
 .role-assignment-editor label>span{display:grid;gap:.08rem;min-width:0}.role-assignment-editor label strong{font-size:.82rem}.role-assignment-editor label small{font-size:.72rem;color:var(--ink-soft);font-weight:400;line-height:1.3}
 .sheet-card .role-assignment-editor label>input{display:inline-block;width:auto;margin:.15rem 0 0;padding:0;flex:none}
@@ -760,7 +765,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
  #chat-header-text strong{font-size:.95rem}
  #chat-info,#chat-clear-context{font-size:.72rem;padding:.3rem .6rem}
  .roles-card{width:100%}
- .role-assignment-summary{align-items:flex-start;flex-wrap:wrap}.role-assignment-identity{flex:1}.role-assignment-current{order:3;flex-basis:100%}
+ .role-assignment-heading{display:grid;gap:.15rem}.role-assignment-summary{grid-template-columns:auto minmax(0,1fr) auto;align-items:start}.role-assignment-current{grid-column:1/-1;padding-top:.2rem}.role-box-mark{width:2rem;height:2rem}.role-assignment-toggle{align-self:center}
  .role-capability-fields{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:899px){
@@ -788,9 +793,9 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .inspect-fold summary h3{margin:0}
 
 /* ── always-visible message actions (touch friendly) ─────────────────── */
-.msg-actions{position:relative;display:inline-flex;align-items:center;margin-left:.3rem}
+.msg-actions{position:relative;display:inline-flex;align-items:center;margin-left:.05rem}
 .msg-more{border:0;background:none;color:var(--ink-soft);cursor:pointer;padding:.15rem;border-radius:.3rem;
-  display:inline-flex;min-width:1.6rem;min-height:1.6rem;align-items:center;justify-content:center}
+  display:inline-flex;min-width:1.45rem;min-height:1.45rem;align-items:center;justify-content:center}
 .msg-more:hover,.msg-more[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent-text)}
 .msg-more svg{width:1rem;height:1rem}
 .msg-actions-menu{position:absolute;top:100%;right:0;z-index:12;display:flex;flex-direction:column;min-width:9rem;
@@ -802,8 +807,8 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .msg-actions-menu svg{width:1rem;height:1rem;flex:none}
 .msg.user .msg-more{color:rgba(255,255,255,.78)}
 .msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:rgba(255,255,255,.18);color:#fff}
-/* Message chevrons sit on top of their bubbles. Hide them while an app sheet
-   is open so they cannot visually bleed through a modal backdrop or card. */
+/* Hide message controls while an app sheet is open so they cannot visually
+   bleed through a modal backdrop or card. */
 body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 
 /* ── mobile bottom-sheet menus ───────────────────────────────────────── */

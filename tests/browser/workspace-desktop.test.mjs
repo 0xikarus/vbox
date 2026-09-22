@@ -84,6 +84,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    await p.type('#agent-message-form textarea','inspect this purple image');await p.click('#agent-message-form > button');
    await p.waitForFunction(()=>document.querySelector('#agent-message-status').textContent==='Message sent.');
    assert.deepEqual(messagePayloads[0],{text:'inspect this purple image',images:[{id:'uploaded-image',number:1}]});
+   await p.waitForFunction(()=>document.querySelectorAll('#agent-messages input[type=checkbox]').length===2);
    const choices=await p.$$eval('#agent-messages input[type=checkbox]',values=>values.map(value=>value.value));assert.deepEqual(choices,['Purple','Green']);
    await p.click('#agent-messages input[value=Purple]');await p.click('#agent-messages form button');
    await p.waitForFunction(()=>document.querySelector('#agent-message-status').textContent==='Selection sent.');

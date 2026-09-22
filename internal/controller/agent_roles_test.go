@@ -175,13 +175,16 @@ func TestSharedChatMentionsRequireAnExactBoxNameOrID(t *testing.T) {
 
 func TestAgentBoxIdempotencyComparesEveryCreationParameter(t *testing.T) {
 	stored := []byte(`["role-a","role-b"]`)
-	if !sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, "alpha", "codex", 20, stored) {
+	if !sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, "# Build it", "alpha", "codex", 20, stored, "# Build it") {
 		t.Fatal("identical create-agent-box request was not reusable")
 	}
-	if sameAgentBoxRequest("alpha", "opencode", 20, []string{"role-a", "role-b"}, "alpha", "codex", 20, stored) {
+	if sameAgentBoxRequest("alpha", "opencode", 20, []string{"role-a", "role-b"}, "# Build it", "alpha", "codex", 20, stored, "# Build it") {
 		t.Fatal("agent type was ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a"}, "alpha", "codex", 20, stored) {
+	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a"}, "# Build it", "alpha", "codex", 20, stored, "# Build it") {
 		t.Fatal("starting roles were ignored during idempotency comparison")
+	}
+	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, "# Review it", "alpha", "codex", 20, stored, "# Build it") {
+		t.Fatal("startup instructions were ignored during idempotency comparison")
 	}
 }

@@ -866,9 +866,8 @@
    if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'maybe failed'));
    meta.append(ticks);
   }
-  row.append(meta);
   // Always-visible actions (hover-only controls are invisible on touch): the
-  // chevron reveals Copy / Forward for this message, WhatsApp style.
+  // chevron sits beside the delivery state and time, then reveals the menu.
   const actions=document.createElement('div');actions.className='msg-actions';
   const toggle=document.createElement('button');toggle.type='button';toggle.className='msg-more';toggle.setAttribute('aria-label','Message actions');toggle.setAttribute('aria-expanded','false');toggle.append(lucide('chevron-down'));
   const menu=document.createElement('div');menu.className='msg-actions-menu';menu.hidden=true;
@@ -880,7 +879,7 @@
   const viewThread=document.createElement('button');viewThread.type='button';viewThread.textContent='View thread';viewThread.onclick=()=>{closeAllMsgActions();void openThread(message.threadId||message.id)};
   menu.append(reply,copy,forward,viewThread);
   toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen){menu.hidden=false;toggle.setAttribute('aria-expanded','true')}};
-  actions.append(toggle,menu);row.append(actions);
+  actions.append(toggle,menu);meta.append(actions);row.append(meta);
   return row;
  }
  function messageAuthor(message){return message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent'}
@@ -1900,13 +1899,16 @@
   if(!agentRoles.length){const empty=mk('div');empty.className='role-empty';empty.append(mk('p','No roles exist yet. vmbox does not generate role names—define the first exact name yourself.'));const create=mk('button','Define first role');create.type='button';create.className='primary compact';create.onclick=()=>openRoleEditor();empty.append(create);root.append(empty);return}
   if(!values.length){root.append(mk('p','No boxes match this search.'));return}
   const catalog=mk('section');catalog.className='role-catalog';const catalogHead=mk('div');catalogHead.className='role-catalog-head';catalogHead.append(mk('strong','Defined roles'),mk('span','Select a role to edit its permissions.'));catalog.append(catalogHead);const catalogItems=mk('div');catalogItems.className='role-catalog-items';for(const role of agentRoles){const edit=mk('button',role.name);edit.type='button';edit.className='role-heading';edit.title='Edit exact role “'+role.name+'”';edit.onclick=()=>openRoleEditor(role);catalogItems.append(edit)}catalog.append(catalogItems);root.append(catalog);
+  const assignmentHead=mk('div');assignmentHead.className='role-assignment-heading';assignmentHead.append(mk('strong','Assign roles to boxes'),mk('span','Each card below represents one box and its agent.'));root.append(assignmentHead);
   const list=mk('div');list.className='role-assignment-list';
   for(const box of values){
-   const card=mk('article');card.className='role-assignment-card';card.dataset.roleBoxId=box.id;
-   const summary=mk('div');summary.className='role-assignment-summary';const identity=mk('div');identity.className='role-assignment-identity';identity.append(mk('strong',box.name),mk('span',(box.defaultAgent||'agent')+' · '+box.state));
-   const current=mk('div');current.className='role-assignment-current';const selectedRoles=agentRoles.filter(role=>roleIDsForBox(box.id).has(role.id));if(selectedRoles.length){for(const role of selectedRoles)current.append(Object.assign(mk('span',role.name),{className:'role-pill'}))}else current.append(Object.assign(mk('span','No roles'),{className:'role-pill empty'}));
-   const toggle=mk('button',roleAssignmentOpenBox===box.id?'Close':'Edit roles');toggle.type='button';toggle.className='role-assignment-toggle';toggle.setAttribute('aria-expanded',String(roleAssignmentOpenBox===box.id));toggle.onclick=()=>{roleAssignmentOpenBox=roleAssignmentOpenBox===box.id?'':box.id;renderRoleAssignments()};summary.append(identity,current,toggle);card.append(summary);
-   const editor=mk('div');editor.className='role-assignment-editor';editor.hidden=roleAssignmentOpenBox!==box.id;for(const role of agentRoles){const label=mk('label'),input=roleAssignmentCheckbox(box,role),copy=mk('span');copy.append(mk('strong',role.name));if(role.description)copy.append(mk('small',role.description));label.append(input,copy);editor.append(label)}card.append(editor);list.append(card);
+   const open=roleAssignmentOpenBox===box.id,card=mk('article');card.className='role-assignment-card'+(open?' is-open':'');card.dataset.roleBoxId=box.id;card.dataset.state=box.state;
+   const summary=mk('div');summary.className='role-assignment-summary';
+   const mark=mk('span',(box.name||'?').slice(0,1).toUpperCase());mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');
+   const identity=mk('div');identity.className='role-assignment-identity';identity.append(mk('small','BOX / AGENT'),mk('strong',box.name));const meta=mk('div');meta.className='role-box-meta';meta.append(Object.assign(mk('span',box.defaultAgent||'agent'),{className:'role-agent-badge'}),Object.assign(mk('span',box.state),{className:'role-state-badge'}));identity.append(meta);
+   const current=mk('div');current.className='role-assignment-current';current.append(Object.assign(mk('span','Assigned roles'),{className:'role-current-label'}));const pills=mk('div');pills.className='role-current-pills';const selectedRoles=agentRoles.filter(role=>roleIDsForBox(box.id).has(role.id));if(selectedRoles.length){for(const role of selectedRoles)pills.append(Object.assign(mk('span',role.name),{className:'role-pill'}))}else pills.append(Object.assign(mk('span','None assigned'),{className:'role-pill empty'}));current.append(pills);
+   const toggle=mk('button',open?'Close':'Manage roles');toggle.type='button';toggle.className='role-assignment-toggle';toggle.setAttribute('aria-expanded',String(open));toggle.onclick=()=>{roleAssignmentOpenBox=open?'':box.id;renderRoleAssignments()};summary.append(mark,identity,current,toggle);card.append(summary);
+   const editor=mk('div');editor.className='role-assignment-editor';editor.hidden=!open;const editorHead=mk('div');editorHead.className='role-assignment-editor-head';editorHead.append(mk('strong','Roles for '+box.name),mk('span','Choose one or more role bundles.'));editor.append(editorHead);for(const role of agentRoles){const label=mk('label'),input=roleAssignmentCheckbox(box,role),copy=mk('span');copy.append(mk('strong',role.name));if(role.description)copy.append(mk('small',role.description));label.append(input,copy);editor.append(label)}card.append(editor);list.append(card);
   }
   root.append(list);
  }

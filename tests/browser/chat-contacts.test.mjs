@@ -213,6 +213,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Manager')&&[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Normal'));
   assert.equal(requests.includes('POST /v1/agent-role-presets/team'),true);
   assert.equal(await p.$eval('#setup-team-roles',button=>button.hidden),true,'the preset action must disappear once either exact preset role exists');
+  await p.click('#role-assignments .role-assignment-card[data-role-box-id="builder"] .role-assignment-toggle');
   await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-team-roles.png'});
   await p.click('#create-role');
   assert.equal(await p.$eval('.msg-actions',element=>getComputedStyle(element).visibility),'hidden','background message actions must not bleed through the role editor');
@@ -225,6 +226,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.$eval('#role-editor-form [data-capability=createAgentBoxEnabled]',element=>element.open=false);
   await p.click('#role-editor-form .mcp-tool-options summary');
   assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.title),/privately/);
+  assert.match(await p.$eval('#role-editor-form label:has(input[value=create_agent_box])',element=>element.title),/startup instructions/);
   await p.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
   assert.equal(await p.$eval('#role-editor-form .mcp-tool-group-toggle[value=computer_use]',input=>input.checked),true);
   assert.equal(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) input[name=mcpTools]',inputs=>inputs.every(input=>input.checked)),true);
@@ -262,6 +264,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(await p.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
   assert.equal(await p.$eval('#role-assignments .role-assignment-card[data-role-box-id="reviewer"]',element=>element.getBoundingClientRect().width>350),true);
   await p.waitForFunction(()=>document.querySelector('#chat-toasts').childElementCount===0,{timeout:5000});
+  await p.$eval('#roles-modal .roles-card',element=>element.scrollTop=0);
   await (await p.$('#roles-modal .roles-card')).screenshot({path:'docs/chat-ui/screenshots/chat-roles-mobile.png'});
   await p.click('#roles-modal .roles-card [data-close="roles-modal"]');
   await p.setViewport({width:420,height:820,deviceScaleFactor:1});

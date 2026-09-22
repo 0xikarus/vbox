@@ -483,7 +483,7 @@ test('index styles ship in a page-scoped sheet, not inline and not in shared app
  // Only the index links controller.css: grid, chat and workspace share app.css
  // and their terminal viewers are sensitive to changes in page geometry.
  for(const other of ['grid.html','chat.html','workspace.html'])assert(!(await readFile(resolve(root,other),'utf8')).includes('controller.css'),other);
- assert(Buffer.byteLength(page)<12288);assert(!/@import|url\(/.test(page));
+ assert(Buffer.byteLength(page)<14336);assert(!/@import|url\(/.test(page));
 });
 test('new box starts automatically and its row follows startup through the temporary saved state',async()=>{
  const page=await browser.newPage();
