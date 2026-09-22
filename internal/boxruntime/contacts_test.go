@@ -14,3 +14,16 @@ func TestValidateContactRefAcceptsBoxIdentities(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveContactAcceptsCompactIDOrExactName(t *testing.T) {
+	contacts := []ContactSummary{{ID: "a1b2c3d4", Name: "CodeChecker", CanMessage: true}}
+	for _, ref := range []string{"a1b2c3d4", "CodeChecker", "codechecker"} {
+		name, err := resolveContactFromList(contacts, ref)
+		if err != nil || name != "CodeChecker" {
+			t.Fatalf("resolveContactFromList(%q)=(%q,%v)", ref, name, err)
+		}
+	}
+	if _, err := resolveContactFromList(contacts, "unknown"); err == nil {
+		t.Fatal("unknown contact was accepted")
+	}
+}

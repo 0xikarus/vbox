@@ -140,10 +140,11 @@ func (s *Server) ackChatEvent(ctx context.Context, prov provider.Provider, servi
 }
 
 // applyChatEvent stores one pooled outbox event. A reply whose reference no
-// longer resolves to an unanswered message is kept as its own agent message, so
-// a late or repeated delivery is never dropped. The caller acknowledges the
-// event only after the store succeeded; the outbox is therefore head-of-line
-// safe even when events arrive long after their watcher expired.
+// longer resolves to an unanswered message is kept as its own agent message.
+// An identical retry of the already delivered answer is idempotent, preventing
+// threaded replies from also appearing as duplicate root bubbles. The caller
+// acknowledges the event only after the store succeeded; the outbox is
+// therefore head-of-line safe even when events arrive after a watcher expired.
 func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, serviceID, accountID string, task v1.BoxTask, event boxruntime.ChatEvent) (string, bool, error) {
 	text := strings.TrimSpace(event.Text)
 	switch event.Kind {
@@ -175,6 +176,15 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		existing, answered, err := s.Store.AgentBoxMessage(ctx, accountID, target.ID)
 		if err != nil {
 			return "", false, err
+		}
+		if answered && existing.State == "delivered" && existing.Text == text {
+			// Two drains (or two client retries) may enqueue the same structured
+			// reply with different event IDs. Treat an identical answer to the same
+			// message as idempotent instead of displaying a second root bubble.
+			if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, target.ID); err != nil {
+				return "", false, err
+			}
+			return target.ID, true, nil
 		}
 		if !answered || existing.State != "delivered" {
 			replyTo = target.ID
@@ -326,7 +336,7 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 	if err != nil || strings.TrimSpace(senderName) == "" {
 		senderName = task.BoxName
 	}
-	body := "[From " + senderName + " (" + task.LogicalBoxID + ")]\n\n" + text
+	body := "[From " + senderName + "]\n\n" + text
 	principal := Principal{AccountID: accountID, UserID: ownerID, Role: "owner", Subject: "box:" + task.LogicalBoxID}
 	result, err := s.routeBoxMessage(ctx, principal, targetID, "contact:"+event.ID, v1.DirectBoxMessageRequest{Text: body, Agent: targetAgent, SenderBoxID: task.LogicalBoxID})
 	if err != nil {

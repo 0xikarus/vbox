@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -101,8 +102,18 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := <-output.lines
-	var response desktopMCPRequest
-	if json.Unmarshal(first, &response) != nil || string(response.ID) != "1" || response.Method != "" {
+	var response struct {
+		JSONRPC string          `json:"jsonrpc"`
+		ID      json.RawMessage `json:"id"`
+		Result  struct {
+			Capabilities struct {
+				Tools struct {
+					ListChanged bool `json:"listChanged"`
+				} `json:"tools"`
+			} `json:"capabilities"`
+		} `json:"result"`
+	}
+	if json.Unmarshal(first, &response) != nil || string(response.ID) != "1" || !response.Result.Capabilities.Tools.ListChanged {
 		t.Fatalf("first output was not initialize response: %s", first)
 	}
 	time.Sleep(50 * time.Millisecond)
@@ -175,7 +186,10 @@ func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
 		t.Fatalf("test request is only %d bytes; it does not exercise the old scanner limit", len(request))
 	}
 	var output bytes.Buffer
-	if err := ServeDesktopMCP(context.Background(), "assignment", strings.NewReader(string(request)+"\n"), &output); err != nil {
+	allowChat := func(context.Context, string) (map[string]bool, error) {
+		return map[string]bool{"chat_message": true}, nil
+	}
+	if err := serveDesktopMCP(context.Background(), "assignment", strings.NewReader(string(request)+"\n"), &output, allowChat); err != nil {
 		t.Fatal(err)
 	}
 	var response map[string]any
@@ -191,6 +205,34 @@ func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
 	}
 	if event.Text != text {
 		t.Fatalf("stored reply has %d bytes, want %d", len(event.Text), len(text))
+	}
+}
+
+func TestWatchDesktopToolPolicyNotifiesRunningClient(t *testing.T) {
+	previousInterval := desktopToolPolicyPollInterval
+	desktopToolPolicyPollInterval = 10 * time.Millisecond
+	t.Cleanup(func() { desktopToolPolicyPollInterval = previousInterval })
+	var calls atomic.Int32
+	resolve := func(context.Context, string) (map[string]bool, error) {
+		if calls.Add(1) == 1 {
+			return map[string]bool{"chat_message": true}, nil
+		}
+		return map[string]bool{"chat_message": true, "take_screenshot": true}, nil
+	}
+	notifications := make(chan map[string]any, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go watchDesktopToolPolicy(ctx, "assignment", resolve, func(value any) error {
+		notifications <- value.(map[string]any)
+		return nil
+	})
+	select {
+	case notification := <-notifications:
+		if notification["method"] != "notifications/tools/list_changed" {
+			t.Fatalf("notification=%v", notification)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("tool-list change was not advertised")
 	}
 }
 
@@ -347,10 +389,13 @@ func TestDesktopMCPGuideMatchesAdvertisedTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## chat_message", "## type_secret", "## take_screenshot", `Schema: `} {
+	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## Contacting other boxes", "get_contacts {}", `chat_message {"contact":"reviewer"`, `chat_message {"contact":"a1b2c3d4"`, "exact box `name`", "## chat_message", "## type_secret", "## take_screenshot", `Schema: `} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("guide missing %q: %s", fragment, text)
 		}
+	}
+	if strings.Contains(text, "chat_message(text=") {
+		t.Fatalf("guide contains legacy pseudo-function syntax: %s", text)
 	}
 	info, err := os.Stat(path)
 	if err != nil {

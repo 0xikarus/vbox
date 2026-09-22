@@ -27,7 +27,9 @@ type PutBoxContactRequest struct {
 	TwoWay  bool   `json:"twoWay,omitempty"`
 }
 
-// ContactEntry is the agent-facing view of one authorized contact.
+// ContactEntry is the agent-facing view of one authorized contact. ID is a
+// compact, unambiguous handle derived from the internal UUID; Name is the
+// account-unique box name. Agent tools accept either one.
 type ContactEntry struct {
 	ID         string             `json:"id"`
 	Name       string             `json:"name"`

@@ -126,6 +126,27 @@ func TestApplyChatEventKeepsAnsweredReplyAsOwnMessage(t *testing.T) {
 	}
 }
 
+func TestApplyChatEventDeduplicatesIdenticalAnsweredReply(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1", "chat-key-1").
+		WillReturnRows(boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "delivered"))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
+		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	server := chatTestServer(store)
+	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", Agent: "claude", Session: "claude-1"}
+	event := boxruntime.ChatEvent{ID: "retry-event", Kind: "reply", ReplyTo: "chat-key-1", Text: "answer"}
+	messageID, matched, err := server.applyChatEvent(context.Background(), &chatDrainProvider{}, "service-1", "account-a", task, event)
+	if err != nil || !matched || messageID != "message-1" {
+		t.Fatalf("messageID=%q matched=%v err=%v", messageID, matched, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestApplyChatEventStoresUncorrelatedMessage covers chat_message without a
 // replyTo: nothing is resolved and the text lands as its own agent message.
 func TestApplyChatEventStoresUncorrelatedMessage(t *testing.T) {

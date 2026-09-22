@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer-core';
 const root=resolve('internal/controller/web'),requests=[];
 let server,browser,base;
 const revision='2026-09-05T12:00:00Z';
-let fixtureRoles=[],fixtureBoxRoleIds=[];
+let fixtureRoles=[],fixtureBoxRoleIds=[],fixturePolicy={capabilities:{}};
 before(async()=>{
  server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://test').pathname;
@@ -49,6 +49,8 @@ before(async()=>{
   if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
   if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/instructions')return res.end(JSON.stringify({...values['/v1/logical-boxes/box-1/instructions'],note:'fixture applied'}));
   if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/login-profiles')return res.end(JSON.stringify({profiles:body.profiles,pending:[],verified:true,note:'fixture applied'}));
+  if(req.method==='GET' && path==='/v1/logical-boxes/box-1/agent-policy')return res.end(JSON.stringify({boxId:'box-1',boxName:'helper ü',...fixturePolicy}));
+  if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/agent-policy'){fixturePolicy=body;return res.end(JSON.stringify({boxId:'box-1',boxName:'helper ü',...fixturePolicy}))}
   if(req.method==='POST' && path==='/v1/agent-roles'){const role={id:'role-'+(fixtureRoles.length+1),...body,assignedBoxCount:0,createdAt:revision,updatedAt:revision};fixtureRoles.push(role);res.statusCode=201;return res.end(JSON.stringify(role))}
   if(req.method==='PUT' && path.startsWith('/v1/agent-roles/')){const id=decodeURIComponent(path.split('/').pop()),index=fixtureRoles.findIndex(role=>role.id===id);fixtureRoles[index]={...fixtureRoles[index],...body};return res.end(JSON.stringify(fixtureRoles[index]))}
   if(req.method==='DELETE' && path.startsWith('/v1/agent-roles/')){const id=decodeURIComponent(path.split('/').pop());fixtureRoles=fixtureRoles.filter(role=>role.id!==id);fixtureBoxRoleIds=fixtureBoxRoleIds.filter(roleID=>roleID!==id);res.statusCode=204;return res.end()}
@@ -62,7 +64,7 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
-test('native roles can be created, assigned per box, and edited on mobile',async()=>{
+test('direct per-box permissions can be edited without a role matrix',async()=>{
  const page=await browser.newPage();
  await page.evaluateOnNewDocument(()=>{
   const original=window.fetch;
@@ -78,42 +80,33 @@ test('native roles can be created, assigned per box, and edited on mobile',async
   };
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#role-assignments .role-empty');
- await page.click('#create-role');
- await page.type('#role-editor-form input[name=name]','Normal');
- await page.type('#role-editor-form textarea[name=description]','Owner-defined computer-use role');
+ await page.waitForSelector('#role-assignments .role-assignment-card[data-role-box-id="box-1"]');
+ await page.click('#role-assignments .role-assignment-card[data-role-box-id="box-1"] button');
  await page.click('#role-editor-form input[name=allContactsEnabled]');
- await page.click('#role-editor-form input[name=queueFollowupEnabled]');
- await page.click('#role-editor-form input[name=sharedChatsEnabled]');
  await page.click('#role-editor-form .mcp-tool-options summary');
+ await page.click('#role-editor-form .mcp-tool-group-toggle[value=coordination]');
  await page.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
  await page.click('#role-editor-form button.primary');
- await page.waitForFunction(()=>[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Normal'));
- const selectedRole=fixtureRoles.find(role=>role.name==='Normal');
- assert.equal(selectedRole.name,'Normal','the exact owner-typed role name must be preserved');
- assert.equal(selectedRole.capabilities.allContacts.enabled,true);
- assert.equal(selectedRole.capabilities.queueFollowup.enabled,true);
- assert.equal(Object.values(selectedRole.capabilities.sharedChats).every(Boolean),true);
- assert.equal(selectedRole.capabilities.mcpTools.allowedTools.includes('press_keys'),true);
- assert.equal(selectedRole.capabilities.mcpTools.allowedTools.includes('secret_request'),false);
- await page.click('#role-assignments .role-assignment-card[data-role-box-id="box-1"] .role-assignment-toggle');
- const assignmentSelector=`#role-assignments input[aria-label="Normal for helper ü"]`;
- await page.click(assignmentSelector);
- await page.click('#save-role-assignments');
- await page.waitForFunction(()=>document.querySelector('#role-status').textContent==='');
- assert.ok(fixtureBoxRoleIds.includes(selectedRole.id));
+ await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Permissions updated'));
+ assert.equal(fixturePolicy.capabilities.allContacts.enabled,true);
+ assert.equal(fixturePolicy.capabilities.queueFollowup.enabled,true);
+ assert.equal(Object.values(fixturePolicy.capabilities.sharedChats).every(Boolean),true);
+ assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('press_keys'),true);
+ assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('secret_request'),false);
+ assert.equal(await page.$('#role-assignments table'),null,'permissions must not use a role matrix');
+ assert.equal(await page.$('#create-role:not([hidden])'),null,'there is no role creation workflow');
  await page.setViewport({width:1280,height:900});
  await page.$eval('a[href="#roles"]',link=>link.click());
- await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-desktop.png')});
- await page.$$eval('#role-assignments .role-heading',buttons=>buttons.find(button=>button.textContent==='Normal').click());
+ await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/permissions-desktop.png')});
+ await page.click('#role-assignments .role-assignment-card[data-role-box-id="box-1"] button');
  await page.setViewport({width:1280,height:1200});
- await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/role-editor.png')});
+ await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/permission-editor.png')});
  await page.click('#role-editor-modal header [data-close="role-editor-modal"]');
  await page.setViewport({width:390,height:844});
- assert.equal(await page.$('#role-assignments table'),null,'assignments should not fall back to a matrix on mobile');
+ assert.equal(await page.$('#role-assignments table'),null,'permissions should not fall back to a matrix on mobile');
  assert.equal(await page.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
  assert.equal(await page.$eval('#role-assignments .role-assignment-card[data-role-box-id="box-1"]',element=>element.getBoundingClientRect().width>350),true);
- await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-mobile.png')});
+ await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/permissions-mobile.png')});
  await page.close();
 });
 test('desktop is implicit in creation and Blender remains optional',async()=>{
@@ -311,11 +304,11 @@ test('box deletion confirms exact identity, prevents repeats and shows asynchron
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button');
- page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] button');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
- page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
+ page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
+ page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
  await page.waitForFunction(()=>document.querySelector('[data-box-id="box-1"]').textContent.includes('delete-detaching-volume'));
- assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),true);assert.equal(await page.$('[data-box-id="box-1"] td:first-child a'),null);
+ assert.equal(await page.$eval('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]',b=>b.disabled),true);assert.equal(await page.$('[data-box-id="box-1"] td:first-child a'),null);
  assert.deepEqual(await page.evaluate(()=>window.deleteCalls),[{path:'/v1/logical-boxes/box-1/volume',body:{confirmation:'helper ü'}}]);
  await page.evaluate(()=>window.deleteState='gone');await page.waitForFunction(()=>!document.querySelector('[data-box-id="box-1"]'),{timeout:10000});
  assert.ok(await page.$('[data-box-id="sibling"]'));assert.deepEqual(errors,[]);await page.close();
@@ -326,9 +319,9 @@ test('mobile box deletion reports a non-transient rejection without replaying de
   const original=window.fetch;window.deleteCalls=0;
   window.fetch=async(path,options={})=>{if(path==='/v1/logical-boxes/box-1/volume'&&options.method==='DELETE'){window.deleteCalls++;return new Response(JSON.stringify({error:'Deletion forbidden by policy.'}),{status:409})}return original(path,options)};
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button');
- page.once('dialog',d=>d.accept());await page.$eval('[data-box-id="box-1"] button',button=>button.click());await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Deletion forbidden by policy'));
- assert.equal(await page.$eval('[data-box-id="box-1"] button',b=>b.disabled),false);assert.equal(await page.evaluate(()=>window.deleteCalls),1);assert.ok(await page.$('[data-box-id="box-1"]'));await page.close();
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
+ page.once('dialog',d=>d.accept());await page.$eval('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]',button=>button.click());await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Deletion forbidden by policy'));
+ assert.equal(await page.$eval('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]',b=>b.disabled),false);assert.equal(await page.evaluate(()=>window.deleteCalls),1);assert.ok(await page.$('[data-box-id="box-1"]'));await page.close();
 });
 test('table previews stay fixed size and tool choices stay compact',async()=>{
  for(const width of [1280,390]){
@@ -378,7 +371,7 @@ test('rows and the create form lay out in reading order without overlapping valu
  assert.equal(layout.stateStacked,true);
  assert.ok(layout.labelGaps.length&&layout.labelGaps.every(gap=>gap>=8),'tool labels need visible separation: '+layout.labelGaps);
  assert.equal(layout.overflowing,0);
- assert.deepEqual(layout.legends,['1 · box','2 · logins','3 · tools','4 · instructions','5 · roles']);
+ assert.deepEqual(layout.legends,['1 · box','2 · logins','3 · tools','4 · instructions']);
  assert.equal(layout.actionBelowGroups,true);
  await page.close();
 });
@@ -398,7 +391,7 @@ test('box actions follow state: no resume while creating, resume on failure',asy
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('[data-box-id="creating"]');
- const buttons=id=>page.$$eval(`[data-box-id="${id}"] button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
+ const buttons=id=>page.$$eval(`[data-box-id="${id}"] td:last-child button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
  // Delete remains available during creation so a stuck box can be cancelled.
  assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
  assert.deepEqual(await buttons('broke'),[{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false}]);

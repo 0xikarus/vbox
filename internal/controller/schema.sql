@@ -799,6 +799,15 @@ ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids json
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_instructions text NOT NULL DEFAULT '';
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 UPDATE agent_box_creations SET completed_at=created_at WHERE created_box_id IS NOT NULL AND completed_at IS NULL;
+CREATE TABLE IF NOT EXISTS agent_box_policies (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  capabilities jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,box_id)
+);
 CREATE TABLE IF NOT EXISTS agent_box_deletions (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,

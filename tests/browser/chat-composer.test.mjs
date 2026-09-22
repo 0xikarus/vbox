@@ -105,12 +105,13 @@ test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
  });
 });
 
-test('reply quotes preserve parent identity and open the thread panel',async()=>{
+test('thread replies stay out of the main timeline and use the thread composer',async()=>{
  await withChat(async(browser,base,posts)=>{
-  const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg.agent .msg-parent');
-  await p.click('.msg.user .msg-more');await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent==='Reply').click());
-  assert.equal(await p.$eval('#reply-preview',element=>element.hidden),false);await p.type('#chat-input','Ship it.');await p.keyboard.press('Enter');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
-  await p.click('.msg.agent .msg-parent');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
+  const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg.user .msg-thread');
+  assert.equal(await p.$$eval('#chat-messages .msg',nodes=>nodes.length),1,'thread children must not be duplicated in the main timeline');
+  await p.click('.msg.user',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.includes('Reply in thread')).click());
+  await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
+  await p.type('#thread-composer textarea','Ship it.');await p.click('#thread-composer button');await p.waitForFunction(()=>document.querySelector('#thread-composer textarea').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
   await (await p.$('#thread-panel')).screenshot({path:'docs/chat-ui/screenshots/chat-thread.png'});await p.close();
  });
 });

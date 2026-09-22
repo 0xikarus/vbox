@@ -138,6 +138,7 @@ table.markets tr.row:hover{background:#fafafa}
 .role-capabilities{margin:12px 0;border:1px solid #e2e2e2;padding:10px}
 .role-capabilities>h3{margin:2px 0}
 .role-capability{border:1px solid #e2e2e2;margin:9px 0;padding:9px;background:#fafafa}
+.role-capability:has(> .role-capability-toggle input[name=requestMoreTimeEnabled]),.role-capability:has(> .role-capability-toggle input[name=queueFollowupEnabled]),.role-capability:has(> .role-capability-toggle input[name=createAgentBoxEnabled]),.role-capability:has(> .role-capability-toggle input[name=createEmailAddressEnabled]),.role-capability:has(> .role-capability-toggle input[name=sharedChatsEnabled]){display:none}
 .role-capability-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:10px;margin:0!important}.role-capability-toggle>span{display:grid}.role-capability-toggle small{font-size:12px;font-weight:400;color:#6b6864}
 .role-capability input[type=checkbox],.role-inline input[type=checkbox],.role-shared input[type=checkbox]{width:auto!important;margin:0}
 .role-capability-options{margin:7px 0 0;border-top:1px solid #e2e2e2;padding-top:7px}

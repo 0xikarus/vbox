@@ -38,7 +38,7 @@ func attachBoxMessageImages(ctx context.Context, tx *sql.Tx, accountID, messageI
 
 // defaultChatInstruction is the full agent-chat reply contract. Keep it compact:
 // it stays in the agent's conversation context.
-const defaultChatInstruction = "\n\n[vmbox chat %s] Reply via vmbox-desktop chat_message(replyTo=%s, text=...). Images: files=[absolute PNG/JPEG/GIF paths]. Choices: chat_ask(replyTo=%s, question=..., choices=..., multiple=...). Desktop: take_screenshot, click_mouse, type_text, press_keys."
+const defaultChatInstruction = "\n\n[vmbox chat %s] Reply through MCP tool chat_message with JSON {\"replyTo\":\"%s\",\"text\":\"...\"}, not terminal. Images: add {\"files\":[\"/absolute/image.png\"]}. Choices: chat_ask {\"replyTo\":\"%s\",\"question\":\"...\",\"choices\":[\"...\"],\"multiple\":false}. Other boxes: get_contacts {}, then chat_message {\"contact\":\"reviewer\",\"text\":\"Please review this.\"}."
 
 // defaultChatInstructionEvery carries the envelope on the first message of a
 // chat and then once every this many messages, so the reply contract stays
@@ -49,7 +49,7 @@ const defaultChatInstructionEvery = 3
 // agent always knows to answer through the chat_message MCP instead of its own
 // terminal output. It stays on even where the full envelope is skipped: without
 // it, messages between repeats would never produce a chat reply.
-const defaultChatReminder = "\n\n[vmbox chat %s] Reply via vmbox-desktop chat_message(replyTo=%s), not terminal."
+const defaultChatReminder = "\n\n[vmbox chat %s] Reply through MCP tool chat_message with JSON {\"replyTo\":\"%s\",\"text\":\"...\"}, not terminal."
 
 // ChatInstructionTemplate controls the agent chat envelope; set with
 // VMBOX_CHAT_INSTRUCTION. Placeholders: three %s broadcasts of the message
@@ -90,7 +90,7 @@ func chatReference(message v1.BoxMessage) string {
 // defaultContactInstruction is appended to a message that arrived from another
 // box. It states the real origin and how to answer, so a contact message is
 // never mistaken for an owner instruction or a local reply.
-const defaultContactInstruction = "\n\n[vmbox chat %s from box %s (%s), not owner] Reply via vmbox-desktop chat_message(contact=\"%s\", text=...). No image files; omit contact to message owner."
+const defaultContactInstruction = "\n\n[vmbox chat %s from box %s, not owner] Reply through MCP tool chat_message with JSON {\"contact\":\"%s\",\"text\":\"...\"}. To message someone else: get_contacts {}, then use its compact id or exact name. Contact messages cannot attach files; omit contact to message the owner."
 
 func (s *Server) contactChatInstruction(messageRef, senderID, senderName, agent string) string {
 	if agent == "shell" || senderID == "" {
@@ -99,7 +99,7 @@ func (s *Server) contactChatInstruction(messageRef, senderID, senderName, agent 
 	if strings.TrimSpace(senderName) == "" {
 		senderName = senderID
 	}
-	return fmt.Sprintf(defaultContactInstruction, messageRef, senderName, senderID, senderID)
+	return fmt.Sprintf(defaultContactInstruction, messageRef, senderName, senderName)
 }
 
 func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {

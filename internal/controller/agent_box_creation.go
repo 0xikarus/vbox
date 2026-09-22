@@ -21,11 +21,10 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	creatorID := r.PathValue("id")
 	var request struct {
-		Name         string   `json:"name"`
-		Agent        string   `json:"agent"`
-		DiskGiB      int64    `json:"diskGiB"`
-		RoleIDs      []string `json:"roleIds"`
-		Instructions string   `json:"instructions"`
+		Name         string `json:"name"`
+		Agent        string `json:"agent"`
+		DiskGiB      int64  `json:"diskGiB"`
+		Instructions string `json:"instructions"`
 	}
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, 400, err)
@@ -33,8 +32,6 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	request.Name = strings.TrimSpace(request.Name)
 	request.Agent = strings.ToLower(strings.TrimSpace(request.Agent))
-	request.RoleIDs = cleanUniqueStrings(request.RoleIDs)
-	slices.Sort(request.RoleIDs)
 	if err := v1.ValidateInstructionMarkdown(request.Instructions); err != nil {
 		writeError(w, 400, err)
 		return
@@ -53,21 +50,15 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if !slices.Contains(grant.AllowedAgents, request.Agent) {
-		writeError(w, 403, fmt.Errorf("agent type is not granted by this box's roles"))
+		writeError(w, 403, fmt.Errorf("agent type is not granted by this box's permissions"))
 		return
 	}
 	if request.DiskGiB < 1 || request.DiskGiB > int64(grant.MaxDiskGiB) {
-		writeError(w, 403, fmt.Errorf("diskGiB exceeds this box's role limit"))
+		writeError(w, 403, fmt.Errorf("diskGiB exceeds this box's permission limit"))
 		return
 	}
-	for _, roleID := range request.RoleIDs {
-		if !slices.Contains(grant.AssignableRoleIDs, roleID) {
-			writeError(w, 403, fmt.Errorf("starting role %q is not assignable by this box", roleID))
-			return
-		}
-	}
 	reservationID := uuid()
-	roleIDsJSON, _ := json.Marshal(request.RoleIDs)
+	roleIDsJSON := []byte(`[]`)
 	var existingBoxID, requestedName, requestedAgent, requestedInstructions, providerName, credential, region string
 	var requestedDisk int64
 	var requestedRoleIDs []byte
@@ -91,7 +82,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_instructions,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &requestedInstructions, &existingBoxID)
 	if err == nil {
-		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.RoleIDs, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedInstructions) {
+		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, nil, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedInstructions) {
 			writeError(w, 409, fmt.Errorf("idempotency key was already used with different box parameters"))
 			return
 		}
@@ -138,7 +129,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 			writeError(w, 409, err)
 			return
 		}
-		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.RoleIDs, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedInstructions) {
+		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, nil, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedInstructions) {
 			writeError(w, 409, fmt.Errorf("idempotency key was already used with different box parameters"))
 			return
 		}
@@ -176,7 +167,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	owner := Principal{AccountID: p.AccountID, UserID: p.UserID, Role: "owner", Subject: p.Subject}
-	create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: providerName, ProviderCredential: credential, Region: region, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, RoleIDs: request.RoleIDs, AllocationRequestKey: "agent-box:" + reservationID}
+	create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: providerName, ProviderCredential: credential, Region: region, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, AllocationRequestKey: "agent-box:" + reservationID}
 	var instructionSelection *v1.InstructionSelection
 	if strings.TrimSpace(request.Instructions) != "" {
 		instructionSelection = &v1.InstructionSelection{Markdown: request.Instructions}

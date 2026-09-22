@@ -117,6 +117,20 @@ type AgentRoleCapabilities struct {
 	MCPTools         MCPToolsGrant           `json:"mcpTools"`
 }
 
+// AgentBoxPolicy is the owner-managed permission set attached directly to one
+// box. Legacy roles are only an upgrade source and are not part of this API.
+type AgentBoxPolicy struct {
+	BoxID        string                `json:"boxId"`
+	BoxName      string                `json:"boxName"`
+	Capabilities AgentRoleCapabilities `json:"capabilities"`
+	Migrated     bool                  `json:"migratedFromRoles,omitempty"`
+	UpdatedAt    time.Time             `json:"updatedAt,omitempty"`
+}
+
+type PutAgentBoxPolicyRequest struct {
+	Capabilities AgentRoleCapabilities `json:"capabilities"`
+}
+
 type AgentRoleSummary struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`

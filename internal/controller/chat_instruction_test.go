@@ -15,12 +15,15 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 	if !strings.Contains(got, "[vmbox chat m1]") {
 		t.Fatalf("default envelope must carry the message id: %q", got)
 	}
-	for _, fragment := range []string{"vmbox-desktop chat_message(replyTo=m1", "files=[absolute PNG/JPEG/GIF paths]", "chat_ask(replyTo=m1, question=..., choices=..., multiple=...)", "take_screenshot, click_mouse, type_text, press_keys"} {
+	for _, fragment := range []string{"MCP tool chat_message", `{"replyTo":"m1","text":"..."}`, `{"files":["/absolute/image.png"]}`, "chat_ask", "get_contacts {}", `{"contact":"reviewer"`} {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("default envelope must mention %q: %q", fragment, got)
 		}
 	}
-	if len(defaultChatInstruction) > 270 {
+	if strings.Contains(got, "chat_message(replyTo=") {
+		t.Fatalf("default envelope must not use legacy pseudo-function syntax: %q", got)
+	}
+	if len(defaultChatInstruction) > 380 {
 		t.Fatalf("default envelope should stay short, got %d characters", len(defaultChatInstruction))
 	}
 	if strings.Count(got, "\n") > 3 {
@@ -36,17 +39,17 @@ func TestChatInstructionRepeatsEveryThirdMessage(t *testing.T) {
 	want := map[int]bool{1: true, 2: false, 3: false, 4: true, 5: false, 6: false, 7: true, 10: true}
 	for ordinal, envelope := range want {
 		got := server.chatInstruction("m1", "claude", ordinal)
-		hasEnvelope := strings.Contains(got, "Images: files=")
+		hasEnvelope := strings.Contains(got, `"files"`)
 		if hasEnvelope != envelope {
 			t.Fatalf("ordinal %d: envelope=%q, want envelope=%t", ordinal, got, envelope)
 		}
 		if !envelope {
-			for _, fragment := range []string{"[vmbox chat m1]", "vmbox-desktop chat_message(replyTo=m1)", "not terminal"} {
+			for _, fragment := range []string{"[vmbox chat m1]", "MCP tool chat_message", `{"replyTo":"m1","text":"..."}`, "not terminal"} {
 				if !strings.Contains(got, fragment) {
 					t.Fatalf("ordinal %d reminder must mention %q: %q", ordinal, fragment, got)
 				}
 			}
-			if len(got) > 95 {
+			if len(got) > 150 {
 				t.Fatalf("ordinal %d reminder must stay compact, got %d characters: %q", ordinal, len(got), got)
 			}
 		}
@@ -58,12 +61,12 @@ func TestChatInstructionRepeatsEveryThirdMessage(t *testing.T) {
 
 func TestContactChatInstructionIsCompactAndKeepsRouting(t *testing.T) {
 	got := (&Server{}).contactChatInstruction("m1", "box-2", "Helper", "claude")
-	for _, fragment := range []string{"[vmbox chat m1 from box Helper (box-2), not owner]", "chat_message(contact=\"box-2\"", "No image files", "omit contact to message owner"} {
+	for _, fragment := range []string{"[vmbox chat m1 from box Helper, not owner]", "MCP tool chat_message", `{"contact":"Helper","text":"..."}`, "get_contacts {}", "compact id or exact name", "cannot attach files", "omit contact to message the owner"} {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("contact envelope must mention %q: %q", fragment, got)
 		}
 	}
-	if len(got) > 180 {
+	if len(got) > 300 {
 		t.Fatalf("contact envelope should stay short, got %d characters", len(got))
 	}
 }
