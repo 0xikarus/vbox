@@ -11,7 +11,7 @@
  let instructionPresets={defaultName:'',presets:[]};
  const presetBodyCache=new Map();
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
- let agentRoles=[],roleAssignmentDraft=new Map(),roleAssignmentsDirty=false;
+ let agentRoles=[],roleAssignmentDraft=new Map(),roleAssignmentsDirty=false,roleAssignmentOpenBox='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
  // Unsent composer text is kept per box so switching chats (or reloading the
@@ -1884,34 +1884,39 @@
   $('#setup-team-roles').hidden=agentRoles.some(role=>role.name==='Manager'||role.name==='Normal');
   syncRoleAssignmentDraft(resetDraft);
   renderCreationRoleChoices();
-  renderRoleMatrix();
+  renderRoleAssignments();
  }
  function roleIDsForBox(boxID){return new Set(roleAssignmentDraft.get(boxID)||[])}
  function updateRoleAssignment(boxID,roleID,checked){
   const ids=roleIDsForBox(boxID);checked?ids.add(roleID):ids.delete(roleID);roleAssignmentDraft.set(boxID,[...ids]);setRoleAssignmentsDirty(true);
-  document.querySelectorAll('#role-matrix input[data-box-id="'+CSS.escape(boxID)+'"][data-role-id="'+CSS.escape(roleID)+'"]').forEach(input=>{input.checked=checked});
+  roleAssignmentOpenBox=boxID;renderRoleAssignments();
  }
  function roleAssignmentCheckbox(box,role){
   const input=document.createElement('input');input.type='checkbox';input.checked=roleIDsForBox(box.id).has(role.id);input.dataset.boxId=box.id;input.dataset.roleId=role.id;input.setAttribute('aria-label',role.name+' for '+box.name);input.addEventListener('change',()=>updateRoleAssignment(box.id,role.id,input.checked));return input;
  }
- function renderRoleMatrix(){
-  const root=$('#role-matrix');if(!root)return;root.replaceChildren();
+ function renderRoleAssignments(){
+  const root=$('#role-assignments');if(!root)return;root.replaceChildren();
   const query=($('#role-box-search')?.value||'').trim().toLocaleLowerCase(),values=roleBoxes().filter(box=>!query||box.name.toLocaleLowerCase().includes(query));
   if(!agentRoles.length){const empty=mk('div');empty.className='role-empty';empty.append(mk('p','No roles exist yet. vmbox does not generate role names—define the first exact name yourself.'));const create=mk('button','Define first role');create.type='button';create.className='primary compact';create.onclick=()=>openRoleEditor();empty.append(create);root.append(empty);return}
   if(!values.length){root.append(mk('p','No boxes match this search.'));return}
-  const wrap=mk('div');wrap.className='role-matrix-wrap';const table=mk('table');table.className='role-matrix';
-  const thead=mk('thead'),head=mk('tr'),boxHead=mk('th','Box');boxHead.className='sticky-box';head.append(boxHead);
-  for(const role of agentRoles){const th=mk('th'),edit=mk('button',role.name);edit.type='button';edit.className='role-heading';edit.title='Edit exact role “'+role.name+'”';edit.onclick=()=>openRoleEditor(role);th.append(edit);head.append(th)}thead.append(head);table.append(thead);
-  const tbody=mk('tbody');for(const box of values){const row=mk('tr'),name=mk('th',box.name);name.scope='row';name.className='sticky-box';row.append(name);for(const role of agentRoles){const cell=mk('td');cell.append(roleAssignmentCheckbox(box,role));row.append(cell)}tbody.append(row)}table.append(tbody);wrap.append(table);
-  const mobile=mk('div');mobile.className='role-mobile';const select=document.createElement('select');select.setAttribute('aria-label','Box to assign roles');for(const box of values)select.append(new Option(box.name,box.id));const checklist=mk('div');checklist.className='role-checklist';const draw=()=>{checklist.replaceChildren();const box=values.find(value=>value.id===select.value);if(!box)return;for(const role of agentRoles){const label=mk('label'),input=roleAssignmentCheckbox(box,role);label.append(input,document.createTextNode(role.name));checklist.append(label)}};select.onchange=draw;draw();mobile.append(select,checklist);root.append(wrap,mobile);
+  const catalog=mk('section');catalog.className='role-catalog';const catalogHead=mk('div');catalogHead.className='role-catalog-head';catalogHead.append(mk('strong','Defined roles'),mk('span','Select a role to edit its permissions.'));catalog.append(catalogHead);const catalogItems=mk('div');catalogItems.className='role-catalog-items';for(const role of agentRoles){const edit=mk('button',role.name);edit.type='button';edit.className='role-heading';edit.title='Edit exact role “'+role.name+'”';edit.onclick=()=>openRoleEditor(role);catalogItems.append(edit)}catalog.append(catalogItems);root.append(catalog);
+  const list=mk('div');list.className='role-assignment-list';
+  for(const box of values){
+   const card=mk('article');card.className='role-assignment-card';card.dataset.roleBoxId=box.id;
+   const summary=mk('div');summary.className='role-assignment-summary';const identity=mk('div');identity.className='role-assignment-identity';identity.append(mk('strong',box.name),mk('span',(box.defaultAgent||'agent')+' · '+box.state));
+   const current=mk('div');current.className='role-assignment-current';const selectedRoles=agentRoles.filter(role=>roleIDsForBox(box.id).has(role.id));if(selectedRoles.length){for(const role of selectedRoles)current.append(Object.assign(mk('span',role.name),{className:'role-pill'}))}else current.append(Object.assign(mk('span','No roles'),{className:'role-pill empty'}));
+   const toggle=mk('button',roleAssignmentOpenBox===box.id?'Close':'Edit roles');toggle.type='button';toggle.className='role-assignment-toggle';toggle.setAttribute('aria-expanded',String(roleAssignmentOpenBox===box.id));toggle.onclick=()=>{roleAssignmentOpenBox=roleAssignmentOpenBox===box.id?'':box.id;renderRoleAssignments()};summary.append(identity,current,toggle);card.append(summary);
+   const editor=mk('div');editor.className='role-assignment-editor';editor.hidden=roleAssignmentOpenBox!==box.id;for(const role of agentRoles){const label=mk('label'),input=roleAssignmentCheckbox(box,role),copy=mk('span');copy.append(mk('strong',role.name));if(role.description)copy.append(mk('small',role.description));label.append(input,copy);editor.append(label)}card.append(editor);list.append(card);
+  }
+  root.append(list);
  }
  async function refreshRoleData(resetDraft=true){
   await loadBoxes(true);const roles=await api('/v1/agent-roles');applyAgentRoles(roles,resetDraft);
  }
  async function openRolesModal(boxID=''){
   if(!owner)return;closeSheets();const modal=$('#roles-modal'),status=$('#role-status');modal.hidden=false;status.textContent='Loading roles…';
-  if(boxID&&boxes.has(boxID))$('#role-box-search').value=boxes.get(boxID).name;else $('#role-box-search').value='';
-  try{await refreshRoleData(!roleAssignmentsDirty);status.textContent=roleAssignmentsDirty?'Unsaved assignment changes.':'';renderRoleMatrix()}catch(e){status.textContent=e.message}
+  if(boxID&&boxes.has(boxID)){$('#role-box-search').value=boxes.get(boxID).name;roleAssignmentOpenBox=boxID}else{$('#role-box-search').value='';roleAssignmentOpenBox=''}
+  try{await refreshRoleData(!roleAssignmentsDirty);status.textContent=roleAssignmentsDirty?'Unsaved assignment changes.':'';renderRoleAssignments()}catch(e){status.textContent=e.message}
  }
  function openRoleEditor(role=null){
   const form=$('#role-editor-form'),cap=role?.capabilities||{};form.reset();form.elements.id.value=role?.id||'';form.elements.name.value=role?.name||'';form.elements.description.value=role?.description||'';
@@ -1933,12 +1938,12 @@
  function changeRoleCapability(input){if(input.name==='sharedChatsEnabled'&&input.checked&&!['sharedChatDiscover','sharedChatRead','sharedChatSubscribe','sharedChatCreate','sharedChatInvite'].some(name=>input.form.elements[name].checked)){for(const name of ['sharedChatDiscover','sharedChatRead','sharedChatSubscribe','sharedChatCreate','sharedChatInvite'])input.form.elements[name].checked=true}syncRoleCapabilityOptions(input.form)}
  function syncMCPToolGroups(form=$('#role-editor-form')){for(const group of form.querySelectorAll('.mcp-tool-group')){const tools=[...group.querySelectorAll('input[name=mcpTools]')],toggle=group.querySelector('.mcp-tool-group-toggle'),selected=tools.filter(input=>input.checked).length;toggle.checked=selected===tools.length;toggle.indeterminate=selected>0&&selected<tools.length}}
  function changeMCPToolGroup(toggle){for(const input of toggle.closest('.mcp-tool-group').querySelectorAll('input[name=mcpTools]'))input.checked=toggle.checked;syncMCPToolGroups(toggle.form)}
- $('#role-box-search').addEventListener('input',renderRoleMatrix);
+ $('#role-box-search').addEventListener('input',renderRoleAssignments);
  $('#roles-toggle').onclick=()=>void openRolesModal();
  $('#inspect-edit-roles').onclick=()=>void openRolesModal(selected);
  $('#create-role').onclick=()=>openRoleEditor();
  $('#setup-team-roles').onclick=async()=>{const status=$('#role-status');if(!confirm('Create the editable Manager and Normal team roles? Manager gets All contacts, labels, and box lifecycle tools; Normal gets Computer use and its direct contacts.'))return;status.textContent='Creating team roles…';try{await api('/v1/agent-role-presets/team','POST',{},{});await refreshRoleData(true);status.textContent='Manager and Normal roles created.';toast('Team roles created.')}catch(e){status.textContent=e.message}};
- $('#discard-role-assignments').onclick=()=>{syncRoleAssignmentDraft(true);renderRoleMatrix()};
+ $('#discard-role-assignments').onclick=()=>{syncRoleAssignmentDraft(true);renderRoleAssignments()};
  $('#save-role-assignments').onclick=async()=>{
   const status=$('#role-status'),button=$('#save-role-assignments');button.disabled=true;status.textContent='Saving assignments…';
   try{await api('/v1/agent-role-assignments','PUT',{}, {assignments:roleBoxes().map(box=>({boxId:box.id,roleIds:roleAssignmentDraft.get(box.id)||[]}))});roleAssignmentsDirty=false;await refreshRoleData(true);status.textContent='Assignments saved.';toast('Role assignments saved.');if(selected)renderInspect()}

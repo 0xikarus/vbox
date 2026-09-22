@@ -35,9 +35,9 @@
 </fieldset>
 <div class="form-actions"><button type="submit" class="primary">create and start box</button></div>
 </form></section>
-<section id="roles" data-owner><h2>agent roles</h2><p class="hint">Roles are editable tool bundles. Type each exact role name, choose its capabilities, and assign any combination to a box. Direct contacts are configured on each box.</p>
+<section id="roles" data-owner><h2>agent roles</h2><p class="hint">Roles are editable tool bundles. Define them once, then choose the roles attached to each box. Direct contacts are configured on each box.</p>
 <div class="role-toolbar"><label class="field">search boxes <input id="role-box-search" type="search" placeholder="Filter by box name"></label><button type="button" class="primary" id="create-role">create role</button><button type="button" class="linkbtn" id="setup-team-roles">set up Manager + Normal</button><button type="button" class="primary" id="save-role-assignments" disabled>save changes</button><button type="button" class="linkbtn" id="discard-role-assignments" disabled>discard</button></div>
-<div id="role-matrix"></div><p id="role-status" role="status"></p></section>
+<div id="role-assignments"></div><p id="role-status" role="status"></p></section>
 <section id="profiles" data-owner><h2>saved login profiles</h2><p class="hint">Account-wide credentials, managed by owners. Select one agent profile above when creating a box; existing boxes are unchanged. Credentials are never displayed or downloaded.</p><div id="profile-tree"></div>
 <p class="hint">Upload or refresh profiles through the CLI: <code>vmbox profiles save APPLICATION NAME</code>. Deleting a saved profile leaves credentials already copied into boxes untouched. Pending creations using it may fail.</p></section>
 <section id="instructions"><h2>instruction presets</h2><div id="instruction-list"></div>

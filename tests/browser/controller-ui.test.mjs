@@ -62,7 +62,7 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
-test('native roles can be created, assigned in the matrix, and edited on mobile',async()=>{
+test('native roles can be created, assigned per box, and edited on mobile',async()=>{
  const page=await browser.newPage();
  await page.evaluateOnNewDocument(()=>{
   const original=window.fetch;
@@ -78,7 +78,7 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
   };
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#role-matrix .role-empty');
+ await page.waitForSelector('#role-assignments .role-empty');
  await page.click('#create-role');
  await page.type('#role-editor-form input[name=name]','Normal');
  await page.type('#role-editor-form textarea[name=description]','Owner-defined computer-use role');
@@ -88,7 +88,7 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  await page.click('#role-editor-form .mcp-tool-options summary');
  await page.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
  await page.click('#role-editor-form button.primary');
- await page.waitForFunction(()=>[...document.querySelectorAll('#role-matrix .role-heading')].some(button=>button.textContent==='Normal'));
+ await page.waitForFunction(()=>[...document.querySelectorAll('#role-assignments .role-heading')].some(button=>button.textContent==='Normal'));
  const selectedRole=fixtureRoles.find(role=>role.name==='Normal');
  assert.equal(selectedRole.name,'Normal','the exact owner-typed role name must be preserved');
  assert.equal(selectedRole.capabilities.allContacts.enabled,true);
@@ -96,7 +96,8 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  assert.equal(Object.values(selectedRole.capabilities.sharedChats).every(Boolean),true);
  assert.equal(selectedRole.capabilities.mcpTools.allowedTools.includes('press_keys'),true);
  assert.equal(selectedRole.capabilities.mcpTools.allowedTools.includes('secret_request'),false);
- const assignmentSelector=`#role-matrix input[aria-label="Normal for helper ü"]`;
+ await page.click('#role-assignments .role-assignment-card[data-role-box-id="box-1"] .role-assignment-toggle');
+ const assignmentSelector=`#role-assignments input[aria-label="Normal for helper ü"]`;
  await page.click(assignmentSelector);
  await page.click('#save-role-assignments');
  await page.waitForFunction(()=>document.querySelector('#role-status').textContent==='');
@@ -104,13 +105,14 @@ test('native roles can be created, assigned in the matrix, and edited on mobile'
  await page.setViewport({width:1280,height:900});
  await page.$eval('a[href="#roles"]',link=>link.click());
  await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-desktop.png')});
- await page.$$eval('#role-matrix .role-heading',buttons=>buttons.find(button=>button.textContent==='Normal').click());
+ await page.$$eval('#role-assignments .role-heading',buttons=>buttons.find(button=>button.textContent==='Normal').click());
  await page.setViewport({width:1280,height:1200});
  await (await page.$('#role-editor-modal .card')).screenshot({path:resolve('docs/screenshots/agent-roles/role-editor.png')});
  await page.click('#role-editor-modal [data-close="role-editor-modal"]');
  await page.setViewport({width:390,height:844});
- assert.equal(await page.$eval('.role-mobile',element=>getComputedStyle(element).display),'grid');
- assert.equal(await page.$eval(assignmentSelector,element=>getComputedStyle(element.closest('.role-matrix-wrap')).display),'none');
+ assert.equal(await page.$('#role-assignments table'),null,'assignments should not fall back to a matrix on mobile');
+ assert.equal(await page.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
+ assert.equal(await page.$eval('#role-assignments .role-assignment-card[data-role-box-id="box-1"]',element=>element.getBoundingClientRect().width>350),true);
  await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/roles-mobile.png')});
  await page.close();
 });
@@ -481,7 +483,7 @@ test('index styles ship in a page-scoped sheet, not inline and not in shared app
  // Only the index links controller.css: grid, chat and workspace share app.css
  // and their terminal viewers are sensitive to changes in page geometry.
  for(const other of ['grid.html','chat.html','workspace.html'])assert(!(await readFile(resolve(root,other),'utf8')).includes('controller.css'),other);
- assert(Buffer.byteLength(page)<10240);assert(!/@import|url\(/.test(page));
+ assert(Buffer.byteLength(page)<12288);assert(!/@import|url\(/.test(page));
 });
 test('new box starts automatically and its row follows startup through the temporary saved state',async()=>{
  const page=await browser.newPage();

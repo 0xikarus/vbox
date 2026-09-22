@@ -241,14 +241,14 @@
  <div class="sheet-backdrop" data-close="roles-modal"></div>
  <section class="sheet-card roles-card" role="dialog" aria-modal="true" aria-labelledby="roles-title">
   <header><strong id="roles-title">Agent roles</strong><span class="spacer"></span><button type="button" data-close="roles-modal" aria-label="Close">×</button></header>
-  <p class="hint">Roles are editable tool bundles. Type each role's exact name, choose its capabilities, then assign any combination to boxes.</p>
+  <p class="hint">Roles are editable tool bundles. Define them once, then choose the roles attached to each box.</p>
   <div class="roles-toolbar">
-   <label>Search boxes <input id="role-box-search" type="search" placeholder="Filter by exact box name" autocomplete="off"></label>
+   <label>Search boxes <input id="role-box-search" type="search" placeholder="Filter boxes by name" autocomplete="off"></label>
    <button type="button" id="create-role" class="primary compact">Define role</button>
    <button type="button" id="setup-team-roles">Set up Manager + Normal</button>
   </div>
-  <div id="role-matrix"></div>
-  <div class="role-actions"><button type="button" id="save-role-assignments" class="primary compact" disabled>Save assignments</button><button type="button" id="discard-role-assignments" disabled>Discard</button></div>
+  <div id="role-assignments"></div>
+  <div class="role-actions"><button type="button" id="save-role-assignments" class="primary compact" disabled>Save role changes</button><button type="button" id="discard-role-assignments" disabled>Discard</button></div>
   <p id="role-status" role="status"></p>
  </section>
 </div>
