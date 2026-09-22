@@ -258,7 +258,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		// Codex used to get a fresh session here because a running thread could
 		// not be addressed. It can now, so an existing primary Codex is reused
 		// instead of starting a second one beside it.
-		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images, SenderBoxID: request.SenderBoxID})
+		task, reused, err := s.Store.CreateBoxTask(ctx, p, box.ID, idempotency+":task", v1.CreateBoxTaskRequest{Agent: request.Agent, Session: request.Session, Prompt: request.Text, Images: request.Images, ParentMessageID: request.ParentMessageID, SenderBoxID: request.SenderBoxID})
 		if err != nil {
 			return response, err
 		}
@@ -275,7 +275,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		}
 		return response, nil
 	}
-	message, _, err := s.Store.CreateBoxMessage(ctx, p, selected.ID, idempotency+":message", v1.SendBoxMessageRequest{Text: request.Text, Images: request.Images, SenderBoxID: request.SenderBoxID})
+	message, _, err := s.Store.CreateBoxMessage(ctx, p, selected.ID, idempotency+":message", v1.SendBoxMessageRequest{Text: request.Text, Images: request.Images, ParentMessageID: request.ParentMessageID, SenderBoxID: request.SenderBoxID})
 	if err != nil {
 		return response, err
 	}
@@ -411,8 +411,22 @@ func (s *Server) dispatchGroupMessage(ctx context.Context, p Principal, message 
 		body = "[Forwarded from " + message.SourceBoxName + " in " + group.Name + "]\n" + message.Text
 	}
 	for _, delivery := range message.Deliveries {
+		if message.SourceBoxID != "" {
+			capabilities, capErr := s.Store.EffectiveAgentCapabilities(ctx, p.AccountID, message.SourceBoxID)
+			if capErr != nil {
+				continue
+			}
+			if !capabilities.SharedChats.Read {
+				_ = s.Store.SetGroupDelivery(ctx, p.AccountID, message.ID, delivery.LogicalBoxID, "", "", "failed", "shared chat permission was revoked")
+				continue
+			}
+		}
 		claimed, err := s.Store.ClaimGroupDelivery(ctx, p.AccountID, message.ID, delivery.LogicalBoxID)
 		if err != nil || !claimed {
+			continue
+		}
+		if agents[delivery.LogicalBoxID] == "" {
+			_ = s.Store.SetGroupDelivery(ctx, p.AccountID, message.ID, delivery.LogicalBoxID, "", "", "failed", "shared chat membership was revoked")
 			continue
 		}
 		key := "group:" + message.ID + ":" + delivery.LogicalBoxID

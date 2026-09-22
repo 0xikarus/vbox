@@ -52,6 +52,9 @@ type Server struct {
 	Bootstrap            func(context.Context, provider.Provider, provider.Box, []string) error
 	HTTP                 *http.Client
 	ReconcileEvery       time.Duration
+	DefaultRunBudget     time.Duration
+	EmailProvisionURL    string
+	EmailProvisionToken  string
 	Deliver              NotificationSink
 	// StartTask hands a freshly created task to its agent. It is a field so
 	// that tests can observe the hand-off instead of racing a detached
@@ -129,6 +132,24 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets/{key}/confirm", s.owner(s.confirmDesktopSecret))
 	mux.HandleFunc("GET /v1/agent-desktop/contacts", s.desktopAgentAuth(s.agentContactsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/busy", s.desktopAgentAuth(s.agentBusyHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/run-budget", s.desktopAgentAuth(s.agentRunBudgetHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/run-budget/extend", s.desktopAgentAuth(s.agentRunBudgetHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/followups", s.desktopAgentAuth(s.agentFollowupHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/tool-policy", s.desktopAgentAuth(s.agentToolPolicyHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/thread-history", s.desktopAgentAuth(s.agentThreadHistoryHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/shared-chats", s.desktopAgentAuth(s.agentSharedChatsHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/shared-chats", s.desktopAgentAuth(s.agentSharedChatsHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/shared-chats/{group}/messages", s.desktopAgentAuth(s.agentSharedChatMessagesHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/shared-chats/{group}/messages", s.desktopAgentAuth(s.agentSharedChatMessagesHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/shared-chats/{group}/subscribe", s.desktopAgentAuth(s.agentSharedChatSubscribeHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/shared-chats/{group}/invite", s.desktopAgentAuth(s.agentSharedChatInviteHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/email-addresses", s.desktopAgentAuth(s.agentEmailHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/boxes", s.desktopAgentAuth(s.agentBoxCreationHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/boxes", s.desktopAgentAuth(s.agentBoxesHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/boxes/{box}", s.desktopAgentAuth(s.agentBoxHandler))
+	mux.HandleFunc("PUT /v1/agent-desktop/boxes/{box}/tags", s.desktopAgentAuth(s.agentBoxTagsHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/boxes/{box}/restart", s.desktopAgentAuth(s.agentBoxRestartHandler))
+	mux.HandleFunc("DELETE /v1/agent-desktop/boxes/{box}", s.desktopAgentAuth(s.agentBoxDeleteHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/type", s.desktopAgentAuth(s.typeDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/ensure", s.desktopAgentAuth(s.ensureAgentDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/request", s.desktopAgentAuth(s.requestDesktopSecret))
@@ -164,6 +185,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/fleet/location", s.owner(s.setFleetLocation))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/resources", s.owner(s.boxResources))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/resources", s.owner(s.setBoxResources))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/tags", s.owner(s.boxTagsHandler))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/tags", s.owner(s.boxTagsHandler))
+	mux.HandleFunc("GET /v1/agent-roles", s.owner(s.agentRolesHandler))
+	mux.HandleFunc("POST /v1/agent-roles", s.owner(s.agentRolesHandler))
+	mux.HandleFunc("POST /v1/agent-role-presets/team", s.owner(s.teamRolePresetHandler))
+	mux.HandleFunc("GET /v1/agent-roles/{id}", s.owner(s.agentRoleHandler))
+	mux.HandleFunc("PUT /v1/agent-roles/{id}", s.owner(s.agentRoleHandler))
+	mux.HandleFunc("DELETE /v1/agent-roles/{id}", s.owner(s.agentRoleHandler))
+	mux.HandleFunc("PUT /v1/agent-role-assignments", s.owner(s.roleAssignmentsHandler))
 	mux.HandleFunc("GET /v1/inventory", s.auth(s.boxInventoryHandler))
 	mux.HandleFunc("GET /v1/capabilities", s.auth(func(w http.ResponseWriter, r *http.Request, p Principal) {
 		writeJSON(w, 200, map[string]any{"nativeSessions": true, "nativeAttach": p.Role == "owner", "snapshotUpdates": true, "providerEdits": p.Role == "owner", "oneShotTasks": true, "interactiveLaunch": p.Role == "owner"})
@@ -628,6 +658,12 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
 		s.Logger.Error("initial logical box hibernate reconciliation failed", "error", err)
 	}
+	if err := s.ReconcileAgentRunBudgetsNow(ctx); err != nil {
+		s.Logger.Error("initial agent run-budget reconciliation failed", "error", err)
+	}
+	if err := s.ReconcileAgentFollowupsNow(ctx); err != nil {
+		s.Logger.Error("initial agent follow-up reconciliation failed", "error", err)
+	}
 	if err := s.ReconcileLogicalBoxDeletesNow(ctx); err != nil {
 		s.Logger.Error("initial logical box deletion reconciliation failed", "error", err)
 	}
@@ -666,6 +702,12 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 				}
 				if err := s.ReconcileDesktopIdleNow(ctx); err != nil {
 					s.Logger.Error("desktop inactivity reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileAgentRunBudgetsNow(ctx); err != nil {
+					s.Logger.Error("agent run-budget reconciliation failed", "error", err)
+				}
+				if err := s.ReconcileAgentFollowupsNow(ctx); err != nil {
+					s.Logger.Error("agent follow-up reconciliation failed", "error", err)
 				}
 				if err := s.ReconcileLogicalBoxHibernatesNow(ctx); err != nil {
 					s.Logger.Error("logical box hibernate reconciliation failed", "error", err)

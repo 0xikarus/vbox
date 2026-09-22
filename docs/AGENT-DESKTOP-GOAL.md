@@ -119,13 +119,13 @@ configuration. Shell remains a visible terminal mode, not an MCP agent client.
 
 | Tool | Behavior |
 | --- | --- |
-| `desktop_screenshot` | Capture the current screen and return an image plus dimensions. |
-| `desktop_move` | Move to a screen coordinate along a smooth Bézier path; support hovering. |
-| `desktop_click` | Click a screen coordinate; support left, right, and double click. |
-| `desktop_type` | Enter literal text into the focused application. |
-| `desktop_key` | Send a key or keyboard shortcut. |
-| `desktop_scroll` | Scroll by a bounded amount at a screen position. |
-| `desktop_drag` | Drag from one coordinate to another. |
+| `take_screenshot` | Capture the current screen and return an image plus dimensions. |
+| `move_mouse` | Move to a screen coordinate along a smooth Bézier path; support hovering. |
+| `click_mouse` | Click a screen coordinate; support left, right, and double click. |
+| `type_text` | Enter literal text into the focused application. |
+| `press_keys` | Send a key or keyboard shortcut. |
+| `scroll_mouse` | Scroll by a bounded amount at a screen position. |
+| `drag_mouse` | Drag from one coordinate to another. |
 | `browser_load_state` | Load a user-provided browser-state reference into the box's browser, subject to origin and box scope. Return status, not cookies or tokens. |
 | `type_secret("secret_key")` | Resolve an authorized secret reference and enter it into a verified destination without returning the value to the agent. |
 
@@ -201,7 +201,7 @@ such as `secretForPageN`; it does not need to supply or receive the password.
 Proposed tool flow:
 
 ```text
-secret_ensure(key="secretForPageN", purpose="new_account_password")
+generate_password(key="secretForPageN", purpose="new_account_password")
     → verify current browser origin and authorization
     → reuse an authorized existing binding, or generate a password if absent
     → encrypt and durably save it in the secret manager before entry

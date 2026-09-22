@@ -36,19 +36,6 @@ const (
 	LogicalBoxFailed      LogicalBoxState = "failed"
 )
 
-// A box role is set when the workspace is created. A manager holds the
-// fleet-wide contact permission; a worker only has explicit contact edges.
-type BoxRole string
-
-const (
-	BoxRoleWorker  BoxRole = "worker"
-	BoxRoleManager BoxRole = "manager"
-)
-
-func ValidBoxRole(role string) bool {
-	return role == string(BoxRoleWorker) || role == string(BoxRoleManager)
-}
-
 type FleetConfig struct {
 	Region             string    `json:"region,omitempty"`
 	Provider           string    `json:"provider"`
@@ -98,26 +85,26 @@ type ComputeSlot struct {
 }
 
 type LogicalBox struct {
-	Tools                []string        `json:"tools,omitempty"`
-	ID                   string          `json:"id"`
-	AccountID            string          `json:"accountId,omitempty"`
-	Name                 string          `json:"name"`
-	Provider             string          `json:"provider"`
-	ProviderCredential   string          `json:"providerCredential,omitempty"`
-	DefaultAgent         string          `json:"defaultAgent"`
-	Role                 string          `json:"role,omitempty"`
-	OwnerUserID          string          `json:"ownerUserId,omitempty"`
-	State                LogicalBoxState `json:"state"`
-	VolumeID             string          `json:"volumeId"`
-	VolumeName           string          `json:"volumeName"`
-	SlotID               string          `json:"slotId,omitempty"`
-	AssignmentGeneration int64           `json:"assignmentGeneration"`
-	LeaseOwner           string          `json:"leaseOwner,omitempty"`
-	LeaseExpiresAt       *time.Time      `json:"leaseExpiresAt,omitempty"`
-	RestorationState     string          `json:"restorationState,omitempty"`
-	FailureReason        string          `json:"failureReason,omitempty"`
-	CreatedAt            time.Time       `json:"createdAt,omitempty"`
-	UpdatedAt            time.Time       `json:"updatedAt,omitempty"`
+	Tools                []string           `json:"tools,omitempty"`
+	ID                   string             `json:"id"`
+	AccountID            string             `json:"accountId,omitempty"`
+	Name                 string             `json:"name"`
+	Provider             string             `json:"provider"`
+	ProviderCredential   string             `json:"providerCredential,omitempty"`
+	DefaultAgent         string             `json:"defaultAgent"`
+	Roles                []AgentRoleSummary `json:"roles"`
+	OwnerUserID          string             `json:"ownerUserId,omitempty"`
+	State                LogicalBoxState    `json:"state"`
+	VolumeID             string             `json:"volumeId"`
+	VolumeName           string             `json:"volumeName"`
+	SlotID               string             `json:"slotId,omitempty"`
+	AssignmentGeneration int64              `json:"assignmentGeneration"`
+	LeaseOwner           string             `json:"leaseOwner,omitempty"`
+	LeaseExpiresAt       *time.Time         `json:"leaseExpiresAt,omitempty"`
+	RestorationState     string             `json:"restorationState,omitempty"`
+	FailureReason        string             `json:"failureReason,omitempty"`
+	CreatedAt            time.Time          `json:"createdAt,omitempty"`
+	UpdatedAt            time.Time          `json:"updatedAt,omitempty"`
 }
 
 type Allocation struct {

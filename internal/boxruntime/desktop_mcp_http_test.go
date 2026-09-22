@@ -37,8 +37,8 @@ func desktopMCPHTTPRequest(t *testing.T, handler http.Handler, method, target, t
 // Loopback is shared between boxes on a worker, so an unauthenticated caller
 // must get nothing, not even the tool list.
 func TestDesktopMCPHTTPRequiresToken(t *testing.T) {
-	handler := desktopMCPHTTPHandler("assignment", "secret-token")
-	for _, target := range []string{"/", "/tools", "/tools/desktop_screenshot"} {
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
+	for _, target := range []string{"/", "/tools", "/tools/take_screenshot", "/prompt"} {
 		status, body := desktopMCPHTTPRequest(t, handler, http.MethodGet, target, "", "")
 		if status != http.StatusUnauthorized {
 			t.Fatalf("%s without a token returned %d", target, status)
@@ -53,17 +53,71 @@ func TestDesktopMCPHTTPRequiresToken(t *testing.T) {
 	}
 }
 
+func TestDesktopMCPHTTPPromptDeliversToRunningClaudeConversation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch strings.Join(args, " ") {
+		case "list-sessions -F #{session_name}":
+			return []byte("agent-session\n"), nil
+		case "show-environment -t agent-session " + taskAgentEnvironment:
+			return []byte(taskAgentEnvironment + "=claude\n"), nil
+		default:
+			return nil, fmt.Errorf("unexpected tmux command: %v", args)
+		}
+	}
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
+	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"run the local check"}`)
+	if status != http.StatusAccepted || response["accepted"] != true || response["session"] != "agent-session" {
+		t.Fatalf("prompt returned %d %v", status, response)
+	}
+	inbound, _, found, err := nextChatInbound(home, "agent-session")
+	if err != nil || !found || inbound.Text != "run the local check" {
+		t.Fatalf("inbound=%+v found=%v err=%v", inbound, found, err)
+	}
+}
+
+func TestDesktopMCPHTTPPromptRejectsNonRunningAndAmbiguousInput(t *testing.T) {
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	tmuxCommand = func(context.Context, string, ...string) ([]byte, error) {
+		return nil, fmt.Errorf("no tmux server")
+	}
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
+	for name, body := range map[string]string{
+		"empty":    `{"text":""}`,
+		"unknown":  `{"text":"hello","wake":true}`,
+		"trailing": `{"text":"hello"}{"text":"again"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			status, _ := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", body)
+			if status != http.StatusBadRequest {
+				t.Fatalf("invalid prompt returned %d", status)
+			}
+		})
+	}
+	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"hello"}`)
+	if status != http.StatusConflict || !strings.Contains(response["error"].(string), "no agent conversation") {
+		t.Fatalf("non-running prompt returned %d %v", status, response)
+	}
+	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/prompt", "secret-token", ""); status != http.StatusMethodNotAllowed {
+		t.Fatalf("GET prompt returned %d", status)
+	}
+}
+
 // Readiness must answer before a caller has the token, so the start-up probe
 // can tell "not listening yet" from "listening".
 func TestDesktopMCPHTTPHealthIsOpen(t *testing.T) {
-	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token"), http.MethodGet, "/health", "", "")
+	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy), http.MethodGet, "/health", "", "")
 	if status != http.StatusOK || body["ok"] != true {
 		t.Fatalf("health returned %d %v", status, body)
 	}
 }
 
 func TestDesktopMCPHTTPListsTheSameToolsAsMCP(t *testing.T) {
-	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token"), http.MethodGet, "/tools", "secret-token", "")
+	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy), http.MethodGet, "/tools", "secret-token", "")
 	if status != http.StatusOK {
 		t.Fatalf("tools returned %d", status)
 	}
@@ -83,38 +137,49 @@ func TestDesktopMCPHTTPListsTheSameToolsAsMCP(t *testing.T) {
 	}
 	for _, value := range listed {
 		tool, _ := value.(map[string]any)
-		if tool["name"] != "desktop_screenshot" {
+		if tool["name"] != "take_screenshot" {
 			continue
 		}
 		schema := tool["inputSchema"].(map[string]any)
 		properties := schema["properties"].(map[string]any)
 		output := properties["output"].(map[string]any)
 		if output["default"] != "image" {
-			t.Fatalf("desktop_screenshot default output = %v", output["default"])
+			t.Fatalf("take_screenshot default output = %v", output["default"])
 		}
 		if got := output["enum"].([]any); len(got) != 2 || got[0] != "image" || got[1] != "file" {
-			t.Fatalf("desktop_screenshot output enum = %v", got)
+			t.Fatalf("take_screenshot output enum = %v", got)
 		}
 	}
 }
 
+func TestDesktopMCPHTTPRejectsToolOutsideBoxPolicy(t *testing.T) {
+	resolve := func(context.Context, string) (map[string]bool, error) {
+		return map[string]bool{"take_screenshot": true}, nil
+	}
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", resolve)
+	status, body := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/click_mouse", "secret-token", `{"x":10,"y":20}`)
+	if status != http.StatusForbidden || !strings.Contains(body["error"].(string), "not allowed") {
+		t.Fatalf("disallowed tool returned %d %v", status, body)
+	}
+}
+
 func TestDesktopMCPHTTPRejectsUnknownToolsAndArguments(t *testing.T) {
-	handler := desktopMCPHTTPHandler("assignment", "secret-token")
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
 	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_launch_missiles", "secret-token", `{}`); status != http.StatusBadRequest {
 		t.Fatalf("unknown tool returned %d", status)
 	}
-	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools/desktop_click?z=1", "secret-token", ""); status != http.StatusBadRequest {
+	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools/click_mouse?z=1", "secret-token", ""); status != http.StatusBadRequest {
 		t.Fatalf("unknown argument returned %d", status)
 	}
-	status, body := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_screenshot", "secret-token", `{"output":"path"}`)
+	status, body := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/take_screenshot", "secret-token", `{"output":"path"}`)
 	if status != http.StatusBadRequest || !strings.Contains(body["error"].(string), "image or file") {
 		t.Fatalf("invalid screenshot output returned %d %v", status, body)
 	}
-	status, body = desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/desktop_click", "secret-token", `{"x":10}`)
+	status, body = desktopMCPHTTPRequest(t, handler, http.MethodPost, "/tools/click_mouse", "secret-token", `{"x":10}`)
 	if status != http.StatusBadRequest || !strings.Contains(body["error"].(string), "y") {
 		t.Fatalf("missing argument returned %d %v", status, body)
 	}
-	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodDelete, "/tools/desktop_click", "secret-token", ""); status != http.StatusMethodNotAllowed {
+	if status, _ := desktopMCPHTTPRequest(t, handler, http.MethodDelete, "/tools/click_mouse", "secret-token", ""); status != http.StatusMethodNotAllowed {
 		t.Fatalf("DELETE returned %d", status)
 	}
 }
@@ -122,7 +187,7 @@ func TestDesktopMCPHTTPRejectsUnknownToolsAndArguments(t *testing.T) {
 // A shell script writes query strings far more easily than JSON, so GET values
 // are converted to the types each tool's schema asks for.
 func TestDesktopMCPHTTPQueryArgumentsFollowTheSchema(t *testing.T) {
-	raw, err := desktopMCPQueryArguments(map[string][]string{"x": {"10"}, "y": {"20"}, "button": {"3"}}, "desktop_click")
+	raw, err := desktopMCPQueryArguments(map[string][]string{"x": {"10"}, "y": {"20"}, "button": {"3"}}, "click_mouse")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +212,7 @@ func TestDesktopMCPHTTPQueryArgumentsFollowTheSchema(t *testing.T) {
 	if decoded["multiple"] != true {
 		t.Fatalf("boolean was not converted: %v", decoded)
 	}
-	if _, err := desktopMCPQueryArguments(map[string][]string{"x": {"left"}, "y": {"2"}}, "desktop_click"); err == nil {
+	if _, err := desktopMCPQueryArguments(map[string][]string{"x": {"left"}, "y": {"2"}}, "click_mouse"); err == nil {
 		t.Fatal("a non-numeric coordinate must be reported")
 	}
 }
@@ -189,7 +254,7 @@ func TestWriteDesktopMCPEndpointDescribesTheFacade(t *testing.T) {
 	if err := json.Unmarshal(data, &endpoint); err != nil {
 		t.Fatal(err)
 	}
-	if endpoint["url"] != desktopMCPHTTPURL("assignment") || endpoint["token"] != "secret-token" {
+	if endpoint["url"] != desktopMCPHTTPURL("assignment") || endpoint["promptUrl"] != desktopMCPHTTPURL("assignment")+"/prompt" || endpoint["token"] != "secret-token" {
 		t.Fatalf("endpoint file is %v", endpoint)
 	}
 }
@@ -364,8 +429,8 @@ func TestWithChatSessionOverridesTheHostingSession(t *testing.T) {
 // vmbox_session steers the call; it is not a tool argument.
 func TestDesktopMCPHTTPSessionParameterIsNotAToolArgument(t *testing.T) {
 	stubTmuxSessions(t, map[string]string{"codex-abc123": "codex"})
-	handler := desktopMCPHTTPHandler("assignment", "secret-token")
-	status, body := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools/desktop_click?x=1&y=2&vmbox_session=codex-abc123", "secret-token", "")
+	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
+	status, body := desktopMCPHTTPRequest(t, handler, http.MethodGet, "/tools/click_mouse?x=1&y=2&vmbox_session=codex-abc123", "secret-token", "")
 	if status == http.StatusBadRequest && strings.Contains(body["error"].(string), "unknown tool argument") {
 		t.Fatalf("vmbox_session was treated as a tool argument: %v", body)
 	}

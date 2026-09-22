@@ -290,12 +290,19 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS chat_key text;
+ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS parent_message_id uuid REFERENCES box_messages(id) ON DELETE SET NULL;
+ALTER TABLE box_messages ADD COLUMN IF NOT EXISTS thread_id uuid;
+-- Historical messages become independent roots. We deliberately do not infer
+-- parentage from timestamps or adjacency because that would fabricate links.
+UPDATE box_messages SET thread_id=id WHERE thread_id IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS box_messages_chat_key_idx
   ON box_messages(account_id,chat_key) WHERE chat_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS box_messages_task_time_idx
   ON box_messages(account_id,task_id,created_at,id);
 CREATE INDEX IF NOT EXISTS box_messages_delivery_idx
   ON box_messages(account_id,state,created_at,id);
+CREATE INDEX IF NOT EXISTS box_messages_thread_time_idx
+  ON box_messages(account_id,thread_id,created_at,id);
 CREATE TABLE IF NOT EXISTS box_message_images (
   message_id uuid NOT NULL REFERENCES box_messages(id) ON DELETE CASCADE,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -312,10 +319,13 @@ CREATE TABLE IF NOT EXISTS chat_groups (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   created_by uuid NOT NULL REFERENCES users(id),
   name text NOT NULL,
+  idempotency_key text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id,name)
 );
+ALTER TABLE chat_groups ADD COLUMN IF NOT EXISTS idempotency_key text;
+CREATE UNIQUE INDEX IF NOT EXISTS chat_groups_idempotency_idx ON chat_groups(account_id,idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE TABLE IF NOT EXISTS chat_group_members (
   group_id uuid NOT NULL REFERENCES chat_groups(id) ON DELETE CASCADE,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -327,6 +337,8 @@ CREATE TABLE IF NOT EXISTS chat_group_members (
 );
 CREATE INDEX IF NOT EXISTS chat_group_members_box_idx
   ON chat_group_members(account_id,logical_box_id);
+ALTER TABLE chat_group_members ADD COLUMN IF NOT EXISTS subscription_mode text NOT NULL DEFAULT 'following'
+  CHECK (subscription_mode IN ('following','mentions','every_message'));
 CREATE TABLE IF NOT EXISTS chat_group_messages (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -340,6 +352,10 @@ CREATE TABLE IF NOT EXISTS chat_group_messages (
 );
 CREATE INDEX IF NOT EXISTS chat_group_messages_time_idx
   ON chat_group_messages(account_id,group_id,created_at,id);
+ALTER TABLE chat_group_messages ADD COLUMN IF NOT EXISTS parent_message_id uuid REFERENCES chat_group_messages(id) ON DELETE SET NULL;
+ALTER TABLE chat_group_messages ADD COLUMN IF NOT EXISTS thread_id uuid;
+UPDATE chat_group_messages SET thread_id=id WHERE thread_id IS NULL;
+CREATE INDEX IF NOT EXISTS chat_group_messages_thread_idx ON chat_group_messages(account_id,group_id,thread_id,created_at,id);
 CREATE TABLE IF NOT EXISTS chat_group_deliveries (
   message_id uuid NOT NULL REFERENCES chat_group_messages(id) ON DELETE CASCADE,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -632,12 +648,10 @@ CREATE TABLE IF NOT EXISTS box_instruction_snapshots (
 );
 -- Existing boxes keep empty guidance; only new creations populate this field.
 ALTER TABLE box_instruction_snapshots ADD COLUMN IF NOT EXISTS tool_guidance text NOT NULL DEFAULT '';
--- A box's role is chosen at creation. A manager holds the fleet-wide contact
--- permission; a worker starts with no contacts and only explicit edges.
-ALTER TABLE logical_boxes ADD COLUMN IF NOT EXISTS role text NOT NULL DEFAULT 'worker' CHECK (role IN ('worker','manager'));
-
--- Two-way, owner-managed contact edges. Each relationship is stored as two
--- directional rows so the authorization hot path stays a simple lookup.
+-- Directed, owner-managed contact overrides. A missing row means inherit,
+-- can_message=true means allow, and can_message=false means block. The legacy
+-- can_receive value was never part of delivery authorization and remains only
+-- so existing rows can be retained without inventing reciprocal permissions.
 CREATE TABLE IF NOT EXISTS box_contacts (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
@@ -659,7 +673,218 @@ SELECT account_id,contact_box_id,box_id,can_receive,can_message,created_by,creat
 FROM box_contacts
 ON CONFLICT(box_id,contact_box_id) DO NOTHING;
 
--- Owner-designated protected boxes are invisible and unreachable to a manager.
+-- Native agent roles are account scoped and deliberately have no built-in
+-- names. Permission keys and typed JSON configs are validated by the
+-- controller's catalogue rather than inferred from those names.
+CREATE TABLE IF NOT EXISTS agent_roles (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  description text NOT NULL DEFAULT '',
+  created_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,name)
+);
+CREATE TABLE IF NOT EXISTS agent_role_permissions (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  role_id uuid NOT NULL REFERENCES agent_roles(id) ON DELETE CASCADE,
+  permission text NOT NULL,
+  scope text NOT NULL,
+  config jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(role_id,permission)
+);
+CREATE INDEX IF NOT EXISTS agent_role_permissions_account_idx ON agent_role_permissions(account_id,role_id);
+CREATE TABLE IF NOT EXISTS box_role_assignments (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  role_id uuid NOT NULL REFERENCES agent_roles(id) ON DELETE CASCADE,
+  assigned_by uuid NOT NULL REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(box_id,role_id)
+);
+CREATE INDEX IF NOT EXISTS box_role_assignments_account_idx ON box_role_assignments(account_id,box_id);
+
+-- Migrate the first role/contact design into the simpler model once. Selected
+-- role grants become direct contacts for boxes currently assigned that role;
+-- all-scope grants become the explicit all_contacts capability. Existing
+-- per-box rows win so an owner-authored block is never widened by migration.
+DO $$
+BEGIN
+  IF to_regclass('agent_role_contact_grants') IS NOT NULL THEN
+    EXECUTE $migrate$
+      INSERT INTO box_contacts(account_id,box_id,contact_box_id,can_message,can_receive,created_by)
+      SELECT a.account_id,a.box_id,g.contact_box_id,true,true,a.assigned_by
+      FROM box_role_assignments a
+      JOIN agent_role_permissions p ON p.account_id=a.account_id AND p.role_id=a.role_id
+        AND p.permission='contacts' AND p.scope='selected'
+      JOIN agent_role_contact_grants g ON g.account_id=a.account_id AND g.role_id=a.role_id
+      ON CONFLICT(box_id,contact_box_id) DO NOTHING
+    $migrate$;
+    INSERT INTO agent_role_permissions(account_id,role_id,permission,scope,config)
+      SELECT account_id,role_id,'all_contacts','allow','{"enabled":true}'::jsonb
+      FROM agent_role_permissions WHERE permission='contacts' AND scope='all'
+      ON CONFLICT(role_id,permission) DO UPDATE SET scope='allow',config=excluded.config,updated_at=now();
+    DELETE FROM agent_role_permissions WHERE permission='contacts';
+    DROP TABLE agent_role_contact_grants;
+  END IF;
+END $$;
+
+-- Agent-initiated work is durable and fenced to an assignment generation.
+-- The run budget is independent of desktop inactivity and only has a live
+-- deadline while the box is allocated.
+CREATE TABLE IF NOT EXISTS agent_run_budgets (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  assignment_generation bigint NOT NULL,
+  remaining_seconds bigint NOT NULL CHECK (remaining_seconds >= 0),
+  deadline_at timestamptz,
+  extension_seconds bigint NOT NULL DEFAULT 0 CHECK (extension_seconds >= 0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,box_id)
+);
+CREATE INDEX IF NOT EXISTS agent_run_budgets_deadline_idx ON agent_run_budgets(deadline_at) WHERE deadline_at IS NOT NULL;
+CREATE TABLE IF NOT EXISTS agent_run_budget_extensions (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  assignment_generation bigint NOT NULL,
+  idempotency_key text NOT NULL,
+  minutes integer NOT NULL CHECK (minutes > 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,box_id,assignment_generation,idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS agent_followups (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  task_id uuid NOT NULL REFERENCES box_tasks(id) ON DELETE CASCADE,
+  created_by uuid NOT NULL REFERENCES users(id),
+  assignment_generation bigint NOT NULL,
+  text text NOT NULL,
+  delay_seconds integer NOT NULL DEFAULT 0 CHECK (delay_seconds >= 0),
+  due_at timestamptz NOT NULL,
+  state text NOT NULL CHECK (state IN ('queued','delivering','delivered','canceled','failed')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,box_id,idempotency_key)
+);
+ALTER TABLE agent_followups ADD COLUMN IF NOT EXISTS delay_seconds integer NOT NULL DEFAULT 0 CHECK (delay_seconds >= 0);
+-- Upgrades may contain follow-ups created before exact task binding existed.
+-- Keep those rows for audit/history, but never deliver them to a guessed task.
+ALTER TABLE agent_followups ADD COLUMN IF NOT EXISTS task_id uuid REFERENCES box_tasks(id) ON DELETE CASCADE;
+UPDATE agent_followups SET state='canceled',failure_reason='created before exact task binding was available',updated_at=now()
+WHERE task_id IS NULL AND state IN ('queued','delivering');
+CREATE INDEX IF NOT EXISTS agent_followups_due_idx ON agent_followups(state,due_at);
+CREATE TABLE IF NOT EXISTS agent_box_creations (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  creator_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  created_box_id uuid REFERENCES logical_boxes(id) ON DELETE SET NULL,
+  requested_name text NOT NULL,
+  requested_agent text NOT NULL,
+  requested_disk_gib bigint NOT NULL,
+  requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+  requested_instructions text NOT NULL DEFAULT '',
+  idempotency_key text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,creator_box_id,idempotency_key)
+);
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_agent text NOT NULL DEFAULT 'codex';
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_disk_gib bigint NOT NULL DEFAULT 10;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_instructions text NOT NULL DEFAULT '';
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS completed_at timestamptz;
+UPDATE agent_box_creations SET completed_at=created_at WHERE created_box_id IS NOT NULL AND completed_at IS NULL;
+CREATE TABLE IF NOT EXISTS agent_box_deletions (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  idempotency_key text NOT NULL,
+  target_ref text NOT NULL,
+  confirmation text NOT NULL,
+  target_box_id uuid,
+  target_name text,
+  accepted boolean NOT NULL DEFAULT false,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,actor_box_id,idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS agent_box_restarts (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  actor_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  target_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  target_ref text NOT NULL,
+  target_name text NOT NULL,
+  confirmation text NOT NULL,
+  idempotency_key text NOT NULL,
+  state text NOT NULL DEFAULT 'requested' CHECK (state IN ('requested','hibernating','allocating','complete','failed')),
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,actor_box_id,idempotency_key)
+);
+CREATE TABLE IF NOT EXISTS agent_email_addresses (
+  id uuid PRIMARY KEY,
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  creator_box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+  address text,
+  provider_ref text,
+  address_type text NOT NULL,
+  domain text NOT NULL,
+  local_part text NOT NULL DEFAULT '',
+  state text NOT NULL CHECK (state IN ('provisioning','ready','failed')),
+  idempotency_key text NOT NULL,
+  failure_reason text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(account_id,creator_box_id,idempotency_key)
+);
+ALTER TABLE agent_email_addresses ADD COLUMN IF NOT EXISTS local_part text NOT NULL DEFAULT '';
+
+-- Preserve the legacy manager contract before removing the scalar role. One
+-- editable Manager role is synthesized per affected account, granted the exact
+-- all_contacts capability, and assigned to every legacy manager box. Dynamic
+-- SQL keeps this migration retry-safe after the old column has been dropped.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema=current_schema() AND table_name='logical_boxes' AND column_name='role'
+  ) THEN
+    EXECUTE $migrate$
+      INSERT INTO agent_roles(id,account_id,name,description,created_by)
+      SELECT gen_random_uuid(),legacy.account_id,'Manager','Migrated from the legacy manager box role.',legacy.owner_user_id
+      FROM (
+        SELECT DISTINCT ON (account_id) account_id,owner_user_id
+        FROM logical_boxes WHERE role='manager' ORDER BY account_id,created_at,id
+      ) legacy
+      ON CONFLICT(account_id,name) DO NOTHING
+    $migrate$;
+    EXECUTE $migrate$
+      INSERT INTO agent_role_permissions(account_id,role_id,permission,scope,config)
+      SELECT r.account_id,r.id,'all_contacts','allow','{"enabled":true}'::jsonb
+      FROM agent_roles r
+      WHERE r.name='Manager' AND EXISTS (
+        SELECT 1 FROM logical_boxes b WHERE b.account_id=r.account_id AND b.role='manager'
+      )
+      ON CONFLICT(role_id,permission) DO UPDATE SET scope='allow',config=excluded.config,updated_at=now()
+    $migrate$;
+    EXECUTE $migrate$
+      INSERT INTO box_role_assignments(account_id,box_id,role_id,assigned_by)
+      SELECT b.account_id,b.id,r.id,b.owner_user_id
+      FROM logical_boxes b JOIN agent_roles r ON r.account_id=b.account_id AND r.name='Manager'
+      WHERE b.role='manager'
+      ON CONFLICT(box_id,role_id) DO NOTHING
+    $migrate$;
+  END IF;
+END $$;
+ALTER TABLE logical_boxes DROP COLUMN IF EXISTS role;
+
+-- Owner-designated protected boxes are invisible and unreachable to agents.
 CREATE TABLE IF NOT EXISTS box_protection (
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
   box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,

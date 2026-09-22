@@ -258,7 +258,14 @@ func (s *Store) CreateGroupMessage(ctx context.Context, p Principal, groupID, id
 		return message, false, err
 	}
 	defer tx.Rollback()
-	err = tx.QueryRowContext(ctx, `INSERT INTO chat_group_messages(id,account_id,group_id,user_id,source_box_id,body,idempotency_key) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,$6,$7) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING created_at`, message.ID, p.AccountID, groupID, p.UserID, request.SourceBoxID, request.Text, idempotency).Scan(&message.CreatedAt)
+	message.ThreadID = message.ID
+	if request.ParentMessageID != "" {
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(thread_id,id)::text FROM chat_group_messages WHERE account_id=$1 AND group_id=$2 AND id::text=$3`, p.AccountID, groupID, request.ParentMessageID).Scan(&message.ThreadID); err != nil {
+			return message, false, fmt.Errorf("parent message is not in this shared chat")
+		}
+		message.ParentMessageID = request.ParentMessageID
+	}
+	err = tx.QueryRowContext(ctx, `INSERT INTO chat_group_messages(id,account_id,group_id,user_id,source_box_id,body,idempotency_key,parent_message_id,thread_id) VALUES($1,$2,$3,$4,NULLIF($5,'')::uuid,$6,$7,NULLIF($8,'')::uuid,$9) ON CONFLICT(account_id,idempotency_key) DO NOTHING RETURNING created_at`, message.ID, p.AccountID, groupID, p.UserID, request.SourceBoxID, request.Text, idempotency, message.ParentMessageID, message.ThreadID).Scan(&message.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {
 			return message, false, rollbackErr
@@ -298,7 +305,7 @@ func (s *Store) groupMessageByIdempotency(ctx context.Context, p Principal, key 
 
 func (s *Store) GroupMessage(ctx context.Context, p Principal, id string) (v1.GroupMessage, error) {
 	var message v1.GroupMessage
-	err := s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.group_id::text,m.user_id::text,COALESCE(m.source_box_id::text,''),COALESCE(source.name,''),m.body,m.created_at FROM chat_group_messages m JOIN chat_groups g ON g.id=m.group_id AND g.account_id=m.account_id LEFT JOIN logical_boxes source ON source.id=m.source_box_id AND source.account_id=m.account_id WHERE m.account_id=$1 AND m.id=$2 AND (g.created_by=$3 OR $4='owner')`, p.AccountID, id, p.UserID, p.Role).Scan(&message.ID, &message.GroupID, &message.UserID, &message.SourceBoxID, &message.SourceBoxName, &message.Text, &message.CreatedAt)
+	err := s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.group_id::text,m.user_id::text,COALESCE(m.source_box_id::text,''),COALESCE(source.name,''),m.body,m.created_at,COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text FROM chat_group_messages m JOIN chat_groups g ON g.id=m.group_id AND g.account_id=m.account_id LEFT JOIN logical_boxes source ON source.id=m.source_box_id AND source.account_id=m.account_id WHERE m.account_id=$1 AND m.id=$2 AND (g.created_by=$3 OR $4='owner')`, p.AccountID, id, p.UserID, p.Role).Scan(&message.ID, &message.GroupID, &message.UserID, &message.SourceBoxID, &message.SourceBoxName, &message.Text, &message.CreatedAt, &message.ParentMessageID, &message.ThreadID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return message, fmt.Errorf("group message not found")
 	}
@@ -395,7 +402,7 @@ func (s *Store) PendingGroupDeliveries(ctx context.Context) ([]pendingGroupDeliv
 }
 
 func (s *Store) DirectBoxMessageByKey(ctx context.Context, p Principal, logicalBoxID, key string) (v1.BoxTask, v1.BoxMessage, bool, error) {
-	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,'') FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id JOIN logical_boxes b ON b.id=t.logical_box_id AND b.account_id=t.account_id WHERE m.account_id=$1 AND t.logical_box_id=$2 AND m.idempotency_key IN ($3,$4) AND (b.owner_user_id=$5 OR $6='owner') ORDER BY m.created_at LIMIT 1`, p.AccountID, logicalBoxID, key+":task:initial", key+":message", p.UserID, p.Role))
+	message, err := scanBoxMessage(s.DB.QueryRowContext(ctx, `SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,''),COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id JOIN logical_boxes b ON b.id=t.logical_box_id AND b.account_id=t.account_id WHERE m.account_id=$1 AND t.logical_box_id=$2 AND m.idempotency_key IN ($3,$4) AND (b.owner_user_id=$5 OR $6='owner') ORDER BY m.created_at LIMIT 1`, p.AccountID, logicalBoxID, key+":task:initial", key+":message", p.UserID, p.Role))
 	if errors.Is(err, sql.ErrNoRows) {
 		return v1.BoxTask{}, v1.BoxMessage{}, false, nil
 	}
@@ -407,6 +414,7 @@ func (s *Store) DirectBoxMessageByKey(ctx context.Context, p Principal, logicalB
 }
 
 func (s *Store) AppendSystemBoxMessage(ctx context.Context, accountID, taskID, text, key string) error {
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,chat_key) VALUES($1,$2,$3,'system',$4,false,'delivered',$5,$6) ON CONFLICT(account_id,idempotency_key) DO NOTHING`, uuid(), accountID, taskID, text, key, chatMessageKey())
+	messageID := uuid()
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,chat_key,thread_id) VALUES($1,$2,$3,'system',$4,false,'delivered',$5,$6,$1) ON CONFLICT(account_id,idempotency_key) DO NOTHING`, messageID, accountID, taskID, text, key, chatMessageKey())
 	return err
 }

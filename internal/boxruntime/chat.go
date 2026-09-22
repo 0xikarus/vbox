@@ -50,9 +50,11 @@ type ChatQuestion struct {
 }
 
 type ChatInbound struct {
-	ID     string           `json:"id"`
-	Text   string           `json:"text"`
-	Images []ChatEventImage `json:"images,omitempty"`
+	ID              string           `json:"id"`
+	Text            string           `json:"text"`
+	ParentMessageID string           `json:"parentMessageId,omitempty"`
+	ThreadID        string           `json:"threadId,omitempty"`
+	Images          []ChatEventImage `json:"images,omitempty"`
 }
 
 type chatInboundFile struct {

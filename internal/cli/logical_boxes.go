@@ -69,15 +69,19 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return a.logicalBoxOutput(box, asJSON)
 	case "contacts":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox boxes contacts NAME [--add CONTACT | --remove CONTACT | --protect | --unprotect] [--json]")
+			return fmt.Errorf("usage: vmbox boxes contacts NAME [--allow CONTACT | --block CONTACT | --inherit CONTACT | --protect | --unprotect] [--two-way] [--json]")
 		}
 		name := args[1]
 		fs := flag.NewFlagSet("contacts", flag.ContinueOnError)
 		fs.SetOutput(a.Err)
-		add := fs.String("add", "", "grant a contact edge to CONTACT (box name or id)")
-		remove := fs.String("remove", "", "revoke a contact edge to CONTACT")
-		protect := fs.Bool("protect", false, "mark the box as off-limits to managers")
-		unprotect := fs.Bool("unprotect", false, "remove manager protection from the box")
+		allow := fs.String("allow", "", "add a manual allowance to CONTACT (box name or id)")
+		block := fs.String("block", "", "block CONTACT even when an assigned role grants access")
+		inherit := fs.String("inherit", "", "remove the override and inherit assigned-role grants for CONTACT")
+		add := fs.String("add", "", "alias for --allow")
+		remove := fs.String("remove", "", "alias for --inherit")
+		protect := fs.Bool("protect", false, "mark the box as off-limits to agents")
+		unprotect := fs.Bool("unprotect", false, "remove agent protection from the box")
+		twoWay := fs.Bool("two-way", false, "apply the connection setting in both directions")
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
@@ -85,7 +89,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			return fmt.Errorf("unexpected contacts argument %q", fs.Arg(0))
 		}
 		selected := 0
-		for _, value := range []string{*add, *remove} {
+		for _, value := range []string{*allow, *block, *inherit, *add, *remove} {
 			if value != "" {
 				selected++
 			}
@@ -97,7 +101,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			selected++
 		}
 		if selected > 1 {
-			return fmt.Errorf("choose one of --add, --remove, --protect or --unprotect")
+			return fmt.Errorf("choose one of --allow, --block, --inherit, --protect or --unprotect")
 		}
 		switch {
 		case *protect:
@@ -114,18 +118,34 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			}
 			fmt.Fprintf(a.Out, "%s is not protected\n", name)
 			return nil
-		case *add != "":
+		case *allow != "" || *add != "":
+			contactRef := *allow
+			if contactRef == "" {
+				contactRef = *add
+			}
 			var contact v1.BoxContact
-			if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts", v1.PutBoxContactRequest{Contact: *add}, &contact, nil); err != nil {
+			if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts", v1.PutBoxContactRequest{Contact: contactRef, State: "allow", TwoWay: *twoWay}, &contact, nil); err != nil {
 				return err
 			}
-			fmt.Fprintf(a.Out, "%s may message %s\n", contact.BoxName, contact.ContactName)
+			fmt.Fprintf(a.Out, "%s -> %s: allow (%s)\n", contact.BoxName, contact.ContactName, contact.Reason)
 			return nil
-		case *remove != "":
-			if _, err := a.request(ctx, c, token, http.MethodDelete, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts/"+url.PathEscape(*remove), nil, nil, nil); err != nil {
+		case *block != "":
+			var contact v1.BoxContact
+			if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts", v1.PutBoxContactRequest{Contact: *block, State: "block", TwoWay: *twoWay}, &contact, nil); err != nil {
 				return err
 			}
-			fmt.Fprintf(a.Out, "%s may no longer message %s\n", name, *remove)
+			fmt.Fprintf(a.Out, "%s -> %s: block (%s)\n", contact.BoxName, contact.ContactName, contact.Reason)
+			return nil
+		case *inherit != "" || *remove != "":
+			contactRef := *inherit
+			if contactRef == "" {
+				contactRef = *remove
+			}
+			var contact v1.BoxContact
+			if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/logical-boxes/"+url.PathEscape(name)+"/contacts", v1.PutBoxContactRequest{Contact: contactRef, State: "inherit", TwoWay: *twoWay}, &contact, nil); err != nil {
+				return err
+			}
+			fmt.Fprintf(a.Out, "%s -> %s: inherit (%s)\n", contact.BoxName, contact.ContactName, contact.Reason)
 			return nil
 		}
 		var contacts []v1.BoxContact
@@ -135,20 +155,35 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		if asJSON {
 			return json.NewEncoder(a.Out).Encode(contacts)
 		}
-		fmt.Fprintln(a.Out, "CONTACT              ROLE       STATE        MESSAGE  RECEIVE")
+		fmt.Fprintln(a.Out, "CONTACT              ROLES                STATE        OVERRIDE  EFFECTIVE  REASON")
 		for _, contact := range contacts {
-			fmt.Fprintf(a.Out, "%-20s %-10s %-12s %-8t %-8t\n", contact.ContactName, contact.ContactRole, contact.ContactState, contact.CanMessage, contact.CanReceive)
+			roleNames := make([]string, 0, len(contact.ContactRoles))
+			for _, role := range contact.ContactRoles {
+				roleNames = append(roleNames, role.Name)
+			}
+			fmt.Fprintf(a.Out, "%-20s %-20s %-12s %-9s %-10t %s\n", contact.ContactName, strings.Join(roleNames, ","), contact.ContactState, contact.Override, contact.CanMessage, contact.Reason)
 		}
 		return nil
 	case "create", "new":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--role worker|manager] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
+			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--role NAME]... [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
 		}
 		fs := flag.NewFlagSet("new", flag.ContinueOnError)
 		fs.SetOutput(a.Err)
 		disk := fs.Int64("disk", 10, "persistent workspace size in GiB")
 		region := fs.String("region", "", "preferred region")
-		role := fs.String("role", "worker", "box role: worker or manager (a manager sees every non-protected box)")
+		var roleRefs []string
+		fs.Func("role", "native role name or id; repeat to assign several roles", func(value string) error {
+			value = strings.TrimSpace(value)
+			if value == "worker" || value == "manager" {
+				return fmt.Errorf("worker/manager roles are obsolete; use an owner-defined role name")
+			}
+			if value == "" {
+				return fmt.Errorf("--role requires a native role name or id")
+			}
+			roleRefs = append(roleRefs, value)
+			return nil
+		})
 		var selectedProfiles []v1.LoginProfileRef
 		fs.Func("profile", "saved login profile APP=NAME (repeat for each app)", func(value string) error {
 			app, name, ok := strings.Cut(value, "=")
@@ -198,10 +233,27 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		if asJSON && mode == creationConnect {
 			return fmt.Errorf("--json requires --detach or --hibernate")
 		}
-		if !v1.ValidBoxRole(strings.ToLower(*role)) {
-			return fmt.Errorf("--role must be worker or manager")
+		roleIDs := []string{}
+		if len(roleRefs) > 0 {
+			var roles []v1.AgentRole
+			if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/agent-roles", nil, &roles, nil); err != nil {
+				return err
+			}
+			for _, ref := range roleRefs {
+				found := ""
+				for _, role := range roles {
+					if role.ID == ref || strings.EqualFold(role.Name, ref) {
+						found = role.ID
+						break
+					}
+				}
+				if found == "" {
+					return fmt.Errorf("native role %q was not found in this account", ref)
+				}
+				roleIDs = append(roleIDs, found)
+			}
 		}
-		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, Role: *role, Region: *region, DiskGiB: *disk, DefaultAgent: "shell", AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
+		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, RoleIDs: roleIDs, Region: *region, DiskGiB: *disk, DefaultAgent: "shell", AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
 		request.LoginProfiles = selectedProfiles
 		request.Tools = tools
 		request.SetupScript = *setupScript

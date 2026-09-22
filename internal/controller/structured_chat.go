@@ -31,7 +31,7 @@ func (s *Server) chatInboundPayload(ctx context.Context, accountID string, task 
 	if err != nil {
 		return nil, err
 	}
-	inbound := boxruntime.ChatInbound{ID: message.ID, Text: text}
+	inbound := boxruntime.ChatInbound{ID: message.ID, Text: text, ParentMessageID: message.ParentMessageID, ThreadID: message.ThreadID}
 	if s.Store == nil || s.Store.DB == nil {
 		return json.Marshal(inbound)
 	}
@@ -305,7 +305,7 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 		return reject("contact messages do not support images yet")
 	}
 	ref := strings.TrimSpace(event.Contact)
-	targetID, targetName, _, targetAgent, targetState, protected, err := s.Store.contactBox(ctx, accountID, ref)
+	targetID, targetName, targetAgent, targetState, protected, err := s.Store.contactBox(ctx, accountID, ref)
 	if err != nil {
 		return reject("unknown contact")
 	}

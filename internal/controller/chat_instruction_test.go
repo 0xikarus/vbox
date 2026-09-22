@@ -15,7 +15,7 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 	if !strings.Contains(got, "[vmbox chat m1]") {
 		t.Fatalf("default envelope must carry the message id: %q", got)
 	}
-	for _, fragment := range []string{"vmbox-desktop chat_message(replyTo=m1", "files=[absolute PNG/JPEG/GIF paths]", "chat_ask(replyTo=m1, question=..., choices=..., multiple=...)", "desktop_screenshot, desktop_click, desktop_type, desktop_key"} {
+	for _, fragment := range []string{"vmbox-desktop chat_message(replyTo=m1", "files=[absolute PNG/JPEG/GIF paths]", "chat_ask(replyTo=m1, question=..., choices=..., multiple=...)", "take_screenshot, click_mouse, type_text, press_keys"} {
 		if !strings.Contains(got, fragment) {
 			t.Fatalf("default envelope must mention %q: %q", fragment, got)
 		}

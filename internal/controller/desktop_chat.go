@@ -59,11 +59,26 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		}
 		before, beforeID = parsed, id
 	}
+	var threadID any
+	if raw := r.URL.Query().Get("threadId"); raw != "" {
+		if !historyMessageID.MatchString(raw) {
+			writeError(w, 400, fmt.Errorf("threadId must identify a thread"))
+			return
+		}
+		threadID = raw
+	}
 	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		writeError(w, 404, fmt.Errorf("box unavailable"))
 		return
 	}
+	drainCtx, cancelDrain := context.WithTimeout(context.WithoutCancel(r.Context()), 10*time.Second)
+	s.drainBoxChat(drainCtx, p, box)
+	cancelDrain()
+	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id,parent_message_id,thread_id FROM (
+ SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,''),COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2
+ UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at,''::text,''::text,''::text,id::text FROM box_notes WHERE account_id=$1 AND box_id=$2
+ ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id,parent_message_id,thread_id)
 	// History is a read path. Outbox polling can involve a worker/provider
 	// round-trip, so never hold the chat switch open waiting for it. The
 	// reconciler and reply watcher also drain the same outbox; this best-effort
@@ -78,7 +93,8 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
  UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at,''::text,''::text FROM box_notes WHERE account_id=$1 AND box_id=$2
  ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id)
  WHERE ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::text))
- ORDER BY created_at DESC,id DESC LIMIT $5`, p.AccountID, box.ID, before, beforeID, limit)
+ AND ($6::uuid IS NULL OR thread_id=$6::text)
+ ORDER BY created_at DESC,id DESC LIMIT $5`, p.AccountID, box.ID, before, beforeID, limit, threadID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("message history unavailable"))
 		return

@@ -77,7 +77,7 @@ func TestPullStructuredAgentReplyDrainsExpiredEventBeforeMatchingReply(t *testin
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
 		WillReturnRows(emptyBoxMessageRows())
 	mock.ExpectExec("INSERT INTO box_messages").
-		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1", "message-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
 		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))

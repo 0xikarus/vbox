@@ -96,6 +96,15 @@ func run() error {
 	registry := provider.NewRegistry()
 	server := controller.NewServer(store, registry)
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
+	server.EmailProvisionURL = os.Getenv("VMBOX_EMAIL_PROVISION_URL")
+	server.EmailProvisionToken = os.Getenv("VMBOX_EMAIL_PROVISION_TOKEN")
+	if value := os.Getenv("VMBOX_DEFAULT_RUN_BUDGET"); value != "" {
+		duration, parseErr := time.ParseDuration(value)
+		if parseErr != nil || duration <= 0 {
+			return fmt.Errorf("VMBOX_DEFAULT_RUN_BUDGET must be a positive duration")
+		}
+		server.DefaultRunBudget = duration
+	}
 	server.DirectWorkersEnabled = os.Getenv("VMBOX_DIRECT_WORKERS") == "1"
 	if template := os.Getenv("VMBOX_CHAT_INSTRUCTION"); template != "" {
 		server.ChatInstructionTemplate = template

@@ -72,14 +72,14 @@ func TestAgentChatDoesNotReadRepliesFromTerminalOutput(t *testing.T) {
 func TestUpsertAgentBoxMessageStreamsAndFinalizesCorrelatedReply(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectExec("INSERT INTO box_messages").
-		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "working", "streaming", "agent-reply:message-1").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "working", "streaming", "agent-reply:message-1", "message-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	changed, err := store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "working", "streaming")
 	if err != nil || !changed {
 		t.Fatalf("streamed=%v err=%v", changed, err)
 	}
 	mock.ExpectExec("INSERT INTO box_messages").
-		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1", "message-1").
 		WillReturnResult(sqlmock.NewResult(1, 1))
 	changed, err = store.UpsertAgentBoxMessage(context.Background(), "account-a", "task-1", "message-1", "answer", "delivered")
 	if err != nil || !changed {
