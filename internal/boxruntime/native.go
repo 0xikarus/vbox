@@ -140,6 +140,9 @@ func NativeAttach(ctx context.Context, root, assignment, id, incarnation string)
 	if err := ApplyTmuxContext(ctx, root, id); err != nil {
 		return err
 	}
+	if err := exitTmuxCopyMode(ctx, id); err != nil {
+		return err
+	}
 	// The check and attach execute in the same tmux server command queue. IDs
 	// are never reused within a server. A new allocation installs a new fence.
 	condition := "#{&&:#{==:#{@vmbox_assignment}," + assignment + "},#{==:#{@vmbox_server_incarnation}," + parts[1] + "}}"
@@ -148,6 +151,21 @@ func NativeAttach(ctx context.Context, root, assignment, id, incarnation string)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// A detached viewer can leave the shared pane in tmux copy mode. The next
+// viewer should open at the live application prompt, without sending Escape to
+// the application itself when the pane is already writable.
+func exitTmuxCopyMode(ctx context.Context, target string) error {
+	mode, err := tmuxOutput(ctx, "display-message", "-p", "-t", target, "#{pane_mode}")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(mode)) != "copy-mode" {
+		return nil
+	}
+	_, err = tmuxOutput(ctx, "send-keys", "-t", target, "-X", "cancel")
+	return err
 }
 
 func NativeWelcome(ctx context.Context, assignment string) error {

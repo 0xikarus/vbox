@@ -134,7 +134,21 @@ func StartDesktop(ctx context.Context, assignment string) error {
 			if err := ensureDesktopIcons(ctx, assignment); err != nil {
 				return err
 			}
-			return EnsureDesktopTerminals(ctx, assignment)
+			if err := EnsureDesktopTerminals(ctx, assignment); err != nil {
+				return err
+			}
+			// Existing xterm viewers stay attached across VNC reconnects, so
+			// NativeAttach is not called again when the owner opens Desktop.
+			// Return their panes to the live prompt on an explicit desktop start.
+			for _, session := range inv.Sessions {
+				if session.Name == "vmbox-desktop" || strings.HasPrefix(session.Name, "vmbox-internal-") {
+					continue
+				}
+				if err := exitTmuxCopyMode(ctx, session.ID); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		if attempt > 0 || !present {
 			return fmt.Errorf("desktop startup timed out; inspect vmbox-desktop session")
