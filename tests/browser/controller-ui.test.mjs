@@ -35,7 +35,7 @@ before(async()=>{
    '/v1/fleet/costs':{provider:'railway',providerCredential:'primary',period:'current provider billing period',observedAt:revision,total:{currency:'USD',accrued:1.23,available:true,detail:'Sum of available fleet service costs.'},availableSlotCount:1,unavailableSlotCount:1,slots:[{ordinal:1,state:'occupied',logicalBoxName:'helper ü',cost:{currency:'USD',accrued:1.23,available:true,detail:'Railway service entries'}},{ordinal:2,state:'free',cost:{currency:'USD',available:false,detail:'Project token cannot read billing'}}]},
    '/v1/notifications':[],
    '/v1/whoami':{accountId:'account-1',accountName:'Team'},
-   '/v1/login-profiles':[{application:'claude',name:'personal',model:'opus[1m]',createdAt:revision},{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash',createdAt:revision},{application:'opencode',name:'venice',model:'venice/deepseek-v4-1-flash',createdAt:revision},{application:'github',name:'gh-work',createdAt:revision}],
+   '/v1/login-profiles':[{application:'claude',name:'personal',model:'opus[1m]',createdAt:revision},{application:'codex',name:'personal-codex',model:'account-codex-model',createdAt:revision},{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash',createdAt:revision},{application:'opencode',name:'venice',model:'venice/deepseek-v4-1-flash',createdAt:revision},{application:'github',name:'gh-work',createdAt:revision}],
    '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
    '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
    '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision},pending:false},
@@ -43,6 +43,7 @@ before(async()=>{
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
   if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash',reasoning:false},{id:'openrouter/google/gemini-test',label:'Gemini test',reasoning:true}]}));
+  if(req.method==='GET' && path==='/v1/login-profiles/codex/personal-codex/models')return res.end(JSON.stringify({source:'Codex account catalog',models:[{id:'account-codex-model',label:'Account Codex Model',reasoning:true,reasoningEfforts:['low','ultra']}]}));
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
@@ -171,19 +172,19 @@ test('model choice opens a searchable modal and loads the provider catalog',asyn
  await page.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('Could not load provider models'));
  assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-option',nodes=>nodes.map(node=>node.dataset.model)),['venice/deepseek-v4-1-flash']);
  await page.click('dialog.model-picker-dialog .model-picker-close');
+ await page.select('#create select[name=defaultAgent]','codex');
+ await page.select('#profile-choices select',JSON.stringify({application:'codex',name:'personal-codex'}));
+ await page.click('#create .model-picker-open');
+ await page.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('Codex account catalog'));
+ assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-option',nodes=>nodes.map(node=>node.dataset.model)),['account-codex-model']);
+ await page.click('dialog.model-picker-dialog .model-picker-option');
+ assert.deepEqual(await page.$$eval('dialog.model-picker-dialog .model-picker-effort option',nodes=>nodes.map(node=>node.value)),['','low','ultra']);
+ await page.click('dialog.model-picker-dialog .model-picker-close');
+ assert.ok(requests.some(request=>request.path==='/v1/login-profiles/codex/personal-codex/models'));
  await page.close();
 });
-test('creation offers current Claude and Codex CLI models beyond uploaded profile defaults',async()=>{
+test('creation offers documented Claude choices and Codex account models',async()=>{
  const page=await browser.newPage();
- await page.evaluateOnNewDocument(()=>{
-  const original=window.fetch;
-  window.fetch=async(path,options)=>{
-   const response=await original(path,options);
-   if(new URL(path,location.origin).pathname!=='/v1/login-profiles')return response;
-   const profiles=await response.json();profiles.push({application:'codex',name:'personal-codex',model:'gpt-5.6-sol',createdAt:'2026-09-05T12:00:00Z'});
-   return new Response(JSON.stringify(profiles),{status:response.status,headers:response.headers});
-  };
- });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#profile-choices select');
  await page.select('#create select[name=defaultAgent]','claude');
@@ -198,18 +199,19 @@ test('creation offers current Claude and Codex CLI models beyond uploaded profil
  await page.click('dialog.model-picker-dialog .model-picker-close');
  await page.select('#create select[name=defaultAgent]','codex');
  await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'codex',name:'personal-codex'}));
- assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-sol');
+ assert.equal(await page.$eval(input,e=>e.value),'account-codex-model');
  await page.click('#create .model-picker-open');
+ await page.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('Codex account catalog'));
  const codex=await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model));
- for(const model of ['gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'])assert.ok(codex.includes(model),model+' is offered');
- await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.find(node=>node.dataset.model==='gpt-5.6-terra').click());
- await page.select('dialog.model-picker-dialog .model-picker-effort','high');
+ assert.deepEqual(codex,['account-codex-model']);
+ await page.click('dialog.model-picker-dialog .model-picker-option:not([hidden])');
+ await page.select('dialog.model-picker-dialog .model-picker-effort','ultra');
  await page.click('dialog.model-picker-dialog .model-picker-apply');
- assert.equal(await page.$eval(input,e=>e.value),'gpt-5.6-terra');
+ assert.equal(await page.$eval(input,e=>e.value),'account-codex-model');
  await page.type('#create input[name=name]','disposable-model-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
  await page.$eval('#create',form=>form.requestSubmit());await created;
- assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'codex',name:'personal-codex',model:'gpt-5.6-terra',reasoningEffort:'high'}]);
+ assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'codex',name:'personal-codex',model:'account-codex-model',reasoningEffort:'ultra'}]);
  await page.close();
 });
 test('creation can import one agent profile alongside a GitHub profile',async()=>{
@@ -517,7 +519,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.click('#provider button');await saved;
  const edit=requests.findLast(r=>r.method==='PATCH'&&r.path.endsWith('/primary'));assert.equal(edit.revision,revision);assert.deepEqual(edit.body,{config:{image:'new'}});
  await page.waitForNetworkIdle();
- assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*No saved profiles.*opencode.*openrouter/s);
+ assert.match(await page.$eval('#profile-tree',n=>n.textContent),/Team.*claude.*personal.*codex.*personal-codex.*opencode.*openrouter/s);
  await page.select('#create select[name=defaultAgent]','opencode');
  await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'openrouter'}));
  await page.type('#create input[name=name]','profile-box');

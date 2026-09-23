@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,12 +20,13 @@ import (
 )
 
 type profileModelChoice struct {
-	ID        string  `json:"id"`
-	Label     string  `json:"label"`
-	Reasoning bool    `json:"reasoning"`
-	InputCost float64 `json:"inputCost,omitempty"`
-	OutputCost float64 `json:"outputCost,omitempty"`
-	Context   int     `json:"context,omitempty"`
+	ID               string   `json:"id"`
+	Label            string   `json:"label"`
+	Reasoning        bool     `json:"reasoning"`
+	ReasoningEfforts []string `json:"reasoningEfforts,omitempty"`
+	InputCost        float64  `json:"inputCost,omitempty"`
+	OutputCost       float64  `json:"outputCost,omitempty"`
+	Context          int      `json:"context,omitempty"`
 }
 
 type profileModelCatalog struct {
@@ -30,16 +34,17 @@ type profileModelCatalog struct {
 	Models []profileModelChoice `json:"models"`
 }
 
-// getLoginProfileModels queries a saved OpenCode provider key on demand. Claude
-// CLI OAuth and Codex ChatGPT logins are not Anthropic/OpenAI API keys, so they
-// are deliberately not sent to those APIs by this endpoint.
+// getLoginProfileModels queries the selected harness with the saved profile on
+// demand. Codex ChatGPT logins are passed only to Codex app-server; they are not
+// API keys and must never be sent to the public OpenAI models endpoint.
 func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p Principal) {
 	w.Header().Set("Cache-Control", "no-store")
-	if r.PathValue("application") != "opencode" {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("live provider catalogs are available for OpenCode profiles only"))
+	application := r.PathValue("application")
+	if application != "codex" && application != "opencode" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("live model catalogs are available for Codex and OpenCode profiles only"))
 		return
 	}
-	profile, err := s.Store.LoadLoginProfile(r.Context(), p, "opencode", r.PathValue("name"))
+	profile, err := s.Store.LoadLoginProfile(r.Context(), p, application, r.PathValue("name"))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, fmt.Errorf("login profile not found"))
@@ -53,6 +58,17 @@ func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p
 			clear(data)
 		}
 	}()
+	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
+	defer cancel()
+	if application == "codex" {
+		models, err := queryCodexModelCatalog(ctx, profile.Files, "codex")
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Errorf("could not load Codex models; the saved model remains selectable"))
+			return
+		}
+		writeJSON(w, http.StatusOK, profileModelCatalog{Source: "Codex account catalog", Models: models})
+		return
+	}
 	selected := loginprofile.Model("opencode", profile.Files)
 	provider := strings.SplitN(selected, "/", 2)[0]
 	if provider != "openrouter" && provider != "venice" {
@@ -77,14 +93,126 @@ func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p
 	if client == nil {
 		client = http.DefaultClient
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
-	defer cancel()
 	models, err := queryOpenCodeModelCatalog(ctx, client, provider, credentials[provider].Key, endpoint)
 	if err != nil {
 		writeError(w, http.StatusBadGateway, fmt.Errorf("could not load %s models; the saved model remains selectable", provider))
 		return
 	}
 	writeJSON(w, http.StatusOK, profileModelCatalog{Source: source, Models: models})
+}
+
+func queryCodexModelCatalog(ctx context.Context, files map[string][]byte, executable string) ([]profileModelChoice, error) {
+	auth := files["auth.json"]
+	if len(auth) == 0 {
+		return nil, fmt.Errorf("Codex profile has no authentication")
+	}
+	home, err := os.MkdirTemp("", "vmbox-codex-models-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(home)
+	if err := os.Chmod(home, 0o700); err != nil {
+		return nil, err
+	}
+	for _, name := range []string{"auth.json", "config.toml"} {
+		data := files[name]
+		if len(data) == 0 {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(home, name), data, 0o600); err != nil {
+			return nil, err
+		}
+	}
+	cmd := exec.CommandContext(ctx, executable, "app-server", "--stdio")
+	cmd.Env = append(os.Environ(), "CODEX_HOME="+home)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stderr = io.Discard
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = stdin.Close()
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		_ = cmd.Wait()
+	}()
+	encoder := json.NewEncoder(stdin)
+	requests := []any{
+		map[string]any{"id": 1, "method": "initialize", "params": map[string]any{"clientInfo": map[string]string{"name": "vmbox-model-catalog", "version": "1"}}},
+		map[string]any{"method": "initialized"},
+		map[string]any{"id": 2, "method": "model/list", "params": map[string]any{"includeHidden": false, "limit": 100}},
+	}
+	for _, request := range requests {
+		if err := encoder.Encode(request); err != nil {
+			return nil, err
+		}
+	}
+	decoder := json.NewDecoder(io.LimitReader(stdout, 8<<20))
+	for {
+		var response struct {
+			ID     int             `json:"id"`
+			Result json.RawMessage `json:"result"`
+			Error  json.RawMessage `json:"error"`
+		}
+		if err := decoder.Decode(&response); err != nil {
+			return nil, err
+		}
+		if response.ID != 2 {
+			continue
+		}
+		if len(response.Error) > 0 && string(response.Error) != "null" {
+			return nil, fmt.Errorf("Codex model list failed")
+		}
+		var result struct {
+			Data []struct {
+				ID                        string `json:"id"`
+				Model                     string `json:"model"`
+				DisplayName               string `json:"displayName"`
+				Hidden                    bool   `json:"hidden"`
+				SupportedReasoningEfforts []struct {
+					ReasoningEffort string `json:"reasoningEffort"`
+				} `json:"supportedReasoningEfforts"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(response.Result, &result) != nil {
+			return nil, fmt.Errorf("invalid Codex model catalog")
+		}
+		models := make([]profileModelChoice, 0, len(result.Data))
+		seen := map[string]bool{}
+		for _, model := range result.Data {
+			id := strings.TrimSpace(model.Model)
+			if id == "" {
+				id = strings.TrimSpace(model.ID)
+			}
+			if id == "" || model.Hidden || seen[id] {
+				continue
+			}
+			seen[id] = true
+			label := strings.TrimSpace(model.DisplayName)
+			if label == "" {
+				label = id
+			}
+			efforts := make([]string, 0, len(model.SupportedReasoningEfforts))
+			for _, option := range model.SupportedReasoningEfforts {
+				if effort := strings.TrimSpace(option.ReasoningEffort); effort != "" {
+					efforts = append(efforts, effort)
+				}
+			}
+			models = append(models, profileModelChoice{ID: id, Label: label, Reasoning: len(efforts) > 0, ReasoningEfforts: cleanUniqueStrings(efforts)})
+		}
+		if len(models) == 0 {
+			return nil, fmt.Errorf("Codex returned no selectable models")
+		}
+		return models, nil
+	}
 }
 
 func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provider, key, endpoint string) ([]profileModelChoice, error) {
@@ -108,15 +236,15 @@ func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provide
 			Name                string   `json:"name"`
 			Type                string   `json:"type"`
 			SupportedParameters []string `json:"supported_parameters"`
-		Architecture        struct {
-			OutputModalities []string `json:"output_modalities"`
-			InputModalities  []string `json:"input_modalities"`
-		} `json:"architecture"`
-		ContextLength int `json:"context_length"`
-		Pricing       struct {
-			Prompt     string `json:"prompt"`
-			Completion string `json:"completion"`
-		} `json:"pricing"`
+			Architecture        struct {
+				OutputModalities []string `json:"output_modalities"`
+				InputModalities  []string `json:"input_modalities"`
+			} `json:"architecture"`
+			ContextLength int `json:"context_length"`
+			Pricing       struct {
+				Prompt     string `json:"prompt"`
+				Completion string `json:"completion"`
+			} `json:"pricing"`
 			ModelSpec struct {
 				Offline      bool `json:"offline"`
 				Capabilities struct {

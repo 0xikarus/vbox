@@ -105,10 +105,11 @@ test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
  });
 });
 
-test('thread replies stay out of the main timeline and use the thread composer',async()=>{
+test('thread replies stay visible in the main timeline and use the thread composer',async()=>{
  await withChat(async(browser,base,posts)=>{
   const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg.user .msg-thread');
-  assert.equal(await p.$$eval('#chat-messages .msg',nodes=>nodes.length),1,'thread children must not be duplicated in the main timeline');
+  assert.equal(await p.$$eval('#chat-messages .msg',nodes=>nodes.length),2,'the agent reply shown in the chat-list preview must also appear in the open transcript');
+  assert.equal(await p.$eval('#chat-messages .msg.agent',node=>node.textContent.includes('verification suite is green')),true);
   await p.click('.msg.user',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.includes('Reply in thread')).click());
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
   await p.type('#thread-composer textarea','Ship it.');await p.click('#thread-composer button');await p.waitForFunction(()=>document.querySelector('#thread-composer textarea').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);

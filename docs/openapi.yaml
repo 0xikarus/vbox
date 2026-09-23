@@ -60,6 +60,18 @@ paths:
           content: {application/json: {schema: {$ref: '#/components/schemas/LoginProfile'}}}
         '400': {description: Invalid name, application, file or size}
         '409': {description: Name already exists or storage/encryption unavailable}
+  /v1/login-profiles/{application}/{name}/models:
+    parameters:
+      - {in: path, name: application, required: true, schema: {enum: [codex, opencode]}}
+      - {in: path, name: name, required: true, schema: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9@+_.:() -]{0,127}$'}}
+    get:
+      summary: Load models available to the selected saved profile
+      description: Codex uses the saved login only through an isolated Codex app-server model/list request. OpenCode queries the saved OpenRouter or Venice provider key. Credential contents are never returned.
+      responses:
+        '200': {description: Model IDs, labels and supported reasoning choices}
+        '400': {description: Profile type has no supported live catalog}
+        '404': {description: Profile not found}
+        '502': {description: Model catalog unavailable; the saved model remains selectable}
   /v1/logical-boxes/{id}/process-tasks:
     parameters:
       - {in: path, name: id, required: true, schema: {type: string}}

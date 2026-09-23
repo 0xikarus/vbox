@@ -315,10 +315,9 @@ func (s *Store) CreateTeamRolePreset(ctx context.Context, p Principal) ([]v1.Age
 }
 
 func teamRolePresetRequests(normalID string) (v1.PutAgentRoleRequest, v1.PutAgentRoleRequest, error) {
-	computerTools := []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
 	normal, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{
 		Name: "Normal", Description: "Team member: can use this box's computer and message its direct contacts.",
-		Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: computerTools}},
+		Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: v1.ComputerAgentMCPTools}},
 	})
 	if err != nil {
 		return v1.PutAgentRoleRequest{}, v1.PutAgentRoleRequest{}, err

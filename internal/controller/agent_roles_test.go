@@ -166,15 +166,29 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	}
 }
 
-func TestEffectiveAgentToolNamesDefaultsOptionalToolsToDenied(t *testing.T) {
+func TestEffectiveAgentToolNamesDefaultsComputerToolsToEnabled(t *testing.T) {
 	store, mock := testStore(t)
-	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}))
+	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow("default_policy", []byte(`{}`)))
 	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(tools, v1.BasicAgentMCPTools) {
-		t.Fatalf("tools without an optional grant=%v", tools)
+	want := append(append([]string(nil), v1.BasicAgentMCPTools...), v1.ComputerAgentMCPTools...)
+	if !slices.Equal(tools, want) {
+		t.Fatalf("default tools=%v, want %v", tools, want)
+	}
+}
+
+func TestEffectiveAgentToolNamesRespectsExplicitComputerToolDeny(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("agent_box_policy").WithArgs("account-a", "box-a").
+		WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow("agent_box_policy", []byte(`{"mcpTools":{"enabled":true,"allowedTools":["take_screenshot"]}}`)))
+	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(tools, append(append([]string(nil), v1.BasicAgentMCPTools...), "take_screenshot")) {
+		t.Fatalf("explicit tool policy was overridden: %v", tools)
 	}
 }
 
