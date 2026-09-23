@@ -2,7 +2,6 @@ package boxruntime
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -327,24 +326,13 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		if err := waitForCodexAppServerReady(ctx, session); err != nil {
 			return err
 		}
-		resetThreadPath := filepath.Join(root, "chat", "codex-reset-threads", messageID)
-		var previous []string
+		resetThreadPath := filepath.Join(root, "chat", "codex-reset-threads-v2", messageID)
 		if data, err := os.ReadFile(resetThreadPath); err == nil {
-			if err := json.Unmarshal(data, &previous); err != nil {
-				previous = nil // A reset started by an older runtime stored one thread ID.
+			if id := strings.TrimSpace(string(data)); id != "" {
+				return rememberCodexThread(root, session, id)
 			}
 		} else if !os.IsNotExist(err) {
 			return err
-		}
-		if previous == nil {
-			var err error
-			previous, err = CodexThreadIDs(ctx, session)
-			if err != nil {
-				return err
-			}
-			if err := writeJSONAtomic(resetThreadPath, previous, 0600); err != nil {
-				return err
-			}
 		}
 		if err := deliverTmuxLiteral(ctx, root, session, messageID+"-command", "/new"); err != nil {
 			return err
@@ -355,23 +343,21 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		if err := DeliverTmuxKeys(ctx, root, session, messageID+"-submit", []string{"Enter"}); err != nil {
 			return err
 		}
-		known := make(map[string]bool, len(previous))
-		for _, id := range previous {
-			known[id] = true
-		}
+		// The remote TUI can invalidate its old thread on /new without
+		// materializing a new one until a prompt arrives. Establish a fresh
+		// app-server thread now so the next chat message cannot select the
+		// invalidated ID from thread/list.
 		for {
-			current, err := CodexThreadIDs(ctx, session)
-			if err != nil {
-				return err
-			}
-			for _, id := range current {
-				if !known[id] {
-					return rememberCodexThread(root, session, id)
+			id, err := CodexStartFreshThread(ctx, session)
+			if err == nil {
+				if err := writeTextAtomic(resetThreadPath, id+"\n", 0600); err != nil {
+					return err
 				}
+				return rememberCodexThread(root, session, id)
 			}
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return fmt.Errorf("start fresh Codex thread: %w", err)
 			case <-time.After(agentReadyPollInterval):
 			}
 		}

@@ -541,9 +541,9 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 }
 
 func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
-	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalThreadIDs, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexThreadIDs, tmuxSubmitPause
+	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexThreadIDs, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalThreadIDs, originalPause
+		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
 	CodexAppServerReady = func(context.Context, string) (bool, error) { return true, nil }
@@ -556,13 +556,13 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
-			threadLists := 0
-			CodexThreadIDs = func(context.Context, string) ([]string, error) {
-				threadLists++
-				if threadLists <= 2 {
-					return []string{"thread-old"}, nil
+			freshThreads := 0
+			CodexStartFreshThread = func(context.Context, string) (string, error) {
+				freshThreads++
+				if freshThreads == 1 {
+					return "", io.ErrUnexpectedEOF
 				}
-				return []string{"thread-new", "thread-old"}, nil
+				return "thread-new", nil
 			}
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
@@ -593,8 +593,13 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("idempotent retry replayed terminal input: %q", inputs)
 			}
-			if test.agent == "codex" && threadLists != 4 {
-				t.Fatalf("thread snapshots = %d, want 4", threadLists)
+			if test.agent == "codex" && freshThreads != 2 {
+				t.Fatalf("fresh thread starts = %d, want 2", freshThreads)
+			}
+			if test.agent == "codex" {
+				if data, err := os.ReadFile(codexThreadFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "thread-new" {
+					t.Fatalf("fresh thread was not remembered: %q %v", data, err)
+				}
 			}
 		})
 	}
