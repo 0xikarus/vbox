@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -12,6 +13,26 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/DATA-DOG/go-sqlmock"
 )
+
+func TestSaveContactImagesCreatesBoundedAttachmentReferences(t *testing.T) {
+	store, mock := testStore(t)
+	pixel, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id::text FROM accounts WHERE id=\$1 FOR UPDATE`).WithArgs("account").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("account"))
+	mock.ExpectQuery(`SELECT COALESCE\(sum\(octet_length\(data\)\),0\) FROM run_once_images`).WithArgs("account").WillReturnRows(sqlmock.NewRows([]string{"used"}).AddRow(0))
+	mock.ExpectExec(`INSERT INTO run_once_images`).WithArgs(sqlmock.AnyArg(), "account", "image/png", pixel, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	refs, err := store.saveContactImages(context.Background(), "account", []boxruntime.ChatEventImage{{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(pixel)}})
+	if err != nil || len(refs) != 1 || refs[0].ID == "" || refs[0].Number != 1 {
+		t.Fatalf("refs=%+v err=%v", refs, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // chatDrainProvider replays scripted chat-pull output and records every runtime
 // call so a test can assert exactly which outbox events were acknowledged.

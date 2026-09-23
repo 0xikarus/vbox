@@ -3,7 +3,7 @@
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>vmbox controller</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/controller.css">
 <header class="topbar"><span class="brand">vmbox</span><nav>
-<a href="#boxes" class="on">boxes</a> · <a href="#roles" data-owner hidden>permissions</a> · <a href="/grid" data-owner hidden>grid</a> · <a href="/chat">chats</a> · <a href="#profiles" data-owner hidden>profiles</a> · <a href="#instructions">instructions</a> · <a href="#providers">providers</a> · <a href="#fleet">capacity</a> · <a href="#notifications" data-owner hidden>notifications</a> <button id="refresh" class="linkbtn">refresh</button><button id="logout" class="linkbtn">log out</button>
+<a href="#boxes" class="on">boxes</a> · <a href="#roles" data-owner hidden>permissions</a> · <a href="/grid" data-owner hidden>grid</a> · <a href="/chat">chats</a> · <a href="/box-chats" data-owner hidden>box ↔ box</a> · <a href="#profiles" data-owner hidden>profiles</a> · <a href="#instructions">instructions</a> · <a href="#providers">providers</a> · <a href="#fleet">capacity</a> · <a href="#notifications" data-owner hidden>notifications</a> <button id="refresh" class="linkbtn">refresh</button><button id="logout" class="linkbtn">log out</button>
 </nav></header>
 <h1>vmbox controller</h1><p class="sub">manage boxes and credentials here · open a shell with <code>vmbox BOX</code></p>
 <form id="login"><label class="field">controller token <input name="token" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary">log in</button></div></form>
@@ -53,6 +53,7 @@
 <label class="field">preset <select id="box-instructions-preset"></select></label>
 <label class="field">markdown <textarea id="box-instructions-markdown" maxlength="65536" spellcheck="false"></textarea></label>
 <div id="box-instructions-preview" class="md-preview"></div>
+<details><summary>View effective AGENTS.md / CLAUDE.md</summary><pre id="box-instructions-effective" class="instruction-effective"></pre></details>
 <div class="form-actions"><button type="button" class="primary" id="box-instructions-apply">apply instructions</button><button type="button" class="linkbtn" data-close="box-instructions-modal">cancel</button></div>
 <p id="box-instructions-status" role="status"></p>
 </section></div>

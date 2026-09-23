@@ -39,6 +39,11 @@ body{max-width:none;margin:0;padding:0;height:100%;
   position:relative;z-index:20}
 #chat-top .brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em}
 #chat-top .brand span{color:var(--accent-text);font-weight:700}
+.chat-scope-tabs{display:flex;gap:.25rem;margin-left:.6rem}
+.chat-scope-tabs a{padding:.4rem .6rem;border-radius:var(--radius-sm);color:var(--ink-soft);text-decoration:none;font-size:.82rem;font-weight:700;white-space:nowrap}
+.chat-scope-tabs a[aria-current="page"]{background:var(--accent-soft);color:var(--accent-text)}
+.chat-scope-tabs a:hover{color:var(--ink);background:var(--surface2)}
+@media(max-width:560px){.chat-scope-tabs{margin-left:0}.chat-scope-tabs a{padding:.3rem .4rem;font-size:.72rem}}
 #chat-top .spacer{flex:1}
 #chat-top button{flex:none;border:1px solid var(--line);background:var(--surface2);color:var(--ink);
   border-radius:var(--radius-sm);min-width:2.4rem;min-height:2.4rem;padding:.3rem .7rem;font:inherit;font-size:.85rem;
@@ -839,3 +844,4 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
    only the inline action (e.g. Undo) is interactive. */
 #chat-toasts .toast{pointer-events:none}
 #chat-toasts .toast .toast-action{pointer-events:auto}
+.instruction-effective{white-space:pre-wrap;overflow-wrap:anywhere;max-height:22rem;overflow:auto;padding:.75rem;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:.78rem;text-transform:none}

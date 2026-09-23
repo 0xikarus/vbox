@@ -38,7 +38,7 @@ before(async()=>{
    '/v1/login-profiles':[{application:'claude',name:'personal',model:'opus[1m]',createdAt:revision},{application:'codex',name:'personal-codex',model:'account-codex-model',createdAt:revision},{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash',createdAt:revision},{application:'opencode',name:'venice',model:'venice/deepseek-v4-1-flash',createdAt:revision},{application:'github',name:'gh-work',createdAt:revision}],
    '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
    '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
-   '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision},pending:false},
+   '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision},effectiveMarkdown:'## vmbox chat delivery\nUse chat_message with Message-ID.',pending:false},
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
@@ -599,6 +599,7 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  // Explicit Apply instructions action for an existing box.
  await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Instructions')).click()});
  await page.waitForFunction(()=>!document.querySelector('#box-instructions-modal').hidden);
+ assert.match(await page.$eval('#box-instructions-effective',element=>element.textContent),/vmbox chat delivery.*Message-ID/s);
  await page.evaluate(()=>{const area=document.querySelector('#box-instructions-markdown');area.value='# Applied\nDo this.';area.dispatchEvent(new Event('input',{bubbles:true}))});
  await page.select('#box-instructions-preset','custom');
  await page.click('#box-instructions-apply');

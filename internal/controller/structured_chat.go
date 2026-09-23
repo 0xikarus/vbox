@@ -116,6 +116,55 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	return tx.Commit()
 }
 
+// saveContactImages prepares attachment references before the recipient's
+// message is created, so native delivery can include the images on its first
+// attempt. The same validation and account quota apply as for owner replies.
+func (s *Store) saveContactImages(ctx context.Context, accountID string, images []boxruntime.ChatEventImage) ([]v1.BoxMessageImageRef, error) {
+	if len(images) > 8 {
+		return nil, fmt.Errorf("attach at most 8 images")
+	}
+	if len(images) == 0 {
+		return nil, nil
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var lockedAccount string
+	if err := tx.QueryRowContext(ctx, `SELECT id::text FROM accounts WHERE id=$1 FOR UPDATE`, accountID).Scan(&lockedAccount); err != nil {
+		return nil, err
+	}
+	var used int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(sum(octet_length(data)),0) FROM run_once_images WHERE account_id=$1`, accountID).Scan(&used); err != nil {
+		return nil, err
+	}
+	refs := make([]v1.BoxMessageImageRef, 0, len(images))
+	for index, image := range images {
+		data, err := base64.StdEncoding.DecodeString(image.Data)
+		if err != nil {
+			return nil, fmt.Errorf("contact attached invalid image data")
+		}
+		media, err := validateRunOnceImage(data)
+		if err != nil || media != image.MediaType {
+			return nil, fmt.Errorf("contact attached invalid image")
+		}
+		used += int64(len(data))
+		if used > maxAccountAttachmentBytes {
+			return nil, fmt.Errorf("saved attachments reached the 1 GiB account storage limit")
+		}
+		id := uuid()
+		if _, err := tx.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,$3,$4,$5,now()+interval '7 days')`, id, accountID, media, data, rand.Text()+rand.Text()); err != nil {
+			return nil, err
+		}
+		refs = append(refs, v1.BoxMessageImageRef{ID: id, Number: index + 1})
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return refs, nil
+}
+
 func (s *Server) pullChatEvent(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask) (boxruntime.ChatEvent, bool, error) {
 	var event boxruntime.ChatEvent
 	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "chat-pull", task.Session}, provider.ExecOptions{})
@@ -226,7 +275,15 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 	if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID); err != nil {
 		return "", false, err
 	}
-	s.pushAgentReply(ctx, accountID, task, text)
+	if target.Direction == "box" && target.SenderBoxID != "" {
+		targetName, _ := s.Store.contactBoxName(ctx, accountID, target.SenderBoxID)
+		if targetName == "" {
+			targetName = "Agent box"
+		}
+		s.pushContactMessage(accountID, task.LogicalBoxID, task.BoxName, target.SenderBoxID, targetName, text)
+	} else {
+		s.pushAgentReply(ctx, accountID, task, text)
+	}
 	return replyTo, true, nil
 }
 
@@ -305,9 +362,6 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 	if text == "" || len(text) > 100_000 {
 		return reject("message must contain between 1 and 100000 bytes")
 	}
-	if len(event.Images) > 0 {
-		return reject("contact messages do not support images yet")
-	}
 	ref := strings.TrimSpace(event.Contact)
 	targetID, targetName, targetAgent, targetState, protected, err := s.Store.contactBox(ctx, accountID, ref)
 	if err != nil {
@@ -326,17 +380,31 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 	if err := s.Store.DB.QueryRowContext(ctx, `SELECT owner_user_id::text FROM logical_boxes WHERE account_id=$1 AND id=$2`, accountID, targetID).Scan(&ownerID); err != nil {
 		return reject("contact box owner unavailable")
 	}
-	senderName, err := s.Store.contactBoxName(ctx, accountID, task.LogicalBoxID)
-	if err != nil || strings.TrimSpace(senderName) == "" {
-		senderName = task.BoxName
-	}
-	body := "[From " + senderName + "]\n\n" + text
+	body := text
 	principal := Principal{AccountID: accountID, UserID: ownerID, Role: "owner", Subject: "box:" + task.LogicalBoxID}
-	result, err := s.routeBoxMessage(ctx, principal, targetID, "contact:"+event.ID, v1.DirectBoxMessageRequest{Text: body, Agent: targetAgent, SenderBoxID: task.LogicalBoxID})
+	key := "contact:" + event.ID
+	if _, existing, found, err := s.Store.DirectBoxMessageByKey(ctx, principal, targetID, key); err == nil && found {
+		return existing.ID
+	} else if err != nil {
+		return reject("delivery lookup failed")
+	}
+	images, err := s.Store.saveContactImages(ctx, accountID, event.Images)
 	if err != nil {
+		return reject(err.Error())
+	}
+	result, err := s.routeBoxMessage(ctx, principal, targetID, key, v1.DirectBoxMessageRequest{Text: body, Agent: targetAgent, SenderBoxID: task.LogicalBoxID, Images: images})
+	if err != nil {
+		for _, image := range images {
+			_, _ = s.Store.DB.ExecContext(ctx, `DELETE FROM run_once_images i WHERE i.id=$1 AND i.account_id=$2 AND NOT EXISTS (SELECT 1 FROM box_message_images j WHERE j.image_id=i.id AND j.account_id=i.account_id)`, image.ID, accountID)
+		}
 		return reject("delivery failed: " + err.Error())
 	}
 	_, _ = s.Store.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.message','logical_box',$3,jsonb_build_object('sender_box_id',$4::text,'event_id',$5::text))`, accountID, ownerID, targetID, task.LogicalBoxID, event.ID)
+	senderName := task.BoxName
+	if senderName == "" {
+		senderName = "Agent box"
+	}
+	s.pushContactMessage(accountID, task.LogicalBoxID, senderName, targetID, targetName, text)
 	return result.Message.ID
 }
 

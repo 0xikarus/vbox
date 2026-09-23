@@ -68,9 +68,12 @@ func TestComposeInstructionMarkdownPreservesPresetAndBounds(t *testing.T) {
 	if got, err := composeInstructionMarkdown("", guide); err != nil || got != guide {
 		t.Fatalf("tool-only instructions: %v %q", err, got)
 	}
-	_, err = composeInstructionMarkdown(strings.Repeat("x", v1.MaxInstructionMarkdownBytes), guide)
+	if _, err := composeInstructionMarkdown(strings.Repeat("x", v1.MaxInstructionMarkdownBytes), guide); err != nil {
+		t.Fatalf("a valid full-size preset must retain room for generated guidance: %v", err)
+	}
+	_, err = composeInstructionMarkdown(strings.Repeat("x", v1.MaxEffectiveInstructionMarkdownBytes), guide)
 	if err == nil {
-		t.Fatal("combined instructions over the runtime limit must be rejected before creating a box")
+		t.Fatal("combined instructions over the effective runtime limit must be rejected")
 	}
 }
 
@@ -86,7 +89,7 @@ func TestSyncBoxInstructionsIncludesOnlyNewBoxToolReferences(t *testing.T) {
 			mock.ExpectQuery(`SELECT source,COALESCE\(preset_name`).WithArgs("account", "box").
 				WillReturnRows(sqlmock.NewRows([]string{"source", "preset_name", "preset_revision", "modified", "markdown", "tool_guidance", "updated_at", "applied_at"}).
 					AddRow("none", "", int64(0), false, tc.user, tc.guidance, time.Now(), nil))
-			mock.ExpectExec(`UPDATE box_instruction_snapshots SET applied_at`).WithArgs("account", "box").WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectExec(`INSERT INTO box_instruction_snapshots\(account_id,box_id,source,markdown,applied_at\)`).WithArgs("account", "box").WillReturnResult(sqlmock.NewResult(0, 1))
 			transport := &guidanceSyncProvider{}
 			server := &Server{Store: store}
 			if err := server.syncBoxInstructions(context.Background(), transport, "account", "box", "worker"); err != nil {
@@ -98,8 +101,12 @@ func TestSyncBoxInstructionsIncludesOnlyNewBoxToolReferences(t *testing.T) {
 			var body struct {
 				Markdown string `json:"markdown"`
 			}
-			if err := json.Unmarshal(transport.payload, &body); err != nil || body.Markdown != tc.want {
-				t.Fatalf("synced markdown: %v %q, want %q", err, body.Markdown, tc.want)
+			want, composeErr := composeChatConventions(tc.want)
+			if composeErr != nil {
+				t.Fatal(composeErr)
+			}
+			if err := json.Unmarshal(transport.payload, &body); err != nil || body.Markdown != want {
+				t.Fatalf("synced markdown: %v %q, want %q", err, body.Markdown, want)
 			}
 			if err := mock.ExpectationsWereMet(); err != nil {
 				t.Fatal(err)

@@ -42,6 +42,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   const policyMatch=path.match(/^\/v1\/logical-boxes\/([^/]+)\/agent-policy$/);
   if(policyMatch){const boxID=decodeURIComponent(policyMatch[1]),box=boxes.find(value=>value.id===boxID);if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;directPolicies.set(boxID,JSON.parse(body))}return res.end(JSON.stringify({boxId:boxID,boxName:box?.name||boxID,...(directPolicies.get(boxID)||{capabilities:{requestMoreTime:{maxExtensionMinutes:0,maxTotalMinutes:0},queueFollowup:{maxPending:0},createAgentBox:{maxBoxes:0,maxDiskGiB:0},createEmailAddress:{maxAddresses:0}}})}))}
   if(path==='/v1/tool-presets')return res.end('[]');
+  if(path==='/v1/tasks/real-thread-task')return res.end(JSON.stringify({id:'real-thread-task',agent:'opencode'}));
   if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'claude',name:'personal',model:'sonnet'},{application:'claude',name:'other',model:'opus'},{application:'opencode',name:'openrouter',model:'openrouter/saved'},{application:'github',name:'gh-work'}]));
   if(path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/live-model',label:'Live model'}]}));
   if(path==='/v1/controller-defaults')return res.end('{}');
@@ -271,6 +272,16 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('#new-box-modal').hidden,{timeout:5000});
   assert.deepEqual(creations.at(-1).loginProfiles,[{application:'claude',name:'personal',model:'haiku'},{application:'github',name:'gh-work'}]);
   assert.equal('roleIds' in creations.at(-1),false,'new boxes do not inherit a role bundle');
+  const threadTime=new Date().toISOString();
+  builderMessages=[{id:'thread-a',taskId:'real-thread-task',threadId:'thread-a',direction:'user',state:'delivered',text:'Start',createdAt:threadTime},{id:'thread-b',taskId:'real-thread-task',threadId:'thread-a',direction:'agent',state:'delivered',text:'Answer',createdAt:threadTime}];
+  await p.click('#refresh');
+  await p.waitForFunction(()=>[...document.querySelectorAll('#chat-messages .msg .text')].some(element=>element.textContent==='Start'));
+  assert.equal(await p.$$eval('#chat-messages .msg-thread',nodes=>nodes.length),0,'a two-message exchange must not show a thread count');
+  builderMessages.push({id:'thread-c',taskId:'real-thread-task',threadId:'thread-a',direction:'user',state:'delivered',text:'Follow-up',createdAt:threadTime});
+  await p.click('#refresh');
+  await p.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg-thread').length>0);
+  await p.click('#chat-messages .msg-thread');
+  await p.waitForFunction(()=>document.querySelector('#thread-origin')?.textContent==='builder · opencode');
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

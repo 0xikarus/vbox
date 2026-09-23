@@ -242,7 +242,7 @@ func TestApplyManagedInstructionsValidatesMarkdown(t *testing.T) {
 	if _, err := ApplyManagedInstructions(home, "text\x00with-nul", nil, nil); err == nil {
 		t.Fatal("NUL bytes must be rejected")
 	}
-	if _, err := ApplyManagedInstructions(home, strings.Repeat("x", 65<<10), nil, nil); err == nil {
+	if _, err := ApplyManagedInstructions(home, strings.Repeat("x", 129<<10), nil, nil); err == nil {
 		t.Fatal("oversized markdown must be rejected")
 	}
 	if _, err := ApplyManagedInstructions(home, string([]byte{0xff, 0xfe, 0xfd}), nil, nil); err == nil {

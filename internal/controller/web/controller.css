@@ -173,3 +173,4 @@ table.markets tr.row:hover{background:#fafafa}
  .role-assignment-heading{display:grid;gap:2px}.role-assignment-summary{grid-template-columns:auto minmax(0,1fr) auto;align-items:start}.role-assignment-current{grid-column:1/-1}.role-assignment-toggle{align-self:center}
  .role-capability-fields{grid-template-columns:1fr}
 }
+.instruction-effective{white-space:pre-wrap;overflow-wrap:anywhere;max-height:22rem;overflow:auto;padding:.75rem;background:#f7f7f7;border:1px solid #ddd;border-radius:6px;font-size:.78rem;text-transform:none}

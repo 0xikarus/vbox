@@ -17,6 +17,7 @@
 <header id="chat-top">
  <button id="chat-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
  <strong class="brand">vmbox <span>chats</span></strong>
+ <nav class="chat-scope-tabs" aria-label="Chat view"><a href="/chat" aria-current="page">Owner chats</a><a href="/box-chats">Box ↔ Box</a></nav>
  <span class="spacer"></span>
  <button id="refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
 </header>
@@ -137,7 +138,7 @@
   </section>
  </main>
  <aside id="thread-panel" hidden aria-label="Thread">
- <header><button id="thread-close" type="button" aria-label="Close thread">←</button><div><strong>Thread</strong><span id="thread-count"></span></div></header>
+ <header><button id="thread-close" type="button" aria-label="Close thread">←</button><div><strong>Thread</strong><span id="thread-origin"></span><span id="thread-count"></span></div></header>
  <div id="thread-messages"></div>
  <form id="thread-composer"><textarea name="text" rows="1" maxlength="100000" placeholder="Reply in thread" aria-label="Reply in thread" required></textarea><button type="submit">Send</button></form>
  </aside>
@@ -206,6 +207,7 @@
   <label>Preset <select id="box-instructions-preset"></select></label>
   <label>Markdown <textarea id="box-instructions-markdown" rows="6" maxlength="65536" spellcheck="false"></textarea></label>
   <div id="box-instructions-preview" class="md-preview"></div>
+  <details><summary>View effective AGENTS.md / CLAUDE.md</summary><pre id="box-instructions-effective" class="instruction-effective"></pre></details>
   <button type="button" id="box-instructions-apply" class="primary">Apply instructions</button>
   <p id="box-instructions-status" role="status"></p>
  </section></div>
@@ -336,7 +338,7 @@
    <a href="/grid">Grid</a>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
-   <button id="push-toggle" type="button" hidden>Enable notifications</button>
+   <button id="push-toggle" type="button" hidden title="Send new chat replies and box conversation activity to this phone">Enable notifications</button>
    <button id="logout" type="button" hidden>Log out</button>
   </div>
   <div class="menu-theme">

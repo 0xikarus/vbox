@@ -82,7 +82,8 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 		s.drainBoxChat(drainCtx, p, box)
 	}()
 	rows, err := s.Store.DB.QueryContext(r.Context(), `SELECT id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id,parent_message_id,thread_id FROM (
- SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,''),COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2
+	SELECT m.id::text,m.task_id::text,COALESCE(m.user_id::text,''),m.direction,m.body,m.state,m.created_at,m.updated_at,COALESCE(m.chat_key,''),COALESCE(m.sender_box_id::text,''),COALESCE(m.parent_message_id::text,''),COALESCE(m.thread_id,m.id)::text FROM box_messages m JOIN box_tasks t ON t.id=m.task_id WHERE m.account_id=$1 AND t.logical_box_id=$2 AND m.direction<>'box'
+	AND NOT (m.direction='agent' AND EXISTS (SELECT 1 FROM box_messages parent WHERE parent.id=m.parent_message_id AND parent.account_id=m.account_id AND parent.direction='box'))
 	 UNION ALL SELECT id::text,''::text,user_id::text,'user',body,'silent',created_at,created_at,''::text,''::text,''::text,id::text FROM box_notes WHERE account_id=$1 AND box_id=$2
 	 ) AS history(id,task_id,user_id,direction,body,state,created_at,updated_at,chat_key,sender_box_id,parent_message_id,thread_id)
  WHERE ($3::timestamptz IS NULL OR (created_at,id)<($3::timestamptz,$4::text))
@@ -139,6 +140,40 @@ func (s *Server) agentBusyHandler(w http.ResponseWriter, r *http.Request, p Prin
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"session": request.Session, "busy": *request.Busy})
+}
+
+// agentChatReadyHandler accepts a scoped hint from the box after an MCP tool
+// has durably queued an outbox event. The controller still pulls and validates
+// the event itself; the hint cannot inject a message or name another box.
+func (s *Server) agentChatReadyHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	var request struct {
+		Session string `json:"session"`
+	}
+	if err := decodeJSON(r, &request); err != nil || !validSessionName(request.Session) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("valid session required"))
+		return
+	}
+	boxID := r.PathValue("id")
+	tasks, err := s.Store.ListBoxTasks(r.Context(), Principal{AccountID: p.AccountID, UserID: p.UserID, Role: "owner"}, boxID)
+	if err != nil {
+		writeError(w, http.StatusConflict, fmt.Errorf("chat session unavailable"))
+		return
+	}
+	for _, task := range tasks {
+		if task.Session != request.Session || task.State != "active" || task.Agent == "shell" {
+			continue
+		}
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := s.drainAgentChat(ctx, p.AccountID, task); err != nil {
+				s.Logger.Warn("agent chat ready drain failed", "task", task.ID, "error", err)
+			}
+		}()
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	writeError(w, http.StatusConflict, fmt.Errorf("chat session unavailable"))
 }
 
 // clearBoxContextHandler starts a fresh context inside the active chat task's

@@ -149,7 +149,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `GET /v1/agent-desktop/contacts` feeds the `get_contacts` tool; `chat_message`
   and `chat_ask` accept an optional `contact`, and the controller routes it into
   the target's existing native conversation (never a second session) with the
-  sender recorded as `box_messages.sender_box_id` and direction `box`. The owner
+  sender recorded as `box_messages.sender_box_id` and direction `box`. Contact
+  messages and direct agent replies to them appear in the separate owner-only
+  Box ↔ Box transcript, with image attachments supported. The owner
   edits roles through `/v1/agent-roles` and `/v1/agent-role-assignments`, and
   direct contacts at `/v1/logical-boxes/{id}/contacts`, metadata labels at
   `/tags`, and protection at `/protection`. Both the controller and chat app
@@ -186,7 +188,9 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
   key carried in the envelope) answers one specific message. The controller polls
   each active task's outbox while a chat window is open, from the reconciler, and
-  while a reply is awaited, and acknowledges an event only after it is stored.
+  while a reply is awaited. The box also sends a scoped chat-ready callback
+  after durably queuing an MCP event; the controller immediately drains the
+  outbox and acknowledges an event only after it is stored.
   A late or repeated reply whose message is already answered is stored as its own
   agent message, so the outbox can never head-of-line block. Terminal capture
   remains a compatibility fallback for clients that do not call the tool. The

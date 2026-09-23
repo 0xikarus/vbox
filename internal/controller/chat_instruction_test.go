@@ -12,62 +12,25 @@ func TestChatInstructionDefaultIsCompact(t *testing.T) {
 			t.Fatalf("%s must receive the same envelope as claude: %q", agent, other)
 		}
 	}
-	if !strings.Contains(got, "[vmbox chat m1]") {
-		t.Fatalf("default envelope must carry the message id: %q", got)
-	}
-	for _, fragment := range []string{"MCP tool chat_message", `{"replyTo":"m1","text":"..."}`, `{"files":["/absolute/image.png"]}`, "chat_ask", "get_contacts {}", `{"contact":"reviewer"`} {
-		if !strings.Contains(got, fragment) {
-			t.Fatalf("default envelope must mention %q: %q", fragment, got)
-		}
-	}
-	if strings.Contains(got, "chat_message(replyTo=") {
-		t.Fatalf("default envelope must not use legacy pseudo-function syntax: %q", got)
-	}
-	if len(defaultChatInstruction) > 380 {
-		t.Fatalf("default envelope should stay short, got %d characters", len(defaultChatInstruction))
-	}
-	if strings.Count(got, "\n") > 3 {
-		t.Fatalf("envelope should stay compact (max 3 newlines), got %d", strings.Count(got, "\n"))
+	if got != "\n\n[Message-ID: m1]" {
+		t.Fatalf("default appendix should carry only the reply ID: %q", got)
 	}
 }
 
-// TestChatInstructionRepeatsEveryThirdMessage keeps the full envelope on the
-// first message and then periodically; every other message carries the short
-// [sent via chat] reminder that still routes replies through chat_message.
-func TestChatInstructionRepeatsEveryThirdMessage(t *testing.T) {
+func TestChatInstructionIsThinOnEveryMessage(t *testing.T) {
 	server := &Server{}
-	want := map[int]bool{1: true, 2: false, 3: false, 4: true, 5: false, 6: false, 7: true, 10: true}
-	for ordinal, envelope := range want {
+	for _, ordinal := range []int{1, 2, 3, 4, 5, 6, 7, 10} {
 		got := server.chatInstruction("m1", "claude", ordinal)
-		hasEnvelope := strings.Contains(got, `"files"`)
-		if hasEnvelope != envelope {
-			t.Fatalf("ordinal %d: envelope=%q, want envelope=%t", ordinal, got, envelope)
-		}
-		if !envelope {
-			for _, fragment := range []string{"[vmbox chat m1]", "MCP tool chat_message", `{"replyTo":"m1","text":"..."}`, "not terminal"} {
-				if !strings.Contains(got, fragment) {
-					t.Fatalf("ordinal %d reminder must mention %q: %q", ordinal, fragment, got)
-				}
-			}
-			if len(got) > 150 {
-				t.Fatalf("ordinal %d reminder must stay compact, got %d characters: %q", ordinal, len(got), got)
-			}
-		}
-		if got == "" {
-			t.Fatalf("ordinal %d must always carry either the envelope or the reply reminder", ordinal)
+		if got != "\n\n[Message-ID: m1]" {
+			t.Fatalf("ordinal %d appendix: %q", ordinal, got)
 		}
 	}
 }
 
 func TestContactChatInstructionIsCompactAndKeepsRouting(t *testing.T) {
 	got := (&Server{}).contactChatInstruction("m1", "box-2", "Helper", "claude")
-	for _, fragment := range []string{"[vmbox chat m1 from box Helper, not owner]", "MCP tool chat_message", `{"contact":"Helper","text":"..."}`, "get_contacts {}", "compact id or exact name", "cannot attach files", "omit contact to message the owner"} {
-		if !strings.Contains(got, fragment) {
-			t.Fatalf("contact envelope must mention %q: %q", fragment, got)
-		}
-	}
-	if len(got) > 300 {
-		t.Fatalf("contact envelope should stay short, got %d characters", len(got))
+	if got != "\n\n[Message-ID: m1; From-Box-ID: box-2]" {
+		t.Fatalf("contact appendix must carry only IDs: %q", got)
 	}
 }
 

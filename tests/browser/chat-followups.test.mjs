@@ -28,7 +28,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
  const msgs=id=>[{id:id+'1',direction:'agent',state:'delivered',text:id.toUpperCase()+'-ONLY',createdAt:now,updatedAt:now}];
  // A snap-packaged Chromium gets a private /tmp, so a fixture in os.tmpdir()
  // fails to upload with ERR_FILE_NOT_FOUND. Keep it in the working directory.
- const pngPath=join(process.cwd(),'vmbox-draft-'+process.pid+'.png');
+ const pngPath=join(process.env.VMBOX_BROWSER_UPLOAD_DIR||process.cwd(),'vmbox-draft-'+process.pid+'.png');
  await writeFile(pngPath,tinyPNG());
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];

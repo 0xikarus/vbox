@@ -21,7 +21,7 @@ test('video attachments play inline and can be uploaded',async()=>{
  const boxes=[{id:'gallery',name:'gallery',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'}];
  // A snap-packaged Chromium gets a private /tmp, so a fixture in os.tmpdir()
  // fails to upload with ERR_FILE_NOT_FOUND. Keep it in the working directory.
- const webmPath=join(process.cwd(),'vmbox-clip-'+process.pid+'.webm');
+ const webmPath=join(process.env.VMBOX_BROWSER_UPLOAD_DIR||process.cwd(),'vmbox-clip-'+process.pid+'.webm');
  await writeFile(webmPath,videoBytes);
  let mediaHits=0;
  const server=http.createServer(async(req,res)=>{
