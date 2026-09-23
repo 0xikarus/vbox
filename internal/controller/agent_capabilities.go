@@ -26,6 +26,10 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 		JOIN agent_role_permissions p ON p.account_id=a.account_id AND p.role_id=a.role_id
 		WHERE a.account_id=$1 AND a.box_id=$2 AND p.scope='allow'
 		AND NOT EXISTS (SELECT 1 FROM agent_box_policies d WHERE d.account_id=$1 AND d.box_id=$2)
+		UNION ALL
+		SELECT 'default_policy'::text,'{}'::jsonb
+		WHERE NOT EXISTS (SELECT 1 FROM agent_box_policies d WHERE d.account_id=$1 AND d.box_id=$2)
+		AND NOT EXISTS (SELECT 1 FROM box_role_assignments a WHERE a.account_id=$1 AND a.box_id=$2)
 	) policies`, accountID, boxID)
 	if err != nil {
 		return result, err
@@ -38,6 +42,8 @@ func (s *Store) EffectiveAgentCapabilities(ctx context.Context, accountID, boxID
 			return result, err
 		}
 		switch permission {
+		case "default_policy":
+			result.MCPTools = v1.MCPToolsGrant{Enabled: true, AllowedTools: append([]string(nil), v1.ComputerAgentMCPTools...)}
 		case "agent_box_policy":
 			if err := json.Unmarshal(config, &result); err != nil {
 				return result, err

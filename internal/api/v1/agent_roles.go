@@ -15,6 +15,8 @@ const (
 
 var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_history", "set_busy", "chat_message", "chat_ask"}
 
+var ComputerAgentMCPTools = []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
+
 var OptionalAgentMCPTools = []string{
 	"request_more_time", "queue_followup", "discover_shared_chats", "read_shared_chat", "create_shared_chat",
 	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address",
