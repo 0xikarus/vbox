@@ -745,7 +745,7 @@
 
  /* ---------- messages ---------- */
  const dayLabel=value=>{const d=new Date(value),now=new Date();if(d.toDateString()===now.toDateString())return 'Today';const y=new Date(now);y.setDate(now.getDate()-1);if(d.toDateString()===y.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'numeric',month:'long',year:'numeric'})};
- const stateTicks={queued:'queued',delivering:'sent',delivered:'delivered',failed:'failed',ambiguous:'maybe failed'};
+ const stateTicks={queued:'queued',delivering:'sent',delivered:'delivered',failed:'failed',ambiguous:'Delivery unconfirmed. The worker connection ended before confirmation; check TMUX before resending.'};
  const stateIconName={queued:'clock',delivering:'check',delivered:'check-check',failed:'alert',ambiguous:'help'};
  // Inline Lucide icons (24x24, currentColor stroke) so delivery state reads as
  // iconography instead of emoji glyphs.
@@ -863,7 +863,7 @@
    ticks.title=stateTicks[message.state]||'';
    const icon=stateIconName[message.state];
    if(icon)ticks.append(lucide(icon));
-   if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'maybe failed'));
+   if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'unconfirmed'));
    meta.append(ticks);
   }
   // Always-visible actions (hover-only controls are invisible on touch): the
@@ -878,6 +878,11 @@
   const reply=document.createElement('button');reply.type='button';reply.append(lucide('reply'),Object.assign(document.createElement('span'),{textContent:'Reply in thread'}));reply.onclick=async()=>{closeAllMsgActions();await openThread(message.threadId||message.id);$('#thread-composer textarea').focus()};
   const viewThread=document.createElement('button');viewThread.type='button';viewThread.textContent='View thread';viewThread.onclick=()=>{closeAllMsgActions();void openThread(message.threadId||message.id)};
   menu.append(reply,copy,forward,viewThread);
+  if(mine&&message.state==='ambiguous'){
+   const inspect=document.createElement('button');inspect.type='button';inspect.append(lucide('help'),Object.assign(document.createElement('span'),{textContent:'Check delivery in TMUX'}));
+   inspect.onclick=()=>{closeAllMsgActions();void openTakeover('tmux',box.id)};
+   menu.append(inspect);
+  }
   toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen){menu.hidden=false;toggle.setAttribute('aria-expanded','true')}};
   row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();menu.hidden=false;toggle.setAttribute('aria-expanded','true')};
   actions.append(toggle,menu);meta.append(actions);row.append(meta);
