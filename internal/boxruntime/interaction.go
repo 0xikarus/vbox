@@ -343,27 +343,10 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		if err := DeliverTmuxKeys(ctx, root, session, messageID+"-submit", []string{"Enter"}); err != nil {
 			return err
 		}
-		// The remote TUI can invalidate its old thread on /new without
-		// materializing a new one until a prompt arrives. Establish a fresh
-		// app-server thread now so the next chat message cannot select the
-		// invalidated ID from thread/list.
-		for {
-			id, err := CodexStartFreshThread(ctx, session)
-			if err == nil {
-				if err := rememberCodexThread(root, session, id); err != nil {
-					return err
-				}
-				if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
-					return err
-				}
-				return writeTextAtomic(resetThreadPath, id+"\n", 0600)
-			}
-			select {
-			case <-ctx.Done():
-				return fmt.Errorf("start fresh Codex thread: %w", err)
-			case <-time.After(agentReadyPollInterval):
-			}
-		}
+		// Let the TUI materialize its new thread when the next visible prompt
+		// arrives. Starting one from another app-server client forks Chat away
+		// from the conversation shown in TMUX and Desktop.
+		return writeTextAtomic(resetThreadPath, "visible-tui\n", 0600)
 	case "opencode":
 		// Continue below.
 	default:
