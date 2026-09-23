@@ -8,7 +8,7 @@ import puppeteer from 'puppeteer-core';
 const root=resolve('internal/controller/web'),requests=[];
 let server,browser,base;
 const revision='2026-09-05T12:00:00Z';
-let fixtureRoles=[],fixtureBoxRoleIds=[],fixturePolicy={capabilities:{}};
+let fixtureRoles=[],fixtureBoxRoleIds=[],fixturePolicy={capabilities:{requestMoreTime:{maxExtensionMinutes:0,maxTotalMinutes:0},queueFollowup:{maxPending:0},createAgentBox:{maxBoxes:0,maxDiskGiB:0},createEmailAddress:{maxAddresses:0}}};
 before(async()=>{
  server=http.createServer(async(req,res)=>{
   const path=new URL(req.url,'http://test').pathname;
@@ -83,6 +83,8 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#role-assignments .role-assignment-card[data-role-box-id="box-1"]');
  await page.click('#role-assignments .role-assignment-card[data-role-box-id="box-1"] button');
+ await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='');
+ assert.equal(await page.$eval('#role-editor-form',form=>form.checkValidity()),true,'disabled zero limits must not block permission saving');
  await page.click('#role-editor-form input[name=allContactsEnabled]');
  await page.click('#role-editor-form .mcp-tool-options summary');
  await page.click('#role-editor-form .mcp-tool-group-toggle[value=coordination]');
