@@ -84,7 +84,10 @@ func RegisterDesktopMCP(ctx context.Context, home, agent string) error {
 	if err == nil {
 		lower := strings.ToLower(string(output))
 		legacy := strings.Contains(lower, "command: vmbox-runtime") && strings.Contains(lower, "args: desktop-mcp") && !strings.Contains(lower, desktopRuntimePath())
-		if !legacy {
+		// Codex persists the environment of this MCP entry in config.toml.
+		// A wake can change the tmux socket, runtime directory and display, so
+		// refresh only our managed entry before each new Codex app server starts.
+		if !legacy && agent != "codex" {
 			return nil
 		}
 		removeArgs := []string{"mcp", "remove", "vmbox-desktop"}

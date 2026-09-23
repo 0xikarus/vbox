@@ -79,6 +79,33 @@ func TestRecoverInterruptedCodexSessionRestartsManagedPane(t *testing.T) {
 	}
 }
 
+func TestRecoverCodexMCPStartupDoesNotRestartWithoutCurrentPolicy(t *testing.T) {
+	originalCommand, originalPolicy := tmuxCommand, codexDesktopMCPPolicy
+	t.Cleanup(func() { tmuxCommand, codexDesktopMCPPolicy = originalCommand, originalPolicy })
+	var calls []string
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, args[0])
+		switch args[0] {
+		case "capture-pane":
+			return []byte("MCP startup issue · Ask Codex to do anything"), nil
+		case "show-option":
+			return []byte("fence\n"), nil
+		default:
+			t.Fatalf("unexpected process restart before policy refresh: %v", args)
+			return nil, nil
+		}
+	}
+	codexDesktopMCPPolicy = func(context.Context, string) (map[string]bool, error) {
+		return nil, fmt.Errorf("stale assignment")
+	}
+	if err := recoverCodexMCPStartup(context.Background(), "codex-test"); err == nil || !strings.Contains(err.Error(), "policy unavailable") {
+		t.Fatalf("missing current policy was accepted: %v", err)
+	}
+	if !reflect.DeepEqual(calls, []string{"capture-pane", "show-option"}) {
+		t.Fatalf("commands after policy failure: %v", calls)
+	}
+}
+
 func TestInteractiveAppliesPreviouslySavedContext(t *testing.T) {
 	bin := t.TempDir()
 	log := filepath.Join(bin, "calls")

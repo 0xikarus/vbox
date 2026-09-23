@@ -19,7 +19,7 @@ func TestDesktopAgentAuthUsesDatabaseBoxAndRejectsExpiredAssignment(t *testing.T
 		}
 		token := strings.Repeat("a", 64)
 		hash := sha256.Sum256([]byte(token))
-		query := mock.ExpectQuery(`SELECT t.account_id::text,t.user_id::text,t.box_id::text,t.fencing_token FROM desktop_agent_tokens`).WithArgs(hash[:])
+		query := mock.ExpectQuery(`SELECT t.account_id::text,t.user_id::text,t.box_id::text,t.fencing_token FROM desktop_agent_tokens`).WithArgs(hash[:], "/")
 		if valid {
 			query.WillReturnRows(sqlmock.NewRows([]string{"account", "user", "box", "fence"}).AddRow("account", "user", "bound-box", "current-fence"))
 		} else {

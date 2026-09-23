@@ -142,6 +142,64 @@ func recoverInterruptedCodexSession(ctx context.Context, root, session string) e
 	return nil
 }
 
+var RecoverCodexMCPStartup = recoverCodexMCPStartup
+var codexDesktopMCPPolicy = desktopAgentToolPolicy
+
+// A Codex TUI that started with a stale desktop-agent credential has no chat
+// reply tool. Never accept a new turn in that state: wait for the controller
+// to refresh the credential, then rebuild only the idle managed Codex pair.
+func recoverCodexMCPStartup(ctx context.Context, session string) error {
+	if !processID.MatchString(session) || !strings.HasPrefix(session, "codex-") {
+		return nil
+	}
+	target := "=" + session + ":0.0"
+	content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-t", target)
+	if err != nil {
+		return err
+	}
+	screen := string(content)
+	if !strings.Contains(screen, "MCP startup issue") && !strings.Contains(screen, "MCP startup incomplete") {
+		return nil
+	}
+	if !strings.Contains(screen, "Ask Codex") && !strings.Contains(screen, "q close") {
+		return fmt.Errorf("codex desktop MCP startup failed while the session is busy")
+	}
+	fence, err := tmuxCommand(ctx, "", "show-option", "-gv", "@vmbox_assignment")
+	if err != nil {
+		return err
+	}
+	if _, err := codexDesktopMCPPolicy(ctx, strings.TrimSpace(string(fence))); err != nil {
+		return fmt.Errorf("codex desktop MCP policy unavailable")
+	}
+	if err := RegisterDesktopMCP(ctx, os.Getenv("HOME"), "codex"); err != nil {
+		return err
+	}
+	if _, err := tmuxCommand(ctx, "", "kill-session", "-t", "="+codexAppServerSession(session)); err != nil {
+		return fmt.Errorf("stop stale codex app server: %w", err)
+	}
+	if err := EnsureCodexAppServer(ctx, session); err != nil {
+		return err
+	}
+	launcher := shellJoin([]string{"vmbox-runtime", "agent-restore", session, "codex"})
+	if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", target, "-c", WorkspaceDirectory(), launcher); err != nil {
+		return fmt.Errorf("restart codex after MCP repair: %w", err)
+	}
+	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
+		return err
+	}
+	if err := settleAgentReadiness(ctx, session, "codex"); err != nil {
+		return err
+	}
+	content, err = tmuxCommand(ctx, "", "capture-pane", "-p", "-t", target)
+	if err != nil {
+		return err
+	}
+	if strings.Contains(string(content), "MCP startup issue") || strings.Contains(string(content), "MCP startup incomplete") {
+		return fmt.Errorf("codex desktop MCP startup failed after repair")
+	}
+	return nil
+}
+
 // ensureAgentBackend starts whatever an agent needs before its terminal can
 // attach. Every box gets the HTTP tool façade so scripts can reach the desktop
 // tools; OpenCode serves its own API in-process, and Codex needs its app server

@@ -31,7 +31,7 @@ func issueDesktopAgentToken(ctx context.Context, executor desktopTokenExecutor, 
 	token := hex.EncodeToString(raw)
 	hash := sha256.Sum256([]byte(token))
 	result, err := executor.ExecContext(ctx, `INSERT INTO desktop_agent_tokens(account_id,box_id,user_id,fencing_token,token_hash)
- SELECT account_id,id,$3,fencing_token,$5 FROM logical_boxes WHERE account_id=$1 AND id=$2 AND fencing_token=$4 AND state='running'
+ SELECT account_id,id,$3,fencing_token,$5 FROM logical_boxes WHERE account_id=$1 AND id=$2 AND fencing_token=$4 AND state IN ('attaching','running')
  ON CONFLICT(box_id) DO UPDATE SET user_id=excluded.user_id,fencing_token=excluded.fencing_token,token_hash=excluded.token_hash,created_at=now()`, p.AccountID, box, p.UserID, fence, hash[:])
 	if err != nil {
 		return "", fmt.Errorf("desktop credential could not be installed")
@@ -67,7 +67,10 @@ func (s *Server) desktopAgentAuth(next handler) http.HandlerFunc {
 		hash := sha256.Sum256([]byte(value))
 		var p Principal
 		var box, fence string
-		err := s.Store.DB.QueryRowContext(r.Context(), `SELECT t.account_id::text,t.user_id::text,t.box_id::text,t.fencing_token FROM desktop_agent_tokens t JOIN logical_boxes b ON b.id=t.box_id AND b.account_id=t.account_id JOIN users u ON u.id=t.user_id AND u.account_id=t.account_id WHERE t.token_hash=$1 AND b.state='running' AND b.fencing_token=t.fencing_token AND u.disabled_at IS NULL`, hash[:]).Scan(&p.AccountID, &p.UserID, &box, &fence)
+		// During allocation, the managed agent needs its tool inventory before
+		// the box becomes ready. Only that read-only policy route is available
+		// while attaching; every tool call still requires the running state.
+		err := s.Store.DB.QueryRowContext(r.Context(), `SELECT t.account_id::text,t.user_id::text,t.box_id::text,t.fencing_token FROM desktop_agent_tokens t JOIN logical_boxes b ON b.id=t.box_id AND b.account_id=t.account_id JOIN users u ON u.id=t.user_id AND u.account_id=t.account_id WHERE t.token_hash=$1 AND (b.state='running' OR (b.state='attaching' AND $2='/v1/agent-desktop/tool-policy')) AND b.fencing_token=t.fencing_token AND u.disabled_at IS NULL`, hash[:], r.URL.Path).Scan(&p.AccountID, &p.UserID, &box, &fence)
 		if err != nil || strings.TrimSpace(box) == "" {
 			writeError(w, 401, fmt.Errorf("desktop assignment authorization expired"))
 			return

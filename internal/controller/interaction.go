@@ -210,6 +210,18 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	}
 	var result provider.ExecResult
 	var execErr error
+	if task.Agent == "codex" && submit && len(s.WorkerRuntime) > 0 {
+		digest := fmt.Sprintf("%x", sha256.Sum256(s.WorkerRuntime))
+		matches, _ := installedWorkspaceRuntimeMatches(ctx, digest, func(ctx context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+			return prov.Exec(ctx, assignment.Slot.ServiceID, argv, options)
+		})
+		if !matches {
+			if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+				_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
+				return fmt.Errorf("update Codex workspace runtime: %w", err)
+			}
+		}
+	}
 	if task.Agent == "claude" && submit {
 		result, execErr = s.deliverNativeAgentChat(ctx, prov, assignment.Slot.ServiceID, p.AccountID, "chat-deliver", task, message)
 	} else if task.Agent == "codex" && submit {
@@ -225,14 +237,22 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		encoded := base64.RawURLEncoding.EncodeToString([]byte(text))
 		result, execErr = prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit), "true"}, provider.ExecOptions{})
 	}
-	if task.Agent == "codex" && submit && execErr == nil && (legacyCodexImageSchemaFailure(result) || codexAppServerConnectionRefused(result) || codexThreadNotFound(result)) {
-		// A retained workspace can keep an older runtime after the controller is
-		// deployed. These failures happen before Codex starts a turn, so
-		// atomically stage the matching runtime and retry the same message once.
-		if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
-			detail := "update workspace runtime after Codex delivery failure: " + err.Error()
-			_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
-			return fmt.Errorf("%s", detail)
+	if task.Agent == "codex" && submit && execErr == nil && (legacyCodexImageSchemaFailure(result) || codexAppServerConnectionRefused(result) || codexThreadNotFound(result) || codexDesktopMCPPolicyUnavailable(result)) {
+		// These exact failures occur before a turn starts. Refresh the missing
+		// prerequisite and retry once without duplicating a user message.
+		if !codexDesktopMCPPolicyUnavailable(result) {
+			if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+				detail := "update workspace runtime after Codex delivery failure: " + err.Error()
+				_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
+				return fmt.Errorf("%s", detail)
+			}
+		}
+		if codexDesktopMCPPolicyUnavailable(result) {
+			if err := s.provisionAssignedDesktopAgent(ctx, assignment, prov, "running"); err != nil {
+				detail := "refresh Codex desktop credential: " + err.Error()
+				_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
+				return fmt.Errorf("%s", detail)
+			}
 		}
 		result, execErr = s.deliverNativeAgentChat(ctx, prov, assignment.Slot.ServiceID, p.AccountID, "chat-codex", task, message)
 	}
@@ -266,6 +286,10 @@ func codexAppServerConnectionRefused(result provider.ExecResult) bool {
 
 func codexThreadNotFound(result provider.ExecResult) bool {
 	return result.ExitCode != 0 && strings.Contains(result.Stderr, "codex app server: thread not found:")
+}
+
+func codexDesktopMCPPolicyUnavailable(result provider.ExecResult) bool {
+	return result.ExitCode != 0 && strings.Contains(result.Stderr, "codex desktop MCP policy unavailable")
 }
 
 func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {

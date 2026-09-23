@@ -140,6 +140,36 @@ func TestDesktopAgentProvisionPrivateConfigAndShellOnlySkip(t *testing.T) {
 	}
 }
 
+func TestProvisionAssignedDesktopAgentCommitsCurrentCredential(t *testing.T) {
+	for _, state := range []string{"attaching", "running"} {
+		t.Run(state, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			mock.ExpectBegin()
+			mock.ExpectQuery("SELECT owner_user_id::text FROM logical_boxes").WithArgs("account", "box", state, int64(2), "fence").WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow("user"))
+			mock.ExpectExec("INSERT INTO desktop_agent_tokens").WithArgs("account", "box", "user", "fence", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+			mock.ExpectCommit()
+			fixture := &desktopProvisionFixture{t: t, enabled: true}
+			s := NewServer(&Store{DB: db}, nil)
+			s.PublicURL = "https://controller.test"
+			a := fleetAssignment{FencingToken: "fence"}
+			a.Box = v1.LogicalBox{ID: "box", AccountID: "account", AssignmentGeneration: 2}
+			if err := s.provisionAssignedDesktopAgent(context.Background(), a, fixture, state); err != nil {
+				t.Fatal(err)
+			}
+			if fixture.writes != 1 || fixture.config.Assignment != nativeFence(a) {
+				t.Fatal("current assignment credential was not installed")
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestChatStartupRejectsStaleAssignmentBeforeWorkerAccess(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

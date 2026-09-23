@@ -111,14 +111,14 @@ printf '%s\n' "$@" >> "$HOME/registration-args"
 					t.Fatal(err)
 				}
 				args, readErr := os.ReadFile(filepath.Join(home, "registration-args"))
-				if mode != "missing" && mode != "legacy" {
+				if mode != "missing" && mode != "legacy" && !(mode == "exists" && agent == "codex") {
 					if !os.IsNotExist(readErr) {
 						t.Fatal("registration changed after existing entry or inspection failure")
 					}
 					return
 				}
 				want := ""
-				if mode == "legacy" {
+				if mode == "legacy" || (mode == "exists" && agent == "codex") {
 					want = "mcp\nremove\nvmbox-desktop\n"
 					if agent == "claude" {
 						want += "--scope\nuser\n"
