@@ -17,9 +17,10 @@ var codexRolloutID = regexp.MustCompile(`^rollout-.*-([0-9a-fA-F]{8}-[0-9a-fA-F]
 // CodexResumeCandidate is scoped to a hibernation snapshot, never to a later
 // empty conversation created when the box wakes.
 type CodexResumeCandidate struct {
-	SessionID string    `json:"sessionId"`
-	SavedAt   time.Time `json:"savedAt"`
-	StartedAt time.Time `json:"startedAt"`
+	SessionID    string    `json:"sessionId"`
+	SavedAt      time.Time `json:"savedAt"`
+	StartedAt    time.Time `json:"startedAt"`
+	LastActiveAt time.Time `json:"lastActiveAt"`
 }
 
 func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate, error) {
@@ -64,6 +65,7 @@ func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate
 		if err != nil {
 			continue
 		}
+		info, infoErr := file.Stat()
 		scanner := bufio.NewScanner(file)
 		scanner.Buffer(make([]byte, 4096), 2<<20)
 		var meta struct {
@@ -79,15 +81,24 @@ func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate
 		_ = file.Close()
 		// A local TUI records source=cli; the managed --remote TUI records
 		// source=vscode in Codex 0.155. Both are interactive conversations.
-		if !valid || meta.Type != "session_meta" || meta.Payload.ID != match[1] || (meta.Payload.Source != "cli" && meta.Payload.Source != "vscode") || meta.Payload.ParentThreadID != "" {
+		if !valid || infoErr != nil || meta.Type != "session_meta" || meta.Payload.ID != match[1] || (meta.Payload.Source != "cli" && meta.Payload.Source != "vscode") || meta.Payload.ParentThreadID != "" {
 			continue
 		}
 		started := meta.Payload.Timestamp
 		if started.IsZero() || started.After(snapshot.SavedAt) {
 			continue
 		}
-		if newest == nil || started.After(newest.StartedAt) {
-			newest = &CodexResumeCandidate{SessionID: match[1], SavedAt: snapshot.SavedAt, StartedAt: started}
+		// Rollout modification time follows conversation activity. Cap it at
+		// the hibernation snapshot: Codex may flush a final record as tmux exits.
+		active := info.ModTime()
+		if active.After(snapshot.SavedAt) {
+			active = snapshot.SavedAt
+		}
+		if active.Before(started) {
+			active = started
+		}
+		if newest == nil || active.After(newest.LastActiveAt) || (active.Equal(newest.LastActiveAt) && started.After(newest.StartedAt)) {
+			newest = &CodexResumeCandidate{SessionID: match[1], SavedAt: snapshot.SavedAt, StartedAt: started, LastActiveAt: active}
 		}
 	}
 	return newest, nil
