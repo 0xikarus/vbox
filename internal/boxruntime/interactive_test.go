@@ -29,6 +29,56 @@ func TestInteractiveShellUsesSpecsWelcome(t *testing.T) {
 	}
 }
 
+func TestRecoverInterruptedCodexSessionLeavesUserShellAlone(t *testing.T) {
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	var calls []string
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		calls = append(calls, args[0])
+		switch args[0] {
+		case "display-message":
+			return []byte("bash\n"), nil
+		case "capture-pane":
+			return []byte("ordinary user shell\n"), nil
+		default:
+			t.Fatalf("unexpected tmux command: %v", args)
+			return nil, nil
+		}
+	}
+	if err := recoverInterruptedCodexSession(context.Background(), "/data/.vmbox", "codex-test"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(calls, []string{"display-message", "capture-pane"}) {
+		t.Fatalf("calls=%v", calls)
+	}
+}
+
+func TestRecoverInterruptedCodexSessionRestartsManagedPane(t *testing.T) {
+	original := tmuxCommand
+	t.Cleanup(func() { tmuxCommand = original })
+	var respawn []string
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "display-message":
+			return []byte("bash\n"), nil
+		case "capture-pane":
+			return []byte("[vmbox] Interrupted: codex --remote\n"), nil
+		case "respawn-pane":
+			respawn = append([]string(nil), args...)
+			return nil, nil
+		default:
+			t.Fatalf("unexpected tmux command: %v", args)
+			return nil, nil
+		}
+	}
+	if err := recoverInterruptedCodexSession(context.Background(), "/data/.vmbox", "codex-test"); err != nil {
+		t.Fatal(err)
+	}
+	if len(respawn) == 0 || !strings.Contains(strings.Join(respawn, " "), "agent-restore") {
+		t.Fatalf("managed pane was not restarted: %v", respawn)
+	}
+}
+
 func TestInteractiveAppliesPreviouslySavedContext(t *testing.T) {
 	bin := t.TempDir()
 	log := filepath.Join(bin, "calls")

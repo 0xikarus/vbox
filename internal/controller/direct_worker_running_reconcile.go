@@ -96,9 +96,9 @@ func (s *Server) restoreRunningWorkerRuntime(ctx context.Context, a fleetAssignm
 	}
 	commands := [][]string{
 		{"vmbox-runtime", "restore-tools"},
+		{"vmbox-runtime", "native-bind", nativeFence(a)},
 		{"vmbox-runtime", "tmux-restore"},
 		{"vmbox-runtime", "tmux-context", a.Box.Name, a.Slot.ServiceName, "running", "connected"},
-		{"vmbox-runtime", "native-bind", nativeFence(a)},
 		{"vmbox-runtime", "native-sessions", nativeFence(a)},
 	}
 	for _, argv := range commands {

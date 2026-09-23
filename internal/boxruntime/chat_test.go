@@ -105,6 +105,7 @@ func TestChatSessionFindsSanitizedMCPThroughProcessTree(t *testing.T) {
 }
 
 func TestDeliverCodexChatSendsTextAndImagesThroughTheAppServer(t *testing.T) {
+	stubCodexDeliveryHealth(t)
 	home := t.TempDir()
 	var encoded bytes.Buffer
 	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
@@ -134,6 +135,7 @@ func TestDeliverCodexChatSendsTextAndImagesThroughTheAppServer(t *testing.T) {
 }
 
 func TestDeliverCodexChatUsesStructuredImagesWhenTUIIsReady(t *testing.T) {
+	stubCodexDeliveryHealth(t)
 	home, root := t.TempDir(), t.TempDir()
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
@@ -163,6 +165,7 @@ func TestDeliverCodexChatUsesStructuredImagesWhenTUIIsReady(t *testing.T) {
 }
 
 func TestDeliverCodexChatUsesAppServerForOrdinaryText(t *testing.T) {
+	stubCodexDeliveryHealth(t)
 	home, root := t.TempDir(), t.TempDir()
 	originalTurn, originalCommand := CodexStartTurn, tmuxCommand
 	t.Cleanup(func() { CodexStartTurn, tmuxCommand = originalTurn, originalCommand })
@@ -188,6 +191,7 @@ func TestDeliverCodexChatUsesAppServerForOrdinaryText(t *testing.T) {
 }
 
 func TestDeliverCodexChatKeepsLongTextIntactThroughAppServer(t *testing.T) {
+	stubCodexDeliveryHealth(t)
 	home, root := t.TempDir(), t.TempDir()
 	originalTurn, originalCommand := CodexStartTurn, tmuxCommand
 	t.Cleanup(func() { CodexStartTurn, tmuxCommand = originalTurn, originalCommand })
@@ -435,6 +439,14 @@ func stubCodexBackend(t *testing.T) {
 	original := EnsureCodexAppServer
 	t.Cleanup(func() { EnsureCodexAppServer = original })
 	EnsureCodexAppServer = func(context.Context, string) error { return nil }
+}
+
+func stubCodexDeliveryHealth(t *testing.T) {
+	t.Helper()
+	stubCodexBackend(t)
+	original := RecoverInterruptedCodexSession
+	t.Cleanup(func() { RecoverInterruptedCodexSession = original })
+	RecoverInterruptedCodexSession = func(context.Context, string, string) error { return nil }
 }
 
 // Codex's MCP server is a child of the app server, so the tmux session holding

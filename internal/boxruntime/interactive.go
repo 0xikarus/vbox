@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 )
 
@@ -104,6 +105,41 @@ func RestoreManagedAgent(ctx context.Context, root, session, agent string) error
 		return err
 	}
 	return syscall.Exec(binary, argv, os.Environ())
+}
+
+// recoverInterruptedCodexSession repairs only the known controller-managed
+// terminal left behind by an old restore. A user shell, even in a Codex-named
+// session, is never replaced unless it contains the runtime's interruption
+// notice and its foreground process is still a shell.
+var RecoverInterruptedCodexSession = recoverInterruptedCodexSession
+
+func recoverInterruptedCodexSession(ctx context.Context, root, session string) error {
+	if !processID.MatchString(session) || !strings.HasPrefix(session, "codex-") {
+		return nil
+	}
+	target := "=" + session + ":0.0"
+	command, err := tmuxCommand(ctx, "", "display-message", "-p", "-t", target, "#{pane_current_command}")
+	if err != nil {
+		return err
+	}
+	current := strings.TrimSpace(string(command))
+	if current != "bash" && current != "sh" && current != "zsh" && current != "fish" {
+		return nil
+	}
+	content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-S", "-", "-t", target)
+	if err != nil {
+		return err
+	}
+	if !strings.Contains(string(content), "[vmbox] Interrupted:") {
+		return nil
+	}
+	// The assignment has already been bound by the controller. The restored
+	// launcher recreates the app server and the visible TUI in this same pane.
+	launcher := shellJoin([]string{"vmbox-runtime", "agent-restore", session, "codex"})
+	if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", target, "-c", WorkspaceDirectory(), launcher); err != nil {
+		return fmt.Errorf("recover interrupted codex session: %w", err)
+	}
+	return nil
 }
 
 // ensureAgentBackend starts whatever an agent needs before its terminal can

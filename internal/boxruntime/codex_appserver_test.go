@@ -11,6 +11,39 @@ import (
 	"testing"
 )
 
+func TestEnsureCodexAppServerReplacesInterruptedHelper(t *testing.T) {
+	originalCommand, originalReady := tmuxCommand, CodexAppServerReady
+	t.Cleanup(func() { tmuxCommand, CodexAppServerReady = originalCommand, originalReady })
+	stale, ready, killed := true, false, false
+	CodexAppServerReady = func(context.Context, string) (bool, error) { return ready, nil }
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		switch args[0] {
+		case "has-session":
+			if stale {
+				return nil, nil
+			}
+			return nil, errors.New("no sessions")
+		case "display-message":
+			return []byte("bash\n"), nil
+		case "kill-session":
+			stale, killed = false, true
+			return nil, nil
+		case "new-session":
+			ready = true
+			return nil, nil
+		default:
+			t.Fatalf("unexpected tmux command: %v", args)
+			return nil, nil
+		}
+	}
+	if err := EnsureCodexAppServer(context.Background(), "codex-test"); err != nil {
+		t.Fatal(err)
+	}
+	if !killed || !ready {
+		t.Fatalf("stale helper was not replaced: killed=%t ready=%t", killed, ready)
+	}
+}
+
 func TestCodexCurrentThreadPrefersFirstTurnAfterClear(t *testing.T) {
 	root := t.TempDir()
 	if err := writeTextAtomic(codexResetPendingFile(root, "session"), "fresh-thread\n", 0600); err != nil {

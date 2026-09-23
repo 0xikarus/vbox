@@ -333,7 +333,22 @@ func codexAppServerSession(session string) string { return codexAppServerPrefix 
 // otherwise.
 var EnsureCodexAppServer = func(ctx context.Context, session string) error {
 	name := codexAppServerSession(session)
-	if _, err := tmuxCommand(ctx, "", "has-session", "-t", name); err != nil {
+	if ready, err := CodexAppServerReady(ctx, session); err != nil {
+		return err
+	} else if ready {
+		return nil
+	}
+	// Old snapshots restored this internal helper as an interrupted login
+	// shell. A tmux name alone does not prove that the app server is alive.
+	if _, err := tmuxCommand(ctx, "", "has-session", "-t", "="+name); err == nil {
+		command, commandErr := tmuxCommand(ctx, "", "display-message", "-p", "-t", "="+name+":0.0", "#{pane_current_command}")
+		if commandErr == nil && (strings.TrimSpace(string(command)) == "bash" || strings.TrimSpace(string(command)) == "sh") {
+			if _, err := tmuxCommand(ctx, "", "kill-session", "-t", "="+name); err != nil {
+				return fmt.Errorf("remove stale codex app server session: %w", err)
+			}
+		}
+	}
+	if _, err := tmuxCommand(ctx, "", "has-session", "-t", "="+name); err != nil {
 		argv := []string{"new-session", "-d", "-s", name, "-c", WorkspaceDirectory(), "--",
 			"codex", "app-server", "--listen", fmt.Sprintf("ws://127.0.0.1:%d", CodexChatPort(session))}
 		if _, err := tmuxCommand(ctx, "", argv...); err != nil {
