@@ -77,7 +77,9 @@ func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate
 		}
 		valid := scanner.Scan() && json.Unmarshal(scanner.Bytes(), &meta) == nil
 		_ = file.Close()
-		if !valid || meta.Type != "session_meta" || meta.Payload.ID != match[1] || meta.Payload.Source != "cli" || meta.Payload.ParentThreadID != "" {
+		// A local TUI records source=cli; the managed --remote TUI records
+		// source=vscode in Codex 0.155. Both are interactive conversations.
+		if !valid || meta.Type != "session_meta" || meta.Payload.ID != match[1] || (meta.Payload.Source != "cli" && meta.Payload.Source != "vscode") || meta.Payload.ParentThreadID != "" {
 			continue
 		}
 		started := meta.Payload.Timestamp

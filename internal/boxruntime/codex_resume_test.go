@@ -34,7 +34,7 @@ func TestFindCodexResumeCandidateUsesPreHibernateInteractiveThread(t *testing.T)
 	newID := "11234567-89ab-cdef-0123-456789abcdef"
 	postWakeID := "21234567-89ab-cdef-0123-456789abcdef"
 	write(oldID, "cli", saved.Add(-time.Hour))
-	write(newID, "cli", saved.Add(-time.Minute))
+	write(newID, "vscode", saved.Add(-time.Minute))
 	write(postWakeID, "cli", saved.Add(time.Minute))
 	write("31234567-89ab-cdef-0123-456789abcdef", "exec", saved.Add(-time.Second))
 	candidate, err := FindCodexResumeCandidate(root, home, "codex-test")
