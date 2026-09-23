@@ -101,6 +101,9 @@ Run `claude`, `codex`, `opencode`, or any shell command inside it.
 
 Disconnect with **Ctrl-a, then d**. Leave the box running to preserve its processes.
 Reconnect with `vmbox work`; hibernation preserves files, not running programs.
+In Agent chat, **Wake box** restores a hibernated box before sending again. Its
+saved chat history remains visible, while the managed agent starts a fresh live
+conversation after wake.
 
 The web workspace's **Agent chat** starts the selected managed agent when no
 reusable session exists. OpenCode starts a bare visible TUI, then receives its

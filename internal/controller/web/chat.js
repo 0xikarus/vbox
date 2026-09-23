@@ -1002,7 +1002,7 @@
   await loadPreviews(force);
   if(selected)applySeen(selected);
   renderRows();
-  updateSendState();
+  if(selected){renderHeader();renderInspect()}
  }
  async function loadPreviews(force){
   await Promise.allSettled([...boxes.keys()].map(async id=>{
@@ -1034,6 +1034,8 @@
   $('#chat-header-state').replaceChildren(Object.assign(document.createElement('span'),{className:box.state==='running'?'running':'',textContent:(box.defaultAgent||'agent')+' · '+box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')}));
   const key=box.id+'|'+box.state;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
+  $('#chat-wake').hidden=!canWakeBox(box);
+  $('#chat-wake').disabled=wakingBoxes.has(box.id);
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   $('#thread-composer button').disabled=box.state!=='running';
   updateSendState();
@@ -1048,6 +1050,7 @@
  function updateBanner(){
   if(reconnecting)return setBanner('Reconnecting to the controller…');
   const box=boxes.get(selected);if(!box)return setBanner('');
+  if(canWakeBox(box))return setBanner('This box is '+box.state+'. Wake it to chat again. Files and chat history are saved; the agent starts a fresh live session.');
   const last=[...(box.messages||[])].reverse().find(m=>m.direction==='user');
   const started=box.agentBusySince||(last&&(last.updatedAt||last.createdAt));
   const elapsed=started?Date.now()-new Date(started).getTime():0;
@@ -1451,6 +1454,10 @@
   const link=document.createElement('a');
   link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
   quick.append(link);
+  if(canWakeBox(box)){
+   const wake=document.createElement('button');wake.type='button';wake.textContent='Wake box';wake.disabled=wakingBoxes.has(box.id);
+   wake.title='Restore the saved workspace and start a fresh agent session';wake.onclick=()=>void wakeBox(box);quick.append(wake);
+  }
   if(box.state==='running'&&agent!=='shell'){
    const clear=document.createElement('button');clear.type='button';clear.textContent='Clear context';
    clear.title='Start a fresh agent context for this chat';clear.onclick=()=>$('#chat-clear-context').click();quick.append(clear);
@@ -1722,6 +1729,8 @@
 
  /* ---------- row menu / hibernate / delete ---------- */
  const rowMenu=$('#row-menu'),menuBackdrop=$('#menu-backdrop');
+ const wakingBoxes=new Set();
+ const canWakeBox=box=>box&&['hibernated','detached','failed'].includes(box.state);
  function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('sheet-mode');menuBackdrop.hidden=true}
  function openRowMenu(box,rect){
   rowMenu.replaceChildren();
@@ -1729,6 +1738,7 @@
   const items=[
    ['Show details',()=>{if(!inspectOpen)$('#chat-info').click()}],
   ];
+  if(canWakeBox(box))items.push(['Wake box',()=>void wakeBox(box)]);
   if(box.state==='running')items.push(['Hibernate box',()=>void hibernateBox(box)],['Restart box…',()=>void restartBox(box)]);
   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
   for(const item of items){const b=document.createElement('button');b.type='button';b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
@@ -1779,6 +1789,28 @@
    await loadBoxes();
   }catch(e){toast(e.message)}
  }
+ async function wakeBox(box){
+  if(!canWakeBox(box)||wakingBoxes.has(box.id))return;
+  wakingBoxes.add(box.id);renderHeader();
+  try{
+   toast('Waking '+box.name+'…');
+   const allocation=await api(boxPath(box.id)+'/allocate','POST',{'Idempotency-Key':crypto.randomUUID()},{leaseOwner:'chat'});
+   await loadBoxes();
+   const deadline=Date.now()+180000;
+   let current=allocation;
+   while(current.state!=='ready'){
+    if(['failed','cancelled'].includes(current.state))throw Error(current.failureReason||'Wake request failed.');
+    if(Date.now()>deadline)throw Error('Wake is still in progress. Check the box state or workspace shortly.');
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    current=await api('/v1/allocations/'+encodeURIComponent(allocation.requestId));
+   }
+   await loadBoxes();
+   if(selected===box.id)await refreshMessages(true);
+   toast(box.name+' is running.');
+  }catch(e){toast(e.message);await loadBoxes().catch(()=>{})}
+  finally{wakingBoxes.delete(box.id);renderHeader()}
+ }
+ $('#chat-wake').onclick=()=>void wakeBox(boxes.get(selected));
  async function hibernateBox(box){
   try{
    await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
