@@ -88,11 +88,14 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  await page.click('#role-editor-form input[name=allContactsEnabled]');
  await page.click('#role-editor-form .mcp-tool-options summary');
  await page.click('#role-editor-form .mcp-tool-group-toggle[value=coordination]');
+ await page.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
  await page.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');
  await page.click('#role-editor-form button.primary');
  await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Permissions updated'));
  assert.equal(fixturePolicy.capabilities.allContacts.enabled,true);
  assert.equal(fixturePolicy.capabilities.queueFollowup.enabled,true);
+ assert.deepEqual(fixturePolicy.capabilities.createAgentBox,{enabled:true,maxBoxes:3,maxDiskGiB:50,allowedAgents:['codex','claude','opencode'],assignableRoleIds:[]});
+ assert.deepEqual(fixturePolicy.capabilities.requestMoreTime,{enabled:true,maxExtensionMinutes:60,maxTotalMinutes:240});
  assert.equal(Object.values(fixturePolicy.capabilities.sharedChats).every(Boolean),true);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('press_keys'),true);
  assert.equal(fixturePolicy.capabilities.mcpTools.allowedTools.includes('secret_request'),false);
