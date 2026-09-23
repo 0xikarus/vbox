@@ -930,7 +930,7 @@
   if(box.resumeCandidate){
    const card=document.createElement('div');card.className='codex-resume-card';
    const title=document.createElement('strong');title.textContent='Restore your Codex conversation?';
-   const detail=document.createElement('span');detail.textContent='Found the latest session saved before hibernation ('+new Date(box.resumeCandidate.startedAt).toLocaleString()+'). Restore its context in the visible terminal, or continue fresh.';
+   const detail=document.createElement('span');detail.textContent='Found the last active session saved before hibernation ('+new Date(box.resumeCandidate.lastActiveAt||box.resumeCandidate.startedAt).toLocaleString()+'). Restore its context in the visible terminal, or continue fresh.';
    const actions=document.createElement('div');actions.className='codex-resume-actions';
    for(const [choice,label] of [['restore','Restore session'],['fresh','Start fresh']]){
     const button=document.createElement('button');button.type='button';button.textContent=label;
