@@ -786,7 +786,25 @@ func pendingStartupDialog(agent, text string) (startupDialog, bool) {
 func agentInputReady(agent, content string) bool {
 	switch agent {
 	case "codex":
-		return !terminalBlocksSubmit(content) && !strings.Contains(content, "Approaching rate limits") && strings.Contains(content, "OpenAI Codex") && strings.Contains(content, "›")
+		// The brand header scrolls away in a long conversation. The
+		// composer remains at the bottom of the current screen, so recognize
+		// that prompt instead of requiring the startup header in scrollback.
+		if terminalBlocksSubmit(content) || strings.Contains(content, "Approaching rate limits") {
+			return false
+		}
+		lines := strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n")
+		visible := make([]string, 0, len(lines))
+		for _, line := range lines {
+			if line = strings.TrimSpace(line); line != "" {
+				visible = append(visible, line)
+			}
+		}
+		for i := len(visible) - 1; i >= 0 && i >= len(visible)-2; i-- {
+			if strings.HasPrefix(visible[i], "› ") {
+				return true
+			}
+		}
+		return false
 	case "claude":
 		if !strings.Contains(content, "Claude Code v") {
 			return false

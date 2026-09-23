@@ -324,6 +324,18 @@ func TestCodexUpdateMenuIsNotInputReady(t *testing.T) {
 	}
 }
 
+func TestCodexLongConversationRemainsInputReadyWithoutStartupHeader(t *testing.T) {
+	content := "• Worked for 9m 33s · done\n\n› Ask Codex to do anything\n\n  gpt-6-sol high · /data/workspace · Add map displacement and zoom\n"
+	if !agentInputReady("codex", content) {
+		t.Fatal("long Codex conversation lost its Chat input readiness")
+	}
+	if agentInputReady("codex", "› Ask Codex to do anything\n• Running a tool\n└ still busy\n") {
+		t.Fatal("stale composer above active output was treated as ready")
+	}
+	// The readiness probe may see a draft; ensureCodexEmptyComposer rejects it
+	// before typing any Chat text into that user's unsent input.
+}
+
 func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 	stubRegisteredAgent(t, "claude")
 	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
