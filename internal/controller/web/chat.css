@@ -230,6 +230,15 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #chat-input{flex:1;resize:none;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius);
   padding:.55rem .75rem;font:inherit;max-height:35vh;overflow-y:auto;background:var(--bg);color:var(--ink);min-height:2.8rem;line-height:1.45}
 #chat-input:focus{outline:none;border-color:var(--accent)}
+#composer-picker{position:absolute;z-index:16;left:.5rem;right:.5rem;bottom:calc(4.3rem + env(safe-area-inset-bottom));
+  max-height:min(16rem,40vh);overflow:auto;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.25rem}
+#composer-picker[hidden]{display:none}
+#composer-picker button{display:block;width:100%;text-align:left;border:0;border-radius:var(--radius-sm);padding:.5rem .65rem;
+  color:var(--ink);background:transparent;font:inherit;cursor:pointer}
+#composer-picker button:hover,#composer-picker button[aria-selected="true"]{background:var(--accent-soft)}
+#composer-picker button strong{display:block;font-size:.88rem}
+#composer-picker button span{display:block;font-size:.74rem;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chat-status{margin:0;padding:0 .7rem .15rem;font-size:.78rem;color:var(--ink-soft);min-height:.95rem}
 #thread-panel{position:absolute;top:0;right:0;bottom:0;z-index:13;width:min(26rem,92vw);display:flex;flex-direction:column;background:var(--bg);border-left:1px solid var(--line);box-shadow:var(--shadow-pop)}
 #thread-panel[hidden]{display:none}
@@ -507,6 +516,12 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .md-preview .md-pre{background:var(--surface2);padding:.4rem .5rem;border-radius:.3rem;overflow:auto;font-size:.78rem}
 .md-preview .md-quote{border-left:3px solid var(--line);margin:.3rem 0;padding:.1rem .6rem;color:var(--ink-soft)}
 .md-preview .md-empty{color:var(--ink-soft);font-style:italic}
+.commands-card{width:min(36rem,100%)}
+#command-list{display:grid;gap:.35rem;margin:.6rem 0 1rem;max-height:14rem;overflow:auto}
+.command-row{display:flex;align-items:center;gap:.4rem;padding:.45rem .55rem;background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm)}
+.command-row>div{min-width:0;flex:1}.command-row strong,.command-row small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.command-row small{color:var(--ink-soft)}.command-row button{border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:var(--radius-sm);padding:.3rem .5rem;cursor:pointer}
+#command-status{min-height:1rem;color:var(--ink-soft);font-size:.8rem}
 
 /* menu sheet */
 .menu-card{width:min(24rem,100%)}

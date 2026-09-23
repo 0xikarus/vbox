@@ -127,6 +127,7 @@
    <div id="chat-messages" aria-live="polite"></div>
    <div id="chat-image-drafts" hidden></div>
    <div id="reply-preview" hidden><div><strong>Replying to</strong><span id="reply-preview-text"></span></div><button id="reply-cancel" type="button" aria-label="Cancel reply">×</button></div>
+   <div id="composer-picker" role="listbox" aria-label="Composer suggestions" hidden></div>
    <form id="chat-composer" autocomplete="off">
     <button id="attach" type="button" title="Attach images" aria-label="Attach images">＋</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
@@ -236,6 +237,21 @@
   <p id="preset-status" role="status"></p>
  </section></div>
 
+<div id="commands-modal" class="sheet" hidden>
+ <div class="sheet-backdrop" data-close="commands-modal"></div>
+ <section class="sheet-card commands-card" role="dialog" aria-modal="true" aria-labelledby="commands-title">
+  <header><strong id="commands-title">Commands</strong><span class="spacer"></span><button type="button" data-close="commands-modal" aria-label="Close">×</button></header>
+  <p class="hint">Save a prompt, then type / in a chat to insert it. You can edit the text before sending.</p>
+  <div id="command-list"></div>
+  <form id="command-form">
+   <label>Slash command <input name="name" required maxlength="40" pattern="[a-z0-9][a-z0-9_-]*" placeholder="review" autocomplete="off"></label>
+   <label>Prompt text <textarea name="prompt" required maxlength="10000" rows="5" placeholder="Review this change and list the risks."></textarea></label>
+   <button type="submit" class="primary">Save command</button>
+  </form>
+  <p id="command-status" role="status"></p>
+ </section>
+</div>
+
 <div id="roles-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="roles-modal"></div>
  <section class="sheet-card roles-card" role="dialog" aria-modal="true" aria-labelledby="roles-title">
@@ -304,6 +320,7 @@
    <a href="/grid">Grid</a>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
+   <button id="commands-toggle" type="button" hidden>Commands</button>
    <button id="push-toggle" type="button" hidden title="Send new chat replies and box conversation activity to this phone">Enable notifications</button>
    <button id="logout" type="button" hidden>Log out</button>
   </div>

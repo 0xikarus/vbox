@@ -8,7 +8,7 @@
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
  let pendingKey='',pendingFingerprint='',replyingTo=null;
- let instructionPresets={defaultName:'',presets:[]};
+ let instructionPresets={defaultName:'',presets:[]},chatCommands=[];
  const presetBodyCache=new Map();
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
@@ -894,9 +894,9 @@
   catch(e){threadMessages.replaceChildren(mk('p',e.message))}
  }
  $('#thread-composer').onsubmit=async event=>{
-  event.preventDefault();const form=event.currentTarget,text=form.elements.text.value.trim(),button=form.querySelector('button');if(!selected||!openThreadID||!text)return;button.disabled=true;
+  event.preventDefault();const form=event.currentTarget,text=form.elements.text.value.trim(),button=form.querySelector('button');if(!selected||!openThreadID||!text)return;if(boxes.get(selected)?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';return}button.disabled=true;
   try{await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text,parentMessageId:openThreadID});form.reset();await refreshMessages(true);await openThread(openThreadID)}
-  catch(e){statusEl.textContent=e.message}finally{button.disabled=false}
+  catch(e){statusEl.textContent=e.message}finally{button.disabled=boxes.get(selected)?.state!=='running'}
  };
  function closeAllMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu'))menu.hidden=true;for(const toggle of document.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
  document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
@@ -1002,6 +1002,7 @@
   await loadPreviews(force);
   if(selected)applySeen(selected);
   renderRows();
+  updateSendState();
  }
  async function loadPreviews(force){
   await Promise.allSettled([...boxes.keys()].map(async id=>{
@@ -1034,6 +1035,8 @@
   const key=box.id+'|'+box.state;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
+  $('#thread-composer button').disabled=box.state!=='running';
+  updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
   updateBanner();
  }
@@ -1095,7 +1098,7 @@
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();messagesEl.dataset.box=id;hideTvPreview()}
-  if(selected!==id)cancelReply();selected=id;lastSignature='';
+  if(selected!==id)cancelReply();selected=id;lastSignature='';hideComposerPicker();
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
   const savedScroll=scrollMemory.get(id);
@@ -1122,15 +1125,69 @@
  // it never eats the transcript on a phone.
  const maxComposerHeight=()=>Math.min(150,Math.max(96,innerHeight*0.35));
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
+ const composerPicker=$('#composer-picker'),mentionCache=new Map();
+ let pickerItems=[],pickerIndex=0,pickerRange=null,pickerRequest=0;
+ function hideComposerPicker(){pickerRequest++;pickerItems=[];pickerRange=null;composerPicker.hidden=true;composerPicker.replaceChildren()}
+ function composerToken(){
+  const before=inputEl.value.slice(0,inputEl.selectionStart),match=/(^|\s)([\/@])([A-Za-z0-9._-]*)$/.exec(before);
+  return match?{kind:match[2],query:match[3].toLowerCase(),start:before.length-match[2].length-match[3].length,end:before.length}:null;
+ }
+ async function mentionChoices(boxID){
+  const cached=mentionCache.get(boxID);
+  if(cached&&Date.now()-cached.at<30000)return cached.items;
+  const contacts=await api(boxPath(boxID)+'/contacts');
+  const items=(contacts||[]).filter(contact=>!contact.protected&&contact.contactState!=='deleting').map(contact=>({kind:'@',id:contact.contactBoxId,name:contact.contactName,detail:contact.contactState||''}));
+  mentionCache.set(boxID,{at:Date.now(),items});return items;
+ }
+ function renderComposerPicker(items,token){
+  pickerItems=items.slice(0,8);pickerIndex=0;pickerRange=token;
+  composerPicker.replaceChildren();
+  for(const [index,item] of pickerItems.entries()){
+   const button=document.createElement('button');button.type='button';button.setAttribute('role','option');button.setAttribute('aria-selected',String(index===0));
+   const title=document.createElement('strong');title.textContent=(item.kind==='/'?'/':'@')+item.name;
+   const detail=document.createElement('span');detail.textContent=item.detail;
+   button.append(title,detail);button.onmousedown=event=>event.preventDefault();button.onclick=()=>chooseComposerSuggestion(index);
+   composerPicker.append(button);
+  }
+  composerPicker.hidden=!pickerItems.length;
+ }
+ async function updateComposerPicker(){
+  const token=composerToken(),boxID=selected,request=++pickerRequest;
+  if(!owner||!boxID||!token){hideComposerPicker();return}
+  if(token.kind==='/'){
+   renderComposerPicker(chatCommands.filter(command=>command.name.startsWith(token.query)).map(command=>({kind:'/',name:command.name,detail:command.prompt,prompt:command.prompt})),token);
+   return;
+  }
+  try{
+   const items=await mentionChoices(boxID);
+   if(request!==pickerRequest||selected!==boxID||JSON.stringify(composerToken())!==JSON.stringify(token))return;
+   renderComposerPicker(items.filter(item=>item.name.toLowerCase().startsWith(token.query)),token);
+  }catch(e){if(request===pickerRequest){hideComposerPicker();statusEl.textContent=e.message}}
+ }
+ function chooseComposerSuggestion(index){
+  const item=pickerItems[index],range=pickerRange;if(!item||!range)return;
+  const insertion=item.kind==='/'?item.prompt:'@'+item.name+' ';
+  inputEl.value=inputEl.value.slice(0,range.start)+insertion+inputEl.value.slice(range.end);
+  const caret=range.start+insertion.length;hideComposerPicker();inputEl.focus();inputEl.setSelectionRange(caret,caret);
+  inputEl.dispatchEvent(new Event('input',{bubbles:true}));
+ }
+ function mentionedBoxIDs(text){
+  if(!owner)return [];
+  const names=new Map([...boxes.values()].filter(box=>box.id!==selected).map(box=>[box.name,box.id]));
+  const ids=new Set();for(const match of text.matchAll(/(?:^|\s)@([A-Za-z0-9._-]{1,63})(?=$|[^A-Za-z0-9._-])/g)){
+   const id=names.get(match[1]);if(id)ids.add(id);
+  }
+  return [...ids];
+ }
  function updateSendState(){
   const drafts=attachmentDrafts.get(selected)||[];
   const hasContent=!!inputEl.value.trim()||drafts.length>0;
-  const send=$('#send');send.disabled=!hasContent;
+  const send=$('#send'),running=boxes.get(selected)?.state==='running';send.disabled=!hasContent||!running;
   const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
   send.setAttribute('aria-label',label);
-  send.title=label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line');
+  send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):'Wait for this box to be running before sending';
  }
- inputEl.addEventListener('input',()=>{grow();updateSendState();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ inputEl.addEventListener('input',()=>{grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
  inputEl.addEventListener('focus',()=>{
   if(composerHintShown)return;composerHintShown=true;
@@ -1143,10 +1200,16 @@
  // A hardware keyboard (hover + fine pointer) keeps Enter-to-send.
  const enterInsertsNewline=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
  inputEl.addEventListener('keydown',event=>{
+  if(!composerPicker.hidden){
+   if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();pickerIndex=(pickerIndex+(event.key==='ArrowDown'?1:-1)+pickerItems.length)%pickerItems.length;[...composerPicker.children].forEach((button,index)=>button.setAttribute('aria-selected',String(index===pickerIndex)));return}
+   if(event.key==='Escape'){event.preventDefault();hideComposerPicker();return}
+   if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chooseComposerSuggestion(pickerIndex);return}
+  }
   if(event.key!=='Enter'||event.shiftKey)return;
   if(enterInsertsNewline())return;
   event.preventDefault();composer.requestSubmit();
  });
+ inputEl.addEventListener('click',()=>void updateComposerPicker());
  function renderDrafts(){
   const drafts=attachmentDrafts.get(selected)||[];
   draftsEl.hidden=!drafts.length;draftsEl.replaceChildren();
@@ -1204,10 +1267,13 @@
   event.preventDefault();
   if(!selected)return;
   const boxID=selected,box=boxes.get(boxID);
+  if(box?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';updateSendState();return}
   const drafts=attachmentDrafts.get(boxID)||[];
-  const text=inputEl.value,images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo;
+  const text=inputEl.value,images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo,mentionedBoxIds=mentionedBoxIDs(text);
   if(!text.trim()&&!images.length)return;
-  const fingerprint=text+'\n'+images.map(i=>i.id).join(',')+'\n'+(replyTarget?.id||'');
+  if(mentionedBoxIds.length>8){statusEl.textContent='Mention at most eight boxes in one message.';return}
+  hideComposerPicker();
+  const fingerprint=text+'\n'+images.map(i=>i.id).join(',')+'\n'+(replyTarget?.id||'')+'\n'+mentionedBoxIds.join(',');
   if(fingerprint!==pendingFingerprint||!pendingKey){pendingKey=crypto.randomUUID();pendingFingerprint=fingerprint}
   const send=$('#send');send.disabled=true;
   const showPending=(box.defaultAgent||'shell')!=='shell'&&!/^\/silent(?:\s|$)/.test(text);
@@ -1227,7 +1293,7 @@
   if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
   let settled=false;
   try{
-   const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images,parentMessageId:replyTarget?.id||''});
+   const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images,parentMessageId:replyTarget?.id||'',mentionedBoxIds});
    for(const d of sentDrafts)URL.revokeObjectURL(d.url);
    pendingKey='';pendingFingerprint='';if(replyingTo?.id===replyTarget?.id)cancelReply();
    statusEl.textContent=result?.message?.state==='silent'?'Note saved without waking the agent.':'';
@@ -1828,7 +1894,7 @@
   for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
   attachmentDrafts.clear();renderDrafts();pendingKey='';pendingFingerprint='';
   boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;
-  owner=false;extrasLoaded=false;closeSheets();
+  owner=false;extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
   selected='';lastSignature='';appEl.classList.remove('in-chat');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
  };
@@ -1836,12 +1902,14 @@
   try{
    const who=await api('/v1/whoami');owner=who.role==='owner';
    $('#presets-toggle').hidden=!owner;
+   $('#commands-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
    $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;
    doodle('Loading chats…');
    try{await loadBoxes()}finally{doodle('')}
    const id=new URLSearchParams(location.hash.slice(1)).get('box');
    if(id&&boxes.has(id))await openBox(id);
+   if(owner)void loadChatCommands().catch(e=>{statusEl.textContent=e.message});
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
@@ -1852,6 +1920,39 @@
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
  function closeSheets(){document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
+
+ /* ---------- saved Chat slash commands ---------- */
+ async function loadChatCommands(){
+  const value=await api('/v1/chat-commands');chatCommands=Array.isArray(value)?value:[];renderChatCommands();
+  if(composerToken()?.kind==='/')void updateComposerPicker();
+ }
+ function renderChatCommands(){
+  const root=$('#command-list');root.replaceChildren();
+  if(!chatCommands.length){root.append(mk('p','No commands saved yet.'));return}
+  for(const command of chatCommands){
+   const row=mk('div');row.className='command-row';const info=mk('div');
+   info.append(mk('strong','/'+command.name),mk('small',command.prompt));row.append(info);
+   const use=mk('button','Use');use.type='button';use.onclick=()=>{
+    if(!selected){$('#command-status').textContent='Open a box chat to insert this prompt.';return}
+    inputEl.value=command.prompt;inputEl.dispatchEvent(new Event('input',{bubbles:true}));$('#commands-modal').hidden=true;inputEl.focus();inputEl.setSelectionRange(inputEl.value.length,inputEl.value.length);
+   };
+   const edit=mk('button','Edit');edit.type='button';edit.onclick=()=>{const form=$('#command-form');form.elements.name.value=command.name;form.elements.prompt.value=command.prompt;form.elements.prompt.focus()};
+   const remove=mk('button','Delete');remove.type='button';remove.onclick=async()=>{
+    if(!confirm('Delete /'+command.name+'?'))return;
+    try{await api('/v1/chat-commands/'+encodeURIComponent(command.name),'DELETE');await loadChatCommands();$('#command-status').textContent='Deleted /'+command.name+'.'}catch(e){$('#command-status').textContent=e.message}
+   };
+   row.append(use,edit,remove);root.append(row);
+  }
+ }
+ $('#commands-toggle').onclick=async()=>{
+  closeSheets();$('#commands-modal').hidden=false;$('#command-status').textContent='';
+  try{await loadChatCommands()}catch(e){$('#command-status').textContent=e.message}
+ };
+ $('#command-form').onsubmit=async event=>{
+  event.preventDefault();const form=event.currentTarget,name=form.elements.name.value.trim(),prompt=form.elements.prompt.value;
+  if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(name)){ $('#command-status').textContent='Use 1–40 lowercase letters, digits, hyphens, or underscores.';return}
+  try{await api('/v1/chat-commands/'+encodeURIComponent(name),'PUT',{}, {prompt});form.reset();await loadChatCommands();$('#command-status').textContent='Saved /'+name+'.'}catch(e){$('#command-status').textContent=e.message}
+ };
 
 
  /* ---------- direct per-box agent permissions ---------- */

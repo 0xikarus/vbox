@@ -153,6 +153,18 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, err
 	}
 	response.BoxState = string(box.State)
+	grantMentions := func(message v1.BoxMessage) error {
+		if len(request.MentionedBoxIDs) == 0 {
+			return nil
+		}
+		if strings.TrimSpace(message.Text) != strings.TrimSpace(request.Text) {
+			return fmt.Errorf("idempotency key belongs to a different message")
+		}
+		if err := s.Store.allowMentionContacts(ctx, p, box.ID, request.MentionedBoxIDs); err != nil {
+			return errMentionContacts
+		}
+		return nil
+	}
 	if strings.TrimSpace(request.Text) == "" || len(request.Text) > 100_000 {
 		return response, fmt.Errorf("message must contain between 1 and 100000 bytes")
 	}
@@ -164,6 +176,9 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, err
 	}
 	if noted {
+		if err := grantMentions(note); err != nil {
+			return response, err
+		}
 		response.Message = note
 		return response, nil
 	}
@@ -172,6 +187,9 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, err
 	}
 	if found {
+		if err := grantMentions(previousMessage); err != nil {
+			return response, err
+		}
 		response.Task, response.Message = previousTask, previousMessage
 		return response, nil
 	}
@@ -270,6 +288,9 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 			return response, err
 		}
 		response.Task, response.Message, response.Started = task, messages[0], !reused
+		if err := grantMentions(response.Message); err != nil {
+			return response, err
+		}
 		if !reused || task.State == "queued" || task.State == "waiting_capacity" {
 			s.startBoxTask(p.AccountID, task)
 		}
@@ -280,6 +301,9 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, err
 	}
 	response.Task, response.Message = *selected, message
+	if err := grantMentions(message); err != nil {
+		return response, err
+	}
 	if selected.State == "active" && message.State == "queued" {
 		if err := s.deliverBoxMessage(ctx, p, *selected, message, true); err != nil {
 			return response, err
@@ -289,15 +313,33 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 	return response, nil
 }
 
+var errMentionContacts = errors.New("message saved but reciprocal contacts could not be added; retry this send")
+
 func (s *Server) directBoxMessageHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	var request v1.DirectBoxMessageRequest
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if len(request.MentionedBoxIDs) > 0 {
+		box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+		if err != nil {
+			writeError(w, http.StatusNotFound, err)
+			return
+		}
+		request.MentionedBoxIDs, err = s.Store.validateMentionTargets(r.Context(), p, box.ID, request.Text, request.MentionedBoxIDs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+	}
 	response, err := s.routeBoxMessage(r.Context(), p, r.PathValue("id"), r.Header.Get("Idempotency-Key"), request)
 	if err != nil {
-		writeError(w, http.StatusConflict, err)
+		status := http.StatusConflict
+		if errors.Is(err, errMentionContacts) {
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, response)
