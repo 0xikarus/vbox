@@ -12,10 +12,12 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
 var historyMessageID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var chatReadyEventID = regexp.MustCompile(`^[0-9a-f]{12}$`)
 
 func silentMessage(text string) (string, bool) {
 	if text == "/silent" {
@@ -142,12 +144,13 @@ func (s *Server) agentBusyHandler(w http.ResponseWriter, r *http.Request, p Prin
 	writeJSON(w, http.StatusOK, map[string]any{"session": request.Session, "busy": *request.Busy})
 }
 
-// agentChatReadyHandler accepts a scoped hint from the box after an MCP tool
-// has durably queued an outbox event. The controller still pulls and validates
-// the event itself; the hint cannot inject a message or name another box.
+// agentChatReadyHandler accepts a scoped event after the box has durably queued
+// it, then confirms storage so the box can remove its outbox copy. Older runtimes
+// and image events still send a hint and use the pull/ack fallback.
 func (s *Server) agentChatReadyHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	var request struct {
-		Session string `json:"session"`
+		Session string                `json:"session"`
+		Event   *boxruntime.ChatEvent `json:"event,omitempty"`
 	}
 	if err := decodeJSON(r, &request); err != nil || !validSessionName(request.Session) {
 		writeError(w, http.StatusBadRequest, fmt.Errorf("valid session required"))
@@ -162,6 +165,18 @@ func (s *Server) agentChatReadyHandler(w http.ResponseWriter, r *http.Request, p
 	for _, task := range tasks {
 		if task.Session != request.Session || task.State != "active" || task.Agent == "shell" {
 			continue
+		}
+		if request.Event != nil {
+			if !chatReadyEventID.MatchString(request.Event.ID) || len(request.Event.Images) != 0 || (request.Event.Kind != "reply" && request.Event.Kind != "question" && request.Event.Kind != "contact") {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid chat-ready event"))
+				return
+			}
+			if _, _, err := s.applyChatEvent(r.Context(), nil, "", p.AccountID, task, *request.Event); err != nil {
+				writeError(w, http.StatusServiceUnavailable, fmt.Errorf("chat event could not be stored"))
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]bool{"stored": true})
+			return
 		}
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

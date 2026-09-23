@@ -201,6 +201,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='');
   assert.equal(await p.$eval('#role-editor-form',form=>form.checkValidity()),true,'disabled zero limits must not block permission saving');
   await p.click('#role-editor-form .mcp-tool-options summary');
+  assert.equal(await p.$('#role-editor-form .mcp-tool-group-toggle[value=coordination]'),null);
   assert.match(await p.$eval('#role-editor-form label:has(input[value=secret_request])',element=>element.title),/privately/);
   assert.match(await p.$eval('#role-editor-form label:has(input[value=create_agent_box])',element=>element.title),/startup instructions/);
   await p.click('#role-editor-form .mcp-tool-group-toggle[value=computer_use]');

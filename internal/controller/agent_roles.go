@@ -76,7 +76,10 @@ func cleanUniqueStrings(values []string) []string {
 func canonicalAgentMCPTools(values []string) []string {
 	canonical := make([]string, 0, len(values))
 	for _, value := range values {
-		canonical = append(canonical, v1.CanonicalAgentMCPToolName(strings.TrimSpace(value)))
+		name := v1.CanonicalAgentMCPToolName(strings.TrimSpace(value))
+		if !v1.RetiredCoordinationMCPTools[name] {
+			canonical = append(canonical, name)
+		}
 	}
 	return cleanUniqueStrings(canonical)
 }

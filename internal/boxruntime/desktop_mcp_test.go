@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -46,6 +47,121 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 		return
 	}
 	t.Fatal("create_agent_box tool is missing")
+}
+
+func TestRetiredCoordinationToolsAreNotCallable(t *testing.T) {
+	for _, tool := range desktopMCPTools() {
+		if v1.RetiredCoordinationMCPTools[tool["name"].(string)] {
+			t.Fatalf("retired tool %s is still advertised", tool["name"])
+		}
+	}
+	tools, allowed, err := allowedDesktopMCPTools(context.Background(), "assignment", func(context.Context, string) (map[string]bool, error) {
+		return map[string]bool{"chat_message": true, "request_more_time": true, "queue_followup": true, "create_email_address": true}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tools) != 1 || tools[0]["name"] != "chat_message" || !allowed["chat_message"] {
+		t.Fatalf("unexpected callable tools: %v", tools)
+	}
+	for name := range v1.RetiredCoordinationMCPTools {
+		if allowed[name] {
+			t.Fatalf("retired tool %s remains callable", name)
+		}
+	}
+}
+
+func TestChatReadyPushAcknowledgesOnlyConfirmedText(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-test")
+	event := ChatEvent{ID: "0123456789ab", Kind: "reply", Text: "done"}
+	if err := writeChatEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	notifyDesktopChatReady(context.Background(), "assignment", home, "codex-test", event, func(_ context.Context, _, method, path string, input, output any) error {
+		calls++
+		if method != http.MethodPost || path != "/v1/agent-desktop/chat-ready" || calls != 1 {
+			t.Fatalf("unexpected callback %d %s %s", calls, method, path)
+		}
+		request := input.(map[string]any)
+		if request["session"] != "codex-test" || !reflect.DeepEqual(request["event"], event) {
+			t.Fatalf("wrong scoped event: %v", request)
+		}
+		return json.Unmarshal([]byte(`{"stored":true}`), output)
+	})
+	if calls != 1 {
+		t.Fatalf("callbacks=%d", calls)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local/share/vmbox/chat/outbox/codex-test", event.ID+".json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("confirmed event remains in outbox: %v", err)
+	}
+}
+
+func TestChatReadyPushFallsBackWithoutDiscardingOutbox(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-test")
+	event := ChatEvent{ID: "0123456789ab", Kind: "contact", Contact: "peer", Text: "hello"}
+	if err := writeChatEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	notifyDesktopChatReady(context.Background(), "assignment", home, "codex-test", event, func(_ context.Context, _, _, _ string, input, _ any) error {
+		calls++
+		if calls == 1 {
+			return errors.New("controller temporarily unavailable")
+		}
+		if _, ok := input.(map[string]string); !ok {
+			t.Fatalf("fallback did not send a legacy hint: %T", input)
+		}
+		return nil
+	})
+	if calls != 2 {
+		t.Fatalf("callbacks=%d", calls)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".local/share/vmbox/chat/outbox/codex-test", event.ID+".json")); err != nil {
+		t.Fatalf("unconfirmed event lost from outbox: %v", err)
+	}
+}
+
+func TestChatReadyPushRetriesHintAfterDirectTimeout(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var calls int
+	notifyDesktopChatReady(ctx, "assignment", t.TempDir(), "codex-test", ChatEvent{ID: "0123456789ab", Kind: "reply", Text: "done"}, func(requestCtx context.Context, _, _, _ string, input, _ any) error {
+		calls++
+		if calls == 1 {
+			cancel()
+			return context.DeadlineExceeded
+		}
+		if requestCtx.Err() != nil {
+			t.Fatalf("fallback inherited the failed direct callback context: %v", requestCtx.Err())
+		}
+		if _, ok := input.(map[string]string); !ok {
+			t.Fatalf("fallback did not send a legacy hint: %T", input)
+		}
+		return nil
+	})
+	if calls != 2 {
+		t.Fatalf("callbacks=%d", calls)
+	}
+}
+
+func TestChatReadyImageUsesOutboxPull(t *testing.T) {
+	event := ChatEvent{ID: "0123456789ab", Kind: "contact", Text: "see image", Images: []ChatEventImage{{MediaType: "image/png", Data: "aGVsbG8="}}}
+	var calls int
+	notifyDesktopChatReady(context.Background(), "assignment", t.TempDir(), "codex-test", event, func(_ context.Context, _, _, _ string, input, _ any) error {
+		calls++
+		if _, ok := input.(map[string]string); !ok {
+			t.Fatalf("image payload was pushed instead of a drain hint: %T", input)
+		}
+		return nil
+	})
+	if calls != 1 {
+		t.Fatalf("callbacks=%d", calls)
+	}
 }
 
 func (c *lineCapture) Write(p []byte) (int, error) {

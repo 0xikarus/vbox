@@ -9,7 +9,7 @@ import (
 
 // EffectiveAgentToolNames returns the tools this box may see and call. The
 // owner-managed allow-list is an additional restriction; typed capability
-// grants still decide whether privileged coordination tools are usable.
+// grants still decide whether privileged admin tools are usable.
 func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID string) ([]string, error) {
 	capabilities, err := s.EffectiveAgentCapabilities(ctx, accountID, boxID)
 	if err != nil {
@@ -32,22 +32,6 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 
 func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bool {
 	switch name {
-	case "request_more_time":
-		return capabilities.RequestMoreTime.Enabled
-	case "queue_followup":
-		return capabilities.QueueFollowup.Enabled
-	case "discover_shared_chats":
-		return capabilities.SharedChats.Discover
-	case "read_shared_chat", "send_shared_chat_message":
-		return capabilities.SharedChats.Read
-	case "subscribe_shared_chat":
-		return capabilities.SharedChats.Subscribe
-	case "create_shared_chat":
-		return capabilities.SharedChats.Create
-	case "invite_to_shared_chat":
-		return capabilities.SharedChats.Invite
-	case "create_email_address":
-		return capabilities.CreateEmail.Enabled
 	case "create_agent_box":
 		return capabilities.CreateAgentBox.Enabled
 	case "list_agent_boxes":
