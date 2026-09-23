@@ -37,6 +37,10 @@ func codexThreadFile(root, session string) string {
 	return filepath.Join(root, "chat", "codex-threads", session)
 }
 
+func codexResetPendingFile(root, session string) string {
+	return filepath.Join(root, "chat", "codex-reset-pending", session)
+}
+
 // codexClient is one connection to a session's app server.
 type codexClient struct {
 	conn   *websocket.Conn
@@ -134,10 +138,17 @@ func (c *codexClient) call(ctx context.Context, method string, params any) (map[
 }
 
 // CodexCurrentThread reports the most recently active thread for the workspace.
-// A remembered id is only a fallback for old servers that omit recencyAt. It
-// must not pin delivery to an earlier thread after the user starts or resumes a
-// different conversation in the terminal.
+// The first turn after Clear must use the newly created, still idle thread:
+// thread/list may report the invalidated old thread as more recently active.
+// After that turn starts, normal recency selection resumes.
 func CodexCurrentThread(ctx context.Context, client *codexClient, root, session, workspace string) (string, error) {
+	if data, err := os.ReadFile(codexResetPendingFile(root, session)); err == nil {
+		if id := strings.TrimSpace(string(data)); id != "" {
+			return id, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return "", err
+	}
 	remembered := ""
 	if data, err := os.ReadFile(codexThreadFile(root, session)); err == nil {
 		remembered = strings.TrimSpace(string(data))
@@ -237,7 +248,13 @@ var CodexStartTurn = func(ctx context.Context, session, root, workspace, text st
 		_, err := client.call(ctx, "turn/start", map[string]any{"threadId": thread, "input": input})
 		return err
 	}
-	return codexStartTurnWithFallback(text, images, start)
+	if err := codexStartTurnWithFallback(text, images, start); err != nil {
+		return err
+	}
+	// A successful turn makes the fresh thread active. Later turns may once
+	// again follow a different conversation selected in the visible terminal.
+	_ = os.Remove(codexResetPendingFile(root, session))
+	return nil
 }
 
 func codexStartTurnWithFallback(text string, images []string, start func([]map[string]any) error) error {
