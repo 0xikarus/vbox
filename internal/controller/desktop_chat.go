@@ -185,6 +185,10 @@ func (s *Server) clearBoxContextHandler(w http.ResponseWriter, r *http.Request, 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
+	if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("could not update chat runtime: %w", err))
+		return
+	}
 	resetID := terminalInputMessageID(p.AccountID, box.ID, task.Session, key)
 	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "chat-reset", task.Session, task.Agent, resetID}, provider.ExecOptions{})
 	if execErr != nil || result.ExitCode != 0 {

@@ -17,8 +17,9 @@ import (
 // call so a test can assert exactly which outbox events were acknowledged.
 type chatDrainProvider struct {
 	fakeProvider
-	pulls []string
-	acks  []string
+	pulls       []string
+	acks        []string
+	namingCalls int
 }
 
 func (p *chatDrainProvider) Exec(_ context.Context, _ string, argv []string, _ provider.ExecOptions) (provider.ExecResult, error) {
@@ -38,8 +39,35 @@ func (p *chatDrainProvider) Exec(_ context.Context, _ string, argv []string, _ p
 			p.acks = append(p.acks, argv[3])
 		}
 		return provider.ExecResult{}, nil
+	case "chat-codex-name":
+		p.namingCalls++
+		return provider.ExecResult{ExitCode: 1}, nil
 	}
 	return provider.ExecResult{}, nil
+}
+
+func TestCodexReplyDeliveryDoesNotDependOnThreadNaming(t *testing.T) {
+	store, mock := testStore(t)
+	prov := &chatDrainProvider{pulls: []string{chatEventJSON(t, boxruntime.ChatEvent{ID: "e1", Kind: "reply", ReplyTo: "chat-key-1", Text: "answer"})}}
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1", "chat-key-1").
+		WillReturnRows(boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "delivered"))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
+		WillReturnRows(emptyBoxMessageRows())
+	mock.ExpectExec("INSERT INTO box_messages").
+		WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "answer", "delivered", "agent-reply:message-1", "message-1").
+		WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
+		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	task := v1.BoxTask{ID: "task-1", LogicalBoxID: "box-1", Agent: "codex", Session: "codex-1"}
+	done, err := chatTestServer(store).pullStructuredAgentReply(context.Background(), prov, "service-1", "account-a", task, v1.BoxMessage{ID: "message-1"})
+	if err != nil || !done || len(prov.acks) != 1 || prov.namingCalls != 0 {
+		t.Fatalf("done=%v err=%v acks=%v namingCalls=%d", done, err, prov.acks, prov.namingCalls)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func chatEventJSON(t *testing.T, event boxruntime.ChatEvent) string {
