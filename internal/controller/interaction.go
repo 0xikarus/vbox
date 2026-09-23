@@ -225,12 +225,12 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		encoded := base64.RawURLEncoding.EncodeToString([]byte(text))
 		result, execErr = prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-message", task.Session, message.ID, encoded, strconv.FormatBool(submit), "true"}, provider.ExecOptions{})
 	}
-	if task.Agent == "codex" && submit && execErr == nil && legacyCodexImageSchemaFailure(result) {
+	if task.Agent == "codex" && submit && execErr == nil && (legacyCodexImageSchemaFailure(result) || codexAppServerConnectionRefused(result)) {
 		// A retained workspace can keep an older runtime after the controller is
-		// deployed. This schema rejection happens before Codex starts a turn, so
+		// deployed. Both failures happen before Codex starts a turn, so
 		// atomically stage the matching runtime and retry the same message once.
 		if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
-			detail := "update workspace runtime after legacy Codex image rejection: " + err.Error()
+			detail := "update workspace runtime after Codex delivery failure: " + err.Error()
 			_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
 			return fmt.Errorf("%s", detail)
 		}
@@ -258,6 +258,10 @@ func legacyCodexImageSchemaFailure(result provider.ExecResult) bool {
 	}
 	detail := result.Stderr
 	return strings.Contains(detail, "missing field `url`") || strings.Contains(detail, "unknown variant `localImage`")
+}
+
+func codexAppServerConnectionRefused(result provider.ExecResult) bool {
+	return result.ExitCode != 0 && strings.Contains(result.Stderr, "codex app server unavailable:") && strings.Contains(result.Stderr, "connect: connection refused")
 }
 
 func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {

@@ -364,6 +364,12 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	if json.Unmarshal(data, &event) != nil {
 		return fmt.Errorf("invalid inbound chat event")
 	}
+	if err := EnsureCodexAppServer(ctx, session); err != nil {
+		return err
+	}
+	if err := RecoverInterruptedCodexSession(ctx, root, session); err != nil {
+		return err
+	}
 	// Follow-ups all use the same native app-server path. This keeps ordinary
 	// text and structured images ordered on one thread without screen-scraping or
 	// typing prompts into tmux.

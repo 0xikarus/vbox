@@ -151,3 +151,17 @@ func TestLegacyCodexImageSchemaFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexAppServerConnectionRefusedIsSafeToRetry(t *testing.T) {
+	if !codexAppServerConnectionRefused(provider.ExecResult{ExitCode: 1, Stderr: "vmbox-runtime: codex app server unavailable: dial tcp 127.0.0.1:37867: connect: connection refused"}) {
+		t.Fatal("unavailable local app server was not recognized")
+	}
+	for _, result := range []provider.ExecResult{
+		{ExitCode: 0, Stderr: "codex app server unavailable: connect: connection refused"},
+		{ExitCode: 1, Stderr: "turn is already running"},
+	} {
+		if codexAppServerConnectionRefused(result) {
+			t.Fatalf("unsafe Codex result was treated as retryable: %+v", result)
+		}
+	}
+}

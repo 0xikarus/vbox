@@ -138,6 +138,12 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 		deploymentID = workerState.BootstrapDeployment
 	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "restoring-tmux", "", false)
+	// Restored managed agents start desktop and native helpers immediately.
+	// Their assignment must exist before tmux launches those processes.
+	bound, bindErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "native-bind", nativeFence(assignment)}, provider.ExecOptions{})
+	if bindErr != nil || bound.ExitCode != 0 {
+		return fail("binding-native-sessions", fmt.Errorf("worker could not bind native session assignment"))
+	}
 	restored, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-restore"}, provider.ExecOptions{})
 	if err != nil {
 		return fail("restoring-tmux", err)
@@ -151,10 +157,6 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	}
 	if guide.ExitCode != 0 {
 		return fail("restoring-tmux-guide", fmt.Errorf("tmux guide update exited with status %d: %s", guide.ExitCode, strings.TrimSpace(guide.Stderr)))
-	}
-	bound, bindErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "native-bind", nativeFence(assignment)}, provider.ExecOptions{})
-	if bindErr != nil || bound.ExitCode != 0 {
-		return fail("binding-native-sessions", fmt.Errorf("worker could not bind native session assignment"))
 	}
 	if err := s.Store.CompleteAssignment(ctx, accountID, assignment.Box.ID, allocation.AssignmentGeneration, allocation.FencingToken, deploymentID); err != nil {
 		return fail("marking-ready", err)

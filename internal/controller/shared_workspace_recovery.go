@@ -48,8 +48,8 @@ func (s *Server) recoverSharedWorkspace(ctx context.Context, assignment fleetAss
 		return err
 	}
 	for _, command := range [][]string{
-		{"vmbox-runtime", "tmux-restore"},
 		{"vmbox-runtime", "native-bind", nativeFence(assignment)},
+		{"vmbox-runtime", "tmux-restore"},
 		{"vmbox-runtime", "native-sessions", nativeFence(assignment)},
 	} {
 		result, err := prov.Exec(ctx, assignment.Slot.ServiceID, command, provider.ExecOptions{})

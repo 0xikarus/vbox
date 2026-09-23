@@ -28,9 +28,10 @@ type TmuxSnapshot struct {
 }
 
 type TmuxSession struct {
-	Name       string       `json:"name"`
-	ShellFirst bool         `json:"shellFirst,omitempty"`
-	Windows    []TmuxWindow `json:"windows"`
+	Name         string       `json:"name"`
+	ShellFirst   bool         `json:"shellFirst,omitempty"`
+	ManagedAgent string       `json:"managedAgent,omitempty"`
+	Windows      []TmuxWindow `json:"windows"`
 }
 
 type TmuxWindow struct {
@@ -112,6 +113,12 @@ func SaveTmuxState(ctx context.Context, root string) (TmuxSnapshot, error) {
 		}
 		for sessionIndex := range snapshot.Sessions {
 			session := &snapshot.Sessions[sessionIndex]
+			if marker, markerErr := tmuxOutput(ctx, "show-environment", "-t", "="+session.Name, taskAgentEnvironment); markerErr == nil {
+				agent := strings.TrimSpace(strings.TrimPrefix(string(marker), taskAgentEnvironment+"="))
+				if agent == "codex" || agent == "claude" || agent == "opencode" {
+					session.ManagedAgent = agent
+				}
+			}
 			marker, markerErr := tmuxOutput(ctx, "show-options", "-v", "-t", "="+session.Name+":", "@vmbox-shell")
 			// Older controller-created shells used this prefix before the
 			// marker existed. Preserve their shell-first restore semantics too.
@@ -123,6 +130,11 @@ func SaveTmuxState(ctx context.Context, root string) (TmuxSnapshot, error) {
 					if session.ShellFirst {
 						pane.ResumeStrategy = "shell"
 						pane.ResumeArgv = []string{"vmbox-runtime", "welcome"}
+					} else if session.ManagedAgent != "" && windowIndex == 0 && paneIndex == 0 {
+						// The managed terminal may run through a wrapper whose foreground
+						// command is node or vmbox-runtime, not the agent binary.
+						pane.ResumeStrategy = session.ManagedAgent + "-fresh-conversation"
+						pane.ResumeArgv = []string{session.ManagedAgent}
 					}
 					target := fmt.Sprintf("%s:%d.%d", snapshot.Sessions[sessionIndex].Name, window.Index, pane.Index)
 					name := fmt.Sprintf("%x.log", sha256.Sum256([]byte(target)))
@@ -290,6 +302,11 @@ func RestoreTmuxState(ctx context.Context, root string) (TmuxRestoreResult, erro
 		return result, fmt.Errorf("unsupported tmux snapshot version %d", snapshot.Version)
 	}
 	for _, session := range snapshot.Sessions {
+		// These processes are rebuilt by the managed agent launcher after the
+		// assignment is bound. Replaying them produces stale shell sessions.
+		if session.Name == "vmbox-desktop" || strings.HasPrefix(session.Name, "vmbox-internal-") {
+			continue
+		}
 		if err := restoreTmuxSession(ctx, snapshot, session); err != nil {
 			return result, err
 		}
