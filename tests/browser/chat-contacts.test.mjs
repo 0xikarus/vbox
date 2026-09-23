@@ -85,6 +85,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;tags=JSON.parse(body).tags}
    return res.end(JSON.stringify({tags}));
   }
+  if(path==='/v1/logical-boxes/builder/imported-credentials')return res.end(JSON.stringify({profiles:[{application:'codex',name:'team-login',model:'gpt-6-sol',reasoningEffort:'high'}],pending:[],verified:true}));
   if(path==='/v1/logical-boxes/builder')return res.end(JSON.stringify(boxes[0]));
   if(path.startsWith('/v1/logical-boxes/builder'))return res.end(JSON.stringify(boxes[0]));
   res.statusCode=404;return res.end('{}');
@@ -175,6 +176,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
+  await p.waitForFunction(()=>document.querySelector('#inspect-runtime-rows')?.textContent.includes('codex · team-login · gpt-6-sol · high'));
   const panelLayout=await p.evaluate(()=>{
    const panel=document.querySelector('#inspect'),header=document.querySelector('#chat-header');
    return {parent:panel.parentElement.id,panel:panel.getBoundingClientRect().toJSON(),header:header.getBoundingClientRect().toJSON()};

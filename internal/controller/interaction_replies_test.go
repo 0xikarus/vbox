@@ -165,3 +165,12 @@ func TestCodexAppServerConnectionRefusedIsSafeToRetry(t *testing.T) {
 		}
 	}
 }
+
+func TestCodexThreadNotFoundIsSafeToRetry(t *testing.T) {
+	if !codexThreadNotFound(provider.ExecResult{ExitCode: 1, Stderr: "vmbox-runtime: codex app server: thread not found: old-id"}) {
+		t.Fatal("stale Codex thread was not recognized")
+	}
+	if codexThreadNotFound(provider.ExecResult{ExitCode: 0, Stderr: "codex app server: thread not found: old-id"}) || codexThreadNotFound(provider.ExecResult{ExitCode: 1, Stderr: "turn is already running"}) {
+		t.Fatal("unrelated or successful result was treated as retryable")
+	}
+}

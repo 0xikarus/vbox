@@ -44,6 +44,28 @@ func TestEnsureCodexAppServerReplacesInterruptedHelper(t *testing.T) {
 	}
 }
 
+func TestCodexStartTurnStartsFreshThreadOnlyWhenOldOneIsMissing(t *testing.T) {
+	turns, fresh := 0, 0
+	err := codexStartTurnWithThreadRecovery("hello", nil, func([]map[string]any) error {
+		turns++
+		if turns == 1 {
+			return errors.New("codex app server: thread not found: old-id")
+		}
+		return nil
+	}, func() error { fresh++; return nil })
+	if err != nil || turns != 2 || fresh != 1 {
+		t.Fatalf("recovery: turns=%d fresh=%d err=%v", turns, fresh, err)
+	}
+	turns, fresh = 0, 0
+	err = codexStartTurnWithThreadRecovery("hello", nil, func([]map[string]any) error {
+		turns++
+		return errors.New("turn is already running")
+	}, func() error { fresh++; return nil })
+	if err == nil || turns != 1 || fresh != 0 {
+		t.Fatalf("unrelated failure retried: turns=%d fresh=%d err=%v", turns, fresh, err)
+	}
+}
+
 func TestCodexCurrentThreadPrefersFirstTurnAfterClear(t *testing.T) {
 	root := t.TempDir()
 	if err := writeTextAtomic(codexResetPendingFile(root, "session"), "fresh-thread\n", 0600); err != nil {

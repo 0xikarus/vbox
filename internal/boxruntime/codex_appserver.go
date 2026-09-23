@@ -248,13 +248,46 @@ var CodexStartTurn = func(ctx context.Context, session, root, workspace, text st
 		_, err := client.call(ctx, "turn/start", map[string]any{"threadId": thread, "input": input})
 		return err
 	}
-	if err := codexStartTurnWithFallback(text, images, start); err != nil {
+	startFresh := func() error {
+		result, err := client.call(ctx, "thread/start", map[string]any{"cwd": workspace})
+		if err != nil {
+			return err
+		}
+		started, _ := result["thread"].(map[string]any)
+		id, _ := started["id"].(string)
+		if id == "" {
+			return fmt.Errorf("codex app server returned no fresh thread")
+		}
+		if err := rememberCodexThread(root, session, id); err != nil {
+			return err
+		}
+		if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
+			return err
+		}
+		thread = id
+		return nil
+	}
+	if err := codexStartTurnWithThreadRecovery(text, images, start, startFresh); err != nil {
 		return err
 	}
 	// A successful turn makes the fresh thread active. Later turns may once
 	// again follow a different conversation selected in the visible terminal.
 	_ = os.Remove(codexResetPendingFile(root, session))
 	return nil
+}
+
+// A restarted app server can list a thread stored on disk without loading it
+// for turns. The explicit "thread not found" response proves the turn never
+// began, so starting one fresh thread and retrying once cannot duplicate it.
+func codexStartTurnWithThreadRecovery(text string, images []string, start func([]map[string]any) error, startFresh func() error) error {
+	err := codexStartTurnWithFallback(text, images, start)
+	if err == nil || !strings.Contains(strings.ToLower(err.Error()), "thread not found") {
+		return err
+	}
+	if err := startFresh(); err != nil {
+		return err
+	}
+	return codexStartTurnWithFallback(text, images, start)
 }
 
 func codexStartTurnWithFallback(text string, images []string, start func([]map[string]any) error) error {
