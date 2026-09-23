@@ -2,6 +2,7 @@ package boxruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -327,29 +328,53 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 			return err
 		}
 		resetThreadPath := filepath.Join(root, "chat", "codex-reset-threads", messageID)
-		threadID := ""
+		var previous []string
 		if data, err := os.ReadFile(resetThreadPath); err == nil {
-			threadID = strings.TrimSpace(string(data))
+			if err := json.Unmarshal(data, &previous); err != nil {
+				previous = nil // A reset started by an older runtime stored one thread ID.
+			}
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if threadID == "" {
+		if previous == nil {
 			var err error
-			threadID, err = CodexStartFreshThread(ctx, session, root, WorkspaceDirectory())
+			previous, err = CodexThreadIDs(ctx, session)
 			if err != nil {
 				return err
 			}
-			if err := writeTextAtomic(resetThreadPath, threadID+"\n", 0600); err != nil {
+			if err := writeJSONAtomic(resetThreadPath, previous, 0600); err != nil {
 				return err
 			}
 		}
-		if err := deliverTmuxLiteral(ctx, root, session, messageID+"-command", "/resume "+threadID); err != nil {
+		if err := deliverTmuxLiteral(ctx, root, session, messageID+"-command", "/new"); err != nil {
 			return err
 		}
 		if err := tmuxSubmitPause(ctx); err != nil {
 			return err
 		}
-		return DeliverTmuxKeys(ctx, root, session, messageID+"-submit", []string{"Enter"})
+		if err := DeliverTmuxKeys(ctx, root, session, messageID+"-submit", []string{"Enter"}); err != nil {
+			return err
+		}
+		known := make(map[string]bool, len(previous))
+		for _, id := range previous {
+			known[id] = true
+		}
+		for {
+			current, err := CodexThreadIDs(ctx, session)
+			if err != nil {
+				return err
+			}
+			for _, id := range current {
+				if !known[id] {
+					return rememberCodexThread(root, session, id)
+				}
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(agentReadyPollInterval):
+			}
+		}
 	case "opencode":
 		// Continue below.
 	default:
