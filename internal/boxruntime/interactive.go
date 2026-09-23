@@ -124,15 +124,13 @@ func persistentAgentArgv(session, agent string) ([]string, error) {
 	switch agent {
 	case "codex":
 		// The terminal attaches to the session's app server rather than running
-		// its own, so chat and the box show the same thread. Approvals and Codex's
-		// own sandbox are off because a box is already an externally sandboxed
-		// machine and that sandbox needs namespaces the runtime refuses; OpenCode
-		// gets the same from --auto.
+		// its own, so chat and the box show the same thread. Full access is set
+		// in ~/.codex/config.toml; a CLI permission override prevents the remote
+		// TUI from switching threads after Clear context.
 		return []string{agent, "--remote", codexAppServerURL(session),
 			"-c", "check_for_update_on_startup=false",
 			"-c", "suppress_unstable_features_warning=true",
-			"-c", "notice.hide_rate_limit_model_nudge=true",
-			"--dangerously-bypass-approvals-and-sandbox"}, nil
+			"-c", "notice.hide_rate_limit_model_nudge=true"}, nil
 	case "opencode":
 		return []string{agent, "--auto", "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
 	case "claude":

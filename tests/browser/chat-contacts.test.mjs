@@ -69,6 +69,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   }
   if(path==='/v1/logical-boxes/reviewer/sessions/interactive'&&method==='POST')return res.end(JSON.stringify({session:'codex-reviewer'}));
   if(path==='/v1/logical-boxes/reviewer/desktop'&&method==='POST')return res.end(JSON.stringify({state:'running'}));
+  if(path==='/v1/logical-boxes/builder/instructions/resync'&&method==='POST')return res.end(JSON.stringify({pending:false,note:'Instructions re-synced.'}));
   if(path.endsWith('/messages'))return res.end(JSON.stringify([]));
   if(path==='/v1/logical-boxes/builder/contacts'){
    if(method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const parsed=JSON.parse(body);const contact=contacts.find(c=>c.contactBoxId===parsed.contact||c.contactName===parsed.contact);contact.override=parsed.state;contact.canMessage=parsed.state==='allow';contact.reason=parsed.state==='allow'?"Included in this box's direct contact list.":"Not in this box's direct contact list.";return res.end(JSON.stringify(contact))}
@@ -217,6 +218,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await (await p.$('#role-editor-modal .role-editor-card')).screenshot({path:'docs/chat-ui/screenshots/chat-permission-editor.png'});
   await p.$eval('#role-editor-form',form=>form.requestSubmit());
   await p.waitForFunction(()=>document.querySelector('#role-editor-status').textContent.startsWith('Saved.'));
+  assert.equal(await p.$eval('#role-editor-modal',modal=>modal.hidden),true,'saving permissions closes the editor');
   const saved=directPolicies.get('builder').capabilities;
   assert.equal(saved.mcpTools.enabled,true);
   assert.equal(saved.mcpTools.allowedTools.includes('drag_mouse'),true);
@@ -224,7 +226,9 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(saved.mcpTools.allowedTools.includes('secret_request'),false);
   assert.deepEqual(saved.manageAgentBoxes,{list:true,inspect:true,tag:true,restart:true,delete:true});
   assert.equal(saved.mcpTools.allowedTools.includes('create_agent_box'),true);
-  await p.click('#role-editor-modal [data-close="role-editor-modal"]');
+  await p.evaluate(()=>[...document.querySelectorAll('#inspect-config-actions button')].find(button=>button.textContent==='Re-sync instructions').click());
+  await p.waitForFunction(()=>document.querySelector('#inspect').hidden);
+  assert.equal(requests.includes('POST /v1/logical-boxes/builder/instructions/resync'),true);
   await p.$eval('#roles-toggle',button=>button.click());
   await p.waitForFunction(()=>!document.querySelector('#roles-modal').hidden&&document.querySelectorAll('#role-assignments .role-assignment-card').length===4);
   await p.setViewport({width:1280,height:900,deviceScaleFactor:1});

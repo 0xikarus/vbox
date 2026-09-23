@@ -541,9 +541,9 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 }
 
 func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
-	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause
+	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalThreadIDs, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexThreadIDs, tmuxSubmitPause
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause
+		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexThreadIDs, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalThreadIDs, originalPause
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
 	CodexAppServerReady = func(context.Context, string) (bool, error) { return true, nil }
@@ -552,14 +552,17 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 		agent string
 		want  []string
 	}{
-		{agent: "codex", want: []string{"/resume thread-new", "Enter"}},
+		{agent: "codex", want: []string{"/new", "Enter"}},
 		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
-			freshThreads := 0
-			CodexStartFreshThread = func(context.Context, string, string, string) (string, error) {
-				freshThreads++
-				return "thread-new", nil
+			threadLists := 0
+			CodexThreadIDs = func(context.Context, string) ([]string, error) {
+				threadLists++
+				if threadLists <= 2 {
+					return []string{"thread-old"}, nil
+				}
+				return []string{"thread-new", "thread-old"}, nil
 			}
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
@@ -590,8 +593,8 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("idempotent retry replayed terminal input: %q", inputs)
 			}
-			if test.agent == "codex" && freshThreads != 1 {
-				t.Fatalf("fresh app-server threads = %d, want 1", freshThreads)
+			if test.agent == "codex" && threadLists != 4 {
+				t.Fatalf("thread snapshots = %d, want 4", threadLists)
 			}
 		})
 	}

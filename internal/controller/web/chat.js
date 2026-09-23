@@ -1394,7 +1394,7 @@
   const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;actions.append(b)};
   act('Instructions…','Edit the Markdown instructions synced into this box',()=>void openBoxInstructions(box));
   if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
-  if(box.state==='running')act('Re-sync','Re-push the saved config to the running box',()=>void resyncBox(box));
+  if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
   maybeLoadInspectContacts(box);
  }
@@ -1413,7 +1413,8 @@
   if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
   else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null}
  };
- $('#inspect-close').onclick=()=>{inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null};
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null}
+ $('#inspect-close').onclick=closeInspect;
  // Collapsible details sections, remembered per browser.
  const foldKey='vmbox.inspectFold';
  let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
@@ -1687,6 +1688,7 @@
   try{
    const result=await api(boxPath(box.id)+'/instructions/resync','POST',{'Idempotency-Key':crypto.randomUUID()},{},120000);
    toast(result?.note||'Config re-synced to '+box.name+'.');
+   if(!result?.pending)closeInspect();
    await loadBoxes();
   }catch(e){toast(e.message)}
  }
@@ -1904,7 +1906,7 @@
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,boxID=form.elements.id.value,status=$('#role-editor-status');if(!boxID)return;
   status.textContent='Saving permissions…';
-  try{await api(boxPath(boxID)+'/agent-policy','PUT',{},directPolicyBody(form));status.textContent='Saved. Running MCP clients refresh their tools automatically.';toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';renderInspect()}}
+  try{await api(boxPath(boxID)+'/agent-policy','PUT',{},directPolicyBody(form));status.textContent='Saved. Running MCP clients refresh their tools automatically.';$('#role-editor-modal').hidden=true;toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';renderInspect()}}
   catch(e){status.textContent=e.message}
  };
  async function presetBody(name){

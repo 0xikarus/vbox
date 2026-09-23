@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,6 +11,46 @@ import (
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
+
+// CancelUnmaterializedBoxCreation removes a failed creation that never reached
+// volume allocation. No provider volume exists at this phase, so attempting a
+// normal detach/delete would leave the placeholder permanently stuck.
+func (s *Store) CancelUnmaterializedBoxCreation(ctx context.Context, p Principal, box v1.LogicalBox) error {
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.ExecContext(ctx, `UPDATE compute_slots s SET state='free',health='unhealthy',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,deployment_instance_id=NULL,failure_reason='failed creation before volume allocation',updated_at=now()
+		FROM logical_boxes b WHERE b.account_id=$1 AND b.id=$2 AND b.name=$3 AND b.owner_user_id=$4 AND b.state='attaching' AND b.restoration_state='creation-reserved' AND b.failure_reason IS NOT NULL AND b.failure_reason<>'' AND b.volume_id LIKE 'pending:%'
+		AND s.id=b.slot_id AND s.account_id=b.account_id AND s.assignment_generation=b.assignment_generation AND s.fencing_token=b.fencing_token AND s.state='draining'`, p.AccountID, box.ID, box.Name, box.OwnerUserID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("failed creation changed while cancelling; retry")
+	}
+	result, err = tx.ExecContext(ctx, `DELETE FROM logical_boxes WHERE account_id=$1 AND id=$2 AND name=$3 AND owner_user_id=$4 AND state='attaching' AND restoration_state='creation-reserved' AND failure_reason IS NOT NULL AND failure_reason<>'' AND volume_id LIKE 'pending:%'`, p.AccountID, box.ID, box.Name, box.OwnerUserID)
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("failed creation changed while cancelling; retry")
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.creation.cancel','logical_box',$3,'{"volume":"not_created"}'::jsonb)`, p.AccountID, p.UserID, box.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *Server) cancelUnmaterializedBoxCreation(ctx context.Context, p Principal, box v1.LogicalBox) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, active := s.activeCreations[p.AccountID+":"+box.ID]; active {
+		return fmt.Errorf("logical box creation is still active; retry deletion shortly")
+	}
+	return s.Store.CancelUnmaterializedBoxCreation(ctx, p, box)
+}
 
 func (s *Server) queueLogicalBoxDelete(ctx context.Context, p Principal, id, confirmation string) (v1.LogicalBox, error) {
 	box, err := s.Store.LogicalBox(ctx, p, id)

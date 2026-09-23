@@ -210,15 +210,9 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		s.pushAgentReply(ctx, accountID, task, text)
 		return message.ID, false, nil
 	}
-	if task.Agent == "codex" {
-		prepared, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "chat-codex-name", task.Session}, provider.ExecOptions{})
-		if err != nil {
-			return "", false, err
-		}
-		if prepared.ExitCode != 0 {
-			return "", false, fmt.Errorf("codex chat thread naming failed")
-		}
-	}
+	// Naming a Codex thread is cosmetic. It must not block an already queued
+	// chat reply: a failed naming command otherwise leaves the outbox at its
+	// head forever and the user never sees the response.
 	if _, err := s.Store.UpsertAgentBoxMessage(ctx, accountID, task.ID, replyTo, text, "delivered"); err != nil {
 		return "", false, err
 	}

@@ -261,7 +261,24 @@ func (s *Server) deleteLogicalBoxVolumeHandler(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	box, err := s.queueLogicalBoxDelete(r.Context(), p, r.PathValue("id"), request.Confirmation)
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	if box.State == v1.LogicalBoxAttaching && box.RestorationState == "creation-reserved" && box.FailureReason != "" && pendingVolume(box.VolumeID) {
+		if request.Confirmation != box.Name {
+			writeError(w, http.StatusConflict, fmt.Errorf("deletion confirmation must exactly match logical box name %q", box.Name))
+			return
+		}
+		if err := s.cancelUnmaterializedBoxCreation(r.Context(), p, box); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
+		writeJSON(w, http.StatusAccepted, box)
+		return
+	}
+	box, err = s.queueLogicalBoxDelete(r.Context(), p, r.PathValue("id"), request.Confirmation)
 	if err != nil {
 		writeError(w, http.StatusConflict, err)
 		return

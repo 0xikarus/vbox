@@ -146,6 +146,40 @@ func TestDurableDeletionPostgres(t *testing.T) {
 			t.Fatal("slot was not released", state, err)
 		}
 	})
+	t.Run("failed creation before volume allocation can be cancelled", func(t *testing.T) {
+		id, slot := makeBox(t, "unmaterialized-creation", true)
+		if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='attaching',volume_id='pending:' || id::text,volume_name='pending:unmaterialized-creation',restoration_state='creation-reserved',failure_reason='slot service not found' WHERE id=$1`, id); err != nil {
+			t.Fatal(err)
+		}
+		p := &deletionProvider{}
+		s := serverFor(p)
+		deleteRequest := func() *httptest.ResponseRecorder {
+			r := httptest.NewRequest(http.MethodDelete, "/volume", strings.NewReader(`{"confirmation":"unmaterialized-creation"}`)).WithContext(ctx)
+			r.SetPathValue("id", id)
+			w := httptest.NewRecorder()
+			s.deleteLogicalBoxVolumeHandler(w, r, owner)
+			return w
+		}
+		s.activeCreations[owner.AccountID+":"+id] = struct{}{}
+		if w := deleteRequest(); w.Code != http.StatusConflict {
+			t.Fatalf("active creation delete HTTP %d", w.Code)
+		}
+		delete(s.activeCreations, owner.AccountID+":"+id)
+		if w := deleteRequest(); w.Code != http.StatusAccepted {
+			t.Fatalf("failed creation delete HTTP %d: %s", w.Code, w.Body.String())
+		}
+		var count int
+		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM logical_boxes WHERE id=$1`, id).Scan(&count); err != nil || count != 0 {
+			t.Fatal("unmaterialized box was retained", count, err)
+		}
+		var state, health string
+		if err := store.DB.QueryRowContext(ctx, `SELECT state,health FROM compute_slots WHERE id=$1`, slot).Scan(&state, &health); err != nil || state != "free" || health != "unhealthy" {
+			t.Fatal("slot was not safely released", state, health, err)
+		}
+		if p.deletes.Load() != 0 {
+			t.Fatal("provider volume deletion attempted for an unmaterialized box")
+		}
+	})
 	t.Run("detached recovery and coworker references", func(t *testing.T) {
 		id, slot := makeBox(t, "retired", true)
 		sibling, _ := makeBox(t, "sibling", false)
