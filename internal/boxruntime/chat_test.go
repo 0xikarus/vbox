@@ -444,9 +444,10 @@ func stubCodexBackend(t *testing.T) {
 func stubCodexDeliveryHealth(t *testing.T) {
 	t.Helper()
 	stubCodexBackend(t)
-	original := RecoverInterruptedCodexSession
-	t.Cleanup(func() { RecoverInterruptedCodexSession = original })
+	original, originalMCP := RecoverInterruptedCodexSession, RecoverCodexMCPStartup
+	t.Cleanup(func() { RecoverInterruptedCodexSession, RecoverCodexMCPStartup = original, originalMCP })
 	RecoverInterruptedCodexSession = func(context.Context, string, string) error { return nil }
+	RecoverCodexMCPStartup = func(context.Context, string) error { return nil }
 }
 
 // Codex's MCP server is a child of the app server, so the tmux session holding

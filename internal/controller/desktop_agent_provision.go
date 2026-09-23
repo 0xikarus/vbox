@@ -54,3 +54,27 @@ func (s *Server) provisionDesktopAgent(ctx context.Context, tx *sql.Tx, p Princi
 	}
 	return nil
 }
+
+// provisionAssignedDesktopAgent installs a credential for the exact fenced
+// assignment before a restored managed agent starts. The transaction commits
+// before tmux restoration, so its MCP server can load its tool policy at
+// startup even while the box is still attaching.
+func (s *Server) provisionAssignedDesktopAgent(ctx context.Context, a fleetAssignment, prov provider.Provider, state string) error {
+	if state != "attaching" && state != "running" {
+		return fmt.Errorf("invalid desktop provisioning state")
+	}
+	tx, err := s.Store.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var owner string
+	if err := tx.QueryRowContext(ctx, `SELECT owner_user_id::text FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state=$3 AND assignment_generation=$4 AND fencing_token=$5 FOR UPDATE`, a.Box.AccountID, a.Box.ID, state, a.Box.AssignmentGeneration, a.FencingToken).Scan(&owner); err != nil {
+		return fmt.Errorf("desktop assignment changed: %w", err)
+	}
+	p := Principal{AccountID: a.Box.AccountID, UserID: owner, Role: "owner"}
+	if err := s.provisionDesktopAgent(ctx, tx, p, a, prov); err != nil {
+		return err
+	}
+	return tx.Commit()
+}

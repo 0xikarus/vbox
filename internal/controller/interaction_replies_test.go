@@ -174,3 +174,12 @@ func TestCodexThreadNotFoundIsSafeToRetry(t *testing.T) {
 		t.Fatal("unrelated or successful result was treated as retryable")
 	}
 }
+
+func TestCodexDesktopMCPPolicyUnavailableIsSafeToRetry(t *testing.T) {
+	if !codexDesktopMCPPolicyUnavailable(provider.ExecResult{ExitCode: 1, Stderr: "vmbox-runtime: codex desktop MCP policy unavailable"}) {
+		t.Fatal("missing desktop policy was not recognized")
+	}
+	if codexDesktopMCPPolicyUnavailable(provider.ExecResult{ExitCode: 0, Stderr: "codex desktop MCP policy unavailable"}) || codexDesktopMCPPolicyUnavailable(provider.ExecResult{ExitCode: 1, Stderr: "turn is already running"}) {
+		t.Fatal("unrelated or successful result was treated as retryable")
+	}
+}

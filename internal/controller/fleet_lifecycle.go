@@ -144,6 +144,9 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	if bindErr != nil || bound.ExitCode != 0 {
 		return fail("binding-native-sessions", fmt.Errorf("worker could not bind native session assignment"))
 	}
+	if err := s.provisionAssignedDesktopAgent(ctx, assignment, prov, "attaching"); err != nil {
+		return fail("provisioning-desktop-agent", err)
+	}
 	restored, err := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "tmux-restore"}, provider.ExecOptions{})
 	if err != nil {
 		return fail("restoring-tmux", err)
