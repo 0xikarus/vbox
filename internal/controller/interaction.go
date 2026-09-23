@@ -196,16 +196,19 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	if err != nil || !claimed {
 		return err
 	}
-	settleCtx, cancelSettlement := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancelSettlement()
+	settle := func(state, failure string) error {
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		return s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, state, failure)
+	}
 	assignment, err := s.Store.assignment(ctx, p.AccountID, box.ID)
 	if err != nil {
-		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
+		_ = settle("failed", err.Error())
 		return err
 	}
 	prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
 	if err != nil {
-		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
+		_ = settle("failed", err.Error())
 		return err
 	}
 	var result provider.ExecResult
@@ -217,7 +220,7 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		})
 		if !matches {
 			if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
-				_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
+				_ = settle("failed", err.Error())
 				return fmt.Errorf("update Codex workspace runtime: %w", err)
 			}
 		}
@@ -231,7 +234,7 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	} else {
 		text, err := s.boxMessagePrompt(ctx, p.AccountID, task.Agent, message)
 		if err != nil {
-			_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", err.Error())
+			_ = settle("failed", err.Error())
 			return err
 		}
 		encoded := base64.RawURLEncoding.EncodeToString([]byte(text))
@@ -243,29 +246,29 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		if !codexDesktopMCPPolicyUnavailable(result) {
 			if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
 				detail := "update workspace runtime after Codex delivery failure: " + err.Error()
-				_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
+				_ = settle("failed", detail)
 				return fmt.Errorf("%s", detail)
 			}
 		}
 		if codexDesktopMCPPolicyUnavailable(result) {
 			if err := s.provisionAssignedDesktopAgent(ctx, assignment, prov, "running"); err != nil {
 				detail := "refresh Codex desktop credential: " + err.Error()
-				_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
+				_ = settle("failed", detail)
 				return fmt.Errorf("%s", detail)
 			}
 		}
 		result, execErr = s.deliverNativeAgentChat(ctx, prov, assignment.Slot.ServiceID, p.AccountID, "chat-codex", task, message)
 	}
 	if execErr != nil {
-		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "ambiguous", execErr.Error())
+		_ = settle("ambiguous", execErr.Error())
 		return fmt.Errorf("message delivery is ambiguous; inspect the terminal before retrying: %w", execErr)
 	}
 	if result.ExitCode != 0 {
 		detail := strings.TrimSpace(result.Stderr)
-		_ = s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "failed", detail)
+		_ = settle("failed", detail)
 		return fmt.Errorf("message delivery exited with status %d: %s", result.ExitCode, detail)
 	}
-	if err := s.Store.SetBoxMessageState(settleCtx, p.AccountID, message.ID, "delivered", ""); err != nil {
+	if err := settle("delivered", ""); err != nil {
 		return err
 	}
 	s.watchAgentReply(p.AccountID, task, message)
@@ -478,11 +481,7 @@ func (s *Server) sendBoxMessageHandler(w http.ResponseWriter, r *http.Request, p
 		submit = *request.Submit
 	}
 	if !reused && task.State == "active" {
-		if err := s.deliverBoxMessage(r.Context(), p, task, message, submit); err != nil {
-			writeError(w, http.StatusConflict, err)
-			return
-		}
-		message.State = "delivered"
+		s.startBoxMessage(p, task, message, submit)
 	}
 	writeJSON(w, http.StatusAccepted, message)
 }

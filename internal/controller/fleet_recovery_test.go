@@ -331,6 +331,7 @@ func TestGeneratedTaskSessionsAreSafeAndDistinct(t *testing.T) {
 func TestRecoverStaleBoxMessagesMakesInterruptedDeliveryAmbiguous(t *testing.T) {
 	store, mock := testStore(t)
 	before := time.Now().UTC().Add(-2 * time.Minute)
+	mock.ExpectExec("UPDATE box_messages parent SET state='delivered'").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("UPDATE box_messages SET state='ambiguous'").WithArgs(before).WillReturnResult(sqlmock.NewResult(0, 1))
 	if err := store.RecoverStaleBoxMessages(context.Background(), before); err != nil {
 		t.Fatal(err)

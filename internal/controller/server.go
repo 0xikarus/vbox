@@ -79,6 +79,18 @@ func (s *Server) startBoxTask(accountID string, task v1.BoxTask) {
 	}()
 }
 
+// startBoxMessage hands a durable queued message to the worker without tying
+// delivery (including runtime repair) to the HTTP request deadline.
+func (s *Server) startBoxMessage(p Principal, task v1.BoxTask, message v1.BoxMessage, submit bool) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		if err := s.deliverBoxMessage(ctx, p, task, message, submit); err != nil {
+			s.Logger.Warn("direct box message delivery stopped", "task", task.ID, "message", message.ID, "error", err)
+		}
+	}()
+}
+
 func NewServer(store *Store, providers *provider.Registry) *Server {
 	return &Server{Store: store, Providers: providers, Logger: slog.Default(), MaxConcurrent: 10, replyWatches: make(map[string]struct{}), activeCreations: make(map[string]struct{})}
 }

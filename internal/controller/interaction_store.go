@@ -511,8 +511,16 @@ func (s *Store) UpsertAgentBoxMessage(ctx context.Context, accountID, taskID, re
 	if state != "streaming" && state != "delivered" {
 		return false, fmt.Errorf("agent reply state must be streaming or delivered")
 	}
-	result, err := s.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,parent_message_id,thread_id)
-		SELECT $1,$2,$3,'agent',$4,false,$5,$6,target.id,COALESCE(target.thread_id,target.id) FROM box_messages target WHERE target.account_id=$2 AND target.task_id=$3 AND target.id=$7
+	result, err := s.DB.ExecContext(ctx, `WITH target AS (
+		SELECT id,thread_id FROM box_messages WHERE account_id=$2 AND task_id=$3 AND id=$7
+	), confirmed AS (
+		UPDATE box_messages parent SET state='delivered',failure_reason=NULL,updated_at=now()
+		FROM target WHERE parent.id=target.id AND parent.account_id=$2 AND $5='delivered'
+		AND parent.state IN ('queued','delivering','ambiguous','failed') RETURNING parent.id
+	)
+	INSERT INTO box_messages(id,account_id,task_id,direction,body,submit,state,idempotency_key,parent_message_id,thread_id)
+		SELECT $1,$2,$3,'agent',$4,false,$5,$6,target.id,COALESCE(target.thread_id,target.id)
+		FROM target LEFT JOIN confirmed ON confirmed.id=target.id
 		ON CONFLICT(account_id,idempotency_key) DO UPDATE
 		SET body=EXCLUDED.body,state=EXCLUDED.state,failure_reason=NULL,updated_at=now()
 		WHERE box_messages.direction='agent'
@@ -557,14 +565,25 @@ func (s *Store) ClaimBoxMessage(ctx context.Context, accountID, id string) (bool
 func (s *Store) SetBoxMessageState(ctx context.Context, accountID, id, state, failure string) error {
 	_, err := s.DB.ExecContext(ctx, `WITH message AS (
 		UPDATE box_messages SET state=$3,failure_reason=NULLIF($4,''),updated_at=now()
-		WHERE account_id=$1 AND id=$2 RETURNING id,task_id,direction,submit
+		WHERE account_id=$1 AND id=$2 AND (state<>'delivered' OR $3='delivered') RETURNING id,task_id,direction,submit
 	) UPDATE box_tasks task SET agent_busy=true,agent_busy_updated_at=now(),agent_busy_message_id=message.id
 	FROM message WHERE task.account_id=$1 AND task.id=message.task_id AND task.agent<>'shell'
-	AND $3='delivered' AND message.submit AND message.direction IN ('user','box')`, accountID, id, state, failure)
+	AND $3='delivered' AND message.submit AND message.direction IN ('user','box')
+	AND NOT EXISTS (SELECT 1 FROM box_messages reply WHERE reply.account_id=$1
+		AND reply.idempotency_key='agent-reply:' || message.id::text AND reply.state='delivered')`, accountID, id, state, failure)
 	return err
 }
 
 func (s *Store) RecoverStaleBoxMessages(ctx context.Context, before time.Time) error {
+	// A worker can publish its reply before the delivery call returns. Repair
+	// messages left in-flight by a controller restart or an old request timeout.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE box_messages parent SET state='delivered',failure_reason=NULL,updated_at=now()
+		WHERE parent.state IN ('queued','delivering','ambiguous','failed') AND EXISTS (
+			SELECT 1 FROM box_messages reply WHERE reply.account_id=parent.account_id
+			AND reply.idempotency_key='agent-reply:' || parent.id::text AND reply.state='delivered'
+		)`); err != nil {
+		return err
+	}
 	_, err := s.DB.ExecContext(ctx, "UPDATE box_messages SET state='ambiguous',failure_reason='delivery was interrupted; inspect the terminal before retrying',updated_at=now() WHERE state='delivering' AND updated_at < $1", before)
 	return err
 }
