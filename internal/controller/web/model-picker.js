@@ -23,6 +23,7 @@
  const normalize=values=>[...new Map((values||[]).map(value=>{
   const id=String(typeof value==='string'?value:value?.id||'').trim();
   return [id,{id,label:String(typeof value==='string'?names[id]||id:value?.label||names[id]||id),reasoning:typeof value==='object'?value?.reasoning:undefined,
+   reasoningEfforts:typeof value==='object'&&Array.isArray(value?.reasoningEfforts)?value.reasoningEfforts.map(String):[],
    inputCost:typeof value==='object'?Number(value?.inputCost)||0:0,outputCost:typeof value==='object'?Number(value?.outputCost)||0:0,
    context:typeof value==='object'?Number(value?.context)||0:0}];
  }).filter(([id])=>id)).values()];
@@ -93,7 +94,11 @@
     if(/haiku/i.test(current()))return [];
     return ['low','medium','high',...(/^(sonnet|opus|best|fable)(\[1m\])?$|(?:sonnet|opus|fable)-(?:5|4-[78])/i.test(current())?['xhigh']:[])];
    }
-   if(application==='codex')return ['low','medium','high','xhigh',...(/^(gpt-6-astra|gpt-5\.6-sol)$/.test(current())?['max']:[])];
+   if(application==='codex'){
+    const selected=findModel(current());
+    if(selected?.reasoningEfforts?.length)return selected.reasoningEfforts;
+    return ['low','medium','high','xhigh',...(/^(gpt-6-astra|gpt-5\.6-sol)$/.test(current())?['max']:[])];
+   }
    if(application==='opencode'){
     const selected=findModel(current());
     if(selected?.reasoning===false)return [];

@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,13 +16,43 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+func TestCodexCatalogUsesSavedProfileAndAdvertisedReasoningLevels(t *testing.T) {
+	dir := t.TempDir()
+	executable := filepath.Join(dir, "codex-fixture")
+	script := `#!/bin/sh
+read initialize
+read initialized
+read model_list
+case "$initialize$model_list" in
+  *vmbox-model-catalog*model/list*) ;;
+  *) exit 2 ;;
+esac
+test -f "$CODEX_HOME/auth.json" || exit 3
+printf '%s\n' '{"id":1,"result":{}}'
+printf '%s\n' '{"id":2,"result":{"data":[{"id":"account-model","model":"account-model","displayName":"Account Model","hidden":false,"supportedReasoningEfforts":[{"reasoningEffort":"low"},{"reasoningEffort":"ultra"}]},{"id":"hidden","model":"hidden","displayName":"Hidden","hidden":true,"supportedReasoningEfforts":[]}]}}'
+`
+	if err := os.WriteFile(executable, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	models, err := queryCodexModelCatalog(context.Background(), map[string][]byte{
+		"auth.json":   []byte(`{"tokens":{"access_token":"synthetic-private-token"}}`),
+		"config.toml": []byte(`model = "saved-model"`),
+	}, executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 1 || models[0].ID != "account-model" || models[0].Label != "Account Model" || strings.Join(models[0].ReasoningEfforts, ",") != "low,ultra" {
+		t.Fatalf("wrong Codex model choices: %+v", models)
+	}
+}
+
 func TestOpenCodeCatalogFiltersToolCapableTextModels(t *testing.T) {
 	for _, tc := range []struct {
 		provider string
 		body     string
 		want     string
 	}{
-			{"openrouter", `{"data":[{"id":"eligible","name":"Eligible","context_length":1000000,"pricing":{"prompt":"0.000003","completion":"0.000015"},"architecture":{"output_modalities":["text"],"input_modalities":["text","image"]},"supported_parameters":["tools","reasoning"]},{"id":"no-tools","architecture":{"output_modalities":["text"]}},{"id":"image","architecture":{"output_modalities":["image"]},"supported_parameters":["tools"]}]}`, "openrouter/eligible"},
+		{"openrouter", `{"data":[{"id":"eligible","name":"Eligible","context_length":1000000,"pricing":{"prompt":"0.000003","completion":"0.000015"},"architecture":{"output_modalities":["text"],"input_modalities":["text","image"]},"supported_parameters":["tools","reasoning"]},{"id":"no-tools","architecture":{"output_modalities":["text"]}},{"id":"image","architecture":{"output_modalities":["image"]},"supported_parameters":["tools"]}]}`, "openrouter/eligible"},
 		{"venice", `{"data":[{"id":"eligible","name":"Eligible","type":"text","model_spec":{"capabilities":{"supportsFunctionCalling":true,"supportsReasoningEffort":true}}},{"id":"offline","type":"text","model_spec":{"offline":true,"capabilities":{"supportsFunctionCalling":true}}},{"id":"no-tools","type":"text"}]}`, "venice/eligible"},
 	} {
 		t.Run(tc.provider, func(t *testing.T) {
