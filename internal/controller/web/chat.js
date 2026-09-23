@@ -1409,9 +1409,11 @@
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect');
  let inspectOpen=false,inspectTimer,controllerPing=null;
+ let inspectProfilesFor='',inspectProfileCache=null;
  const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
  const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
+ const importedProfileLabel=ref=>[ref.application,ref.name,ref.model,ref.reasoningEffort].filter(Boolean).join(' · ');
  const fillRows=(target,rows)=>{
   target.replaceChildren();
   for(const [dt,dd,cls] of rows){
@@ -1422,6 +1424,7 @@
  function renderInspect(){
   if(!inspectOpen||!selected)return;
   const box=boxes.get(selected);if(!box)return;
+  if(inspectProfilesFor!==box.id)inspectProfileCache=null;
   const msgs=box.messages||[],lastAgent=lastMessage(msgs,'agent'),lastUser=lastMessage(msgs,'user');
   const livePing=boxViewerMetrics.get(box.id)?.ping;
   const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
@@ -1441,6 +1444,7 @@
   fillRows($('#inspect-runtime-rows'),[
    ['State',stateText,stateClass(box.state)],
    ['Agent',agent],
+   ...(owner?[['Imported profiles',inspectProfileCache?inspectProfileCache.error||((inspectProfileCache.profiles||[]).map(importedProfileLabel).join(', ')||'None')+(inspectProfileCache.pending?.length?' · queued: '+inspectProfileCache.pending.map(importedProfileLabel).join(', '):''):'Loading…']]:[]),
    ['Provider',box.provider||'—'],
    ['Messages',msgs.length+' total'],
   ]);
@@ -1469,7 +1473,19 @@
   if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
   if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
+  maybeLoadInspectProfiles(box);
   maybeLoadInspectContacts(box);
+ }
+ function maybeLoadInspectProfiles(box){
+  if(!owner||inspectProfilesFor===box.id)return;
+  inspectProfilesFor=box.id;inspectProfileCache=null;
+  void api(boxPath(box.id)+'/imported-credentials').then(state=>{
+   if(!inspectOpen||selected!==box.id||inspectProfilesFor!==box.id)return;
+   inspectProfileCache=state;renderInspect();
+  }).catch(()=>{
+   if(!inspectOpen||selected!==box.id||inspectProfilesFor!==box.id)return;
+   inspectProfileCache={error:'Unavailable'};renderInspect();
+  });
  }
  async function samplePing(){
   if(!inspectOpen)return;
@@ -1484,9 +1500,9 @@
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
-  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null}
+  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null}
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null}
  $('#inspect-close').onclick=closeInspect;
  // Collapsible details sections, remembered per browser.
  const foldKey='vmbox.inspectFold';
@@ -2233,6 +2249,7 @@
    const result=await api(boxPath(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
    status.textContent=result.note||'Saved.';
    $('#box-credentials-current').textContent=(result.profiles||[]).length?'Imported: '+(result.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', ')+'.':'No imported login profiles recorded.';
+   if(inspectOpen&&selected===boxCredentialTarget.id){inspectProfilesFor='';maybeLoadInspectProfiles(boxCredentialTarget)}
    toast('Login profiles updated for '+boxCredentialTarget.name+'.');
   }catch(e){status.textContent=e.message}
  };
