@@ -77,6 +77,27 @@ func TestComposeInstructionMarkdownPreservesPresetAndBounds(t *testing.T) {
 	}
 }
 
+func TestManagedChatConventionsStayFocusedOnVmboxCalls(t *testing.T) {
+	got, err := composeChatConventions("# Owner preset\n")
+	if err != nil || !strings.HasPrefix(got, "# Owner preset\n\n## vmbox chat\n") {
+		t.Fatalf("compose: %v %q", err, got)
+	}
+	for _, example := range []string{
+		`chat_message {"replyTo":"KEY","text":"..."}`,
+		`chat_message {"contact":"BOX_ID","text":"..."}`,
+		`"files":["/absolute/image.png"]`,
+		`chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"],"multiple":false}`,
+		`get_contacts {}`,
+	} {
+		if !strings.Contains(got, example) {
+			t.Fatalf("missing exact MCP example %q", example)
+		}
+	}
+	if strings.Contains(got, "Long-running local servers") || strings.Contains(got, "npm run dev") {
+		t.Fatal("unrelated server instructions remain in managed chat guidance")
+	}
+}
+
 func TestSyncBoxInstructionsIncludesOnlyNewBoxToolReferences(t *testing.T) {
 	for _, tc := range []struct {
 		name, user, guidance, want string
