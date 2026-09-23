@@ -199,27 +199,25 @@ func rememberCodexThread(root, session, id string) error {
 	return writeTextAtomic(codexThreadFile(root, session), id+"\n", 0600)
 }
 
-// CodexThreadIDs snapshots the app-server threads before the TUI starts a new
-// one. Clear context waits for that new thread before accepting another chat.
-var CodexThreadIDs = func(ctx context.Context, session string) ([]string, error) {
+// CodexStartFreshThread materializes a thread after the TUI's /new command.
+// The remote TUI may invalidate its old thread before it creates another, so
+// waiting for thread/list to grow can leave the next chat on a missing ID.
+var CodexStartFreshThread = func(ctx context.Context, session string) (string, error) {
 	client, err := dialCodexAppServer(ctx, session)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	defer client.Close()
-	result, err := client.call(ctx, "thread/list", map[string]any{})
+	result, err := client.call(ctx, "thread/start", map[string]any{"cwd": WorkspaceDirectory()})
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	threads, _ := result["data"].([]any)
-	ids := make([]string, 0, len(threads))
-	for _, value := range threads {
-		thread, _ := value.(map[string]any)
-		if id, _ := thread["id"].(string); id != "" {
-			ids = append(ids, id)
-		}
+	thread, _ := result["thread"].(map[string]any)
+	id, _ := thread["id"].(string)
+	if id == "" {
+		return "", fmt.Errorf("codex app server returned no fresh thread")
 	}
-	return ids, nil
+	return id, nil
 }
 
 // CodexStartTurn sends one message to the thread the terminal is showing and
