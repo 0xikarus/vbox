@@ -600,6 +600,9 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 				if data, err := os.ReadFile(codexThreadFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "thread-new" {
 					t.Fatalf("fresh thread was not remembered: %q %v", data, err)
 				}
+				if data, err := os.ReadFile(codexResetPendingFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "thread-new" {
+					t.Fatalf("first post-clear turn was not pinned to the fresh thread: %q %v", data, err)
+				}
 			}
 		})
 	}

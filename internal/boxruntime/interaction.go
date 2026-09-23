@@ -328,8 +328,8 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		}
 		resetThreadPath := filepath.Join(root, "chat", "codex-reset-threads-v2", messageID)
 		if data, err := os.ReadFile(resetThreadPath); err == nil {
-			if id := strings.TrimSpace(string(data)); id != "" {
-				return rememberCodexThread(root, session, id)
+			if strings.TrimSpace(string(data)) != "" {
+				return nil
 			}
 		} else if !os.IsNotExist(err) {
 			return err
@@ -350,10 +350,13 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		for {
 			id, err := CodexStartFreshThread(ctx, session)
 			if err == nil {
-				if err := writeTextAtomic(resetThreadPath, id+"\n", 0600); err != nil {
+				if err := rememberCodexThread(root, session, id); err != nil {
 					return err
 				}
-				return rememberCodexThread(root, session, id)
+				if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
+					return err
+				}
+				return writeTextAtomic(resetThreadPath, id+"\n", 0600)
 			}
 			select {
 			case <-ctx.Done():

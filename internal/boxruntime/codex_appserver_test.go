@@ -1,6 +1,7 @@
 package boxruntime
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"os"
@@ -9,6 +10,19 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestCodexCurrentThreadPrefersFirstTurnAfterClear(t *testing.T) {
+	root := t.TempDir()
+	if err := writeTextAtomic(codexResetPendingFile(root, "session"), "fresh-thread\n", 0600); err != nil {
+		t.Fatal(err)
+	}
+	// No app-server query is needed while the freshly created thread is idle;
+	// the older conversation may still appear more recently active in its list.
+	id, err := CodexCurrentThread(context.Background(), nil, root, "session", "/workspace")
+	if err != nil || id != "fresh-thread" {
+		t.Fatalf("thread=%q err=%v", id, err)
+	}
+}
 
 func TestCodexTurnInputUsesLocalImageSchema(t *testing.T) {
 	got := codexTurnInput("inspect this", []string{"/tmp/first.png", "/tmp/second.jpg"})
