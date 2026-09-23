@@ -855,7 +855,7 @@
   }
   const form=questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
-  const threadSize=(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>1){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
+  const threadSize=(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>2){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
   if(mine&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
@@ -890,7 +890,7 @@
  $('#thread-close').onclick=()=>{openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren()};
  async function openThread(threadID){
   if(!selected||!threadID)return;openThreadID=threadID;threadPanel.hidden=false;threadMessages.replaceChildren(mk('p','Loading thread…'));
-  try{const result=await chatHistory(boxPath(selected)+'/messages?limit=100&threadId='+encodeURIComponent(threadID)),box=boxes.get(selected);threadMessages.replaceChildren();$('#thread-count').textContent=result.messages.length+' message'+(result.messages.length===1?'':'s');for(const message of result.messages)threadMessages.append(bubble({...box,messages:result.messages},message))}
+  try{const result=await chatHistory(boxPath(selected)+'/messages?limit=100&threadId='+encodeURIComponent(threadID)),box=boxes.get(selected);threadMessages.replaceChildren();$('#thread-origin').textContent=(box?.name||'Box')+' · '+(box?.defaultAgent||'agent');$('#thread-count').textContent=result.messages.length+' message'+(result.messages.length===1?'':'s');for(const message of result.messages)threadMessages.append(bubble({...box,messages:result.messages},message));const taskID=result.messages.find(message=>message.taskId)?.taskId;if(taskID)void api('/v1/tasks/'+encodeURIComponent(taskID)).then(task=>{if(openThreadID===threadID&&task?.agent)$('#thread-origin').textContent=(box?.name||'Box')+' · '+task.agent}).catch(()=>{})}
   catch(e){threadMessages.replaceChildren(mk('p',e.message))}
  }
  $('#thread-composer').onsubmit=async event=>{
@@ -2038,12 +2038,13 @@
   const select=$('#box-instructions-preset');select.replaceChildren();
   try{
    const state=await api(boxPath(box.id)+'/instructions'),current=state.instructions||{source:'none',markdown:''};
-   const none=mk('option','None (clear managed instructions)');none.value='';select.append(none);
+   const none=mk('option','No custom instructions (chat conventions only)');none.value='';select.append(none);
    for(const preset of instructionPresets.presets){const option=mk('option',preset.name+' · r'+preset.revision);option.value=preset.name;select.append(option)}
    const custom=mk('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
    select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?'custom':'');
    $('#box-instructions-markdown').value=current.markdown||'';
    mdPreview($('#box-instructions-preview'),current.markdown||'');
+   $('#box-instructions-effective').textContent=state.effectiveMarkdown||'';
    $('#box-instructions-current').textContent=describeBoxInstructions(state);
    status.textContent='';$('#box-instructions-modal').hidden=false;
   }catch(e){status.textContent=e.message}
@@ -2068,6 +2069,7 @@
    const result=await api(boxPath(boxInstructionTarget.id)+'/instructions','PUT',body);
    status.textContent=result.note||describeBoxInstructions(result);
    if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
+   $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';
    toast('Instructions applied to '+boxInstructionTarget.name+'.');
   }catch(e){status.textContent=e.message}
  };

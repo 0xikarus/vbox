@@ -233,8 +233,17 @@ func (s *Store) InstructionSnapshot(ctx context.Context, p Principal, boxID stri
 }
 
 func (s *Store) MarkInstructionsApplied(ctx context.Context, accountID, boxID string) error {
-	_, err := s.DB.ExecContext(ctx, `UPDATE box_instruction_snapshots SET applied_at=now() WHERE account_id=$1 AND box_id=$2`, accountID, boxID)
+	_, err := s.DB.ExecContext(ctx, `INSERT INTO box_instruction_snapshots(account_id,box_id,source,markdown,applied_at)
+		VALUES($1,$2,'none','',now()) ON CONFLICT(account_id,box_id) DO UPDATE SET applied_at=now()`, accountID, boxID)
 	return err
+}
+
+func effectiveInstructionMarkdown(snapshot v1.BoxInstructions) (string, error) {
+	markdown, err := composeInstructionMarkdown(snapshot.Markdown, snapshot.ToolGuidance)
+	if err != nil {
+		return "", err
+	}
+	return composeChatConventions(markdown)
 }
 
 // syncBoxInstructions pushes the box's snapshot into the box filesystem. It is
@@ -245,11 +254,7 @@ func (s *Server) syncBoxInstructions(ctx context.Context, prov provider.Provider
 	if err != nil {
 		return err
 	}
-	if snapshot.Source == "none" && snapshot.Markdown == "" && snapshot.AppliedAt == nil && snapshot.UpdatedAt.IsZero() {
-		// Boxes that predate this feature carry no row: leave their volume alone.
-		return nil
-	}
-	markdown, err := composeInstructionMarkdown(snapshot.Markdown, snapshot.ToolGuidance)
+	markdown, err := effectiveInstructionMarkdown(snapshot)
 	if err != nil {
 		return fmt.Errorf("compose managed instructions: %w", err)
 	}
@@ -371,6 +376,10 @@ func (s *Server) boxInstructionsState(ctx context.Context, p Principal, boxID st
 		return response, err
 	}
 	response.Instructions = snapshot
+	response.EffectiveMarkdown, err = effectiveInstructionMarkdown(snapshot)
+	if err != nil {
+		return response, err
+	}
 	if snapshot.Preset != "" {
 		state := &v1.PresetState{}
 		if preset, err := s.Store.GetInstructionPreset(ctx, p, snapshot.Preset); err == nil {
@@ -381,7 +390,7 @@ func (s *Server) boxInstructionsState(ctx context.Context, p Principal, boxID st
 		}
 		response.Preset = state
 	}
-	response.Pending = snapshot.Source != "none" && (snapshot.AppliedAt == nil || snapshot.AppliedAt.Before(snapshot.UpdatedAt))
+	response.Pending = snapshot.AppliedAt == nil || snapshot.AppliedAt.Before(snapshot.UpdatedAt)
 	return response, nil
 }
 

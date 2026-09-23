@@ -64,7 +64,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
-		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass a compact id or exact box name returned by get_contacts to send to another box instead of the owner; contact messages cannot carry image files.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
+		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass a compact id or exact box name returned by get_contacts to send to another box instead of the owner. Image files are supported for both owner and contact messages.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass a compact id or exact box name returned by get_contacts to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
@@ -108,6 +108,24 @@ func allowedDesktopMCPTools(ctx context.Context, assignment string, resolve desk
 
 const desktopMCPGuidePath = ".config/vmbox/mcp-tools.md"
 
+// Persist first, then signal the controller to drain this session. The outbox
+// remains authoritative if the callback fails or the controller restarts.
+func writeDesktopChatEvent(ctx context.Context, assignment string, event ChatEvent) error {
+	session, err := chatSession(ctx)
+	if err != nil {
+		return err
+	}
+	if err := writeChatEvent(ctx, event); err != nil {
+		return err
+	}
+	go func() {
+		requestCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = desktopAgentAPI(requestCtx, assignment, http.MethodPost, "/v1/agent-desktop/chat-ready", map[string]string{"session": session}, nil)
+	}()
+	return nil
+}
+
 // writeDesktopMCPGuide gives every managed agent a local, readable tool
 // reference. It is generated from the same schemas advertised over MCP.
 func writeDesktopMCPGuide(home string) error {
@@ -121,7 +139,7 @@ func writeDesktopMCPGuide(home string) error {
 	guide.WriteString("   The same call may use the compact ID: `chat_message {\"contact\":\"a1b2c3d4\",\"text\":\"Please review commit abc123.\"}`\n")
 	guide.WriteString("3. Ask a choice: `chat_ask {\"contact\":\"planner\",\"question\":\"Which option should we ship?\",\"choices\":[\"A\",\"B\"],\"multiple\":false}`\n")
 	guide.WriteString("4. Reply to an incoming box message: `chat_message {\"contact\":\"reviewer\",\"text\":\"Applied your feedback.\"}`\n\n")
-	guide.WriteString("Only contacts returned by `get_contacts` are permitted. If a box is absent, ask the owner to add it as a direct contact or grant All contacts. Omit `contact` to message the owner. Contact messages cannot attach files.\n\n")
+	guide.WriteString("Only contacts returned by `get_contacts` are permitted. If a box is absent, ask the owner to add it as a direct contact or grant All contacts. Omit `contact` to message the owner. Add `files` with absolute PNG, JPEG, or GIF paths to attach images to either kind of message.\n\n")
 	for _, tool := range desktopMCPTools() {
 		name := tool["name"].(string)
 		description := tool["description"].(string)
@@ -685,14 +703,15 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if err := validateContactRef(request.Contact); err != nil {
 				return nil, err
 			}
-			if len(request.Files) > 0 {
-				return nil, fmt.Errorf("contact messages cannot carry image files")
+			images, err := loadChatImages(request.Files)
+			if err != nil {
+				return nil, err
 			}
 			contact, err := resolveContact(ctx, assignment, request.Contact)
 			if err != nil {
 				return nil, err
 			}
-			if err := writeChatEvent(ctx, ChatEvent{Kind: "contact", Contact: contact, Text: request.Text}); err != nil {
+			if err := writeDesktopChatEvent(ctx, assignment, ChatEvent{Kind: "contact", ReplyTo: request.ReplyTo, Contact: contact, Text: request.Text, Images: images}); err != nil {
 				return nil, err
 			}
 			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Message delivered to the contact's conversation."}}}, nil
@@ -701,7 +720,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		if err != nil {
 			return nil, err
 		}
-		if err := writeChatEvent(ctx, ChatEvent{Kind: "reply", ReplyTo: request.ReplyTo, Text: request.Text, Images: images}); err != nil {
+		if err := writeDesktopChatEvent(ctx, assignment, ChatEvent{Kind: "reply", ReplyTo: request.ReplyTo, Text: request.Text, Images: images}); err != nil {
 			return nil, err
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Response delivered to vmbox Agent chat."}}}, nil
@@ -742,13 +761,13 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if request.Multiple {
 				text += "\n\nOne or more choices may be selected."
 			}
-			if err := writeChatEvent(ctx, ChatEvent{Kind: "contact", Contact: contact, Text: text}); err != nil {
+			if err := writeDesktopChatEvent(ctx, assignment, ChatEvent{Kind: "contact", Contact: contact, Text: text}); err != nil {
 				return nil, err
 			}
 			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to the contact's conversation."}}}, nil
 		}
 		event := ChatEvent{Kind: "question", ReplyTo: request.ReplyTo, Text: request.Question, Question: &ChatQuestion{Text: request.Question, Choices: request.Choices, Multiple: request.Multiple}}
-		if err := writeChatEvent(ctx, event); err != nil {
+		if err := writeDesktopChatEvent(ctx, assignment, event); err != nil {
 			return nil, err
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to vmbox Agent chat."}}}, nil

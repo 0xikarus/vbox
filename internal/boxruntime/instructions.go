@@ -156,7 +156,7 @@ func applyInstructionCanonical(home, markdown string, owner *Ownership, chown Ch
 		}
 		return "", true, nil
 	}
-	if err := v1.ValidateInstructionMarkdown(markdown); err != nil {
+	if err := v1.ValidateEffectiveInstructionMarkdown(markdown); err != nil {
 		return "", false, err
 	}
 	data, err := os.ReadFile(canonical)

@@ -43,8 +43,8 @@ type Server struct {
 	// ChatInstructionTemplate overrides the agent-chat envelope appended to
 	// every chat prompt; "off" disables it.
 	ChatInstructionTemplate string
-	// ChatInstructionEvery repeats the envelope on the first message of a chat
-	// and then every N messages; 1 means every message, 0 uses the default.
+	// ChatInstructionEvery controls the cadence of a custom appendix template.
+	// The thin default appendix is present on every message.
 	ChatInstructionEvery int
 	WorkerRuntime        []byte
 	WorkerAgent          []byte
@@ -108,6 +108,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /chat", uiHandler("chat.html", "text/html; charset=utf-8", false))
 	mux.HandleFunc("GET /chat.js", uiHandler("chat.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /chat.css", uiHandler("chat.css", "text/css; charset=utf-8", false))
+	mux.HandleFunc("GET /box-chats", uiHandler("box-chats.html", "text/html; charset=utf-8", false))
+	mux.HandleFunc("GET /box-chats.js", uiHandler("box-chats.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /box-chats.css", uiHandler("box-chats.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /push-sw.js", uiHandler("push-sw.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /loading-doodle.svg", uiHandler("loading-doodle.svg", "image/svg+xml", false))
 	mux.HandleFunc("GET /manifest.json", uiHandler("manifest.json", "application/manifest+json; charset=utf-8", false))
@@ -132,6 +135,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets/{key}/confirm", s.owner(s.confirmDesktopSecret))
 	mux.HandleFunc("GET /v1/agent-desktop/contacts", s.desktopAgentAuth(s.agentContactsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/busy", s.desktopAgentAuth(s.agentBusyHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/chat-ready", s.desktopAgentAuth(s.agentChatReadyHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/run-budget", s.desktopAgentAuth(s.agentRunBudgetHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/run-budget/extend", s.desktopAgentAuth(s.agentRunBudgetHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/followups", s.desktopAgentAuth(s.agentFollowupHandler))
@@ -238,6 +242,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages", s.auth(s.directBoxMessageHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages/clear-context", s.auth(s.clearBoxContextHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/messages", s.auth(s.boxMessageHistory))
+	mux.HandleFunc("GET /v1/box-conversations", s.owner(s.contactConversationsHandler))
+	mux.HandleFunc("GET /v1/box-conversations/{a}/{b}/messages", s.owner(s.contactConversationMessagesHandler))
 	mux.HandleFunc("GET /v1/messages/{message}/images/{image}", s.auth(s.downloadBoxMessageImage))
 	mux.HandleFunc("GET /v1/tasks/{id}", s.auth(s.getBoxTaskHandler))
 	mux.HandleFunc("GET /v1/tasks/{id}/messages", s.auth(s.listBoxMessagesHandler))
@@ -1099,7 +1105,7 @@ func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; connect-src 'self'; img-src 'self' data:; script-src 'self'; style-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
-		if strings.HasPrefix(r.URL.Path, "/boxes/") || r.URL.Path == "/grid" || r.URL.Path == "/chat" {
+		if strings.HasPrefix(r.URL.Path, "/boxes/") || r.URL.Path == "/grid" || r.URL.Path == "/chat" || r.URL.Path == "/box-chats" {
 			// Terminal palettes, noVNC geometry and chat menu/message bubbles
 			// generate styles at runtime. Script execution remains restricted
 			// to locally bundled assets.

@@ -413,12 +413,13 @@ async function openBoxInstructions(box){
  const select=$('#box-instructions-preset');select.replaceChildren();
  try{
   const state=await api(bp(box.id)+'/instructions'),current=state.instructions||{source:'none',markdown:''};
-  const none=node('option','None (clear managed instructions)');none.value='';select.append(none);
+  const none=node('option','No custom instructions (chat conventions only)');none.value='';select.append(none);
   for(const preset of instructionPresets.presets){const option=node('option',preset.name+' · r'+preset.revision);option.value=preset.name;select.append(option)}
   const custom=node('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
   select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?'custom':'');
   $('#box-instructions-markdown').value=current.markdown||'';
   renderMarkdownPreview($('#box-instructions-preview'),current.markdown||'');
+  $('#box-instructions-effective').textContent=state.effectiveMarkdown||'';
   $('#box-instructions-current').textContent=describeBoxInstructions(state);
   status.textContent='';
   modalEl('box-instructions-modal').hidden=false;
@@ -443,6 +444,7 @@ $('#box-instructions-apply').addEventListener('click',action(async()=>{
  const result=await api(bp(boxInstructionTarget.id)+'/instructions','PUT',body);
  status.textContent=result.note||describeBoxInstructions(result);
  if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
+ $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';
  await refresh();
 }));
 async function openBoxCredentials(box){

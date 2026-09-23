@@ -13,6 +13,10 @@ import (
 // executed as installation scripts.
 const MaxInstructionMarkdownBytes = 64 << 10
 
+// Managed files also contain runtime-generated guidance beside the user's
+// 64 KiB preset. Keep separate headroom so a valid preset remains applicable.
+const MaxEffectiveInstructionMarkdownBytes = 128 << 10
+
 // InstructionPresetMeta describes one preset without its Markdown body.
 type InstructionPresetMeta struct {
 	Name      string    `json:"name"`
@@ -103,10 +107,11 @@ type PresetState struct {
 // BoxInstructionsResponse pairs the snapshot with its live-preset state and
 // materialization status.
 type BoxInstructionsResponse struct {
-	Instructions BoxInstructions `json:"instructions"`
-	Preset       *PresetState    `json:"preset,omitempty"`
-	Pending      bool            `json:"pending"`
-	Note         string          `json:"note,omitempty"`
+	Instructions      BoxInstructions `json:"instructions"`
+	EffectiveMarkdown string          `json:"effectiveMarkdown"`
+	Preset            *PresetState    `json:"preset,omitempty"`
+	Pending           bool            `json:"pending"`
+	Note              string          `json:"note,omitempty"`
 }
 
 func ValidateInstructionPresetName(name string) error {
@@ -129,8 +134,16 @@ func matchesInstructionName(name string) bool {
 // ValidateInstructionMarkdown bounds trusted user-authored Markdown. It must be
 // valid UTF-8 text without NUL bytes and fit the preset size budget.
 func ValidateInstructionMarkdown(markdown string) error {
-	if len(markdown) > MaxInstructionMarkdownBytes {
-		return fmt.Errorf("instructions are limited to %d KiB of Markdown", MaxInstructionMarkdownBytes/1024)
+	return validateInstructionMarkdown(markdown, MaxInstructionMarkdownBytes)
+}
+
+func ValidateEffectiveInstructionMarkdown(markdown string) error {
+	return validateInstructionMarkdown(markdown, MaxEffectiveInstructionMarkdownBytes)
+}
+
+func validateInstructionMarkdown(markdown string, maxBytes int) error {
+	if len(markdown) > maxBytes {
+		return fmt.Errorf("instructions are limited to %d KiB of Markdown", maxBytes/1024)
 	}
 	if !utf8.ValidString(markdown) || strings.ContainsRune(markdown, 0) {
 		return fmt.Errorf("instructions must be UTF-8 text without NUL bytes")

@@ -311,11 +311,23 @@ func (s *Server) pushAgentReply(ctx context.Context, accountID string, task v1.B
 	}
 	probe := v1.BoxMessage{Text: text}
 	decodeBoxMessageQuestion(&probe)
-	notice := []rune(probe.Text)
+	s.pushAccountNotification(accountID, map[string]string{"title": task.BoxName, "body": probe.Text, "box": task.LogicalBoxID, "url": "/chat#box=" + task.LogicalBoxID})
+}
+
+func (s *Server) pushContactMessage(accountID, senderID, senderName, targetID, targetName, text string) {
+	s.pushAccountNotification(accountID, map[string]string{"title": senderName + " ↔ " + targetName, "body": text, "url": "/box-chats#pair=" + senderID + "/" + targetID})
+}
+
+func (s *Server) pushAccountNotification(accountID string, value map[string]string) {
+	if s.Store == nil || s.Store.DB == nil {
+		return
+	}
+	notice := []rune(value["body"])
 	if len(notice) > webPushNotificationText {
 		notice = append(append([]rune{}, notice[:webPushNotificationText-1]...), '…')
 	}
-	payload, err := json.Marshal(map[string]string{"title": task.BoxName, "body": string(notice), "box": task.LogicalBoxID})
+	value["body"] = string(notice)
+	payload, err := json.Marshal(value)
 	if err != nil || len(payload) > webPushMaxPayload {
 		return
 	}
