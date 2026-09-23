@@ -305,10 +305,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		return response, err
 	}
 	if selected.State == "active" && message.State == "queued" {
-		if err := s.deliverBoxMessage(ctx, p, *selected, message, true); err != nil {
-			return response, err
-		}
-		response.Message.State = "delivered"
+		s.startBoxMessage(p, *selected, message, true)
 	}
 	return response, nil
 }
