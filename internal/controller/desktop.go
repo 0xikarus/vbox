@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -92,6 +93,18 @@ func (s *Server) desktopAction(w http.ResponseWriter, r *http.Request, p Princip
 	if err != nil {
 		writeError(w, 502, err)
 		return
+	}
+	if command == "desktop-start" && len(s.WorkerRuntime) > 0 {
+		digest := fmt.Sprintf("%x", sha256.Sum256(s.WorkerRuntime))
+		matches, _ := installedWorkspaceRuntimeMatches(ctx, digest, func(ctx context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+			return prov.Exec(ctx, a.Slot.ServiceID, argv, options)
+		})
+		if !matches {
+			if err := stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime); err != nil {
+				writeError(w, 502, fmt.Errorf("update desktop runtime: %w", err))
+				return
+			}
+		}
 	}
 	verb := strings.TrimPrefix(command, "desktop-")
 	argv := []string{"vmbox-runtime", command, nativeFence(a)}

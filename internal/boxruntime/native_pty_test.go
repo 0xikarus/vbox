@@ -45,6 +45,33 @@ func TestNativeAttachHelper(t *testing.T) {
 	}
 }
 
+func TestExitTmuxCopyMode(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux unavailable")
+	}
+	t.Setenv("TMUX_TMPDIR", t.TempDir())
+	t.Setenv("TMUX", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	t.Cleanup(func() { _, _ = tmuxOutput(context.Background(), "kill-server") })
+	if _, err := tmuxOutput(ctx, "new-session", "-d", "-s", "copy-reset", "sleep 30"); err != nil {
+		t.Fatal(err)
+	}
+	if err := exitTmuxCopyMode(ctx, "copy-reset"); err != nil {
+		t.Fatalf("writable pane: %v", err)
+	}
+	if _, err := tmuxOutput(ctx, "copy-mode", "-t", "copy-reset"); err != nil {
+		t.Fatal(err)
+	}
+	if err := exitTmuxCopyMode(ctx, "copy-reset"); err != nil {
+		t.Fatalf("copy-mode pane: %v", err)
+	}
+	mode, err := tmuxOutput(ctx, "display-message", "-p", "-t", "copy-reset", "#{pane_mode}")
+	if err != nil || strings.TrimSpace(string(mode)) != "" {
+		t.Fatalf("pane stayed in copy mode: mode=%q err=%v", mode, err)
+	}
+}
+
 func TestNativeInputPTY(t *testing.T) {
 	for _, bin := range []string{"tmux", "script"} {
 		if _, err := exec.LookPath(bin); err != nil {
