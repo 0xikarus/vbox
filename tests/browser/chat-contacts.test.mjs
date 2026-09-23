@@ -229,6 +229,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(saved.mcpTools.allowedTools.includes('secret_request'),false);
   assert.deepEqual(saved.manageAgentBoxes,{list:true,inspect:true,tag:true,restart:true,delete:true});
   assert.equal(saved.mcpTools.allowedTools.includes('create_agent_box'),true);
+  assert.deepEqual(saved.createAgentBox,{enabled:true,maxBoxes:3,maxDiskGiB:50,allowedAgents:['codex','claude','opencode']});
   await p.evaluate(()=>[...document.querySelectorAll('#inspect-config-actions button')].find(button=>button.textContent==='Re-sync instructions').click());
   await p.waitForFunction(()=>document.querySelector('#inspect').hidden);
   assert.equal(requests.includes('POST /v1/logical-boxes/builder/instructions/resync'),true);
