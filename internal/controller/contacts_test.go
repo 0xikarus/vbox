@@ -10,6 +10,61 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+func TestBoxMentionRequiresExactVisibleToken(t *testing.T) {
+	for _, tc := range []struct {
+		text, name string
+		want       bool
+	}{
+		{"Please ask @reviewer to check", "reviewer", true},
+		{"Ask @reviewer, then summarize", "reviewer", true},
+		{"Ask @reviewer-extra", "reviewer", false},
+		{"Email me at owner@reviewer.example", "reviewer", false},
+		{"Ask reviewer without a mention", "reviewer", false},
+	} {
+		if got := containsBoxMention(tc.text, tc.name); got != tc.want {
+			t.Fatalf("text=%q name=%q got=%v want=%v", tc.text, tc.name, got, tc.want)
+		}
+	}
+}
+
+func TestMentionContactsAreGrantedReciprocallyInOneTransaction(t *testing.T) {
+	store, mock := testStore(t)
+	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}
+	mock.ExpectBegin()
+	mock.ExpectExec("INSERT INTO box_contacts").WithArgs("account-a", "source", "target", true, "user-a").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO box_contacts").WithArgs("account-a", "target", "source", true, "user-a").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO audit_log").WithArgs("account-a", "user-a", "source", "target").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := store.allowMentionContacts(context.Background(), p, "source", []string{"target"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMentionTargetsMustBeVisibleExactBoxIDs(t *testing.T) {
+	store, mock := testStore(t)
+	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}
+	mock.ExpectQuery("SELECT b.id::text,b.name,b.default_agent,b.state").WithArgs("account-a", "target-id").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "agent", "state", "protected"}).AddRow("target-id", "reviewer", "codex", "running", false))
+	ids, err := store.validateMentionTargets(context.Background(), p, "source-id", "Ask @reviewer to check", []string{"target-id"})
+	if err != nil || len(ids) != 1 || ids[0] != "target-id" {
+		t.Fatalf("ids=%v err=%v", ids, err)
+	}
+	mock.ExpectQuery("SELECT b.id::text,b.name,b.default_agent,b.state").WithArgs("account-a", "target-id").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "agent", "state", "protected"}).AddRow("target-id", "reviewer", "codex", "running", true))
+	if _, err := store.validateMentionTargets(context.Background(), p, "source-id", "Ask @reviewer", []string{"target-id"}); err == nil {
+		t.Fatal("protected box mention was accepted")
+	}
+	if _, err := store.validateMentionTargets(context.Background(), Principal{Role: "agent"}, "source-id", "Ask @reviewer", []string{"target-id"}); err == nil {
+		t.Fatal("agent mention was accepted")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestEffectiveAccessPrecedence(t *testing.T) {
 	tests := []struct {
 		name        string

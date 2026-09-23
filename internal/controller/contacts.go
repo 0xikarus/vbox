@@ -125,6 +125,81 @@ func putContactOverride(ctx context.Context, tx *sql.Tx, p Principal, boxID, con
 	}
 }
 
+func boxNameByte(char byte) bool {
+	return char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '.' || char == '_' || char == '-'
+}
+
+func containsBoxMention(text, name string) bool {
+	needle := "@" + name
+	for start := 0; start < len(text); {
+		index := strings.Index(text[start:], needle)
+		if index < 0 {
+			return false
+		}
+		begin := start + index
+		end := begin + len(needle)
+		if (begin == 0 || strings.ContainsRune(" \t\r\n", rune(text[begin-1]))) && (end == len(text) || !boxNameByte(text[end])) {
+			return true
+		}
+		start = end
+	}
+	return false
+}
+
+// Mention targets are resolved from exact IDs and visible @names before a
+// message is routed. The browser cannot silently grant a hidden box contact.
+func (s *Store) validateMentionTargets(ctx context.Context, p Principal, sourceID, text string, refs []string) ([]string, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	if p.Role != "owner" || len(refs) > 8 || strings.HasPrefix(text, "/silent") {
+		return nil, fmt.Errorf("box mentions require an owner message with at most eight boxes")
+	}
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		id, name, _, state, protected, err := s.contactBox(ctx, p.AccountID, ref)
+		if err != nil {
+			return nil, err
+		}
+		if ref != id || id == sourceID || state == "deleting" || protected || !containsBoxMention(text, name) {
+			return nil, fmt.Errorf("invalid box mention")
+		}
+		if !seen[id] {
+			seen[id] = true
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
+}
+
+// Apply all reciprocal contact grants together after the owner message is
+// accepted. A retry with the same message idempotency key can repair a failed
+// grant without posting the message again.
+func (s *Store) allowMentionContacts(ctx context.Context, p Principal, sourceID string, ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if err := putContactOverride(ctx, tx, p, sourceID, id, "allow"); err != nil {
+			return err
+		}
+		if err := putContactOverride(ctx, tx, p, id, sourceID, "allow"); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail)
+			VALUES($1,$2,'box_contact.mention','logical_box',$3,jsonb_build_object('contact_box_id',$4::text,'two_way',true))`, p.AccountID, p.UserID, sourceID, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 func (s *Store) PutBoxContact(ctx context.Context, p Principal, boxRef string, request v1.PutBoxContactRequest) (v1.BoxContact, error) {
 	if p.Role != "owner" {
 		return v1.BoxContact{}, fmt.Errorf("only an account owner may change contact rules")

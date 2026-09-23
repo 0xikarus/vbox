@@ -623,6 +623,16 @@ CREATE TABLE IF NOT EXISTS instruction_presets (
   updated_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id,name)
 );
+-- Owner-defined Chat slash commands are account scoped and store only prompt
+-- text; choosing one inserts text into a draft and never executes it here.
+CREATE TABLE IF NOT EXISTS chat_commands (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  prompt text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(account_id,name)
+);
 CREATE TABLE IF NOT EXISTS instruction_preset_defaults (
   account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   preset_name text NOT NULL,
