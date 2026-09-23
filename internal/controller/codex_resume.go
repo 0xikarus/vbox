@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -58,14 +59,22 @@ func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Pr
 		writeError(w, 502, fmt.Errorf("worker unavailable"))
 		return
 	}
-	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "codex-resume-candidate", task.Session}, provider.ExecOptions{})
-	// A controller can be deployed while a box stays running on the previous
-	// workspace runtime. Upgrade that binary once before giving up on the offer.
-	if err == nil && result.ExitCode != 0 && strings.Contains(result.Stderr, "unknown command") {
-		if stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime) == nil {
-			result, err = prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "codex-resume-candidate", task.Session}, provider.ExecOptions{})
+	// A running box does not pass through wake's runtime installation when the
+	// controller is deployed. A previous scanner can validly return null, so
+	// checking only for an unknown command would silently hide the offer.
+	if len(s.WorkerRuntime) > 0 {
+		digest := fmt.Sprintf("%x", sha256.Sum256(s.WorkerRuntime))
+		matches, _ := installedWorkspaceRuntimeMatches(ctx, digest, func(ctx context.Context, argv []string, opts provider.ExecOptions) (provider.ExecResult, error) {
+			return prov.Exec(ctx, a.Slot.ServiceID, argv, opts)
+		})
+		if !matches {
+			if err := stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime); err != nil {
+				writeError(w, 502, fmt.Errorf("could not update Codex workspace runtime"))
+				return
+			}
 		}
 	}
+	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "codex-resume-candidate", task.Session}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
 		writeError(w, 502, fmt.Errorf("saved Codex session lookup failed"))
 		return
@@ -129,10 +138,6 @@ func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Pr
 		return
 	}
 	if request.Choice == "restore" {
-		if err := stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime); err != nil {
-			writeError(w, 502, fmt.Errorf("could not update chat runtime"))
-			return
-		}
 		result, err = prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "codex-resume-session", task.Session, candidate.SessionID, candidate.SavedAt.Format(time.RFC3339Nano)}, provider.ExecOptions{})
 		if err != nil || result.ExitCode != 0 {
 			writeError(w, 409, fmt.Errorf("Codex session could not be restored: %s", strings.TrimSpace(result.Stderr)))
