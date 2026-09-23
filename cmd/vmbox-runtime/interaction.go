@@ -19,6 +19,24 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		return false, nil
 	}
 	switch args[0] {
+	case "codex-resume-candidate":
+		if len(args) != 2 {
+			return true, fmt.Errorf("codex-resume-candidate requires SESSION")
+		}
+		candidate, err := boxruntime.FindCodexResumeCandidate(runtime.Root, boxruntime.WorkloadHome(), args[1])
+		if err != nil {
+			return true, err
+		}
+		return true, json.NewEncoder(os.Stdout).Encode(candidate)
+	case "codex-resume-session":
+		if len(args) != 4 {
+			return true, fmt.Errorf("codex-resume-session requires SESSION THREAD_ID SNAPSHOT_TIME")
+		}
+		at, err := time.Parse(time.RFC3339Nano, args[3])
+		if err != nil {
+			return true, fmt.Errorf("invalid snapshot time")
+		}
+		return true, boxruntime.RestoreCodexConversation(context.Background(), runtime.Root, args[1], boxruntime.CodexResumeCandidate{SessionID: args[2], SavedAt: at})
 	case "agent-reconcile":
 		if len(args) != 2 {
 			return true, fmt.Errorf("agent-reconcile requires SELECTED_AGENT")

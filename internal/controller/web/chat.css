@@ -163,6 +163,11 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .msg.system,.msg.note{align-self:center;background:var(--accent-soft);color:var(--ink);font-size:.8rem;
   text-align:center;box-shadow:var(--shadow)}
 .msg.note{border:1px dashed var(--accent)}
+.codex-resume-card{align-self:center;display:flex;flex-direction:column;gap:.55rem;width:min(100%,34rem);padding:.9rem;border:1px solid var(--accent);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
+.codex-resume-card>span{font-size:.83rem;color:var(--ink-soft)}
+.codex-resume-actions{display:flex;gap:.5rem;flex-wrap:wrap}
+.codex-resume-actions button{padding:.45rem .7rem;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--ink);cursor:pointer}
+.codex-resume-actions button:disabled{opacity:.5;cursor:wait}
 .msg .note-label{display:block;font-size:.68rem;text-transform:uppercase;letter-spacing:.04em;color:var(--warn);margin-bottom:.1rem}
 .msg.streaming .text::after{content:" ▌";animation:chat-blink 1s steps(2) infinite;color:var(--accent)}
 @keyframes chat-blink{50%{opacity:0}}
