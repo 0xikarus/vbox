@@ -3,12 +3,17 @@ package boxruntime
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/coder/websocket"
 )
 
 func TestEnsureCodexAppServerReplacesInterruptedHelper(t *testing.T) {
@@ -79,6 +84,16 @@ func TestCodexCurrentThreadPrefersFirstTurnAfterClear(t *testing.T) {
 	}
 }
 
+func TestNewestCreatedCodexThreadAfterVisibleClear(t *testing.T) {
+	threads := []any{
+		map[string]any{"id": "old-busy", "createdAt": float64(10), "recencyAt": float64(100)},
+		map[string]any{"id": "new-visible", "createdAt": float64(20), "recencyAt": float64(20)},
+	}
+	if got := newestCreatedCodexThread(threads); got != "new-visible" {
+		t.Fatalf("visible reset picked %q", got)
+	}
+}
+
 func TestCodexTurnInputUsesLocalImageSchema(t *testing.T) {
 	got := codexTurnInput("inspect this", []string{"/tmp/first.png", "/tmp/second.jpg"})
 	want := []map[string]any{
@@ -88,6 +103,52 @@ func TestCodexTurnInputUsesLocalImageSchema(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("turn input = %#v, want %#v", got, want)
+	}
+}
+
+func TestCodexQueueInputSendsImageAsStructuredPart(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Errorf("accept app-server client: %v", err)
+			return
+		}
+		defer conn.Close(websocket.StatusNormalClosure, "")
+		_, data, err := conn.Read(r.Context())
+		if err != nil {
+			t.Errorf("read queue request: %v", err)
+			return
+		}
+		var request struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+			Params struct {
+				ThreadID            string           `json:"threadId"`
+				ClientUserMessageID string           `json:"clientUserMessageId"`
+				Input               []map[string]any `json:"input"`
+			} `json:"params"`
+		}
+		if err := json.Unmarshal(data, &request); err != nil {
+			t.Errorf("decode queue request: %v", err)
+			return
+		}
+		if request.Method != "thread/queue/add" || request.Params.ThreadID != "visible-thread" || request.Params.ClientUserMessageID != "message-1" || !reflect.DeepEqual(request.Params.Input, codexTurnInput("inspect this", []string{"/tmp/scene.png"})) {
+			t.Errorf("incorrect structured queue request: %+v", request)
+		}
+		response, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": map[string]any{"queuedSubmission": map[string]any{"id": "queued-1"}}})
+		if err := conn.Write(r.Context(), websocket.MessageText, response); err != nil {
+			t.Errorf("write queue response: %v", err)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexQueueInput(context.Background(), client, "visible-thread", "message-1", "inspect this", []string{"/tmp/scene.png"}); err != nil {
+		t.Fatal(err)
 	}
 }
 

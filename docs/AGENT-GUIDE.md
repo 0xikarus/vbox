@@ -176,7 +176,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `NO SIGNAL` fallback) and the processing bubble. Screenshots live in
   `docs/chat-ui/screenshots/mobile-first/`.
 - Persistent-box Agent chat links images to individual messages and displays them
-  through an authenticated endpoint. Follow-ups use the visible Codex TUI, Claude's
+  through an authenticated endpoint. Codex follow-ups use the visible thread's
+  app-server queue with structured image inputs; Claude uses its
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
   `vmbox-desktop` MCP exposes `chat_message`, `chat_ask`, and `set_busy`.
   Submitted prompts mark the active task busy in the controller; replies and

@@ -334,19 +334,23 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		if err := deliverTmuxLiteral(ctx, root, session, messageID+"-command", "/new"); err != nil {
+		id, err := CodexStartFreshThread(ctx, session)
+		if err != nil {
 			return err
 		}
-		if err := tmuxSubmitPause(ctx); err != nil {
+		if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", "="+session+":0.0", "-c", WorkspaceDirectory(), shellJoin(codexRemoteResumeArgv(session, id))); err != nil {
+			return fmt.Errorf("show fresh Codex conversation: %w", err)
+		}
+		if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 			return err
 		}
-		if err := DeliverTmuxKeys(ctx, root, session, messageID+"-submit", []string{"Enter"}); err != nil {
+		if err := rememberCodexThread(root, session, id); err != nil {
 			return err
 		}
-		// Let the TUI materialize its new thread when the next visible prompt
-		// arrives. Starting one from another app-server client forks Chat away
-		// from the conversation shown in TMUX and Desktop.
-		return writeTextAtomic(resetThreadPath, "visible-tui\n", 0600)
+		if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
+			return err
+		}
+		return writeTextAtomic(resetThreadPath, id+"\n", 0600)
 	case "opencode":
 		// Continue below.
 	default:

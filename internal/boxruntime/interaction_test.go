@@ -564,21 +564,24 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 		agent string
 		want  []string
 	}{
-		{agent: "codex", want: []string{"/new", "Enter"}},
+		{agent: "codex", want: []string{"respawn"}},
 		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
-			CodexStartFreshThread = func(context.Context, string) (string, error) {
-				t.Fatal("Codex reset started an app-server thread separate from the visible TUI")
-				return "", nil
-			}
+			CodexStartFreshThread = func(context.Context, string) (string, error) { return "fresh-thread", nil }
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 				if len(args) > 0 && args[0] == "capture-pane" {
 					if test.agent == "codex" {
-						t.Fatal("Codex reset screen-scraped the TUI instead of probing its app server")
+						return []byte("OpenAI Codex (v0.155.1)\n› Ask Codex to do anything"), nil
 					}
 					return nil, nil
+				}
+				if len(args) > 0 && args[0] == "respawn-pane" {
+					if !strings.Contains(strings.Join(args, " "), "--remote") || !strings.Contains(args[len(args)-1], "fresh-thread") {
+						t.Fatalf("fresh thread was not attached to the TUI: %v", args)
+					}
+					inputs = append(inputs, "respawn")
 				}
 				if len(args) > 0 && args[0] == "load-buffer" {
 					inputs = append(inputs, stdin)
@@ -603,8 +606,11 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			}
 			if test.agent == "codex" {
 				path := filepath.Join(root, "chat", "codex-reset-threads-v2", "reset-message")
-				if data, err := os.ReadFile(path); err != nil || strings.TrimSpace(string(data)) != "visible-tui" {
+				if data, err := os.ReadFile(path); err != nil || strings.TrimSpace(string(data)) != "fresh-thread" {
 					t.Fatalf("reset marker was not saved: %q %v", data, err)
+				}
+				if data, err := os.ReadFile(codexResetPendingFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "fresh-thread" {
+					t.Fatalf("visible thread was not remembered: %q %v", data, err)
 				}
 			}
 		})

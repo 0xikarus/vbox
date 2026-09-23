@@ -104,35 +104,10 @@ func TestChatSessionFindsSanitizedMCPThroughProcessTree(t *testing.T) {
 	}
 }
 
-func stubVisibleCodexTerminal(t *testing.T, screen string) (*strings.Builder, *int) {
-	t.Helper()
-	originalCommand, originalPause := tmuxCommand, tmuxSubmitPause
-	t.Cleanup(func() { tmuxCommand, tmuxSubmitPause = originalCommand, originalPause })
-	tmuxSubmitPause = func(context.Context) error { return nil }
-	typed := &strings.Builder{}
-	enters := new(int)
-	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		switch args[0] {
-		case "capture-pane":
-			return []byte(screen), nil
-		case "send-keys":
-			if len(args) >= 2 && args[len(args)-2] == "-l" {
-				typed.WriteString(args[len(args)-1])
-			} else if args[len(args)-1] == "Enter" {
-				*enters++
-			}
-			return nil, nil
-		default:
-			t.Fatalf("unexpected tmux command: %v", args)
-			return nil, nil
-		}
-	}
-	return typed, enters
-}
-
-func TestDeliverCodexChatUsesVisibleTUIWithImagePaths(t *testing.T) {
+func TestDeliverCodexChatQueuesEmbeddedImagesForVisibleThread(t *testing.T) {
 	stubCodexDeliveryHealth(t)
-	typed, enters := stubVisibleCodexTerminal(t, "OpenAI Codex\n› Ask Codex to do anything\n")
+	originalQueue := CodexQueueMessage
+	t.Cleanup(func() { CodexQueueMessage = originalQueue })
 	home, root := t.TempDir(), t.TempDir()
 	var encoded bytes.Buffer
 	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
@@ -141,36 +116,55 @@ func TestDeliverCodexChatUsesVisibleTUIWithImagePaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	inbound := ChatInbound{ID: "message-1", Text: "Inspect [Image 1]", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
+	var queuedID, queuedText string
+	var queuedPaths []string
+	CodexQueueMessage = func(_ context.Context, _, _, _, id, text string, paths []string) error {
+		queuedID, queuedText, queuedPaths = id, text, append([]string(nil), paths...)
+		return nil
+	}
 	if err := DeliverCodexChat(context.Background(), root, home, "codex-chat", inbound); err != nil {
 		t.Fatal(err)
 	}
 	wantPath := filepath.Join(home, ".local/share/vmbox/chat/inbox/codex-chat/files/message-1/image-1.png")
-	if !strings.Contains(typed.String(), "Inspect [Image 1]") || !strings.Contains(typed.String(), wantPath) || !strings.Contains(typed.String(), "image-viewing tool") || *enters != 1 {
-		t.Fatalf("visible prompt=%q enters=%d", typed.String(), *enters)
+	if queuedID != inbound.ID || queuedText != inbound.Text || len(queuedPaths) != 1 || queuedPaths[0] != wantPath {
+		t.Fatalf("queued ID=%q text=%q paths=%v", queuedID, queuedText, queuedPaths)
 	}
 	if _, err := os.Stat(filepath.Join(home, ".local/share/vmbox/chat/inbox/codex-chat/message-1.json")); !os.IsNotExist(err) {
 		t.Fatalf("delivered inbox retained: %v", err)
 	}
 }
 
-func TestDeliverCodexChatPreservesLongPromptInVisibleTUI(t *testing.T) {
+func TestDeliverCodexChatQueuesLongPromptWithoutTerminalTyping(t *testing.T) {
 	stubCodexDeliveryHealth(t)
-	typed, enters := stubVisibleCodexTerminal(t, "OpenAI Codex\n› Ask Codex to do anything\n")
+	originalQueue := CodexQueueMessage
+	t.Cleanup(func() { CodexQueueMessage = originalQueue })
 	want := strings.Repeat("ab🙂", 16_000)
+	var queued string
+	CodexQueueMessage = func(_ context.Context, _, _, _, _, text string, _ []string) error { queued = text; return nil }
 	if err := DeliverCodexChat(context.Background(), t.TempDir(), t.TempDir(), "codex-long", ChatInbound{ID: "message-long", Text: want}); err != nil {
 		t.Fatal(err)
 	}
-	if typed.String() != want || *enters != 1 {
-		t.Fatalf("visible prompt changed: got %d bytes, want %d; enters=%d", typed.Len(), len(want), *enters)
+	if queued != want {
+		t.Fatalf("queued prompt changed: got %d bytes, want %d", len(queued), len(want))
 	}
 }
 
-func TestDeliverCodexChatPreservesUnsentTUIDraft(t *testing.T) {
+func TestDeliverCodexChatLeavesUnsentTUIDraftUntouched(t *testing.T) {
 	stubCodexDeliveryHealth(t)
-	typed, enters := stubVisibleCodexTerminal(t, "OpenAI Codex\n› unfinished owner draft\n")
+	originalQueue, originalTmux := CodexQueueMessage, tmuxCommand
+	t.Cleanup(func() { CodexQueueMessage, tmuxCommand = originalQueue, originalTmux })
+	queued := false
+	CodexQueueMessage = func(context.Context, string, string, string, string, string, []string) error {
+		queued = true
+		return nil
+	}
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		t.Fatalf("queue delivery touched the TUI: %v", args)
+		return nil, nil
+	}
 	err := DeliverCodexChat(context.Background(), t.TempDir(), t.TempDir(), "codex-draft", ChatInbound{ID: "message-draft", Text: "new chat message"})
-	if err == nil || !strings.Contains(err.Error(), "unsent input") || typed.Len() != 0 || *enters != 0 {
-		t.Fatalf("draft delivery err=%v typed=%q enters=%d", err, typed.String(), *enters)
+	if err != nil || !queued {
+		t.Fatalf("draft delivery err=%v queued=%t", err, queued)
 	}
 }
 

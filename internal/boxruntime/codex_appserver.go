@@ -142,9 +142,13 @@ func (c *codexClient) call(ctx context.Context, method string, params any) (map[
 // thread/list may report the invalidated old thread as more recently active.
 // After that turn starts, normal recency selection resumes.
 func CodexCurrentThread(ctx context.Context, client *codexClient, root, session, workspace string) (string, error) {
+	visibleReset := false
 	if data, err := os.ReadFile(codexResetPendingFile(root, session)); err == nil {
 		if id := strings.TrimSpace(string(data)); id != "" {
-			return id, nil
+			if id != "visible-tui" {
+				return id, nil
+			}
+			visibleReset = true
 		}
 	} else if !os.IsNotExist(err) {
 		return "", err
@@ -159,21 +163,28 @@ func CodexCurrentThread(ctx context.Context, client *codexClient, root, session,
 	}
 	threads, _ := result["data"].([]any)
 	newest := newestCodexThread(threads, remembered)
+	if visibleReset {
+		newest = newestCreatedCodexThread(threads)
+	}
 	if newest != "" {
 		return newest, rememberCodexThread(root, session, newest)
 	}
-	// Nothing recorded yet: start the thread ourselves so the terminal has one
-	// to attach to.
-	started, err := client.call(ctx, "thread/start", map[string]any{"cwd": workspace})
-	if err != nil {
-		return "", err
+	// A new thread created here would not be attached to the visible TUI.
+	return "", fmt.Errorf("visible Codex thread is not available yet")
+}
+
+func newestCreatedCodexThread(threads []any) string {
+	var newest string
+	var created float64
+	for _, value := range threads {
+		thread, _ := value.(map[string]any)
+		id, _ := thread["id"].(string)
+		at, _ := thread["createdAt"].(float64)
+		if id != "" && (newest == "" || at > created) {
+			newest, created = id, at
+		}
 	}
-	thread, _ := started["thread"].(map[string]any)
-	id, _ := thread["id"].(string)
-	if id == "" {
-		return "", fmt.Errorf("codex app server returned no thread")
-	}
-	return id, rememberCodexThread(root, session, id)
+	return newest
 }
 
 func newestCodexThread(threads []any, remembered string) string {
@@ -274,6 +285,46 @@ var CodexStartTurn = func(ctx context.Context, session, root, workspace, text st
 	// again follow a different conversation selected in the visible terminal.
 	_ = os.Remove(codexResetPendingFile(root, session))
 	return nil
+}
+
+// CodexQueueMessage asks the app server to enqueue one structured user input
+// for its loaded visible thread. Queueing is shared with the remote TUI, unlike
+// starting a turn from an independent app-server client.
+var CodexQueueMessage = func(ctx context.Context, session, root, workspace, messageID, text string, images []string) error {
+	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
+		return err
+	}
+	client, err := dialCodexAppServer(ctx, session)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	thread, err := CodexCurrentThread(ctx, client, root, session, workspace)
+	if err != nil {
+		return err
+	}
+	if err := codexQueueInput(ctx, client, thread, messageID, text, images); err != nil {
+		return err
+	}
+	_ = os.Remove(codexResetPendingFile(root, session))
+	return nil
+}
+
+func codexQueueInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {
+	add := func(input []map[string]any) error {
+		result, err := client.call(ctx, "thread/queue/add", map[string]any{
+			"threadId": thread, "input": input, "clientUserMessageId": messageID,
+		})
+		if err != nil {
+			return err
+		}
+		queued, _ := result["queuedSubmission"].(map[string]any)
+		if queued["id"] == nil {
+			return fmt.Errorf("codex app server did not confirm queued message")
+		}
+		return nil
+	}
+	return codexStartTurnWithFallback(text, images, add)
 }
 
 // A restarted app server can list a thread stored on disk without loading it

@@ -127,9 +127,7 @@ func RestoreCodexConversation(ctx context.Context, root, session string, expecte
 	if err != nil {
 		return fmt.Errorf("saved Codex thread unavailable: %w", err)
 	}
-	argv := []string{"codex", "resume", "--remote", codexAppServerURL(session),
-		"-c", "check_for_update_on_startup=false", "-c", "suppress_unstable_features_warning=true",
-		"-c", "notice.hide_rate_limit_model_nudge=true", candidate.SessionID}
+	argv := codexRemoteResumeArgv(session, candidate.SessionID)
 	if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", "="+session+":0.0", "-c", WorkspaceDirectory(), shellJoin(argv)); err != nil {
 		return fmt.Errorf("resume Codex terminal: %w", err)
 	}
@@ -140,4 +138,10 @@ func RestoreCodexConversation(ctx context.Context, root, session string, expecte
 		return err
 	}
 	return writeTextAtomic(codexResetPendingFile(root, session), candidate.SessionID+"\n", 0600)
+}
+
+func codexRemoteResumeArgv(session, threadID string) []string {
+	return []string{"codex", "resume", "--remote", codexAppServerURL(session),
+		"-c", "check_for_update_on_startup=false", "-c", "suppress_unstable_features_warning=true",
+		"-c", "notice.hide_rate_limit_model_nudge=true", threadID}
 }

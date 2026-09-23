@@ -160,18 +160,17 @@ cannot widen an agent's reach. A box needs no role to chat with its owner.
 | --- | --- | --- | --- |
 | First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the native visible-TUI bridge |
 | Follow-ups reuse the same native task/thread | Yes | Yes | Yes |
-| **Clear context** keeps the watched session usable | Native `/new` in the visible TUI | Respawns Claude with a new channel | Native `/new` |
-| Old process cleanup when a respawn is required | Not applicable | Old Claude tree is terminated | Not applicable |
+| **Clear context** keeps the watched session usable | Reattaches a fresh thread in the same pane | Respawns Claude with a new channel | Native `/new` |
+| Old process cleanup when a respawn is required | Old Codex pane is replaced | Old Claude tree is terminated | Not applicable |
 | `chat_message`, `chat_ask`, `set_busy`, and contact routing | Yes | Yes | Yes |
 | Desktop screenshot, mouse, keyboard, and typing tools | Yes | Yes | Yes |
 | Box-side HTTP façade with the same 15 tools | Yes | Yes | Yes |
 | Harness-specific saved profile and per-box model | Yes | Yes | Yes |
 | Agent exchange remains visible in TMUX/VNC | Yes | Yes | Yes |
 
-Codex and OpenCode clear their model context without killing a healthy TUI.
-Codex creates the fresh thread in the watched TUI when the next prompt arrives.
-Chat follow-ups enter that visible composer; they do not create a parallel
-app-server conversation.
+Codex clears context by attaching a fresh app-server thread to the same visible
+pane. Chat follow-ups, including images, enter that thread through its shared
+queue. OpenCode uses its native reset command.
 Claude has no equivalent channel reset, so clearing it replaces the Claude
 process and waits for the new channel before accepting another chat message.
 

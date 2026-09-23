@@ -15,7 +15,6 @@ import (
 	_ "image/png"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -373,23 +372,13 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	if err := RecoverCodexMCPStartup(ctx, session); err != nil {
 		return err
 	}
-	// An app-server turn from a second client can run in a thread that the
-	// remote TUI never selects or renders. Deliver through the visible composer
-	// so Chat, TMUX and Desktop remain one conversation.
-	return deliverCodexThroughTUI(ctx, root, session, codexVisiblePrompt(event), path)
-}
-
-func codexVisiblePrompt(event chatInboundFile) string {
-	if len(event.Paths) == 0 {
-		return event.Text
+	// The app-server queue delivers structured text and images to the thread
+	// attached to the visible TUI. Unlike turn/start from a second client, its
+	// submissions are dispatched by that thread and shown in both tmux views.
+	if err := CodexQueueMessage(ctx, session, root, WorkspaceDirectory(), event.ID, event.Text, event.Paths); err != nil {
+		return err
 	}
-	var prompt strings.Builder
-	prompt.WriteString(event.Text)
-	prompt.WriteString("\n\nAttached images are saved locally. Open each with the image-viewing tool before replying:\n")
-	for index, path := range event.Paths {
-		fmt.Fprintf(&prompt, "%d. %s\n", index+1, path)
-	}
-	return prompt.String()
+	return os.Remove(path)
 }
 
 // StartCodexChat starts a new interactive Codex session with the first Agent
@@ -495,15 +484,6 @@ func ensureCodexEmptyComposer(ctx context.Context, session string) error {
 		return fmt.Errorf("Codex composer contains unsent input; finish or clear it in TMUX before sending chat")
 	}
 	return nil
-}
-
-var runCodexQueue = func(ctx context.Context, home, eventPath string, args []string) error {
-	command := exec.CommandContext(ctx, "codex", args...)
-	command.Env = append(os.Environ(), "HOME="+home)
-	if output, err := command.CombinedOutput(); err != nil {
-		return fmt.Errorf("codex queue failed: %w: %s", err, strings.TrimSpace(string(output)))
-	}
-	return os.Remove(eventPath)
 }
 
 func NameCodexChatThread(ctx context.Context, root, session string) error {
