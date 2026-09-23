@@ -186,11 +186,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   minutes. Automatic clears are tied to the submitted message, so a late reply
   cannot hide a newer prompt that is still being processed.
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
-  key carried in the envelope) answers one specific message. The controller polls
-  each active task's outbox while a chat window is open, from the reconciler, and
-  while a reply is awaited. The box also sends a scoped chat-ready callback
-  after durably queuing an MCP event; the controller immediately drains the
-  outbox and acknowledges an event only after it is stored.
+  key carried in the envelope) answers one specific message. The box durably
+  queues each MCP event and pushes text events through its scoped chat-ready
+  callback. The controller confirms storage before the box removes its outbox
+  copy. Image events, older runtimes, and failed callbacks use the existing
+  worker outbox pull/ack path; chat reads, reconciliation, and reply watchers
+  continue to drain that fallback.
   A late or repeated reply whose message is already answered is stored as its own
   agent message, so the outbox can never head-of-line block. Terminal capture
   remains a compatibility fallback for clients that do not call the tool. The

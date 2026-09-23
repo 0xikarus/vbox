@@ -19,14 +19,20 @@ is rechecked by the controller at execution time.
   that fact and does not invent an address.
 - `shared_chats`: independent discover, read, subscribe, create, and invite
   grants. Membership is still required to read or post.
-- `mcp_tools`: an exact allow-list for optional coordination, secret, and
+- `mcp_tools`: an exact allow-list for optional admin, secret, and
   desktop tools. Core chat, contact, budget visibility, busy-state, and thread
   history tools remain available. The allow-list is an additional restriction:
   a selected tool still needs its typed capability grant and limits. Optional
   tools default to denied when no assigned role explicitly grants them. The UI
-  provides Coordination, Passwords, and Computer use group toggles while saving
+  provides Admin work, Passwords, and Computer use group toggles while saving
   the resulting exact per-tool list; individual tools remain independently
   adjustable.
+
+The coordination MCP tools from this phase (`request_more_time`,
+`queue_followup`, shared-chat operations, and `create_email_address`) were later
+retired from agent tool discovery and the permission editors. Their stored data
+and older typed grant records remain for compatibility; direct box messaging is
+still available through the core chat tools.
 
 Multiple assigned roles combine additively. Boolean grants are ORed, numeric
 limits use the largest explicit ceiling, and allow-lists are unioned.

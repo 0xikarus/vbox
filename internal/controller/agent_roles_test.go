@@ -69,6 +69,16 @@ func TestValidateAgentRoleCapabilitiesUsesExplicitTypesAndBounds(t *testing.T) {
 	}
 }
 
+func TestRetiredCoordinationToolsAreDroppedFromOlderPolicies(t *testing.T) {
+	request, err := validateAgentBoxPolicy(v1.PutAgentBoxPolicyRequest{Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"request_more_time", "queue_followup", "create_email_address", "click_mouse"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(request.Capabilities.MCPTools.AllowedTools, []string{"click_mouse"}) {
+		t.Fatalf("retired tools survived policy normalization: %v", request.Capabilities.MCPTools.AllowedTools)
+	}
+}
+
 func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 	normal, manager, err := teamRolePresetRequests("normal-role-id")
 	if err != nil {

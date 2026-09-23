@@ -18,11 +18,17 @@ var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_
 var ComputerAgentMCPTools = []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
 
 var OptionalAgentMCPTools = []string{
-	"request_more_time", "queue_followup", "discover_shared_chats", "read_shared_chat", "create_shared_chat",
-	"subscribe_shared_chat", "invite_to_shared_chat", "send_shared_chat_message", "create_email_address",
 	"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
+}
+
+// These previously advertised MCP tools are retired. Keep recognizing their
+// names when an older saved role or policy is edited, but never grant them.
+var RetiredCoordinationMCPTools = map[string]bool{
+	"request_more_time": true, "queue_followup": true, "discover_shared_chats": true,
+	"read_shared_chat": true, "create_shared_chat": true, "subscribe_shared_chat": true,
+	"invite_to_shared_chat": true, "send_shared_chat_message": true, "create_email_address": true,
 }
 
 // CanonicalAgentMCPToolName translates names emitted by the pre-merge role UI

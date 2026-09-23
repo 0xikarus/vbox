@@ -1860,8 +1860,8 @@
  function populatePolicyEditor(box,cap={}){
   const form=$('#role-editor-form');form.reset();form.elements.id.value=box.id;form.elements.name.value=box.name;
   const set=(name,value)=>{if(value===undefined||value===null)return;const input=form.elements[name];if(input.type==='number'&&input.min!==''&&Number(value)<Number(input.min))return;input.value=String(value)};
-  form.elements.allContactsEnabled.checked=!!cap.allContacts?.enabled;set('maxExtensionMinutes',cap.requestMoreTime?.maxExtensionMinutes);set('maxTotalMinutes',cap.requestMoreTime?.maxTotalMinutes);set('maxDelayMinutes',cap.queueFollowup?.maxDelayMinutes);set('maxPending',cap.queueFollowup?.maxPending);set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);
-  const allowedAgents=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowedAgents.size||allowedAgents.has(input.value));set('maxAddresses',cap.createEmailAddress?.maxAddresses);set('emailDomains',(cap.createEmailAddress?.domains||[]).join(', '));set('emailAddressTypes',(cap.createEmailAddress?.addressTypes||[]).join(', '));
+  form.elements.allContactsEnabled.checked=!!cap.allContacts?.enabled;set('maxBoxes',cap.createAgentBox?.maxBoxes);set('maxDiskGiB',cap.createAgentBox?.maxDiskGiB);
+  const allowedAgents=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowedAgents.size||allowedAgents.has(input.value));
   const allowedMCP=new Set(cap.mcpTools?.enabled?(cap.mcpTools.allowedTools||[]):[]);form.querySelectorAll('input[name=mcpTools]').forEach(input=>input.checked=allowedMCP.has(input.value));form.querySelectorAll('.role-capability-options').forEach(details=>details.open=false);syncMCPToolGroups(form);$('#role-editor-modal').hidden=false;
  }
  function permissionBoxes(){return [...boxes.values()].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))}
@@ -1894,9 +1894,9 @@
   }catch(e){$('#role-editor-status').textContent=e.message}
  }
  function directPolicyBody(form){
-  const f=form.elements,csv=value=>value.split(',').map(item=>item.trim()).filter(Boolean),num=name=>Number.parseInt(f[name].value,10)||0,allowedTools=[...form.querySelectorAll('input[name=mcpTools]:checked')].map(input=>input.value),hasTool=name=>allowedTools.includes(name);
-  const chosenAgents=[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value),domains=csv(f.emailDomains.value),addressTypes=csv(f.emailAddressTypes.value);
-  return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},requestMoreTime:{enabled:hasTool('request_more_time'),maxExtensionMinutes:num('maxExtensionMinutes'),maxTotalMinutes:num('maxTotalMinutes')},queueFollowup:{enabled:hasTool('queue_followup'),maxDelayMinutes:num('maxDelayMinutes'),maxPending:num('maxPending')},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box'),tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box'),delete:hasTool('delete_agent_box')},createEmailAddress:{enabled:hasTool('create_email_address')&&domains.length>0&&addressTypes.length>0,maxAddresses:num('maxAddresses'),domains,addressTypes},sharedChats:{discover:hasTool('discover_shared_chats'),read:hasTool('read_shared_chat')||hasTool('send_shared_chat_message'),subscribe:hasTool('subscribe_shared_chat'),create:hasTool('create_shared_chat'),invite:hasTool('invite_to_shared_chat')},mcpTools:{enabled:true,allowedTools}}};
+  const f=form.elements,num=name=>Number.parseInt(f[name].value,10)||0,allowedTools=[...form.querySelectorAll('input[name=mcpTools]:checked')].map(input=>input.value),hasTool=name=>allowedTools.includes(name);
+  const chosenAgents=[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value);
+  return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box'),tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
  }
  $('#roles-toggle').onclick=()=>void openPermissionsModal();
  $('#inspect-edit-roles').onclick=()=>void openBoxPolicyEditor(selected);

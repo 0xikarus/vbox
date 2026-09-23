@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
@@ -102,6 +105,29 @@ func chatEventJSON(t *testing.T, event boxruntime.ChatEvent) string {
 
 func chatTestServer(store *Store) *Server {
 	return &Server{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+}
+
+func TestChatReadyDirectEventConfirmsStoredReply(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(restartTestBoxRow())
+	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").WithArgs("account-a", "box-1").WillReturnRows(restartTestTaskRow("task-1", "active"))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "task-1", "chat-key-1").
+		WillReturnRows(boxMessageRow("message-1", "task-1", "user-a", "user", "hello", "delivered"))
+	mock.ExpectQuery("FROM box_messages").WithArgs("account-a", "agent-reply:message-1").
+		WillReturnRows(boxMessageRow("reply-1", "task-1", "", "agent", "answer", "delivered"))
+	mock.ExpectExec("UPDATE box_tasks SET agent_busy=false").WithArgs("account-a", "task-1", "message-1").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	r := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/chat-ready", strings.NewReader(`{"session":"opencode-one","event":{"id":"0123456789ab","kind":"reply","replyTo":"chat-key-1","text":"answer"}}`))
+	r.SetPathValue("id", "box-1")
+	w := httptest.NewRecorder()
+	chatTestServer(store).agentChatReadyHandler(w, r, Principal{AccountID: "account-a", UserID: "user-a", Role: "desktop-agent"})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"stored":true`) {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestPullStructuredAgentReplyDrainsExpiredEventBeforeMatchingReply is the
