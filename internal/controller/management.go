@@ -255,6 +255,12 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		if err != nil {
 			return response, fmt.Errorf("check active chat session: %w", err)
 		}
+		if !missing && selected.Agent == "codex" {
+			missing, err = codexTaskPaneExited(ctx, prov, assignment.Slot.ServiceID, *selected)
+			if err != nil {
+				return response, fmt.Errorf("check active Codex pane: %w", err)
+			}
+		}
 		if missing {
 			if err := s.Store.failMissingTask(ctx, p.AccountID, *selected, assignment.Box); err != nil {
 				return response, fmt.Errorf("retire closed chat session: %w", err)

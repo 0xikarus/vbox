@@ -388,6 +388,38 @@ func taskSessionMissing(ctx context.Context, prov provider.Provider, serviceID, 
 	return false, fmt.Errorf("tmux session probe failed with status %d", result.ExitCode)
 }
 
+// tmux can keep a managed session after its Codex process has exited. A plain
+// has-session probe then files new messages under a dead task, where delivery
+// times out waiting for a composer. Retire only a demonstrably dead pane or a
+// long-lived task whose pane has fallen back to a shell; a starting harness
+// may briefly show a shell before the TUI appears.
+func codexTaskPaneExited(ctx context.Context, prov provider.Provider, serviceID string, task v1.BoxTask) (bool, error) {
+	result, err := prov.Exec(ctx, serviceID, []string{"tmux", "display-message", "-p", "-t", "=" + task.Session + ":0.0", "#{pane_dead}\t#{pane_current_command}"}, provider.ExecOptions{})
+	if err != nil {
+		return false, err
+	}
+	if result.ExitCode != 0 {
+		if strings.Contains(result.Stderr, "can't find pane") || strings.Contains(result.Stderr, "can't find session") {
+			return true, nil
+		}
+		return false, fmt.Errorf("Codex pane probe failed with status %d", result.ExitCode)
+	}
+	fields := strings.SplitN(strings.TrimSpace(result.Stdout), "\t", 2)
+	if len(fields) != 2 {
+		return false, fmt.Errorf("Codex pane probe returned incomplete state")
+	}
+	if fields[0] == "1" {
+		return true, nil
+	}
+	command := strings.TrimSpace(fields[1])
+	switch command {
+	case "bash", "sh", "zsh", "fish":
+		return time.Since(task.CreatedAt) > 30*time.Second, nil
+	default:
+		return false, nil
+	}
+}
+
 func (s *Server) createBoxTaskHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	var request v1.CreateBoxTaskRequest
 	if err := decodeJSON(r, &request); err != nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/provider"
@@ -61,5 +62,35 @@ func TestMissingTaskUpdateIsScopedAndFenced(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCodexTaskPaneExited(t *testing.T) {
+	task := v1.BoxTask{Session: "codex-one", CreatedAt: time.Now().Add(-time.Hour)}
+	for _, tc := range []struct {
+		name, stdout, stderr string
+		code                 int
+		want                 bool
+	}{
+		{"running", "0\tnode\n", "", 0, false},
+		{"dead pane", "1\tnode\n", "", 0, true},
+		{"fell back to shell", "0\tbash\n", "", 0, true},
+		{"pane vanished", "", "can't find pane", 1, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &sessionProbeProvider{result: provider.ExecResult{Stdout: tc.stdout, Stderr: tc.stderr, ExitCode: tc.code}}
+			dead, err := codexTaskPaneExited(context.Background(), p, "slot", task)
+			if err != nil || dead != tc.want {
+				t.Fatalf("dead=%v err=%v", dead, err)
+			}
+			if !reflect.DeepEqual(p.argv, []string{"tmux", "display-message", "-p", "-t", "=codex-one:0.0", "#{pane_dead}\t#{pane_current_command}"}) {
+				t.Fatalf("argv=%v", p.argv)
+			}
+		})
+	}
+	task.CreatedAt = time.Now()
+	p := &sessionProbeProvider{result: provider.ExecResult{Stdout: "0\tbash\n"}}
+	if dead, err := codexTaskPaneExited(context.Background(), p, "slot", task); err != nil || dead {
+		t.Fatalf("new task shell must not be retired: %v %v", dead, err)
 	}
 }
