@@ -373,13 +373,23 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	if err := RecoverCodexMCPStartup(ctx, session); err != nil {
 		return err
 	}
-	// Follow-ups all use the same native app-server path. This keeps ordinary
-	// text and structured images ordered on one thread without screen-scraping or
-	// typing prompts into tmux.
-	if err := CodexStartTurn(ctx, session, root, WorkspaceDirectory(), event.Text, event.Paths); err != nil {
-		return err
+	// An app-server turn from a second client can run in a thread that the
+	// remote TUI never selects or renders. Deliver through the visible composer
+	// so Chat, TMUX and Desktop remain one conversation.
+	return deliverCodexThroughTUI(ctx, root, session, codexVisiblePrompt(event), path)
+}
+
+func codexVisiblePrompt(event chatInboundFile) string {
+	if len(event.Paths) == 0 {
+		return event.Text
 	}
-	return os.Remove(path)
+	var prompt strings.Builder
+	prompt.WriteString(event.Text)
+	prompt.WriteString("\n\nAttached images are saved locally. Open each with the image-viewing tool before replying:\n")
+	for index, path := range event.Paths {
+		fmt.Fprintf(&prompt, "%d. %s\n", index+1, path)
+	}
+	return prompt.String()
 }
 
 // StartCodexChat starts a new interactive Codex session with the first Agent
@@ -451,6 +461,9 @@ func deliverCodexThroughTUI(ctx context.Context, root, session, prompt, eventPat
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err
 	}
+	if err := ensureCodexEmptyComposer(ctx, session); err != nil {
+		return err
+	}
 	// Codex 0.155 ignores tmux bracketed paste, which DeliverTmuxInput uses and
 	// Claude accepts, so the text is sent as literal keys instead. Chunking is
 	// required because tmux rejects an individual command around 16 KiB.
@@ -465,6 +478,23 @@ func deliverCodexThroughTUI(ctx context.Context, root, session, prompt, eventPat
 		return err
 	}
 	return os.Remove(eventPath)
+}
+
+func ensureCodexEmptyComposer(ctx context.Context, session string) error {
+	content, err := tmuxCommand(ctx, "", "capture-pane", "-p", "-J", "-t", session)
+	if err != nil {
+		return err
+	}
+	text := string(content)
+	index := strings.LastIndex(text, "›")
+	if index < 0 {
+		return fmt.Errorf("Codex composer is not visible")
+	}
+	line := strings.TrimSpace(strings.SplitN(text[index+len("›"):], "\n", 2)[0])
+	if line != "" && !strings.HasPrefix(line, "Ask Codex") {
+		return fmt.Errorf("Codex composer contains unsent input; finish or clear it in TMUX before sending chat")
+	}
+	return nil
 }
 
 var runCodexQueue = func(ctx context.Context, home, eventPath string, args []string) error {

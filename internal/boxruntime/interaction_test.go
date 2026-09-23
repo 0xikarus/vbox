@@ -556,13 +556,9 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
-			freshThreads := 0
 			CodexStartFreshThread = func(context.Context, string) (string, error) {
-				freshThreads++
-				if freshThreads == 1 {
-					return "", io.ErrUnexpectedEOF
-				}
-				return "thread-new", nil
+				t.Fatal("Codex reset started an app-server thread separate from the visible TUI")
+				return "", nil
 			}
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
@@ -593,15 +589,10 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			if !reflect.DeepEqual(inputs, test.want) {
 				t.Fatalf("idempotent retry replayed terminal input: %q", inputs)
 			}
-			if test.agent == "codex" && freshThreads != 2 {
-				t.Fatalf("fresh thread starts = %d, want 2", freshThreads)
-			}
 			if test.agent == "codex" {
-				if data, err := os.ReadFile(codexThreadFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "thread-new" {
-					t.Fatalf("fresh thread was not remembered: %q %v", data, err)
-				}
-				if data, err := os.ReadFile(codexResetPendingFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "thread-new" {
-					t.Fatalf("first post-clear turn was not pinned to the fresh thread: %q %v", data, err)
+				path := filepath.Join(root, "chat", "codex-reset-threads-v2", "reset-message")
+				if data, err := os.ReadFile(path); err != nil || strings.TrimSpace(string(data)) != "visible-tui" {
+					t.Fatalf("reset marker was not saved: %q %v", data, err)
 				}
 			}
 		})

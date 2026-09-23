@@ -109,7 +109,7 @@ The web workspace's **Agent chat** starts the selected managed agent when no
 reusable session exists. OpenCode starts a bare visible TUI, then receives its
 first message through the same native loopback bridge as later messages,
 including structured image attachments. Later messages enter the running client
-through Codex queue, Claude channel, or OpenCode's loopback API. OpenCode
+through the visible Codex TUI, Claude channel, or OpenCode's loopback API. OpenCode
 sessions auto-approve permission asks by default unless their configuration
 explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
@@ -160,7 +160,7 @@ cannot widen an agent's reach. A box needs no role to chat with its owner.
 | --- | --- | --- | --- |
 | First message starts an empty visible TUI | Yes | Yes, through a channel | Yes, through the native visible-TUI bridge |
 | Follow-ups reuse the same native task/thread | Yes | Yes | Yes |
-| **Clear context** keeps the watched session usable | App-server thread + native `/resume` | Respawns Claude with a new channel | Native `/new` |
+| **Clear context** keeps the watched session usable | Native `/new` in the visible TUI | Respawns Claude with a new channel | Native `/new` |
 | Old process cleanup when a respawn is required | Not applicable | Old Claude tree is terminated | Not applicable |
 | `chat_message`, `chat_ask`, `set_busy`, and contact routing | Yes | Yes | Yes |
 | Desktop screenshot, mouse, keyboard, and typing tools | Yes | Yes | Yes |
@@ -169,9 +169,9 @@ cannot widen an agent's reach. A box needs no role to chat with its owner.
 | Agent exchange remains visible in TMUX/VNC | Yes | Yes | Yes |
 
 Codex and OpenCode clear their model context without killing a healthy TUI.
-Codex creates the fresh thread through app-server and resumes the watched TUI
-onto that exact thread so later API-delivered prompts cannot fall back to the
-previous conversation.
+Codex creates the fresh thread in the watched TUI when the next prompt arrives.
+Chat follow-ups enter that visible composer; they do not create a parallel
+app-server conversation.
 Claude has no equivalent channel reset, so clearing it replaces the Claude
 process and waits for the new channel before accepting another chat message.
 
