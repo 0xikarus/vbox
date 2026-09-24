@@ -41,6 +41,10 @@ func codexResetPendingFile(root, session string) string {
 	return filepath.Join(root, "chat", "codex-reset-pending", session)
 }
 
+func codexFreshUsedFile(root, session string) string {
+	return filepath.Join(root, "chat", "codex-fresh-used", session)
+}
+
 // codexClient is one connection to a session's app server.
 type codexClient struct {
 	conn   *websocket.Conn
@@ -137,18 +141,16 @@ func (c *codexClient) call(ctx context.Context, method string, params any) (map[
 	return c.await(ctx, id)
 }
 
-// CodexCurrentThread reports the most recently active thread for the workspace.
-// The first turn after Clear must use the newly created, still idle thread:
-// thread/list may report the invalidated old thread as more recently active.
-// After that turn starts, normal recency selection resumes.
+// CodexCurrentThread reports the most recently active persisted thread for the
+// workspace. A new TUI's first message must enter its visible pane first;
+// thread/list can omit that idle thread and still return old rollouts.
 func CodexCurrentThread(ctx context.Context, client *codexClient, root, session, workspace string) (string, error) {
-	visibleReset := false
 	if data, err := os.ReadFile(codexResetPendingFile(root, session)); err == nil {
 		if id := strings.TrimSpace(string(data)); id != "" {
-			if id != "visible-tui" {
-				return id, nil
+			if id == "visible-tui" {
+				return "", fmt.Errorf("fresh Codex TUI needs its first message through the visible pane")
 			}
-			visibleReset = true
+			return id, nil
 		}
 	} else if !os.IsNotExist(err) {
 		return "", err
@@ -163,28 +165,11 @@ func CodexCurrentThread(ctx context.Context, client *codexClient, root, session,
 	}
 	threads, _ := result["data"].([]any)
 	newest := newestCodexThread(threads, remembered)
-	if visibleReset {
-		newest = newestCreatedCodexThread(threads)
-	}
 	if newest != "" {
 		return newest, rememberCodexThread(root, session, newest)
 	}
 	// A new thread created here would not be attached to the visible TUI.
 	return "", fmt.Errorf("visible Codex thread is not available yet")
-}
-
-func newestCreatedCodexThread(threads []any) string {
-	var newest string
-	var created float64
-	for _, value := range threads {
-		thread, _ := value.(map[string]any)
-		id, _ := thread["id"].(string)
-		at, _ := thread["createdAt"].(float64)
-		if id != "" && (newest == "" || at > created) {
-			newest, created = id, at
-		}
-	}
-	return newest
 }
 
 func newestCodexThread(threads []any, remembered string) string {
@@ -221,43 +206,56 @@ func rememberCodexThread(root, session, id string) error {
 	return writeTextAtomic(codexThreadFile(root, session), id+"\n", 0600)
 }
 
-// startVisibleCodexThread binds a new or restored managed TUI to a known
-// app-server thread before it accepts Chat messages. An idle remote TUI's
-// zero-turn thread may not appear in thread/list, while old rollouts do; using
-// list recency after wake can therefore enqueue Chat into an unseen thread.
-func startVisibleCodexThread(ctx context.Context, root, session string) ([]string, error) {
-	id, err := CodexStartFreshThread(ctx, session)
-	if err != nil {
-		return nil, err
+// A new remote TUI owns a zero-turn thread that Codex may not have persisted
+// yet. Record its birth rather than starting an app-server thread from a second
+// client: a second client's zero-turn ID can disappear before the TUI attaches.
+func markFreshCodexTUI(root, session string) error {
+	if err := writeTextAtomic(codexResetPendingFile(root, session), "visible-tui\n", 0600); err != nil {
+		return err
 	}
-	if err := rememberCodexThread(root, session, id); err != nil {
-		return nil, err
+	if err := os.Remove(codexFreshUsedFile(root, session)); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
-		return nil, err
+	if err := os.Remove(codexThreadFile(root, session)); err != nil && !os.IsNotExist(err) {
+		return err
 	}
-	return codexRemoteResumeArgv(session, id), nil
+	return nil
 }
 
-// CodexStartFreshThread materializes a thread after the TUI's /new command.
-// The remote TUI may invalidate its old thread before it creates another, so
-// waiting for thread/list to grow can leave the next chat on a missing ID.
-var CodexStartFreshThread = func(ctx context.Context, session string) (string, error) {
+// codexRecentRolloutThread finds a thread with an actual rollout modified
+// since the fresh TUI appeared. A zero-turn ID returned by thread/list alone
+// cannot accept queue/add on Codex releases that have not persisted it yet.
+var codexRecentRolloutThread = func(ctx context.Context, session, home string, since time.Time) (string, error) {
 	client, err := dialCodexAppServer(ctx, session)
 	if err != nil {
 		return "", err
 	}
 	defer client.Close()
-	result, err := client.call(ctx, "thread/start", map[string]any{"cwd": WorkspaceDirectory()})
+	result, err := client.call(ctx, "thread/list", map[string]any{})
 	if err != nil {
 		return "", err
 	}
-	thread, _ := result["thread"].(map[string]any)
-	id, _ := thread["id"].(string)
-	if id == "" {
-		return "", fmt.Errorf("codex app server returned no fresh thread")
+	threads, _ := result["data"].([]any)
+	newest := ""
+	var newestAt time.Time
+	for _, value := range threads {
+		thread, _ := value.(map[string]any)
+		id, _ := thread["id"].(string)
+		if id == "" {
+			continue
+		}
+		paths, err := filepath.Glob(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "rollout-*-"+id+".jsonl"))
+		if err != nil {
+			return "", err
+		}
+		for _, path := range paths {
+			info, err := os.Stat(path)
+			if err == nil && info.ModTime().After(since) && info.ModTime().After(newestAt) {
+				newest, newestAt = id, info.ModTime()
+			}
+		}
 	}
-	return id, nil
+	return newest, nil
 }
 
 // CodexStartTurn sends one message to the thread the terminal is showing and
