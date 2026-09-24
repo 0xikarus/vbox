@@ -768,14 +768,14 @@ while Normal gets computer-use tools and relies on its box's direct contacts.
 Owners may rename or replace them, assign roles to boxes, and select initial
 roles during box creation from either the controller or the chat app.
 
-A box with `create_agent_box` permission can call `get_agent_box_configs {}` to
+A box with `create_agent_box` permission can call `get_agent_box_configs {"mode":"list"}` to
 see which saved login profiles, agent types, and initial roles it may use. It
 can then pass `loginProfiles` and `roleIds` to `create_agent_box`. For example,
 `{"name":"researcher","agent":"opencode","loginProfiles":[{"application":"opencode","name":"venice"}],"roleIds":["NORMAL_ROLE_ID"],"idempotencyKey":"researcher-1"}`
 imports the named OpenCode profile and assigns the owner-approved role. The
 profile's saved model is used unless the reference includes a `model` override;
 `reasoningEffort` can accompany an override. A second GitHub profile is optional.
-`get_agent_box_configs {"application":"opencode","name":"venice"}` reads that
+`get_agent_box_configs {"mode":"models","application":"opencode","name":"venice"}` reads that
 profile's live model choices. Omitting `loginProfiles` imports no saved login.
 
 ## Optional tools
