@@ -5,6 +5,7 @@
  const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  const resumeChecks=new Map();
  let selected='',selectedPair='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
  const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
@@ -1084,7 +1085,7 @@
    boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id);attachmentDrafts.delete(id);
   }
   for(const [id,b] of current)boxes.set(id,b);
-  if(selected&&!boxes.has(selected)){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
+  if(selected&&!boxes.has(selected)){selected='';selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
   await loadPreviews(force);
   if(owner)try{await loadPairs()}catch(e){if(selectedPair)statusEl.textContent='Could not refresh box conversations: '+e.message}
   if(selected)applySeen(selected);
@@ -1209,7 +1210,7 @@
  }
  async function openPair(key){
   const pair=pairs.get(key);if(!pair)return;
-  viewEpoch++;selected='';selectedPair=key;lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
+  viewEpoch++;selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   stickToBottom=scrollMemory.get('pair:'+key)==null;
@@ -1267,6 +1268,7 @@
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
   if(selected!==id)cancelReply();selected=id;lastSignature='';hideComposerPicker();
+  selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
   const savedScroll=scrollMemory.get(id);
@@ -2150,8 +2152,8 @@
  $('#logout').onclick=async()=>{
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);
   $('#usage-modal').hidden=true;
-  usageGeneration++;usagePending=null;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
-  $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';owner=false;
+  usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
+  $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';$('#chat-usage').hidden=true;owner=false;
   closeTakeover();
   inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
@@ -2191,6 +2193,33 @@
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
  function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
  function remainingPercent(used){return typeof used==='number'&&Number.isFinite(used)?Math.max(0,Math.min(100,100-used)):null}
+ function lowestRemaining(profile){
+  const remaining=(profile?.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent)).filter(value=>value!==null);
+  return remaining.length?Math.min(...remaining):null;
+ }
+ function renderChatUsage(){
+  const button=$('#chat-usage');
+  const ref=selectedUsageProfile;
+  button.hidden=!owner||!selected||!ref||!usageLoaded;
+  if(button.hidden)return;
+  const profile=usageProfiles.find(item=>item.application===ref.application&&item.name===ref.name);
+  const lowest=lowestRemaining(profile);
+  const label=mk('span','Usage · ');label.className='chat-usage-label';
+  button.replaceChildren(label,mk('span',lowest===null?'unavailable':usageNumber(lowest)+'% left'));
+  button.setAttribute('aria-label',ref.application+' '+ref.name+' usage: '+(lowest===null?'remaining unavailable':usageNumber(lowest)+'% remaining'));
+  button.title=ref.application+' · '+ref.name+(lowest===null?' · No remaining usage reported':' · Lowest reported remaining window: '+usageNumber(lowest)+'%. Open this profile’s usage details.');
+  button.classList.toggle('usage-low',lowest!==null&&lowest<=20);
+ }
+ async function loadChatUsageProfile(id){
+  const request=++chatUsageRequest;
+  try{
+   const state=await api(boxPath(id)+'/imported-credentials');
+   if(request!==chatUsageRequest||selected!==id||!owner)return;
+   const agent=boxes.get(id)?.defaultAgent;
+   selectedUsageProfile=(state.profiles||[]).find(ref=>ref.application===agent&&['claude','codex','opencode'].includes(ref.application))||null;
+  }catch{if(request!==chatUsageRequest||selected!==id||!owner)return;selectedUsageProfile=null}
+  renderChatUsage();
+ }
  function renderUsageSummary(profiles){
   const remaining=profiles.flatMap(profile=>(profile.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent))).filter(value=>value!==null);
   const lowest=remaining.length?Math.min(...remaining):null,button=$('#usage-toggle');
@@ -2201,9 +2230,14 @@
  function renderUsage(data){
   const root=$('#usage-list');root.replaceChildren();
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
+  usageProfiles=profiles;
+  if(data?.loaded)usageLoaded=true;
   renderUsageSummary(profiles);
-  if(!profiles.length){root.append(mk('p','No saved agent profiles yet.'));return}
-  for(const profile of profiles){
+  renderChatUsage();
+  $('#usage-title').textContent=usageScope?'Profile usage · '+usageScope.application+' · '+usageScope.name:'Profile usage limits';
+  const visible=usageScope?profiles.filter(profile=>profile.application===usageScope.application&&profile.name===usageScope.name):profiles;
+  if(!visible.length){root.append(mk('p',usageScope?'No usage data for this chat’s profile yet.':'No saved agent profiles yet.'));return}
+  for(const profile of visible){
    const card=mk('article');card.className='usage-profile';
    const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
    const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
@@ -2242,10 +2276,11 @@
   if(usagePending)return usagePending;
   const status=$('#usage-status');if(!$('#usage-modal').hidden)status.textContent='Loading…';
   const generation=usageGeneration;
-  const pending=api('/v1/profile-usage').then(data=>{if(generation!==usageGeneration||!owner)return;renderUsage(data);status.textContent=''}).catch(error=>{if(generation===usageGeneration&&!$('#usage-modal').hidden)status.textContent=error.message}).finally(()=>{if(usagePending===pending)usagePending=null});
+  const pending=api('/v1/profile-usage').then(data=>{if(generation!==usageGeneration||!owner)return;renderUsage({...data,loaded:true});status.textContent=''}).catch(error=>{if(generation===usageGeneration&&!$('#usage-modal').hidden)status.textContent=error.message}).finally(()=>{if(usagePending===pending)usagePending=null});
   usagePending=pending;return pending;
  }
- $('#usage-toggle').onclick=()=>{if(!owner)return;closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
+ $('#usage-toggle').onclick=()=>{if(!owner)return;usageScope=null;renderUsage({profiles:usageProfiles});closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
+ $('#chat-usage').onclick=()=>{if(!owner||!selectedUsageProfile)return;usageScope={...selectedUsageProfile};renderUsage({profiles:usageProfiles});closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
  $('#usage-refresh').onclick=()=>void refreshUsage();
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshUsage()});
 
@@ -2606,6 +2641,7 @@
    const result=await api(boxPath(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
    status.textContent=result.note||'Saved.';
    $('#box-credentials-current').textContent=(result.profiles||[]).length?'Imported: '+(result.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', ')+'.':'No imported login profiles recorded.';
+   if(selected===boxCredentialTarget.id){const agent=boxes.get(selected)?.defaultAgent;selectedUsageProfile=(result.profiles||[]).find(ref=>ref.application===agent&&['claude','codex','opencode'].includes(ref.application))||null;chatUsageRequest++;renderChatUsage()}
    if(inspectOpen&&selected===boxCredentialTarget.id){inspectProfilesFor='';maybeLoadInspectProfiles(boxCredentialTarget)}
    toast('Login profiles updated for '+boxCredentialTarget.name+'.');
   }catch(e){status.textContent=e.message}

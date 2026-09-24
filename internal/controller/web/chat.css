@@ -80,7 +80,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .conversation-group:hover{background:none!important}
 .pair-avatar{flex:none;display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-size:1.45rem;font-weight:800}
 #chat-entries li[data-pair-key] .chat-meta .name{font-size:.86rem}
-#chat-conversation.pair-view #chat-composer,#chat-conversation.pair-view #chat-image-drafts,#chat-conversation.pair-view #reply-preview,#chat-conversation.pair-view #chat-wake,#chat-conversation.pair-view #chat-clear-context,#chat-conversation.pair-view #chat-control,#chat-conversation.pair-view #chat-info,#chat-conversation.pair-view #chat-workspace,#chat-conversation.pair-view #chat-more,#chat-conversation.pair-view #chat-more-menu{display:none!important}
+#chat-conversation.pair-view #chat-composer,#chat-conversation.pair-view #chat-image-drafts,#chat-conversation.pair-view #reply-preview,#chat-conversation.pair-view #chat-usage,#chat-conversation.pair-view #chat-wake,#chat-conversation.pair-view #chat-clear-context,#chat-conversation.pair-view #chat-control,#chat-conversation.pair-view #chat-info,#chat-conversation.pair-view #chat-workspace,#chat-conversation.pair-view #chat-more,#chat-conversation.pair-view #chat-more-menu{display:none!important}
 #chat-conversation.pair-view #chat-header>.spacer{display:none}
 #chat-conversation.pair-view #chat-header-text{flex:1}
 #chat-conversation.pair-view #chat-header-text strong{white-space:normal;overflow-wrap:anywhere}
@@ -148,6 +148,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-header button{border:1px solid var(--line);background:var(--surface2);color:var(--ink);
   border-radius:var(--radius-sm);min-height:2.2rem;padding:.3rem .7rem;cursor:pointer;margin:0;font-size:.78rem;font-weight:700}
 #chat-header button:hover{background:var(--accent-soft);border-color:var(--accent)}
+#chat-header #chat-usage{white-space:nowrap;color:var(--ok-text);border-color:var(--ok);background:var(--surface2)}
+#chat-header #chat-usage.usage-low{color:var(--warn-text);border-color:var(--warn)}
 #chat-workspace{font-size:.82rem;white-space:nowrap;color:var(--accent-text);font-weight:700}
 
 #chat-messages{flex:1;overflow-y:auto;overflow-x:hidden;padding:.7rem clamp(.4rem,2.4vw,1.3rem) .5rem;
@@ -1015,6 +1017,8 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
  #chat-header-text{flex:1}
  #chat-header-text strong{font-size:.87rem}
  #chat-header-state{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:11rem;font-size:.67rem}
+ #chat-usage .chat-usage-label{display:none}
+ #chat-header #chat-usage{font-size:.68rem;padding:.35rem .5rem}
  #chat-header #chat-clear-context,#chat-header #chat-info,#chat-header #chat-control,#chat-header #chat-workspace{display:none}
  #chat-header #chat-wake:not([hidden]){display:block;font-size:.7rem}
  #chat-more{display:block}
