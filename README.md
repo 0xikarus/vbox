@@ -144,8 +144,8 @@ box setting.
 Agents can also address each other through owner-managed direct contacts.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
 accept an optional `contact`; the message is delivered into that box's same
-native conversation, while the owner reads the direct exchange in the separate
-**Box ↔ Box** view in chats or the controller. `chat_message` can attach images
+native conversation, while the owner reads the direct exchange alongside agent
+chats in the controller's **Chats** list. `chat_message` can attach images
 to contact messages with the same `files` argument used for owner replies.
 Enabled mobile web push notifications open the relevant owner or box conversation. Owners
 choose each box's directional direct contacts. A role may add the explicit

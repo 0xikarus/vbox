@@ -117,7 +117,7 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  assert.equal(await page.$$('#profile-tree .profile-app').then(cards=>cards.length),4);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.click('.workspace-links a[href="#boxes"]');
- assert.equal(await page.$eval('body',body=>body.dataset.manageView),'boxes');
+ await page.waitForFunction(()=>document.body.dataset.manageView==='boxes');
  await page.close();
 });
 test('direct per-box permissions can be edited without a role matrix',async()=>{

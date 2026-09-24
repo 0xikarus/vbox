@@ -32,11 +32,6 @@ body{max-width:none;margin:0;padding:0;height:100%;
   position:relative;z-index:20}
 #chat-top .brand{font-weight:800;font-size:1.05rem;letter-spacing:-.01em}
 #chat-top .brand span{color:var(--accent-text);font-weight:700}
-.chat-scope-tabs{display:flex;gap:.25rem;margin-left:.6rem}
-.chat-scope-tabs a{padding:.4rem .6rem;border-radius:var(--radius-sm);color:var(--ink-soft);text-decoration:none;font-size:.82rem;font-weight:700;white-space:nowrap}
-.chat-scope-tabs a[aria-current="page"]{background:var(--accent-soft);color:var(--accent-text)}
-.chat-scope-tabs a:hover{color:var(--ink);background:var(--surface2)}
-@media(max-width:560px){.chat-scope-tabs{margin-left:0}.chat-scope-tabs a{padding:.3rem .4rem;font-size:.72rem}}
 #chat-top .spacer{flex:1}
 #chat-top button{flex:none;border:1px solid var(--line);background:var(--surface2);color:var(--ink);
   border-radius:var(--radius-sm);min-width:2.4rem;min-height:2.4rem;padding:.3rem .7rem;font:inherit;font-size:.85rem;
@@ -78,6 +73,17 @@ body{max-width:none;margin:0;padding:0;height:100%;
   border-radius:var(--radius);border:1px solid transparent;position:relative;transition:background .14s,border-color .14s}
 #chat-entries li:hover{background:var(--surface2)}
 #chat-entries li.active{background:var(--surface);border-color:var(--accent);box-shadow:var(--shadow)}
+.conversation-group{padding:.9rem .7rem .35rem!important;cursor:default!important;border:0!important;color:var(--ink-soft);font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.conversation-group:hover{background:none!important}
+.pair-avatar{flex:none;display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-size:1.45rem;font-weight:800}
+#chat-entries li[data-pair-key] .chat-meta .name{font-size:.86rem}
+#chat-conversation.pair-view #chat-composer,#chat-conversation.pair-view #chat-image-drafts,#chat-conversation.pair-view #reply-preview,#chat-conversation.pair-view #chat-wake,#chat-conversation.pair-view #chat-clear-context,#chat-conversation.pair-view #chat-control,#chat-conversation.pair-view #chat-info,#chat-conversation.pair-view #chat-workspace,#chat-conversation.pair-view #chat-more,#chat-conversation.pair-view #chat-more-menu{display:none!important}
+#chat-conversation.pair-view #chat-header>.spacer{display:none}
+#chat-conversation.pair-view #chat-header-text{flex:1}
+#chat-conversation.pair-view #chat-header-text strong{white-space:normal;overflow-wrap:anywhere}
+#chat-conversation.pair-view #chat-header-state{max-width:none;white-space:normal}
+#chat-conversation.pair-view .msg.user .agent-origin{text-align:right;color:#c6ddf3}
+#chat-conversation.pair-view #chat-status{padding:.55rem 1rem;color:var(--ink-soft);border-top:1px solid var(--line)}
 .row-state{flex:none;font-size:.62rem;font-weight:800;letter-spacing:.02em;text-transform:uppercase;
   padding:.08rem .36rem;border-radius:var(--radius-sm);color:var(--ink);
   background:var(--surface2);border:1px solid transparent}
@@ -878,9 +884,6 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 #chat-top .workspace-links a{padding:.45rem .7rem;border-radius:var(--radius-sm);color:var(--ink-soft);font-size:.77rem;font-weight:650;text-decoration:none;white-space:nowrap}
 #chat-top .workspace-links a:hover,#chat-top .workspace-links a[aria-current="page"]{background:var(--accent-soft);color:var(--ink)}
 #chat-menu{font-size:1.15rem!important}
-.chat-scope-tabs{margin-left:1.2rem;gap:.2rem}
-.chat-scope-tabs a{font-size:.81rem;padding:.48rem .78rem;border-radius:var(--radius)}
-.chat-scope-tabs a[aria-current="page"]{background:var(--accent-soft);color:var(--ink)}
 #chat-top button,#chat-header button{border-radius:var(--radius-sm);font-weight:650}
 #chat-app{background:var(--bg)}
 #chat-list{background:var(--surface);border-right:1px solid var(--line)}
@@ -994,7 +997,6 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
  #chat-top .brand{font-size:.9rem}
  #chat-top .workspace-links{order:2;flex:0 0 100%;margin:0;overflow-x:auto}
  #chat-top .workspace-links a{padding:.33rem .55rem;font-size:.72rem}
- .chat-scope-tabs{display:none}
  #chat-header{min-height:3.8rem;padding:.4rem .55rem;gap:.45rem}
  #chat-header-avatar .avatar{width:2.2rem;height:2.2rem}
  #chat-header-text{flex:1}

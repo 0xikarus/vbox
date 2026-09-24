@@ -18,7 +18,6 @@
  <button id="chat-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
  <strong class="brand">vmbox <span>/ chats</span></strong>
  <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a><a href="/#profiles" data-owner-nav>Profiles</a></nav>
- <nav class="chat-scope-tabs" aria-label="Chat view"><a href="/chat" aria-current="page">Owner</a><a href="/box-chats">Box ↔ Box</a></nav>
  <span class="spacer"></span>
  <button id="usage-toggle" type="button" hidden title="Usage limits for active imported profiles">Usage</button>
  <button id="refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
@@ -40,20 +39,20 @@
   <div id="chat-list-head">
    <div>
     <h1>Conversations</h1>
-    <p id="chat-list-sub">Your agent boxes</p>
+    <p id="chat-list-sub">Agent and box conversations</p>
    </div>
    <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
-  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search boxes…" autocomplete="off" aria-label="Search boxes"></div>
+  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"></div>
   <ul id="chat-entries"></ul>
-  <p id="chat-list-empty" hidden>No interactive boxes yet. Create one with the + button above.</p>
+  <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
  </aside>
  <main id="chat-main">
   <section id="chat-empty">
    <div id="chat-empty-mascot" class="mascot-host" aria-hidden="true"></div>
    <div class="empty-copy">
     <h2>vmbox agent chats</h2>
-    <p>One chat per agent box. Pick a box to read its history, steer the agent, or forward messages between boxes.</p>
+    <p>Pick an agent chat or a direct conversation between boxes.</p>
     <p class="hint">Avatars show a live desktop preview while a box is running.</p>
    </div>
   </section>
@@ -354,7 +353,6 @@
    <a href="/#boxes">Boxes</a>
    <a href="/#providers" data-owner-nav>Providers</a>
    <a href="/grid" data-owner-nav>Grid</a>
-   <a href="/box-chats">Box ↔ Box</a>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>

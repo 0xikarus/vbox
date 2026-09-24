@@ -2,9 +2,9 @@
 (()=>{
  const $=s=>document.querySelector(s);
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle'),replyPreview=$('#reply-preview'),threadPanel=$('#thread-panel'),threadMessages=$('#thread-messages');
- const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
+ const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  const resumeChecks=new Map();
- let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let selected='',selectedPair='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
  const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
@@ -690,12 +690,13 @@
   if(m.images?.length)text=(text?text+' ':'')+'📷'.repeat(Math.min(3,m.images.length));
   return who+text;
  }
+ const pairKey=pair=>pair.boxAId+'/'+pair.boxBId;
+ const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter));
   // Keep the list stable: activity must not reshuffle rows under the pointer.
   list.sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
-  $('#chat-list-empty').hidden=list.length>0;
   for(const box of list){
    let row=rows.get(box.id);
    if(!row){
@@ -709,7 +710,7 @@
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
-   row.classList.toggle('active',box.id===selected);
+   row.classList.toggle('active',box.id===selected&&!selectedPair);
    // Make the box state readable at a glance, not just a tiny dot.
    const starting=['creating','attaching','reserved','starting','allocating','restoring','pending'];
    const stateClass=box.state==='running'?'running':box.state==='failed'?'failed':starting.includes(box.state)?'starting':'muted';
@@ -728,7 +729,30 @@
    const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=box.unread>99?'99+':box.unread;
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
-  const desired=list.map(b=>rows.get(b.id));if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
+  const pairList=owner?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)):[];
+  pairList.sort((a,b)=>a.boxAName.localeCompare(b.boxAName)||a.boxBName.localeCompare(b.boxBName));
+  for(const pair of pairList){
+   const key=pairKey(pair);let row=pairRows.get(key);
+   if(!row){
+    row=document.createElement('li');row.dataset.pairKey=key;
+    const avatar=document.createElement('span');avatar.className='pair-avatar';avatar.textContent='↔';avatar.setAttribute('aria-hidden','true');
+    const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
+    const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
+    const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';second.append(badge,preview);
+    meta.append(first,second);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
+   }
+   const name=pair.boxAName+' ↔ '+pair.boxBName;
+   row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
+   row.querySelector('.chat-meta').setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
+   row.classList.toggle('active',key===selectedPair);
+   row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
+   row.querySelector('.preview').textContent=pair.lastText||'No messages yet';
+  }
+  for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
+  const desired=list.map(b=>rows.get(b.id));
+  if(pairList.length)desired.push(pairGroup,...pairList.map(pair=>pairRows.get(pairKey(pair))));
+  $('#chat-list-empty').hidden=desired.length>0;
+  if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
  }
 
  /* ---------- messages ---------- */
@@ -816,13 +840,14 @@
   if(last<text.length)fragment.append(text.slice(last));
   return fragment;
  }
- function bubble(box,message){
+ function bubble(box,message,readOnly=false){
   const row=document.createElement('div');
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
   const mine=message.direction==='user';
   row.className='msg '+(mine?'user':'agent')+(message.state==='silent'?' note':'')+(message.state==='streaming'?' streaming':'');
+  if(message.pairAuthor){const author=document.createElement('span');author.className='agent-origin';author.textContent=message.pairAuthor;row.append(author)}
   if(message.direction==='box'){const origin=document.createElement('span');origin.className='agent-origin';origin.textContent='From '+(boxes.get(message.senderBoxId)?.name||'agent box');row.append(origin)}
-  if(message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?messageAuthor(parent)+': ':'')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
+  if(!readOnly&&message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?messageAuthor(parent)+': ':'')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
   if(message.state==='silent'){const label=document.createElement('span');label.className='note-label';label.textContent='Note · not sent to the agent';row.append(label)}
   if(message.text.startsWith('Forwarded from ')){const mark=document.createElement('span');mark.className='fwd-mark';const end=message.text.indexOf(':\n');mark.textContent=end>0?message.text.slice(0,end+1):'Forwarded';row.append(mark)}
   const text=document.createElement('div');text.className='text';
@@ -842,11 +867,11 @@
    }
    imageURL(message,image).then(url=>{if(!url)return;const btn=mediaButton(url,{kind:mediaKind(image.mediaType,url),alt,label,messageId:message.id,imageId:image.id});row.insertBefore(btn,row.querySelector('.meta'))});
   }
-  const form=questionForm(box,message);if(form)row.append(form);
+  const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
-  const threadSize=(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>2){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
+  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>2){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
-  if(mine&&message.state!=='silent'){
+  if(mine&&!readOnly&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
    ticks.title=stateTicks[message.state]||'';
    const icon=stateIconName[message.state];
@@ -856,6 +881,7 @@
   }
   // Always-visible actions (hover-only controls are invisible on touch): the
   // chevron sits beside the delivery state and time, then reveals the menu.
+  if(readOnly){row.append(meta);return row}
   const actions=document.createElement('div');actions.className='msg-actions';
   const toggle=document.createElement('button');toggle.type='button';toggle.className='msg-more';toggle.setAttribute('aria-label','Message actions');toggle.setAttribute('aria-expanded','false');toggle.append(lucide('chevron-down'));
   const menu=document.createElement('div');menu.className='msg-actions-menu';menu.hidden=true;
@@ -925,7 +951,7 @@
  }
  // A chat opens at its newest message and keeps following output until the
  // reader scrolls away; scrolling back to the bottom resumes following.
- messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;if(selected)scrollMemory.set(selected,messagesEl.scrollTop)});
+ messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;if(selected)scrollMemory.set(selected,messagesEl.scrollTop);if(selectedPair)scrollMemory.set('pair:'+selectedPair,messagesEl.scrollTop)});
  function renderMessages(box){
   if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
@@ -1030,9 +1056,20 @@
   for(const [id,b] of current)boxes.set(id,b);
   if(selected&&!boxes.has(selected)){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
   await loadPreviews(force);
+  if(owner)try{await loadPairs()}catch(e){if(selectedPair)statusEl.textContent='Could not refresh box conversations: '+e.message}
   if(selected)applySeen(selected);
   renderRows();
   if(selected){renderHeader();renderInspect()}
+ }
+ async function loadPairs(){
+  const values=await api('/v1/box-conversations');
+  if(!Array.isArray(values))return;
+  const alive=new Set();
+  for(const value of values){const key=pairKey(value);alive.add(key);pairs.set(key,Object.assign(pairs.get(key)||{messages:[]},value))}
+  for(const key of pairs.keys())if(!alive.has(key))pairs.delete(key);
+  if(selectedPair&&!pairs.has(selectedPair)){
+   selectedPair='';lastSignature='';viewEpoch++;appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;
+  }
  }
  async function loadPreviews(force){
   await Promise.allSettled([...boxes.keys()].map(async id=>{
@@ -1114,6 +1151,47 @@
   renderRows();renderInspect();
   if(owner&&box.state==='running'&&box.defaultAgent==='codex')void refreshCodexResume(box,!!force);
  }
+ function renderPairMessages(pair){
+  const follow=stickToBottom;
+  messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=pairKey(pair);
+  let day='';
+  for(const message of pair.messages||[]){
+   const label=dayLabel(message.createdAt);
+   if(label!==day){day=label;const sep=mk('div',day);sep.className='day-sep';messagesEl.append(sep)}
+   const fromB=message.senderBoxId===pair.boxBId;
+   messagesEl.append(bubble(pair,{...message,direction:fromB?'user':'agent',pairAuthor:fromB?pair.boxBName:pair.boxAName},true));
+  }
+  if(!(pair.messages||[]).length){const empty=mk('p','No direct messages between these boxes yet.');empty.className='day-sep';messagesEl.append(empty)}
+  statusEl.textContent='Read only · '+(pair.messages||[]).length+' messages'+((pair.messages||[]).length===500?' (latest 500)':'');
+  if(follow)scrollMessagesToBottom();
+ }
+ async function refreshPairMessages(force=false){
+  const key=selectedPair,pair=pairs.get(key);if(!pair)return;
+  const epoch=viewEpoch;
+  const messages=await api('/v1/box-conversations/'+encodeURIComponent(pair.boxAId)+'/'+encodeURIComponent(pair.boxBId)+'/messages');
+  if(epoch!==viewEpoch||selectedPair!==key||pairs.get(key)!==pair)return;
+  pair.messages=Array.isArray(messages)?messages:[];
+  const last=pair.messages.at(-1);
+  if(last){pair.lastAt=last.createdAt;pair.lastText=last.text}
+  const signature=pair.messages.map(message=>message.id+message.updatedAt+message.state).join('|');
+  if(force||signature!==lastSignature){lastSignature=signature;renderPairMessages(pair)}
+  renderRows();
+ }
+ async function openPair(key){
+  const pair=pairs.get(key);if(!pair)return;
+  viewEpoch++;selected='';selectedPair=key;lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
+  openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
+  messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
+  stickToBottom=scrollMemory.get('pair:'+key)==null;
+  $('#chat-conversation').classList.add('pair-view');
+  $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;appEl.classList.add('in-chat');
+  $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
+  $('#chat-header-state').textContent='Direct messages between boxes · read only';
+  $('#chat-header-avatar').replaceChildren(Object.assign(mk('span','↔'),{className:'pair-avatar'}));headerAvatarKey='';
+  setBanner('');statusEl.textContent='';renderRows();doodle('Loading messages…');
+  try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
+  const saved=scrollMemory.get('pair:'+key);if(selectedPair===key&&saved!=null)requestAnimationFrame(()=>{if(selectedPair===key)messagesEl.scrollTop=saved});
+ }
  async function refreshCodexResume(box,force){
   const prior=resumeChecks.get(box.id);
   if(prior&&(!force&&Date.now()-prior.at<20000||prior.pending))return;
@@ -1154,9 +1232,10 @@
  async function openBox(id){
   if(!boxes.has(id))return;
   viewEpoch++;
+  selectedPair='';$('#chat-conversation').classList.remove('pair-view');
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
-  if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();messagesEl.dataset.box=id;hideTvPreview()}
+  if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
   if(selected!==id)cancelReply();selected=id;lastSignature='';hideComposerPicker();
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
@@ -1397,7 +1476,11 @@
  },{passive:true});
  appEl.addEventListener('touchend',()=>{listSwipe=null},{passive:true});
  appEl.addEventListener('touchcancel',()=>{listSwipe=null},{passive:true});
- addEventListener('hashchange',()=>{const id=new URLSearchParams(location.hash.slice(1)).get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id)});
+ addEventListener('hashchange',()=>{
+  const params=new URLSearchParams(location.hash.slice(1)),pair=params.get('pair');
+  if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair)void openPair(match);return}
+  const id=params.get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id);
+ });
 
  /* ---------- takeover popup: VNC/TMUX control ---------- */
  const takeover=$('#takeover'),takeoverScreen=$('#takeover-screen'),takeoverControls=$('#takeover-controls'),takeoverStatus=$('#takeover-status');
@@ -2013,7 +2096,7 @@
   finally{pushBtn.disabled=false;renderPushState()}
  };
  navigator.serviceWorker?.addEventListener('message',event=>{
-  if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void loadBoxes(true)},250)}
+  if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void refreshPairMessages();void loadBoxes(true)},250)}
   if(event.data?.type==='vmbox-open'&&event.data.url){const url=new URL(event.data.url,location.origin);if(url.hash!==location.hash)location.hash=url.hash}
  });
 
@@ -2024,10 +2107,10 @@
   msgTimer=setTimeout(tickMessages,3000);
  }
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
- async function tickMessages(){try{if(!document.hidden&&selected)await refreshMessages();reconnecting=false}catch(e){reconnecting=!!selected}updateBanner();msgTimer=setTimeout(tickMessages,3000)}
+ async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages()}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
- $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
+ $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
  /* ---------- auth ---------- */
  $('#login').onsubmit=async event=>{
@@ -2047,9 +2130,9 @@
   avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
   for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
   attachmentDrafts.clear();renderDrafts();pendingKey='';pendingFingerprint='';
-  boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;
+  boxes.clear();rows.clear();pairs.clear();pairRows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;delete messagesEl.dataset.pair;
   owner=false;extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
-  selected='';lastSignature='';appEl.classList.remove('in-chat');
+  selected='';selectedPair='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').classList.remove('pair-view');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
  };
  async function enter(){
@@ -2063,9 +2146,10 @@
    $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;
    doodle('Loading chats…');
    try{await loadBoxes()}finally{doodle('')}
-   const id=new URLSearchParams(location.hash.slice(1)).get('box');
-   if(id&&boxes.has(id))await openBox(id);
-   if(owner)void loadChatCommands().catch(e=>{statusEl.textContent=e.message});
+   const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box'),pair=params.get('pair');
+   if(pair&&owner){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match)await openPair(match)}
+   else if(id&&boxes.has(id))await openBox(id);
+   if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }

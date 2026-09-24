@@ -4,39 +4,88 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-test('owner can read a separate two-way box conversation with its image',async()=>{
- const [html,js,css]=await Promise.all(['box-chats.html','box-chats.js','box-chats.css'].map(name=>readFile('internal/controller/web/'+name,'utf8')));
- const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',now=new Date().toISOString();
- const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
- const server=http.createServer((request,response)=>{
+const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js','box-chats.html','box-chats.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
+const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
+
+async function withChat(fn,{pairDelay=0}={}){
+ const server=http.createServer(async(request,response)=>{
   const path=request.url.split('?')[0];
-  if(path==='/box-chats')return response.end(html);
-  if(path==='/box-chats.js'){response.setHeader('Content-Type','text/javascript');return response.end(js)}
-  if(path==='/box-chats.css'){response.setHeader('Content-Type','text/css');return response.end(css)}
+  if(path==='/chat'||path==='/box-chats'){response.setHeader('Content-Type','text/html');if(path==='/box-chats')response.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'");return response.end(files[path==='/chat'?'chat.html':'box-chats.html'])}
+  if(files[path.slice(1)]){response.setHeader('Content-Type',path.endsWith('.css')?'text/css':'text/javascript');return response.end(files[path.slice(1)])}
   if(path.startsWith('/v1/messages/')){response.setHeader('Content-Type','image/png');return response.end(pixel)}
   response.setHeader('Content-Type','application/json');
+  if(path==='/v1/whoami')return response.end(JSON.stringify({role:'owner'}));
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'}]));
   if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:now,lastText:'The review is ready'}]));
-  if(path==='/v1/box-conversations/'+a+'/'+b+'/messages')return response.end(JSON.stringify([
-   {id:'m1',senderBoxId:a,recipientBoxId:b,direction:'box',text:'Please inspect this image',state:'delivered',createdAt:now,images:[{id:'image-1',number:1,mediaType:'image/png'}]},
-   {id:'m2',senderBoxId:b,recipientBoxId:a,direction:'box',text:'The review is ready',state:'delivered',createdAt:now}
-  ]));
+  if(path==='/v1/box-conversations/'+a+'/'+b+'/messages'){
+   if(pairDelay)await new Promise(resolve=>setTimeout(resolve,pairDelay));
+   return response.end(JSON.stringify([
+   {id:'m1',senderBoxId:a,recipientBoxId:b,direction:'box',text:'Please inspect this image',state:'delivered',createdAt:now,updatedAt:now,images:[{id:'image-1',number:1,mediaType:'image/png'}]},
+   {id:'m2',senderBoxId:b,recipientBoxId:a,direction:'box',text:'The review is ready',state:'delivered',createdAt:now,updatedAt:now}
+   ]));
+  }
+  if(path==='/v1/logical-boxes/'+a+'/messages')return response.end(JSON.stringify([{id:'owner-1',direction:'agent',text:'Owner chat is here',state:'delivered',createdAt:now,updatedAt:now}]));
+  if(path==='/v1/tool-presets')return response.end('[]');
+  if(path==='/v1/chat-commands')return response.end('[]');
+  if(path==='/v1/push/vapid-key'){response.statusCode=404;return response.end('{}')}
+  if(path.endsWith('/messages'))return response.end('[]');
   response.statusCode=404;response.end('{}');
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
- try{
-  const page=await browser.newPage();await page.setViewport({width:390,height:844});
-  await page.goto('http://127.0.0.1:'+server.address().port+'/box-chats');
-  await page.waitForSelector('#conversations button');await page.click('#conversations button');
-  await page.waitForFunction(()=>document.querySelectorAll('#messages article').length===2);
-  assert.equal(await page.$eval('#title',element=>element.textContent),'Builder ↔ Reviewer');
-  assert.deepEqual(await page.$$eval('#messages article strong',elements=>elements.map(element=>element.textContent)),['Builder','Reviewer']);
-  assert.equal(await page.$eval('#messages img',image=>image.naturalWidth),1);
-  assert.equal(await page.$eval('#transcript',element=>getComputedStyle(element).display),'flex');
-  const sides=await page.$$eval('#messages article',elements=>elements.map(element=>({side:element.dataset.side,left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right})));
-  assert.deepEqual(sides.map(message=>message.side),['left','right']);
-  assert.ok(sides[0].left<sides[1].left&&sides[0].right<sides[1].right,'the two boxes must occupy opposite sides of the transcript');
-  await page.click('#back');assert.equal(await page.$eval('#transcript',element=>getComputedStyle(element).display),'none');
+ try{await fn(browser,'http://127.0.0.1:'+server.address().port)}
+ finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
+}
+
+test('owner and box conversations share the Chats list and transcript',async()=>{
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:1100,height:760});
+  await page.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
+  await page.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===2);
+  assert.equal(await page.$$eval('#chat-entries [data-box-id]',rows=>rows.length),2);
+  assert.equal(await page.$$eval('#chat-entries [data-pair-key]',rows=>rows.length),1);
+  assert.equal(await page.$eval('#chat-header-name',element=>element.textContent),'Builder ↔ Reviewer');
+  assert.deepEqual(await page.$$eval('#chat-messages .agent-origin',elements=>elements.map(element=>element.textContent)),['Builder','Reviewer']);
+  assert.deepEqual(await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>element.classList.contains('user')?'right':'left')),['left','right']);
+  const sides=await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>({left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right})));
+  assert.ok(sides[0].left<sides[1].left&&sides[0].right<sides[1].right,'each box should have its own side');
+  assert.equal(await page.$eval('#chat-messages img',image=>image.naturalWidth),1);
+  assert.equal(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
+  assert.equal(await page.$('#chat-messages .msg-actions'),null,'read-only messages have no reply controls');
+  await page.click('[data-box-id="'+a+'"] .chat-meta');
+  await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('Owner chat is here'));
+  assert.notEqual(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
+  await page.click('[data-pair-key] .chat-meta');
+  await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('The review is ready'));
+  assert.equal(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
   await page.close();
- }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
+ });
+});
+
+test('old box conversation links open the unified mobile chat',async()=>{
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  await page.goto(base+'/box-chats#pair='+pairKey);
+  await page.waitForFunction(()=>location.pathname==='/chat'&&document.querySelectorAll('#chat-messages .msg').length===2);
+  assert.equal(await page.$eval('#chat-conversation',element=>element.classList.contains('pair-view')),true);
+  await page.click('#chat-back');
+  await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  assert.equal(await page.$eval('[data-pair-key]',element=>element.textContent.includes('Builder ↔ Reviewer')),true);
+  await page.close();
+ });
+});
+
+test('a late box conversation response cannot overwrite the selected owner chat',async()=>{
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:1100,height:760});
+  await page.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
+  await page.waitForFunction(()=>document.querySelector('#chat-conversation').classList.contains('pair-view'));
+  await page.click('[data-box-id="'+a+'"] .chat-meta');
+  await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('Owner chat is here'));
+  await new Promise(resolve=>setTimeout(resolve,700));
+  assert.equal(await page.$eval('#chat-messages',element=>element.textContent.includes('The review is ready')),false);
+  assert.equal(await page.$eval('#chat-conversation',element=>element.classList.contains('pair-view')),false);
+  await page.close();
+ },{pairDelay:500});
 });
