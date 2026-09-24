@@ -98,10 +98,6 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:1}
 .avatar .avatar-mascot{position:absolute;inset:0;display:block;z-index:0}
 .avatar .avatar-mascot svg{width:100%;height:100%;display:block}
-.avatar .avatar-no-signal{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  text-align:center;font-weight:800;font-size:.5rem;line-height:1.05;letter-spacing:.02em;padding:.25rem;
-  color:#8fa1a8;background:#101418;z-index:0;overflow-wrap:anywhere}
-.avatar.small .avatar-no-signal{font-size:.42rem}
 .avatar .mx-mini{position:absolute;inset:0;width:100%;height:100%;z-index:0}
 .avatar .initials{position:relative;z-index:0;font-weight:700;font-size:1.05rem;color:var(--accent-ink)}
 .avatar.small{width:2.6rem;height:2.6rem}
@@ -935,6 +931,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .chat-meta time{font-size:.69rem}
 .chat-meta .preview{font-size:.75rem}
 .chat-meta .row2{gap:.25rem;margin-top:.15rem}
+#chat-entries .unread-note{display:block;margin-top:.18rem;color:var(--accent-text);font-size:.68rem;font-weight:750;letter-spacing:.01em}
 #chat-entries li.conversation-group:hover{background:none}
 .row-state,.agent-badge{font-size:.59rem;padding:.07rem .3rem;border-radius:.3rem}
 .unread{min-width:1.15rem;border-radius:.4rem;font-size:.65rem}

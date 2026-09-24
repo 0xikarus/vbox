@@ -17,7 +17,7 @@ async function withChat(fn,{pairDelay=0,pairMessages=null}={}){
   response.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return response.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'}]));
-  if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:now,lastText:'The review is ready'}]));
+  if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:pairMessages?.at(-1)?.createdAt||now,lastText:pairMessages?.at(-1)?.text||'The review is ready'}]));
   if(path==='/v1/box-conversations/'+a+'/'+b+'/messages'){
    if(pairDelay)await new Promise(resolve=>setTimeout(resolve,pairDelay));
    return response.end(JSON.stringify(pairMessages||[
@@ -81,17 +81,29 @@ test('box conversations open at the latest message on desktop and mobile',async(
   await desktop.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop===0);
   await desktop.click('[data-box-id="'+a+'"] .chat-meta');
   await desktop.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');
+  pairMessages.push({id:'pair-new',senderBoxId:b,recipientBoxId:a,direction:'box',text:'A NEW BOX REPLY',state:'delivered',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+  await desktop.click('#refresh');
+  await desktop.waitForFunction(()=>!document.querySelector('[data-pair-key] .unread-note').hidden);
+  await desktop.screenshot({path:'/tmp/vmbox-pair-note-desktop.png'});
   await desktop.click('[data-pair-key] .chat-meta');
-  await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
+  await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===37);
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'returning to a box conversation starts at its newest message');
+  assert.equal(await desktop.$eval('[data-pair-key] .unread-note',note=>note.hidden),true,'opening the newest pair message clears its left-list note');
 
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
-  await mobile.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
+  await mobile.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===37);
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await mobile.$eval('#chat-messages',bottom)<3,'mobile opens at the newest box message');
   await mobile.screenshot({path:'/tmp/vmbox-pair-latest-mobile.png'});
+  await mobile.click('#chat-back');
+  await mobile.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  pairMessages.push({id:'pair-new-mobile',senderBoxId:a,recipientBoxId:b,direction:'box',text:'NEW BOX REPLY ON MOBILE',state:'delivered',createdAt:new Date(Date.now()+1000).toISOString(),updatedAt:new Date(Date.now()+1000).toISOString()});
+  await mobile.click('#refresh');
+  await mobile.waitForFunction(()=>!document.querySelector('[data-pair-key] .unread-note').hidden);
+  await new Promise(resolve=>setTimeout(resolve,350));
+  await mobile.screenshot({path:'/tmp/vmbox-pair-note-mobile.png'});
   await mobile.close();await desktop.close();
  },{pairMessages});
 });
