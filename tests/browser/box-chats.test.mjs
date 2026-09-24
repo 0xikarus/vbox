@@ -8,7 +8,7 @@ const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.cs
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
 
-async function withChat(fn,{pairDelay=0}={}){
+async function withChat(fn,{pairDelay=0,pairMessages=null}={}){
  const server=http.createServer(async(request,response)=>{
   const path=request.url.split('?')[0];
   if(path==='/chat'||path==='/box-chats'){response.setHeader('Content-Type','text/html');if(path==='/box-chats')response.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'");return response.end(files[path==='/chat'?'chat.html':'box-chats.html'])}
@@ -20,7 +20,7 @@ async function withChat(fn,{pairDelay=0}={}){
   if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:now,lastText:'The review is ready'}]));
   if(path==='/v1/box-conversations/'+a+'/'+b+'/messages'){
    if(pairDelay)await new Promise(resolve=>setTimeout(resolve,pairDelay));
-   return response.end(JSON.stringify([
+   return response.end(JSON.stringify(pairMessages||[
    {id:'m1',senderBoxId:a,recipientBoxId:b,direction:'box',text:'Please inspect this image',state:'delivered',createdAt:now,updatedAt:now,images:[{id:'image-1',number:1,mediaType:'image/png'}]},
    {id:'m2',senderBoxId:b,recipientBoxId:a,direction:'box',text:'The review is ready',state:'delivered',createdAt:now,updatedAt:now}
    ]));
@@ -61,6 +61,39 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   assert.equal(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
   await page.close();
  });
+});
+
+test('box conversations open at the latest message on desktop and mobile',async()=>{
+ const pairMessages=Array.from({length:36},(_,index)=>({
+  id:'pair-'+index,senderBoxId:index%2?a:b,recipientBoxId:index%2?b:a,direction:'box',
+  text:index===35?'LATEST BOX MESSAGE':'Box message '+index+' '+('discussion '.repeat(12)),
+  state:'delivered',createdAt:new Date(Date.now()-(36-index)*60000).toISOString(),updatedAt:new Date(Date.now()-(36-index)*60000).toISOString()
+ }));
+ await withChat(async(browser,base)=>{
+  const bottom=element=>element.scrollHeight-element.scrollTop-element.clientHeight;
+  const desktop=await browser.newPage();await desktop.setViewport({width:1100,height:760});
+  await desktop.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
+  await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'a direct link starts at the newest box message');
+  await desktop.screenshot({path:'/tmp/vmbox-pair-latest-desktop.png'});
+  await desktop.$eval('#chat-messages',element=>{element.scrollTop=0});
+  await desktop.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop===0);
+  await desktop.click('[data-box-id="'+a+'"] .chat-meta');
+  await desktop.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');
+  await desktop.click('[data-pair-key] .chat-meta');
+  await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'returning to a box conversation starts at its newest message');
+
+  const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+  await mobile.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
+  await mobile.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.ok(await mobile.$eval('#chat-messages',bottom)<3,'mobile opens at the newest box message');
+  await mobile.screenshot({path:'/tmp/vmbox-pair-latest-mobile.png'});
+  await mobile.close();await desktop.close();
+ },{pairMessages});
 });
 
 test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned on desktop and mobile',async()=>{

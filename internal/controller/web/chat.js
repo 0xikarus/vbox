@@ -1331,8 +1331,9 @@
   selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
-  const savedScroll=scrollMemory.get('pair:'+key);
-  stickToBottom=savedScroll==null||followMemory.get('pair:'+key)!==false;
+  // Box-to-box chats are read-only activity logs: opening one starts at its
+  // latest message, even if the reader scrolled up on an earlier visit.
+  scrollMemory.delete('pair:'+key);followMemory.set('pair:'+key,true);stickToBottom=true;
   $('#chat-conversation').classList.add('pair-view');
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;appEl.classList.add('in-chat');
   $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
@@ -1342,7 +1343,7 @@
   try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
   if(epoch===viewEpoch&&selectedPair===key)requestAnimationFrame(()=>{
    if(epoch!==viewEpoch||selectedPair!==key)return;
-   if(stickToBottom)scrollMessagesToBottom();else if(savedScroll!=null)messagesEl.scrollTop=savedScroll;
+   scrollMessagesToBottom();
    restoringTranscript=false;
   });
  }
