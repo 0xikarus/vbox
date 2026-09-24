@@ -162,6 +162,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-desktop/shared-chats/{group}/invite", s.desktopAgentAuth(s.agentSharedChatInviteHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/email-addresses", s.desktopAgentAuth(s.agentEmailHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/boxes", s.desktopAgentAuth(s.agentBoxCreationHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/box-configs", s.desktopAgentAuth(s.agentBoxConfigsHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/box-configs/{application}/{name}/models", s.desktopAgentAuth(s.agentBoxConfigsHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/boxes", s.desktopAgentAuth(s.agentBoxesHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/boxes/{box}", s.desktopAgentAuth(s.agentBoxHandler))
 	mux.HandleFunc("PUT /v1/agent-desktop/boxes/{box}/tags", s.desktopAgentAuth(s.agentBoxTagsHandler))

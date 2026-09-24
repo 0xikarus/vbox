@@ -50,7 +50,8 @@ func desktopMCPTools() []map[string]any {
 		makeTool("get_thread_history", "Read a paginated direct or shared-chat thread this box already has access to. Pass chatId for a shared-chat thread. A thread reference alone never grants access.", map[string]any{"threadId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "before": map[string]any{"type": "string"}, "beforeId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "threadId"),
 		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
 		makeTool("get_agent_box", "Inspect one agent box's safe lifecycle details by ID or exact name. Does not grant terminal or desktop access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box"),
-		makeTool("create_agent_box", "Create an agent box on this box's provider within its agent, disk, and count permission limits. The new box starts with core chat/history tools only. Optional instructions become that agent's managed startup instructions. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 4096}, "instructions": map[string]any{"type": "string", "maxLength": v1.MaxInstructionMarkdownBytes, "description": "Managed Markdown instructions given to the new agent at startup."}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
+		makeTool("create_agent_box", "Create an agent box on this box's provider within its agent, disk, and count permission limits. Call get_agent_box_configs first for exact saved profile and assignable role IDs. loginProfiles imports one matching agent profile and optionally one GitHub profile; model and reasoningEffort override that saved profile for this box. Omit roleIds for core chat/history tools only. Optional instructions become managed startup instructions. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000}, "loginProfiles": map[string]any{"type": "array", "maxItems": 2, "items": map[string]any{"type": "object", "properties": map[string]any{"application": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode", "github"}}, "name": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string"}, "reasoningEffort": map[string]any{"type": "string"}}, "required": []string{"application", "name"}, "additionalProperties": false}}, "roleIds": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string", "minLength": 1}}, "instructions": map[string]any{"type": "string", "maxLength": v1.MaxInstructionMarkdownBytes, "description": "Managed Markdown instructions given to the new agent at startup."}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
+		makeTool("get_agent_box_configs", "List exact saved login profile references and role IDs this box may use with create_agent_box, plus allowed agents and creation limits. Pass application and name together to read a live Codex or OpenCode model catalog for one listed profile. Never returns credentials.", map[string]any{"application": map[string]any{"type": "string", "enum": []string{"codex", "opencode"}}, "name": map[string]any{"type": "string", "minLength": 1}}),
 		makeTool("set_agent_box_tags", "Replace an agent box's plain metadata tags. Tags are labels only and never grant contact or tool access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 32}}}, "box", "tags"),
 		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
@@ -462,17 +463,37 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 	}
 	if name == "create_agent_box" {
 		var request struct {
-			Name           string `json:"name"`
-			Agent          string `json:"agent"`
-			DiskGiB        int    `json:"diskGiB"`
-			Instructions   string `json:"instructions"`
-			IdempotencyKey string `json:"idempotencyKey"`
+			Name           string               `json:"name"`
+			Agent          string               `json:"agent"`
+			DiskGiB        int                  `json:"diskGiB"`
+			LoginProfiles  []v1.LoginProfileRef `json:"loginProfiles"`
+			RoleIDs        []string             `json:"roleIds"`
+			Instructions   string               `json:"instructions"`
+			IdempotencyKey string               `json:"idempotencyKey"`
 		}
 		if json.Unmarshal(args, &request) != nil || request.Name == "" || request.Agent == "" || request.IdempotencyKey == "" {
 			return nil, fmt.Errorf("name, agent, and idempotencyKey are required")
 		}
 		var result map[string]any
-		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes", request.IdempotencyKey, map[string]any{"name": request.Name, "agent": request.Agent, "diskGiB": request.DiskGiB, "instructions": request.Instructions}, &result); err != nil {
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes", request.IdempotencyKey, map[string]any{"name": request.Name, "agent": request.Agent, "diskGiB": request.DiskGiB, "loginProfiles": request.LoginProfiles, "roleIds": request.RoleIDs, "instructions": request.Instructions}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "get_agent_box_configs" {
+		var request struct {
+			Application string `json:"application"`
+			Name        string `json:"name"`
+		}
+		if json.Unmarshal(args, &request) != nil || (request.Application == "") != (request.Name == "") {
+			return nil, fmt.Errorf("pass application and name together to load a model catalog")
+		}
+		path := "/v1/agent-desktop/box-configs"
+		if request.Application != "" {
+			path += "/" + url.PathEscape(request.Application) + "/" + url.PathEscape(request.Name) + "/models"
+		}
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodGet, path, nil, &result); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)

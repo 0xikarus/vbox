@@ -21,10 +21,12 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	creatorID := r.PathValue("id")
 	var request struct {
-		Name         string `json:"name"`
-		Agent        string `json:"agent"`
-		DiskGiB      int64  `json:"diskGiB"`
-		Instructions string `json:"instructions"`
+		Name          string               `json:"name"`
+		Agent         string               `json:"agent"`
+		DiskGiB       int64                `json:"diskGiB"`
+		Instructions  string               `json:"instructions"`
+		LoginProfiles []v1.LoginProfileRef `json:"loginProfiles"`
+		RoleIDs       []string             `json:"roleIds"`
 	}
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, 400, err)
@@ -38,6 +40,33 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	if request.DiskGiB == 0 {
 		request.DiskGiB = 10
+	}
+	if err := validateAgentBoxProfiles(request.Agent, request.LoginProfiles); err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	slices.SortFunc(request.LoginProfiles, func(a, b v1.LoginProfileRef) int {
+		if cmp := strings.Compare(a.Application, b.Application); cmp != 0 {
+			return cmp
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
+	if len(request.RoleIDs) > 8 {
+		writeError(w, 400, fmt.Errorf("select at most eight roles"))
+		return
+	}
+	for _, roleID := range request.RoleIDs {
+		if strings.TrimSpace(roleID) != roleID || roleID == "" {
+			writeError(w, 400, fmt.Errorf("role IDs must be exact and non-empty"))
+			return
+		}
+	}
+	slices.Sort(request.RoleIDs)
+	for i := 1; i < len(request.RoleIDs); i++ {
+		if request.RoleIDs[i] == request.RoleIDs[i-1] {
+			writeError(w, 400, fmt.Errorf("role IDs must be unique"))
+			return
+		}
 	}
 	caps, err := s.Store.EffectiveAgentCapabilities(r.Context(), p.AccountID, creatorID)
 	if err != nil {
@@ -53,15 +82,22 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 403, fmt.Errorf("agent type is not granted by this box's permissions"))
 		return
 	}
-	if request.DiskGiB < 1 || request.DiskGiB > int64(grant.MaxDiskGiB) {
+	if request.DiskGiB < 1 || request.DiskGiB > min(int64(grant.MaxDiskGiB), 1000) {
 		writeError(w, 403, fmt.Errorf("diskGiB exceeds this box's permission limit"))
 		return
 	}
+	for _, roleID := range request.RoleIDs {
+		if !slices.Contains(grant.AssignableRoleIDs, roleID) {
+			writeError(w, 403, fmt.Errorf("role %q is not assignable by this box", roleID))
+			return
+		}
+	}
 	reservationID := uuid()
-	roleIDsJSON := []byte(`[]`)
+	roleIDsJSON, _ := json.Marshal(request.RoleIDs)
+	profileJSON, _ := json.Marshal(request.LoginProfiles)
 	var existingBoxID, requestedName, requestedAgent, requestedInstructions, providerName, credential, region string
 	var requestedDisk int64
-	var requestedRoleIDs []byte
+	var requestedRoleIDs, requestedProfiles []byte
 	tx, err := s.Store.DB.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		writeError(w, 500, err)
@@ -80,9 +116,9 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 500, err)
 		return
 	}
-	err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_instructions,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &requestedInstructions, &existingBoxID)
+	err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_login_profiles,requested_instructions,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &requestedProfiles, &requestedInstructions, &existingBoxID)
 	if err == nil {
-		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, nil, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedInstructions) {
+		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.RoleIDs, request.LoginProfiles, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedProfiles, requestedInstructions) {
 			writeError(w, 409, fmt.Errorf("idempotency key was already used with different box parameters"))
 			return
 		}
@@ -122,14 +158,14 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 403, fmt.Errorf("created-box limit reached"))
 		return
 	}
-	err = tx.QueryRowContext(r.Context(), `INSERT INTO agent_box_creations(id,account_id,creator_box_id,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_instructions,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,requested_name`, reservationID, p.AccountID, creatorID, request.Name, request.Agent, request.DiskGiB, string(roleIDsJSON), request.Instructions, key).Scan(&reservationID, &requestedName)
+	err = tx.QueryRowContext(r.Context(), `INSERT INTO agent_box_creations(id,account_id,creator_box_id,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_login_profiles,requested_instructions,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,requested_name`, reservationID, p.AccountID, creatorID, request.Name, request.Agent, request.DiskGiB, string(roleIDsJSON), string(profileJSON), request.Instructions, key).Scan(&reservationID, &requestedName)
 	if errors.Is(err, sql.ErrNoRows) {
-		err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_instructions,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &requestedInstructions, &existingBoxID)
+		err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_login_profiles,requested_instructions,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &requestedProfiles, &requestedInstructions, &existingBoxID)
 		if err != nil {
 			writeError(w, 409, err)
 			return
 		}
-		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, nil, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedInstructions) {
+		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.RoleIDs, request.LoginProfiles, request.Instructions, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedProfiles, requestedInstructions) {
 			writeError(w, 409, fmt.Errorf("idempotency key was already used with different box parameters"))
 			return
 		}
@@ -166,8 +202,13 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 500, err)
 		return
 	}
+	if err := s.validateBoxProfileRefs(r.Context(), p.AccountID, request.LoginProfiles); err != nil {
+		_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2 AND created_box_id IS NULL`, p.AccountID, reservationID)
+		writeError(w, 409, err)
+		return
+	}
 	owner := Principal{AccountID: p.AccountID, UserID: p.UserID, Role: "owner", Subject: p.Subject}
-	create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: providerName, ProviderCredential: credential, Region: region, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, AllocationRequestKey: "agent-box:" + reservationID}
+	create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: providerName, ProviderCredential: credential, Region: region, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, LoginProfiles: request.LoginProfiles, RoleIDs: request.RoleIDs, AllocationRequestKey: "agent-box:" + reservationID}
 	var instructionSelection *v1.InstructionSelection
 	if strings.TrimSpace(request.Instructions) != "" {
 		instructionSelection = &v1.InstructionSelection{Markdown: request.Instructions}
@@ -199,11 +240,27 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}()
 }
 
-func sameAgentBoxRequest(name, agent string, disk int64, roleIDs []string, instructions, storedName, storedAgent string, storedDisk int64, storedRoleJSON []byte, storedInstructions string) bool {
+func sameAgentBoxRequest(name, agent string, disk int64, roleIDs []string, profiles []v1.LoginProfileRef, instructions, storedName, storedAgent string, storedDisk int64, storedRoleJSON, storedProfilesJSON []byte, storedInstructions string) bool {
 	var storedRoleIDs []string
-	if json.Unmarshal(storedRoleJSON, &storedRoleIDs) != nil {
+	var storedProfiles []v1.LoginProfileRef
+	if json.Unmarshal(storedRoleJSON, &storedRoleIDs) != nil || json.Unmarshal(storedProfilesJSON, &storedProfiles) != nil {
 		return false
 	}
 	slices.Sort(storedRoleIDs)
-	return name == storedName && agent == storedAgent && disk == storedDisk && slices.Equal(roleIDs, storedRoleIDs) && instructions == storedInstructions
+	return name == storedName && agent == storedAgent && disk == storedDisk && slices.Equal(roleIDs, storedRoleIDs) && slices.Equal(profiles, storedProfiles) && instructions == storedInstructions
+}
+
+func validateAgentBoxProfiles(agent string, profiles []v1.LoginProfileRef) error {
+	if err := validateBoxProfileSelection(profiles); err != nil {
+		return err
+	}
+	for _, profile := range profiles {
+		if profile.Application != "github" && profile.Application != agent {
+			return fmt.Errorf("agent login profile must match the selected agent")
+		}
+		if strings.TrimSpace(profile.Name) == "" {
+			return fmt.Errorf("login profile name is required")
+		}
+	}
+	return nil
 }

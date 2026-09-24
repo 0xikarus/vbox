@@ -21,6 +21,11 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 			selected[name] = true
 		}
 	}
+	// Discovering valid creation settings is part of the create grant. Existing
+	// manager policies gain the companion tool without an owner migration.
+	if selected["create_agent_box"] {
+		selected["get_agent_box_configs"] = true
+	}
 	allowed := append([]string(nil), v1.BasicAgentMCPTools...)
 	for _, name := range v1.OptionalAgentMCPTools {
 		if selected[name] && toolCapabilityAllows(name, capabilities) {
@@ -32,7 +37,7 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 
 func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bool {
 	switch name {
-	case "create_agent_box":
+	case "create_agent_box", "get_agent_box_configs":
 		return capabilities.CreateAgentBox.Enabled
 	case "list_agent_boxes":
 		return capabilities.ManageAgentBoxes.List
