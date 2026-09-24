@@ -35,6 +35,12 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if err := ensureAgentBackend(ctx, session, agent, assignment); err != nil {
 		return err
 	}
+	if agent == "codex" {
+		argv, err = startVisibleCodexThread(ctx, root, session)
+		if err != nil {
+			return err
+		}
+	}
 	args := []string{"new-session", "-d", "-s", session, "-c", filepath.Join(filepath.Dir(root), "workspace"), "--"}
 	args = append(args, argv...)
 	_, err = tmuxOutput(ctx, args...)
@@ -87,6 +93,12 @@ func RestoreManagedAgent(ctx context.Context, root, session, agent string) error
 	}
 	if err := ensureAgentBackend(ctx, session, agent, assignment); err != nil {
 		return err
+	}
+	if agent == "codex" {
+		argv, err = startVisibleCodexThread(ctx, root, session)
+		if err != nil {
+			return err
+		}
 	}
 	if _, err := tmuxOutput(ctx, "set-environment", "-t", session, taskAgentEnvironment, agent); err != nil {
 		return err
