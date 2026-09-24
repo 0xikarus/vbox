@@ -122,13 +122,17 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   workers assign a distinct display to each workspace. Screenshot/input agent
   tools remain separate and should be used instead of assuming a display number.
 
-- Blender is an optional preset, including desktop packages. New presets pin the
-  official Linux x64 Blender 5.1.2 archive and its SHA-256 in
+- Blender's binary is available on PATH in fresh boxes from the common worker
+  image. The optional preset configures Blender MCP and its add-on. New presets
+  pin the official Linux x64 Blender 5.1.2 archive and its SHA-256 in
   `internal/boxruntime/blender_release.go`; the common worker image bundles the
-  binary and MCP package under `/opt/vmbox`, linked into each tagged box's home.
+  binary and MCP package under `/opt/vmbox`. The binary is linked into image PATH
+  and into each tagged box's home.
   The image omits Blender's two static embedded-Python link archives; these are
   build-time artifacts, not needed to run Blender or its Python API. Verify a
-  candidate image with `bash tests/worker-blender-runtime-image.sh IMAGE`.
+  candidate image with `bash tests/worker-blender-runtime-image.sh IMAGE`; that
+  smoke test runs `blender` as the box user in regular and login shells, then
+  launches it headlessly.
   Older dedicated images retain the per-home verified download fallback; shared
   workers require the bundled image. Shared MCP listeners use the workspace UID
   as a stable loopback port, and both the add-on and client use that port.

@@ -13,8 +13,9 @@ configuration are documented in [the desktop MVP guide](docs/AGENT-DESKTOP-IMPLE
 ## Quick setup
 
 New boxes created in the Controller or Agent chat prepare the desktop and
-Chromium browser automatically, including across restores. Blender remains an
-optional tool. The Controller workspace viewer prefers an available desktop;
+Chromium browser automatically, including across restores. The worker image
+ships Blender 5.1.2 on PATH; the optional Blender tool preset configures its
+MCP integration. The Controller workspace viewer prefers an available desktop;
 Grid displays each box's desktop above its TMUX session. Older workers without
 desktop packages prepare them when the new box is created.
 
