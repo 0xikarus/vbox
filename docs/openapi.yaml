@@ -38,7 +38,7 @@ paths:
   /v1/profile-usage:
     get:
       summary: Owner-only cached usage limits for every saved agent profile
-      description: Reads cached results without waking a box. The controller polls each account, application, and saved profile about every five minutes, preferring an available live box and otherwise checking the saved credential snapshot.
+      description: Reads cached results without waking a box. The controller polls each account, application, and saved profile about every 30 minutes, preferring an available live box and otherwise checking the saved credential snapshot.
       responses:
         '200':
           description: Saved profile names, live box names, last observation, probe source, and normalized provider limits
@@ -70,6 +70,21 @@ paths:
                             balances: {type: array, items: {type: object}}
                             rateCaps: {type: array, items: {type: object}}
                             note: {type: string}
+        '403': {description: Owner role required}
+  /v1/profile-usage/refresh:
+    post:
+      summary: Request an immediate usage check for every saved agent profile owned by the account
+      description: Starts checks in the background and returns immediately. Active checks are deduplicated. Read GET /v1/profile-usage for progress and results; no sleeping box is started.
+      responses:
+        '202':
+          description: Usage checks accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles]
+                properties:
+                  profiles: {type: integer, description: Number of saved profiles selected for checking}
         '403': {description: Owner role required}
   /v1/login-profiles/{application}/{name}:
     parameters:

@@ -4,7 +4,7 @@
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle'),replyPreview=$('#reply-preview'),threadPanel=$('#thread-panel'),threadMessages=$('#thread-messages');
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  const resumeChecks=new Map();
- let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
  const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
@@ -2044,7 +2044,7 @@
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
- addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url);for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
+ addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url);for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
 
  /* ---------- imported profile usage ---------- */
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
@@ -2052,7 +2052,7 @@
  function renderUsage(data){
   const root=$('#usage-list');root.replaceChildren();
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
-  if(!profiles.length){root.append(mk('p','No running boxes with imported profiles.'));return}
+  if(!profiles.length){root.append(mk('p','No saved agent profiles.'));return}
   for(const profile of profiles){
    const card=mk('article');card.className='usage-profile';
    const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
@@ -2089,18 +2089,47 @@
  async function refreshUsage(){
   if($('#usage-modal').hidden||document.hidden)return;
   const status=$('#usage-status');status.textContent='Loading…';
-  try{renderUsage(await api('/v1/profile-usage'));status.textContent=''}catch(error){status.textContent=error.message}
+  try{
+   const data=await api('/v1/profile-usage');renderUsage(data);
+   if(usageManualBaseline){
+    const profiles=Array.isArray(data?.profiles)?data.profiles:[];
+    const done=profiles.every(profile=>{
+     const previous=usageManualBaseline.get(profile.application+'\0'+profile.name);
+     return profile.checkedAt&&new Date(profile.checkedAt).getTime()>new Date(previous||0).getTime();
+    });
+    if(done){stopManualUsageRefresh();status.textContent='Usage updated.'}
+    else if(Date.now()-usageManualStarted>180000){stopManualUsageRefresh();status.textContent='Checks are taking longer; results will continue to update.'}
+    else status.textContent='Checking profiles…';
+   }else status.textContent='';
+   return data;
+  }catch(error){if(usageManualBaseline&&Date.now()-usageManualStarted>180000)stopManualUsageRefresh();status.textContent=error.message}
+ }
+ function stopManualUsageRefresh(){clearInterval(usageManualTimer);usageManualBaseline=null;$('#usage-refresh').disabled=false}
+ async function requestUsageRefresh(){
+  if(usageManualBaseline)return;
+  const button=$('#usage-refresh'),status=$('#usage-status');button.disabled=true;
+  try{
+   const before=await api('/v1/profile-usage');renderUsage(before);
+   const result=await api('/v1/profile-usage/refresh','POST');
+   if($('#usage-modal').hidden)return;
+   if(!result.profiles){status.textContent='No saved agent profiles to check.';return}
+   usageManualBaseline=new Map((before.profiles||[]).map(profile=>[profile.application+'\0'+profile.name,profile.checkedAt||'']));
+   usageManualStarted=Date.now();status.textContent='Checking profiles…';
+   usageManualTimer=setInterval(()=>void refreshUsage(),5000);
+   await refreshUsage();
+  }catch(error){status.textContent=error.message}
+  finally{if(!usageManualBaseline)button.disabled=false}
  }
  $('#usage-toggle').onclick=()=>{if(!owner)return;closeSheets();$('#usage-modal').hidden=false;void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)};
- $('#usage-refresh').onclick=()=>void refreshUsage();
- document.querySelectorAll('#usage-modal [data-close]').forEach(el=>el.addEventListener('click',()=>clearInterval(usageTimer)));
+ $('#usage-refresh').onclick=()=>void requestUsageRefresh();
+ document.querySelectorAll('#usage-modal [data-close]').forEach(el=>el.addEventListener('click',()=>{clearInterval(usageTimer);stopManualUsageRefresh()}));
  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('#usage-modal').hidden)void refreshUsage()});
 
  /* ---------- instruction presets, box instructions, imported profiles ---------- */
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
- function closeSheets(){clearInterval(usageTimer);document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
+ function closeSheets(){clearInterval(usageTimer);stopManualUsageRefresh();document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
 
  /* ---------- saved Chat slash commands ---------- */
  let selectedCommandName='';

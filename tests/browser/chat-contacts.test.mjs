@@ -17,6 +17,7 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // APIs and writes the screenshot the PR references.
 test('chat details drawer edits the per-box contact graph',async()=>{
  let protectedBox=false,requests=[],creations=[],fullDesktopShots=0,explicitIdle=false,tags=['backend','priority'];
+ let usageCheckedAt=new Date(Date.now()-60000).toISOString();
  const directPolicies=new Map();
  let contacts=[
   {contactBoxId:'reviewer',contactName:'reviewer',contactRoles:[],contactState:'running',contactAgent:'codex',override:'allow',canMessage:true,reason:"Included in this box's direct contact list."},
@@ -37,6 +38,8 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(!path.startsWith('/v1/'))return res.end();
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
+  if(path==='/v1/profile-usage'&&method==='GET')return res.end(JSON.stringify({profiles:[{application:'claude',name:'personal',boxes:[],checkedAt:usageCheckedAt,observedAt:usageCheckedAt,snapshot:{windows:[{name:'session',usedPercent:4}],balances:[],rateCaps:[],source:'saved profile'}}],refreshSeconds:60,pollSeconds:1800}));
+  if(path==='/v1/profile-usage/refresh'&&method==='POST'){usageCheckedAt=new Date().toISOString();res.statusCode=202;return res.end(JSON.stringify({profiles:1}))}
   if(path==='/v1/logical-boxes'&&method==='POST'){let body='';for await(const chunk of req)body+=chunk;creations.push(JSON.parse(body));return res.end(JSON.stringify({id:'created',name:'github-chat-fixture'}))}
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
   if(path==='/v1/fleet/status')return res.end(JSON.stringify({slots:[{id:'slot-builder',ordinal:2,serviceName:'worker-west-2',serviceId:'svc-42'}]}));
@@ -107,6 +110,12 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-app').hidden);
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await p.click('#usage-toggle');
+  await p.waitForFunction(()=>document.querySelector('#usage-list').textContent.includes('claude · personal'));
+  await p.click('#usage-refresh');
+  await p.waitForFunction(()=>document.querySelector('#usage-status').textContent==='Usage updated.');
+  assert.ok(requests.includes('POST /v1/profile-usage/refresh'),'manual usage refresh must start a new check');
+  await p.click('#usage-modal button[data-close]');
   await p.evaluate(()=>{document.querySelector('#login').hidden=false});
   const loginLayout=await p.evaluate(()=>{const form=document.querySelector('#login'),card=form.querySelector('.login-card'),style=getComputedStyle(form);return {position:style.position,z:Number(style.zIndex),card:!!card,modal:card?.getAttribute('aria-modal')}});
   assert.deepEqual(loginLayout,{position:'fixed',z:100,card:true,modal:'true'});

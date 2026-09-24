@@ -671,9 +671,10 @@ profile does not establish that its authentication is valid.
 
 Owners can open **Usage** in the Agent chat header to see limits for every saved
 Claude, Codex, and OpenCode profile, including profiles with no running box.
-The controller checks each account/profile pair once every five minutes and
-caches the result; opening the view only reads that cache. It prefers a running
-box's credential copy, then tries the encrypted saved profile in an isolated
+The controller checks each account/profile pair about every 30 minutes and
+caches the result; opening the view only reads that cache. Owners can use the
+refresh button to start an immediate check of all saved profiles. It prefers a
+running box's credential copy, then tries the encrypted saved profile in an isolated
 temporary home if no box is available or the live check fails. A sleeping box
 is never started for a usage check. A saved OAuth snapshot can be older than a
 box's refreshed login; failed checks are shown instead of an invented limit.
