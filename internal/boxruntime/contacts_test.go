@@ -15,15 +15,21 @@ func TestValidateContactRefAcceptsBoxIdentities(t *testing.T) {
 	}
 }
 
-func TestResolveContactAcceptsCompactIDOrExactName(t *testing.T) {
+func TestResolveContactAcceptsCompactIDNameOrIncomingFullID(t *testing.T) {
 	contacts := []ContactSummary{{ID: "a1b2c3d4", Name: "CodeChecker", CanMessage: true}}
-	for _, ref := range []string{"a1b2c3d4", "CodeChecker", "codechecker"} {
+	for _, ref := range []string{"a1b2c3d4", "CodeChecker", "codechecker", "a1b2c3d4-1234-4000-8000-000000000000"} {
 		name, err := resolveContactFromList(contacts, ref)
 		if err != nil || name != "CodeChecker" {
 			t.Fatalf("resolveContactFromList(%q)=(%q,%v)", ref, name, err)
 		}
 	}
-	if _, err := resolveContactFromList(contacts, "unknown"); err == nil {
-		t.Fatal("unknown contact was accepted")
+	for _, ref := range []string{"unknown", "deadbeef-1234-4000-8000-000000000000", "a1b2c3d4-not-a-valid-uuid"} {
+		if _, err := resolveContactFromList(contacts, ref); err == nil {
+			t.Fatalf("unknown contact %q was accepted", ref)
+		}
+	}
+	blocked := []ContactSummary{{ID: "a1b2c3d4", Name: "CodeChecker", CanMessage: false}}
+	if _, err := resolveContactFromList(blocked, "a1b2c3d4-1234-4000-8000-000000000000"); err == nil {
+		t.Fatal("the full ID bypassed a blocked contact")
 	}
 }

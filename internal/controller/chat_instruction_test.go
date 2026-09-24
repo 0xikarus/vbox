@@ -1,8 +1,11 @@
 package controller
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
 
 func TestChatInstructionDefaultRemindsAgentToReplyThroughMCP(t *testing.T) {
@@ -29,8 +32,33 @@ func TestChatInstructionIsThinOnEveryMessage(t *testing.T) {
 
 func TestContactChatInstructionKeepsRoutingAndRemindsAgentToReplyThroughMCP(t *testing.T) {
 	got := (&Server{}).contactChatInstruction("m1", "box-2", "Helper", "claude")
-	if got != "\n\n[Message-ID: m1; From-Box-ID: box-2]\nReply using the vmbox-desktop chat_message MCP tool with contact set to this From-Box-ID." {
+	if got != "\n\n[Message-ID: m1; From-Box-ID: box-2]\nFormat to reply: call the vmbox-desktop chat_message MCP tool with {\"contact\":\"box-2\",\"text\":\"...\"}. Do not use replyTo for a contact message." {
 		t.Fatalf("contact appendix must carry IDs and MCP reminder: %q", got)
+	}
+}
+
+func TestContactPromptAppendsExactReplyFormatForEveryManagedAgent(t *testing.T) {
+	const senderID = "a1b2c3d4-1234-4000-8000-000000000000"
+	message := v1.BoxMessage{ID: "message-1", ChatKey: "short-ref", SenderBoxID: senderID, Text: "Please review this."}
+	for _, agent := range []string{"codex", "claude", "opencode"} {
+		for _, native := range []bool{false, true} {
+			server := &Server{}
+			var prompt string
+			var err error
+			if native {
+				prompt, err = server.boxMessageNativePrompt(context.Background(), "account-a", agent, message)
+			} else {
+				prompt, err = server.boxMessagePrompt(context.Background(), "account-a", agent, message)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasPrefix(prompt, message.Text+"\n\n[Message-ID: short-ref; From-Box-ID: "+senderID+"]") ||
+				!strings.Contains(prompt, `{"contact":"`+senderID+`","text":"..."}`) ||
+				strings.Contains(prompt, `{"replyTo":`) {
+				t.Fatalf("%s native=%t contact prompt lacks exact reply format: %q", agent, native, prompt)
+			}
+		}
 	}
 }
 
