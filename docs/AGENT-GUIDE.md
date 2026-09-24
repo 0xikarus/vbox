@@ -113,7 +113,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   are created only when absent; an exact legacy vmbox Terminal icon is refreshed,
   while owner edits survive reconnects. libfm's quick-execute preference allows
   desktop launchers to open without an executable-file prompt; it also applies
-  to other executable files opened through PCManFM. New interactive shells use
+  to other executable files opened through PCManFM. The desktop runtime polls
+  `/data/workspace` every three seconds and mirrors its top-level real folders
+  as symlinks in the configured Desktop directory. It records only links it
+  created and removes stale links only if their targets remain unchanged, so
+  owner files and custom launchers survive. New interactive shells use
   `VMBOX_DESKTOP_DISPLAY`: `:99` is the dedicated-worker fallback, while shared
   workers assign a distinct display to each workspace. Screenshot/input agent
   tools remain separate and should be used instead of assuming a display number.

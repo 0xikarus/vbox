@@ -160,7 +160,7 @@ func run() error {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		return boxruntime.DesktopInput(ctx, args[1], action)
-	case "desktop-enable", "desktop-start", "desktop-run", "desktop-stream", "desktop-status", "desktop-screenshot", "desktop-thumbnail":
+	case "desktop-enable", "desktop-start", "desktop-run", "desktop-folders", "desktop-stream", "desktop-status", "desktop-screenshot", "desktop-thumbnail":
 		if len(args) != 2 && !(args[0] == "desktop-start" && len(args) == 3) {
 			return fmt.Errorf("desktop command requires ASSIGNMENT")
 		}
@@ -187,6 +187,8 @@ func run() error {
 			return boxruntime.StartDesktop(ctx, args[1])
 		case "desktop-run":
 			return boxruntime.RunDesktop(ctx, args[1])
+		case "desktop-folders":
+			return boxruntime.RunDesktopFolders(ctx, args[1])
 		default:
 			return boxruntime.StreamDesktop(ctx, args[1], os.Stdin, os.Stdout)
 		}

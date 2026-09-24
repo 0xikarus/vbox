@@ -429,6 +429,10 @@ applications without restarting VNC or the box.
 New default worker images include a desktop, which opens automatically in the
 interactive web workspace. TMUX remains available in its tab and through the CLI.
 The desktop has Chromium, Terminal and Files launch icons, plus Blender when installed.
+Top-level folders created in `/data/workspace` appear as links on the desktop
+within a few seconds. Opening one opens the original workspace folder; files
+and hidden folders are not added. Existing desktop files and custom launchers
+are preserved.
 Applications launch when you select them. New interactive shells use the box's
 `VMBOX_DESKTOP_DISPLAY` for this shared screen (`:99` on dedicated workers; a
 per-workspace display on shared workers); this does not itself give agents

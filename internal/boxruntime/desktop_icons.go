@@ -20,5 +20,10 @@ func ensureDesktopIcons(ctx context.Context, assignment string) error {
 	if err != nil {
 		return fmt.Errorf("start desktop icons: %w", err)
 	}
+	command = "new-window -d -t vmbox-desktop -n folders " + shellQuote("vmbox-runtime desktop-folders "+shellQuote(assignment))
+	_, err = tmuxOutput(ctx, "if-shell", "-F", "#{==:#{@vmbox_assignment},"+assignment+"}", command, "display-message 'assignment changed'")
+	if err != nil {
+		return fmt.Errorf("start workspace folder icons: %w", err)
+	}
 	return nil
 }
