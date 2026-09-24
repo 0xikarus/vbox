@@ -43,7 +43,7 @@ try:
     worker('vmbox-runtime', 'desktop-start', fence)
     for attempt in range(50):
         try:
-            identifier = window('search', '--onlyvisible', '--name', '^vmbox managed session$').splitlines()[0]
+            identifier = window('search', '--onlyvisible', '--name', '^vmbox managed session:').splitlines()[0]
             break
         except subprocess.CalledProcessError:
             time.sleep(.2)

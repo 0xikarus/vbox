@@ -166,7 +166,7 @@ exec docker exec --interactive --user 10001:10001 --env HOME=/data/home %q "$@"
 	desktopAction(t, ctx, wrapped, binding.Assignment, map[string]any{"action": "pause"}, 0)
 	desktopAction(t, ctx, wrapped, binding.Assignment, map[string]any{"action": "type", "text": "must-not-be-typed"}, 1)
 	desktopAction(t, ctx, wrapped, binding.Assignment, map[string]any{"action": "resume"}, 0)
-	containerExec("sh", "-c", `id=$(DISPLAY=:99 xdotool search --name '^vmbox managed session$' | head -n1); test -n "$id"; DISPLAY=:99 xdotool windowactivate --sync "$id"`)
+	containerExec("sh", "-c", `id=$(DISPLAY=:99 xdotool search --name '^vmbox managed session:' | head -n1); test -n "$id"; DISPLAY=:99 xdotool windowactivate --sync "$id"`)
 	secondToken := "desktop-input-" + strings.ReplaceAll(uuid(), "-", "")
 	desktopAction(t, ctx, wrapped, binding.Assignment, map[string]any{"action": "type", "text": "printf '%s\\n' '" + secondToken + "'"}, 0)
 	desktopAction(t, ctx, wrapped, binding.Assignment, map[string]any{"action": "key", "keys": []string{"Return"}}, 0)
@@ -573,7 +573,7 @@ func desktopAction(t *testing.T, ctx context.Context, wrapped *directWorkerProvi
 func waitDesktopWindow(t *testing.T, ctx context.Context, wrapped *directWorkerProvider) {
 	t.Helper()
 	for {
-		result, err := wrapped.Exec(ctx, "disposable-desktop-service", []string{"sh", "-c", "DISPLAY=:99 xdotool search --name '^vmbox managed session$'"}, provider.ExecOptions{})
+		result, err := wrapped.Exec(ctx, "disposable-desktop-service", []string{"sh", "-c", "DISPLAY=:99 xdotool search --name '^vmbox managed session:'"}, provider.ExecOptions{})
 		if err == nil && result.ExitCode == 0 && strings.TrimSpace(result.Stdout) != "" {
 			return
 		}

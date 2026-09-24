@@ -97,7 +97,7 @@ func installDesktopPackages(ctx context.Context, progress io.Writer, blender boo
 	return nil
 }
 
-func StartDesktop(ctx context.Context, assignment string) error {
+func StartDesktop(ctx context.Context, assignment string, preferredSession ...string) error {
 	inv, err := NativeSessions(ctx, assignment)
 	if err != nil {
 		return err
@@ -146,6 +146,14 @@ func StartDesktop(ctx context.Context, assignment string) error {
 				}
 				if err := exitTmuxCopyMode(ctx, session.ID); err != nil {
 					return err
+				}
+			}
+			if len(preferredSession) > 0 {
+				for _, session := range inv.Sessions {
+					if session.Name == preferredSession[0] {
+						raiseManagedDesktopTerminal(ctx, session.Name)
+						break
+					}
 				}
 			}
 			return nil

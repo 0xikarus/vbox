@@ -32,7 +32,7 @@ try:
         # Reopening the viewer must not launch a second terminal or shell.
         worker(name, 'vmbox-runtime', 'desktop-start', fence)
         time.sleep(.5)
-        windows = worker(name, 'env', 'DISPLAY=:99', 'xdotool', 'search', '--name', '^vmbox managed session$').stdout.splitlines()
+        windows = worker(name, 'env', 'DISPLAY=:99', 'xdotool', 'search', '--name', '^vmbox managed session:').stdout.splitlines()
         assert len(windows) == 1, ('visible terminal count', len(windows))
         for attempt in range(50):
             command = worker(name, 'tmux', 'display-message', '-p', '-t', 'shell-fixture', '#{pane_current_command}').stdout.strip()

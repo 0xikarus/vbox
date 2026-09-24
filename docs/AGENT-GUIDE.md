@@ -12,7 +12,7 @@ provider-agnostic. A logical box is **not** a fleet service: its workspace volum
 can outlive, and later attach to, a different compute slot.
 
 - `vmbox BOX`: persistent interactive shell/tmux workspace; launch agents yourself.
-- Web box workspace: start the selected managed agent and prefer its enabled desktop, with Desktop and TMUX views of the same session.
+- Web box workspace: start the selected managed agent and prefer its enabled desktop, with Desktop and TMUX views of the same session. Opening Desktop raises the box's primary session window, which is titled with its tmux session name.
 - **Grid**: multiple viewers for existing persistent interactive boxes, not a
   scheduler, launcher, or broadcast-input console.
 

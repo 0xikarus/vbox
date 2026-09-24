@@ -108,6 +108,16 @@ func (s *Server) desktopAction(w http.ResponseWriter, r *http.Request, p Princip
 	}
 	verb := strings.TrimPrefix(command, "desktop-")
 	argv := []string{"vmbox-runtime", command, nativeFence(a)}
+	if command == "desktop-start" {
+		primary, err := s.Store.PrimarySession(ctx, p, box.ID)
+		if err != nil {
+			writeError(w, 500, fmt.Errorf("desktop primary session unavailable"))
+			return
+		}
+		if validSessionName(primary) {
+			argv = append(argv, primary)
+		}
+	}
 	result, err := prov.Exec(ctx, a.Slot.ServiceID, argv, provider.ExecOptions{})
 	// A restarted worker keeps the box running but loses the tmux server that
 	// carried its assignment, so every desktop command fails until the fence is
