@@ -2056,7 +2056,9 @@
   for(const profile of profiles){
    const card=mk('article');card.className='usage-profile';
    const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
-   card.append(mk('p',(profile.boxes||[]).join(', ')+' · '+(profile.observedAt?'Observed '+usageDate(profile.observedAt):'Waiting for first check')));
+   const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
+   const source=profile.snapshot?.source?' · Source: '+profile.snapshot.source:'';
+   card.append(mk('p',boxes+source+' · '+(profile.observedAt?'Observed '+usageDate(profile.observedAt):'Waiting for first check')));
    const snapshot=profile.snapshot;
    for(const window of snapshot?.windows||[]){
     const row=mk('div');row.className='usage-window';

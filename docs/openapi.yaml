@@ -37,11 +37,11 @@ paths:
               schema: {type: array, items: {$ref: '#/components/schemas/LoginProfile'}}
   /v1/profile-usage:
     get:
-      summary: Owner-only cached usage limits for profiles imported into running boxes
-      description: Reads cached results without waking a box. The controller polls one live box per account, application, and imported profile about every five minutes.
+      summary: Owner-only cached usage limits for every saved agent profile
+      description: Reads cached results without waking a box. The controller polls each account, application, and saved profile about every five minutes, preferring an available live box and otherwise checking the saved credential snapshot.
       responses:
         '200':
-          description: Profile names, live box names, last observation and normalized provider limits
+          description: Saved profile names, live box names, last observation, probe source, and normalized provider limits
           content:
             application/json:
               schema:

@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -59,6 +62,7 @@ type profileUsageSnapshot struct {
 	Spend    *profileUsageSpend    `json:"spend,omitempty"`
 	RateCaps []profileUsageRateCap `json:"rateCaps"`
 	Note     string                `json:"note,omitempty"`
+	Source   string                `json:"source,omitempty"`
 }
 
 type profileUsageCandidate struct {
@@ -130,6 +134,45 @@ WHERE b.state='running' AND s.service_id IS NOT NULL`
 	return result, nil
 }
 
+// Start with saved controller profiles so profiles without a running box are
+// still visible. A matching live box supplies the freshest credential copy.
+func (s *Server) savedProfileUsageCandidates(ctx context.Context, accountID string) ([]profileUsageCandidate, error) {
+	live, err := s.liveProfileUsageCandidates(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	byKey := make(map[string]profileUsageCandidate, len(live))
+	for _, candidate := range live {
+		byKey[candidate.key()] = candidate
+	}
+	query := `SELECT account_id::text,application,name FROM login_profiles WHERE application IN ('claude','codex','opencode')`
+	args := []any{}
+	if accountID != "" {
+		query += " AND account_id=$1"
+		args = append(args, accountID)
+	}
+	query += " ORDER BY account_id,application,name"
+	rows, err := s.Store.DB.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []profileUsageCandidate{}
+	for rows.Next() {
+		var candidate profileUsageCandidate
+		if err := rows.Scan(&candidate.AccountID, &candidate.Application, &candidate.Name); err != nil {
+			return nil, err
+		}
+		if current, ok := byKey[candidate.key()]; ok {
+			candidate = current
+		} else {
+			candidate.Boxes = []string{}
+		}
+		result = append(result, candidate)
+	}
+	return result, rows.Err()
+}
+
 func (s *Server) claimProfileUsage(ctx context.Context, candidate profileUsageCandidate, token string) (bool, error) {
 	var claimed string
 	err := s.Store.DB.QueryRowContext(ctx, `INSERT INTO profile_usage_snapshots(account_id,application,profile_name,claim_until,claim_token)
@@ -163,20 +206,36 @@ WHERE account_id=$1 AND application=$2 AND profile_name=$3 AND claim_token=$4`,
 
 func (s *Server) probeProfileUsage(ctx context.Context, candidate profileUsageCandidate) (profileUsageSnapshot, error) {
 	var snapshot profileUsageSnapshot
+	profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: candidate.AccountID}, candidate.Application, candidate.Name)
+	if err != nil {
+		return snapshot, fmt.Errorf("saved profile unavailable")
+	}
+	defer func() {
+		for _, data := range profile.Files {
+			clear(data)
+		}
+	}()
 	model := candidate.Model
 	if candidate.Application == "opencode" && model == "" {
-		profile, err := s.Store.LoadLoginProfile(ctx, Principal{AccountID: candidate.AccountID}, "opencode", candidate.Name)
-		if err == nil {
-			model = loginprofile.Model("opencode", profile.Files)
-			for _, data := range profile.Files {
-				clear(data)
-			}
-		}
+		model = loginprofile.Model("opencode", profile.Files)
 	}
 	providerName, modelID, _ := strings.Cut(model, "/")
 	if candidate.Application == "opencode" && providerName != "" && providerName != "openrouter" && providerName != "venice" {
 		return snapshot, fmt.Errorf("OpenCode model does not select OpenRouter or Venice")
 	}
+	if candidate.ServiceID != "" {
+		liveCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		live, err := s.probeLiveProfileUsage(liveCtx, candidate, providerName, modelID)
+		cancel()
+		if err == nil {
+			return live, nil
+		}
+	}
+	return runSavedProfileUsage(ctx, candidate.Application, providerName, modelID, profile.Files, "/usr/local/bin:/usr/bin:/bin")
+}
+
+func (s *Server) probeLiveProfileUsage(ctx context.Context, candidate profileUsageCandidate, providerName, modelID string) (profileUsageSnapshot, error) {
+	var snapshot profileUsageSnapshot
 	prov, err := s.provider(ctx, candidate.AccountID, candidate.Provider, candidate.Credential)
 	if err != nil {
 		return snapshot, fmt.Errorf("worker connection unavailable")
@@ -189,17 +248,75 @@ func (s *Server) probeProfileUsage(ctx context.Context, candidate profileUsageCa
 	if len(result.Stdout) > 1<<20 {
 		return snapshot, fmt.Errorf("usage response too large")
 	}
+	return decodeProfileUsage([]byte(result.Stdout), "live box")
+}
+
+func decodeProfileUsage(data []byte, source string) (profileUsageSnapshot, error) {
+	var snapshot profileUsageSnapshot
 	var response struct {
 		profileUsageSnapshot
 		Error string `json:"error"`
 	}
-	if json.Unmarshal([]byte(result.Stdout), &response) != nil {
+	if json.Unmarshal(data, &response) != nil {
 		return snapshot, fmt.Errorf("invalid usage response")
 	}
 	if response.Error != "" {
 		return snapshot, fmt.Errorf("%s", response.Error)
 	}
+	response.Source = source
 	return response.profileUsageSnapshot, nil
+}
+
+// Give each saved profile a private, short-lived home. Only credential files
+// are copied; uploaded settings and MCP configuration cannot run on the
+// controller while reading usage. The command receives no controller secrets.
+func runSavedProfileUsage(ctx context.Context, application, providerName, modelID string, files map[string][]byte, pathEnv string) (profileUsageSnapshot, error) {
+	var snapshot profileUsageSnapshot
+	home, err := os.MkdirTemp("", "vmbox-profile-usage-")
+	if err != nil {
+		return snapshot, fmt.Errorf("profile usage workspace unavailable")
+	}
+	defer os.RemoveAll(home)
+	credentials := map[string]string{
+		"claude":   ".claude/.credentials.json",
+		"codex":    ".codex/auth.json",
+		"opencode": ".local/share/opencode/auth.json",
+	}
+	relative := credentials[application]
+	if relative == "" {
+		return snapshot, fmt.Errorf("unsupported harness")
+	}
+	name := filepath.Base(relative)
+	data := files[name]
+	if len(data) == 0 {
+		return snapshot, fmt.Errorf("saved profile credential unavailable")
+	}
+	destination := filepath.Join(home, relative)
+	if err := os.MkdirAll(filepath.Dir(destination), 0o700); err != nil {
+		return snapshot, fmt.Errorf("profile usage workspace unavailable")
+	}
+	if err := os.WriteFile(destination, data, 0o600); err != nil {
+		return snapshot, fmt.Errorf("profile usage workspace unavailable")
+	}
+	cmd := exec.CommandContext(ctx, "/usr/bin/python3", "-c", usageProbeScript, application, providerName, modelID)
+	cmd.Dir = home
+	cmd.Env = []string{
+		"HOME=" + home, "USER=vmbox", "LOGNAME=vmbox", "PATH=" + pathEnv,
+		"LANG=C.UTF-8", "TERM=dumb", "TMPDIR=" + home,
+		"XDG_CONFIG_HOME=" + filepath.Join(home, ".config"),
+		"XDG_DATA_HOME=" + filepath.Join(home, ".local/share"),
+		"XDG_CACHE_HOME=" + filepath.Join(home, ".cache"),
+		"CLAUDE_CONFIG_DIR=" + filepath.Join(home, ".claude"),
+		"CODEX_HOME=" + filepath.Join(home, ".codex"),
+	}
+	output, err := cmd.Output()
+	if err != nil {
+		return snapshot, fmt.Errorf("saved profile usage probe unavailable")
+	}
+	if len(output) > 1<<20 {
+		return snapshot, fmt.Errorf("usage response too large")
+	}
+	return decodeProfileUsage(output, "saved profile")
 }
 
 func (s *Server) pollProfileUsage(ctx context.Context, candidate profileUsageCandidate) {
@@ -212,7 +329,7 @@ func (s *Server) pollProfileUsage(ctx context.Context, candidate profileUsageCan
 	if !claimed {
 		return
 	}
-	probeCtx, cancel := context.WithTimeout(ctx, 35*time.Second)
+	probeCtx, cancel := context.WithTimeout(ctx, 65*time.Second)
 	snapshot, probeErr := s.probeProfileUsage(probeCtx, candidate)
 	cancel()
 	detail := ""
@@ -225,14 +342,16 @@ func (s *Server) pollProfileUsage(ctx context.Context, candidate profileUsageCan
 	// A probe that crossed a box reassignment or credential replacement must not
 	// publish a snapshot from the old workspace.
 	var stillCurrent bool
-	err = s.Store.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM logical_boxes b JOIN compute_slots sl ON sl.id=b.slot_id
+	if output != nil && output.Source == "live box" {
+		err = s.Store.DB.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM logical_boxes b JOIN compute_slots sl ON sl.id=b.slot_id
 WHERE b.account_id=$1 AND b.id=$2 AND b.state='running' AND b.assignment_generation=$3
 AND sl.service_id=$4 AND COALESCE(b.metadata->'importedLoginProfiles',b.metadata->'loginProfiles','[]'::jsonb)
 @> jsonb_build_array(jsonb_build_object('application',$5::text,'name',$6::text)))`,
-		candidate.AccountID, candidate.BoxID, candidate.Generation, candidate.ServiceID, candidate.Application, candidate.Name).Scan(&stillCurrent)
-	if err != nil || !stillCurrent {
-		output = nil
-		detail = "Live box assignment or imported profile changed"
+			candidate.AccountID, candidate.BoxID, candidate.Generation, candidate.ServiceID, candidate.Application, candidate.Name).Scan(&stillCurrent)
+		if err != nil || !stillCurrent {
+			output = nil
+			detail = "Live box assignment or imported profile changed"
+		}
 	}
 	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer finishCancel()
@@ -242,7 +361,7 @@ AND sl.service_id=$4 AND COALESCE(b.metadata->'importedLoginProfiles',b.metadata
 }
 
 func (s *Server) reconcileProfileUsageNow(ctx context.Context) error {
-	candidates, err := s.liveProfileUsageCandidates(ctx, "")
+	candidates, err := s.savedProfileUsageCandidates(ctx, "")
 	if err != nil {
 		return err
 	}
@@ -293,7 +412,7 @@ type profileUsageOverviewRow struct {
 
 func (s *Server) profileUsageOverview(w http.ResponseWriter, r *http.Request, p Principal) {
 	w.Header().Set("Cache-Control", "no-store")
-	candidates, err := s.liveProfileUsageCandidates(r.Context(), p.AccountID)
+	candidates, err := s.savedProfileUsageCandidates(r.Context(), p.AccountID)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("usage overview unavailable"))
 		return

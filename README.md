@@ -667,12 +667,16 @@ persistent volume and creation recovery remembers it. Account owners manage and
 provision saved profiles. Expired upstream logins still need renewal; saving a
 profile does not establish that its authentication is valid.
 
-### Usage limits for active profiles
+### Usage limits for saved profiles
 
-Owners can open **Usage** in the Agent chat header to see limits for profiles
-imported into running boxes. The controller checks each account/profile pair
-once every five minutes through one live box and caches the result; opening the
-view only reads that cache. A sleeping box is never started for a usage check.
+Owners can open **Usage** in the Agent chat header to see limits for every saved
+Claude, Codex, and OpenCode profile, including profiles with no running box.
+The controller checks each account/profile pair once every five minutes and
+caches the result; opening the view only reads that cache. It prefers a running
+box's credential copy, then tries the encrypted saved profile in an isolated
+temporary home if no box is available or the live check fails. A sleeping box
+is never started for a usage check. A saved OAuth snapshot can be older than a
+box's refreshed login; failed checks are shown instead of an invented limit.
 Claude shows `/usage` session and weekly windows, Codex shows ChatGPT quota
 windows, OpenRouter shows API-key spending and free-model daily requests, and
 Venice shows balances and configured model rates. These providers expose
