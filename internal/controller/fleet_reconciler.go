@@ -42,11 +42,17 @@ func (s *Server) reconcileFleet(ctx context.Context, accountID string, config v1
 	if config.Provider == "railway" && s.DefaultImage != "" && !immutableImage(config.Provider, s.DefaultImage) {
 		return fmt.Errorf("Railway compute fleet image must be pinned by sha256 digest")
 	}
-	prov, err := s.provider(ctx, accountID, config.Provider, config.ProviderCredential)
+	status, err := s.Store.FleetStatus(ctx, accountID, config.Provider, config.ProviderCredential)
 	if err != nil {
 		return err
 	}
-	status, err := s.Store.FleetStatus(ctx, accountID, config.Provider, config.ProviderCredential)
+	// A retained zero-capacity configuration has nothing to inspect or repair.
+	// Its old provider endpoint may no longer exist, but that must not make the
+	// active fleets' reconciliation fail every cycle.
+	if config.ComputeBoxSlots == 0 && status.ActualSlots == 0 && len(status.Slots) == 0 {
+		return nil
+	}
+	prov, err := s.provider(ctx, accountID, config.Provider, config.ProviderCredential)
 	if err != nil {
 		return err
 	}
