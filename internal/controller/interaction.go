@@ -139,17 +139,24 @@ func (s *Server) startAssignedBoxTaskRuntime(ctx context.Context, p Principal, p
 	if err = s.provisionDesktopAgent(ctx, tx, p, a, prov); err != nil {
 		return provider.ExecResult{}, err
 	}
+	// Codex asks the controller for its MCP policy while starting. Its newly
+	// issued desktop token must be visible to that request before startup runs.
+	if err = tx.Commit(); err != nil {
+		return provider.ExecResult{}, fmt.Errorf("commit desktop credential: %w", err)
+	}
 	result, err := s.startBoxTaskRuntime(ctx, p.AccountID, prov, a.Slot.ServiceID, task, message)
 	if err != nil {
 		return result, err
 	}
 	if result.ExitCode == 0 {
-		if _, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(jsonb_set(metadata,'{primarySession}',to_jsonb($3::text)),'{primaryAgent}',to_jsonb($4::text)),updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, a.Box.ID, task.Session, task.Agent); err != nil {
+		updated, updateErr := s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(jsonb_set(metadata,'{primarySession}',to_jsonb($3::text)),'{primaryAgent}',to_jsonb($4::text)),updated_at=now() WHERE account_id=$1 AND id=$2 AND state='running' AND fencing_token=$5 AND assignment_generation=$6`, p.AccountID, a.Box.ID, task.Session, task.Agent, a.FencingToken, a.Box.AssignmentGeneration)
+		if updateErr != nil {
 			return result, fmt.Errorf("task startup outcome uncertain; inspect its terminal")
 		}
-	}
-	if err = tx.Commit(); err != nil {
-		return result, fmt.Errorf("task startup outcome uncertain; inspect its terminal")
+		rows, rowsErr := updated.RowsAffected()
+		if rowsErr != nil || rows != 1 {
+			return result, fmt.Errorf("task startup outcome uncertain; inspect its terminal")
+		}
 	}
 	return result, nil
 }

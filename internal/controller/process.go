@@ -460,6 +460,13 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 			return
 		}
 	}
+	// The managed harness requests its MCP policy during startup. Publish the
+	// desktop credential before launching it, or that request sees an unknown
+	// token until this transaction finally commits.
+	if err = tx.Commit(); err != nil {
+		writeError(w, 409, fmt.Errorf("desktop credential could not be committed"))
+		return
+	}
 	session := generatedTaskSession(req.Agent)
 	argv := []string{"vmbox-runtime", "interactive-start", nativeFence(a), session, req.Agent}
 	if req.StartCLI != "" {
@@ -470,19 +477,27 @@ func (s *Server) interactiveStartHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 502, fmt.Errorf("interactive startup unconfirmed; inspect sessions before retrying"))
 		return
 	}
-	if _, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(jsonb_set(metadata,'{primarySession}',to_jsonb($3::text)),'{primaryAgent}',to_jsonb($4::text)),updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID, session, req.Agent); err != nil {
+	updated, updateErr := s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(jsonb_set(metadata,'{primarySession}',to_jsonb($3::text)),'{primaryAgent}',to_jsonb($4::text)),updated_at=now() WHERE account_id=$1 AND id=$2 AND state='running' AND fencing_token=$5 AND assignment_generation=$6`, p.AccountID, box.ID, session, req.Agent, a.FencingToken, a.Box.AssignmentGeneration)
+	if updateErr != nil {
 		writeError(w, 500, fmt.Errorf("managed session started but identity could not be saved"))
 		return
 	}
+	rows, rowsErr := updated.RowsAffected()
+	if rowsErr != nil || rows != 1 {
+		writeError(w, 409, fmt.Errorf("managed session started but assignment changed; inspect sessions before retrying"))
+		return
+	}
 	if req.Agent == "shell" {
-		if _, err = tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{shellSession}',to_jsonb($3::text)),updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID, session); err != nil {
+		updated, updateErr = s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{shellSession}',to_jsonb($3::text)),updated_at=now() WHERE account_id=$1 AND id=$2 AND state='running' AND fencing_token=$4 AND assignment_generation=$5`, p.AccountID, box.ID, session, a.FencingToken, a.Box.AssignmentGeneration)
+		if updateErr != nil {
 			writeError(w, 500, fmt.Errorf("shell started but its identity could not be saved; inspect sessions before retrying"))
 			return
 		}
-	}
-	if err = tx.Commit(); err != nil {
-		writeError(w, 409, err)
-		return
+		rows, rowsErr = updated.RowsAffected()
+		if rowsErr != nil || rows != 1 {
+			writeError(w, 409, fmt.Errorf("shell started but assignment changed; inspect sessions before retrying"))
+			return
+		}
 	}
 	writeJSON(w, 201, map[string]string{"session": session})
 }
