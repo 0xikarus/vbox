@@ -4,7 +4,7 @@
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle'),replyPreview=$('#reply-preview'),threadPanel=$('#thread-panel'),threadMessages=$('#thread-messages');
  const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  const resumeChecks=new Map();
- let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,lastSignature='',stickToBottom=true,viewEpoch=0;
  const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
@@ -2010,7 +2010,9 @@
   try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){$('#error').textContent=e.message}
  };
  $('#logout').onclick=async()=>{
-  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);
+  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);
+  $('#usage-modal').hidden=true;
+  $('#usage-toggle').hidden=true;owner=false;
   closeTakeover();
   inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
@@ -2029,6 +2031,7 @@
   try{
    const who=await api('/v1/whoami');owner=who.role==='owner';
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
+   $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
@@ -2041,13 +2044,61 @@
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
- addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url);for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
+ addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url);for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
+
+ /* ---------- imported profile usage ---------- */
+ function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
+ function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
+ function renderUsage(data){
+  const root=$('#usage-list');root.replaceChildren();
+  const profiles=Array.isArray(data?.profiles)?data.profiles:[];
+  if(!profiles.length){root.append(mk('p','No running boxes with imported profiles.'));return}
+  for(const profile of profiles){
+   const card=mk('article');card.className='usage-profile';
+   const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
+   card.append(mk('p',(profile.boxes||[]).join(', ')+' · '+(profile.observedAt?'Observed '+usageDate(profile.observedAt):'Waiting for first check')));
+   const snapshot=profile.snapshot;
+   for(const window of snapshot?.windows||[]){
+    const row=mk('div');row.className='usage-window';
+    const names={session:'Current session',weekly_all:'Current week (all models)',weekly_scoped:'Current week',primary:'Primary',secondary:'Secondary'};
+    const label=[names[window.name]||window.name,window.scope,window.group&&window.group!==window.name?(names[window.group]||window.group):null,window.durationMinutes?window.durationMinutes+' min':null].filter(Boolean).join(' · ');
+    const percent=typeof window.usedPercent==='number'?window.usedPercent:null;
+    row.append(mk('div',label+' · '+(percent===null?'unknown':usageNumber(percent)+'% used')));
+    if(percent!==null){const track=mk('div');track.className='usage-track';const fill=mk('span');fill.style.width=Math.max(0,Math.min(100,percent))+'%';track.append(fill);row.append(track)}
+    if(window.resetsAt)row.append(mk('small','Resets '+usageDate(window.resetsAt)));
+    card.append(row);
+   }
+   if(snapshot?.spend){
+    const spend=snapshot.spend,unit=spend.currency||spend.unit||'';
+    const parts=[];
+    if(spend.remaining!=null)parts.push('remaining '+usageNumber(spend.remaining));
+    if(spend.used!=null)parts.push('used '+usageNumber(spend.used));
+    if(spend.limit!=null)parts.push('limit '+usageNumber(spend.limit));
+    card.append(mk('p','Spend'+(unit?' ('+unit+')':'')+': '+(parts.join(' · ')||'unavailable')+(spend.period?' · '+spend.period:'')));
+   }
+   if(snapshot?.balances?.length)card.append(mk('p','Balances: '+snapshot.balances.map(balance=>balance.unit+' '+usageNumber(balance.amount)).join(' · ')));
+   if(snapshot?.rateCaps?.length){const list=mk('ul');list.className='usage-caps';for(const cap of snapshot.rateCaps)list.append(mk('li',[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')));card.append(list)}
+   if(snapshot?.note)card.append(mk('p',snapshot.note));
+   if(profile.error)card.append(mk('p','Last check failed: '+profile.error));
+   if(profile.checkedAt)card.append(mk('small','Last checked '+usageDate(profile.checkedAt)));
+   root.append(card);
+  }
+ }
+ async function refreshUsage(){
+  if($('#usage-modal').hidden||document.hidden)return;
+  const status=$('#usage-status');status.textContent='Loading…';
+  try{renderUsage(await api('/v1/profile-usage'));status.textContent=''}catch(error){status.textContent=error.message}
+ }
+ $('#usage-toggle').onclick=()=>{if(!owner)return;closeSheets();$('#usage-modal').hidden=false;void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)};
+ $('#usage-refresh').onclick=()=>void refreshUsage();
+ document.querySelectorAll('#usage-modal [data-close]').forEach(el=>el.addEventListener('click',()=>clearInterval(usageTimer)));
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('#usage-modal').hidden)void refreshUsage()});
 
  /* ---------- instruction presets, box instructions, imported profiles ---------- */
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
- function closeSheets(){document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
+ function closeSheets(){clearInterval(usageTimer);document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
 
  /* ---------- saved Chat slash commands ---------- */
  let selectedCommandName='';

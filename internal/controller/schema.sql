@@ -42,6 +42,18 @@ CREATE TABLE IF NOT EXISTS login_profiles (
 );
 ALTER TABLE login_profiles DROP CONSTRAINT IF EXISTS login_profiles_application_check;
 ALTER TABLE login_profiles ADD CONSTRAINT login_profiles_application_check CHECK (application IN ('claude','codex','opencode','github'));
+CREATE TABLE IF NOT EXISTS profile_usage_snapshots (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  application text NOT NULL,
+  profile_name text NOT NULL,
+  checked_at timestamptz,
+  observed_at timestamptz,
+  claim_until timestamptz,
+  claim_token text,
+  snapshot jsonb,
+  last_error text NOT NULL DEFAULT '',
+  PRIMARY KEY(account_id, application, profile_name)
+);
 CREATE TABLE IF NOT EXISTS notification_destinations (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),

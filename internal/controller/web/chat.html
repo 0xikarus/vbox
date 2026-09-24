@@ -20,6 +20,7 @@
  <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a></nav>
  <nav class="chat-scope-tabs" aria-label="Chat view"><a href="/chat" aria-current="page">Owner</a><a href="/box-chats">Box ↔ Box</a></nav>
  <span class="spacer"></span>
+ <button id="usage-toggle" type="button" hidden title="Usage limits for active imported profiles">Usage</button>
  <button id="refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
 </header>
 
@@ -211,6 +212,16 @@
    <button id="delete-box-submit">Delete permanently</button>
   </form>
   <p id="delete-box-status" role="status"></p>
+ </section>
+</div>
+
+<div id="usage-modal" class="sheet" hidden>
+ <div class="sheet-backdrop" data-close="usage-modal"></div>
+ <section class="sheet-card usage-card" role="dialog" aria-modal="true" aria-labelledby="usage-title">
+  <header><strong id="usage-title">Profile usage limits</strong><span class="spacer"></span><button id="usage-refresh" type="button" title="Refresh cached results">↻</button><button type="button" data-close="usage-modal" aria-label="Close">×</button></header>
+  <p class="hint">Running boxes only. Each imported profile is queried once every five minutes; this view updates once a minute.</p>
+  <p id="usage-status" role="status"></p>
+  <div id="usage-list"></div>
  </section>
 </div>
 

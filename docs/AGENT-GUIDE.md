@@ -55,6 +55,7 @@ cleanup to these boxes.
 | Single-box UI | `internal/controller/web/workspace*` |
 | Grid | `internal/controller/grid.go`, `web/grid.html`, `web/grid.js`, `web/grid.css` |
 | Agent chats (WhatsApp-style, PWA, web push) | `web/chat.html`, `web/chat.js`, `web/chat.css`, `web/push-sw.js`, `internal/controller/web_push.go` |
+| Imported-profile usage polling and cached owner view | `internal/controller/profile_usage.go`, `usage_probe.py`, `profile_usage_snapshots` in `schema.sql`, `GET /v1/profile-usage` |
 
 The [direct-worker rollout](RAILWAY-DIRECT-WORKERS.md) keeps worker hosting on
 Railway. Each enrolled box has an authenticated worker agent; the controller sends

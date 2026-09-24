@@ -667,6 +667,18 @@ persistent volume and creation recovery remembers it. Account owners manage and
 provision saved profiles. Expired upstream logins still need renewal; saving a
 profile does not establish that its authentication is valid.
 
+### Usage limits for active profiles
+
+Owners can open **Usage** in the Agent chat header to see limits for profiles
+imported into running boxes. The controller checks each account/profile pair
+once every five minutes through one live box and caches the result; opening the
+view only reads that cache. A sleeping box is never started for a usage check.
+Claude shows `/usage` session and weekly windows, Codex shows ChatGPT quota
+windows, OpenRouter shows API-key spending and free-model daily requests, and
+Venice shows balances and configured model rates. These providers expose
+different metrics, so a missing quota window does not mean unlimited capacity.
+The view also shows the last observation time and any failed check.
+
 ## Managed agent instructions
 
 Reusable **instruction presets** are named Markdown guidance sets stored on the
