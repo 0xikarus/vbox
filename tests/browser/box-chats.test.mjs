@@ -33,6 +33,9 @@ test('owner can read a separate two-way box conversation with its image',async()
   assert.deepEqual(await page.$$eval('#messages article strong',elements=>elements.map(element=>element.textContent)),['Builder','Reviewer']);
   assert.equal(await page.$eval('#messages img',image=>image.naturalWidth),1);
   assert.equal(await page.$eval('#transcript',element=>getComputedStyle(element).display),'flex');
+  const sides=await page.$$eval('#messages article',elements=>elements.map(element=>({side:element.dataset.side,left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right})));
+  assert.deepEqual(sides.map(message=>message.side),['left','right']);
+  assert.ok(sides[0].left<sides[1].left&&sides[0].right<sides[1].right,'the two boxes must occupy opposite sides of the transcript');
   await page.click('#back');assert.equal(await page.$eval('#transcript',element=>getComputedStyle(element).display),'none');
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}

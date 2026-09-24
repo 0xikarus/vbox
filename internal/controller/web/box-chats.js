@@ -32,7 +32,7 @@
   if(messages.dataset.signature===signature)return;
   messages.dataset.signature=signature;messages.replaceChildren();
   for(const message of result){
-   const row=node('article','');row.className='message'+(message.senderBoxId===pair.boxBId?' reverse':'');
+   const row=node('article','');row.className='message';row.dataset.side=message.senderBoxId===pair.boxBId?'right':'left';
    row.append(node('strong',message.senderBoxId===pair.boxAId?pair.boxAName:pair.boxBName));row.append(node('p',message.text));
    for(const image of message.images||[]){const link=document.createElement('a');link.href='/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(image.id);link.target='_blank';link.rel='noopener';const preview=document.createElement('img');preview.src=link.href;preview.alt='Image '+image.number+' from '+(message.senderBoxId===pair.boxAId?pair.boxAName:pair.boxBName);link.append(preview);row.append(link)}
    row.append(node('time',new Date(message.createdAt).toLocaleString()));messages.append(row);

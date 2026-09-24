@@ -871,8 +871,8 @@
    inspect.onclick=()=>{closeAllMsgActions();void openTakeover('tmux',box.id)};
    menu.append(inspect);
   }
-  toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen){menu.hidden=false;toggle.setAttribute('aria-expanded','true')}};
-  row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();menu.hidden=false;toggle.setAttribute('aria-expanded','true')};
+  toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen)openMsgActions(menu,toggle)};
+  row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle)};
   actions.append(toggle,menu);meta.append(actions);row.append(meta);
   return row;
  }
@@ -893,7 +893,32 @@
   catch(e){statusEl.textContent=e.message}finally{button.disabled=boxes.get(selected)?.state!=='running'}
  };
  function closeAllMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu'))menu.hidden=true;for(const toggle of document.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
+ function openMsgActions(menu,toggle){menu.hidden=false;toggle.setAttribute('aria-expanded','true');placeMsgActions(menu,toggle)}
+ function placeMsgActions(menu,toggle){
+  const scroller=toggle.closest('#chat-messages,#thread-messages');
+  if(!scroller)return;
+  const clip=scroller.getBoundingClientRect(),viewport=window.visualViewport;
+  const top=Math.max(8,clip.top,viewport?.offsetTop||0),bottom=Math.min(innerHeight-8,clip.bottom,(viewport?.offsetTop||0)+(viewport?.height||innerHeight));
+  const left=Math.max(8,clip.left,viewport?.offsetLeft||0),right=Math.min(innerWidth-8,clip.right,(viewport?.offsetLeft||0)+(viewport?.width||innerWidth));
+  const anchor=toggle.getBoundingClientRect();
+  if(anchor.bottom<top||anchor.top>bottom){closeAllMsgActions();return}
+  menu.style.top='100%';menu.style.bottom='auto';menu.style.marginTop='.2rem';menu.style.marginBottom='0';
+  menu.style.maxHeight='none';menu.style.transform='none';
+  const height=menu.getBoundingClientRect().height,below=Math.max(0,bottom-anchor.bottom-4),above=Math.max(0,anchor.top-top-4);
+  const up=height>below&&above>below;
+  menu.style.top=up?'auto':'100%';menu.style.bottom=up?'100%':'auto';
+  menu.style.marginTop=up?'0':'.2rem';menu.style.marginBottom=up?'.2rem':'0';
+  menu.style.maxHeight=Math.max(0,(up?above:below)-4)+'px';
+  menu.dataset.placement=up?'up':'down';
+  const rect=menu.getBoundingClientRect();
+  const shift=rect.left<left?left-rect.left:rect.right>right?right-rect.right:0;
+  menu.style.transform='translateX('+shift+'px)';
+ }
  document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
+ function repositionMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu:not([hidden])'))placeMsgActions(menu,menu.parentElement.querySelector('.msg-more'))}
+ document.addEventListener('scroll',repositionMsgActions,true);
+ addEventListener('resize',repositionMsgActions);
+ window.visualViewport?.addEventListener('resize',repositionMsgActions);
  function scrollMessagesToBottom(){
   messagesEl.scrollTop=messagesEl.scrollHeight;
   requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});

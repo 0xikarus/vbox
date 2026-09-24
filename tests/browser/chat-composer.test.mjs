@@ -127,3 +127,31 @@ test('agent-to-agent messages identify their source box and preserve the thread'
   await p.screenshot({path:'docs/chat-ui/screenshots/agent-to-agent-thread.png'});await p.close();
  },agentThreadMessages);
 });
+
+test('message actions open toward available space and stay inside the transcript',async()=>{
+ await withChat(async(browser,base)=>{
+  const p=await browser.newPage();await p.setViewport({width:390,height:520});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user .msg-more');
+  await p.evaluate(()=>{
+   const messages=document.querySelector('#chat-messages');
+   for(const edge of ['before','after']){
+    const spacer=document.createElement('div');spacer.style.cssText='height:420px;flex:none';
+    if(edge==='before')messages.prepend(spacer);else messages.append(spacer);
+   }
+  });
+  async function check(block,expected){
+   await p.$eval('#chat-messages .msg.user .msg-more',(toggle,position)=>toggle.scrollIntoView({block:position}),block);
+   await p.click('#chat-messages .msg.user .msg-more');
+   const result=await p.$eval('#chat-messages .msg.user .msg-actions-menu',menu=>{
+    const rect=menu.getBoundingClientRect(),clip=document.querySelector('#chat-messages').getBoundingClientRect();
+    return {placement:menu.dataset.placement,top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right,clipTop:clip.top,clipBottom:clip.bottom,clipLeft:clip.left,clipRight:clip.right};
+   });
+   assert.equal(result.placement,expected);
+   assert.ok(result.top>=result.clipTop-1&&result.bottom<=result.clipBottom+1,'menu must fit vertically inside the transcript');
+   assert.ok(result.left>=result.clipLeft-1&&result.right<=result.clipRight+1,'menu must fit horizontally inside the transcript');
+   await p.click('#chat-messages .msg.user .msg-more');
+  }
+  await check('end','up');
+  await check('start','down');
+  await p.close();
+ });
+});
