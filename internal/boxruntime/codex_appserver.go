@@ -221,6 +221,24 @@ func rememberCodexThread(root, session, id string) error {
 	return writeTextAtomic(codexThreadFile(root, session), id+"\n", 0600)
 }
 
+// startVisibleCodexThread binds a new or restored managed TUI to a known
+// app-server thread before it accepts Chat messages. An idle remote TUI's
+// zero-turn thread may not appear in thread/list, while old rollouts do; using
+// list recency after wake can therefore enqueue Chat into an unseen thread.
+func startVisibleCodexThread(ctx context.Context, root, session string) ([]string, error) {
+	id, err := CodexStartFreshThread(ctx, session)
+	if err != nil {
+		return nil, err
+	}
+	if err := rememberCodexThread(root, session, id); err != nil {
+		return nil, err
+	}
+	if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
+		return nil, err
+	}
+	return codexRemoteResumeArgv(session, id), nil
+}
+
 // CodexStartFreshThread materializes a thread after the TUI's /new command.
 // The remote TUI may invalidate its old thread before it creates another, so
 // waiting for thread/list to grow can leave the next chat on a missing ID.

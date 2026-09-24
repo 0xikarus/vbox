@@ -84,6 +84,24 @@ func TestCodexCurrentThreadPrefersFirstTurnAfterClear(t *testing.T) {
 	}
 }
 
+func TestStartVisibleCodexThreadPinsWakeToTheTerminalThread(t *testing.T) {
+	previous := CodexStartFreshThread
+	t.Cleanup(func() { CodexStartFreshThread = previous })
+	CodexStartFreshThread = func(context.Context, string) (string, error) { return "fresh-visible", nil }
+	root := t.TempDir()
+	argv, err := startVisibleCodexThread(context.Background(), root, "codex-wake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(argv, codexRemoteResumeArgv("codex-wake", "fresh-visible")) {
+		t.Fatalf("terminal did not attach to pinned thread: %v", argv)
+	}
+	selected, err := CodexCurrentThread(context.Background(), nil, root, "codex-wake", "/workspace")
+	if err != nil || selected != "fresh-visible" {
+		t.Fatalf("Chat chose %q instead of the visible fresh thread: %v", selected, err)
+	}
+}
+
 func TestNewestCreatedCodexThreadAfterVisibleClear(t *testing.T) {
 	threads := []any{
 		map[string]any{"id": "old-busy", "createdAt": float64(10), "recencyAt": float64(100)},
