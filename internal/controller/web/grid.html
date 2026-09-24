@@ -1,12 +1,12 @@
 <!doctype html>
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>vmbox grid</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/xterm.css"><link rel="stylesheet" href="/grid.css">
-<header class="topbar"><span class="brand">vmbox</span><nav><a href="/">controller</a> · <a href="/grid" class="on">grid</a> <button id="logout" class="linkbtn" hidden>log out</button></nav></header>
-<h1>Grid</h1><p>Running interactive boxes appear automatically. Desktop is preferred when enabled; choose TMUX in any tile. Unavailable boxes are replaced automatically. Sleeping boxes stay asleep.</p>
+<header class="topbar grid-top"><strong class="brand">vmbox <span>/ grid</span></strong><nav class="workspace-links" aria-label="Workspace"><a href="/chat">Chats</a><a href="/grid" aria-current="page">Grid</a><a href="/#boxes">Boxes</a><a href="/#providers">Providers</a></nav><button id="logout" class="linkbtn" hidden>Log out</button></header>
+<div class="grid-heading"><div><h1>Grid</h1><p>Each running box shows its desktop above its TMUX session.</p></div><span id="grid-count" aria-live="polite"></span></div>
 <form id="login" hidden><label>Controller token <input name="token" type="password" autocomplete="current-password" required></label><button>Log in</button></form>
 <p id="error" role="alert"></p>
 <main id="grid-app" hidden>
 <form id="layout"><label>Columns <select name="columns"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label><label>Rows <select name="rows"><option value="auto" selected>All boxes</option><option>1</option><option>2</option></select></label><button>Apply layout</button><button type="button" id="refresh">Refresh boxes</button></form>
-<div id="tiles" aria-label="Box terminals"></div>
+<div id="tiles" aria-label="Box desktops and terminals"></div>
 </main>
 <script src="/xterm.js" defer></script><script src="/xterm-fit.js" defer></script><script src="/workspace-terminal.js" defer></script><script src="/novnc.js" defer></script><script src="/workspace-desktop.js" defer></script><script src="/grid.js" defer></script></html>

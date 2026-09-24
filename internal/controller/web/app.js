@@ -19,6 +19,7 @@ function boxPlacement(box){
 function updateBoxPlacements(boxes){
  const byID=new Map(boxes.map(box=>[box.id,box]));
  for(const row of document.querySelectorAll('#box-list [data-box-id]')){const box=byID.get(row.dataset.boxId);if(box){const cell=row.querySelector('.box-placement'),text=boxPlacement(box);cell.textContent=text;cell.title=text}}
+ if(selectedManagedBoxID)renderBoxDetail();
 }
 function renderPoolChoices(providers){
  for(const selector of ['#create-pool','#capacity-pool']){
@@ -170,13 +171,60 @@ function renderWorkerCapacity(){
 }
 $('#capacity-pool').addEventListener('change',renderWorkerCapacity);
 function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){root.append(node('p','No notification destinations configured. Notifications are optional.'));return}root.append(dataTable(['Name','Type','Status','Allowed users','Allowed chats'],values.map(n=>[n.name,n.kind,n.enabled?'Enabled':'Disabled',(n.allowedUsers||[]).join(', ')||'Not specified',(n.allowedChats||[]).join(', ')||'Not specified'])),rawDetails(values))}
+function renderProviders(providers){
+ const root=$('#provider-list');root.replaceChildren();
+ if(!providers.length){root.append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));return}
+ for(const provider of providers){
+  const fleet=fleetSnapshots.find(item=>item.provider===provider.provider&&item.providerCredential===(provider.name||''));
+  const card=node('article');card.className='provider-card';
+  const heading=node('div');heading.className='provider-card-heading';
+  const identity=node('div');identity.append(node('small',provider.provider),node('strong',provider.name));
+  const isDefault=defaults?.provider===provider.provider&&defaults?.providerCredential===provider.name;
+  if(isDefault){const badge=node('span','Default pool');badge.className='provider-default-badge';heading.append(identity,badge)}else heading.append(identity);
+  const capacity=node('div');capacity.className='provider-capacity';
+  if(fleet?.error)capacity.append(node('span','Capacity unavailable: '+fleet.error));
+  else for(const [label,value] of [['Workers',provider.provider==='shared-worker'?(fleet?.slots?.length?1:0):(fleet?.slots?.length??'—')],['Slots',fleet?.actualSlots??'—'],['Occupied',fleet?.occupiedSlots??'—'],['Free',fleet?.freeSlots??'—']]){const stat=node('span');stat.append(node('small',label),node('strong',String(value)));capacity.append(stat)}
+  const actions=node('div');actions.className='provider-actions';
+  actions.append(button('Edit',()=>{const form=$('#provider').elements;form.provider.value=provider.provider;form.alias.value=provider.name;form.config.value=JSON.stringify(provider.config||{},null,2);form.secret.value='';form.revision.value=provider.updatedAt;$('#provider-editor').open=true;$('#provider-editor').scrollIntoView({block:'start'});form.config.focus()}),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
+  if(!isDefault)actions.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
+  const details=node('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(provider.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));
+  card.append(heading,capacity,actions,details);root.append(card);
+ }
+}
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
+let listedBoxes=[],selectedManagedBoxID='',boxDetailTrigger=null;
+function closeBoxDetail(){selectedManagedBoxID='';$('#box-detail').hidden=true;$('#box-detail-backdrop').hidden=true;boxDetailTrigger?.focus();boxDetailTrigger=null}
+function renderBoxDetail(){
+ const box=listedBoxes.find(item=>item.id===selectedManagedBoxID);if(!box){closeBoxDetail();return}
+ $('#box-detail-title').textContent=box.name;
+ const root=$('#box-detail-body');root.replaceChildren();
+ const state=node('span',box.state);state.className='box-detail-state';state.dataset.state=box.state;
+ const intro=node('div');intro.className='box-detail-intro';intro.append(state,node('span',box.defaultAgent||'shell'));
+ const facts=node('dl');facts.className='box-detail-facts';
+ for(const [label,value] of [['Worker / slot',boxPlacement(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
+ if(box.failureReason){const error=node('p',box.failureReason);error.className='box-detail-error';root.append(error)}
+ const actions=node('div');actions.className='box-detail-actions';
+ const workspace=node('a','Open workspace');workspace.href='/boxes/'+encodeURIComponent(box.id);
+ const chat=node('a','Open chat');chat.href='/chat#box='+encodeURIComponent(box.id);
+ actions.append(workspace,chat,button('Permissions',()=>openBoxPolicyEditor(box)),button('Instructions',()=>openBoxInstructions(box)));
+ if(ownerTools)actions.append(button('Credentials',()=>openBoxCredentials(box)));
+ if(boxPhase(box.state)==='running')actions.append(button('Restart…',()=>restartBox(box)));
+ if(['stopped','failed'].includes(boxPhase(box.state)))actions.append(button('Resume',()=>{const row=document.querySelector('#box-list [data-box-id="'+CSS.escape(box.id)+'"]');row?.querySelector('[aria-label^="Resume box "]')?.click()}));
+ root.append(intro,facts,node('h3','Manage box'),actions);
+}
+function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus()}
+$('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#box-detail').hidden&&!document.querySelector('.modal:not([hidden])'))closeBoxDetail()});
+function manageView(){const view=location.hash==='#boxes'?'boxes':location.hash==='#providers'?'providers':'all';document.body.dataset.manageView=view;document.querySelectorAll('.workspace-links a').forEach(link=>{const active=link.getAttribute('href')==='#'+view;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})}
+addEventListener('hashchange',manageView);manageView();
 function renderBoxes(boxes){
+ listedBoxes=boxes;
  clearTimeout(boxRefreshTimer);
  for(const id of startingBoxes){const box=boxes.find(b=>b.id===id);if(!box||box.state==='running'||box.state==='failed'||box.state==='deleting'||box.state==='hibernated'&&box.failureReason)startingBoxes.delete(id)}
  const wrap=node('div');wrap.className='table-wrap';
  const table=document.createElement('table');table.className='markets';const head=document.createElement('tr');['Name','State','Worker / slot','Default agent','Permissions','CLI','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
- for(const b of boxes){
+ const query=$('#box-search').value.trim().toLocaleLowerCase();
+ for(const b of boxes.filter(box=>!query||box.name.toLocaleLowerCase().includes(query))){
   const row=document.createElement('tr');row.className='row';const cell=document.createElement('td'),select=document.createElement('select'),status=node('td',b.state),actions=document.createElement('td');row.dataset.boxId=b.id;
   for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;select.disabled=b.state==='deleting'||deletingBoxes.has(b.id);
   select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);
@@ -208,10 +256,13 @@ function renderBoxes(boxes){
    try{await deleteBoxWhenReady(b,()=>notice('Waiting for '+b.name+' to finish its current setup step before deleting…'));notice('Deleting '+b.name+'…')}
    finally{deletingBoxes.delete(b.id);try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch{if(version===epoch)remove.disabled=false}}
   });remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.prepend(remove);
+  const details=button('Details',event=>openBoxDetail(b,event.currentTarget));details.classList.add('box-details-action');details.setAttribute('aria-label','Details for box '+b.name);actions.prepend(details);
   const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));const permissions=node('td');permissions.append(button('Manage…',()=>openBoxPolicyEditor(b)));row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
+ if(selectedManagedBoxID)renderBoxDetail();
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
 }
+$('#box-search').addEventListener('input',()=>renderBoxes(listedBoxes));
 function renderPermissionBoxes(boxes){
  roleBoxes=boxes||[];const root=$('#role-assignments'),query=$('#role-box-search').value.trim().toLowerCase(),visible=roleBoxes.filter(box=>!query||box.name.toLowerCase().includes(query));root.replaceChildren();
  if(!visible.length){root.append(node('p',query?'No boxes match this search.':'Create a box to configure agent permissions.'));return}
@@ -265,11 +316,9 @@ async function refresh(){
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){if(preset.id==='desktop')continue;const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
  renderProfiles(identity,profiles);
- $('#provider-list').replaceChildren();
- if(!providers.length)$('#provider-list').append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));
- for(const p of providers){const line=node('p',p.provider+' / '+p.name+' ');line.append(button('Edit',()=>{const f=$('#provider').elements;f.provider.value=p.provider;f.alias.value=p.name;f.config.value=JSON.stringify(p.config||{},null,2);f.secret.value='';f.revision.value=p.updatedAt;$('#provider-editor').open=true;f.config.focus()}),button('Validate',async()=>{const result=await api(pp(p.provider,p.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}),button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:p.provider,providerCredential:p.name});await refresh()}));const details=document.createElement('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(p.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));$('#provider-list').append(line,details)}
+ renderProviders(providers);
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
- try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity()}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
+ try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
 $('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));

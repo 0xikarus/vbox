@@ -68,8 +68,8 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   const overlap=await p.evaluate(()=>{const a=document.querySelector('#new-box').getBoundingClientRect(),b=document.querySelector('#send').getBoundingClientRect();return !(a.right<b.left||a.left>b.right||a.bottom<b.top||a.top>b.bottom)});
   assert.equal(overlap,false,'the add-box button must not overlap send');
 
-  // dark Discord-like shell
-  assert.equal(await p.$eval('#chat-shell',el=>getComputedStyle(el).backgroundColor),'rgb(49, 51, 56)');
+  // Quiet workspace shell
+  assert.equal(await p.$eval('#chat-shell',el=>getComputedStyle(el).backgroundColor),'rgb(17, 25, 35)');
 
   // typing persists per box and across a reload
   await p.type('#chat-input','draft for alpha');

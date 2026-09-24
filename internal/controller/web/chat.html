@@ -16,8 +16,9 @@
 
 <header id="chat-top">
  <button id="chat-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
- <strong class="brand">vmbox <span>chats</span></strong>
- <nav class="chat-scope-tabs" aria-label="Chat view"><a href="/chat" aria-current="page">Owner chats</a><a href="/box-chats">Box ↔ Box</a></nav>
+ <strong class="brand">vmbox <span>/ chats</span></strong>
+ <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a></nav>
+ <nav class="chat-scope-tabs" aria-label="Chat view"><a href="/chat" aria-current="page">Owner</a><a href="/box-chats">Box ↔ Box</a></nav>
  <span class="spacer"></span>
  <button id="refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
 </header>
@@ -37,8 +38,8 @@
  <aside id="chat-list">
   <div id="chat-list-head">
    <div>
-    <h1>Chats</h1>
-    <p id="chat-list-sub">One chat per agent box</p>
+    <h1>Conversations</h1>
+    <p id="chat-list-sub">Your agent boxes</p>
    </div>
    <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
@@ -62,17 +63,25 @@
     <div id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></div>
     <span class="spacer"></span>
     <button id="chat-wake" type="button" hidden>Wake box</button>
-    <button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session">Clear</button>
-    <button id="chat-control" type="button" title="Take control: Desktop or TMUX in a popup">Control</button>
+    <button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session">Clear context</button>
+    <button id="chat-control" type="button" title="Take control: Desktop or TMUX in a popup">Desktop</button>
     <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false">Details</button>
     <a id="chat-workspace" href="#">Workspace</a>
+    <button id="chat-more" type="button" aria-label="More chat actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+    <div id="chat-more-menu" role="menu" hidden>
+     <button type="button" data-action="details" role="menuitem">Box details</button>
+     <button type="button" data-action="control" role="menuitem">Desktop / TMUX</button>
+     <a data-action="workspace" href="#" role="menuitem">Open workspace</a>
+     <button type="button" data-action="clear" role="menuitem">Clear context</button>
+    </div>
    </header>
    <div id="chat-banner" hidden role="status"></div>
+   <div id="inspect-backdrop" hidden></div>
    <aside id="inspect" role="region" aria-label="Box details" hidden>
     <header id="inspect-header">
      <div id="inspect-header-text"><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
      <span class="spacer"></span>
-     <button id="inspect-close" type="button" aria-label="Close details">×</button>
+     <button id="inspect-close" type="button" aria-label="Close details">× <span>Close</span></button>
     </header>
     <div id="inspect-body">
      <section id="inspect-summary" aria-label="Box overview">
@@ -98,6 +107,14 @@
      </section>
      <section id="inspect-contacts" hidden>
      <header class="inspect-block-head"><h3>Contacts</h3></header>
+      <div class="inspect-block">
+       <div class="inspect-contact-heading"><h3>Direct contacts</h3><button id="inspect-add-contact" type="button" aria-expanded="false" aria-controls="inspect-contact-picker">+ Add</button></div>
+       <ul id="inspect-contact-list"></ul>
+       <div id="inspect-contact-picker" hidden>
+        <input id="inspect-contact-search" type="search" placeholder="Search boxes…" aria-label="Search boxes to add as contacts">
+        <ul id="inspect-contact-options"></ul>
+       </div>
+      </div>
       <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> in its MCP permissions makes every eligible box available instead.</p>
       <div class="contact-policy">
        <div class="contact-policy-card">
@@ -116,10 +133,6 @@
         <button id="inspect-toggle-protection" type="button">Protect box</button>
        </div>
       </div>
-      <div class="inspect-block">
-       <h3>Direct contacts</h3>
-       <ul id="inspect-contact-list"></ul>
-      </div>
       <p id="inspect-contact-status" role="status"></p>
      </section>
     </div>
@@ -130,7 +143,7 @@
    <div id="reply-preview" hidden><div><strong>Replying to</strong><span id="reply-preview-text"></span></div><button id="reply-cancel" type="button" aria-label="Cancel reply">×</button></div>
    <div id="composer-picker" role="listbox" aria-label="Composer suggestions" hidden></div>
    <form id="chat-composer" autocomplete="off">
-    <button id="attach" type="button" title="Attach images" aria-label="Attach images">＋</button>
+    <button id="attach" type="button" title="Attach files" aria-label="Attach files">+</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
     <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
@@ -241,15 +254,25 @@
 <div id="commands-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="commands-modal"></div>
  <section class="sheet-card commands-card" role="dialog" aria-modal="true" aria-labelledby="commands-title">
-  <header><strong id="commands-title">Commands</strong><span class="spacer"></span><button type="button" data-close="commands-modal" aria-label="Close">×</button></header>
-  <p class="hint">Save a prompt, then type / in a chat to insert it. You can edit the text before sending.</p>
-  <div id="command-list"></div>
-  <form id="command-form">
-   <label>Slash command <input name="name" required maxlength="40" pattern="[a-z0-9][a-z0-9_-]*" placeholder="review" autocomplete="off"></label>
-   <label>Prompt text <textarea name="prompt" required maxlength="10000" rows="5" placeholder="Review this change and list the risks."></textarea></label>
-   <button type="submit" class="primary">Save command</button>
-  </form>
-  <p id="command-status" role="status"></p>
+  <header class="commands-header"><div><strong id="commands-title">Saved commands</strong><p>Reusable prompts for every box chat</p></div><span class="spacer"></span><button type="button" data-close="commands-modal" aria-label="Close">×</button></header>
+  <div class="commands-layout">
+   <div class="commands-list-pane">
+    <div class="commands-list-heading"><strong>Your commands</strong><span id="command-count">0 saved</span></div>
+    <input id="command-filter" type="search" placeholder="Search commands…" aria-label="Search commands" autocomplete="off">
+    <div id="command-list" role="group" aria-label="Saved commands"></div>
+    <button id="command-new" type="button">+ New command</button>
+   </div>
+   <form id="command-form">
+    <div class="command-editor-heading"><h3 id="command-form-title">Create a command</h3><span>LOCAL PROMPT</span></div>
+    <p class="hint" id="command-editor-help">Give your prompt a short name and save it for every box chat.</p>
+    <label>Slash command <span class="command-name-field"><span aria-hidden="true">/</span><input name="name" required maxlength="40" pattern="[a-z0-9][a-z0-9_-]*" placeholder="review" autocomplete="off"></span></label>
+    <label>Prompt text <textarea name="prompt" required maxlength="10000" rows="6" placeholder="Review this change and list the risks."></textarea></label>
+    <p class="command-tip">Type <strong>/</strong> in any chat to browse commands. You can edit inserted text before sending.</p>
+    <div class="command-actions"><button id="command-use" type="button" hidden>Use in chat</button><button type="submit" class="primary">Save command</button><button id="command-delete" type="button" hidden>Delete</button></div>
+    <div id="command-delete-confirm" hidden><span id="command-delete-question"></span><button type="button" id="command-delete-yes">Delete command</button><button type="button" id="command-delete-no">Cancel</button></div>
+    <p id="command-status" role="status"></p>
+   </form>
+  </div>
  </section>
 </div>
 
@@ -257,7 +280,7 @@
  <div class="sheet-backdrop" data-close="roles-modal"></div>
  <section class="sheet-card roles-card" role="dialog" aria-modal="true" aria-labelledby="roles-title">
   <header><strong id="roles-title">Agent permissions</strong><span class="spacer"></span><button type="button" data-close="roles-modal" aria-label="Close">×</button></header>
-  <p class="hint">Permissions belong directly to each box. Choose a box to control its optional MCP tools and contact reach.</p>
+  <p class="hint">Compare contact reach and optional tools across boxes. Edit a box to change individual tools and limits.</p>
   <div class="roles-toolbar">
    <label>Search boxes <input id="role-box-search" type="search" placeholder="Filter boxes by name" autocomplete="off"></label>
   </div>
@@ -317,8 +340,10 @@
  <section class="sheet-card menu-card" role="dialog" aria-modal="true">
   <header><strong>vmbox chats</strong><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
   <div class="menu-links">
-   <a href="/">Controller</a>
-   <a href="/grid">Grid</a>
+   <a href="/#boxes">Boxes</a>
+   <a href="/#providers" data-owner-nav>Providers</a>
+   <a href="/grid" data-owner-nav>Grid</a>
+   <a href="/box-chats">Box ↔ Box</a>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>
@@ -326,7 +351,7 @@
    <button id="logout" type="button" hidden>Log out</button>
   </div>
   <div class="menu-theme">
-   <p class="hint">Dark theme. The seed shapes the mascot, the corner radii and the type face.</p>
+   <p class="hint">The seed shapes the mascot.</p>
    <div class="seedrow">
     <input id="variant-seed" spellcheck="false" aria-label="Look seed" maxlength="32">
     <button id="variant-dice" type="button" title="Roll a new seed">🎲</button>

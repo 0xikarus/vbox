@@ -2,6 +2,14 @@
 (()=>{
  const $=s=>document.querySelector(s),tiles=[];let boxes=[],epoch=0,timer,automaticLayout=true;const unavailable=new Map();
  const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e};
+ function connectionBadge(label,title){const badge=node('span');badge.className='connection-badge';badge.title=title;badge.dataset.viewer=label;badge.dataset.state='idle';badge.dataset.ping='';updateConnectionBadge(badge,{state:'idle'});return badge}
+ function updateConnectionBadge(badge,metrics){
+  if(metrics.state)badge.dataset.state=metrics.state;
+  if(Object.hasOwn(metrics,'ping'))badge.dataset.ping=Number.isFinite(metrics.ping)?String(Math.max(0,Math.round(metrics.ping))):'';
+  const state=badge.dataset.state,ping=badge.dataset.ping;
+  badge.textContent=state==='connected'?'Live · '+(ping!==''?ping:'—')+' ms':state==='disconnected'?'Disconnected':state==='connecting'?'Connecting':'Idle';
+  badge.setAttribute('aria-label',badge.dataset.viewer+' '+badge.textContent);
+ }
  // A tile only offers an action its box state can satisfy.
  const boxPhase=state=>state==='running'?'running':state==='failed'?'failed':(state==='reserved'||state==='attaching')?'creating':state==='deleting'?'deleting':(state==='hibernating'||state==='draining')?'transitioning':'stopped';
  function syncActions(t){const b=boxes.find(x=>x.id===t.box.value),phase=b?boxPhase(b.state):'';const available=phase==='running'||phase==='stopped'||phase==='failed';t.reconnect.hidden=!available;t.reconnect.disabled=!available;t.reconnect.textContent=phase==='running'?'Reconnect':'Resume'}
@@ -29,29 +37,57 @@
  function makeTile(){
   const element=node('section');element.className='tile';const header=node('header'),label=node('label','Box '),box=node('select');label.append(box);header.append(label);
   const sessionLabel=node('label','Session '),session=node('select');sessionLabel.append(session);header.append(sessionLabel);
-  const view=node('select');view.setAttribute('aria-label','Viewer');view.add(new Option('Desktop','desktop'));view.add(new Option('TMUX','terminal'));header.append(view);const reconnect=node('button','Reconnect'),close=node('button','Next box');header.append(reconnect,close);
+  const reconnect=node('button','Reconnect'),close=node('button','Next box');header.append(reconnect,close);
   const status=node('p','Select a running box.');status.setAttribute('role','status');
-  const controls=node('details');controls.append(node('summary','Keys / fullscreen'));const keys=node('div');keys.className='terminal-keys';controls.append(keys);
-  const screen=node('div');screen.className='screen';element.append(header,status,controls,screen);$('#tiles').append(element);
-  let version=0,dispose=()=>{};
+  const controlsBar=node('div');controlsBar.className='tile-controls';
+  const desktopPanel=node('section');desktopPanel.className='viewer-panel desktop-panel';desktopPanel.hidden=true;
+  const desktopStatus=node('div','Desktop · Checking connection…');desktopStatus.className='viewer-overlay';desktopStatus.setAttribute('role','status');
+  const desktopBadge=connectionBadge('Desktop','Round trip over the live VNC desktop connection.');
+  const desktopScreen=node('div');desktopScreen.className='screen desktop-screen';
+  const desktopControls=node('details');desktopControls.className='desktop-control-menu';desktopControls.hidden=true;desktopControls.append(node('summary','Desktop controls'));const desktopKeys=node('div');desktopKeys.className='desktop-controls';desktopControls.append(desktopKeys);desktopPanel.append(desktopScreen,desktopStatus,desktopBadge);
+  const terminalPanel=node('section');terminalPanel.className='viewer-panel terminal-panel';
+  const terminalStatus=node('div','TMUX · Select a running box.');terminalStatus.className='viewer-overlay';terminalStatus.setAttribute('role','status');
+  const terminalBadge=connectionBadge('TMUX','Round trip over the live TMUX WebSocket connection.');
+  const terminalControls=node('details');terminalControls.className='terminal-control-menu';terminalControls.append(node('summary','TMUX keyboard / controls'));const keys=node('div');keys.className='terminal-keys';terminalControls.append(keys);
+  const terminalScreen=node('div');terminalScreen.className='screen terminal-screen';terminalPanel.append(terminalScreen,terminalStatus,terminalBadge);
+  controlsBar.append(desktopControls,terminalControls);element.append(controlsBar,header,status,desktopPanel,terminalPanel);$('#tiles').append(element);
+  let version=0,terminalVersion=0,disposeDesktop=()=>{},disposeTerminal=()=>{};
   function dropped(){unavailable.set(box.value,Date.now()+30000);t.disconnect();box.value='';session.replaceChildren();status.textContent='Waiting for an available box…';fill()}
-  async function desktop(ticket,b){await api('/v1/logical-boxes/'+b.id+'/desktop','POST');if(ticket!==version)return;dispose=openWorkspaceDesktop(b.id,message=>{if(ticket===version)status.textContent=b.name+' · '+message},{root:screen,controls:keys,onDisconnect:()=>{if(ticket===version)dropped()}})}
-  const t={element,box,session,status,reconnect,disconnect(){version++;dispose();dispose=()=>{};screen.replaceChildren();keys.replaceChildren();},async connect(preferred='auto'){
+  function maybeDrop(ticket){if(ticket===version&&!t.desktopPending&&!t.terminalPending&&!t.desktopActive&&!t.terminalActive)dropped()}
+  async function connectDesktop(ticket,b){
+   t.desktopPending=true;let enabled=false;
+   try{enabled=(await api('/v1/logical-boxes/'+encodeURIComponent(b.id)+'/desktop')).enabled}catch{enabled=true}
+   if(ticket!==version)return;
+   if(!enabled){desktopPanel.hidden=true;desktopControls.hidden=true;t.desktopPending=false;maybeDrop(ticket);return}
+   desktopPanel.hidden=false;desktopControls.hidden=false;desktopStatus.hidden=false;desktopStatus.textContent='Desktop · Starting…';updateConnectionBadge(desktopBadge,{state:'connecting',ping:null});
+   try{
+    await api('/v1/logical-boxes/'+encodeURIComponent(b.id)+'/desktop','POST');if(ticket!==version)return;
+    disposeDesktop=openWorkspaceDesktop(b.id,message=>{if(ticket===version){desktopStatus.textContent=message;status.textContent=b.name+' · '+message}},{root:desktopScreen,controls:desktopKeys,onMetrics:metrics=>{if(ticket!==version)return;updateConnectionBadge(desktopBadge,metrics);if(metrics.state==='connected'){t.desktopActive=true;t.desktopPending=false;desktopStatus.hidden=true}else if(metrics.state==='disconnected'){t.desktopActive=false;t.desktopPending=false;desktopStatus.hidden=false;maybeDrop(ticket)}},onDisconnect:()=>{if(ticket===version){t.desktopActive=false;t.desktopPending=false;desktopStatus.hidden=false;updateConnectionBadge(desktopBadge,{state:'disconnected',ping:null});maybeDrop(ticket)}}});
+   }catch(e){if(ticket===version){desktopStatus.textContent=e.message;desktopStatus.hidden=false;updateConnectionBadge(desktopBadge,{state:'disconnected',ping:null});t.desktopPending=false;maybeDrop(ticket)}}
+  }
+  async function connectTerminal(ticket,b){
+   t.terminalPending=true;terminalStatus.hidden=false;terminalStatus.textContent='TMUX · Checking sessions…';updateConnectionBadge(terminalBadge,{state:'connecting',ping:null});
+   try{
+    const [inv,primary]=await Promise.all([api('/v1/logical-boxes/'+encodeURIComponent(b.id)+'/sessions'),api('/v1/logical-boxes/'+encodeURIComponent(b.id)+'/sessions/primary')]);if(ticket!==version)return;
+    const sessions=(inv.sessions||[]).filter(s=>!s.name.startsWith('task-'));if(inv.partial||inv.state!=='live')throw Error('Session inventory is incomplete; reconnect.');
+    for(const s of sessions)session.add(new Option(s.name,s.name));if(sessions.some(s=>s.name===primary.session))session.value=primary.session;
+    if(!sessions.length){const created=await api('/v1/logical-boxes/'+encodeURIComponent(b.id)+'/sessions/interactive','POST',{'Content-Type':'application/json'},{agent:'shell',reuseShell:true});if(ticket!==version)return;session.add(new Option(created.session,created.session))}
+    t.attach();
+   }catch(e){if(ticket===version){terminalStatus.textContent=e.message;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'disconnected',ping:null});t.terminalPending=false;maybeDrop(ticket)}}
+  }
+  const t={element,box,session,status,reconnect,desktopPending:false,terminalPending:false,desktopActive:false,terminalActive:false,disconnect(){version++;terminalVersion++;disposeDesktop();disposeTerminal();disposeDesktop=()=>{};disposeTerminal=()=>{};desktopScreen.replaceChildren();terminalScreen.replaceChildren();desktopKeys.replaceChildren();keys.replaceChildren();desktopPanel.hidden=true;desktopControls.hidden=true;desktopStatus.textContent='Desktop · Checking connection…';desktopStatus.hidden=false;terminalStatus.textContent='TMUX · Select a running box.';terminalStatus.hidden=false;updateConnectionBadge(desktopBadge,{state:'idle',ping:null});updateConnectionBadge(terminalBadge,{state:'idle',ping:null});t.desktopPending=false;t.terminalPending=false;t.desktopActive=false;t.terminalActive=false;},async connect(){
    t.disconnect();const ticket=version,selected=box.value;session.replaceChildren();
    if(!selected){status.textContent='Select a running box.';return}
    const b=boxes.find(b=>b.id===selected);syncActions(t);if(!b||b.state!=='running'){status.textContent=(b?.state||'Unavailable')+(b?.failureReason?' · '+b.failureReason:'')+' · '+(boxPhase(b?.state)==='creating'?'being created; this tile updates automatically':'resume to attach it here');return}
-   status.textContent=b.name+' · '+b.state+' · checking sessions…';
-   try{if(preferred!=='terminal'){let enabled=false;try{enabled=(await api('/v1/logical-boxes/'+selected+'/desktop')).enabled}catch{enabled=true}if(ticket!==version)return;if(enabled||preferred==='desktop'){view.value='desktop';sessionLabel.hidden=true;try{await desktop(ticket,b);return}catch(e){if(ticket!==version)return;if(preferred==='desktop')throw e}}}view.value='terminal';sessionLabel.hidden=false;const [inv,primary]=await Promise.all([api('/v1/logical-boxes/'+selected+'/sessions'),api('/v1/logical-boxes/'+selected+'/sessions/primary')]);if(ticket!==version)return;
-    const sessions=(inv.sessions||[]).filter(s=>!s.name.startsWith('task-'));if(inv.partial||inv.state!=='live')throw Error('Session inventory is incomplete; reconnect.');
-    for(const s of sessions)session.add(new Option(s.name,s.name));if(sessions.some(s=>s.name===primary.session))session.value=primary.session;
-    if(!sessions.length){const created=await api('/v1/logical-boxes/'+selected+'/sessions/interactive','POST',{'Content-Type':'application/json'},{agent:'shell',reuseShell:true});if(ticket!==version)return;session.add(new Option(created.session,created.session))}
-    t.attach();
-   }catch(e){if(ticket===version){status.textContent=e.message;dropped()}}
-  },attach(){t.disconnect();const ticket=version,b=boxes.find(b=>b.id===box.value);if(!b||!session.value)return;status.textContent=b.name+' · connecting…';dispose=openWorkspaceTerminal(b.id,session.value,message=>{if(ticket===version)status.textContent=b.name+' · '+b.state+' · '+message},{root:screen,keys,autoFocus:false,onDisconnect:()=>{if(ticket===version)dropped()}});}};
-  view.onchange=()=>t.connect(view.value);box.onchange=()=>{t.connect();tiles.forEach(picker)};session.onchange=()=>t.attach();reconnect.onclick=()=>{const b=boxes.find(x=>x.id===box.value),phase=b?boxPhase(b.state):'';if(phase==='running')t.connect();else if(phase==='stopped'||phase==='failed')void resumeTile(t)};close.onclick=dropped;tiles.push(t);picker(t);
+   status.textContent=b.name+' · '+b.state;t.desktopPending=true;t.terminalPending=true;
+   await Promise.allSettled([connectDesktop(ticket,b),connectTerminal(ticket,b)]);
+  },attach(){const ticket=version,b=boxes.find(b=>b.id===box.value);terminalVersion++;const sessionTicket=terminalVersion;disposeTerminal();disposeTerminal=()=>{};terminalScreen.replaceChildren();keys.replaceChildren();t.terminalActive=false;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'connecting',ping:null});if(!b||!session.value){t.terminalPending=false;updateConnectionBadge(terminalBadge,{state:'idle',ping:null});return}t.terminalPending=true;terminalStatus.textContent='TMUX · Connecting to '+session.value+'…';
+   try{disposeTerminal=openWorkspaceTerminal(b.id,session.value,message=>{if(ticket===version&&sessionTicket===terminalVersion){terminalStatus.textContent=message;status.textContent=b.name+' · '+message}},{root:terminalScreen,keys,autoFocus:false,onMetrics:metrics=>{if(ticket!==version||sessionTicket!==terminalVersion)return;updateConnectionBadge(terminalBadge,metrics);if(metrics.state==='connected'){t.terminalActive=true;t.terminalPending=false;terminalStatus.hidden=true}else if(metrics.state==='disconnected'){t.terminalActive=false;t.terminalPending=false;terminalStatus.hidden=false;maybeDrop(ticket)}},onDisconnect:()=>{if(ticket===version&&sessionTicket===terminalVersion){t.terminalActive=false;t.terminalPending=false;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'disconnected',ping:null});maybeDrop(ticket)}}})}catch(e){terminalStatus.textContent=e.message;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'disconnected',ping:null});t.terminalPending=false;maybeDrop(ticket)}
+  }};
+  box.onchange=()=>{t.connect();tiles.forEach(picker)};session.onchange=()=>t.attach();reconnect.onclick=()=>{const b=boxes.find(x=>x.id===box.value),phase=b?boxPhase(b.state):'';if(phase==='running')t.connect();else if(phase==='stopped'||phase==='failed')void resumeTile(t)};close.onclick=dropped;tiles.push(t);picker(t);
  }
  function layout(){const form=$('#layout'),columns=Number(form.elements.columns.value),rows=automaticLayout?Math.max(1,Math.ceil(boxes.filter(b=>b.state==='running').length/columns)):Number(form.elements.rows.value);while(tiles.length>columns*rows){const t=tiles.pop();t.disconnect();t.element.remove()}while(tiles.length<columns*rows)makeTile();$('#tiles').style.setProperty('--columns',columns);$('#tiles').style.setProperty('--rows',rows);tiles.forEach(picker);fill();}
- async function refresh(){clearTimeout(timer);const ticket=++epoch;try{const current=await api('/v1/grid-boxes');if(ticket!==epoch)return;boxes=current;$('#error').textContent='';for(const t of tiles){const selected=t.box.value,b=boxes.find(b=>b.id===selected);if(selected&&(!b||b.state!=='running')){t.disconnect();t.box.value='';t.session.replaceChildren();t.status.textContent=b?b.name+' · '+b.state+' · not connected.':'Box removed or no longer interactive.';}picker(t)}if(automaticLayout)layout();else fill()}catch(e){if(ticket===epoch)$('#error').textContent=e.message}finally{if(ticket===epoch&&!$('#grid-app').hidden)timer=setTimeout(refresh,15000)}}
+ async function refresh(){clearTimeout(timer);const ticket=++epoch;try{const current=await api('/v1/grid-boxes');if(ticket!==epoch)return;boxes=current;$('#grid-count').textContent=boxes.filter(box=>box.state==='running').length+' running · '+boxes.length+' total';$('#error').textContent='';for(const t of tiles){const selected=t.box.value,b=boxes.find(b=>b.id===selected);if(selected&&(!b||b.state!=='running')){t.disconnect();t.box.value='';t.session.replaceChildren();t.status.textContent=b?b.name+' · '+b.state+' · not connected.':'Box removed or no longer interactive.';}picker(t)}if(automaticLayout)layout();else fill()}catch(e){if(ticket===epoch)$('#error').textContent=e.message}finally{if(ticket===epoch&&!$('#grid-app').hidden)timer=setTimeout(refresh,15000)}}
  async function enter(){try{await api('/v1/whoami');$('#login').hidden=true;$('#logout').hidden=false;$('#grid-app').hidden=false;if(!tiles.length)layout();await refresh()}catch(e){$('#error').textContent=e.message;$('#login').hidden=false}}
  $('#layout').onsubmit=e=>{e.preventDefault();automaticLayout=$('#layout').elements.rows.value==='auto';layout()};$('#refresh').onclick=refresh;
  $('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();await enter()}catch(err){$('#error').textContent=err.message}};

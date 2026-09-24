@@ -15,7 +15,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/markdown.js','/model-picker.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -65,6 +65,40 @@ before(async()=>{
  browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});
 });
 after(async()=>{await browser?.close();await new Promise(r=>server?.close(r))});
+test('management views expose box placement and keep details easy to close',async()=>{
+ const page=await browser.newPage();await page.setViewport({width:1280,height:900});
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;
+  window.fetch=async(path,options)=>{
+   const response=await original(path,options),url=new URL(path,location.origin);
+   if(url.pathname==='/v1/logical-boxes'&&(!options?.method||options.method==='GET')){
+    const boxes=await response.json();
+    return new Response(JSON.stringify(boxes.map(box=>({...box,provider:'railway',providerCredential:'primary',slotId:'slot-1'}))),{status:response.status,headers:response.headers});
+   }
+   if(url.pathname==='/v1/fleet/status'&&(!options?.method||options.method==='GET')){
+    const fleet=await response.json();fleet.slots[0].id='slot-1';fleet.slots[0].serviceName='railway-worker-01';
+    return new Response(JSON.stringify(fleet),{status:response.status,headers:response.headers});
+   }
+   return response;
+  };
+ });
+ await page.goto(base+'/#boxes');await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('railway-worker-01'));
+ assert.equal(await page.$eval('body',body=>body.dataset.manageView),'boxes');
+ assert.equal(await page.$eval('#providers',section=>getComputedStyle(section).display),'none');
+ await page.click('[aria-label="Details for box helper ü"]');
+ assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),false);
+ assert.match(await page.$eval('#box-detail-body',body=>body.textContent),/railway-worker-01/);
+ await page.keyboard.press('Escape');
+ assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),true);
+ await page.click('.workspace-links a[href="#providers"]');
+ assert.equal(await page.$eval('body',body=>body.dataset.manageView),'providers');
+ assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
+ await page.waitForSelector('.provider-card');
+ await page.setViewport({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await page.close();
+});
 test('direct per-box permissions can be edited without a role matrix',async()=>{
  const page=await browser.newPage();
  await page.evaluateOnNewDocument(()=>{
@@ -400,9 +434,9 @@ test('box actions follow state: no resume while creating, resume on failure',asy
  await page.waitForSelector('[data-box-id="creating"]');
  const buttons=id=>page.$$eval(`[data-box-id="${id}"] td:last-child button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
  // Delete remains available during creation so a stuck box can be cancelled.
- assert.deepEqual(await buttons('creating'),[{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
- assert.deepEqual(await buttons('broke'),[{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false}]);
- assert.deepEqual(await buttons('sleepy'),[{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false}]);
+ assert.deepEqual(await buttons('creating'),[{aria:'Details for box building',disabled:false},{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
+ assert.deepEqual(await buttons('broke'),[{aria:'Details for box broken',disabled:false},{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false}]);
+ assert.deepEqual(await buttons('sleepy'),[{aria:'Details for box sleepy',disabled:false},{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false}]);
  assert.match(await page.$eval('[data-box-id="broke"] td:nth-child(2)',n=>n.textContent),/provider refused the volume/);
  await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
  await page.close();
@@ -624,7 +658,9 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  await page.evaluate(()=>{document.querySelector('#instruction-editor').open=true});
  await page.type('#instruction-form input[name=name]','huge-preset');
  await page.evaluate(()=>{document.querySelector('#instruction-form textarea[name=markdown]').value='x'.repeat(70000)});
- await page.click('#instruction-form button.primary');
+ // Exercise the editor's size guard even if Chromium applies the textarea's
+ // native maxlength constraint to a programmatically assigned value.
+ await page.evaluate(()=>{const form=document.querySelector('#instruction-form');form.noValidate=true;form.requestSubmit()});
  await page.waitForFunction(()=>document.querySelector('#instruction-status').textContent.includes('64 KiB'));
  assert.equal(requests.some(request=>request.method==='PUT'&&request.path==='/v1/instruction-presets/huge-preset'),false);
  await page.close();

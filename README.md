@@ -14,9 +14,9 @@ configuration are documented in [the desktop MVP guide](docs/AGENT-DESKTOP-IMPLE
 
 New boxes created in the Controller or Agent chat prepare the desktop and
 Chromium browser automatically, including across restores. Blender remains an
-optional tool. Controller and Grid viewers prefer an available desktop, with
-TMUX available manually. Older workers without desktop packages prepare them
-when the new box is created.
+optional tool. The Controller workspace viewer prefers an available desktop;
+Grid displays each box's desktop above its TMUX session. Older workers without
+desktop packages prepare them when the new box is created.
 
 ### 1. Install
 

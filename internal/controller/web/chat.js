@@ -36,13 +36,8 @@
  }
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
- /* ═══════════════════════════════════════════════════════════════════════
-    Generated look: one hex seed grows the whole visual identity.
-    The shipped look is daylight. Hue, saturation, radii, type and the
-    mascot on the sign-in screen are all derived from a hex seed with the
-    same blockies-style PRNG the mascot uses, so two seeds never look alike.
-    The seed can be rerolled from the look sheet in the menu.
-    ═══════════════════════════════════════════════════════════════════════ */
+ /* The chat palette, type and spacing stay consistent across sessions. The
+    optional seed changes the mascot only. */
  const DEFAULT_SEED='0xe57c2091';
  const theme=(()=>{let saved={};try{saved=JSON.parse(localStorage.getItem('vmboxChatTheme')||'{}')}catch{}
   const qp=new URLSearchParams(location.search);
@@ -54,21 +49,14 @@
  const THEME_ADJ=['mossy','sunny','plucky','sleepy','brisk','cosy','fizzy','tiny','bold','minty','wobbly','glossy'];
  const THEME_NOUN=['pebble','mochi','bramble','biscuit','comet','dumpling','clover','pixel','marble','sprout','pudding','ember'];
  const titleCase=w=>w.charAt(0).toUpperCase()+w.slice(1);
- // The shipped scheme is a dark, Discord-like theme. The seed still shapes the
- // mascot, the corner radii and the type, but the palette is fixed.
- const DISCORD={bg:'#313338',bg2:'#2b2d31',surface:'#2b2d31',surface2:'#383a40',
-  ink:'#dbdee1','ink-soft':'#a3a6aa',line:'#45474d',
-  accent:'#5865f2','accent-text':'#aab4ff','accent-ink':'#ffffff','accent-soft':'#3b418c',
-  pop:'#eb459e','bubble-out':'#5865f2','bubble-in':'#2b2d31','bubble-in-ink':'#dbdee1',
-  danger:'#f23f42','danger-text':'#ff9a9b',warn:'#f0b232','warn-text':'#f6d16b',ok:'#23a55a','ok-text':'#5bd67f'};
+ const WORKSPACE_THEME={bg:'#111923',bg2:'#18212d',surface:'#1a2230',surface2:'#202e3d',
+  ink:'#eaf0f8','ink-soft':'#91a0b3',line:'#2b3848',
+  accent:'#8fb8f5','accent-text':'#aaceff','accent-ink':'#102136','accent-soft':'#263749',
+  pop:'#b691e6','bubble-out':'#294b65','bubble-in':'#1b2938','bubble-in-ink':'#eaf0f8',
+  danger:'#ec727c','danger-text':'#ffadb5',warn:'#e3b66d','warn-text':'#f2cf8e',ok:'#69d3a4','ok-text':'#8ee5ba'};
  function deriveTheme(seed){
-  const rnd=mulberry32(xmur3(String(seed))());
-  const R=(a,b)=>a+rnd()*(b-a), Ri=(a,b)=>Math.floor(R(a,b+1)), pick=arr=>arr[Ri(0,arr.length-1)];
-  const font=pick(['"Baloo 2", ui-rounded, system-ui, sans-serif','ui-rounded, "SF Pro Rounded", system-ui, sans-serif','system-ui, -apple-system, "Segoe UI", sans-serif']);
-  const radius=Math.round(R(5,10)), radiusSm=Math.max(3,Math.round(radius*.5)), radiusLg=Math.round(radius*1.5)+2;
-  const name=titleCase(pick(THEME_ADJ))+' '+pick(THEME_NOUN);
-  const t=Object.assign({},DISCORD,{radius:radius+'px','radius-sm':radiusSm+'px','radius-lg':radiusLg+'px',shadow:'none','shadow-pop':'none',wall:'none'});
-  return {name,font,radius,tokens:t};
+  const t=Object.assign({},WORKSPACE_THEME,{radius:'10px','radius-sm':'7px','radius-lg':'16px',shadow:'0 5px 18px #08121d44','shadow-pop':'0 22px 70px #06101bbb',wall:'none'});
+  return {name:String(seed),font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:10,tokens:t};
  }
  function applyVariant(){
   document.documentElement.dataset.variant='A';
@@ -714,7 +702,7 @@
     row=document.createElement('li');row.dataset.boxId=box.id;
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu(box,{left:x,right:x,bottom:y+4,top:y})});
     row.oncontextmenu=event=>{event.preventDefault();if(rowMenu.hidden)openRowMenu(box,{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
-    const meta=document.createElement('div');meta.className='chat-meta';
+    const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
     meta.append(r1,r2);row.append(meta);
@@ -1049,6 +1037,7 @@
   const box=boxes.get(selected);if(!box)return;
   $('#chat-header-name').textContent=box.name;
   $('#chat-header-state').replaceChildren(Object.assign(document.createElement('span'),{className:box.state==='running'?'running':'',textContent:(box.defaultAgent||'agent')+' · '+box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')}));
+  inputEl.placeholder='Message '+box.name+'…';
   const key=box.id+'|'+box.state;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
   $('#chat-wake').hidden=!canWakeBox(box);
@@ -1057,6 +1046,8 @@
   $('#thread-composer button').disabled=box.state!=='running';
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
+  $('#chat-more-menu [data-action="workspace"]').href='/boxes/'+encodeURIComponent(box.id);
+  $('#chat-more-menu [data-action="clear"]').disabled=$('#chat-clear-context').disabled;
   updateBanner();
  }
  // One banner for the two things that silently confuse people: a dropped
@@ -1451,6 +1442,21 @@
  const inspect=$('#inspect');
  let inspectOpen=false,inspectTimer,controllerPing=null;
  let inspectProfilesFor='',inspectProfileCache=null;
+ let inspectWorkerKey='',inspectWorker=null;
+ async function loadInspectWorker(box,key){
+  if(!box.slotId){inspectWorker={name:'Unassigned',serviceId:'',slot:'—'};renderInspect();return}
+  try{
+   const query=new URLSearchParams({provider:box.provider,providerCredential:box.providerCredential||''});
+   const fleet=await api('/v1/fleet/status?'+query);
+   if(inspectWorkerKey!==key||selected!==box.id||!inspectOpen)return;
+   const slot=(fleet.slots||[]).find(item=>item.id===box.slotId);
+   inspectWorker={name:slot?.serviceName||slot?.serviceId||box.providerCredential||'Unknown worker',serviceId:slot?.serviceId||'',slot:slot?.ordinal?('#'+slot.ordinal+' · '+box.slotId):box.slotId};
+  }catch{
+   if(inspectWorkerKey!==key||selected!==box.id||!inspectOpen)return;
+   inspectWorker={name:box.providerCredential||'Worker unavailable',serviceId:'',slot:box.slotId};
+  }
+  renderInspect();
+ }
  const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
  const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
@@ -1466,6 +1472,8 @@
   if(!inspectOpen||!selected)return;
   const box=boxes.get(selected);if(!box)return;
   if(inspectProfilesFor!==box.id)inspectProfileCache=null;
+  const workerKey=box.id+'|'+(box.slotId||'');
+  if(inspectWorkerKey!==workerKey){inspectWorkerKey=workerKey;inspectWorker=null;void loadInspectWorker(box,workerKey)}
   const msgs=box.messages||[],lastAgent=lastMessage(msgs,'agent'),lastUser=lastMessage(msgs,'user');
   const livePing=boxViewerMetrics.get(box.id)?.ping;
   const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
@@ -1487,6 +1495,9 @@
    ['Agent',agent],
    ...(owner?[['Imported profiles',inspectProfileCache?inspectProfileCache.error||((inspectProfileCache.profiles||[]).map(importedProfileLabel).join(', ')||'None')+(inspectProfileCache.pending?.length?' · queued: '+inspectProfileCache.pending.map(importedProfileLabel).join(', '):''):'Loading…']]:[]),
    ['Provider',box.provider||'—'],
+   ['Worker',inspectWorker?.name||'Loading…'],
+   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId]]:[]),
+   ['Slot',inspectWorker?.slot||'Loading…'],
    ['Messages',msgs.length+' total'],
   ]);
   fillRows($('#inspect-activity-rows'),[
@@ -1537,14 +1548,15 @@
   renderInspect();
  }
  $('#chat-info').onclick=()=>{
-  inspectOpen=!inspectOpen;inspect.hidden=!inspectOpen;
+  if(inspectOpen){closeInspect();return}
+  inspectOpen=true;inspect.hidden=false;$('#inspect-backdrop').hidden=false;
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
-  if(inspectOpen){controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000)}
-  else{clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null}
+  controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectWorkerKey='';inspectWorker=null}
  $('#inspect-close').onclick=closeInspect;
+ $('#inspect-backdrop').onclick=closeInspect;
  // Collapsible details sections, remembered per browser.
  const foldKey='vmbox.inspectFold';
  let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
@@ -1561,8 +1573,33 @@
   const known=boxes.get(contact.contactBoxId)||{};
   return {id:contact.contactBoxId||contact.contactName,name:contact.contactName||known.name||'—',state:contact.contactState||known.state||'unknown',defaultAgent:contact.contactAgent||known.defaultAgent||''};
  };
+ function renderInspectContacts(box){
+  const contacts=inspectContactCache||[],selectedList=$('#inspect-contact-list'),options=$('#inspect-contact-options');
+  selectedList.replaceChildren();options.replaceChildren();
+  const direct=contacts.filter(contact=>contact.override==='allow');
+  const available=contacts.filter(contact=>contact.override!=='allow');
+  const query=$('#inspect-contact-search').value.trim().toLocaleLowerCase();
+  const makeRow=(contact,added)=>{
+   const view=contactView(contact),item=document.createElement('li');item.dataset.state=view.state;
+   item.append(avatarNode(view,true));
+   const meta=document.createElement('div');meta.className='contact-info';
+   const name=document.createElement('span');name.className='contact-name';name.textContent=view.name;
+   const detail=document.createElement('span');detail.className='contact-meta';detail.textContent=(view.defaultAgent||'agent')+' · '+view.state+(contact.override==='block'?' · blocked':'');
+   meta.append(name,detail);item.append(meta);
+   const access=document.createElement('button');access.type='button';access.className='contact-access';access.textContent=added?'Remove':'Add';
+   access.setAttribute('aria-label',(added?'Remove ':'Add ')+view.name+(added?' from ':' to ')+box.name+' contacts');
+   access.onclick=async()=>{access.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:added?'inherit':'allow'});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message;access.disabled=false}};
+   item.append(access);return item;
+  };
+  if(!direct.length){const empty=document.createElement('li');empty.className='empty';empty.textContent='No direct contacts yet.';selectedList.append(empty)}
+  else for(const contact of direct)selectedList.append(makeRow(contact,true));
+  const matches=available.filter(contact=>!query||contactView(contact).name.toLocaleLowerCase().includes(query));
+  if(!matches.length){const empty=document.createElement('li');empty.className='empty';empty.textContent=available.length?'No matching boxes.':'All eligible boxes are contacts.';options.append(empty)}
+  else for(const contact of matches)options.append(makeRow(contact,false));
+  $('#inspect-add-contact').disabled=!available.length;
+ }
  async function loadInspectContacts(box){
-  const status=$('#inspect-contact-status'),list=$('#inspect-contact-list');
+  const status=$('#inspect-contact-status');
   status.textContent='Loading…';
   try{
    const [contacts,protection,tagResult]=await Promise.all([api(boxPath(box.id)+'/contacts'),api(boxPath(box.id)+'/protection'),api(boxPath(box.id)+'/tags')]);
@@ -1573,27 +1610,7 @@
    $('#inspect-tags').textContent=(tagResult.tags||[]).join(', ')||'None';
    $('#inspect-protection-label').textContent=inspectProtected?'Protected — agents cannot see or message this box':'Not protected';
    $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
-   list.replaceChildren();
-   if(!contacts.length){const empty=document.createElement('li');empty.className='empty';empty.textContent='No other eligible boxes.';list.append(empty)}
-   for(const contact of contacts){
-    const view=contactView(contact);
-    const item=document.createElement('li');item.dataset.state=view.state;
-    item.append(avatarNode(view,true));
-    const meta=document.createElement('div');meta.className='chat-meta';
-    const r1=document.createElement('div');r1.className='row1';
-    const name=document.createElement('span');name.className='name';name.textContent=view.name;
-    r1.append(name);
-    const r2=document.createElement('div');r2.className='row2';
-    const state=document.createElement('span');state.className='row-state';state.textContent=view.state;
-    const agent=document.createElement('span');agent.className='agent-badge';agent.textContent=view.defaultAgent||'agent';
-    r2.append(state,agent);
-    const reason=document.createElement('span');reason.className='contact-reason';reason.textContent=contact.reason||'';
-    meta.append(r1,r2,reason);item.append(meta);
-    const access=document.createElement('button');access.type='button';access.className='contact-access';
-    const added=contact.override==='allow';access.textContent=added?'Remove contact':'Add contact';access.setAttribute('aria-label',(added?'Remove ':'Add ')+view.name+(added?' from ':' to ')+box.name+' contacts');
-    access.onclick=async()=>{access.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:added?'inherit':'allow'});await loadInspectContacts(box)}catch(e){status.textContent=e.message;access.disabled=false}};
-    item.append(access);list.append(item);
-   }
+   renderInspectContacts(box);
    status.textContent='Add only the boxes this agent should contact directly. All contacts is managed in this box’s MCP permissions; protected boxes remain hidden.';
   }catch(e){status.textContent=e.message}
  }
@@ -1601,8 +1618,10 @@
   if(!owner){inspectContacts.hidden=true;inspectContactsFor='';inspectContactCache=null;return}
   inspectContacts.hidden=false;
   if(inspectContactsFor===box.id)return;
-  inspectContactsFor=box.id;inspectContactCache=null;void loadInspectContacts(box);
+  inspectContactsFor=box.id;inspectContactCache=null;$('#inspect-contact-picker').hidden=true;$('#inspect-add-contact').setAttribute('aria-expanded','false');$('#inspect-contact-search').value='';void loadInspectContacts(box);
  }
+ $('#inspect-add-contact').onclick=()=>{const picker=$('#inspect-contact-picker'),open=picker.hidden;picker.hidden=!open;$('#inspect-add-contact').setAttribute('aria-expanded',String(open));if(open)$('#inspect-contact-search').focus()};
+ $('#inspect-contact-search').addEventListener('input',()=>{const box=boxes.get(selected);if(box)renderInspectContacts(box)});
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
  $('#inspect-edit-tags').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const current=$('#inspect-tags').textContent==='None'?'':$('#inspect-tags').textContent;const value=prompt('Labels for '+box.name+' (comma separated)',current);if(value===null)return;try{await api(boxPath(box.id)+'/tags','PUT',{}, {tags:value.split(',').map(tag=>tag.trim()).filter(Boolean)});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
 
@@ -1813,7 +1832,7 @@
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
- addEventListener('keydown',event=>{if(event.key==='Escape'){closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();}});
+ addEventListener('keydown',event=>{if(event.key==='Escape'){const overlayOpen=!!document.querySelector('.sheet:not([hidden])')||!newBoxModal.hidden||!deleteModal.hidden||!takeover.hidden;closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();if(inspectOpen&&!overlayOpen){closeInspect();$(matchMedia('(max-width:640px)').matches?'#chat-more':'#chat-info').focus()}}});
  // Re-push the instructions the box already carries. A replaced worker or a
  // restored hibernation can leave a running box behind its saved config, and
  // re-typing the same Markdown just to trigger a write is a poor way to fix it.
@@ -1868,6 +1887,25 @@
   finally{wakingBoxes.delete(box.id);renderHeader()}
  }
  $('#chat-wake').onclick=()=>void wakeBox(boxes.get(selected));
+ const moreButton=$('#chat-more'),moreMenu=$('#chat-more-menu');
+ function closeChatMore(){moreMenu.hidden=true;moreButton.setAttribute('aria-expanded','false')}
+ moreButton.onclick=()=>{const willOpen=moreMenu.hidden;moreMenu.hidden=!willOpen;moreButton.setAttribute('aria-expanded',String(willOpen));if(willOpen)moreMenu.querySelector('[role="menuitem"]')?.focus()};
+ moreMenu.onkeydown=event=>{
+  if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
+  event.preventDefault();const items=[...moreMenu.querySelectorAll('[role="menuitem"]')].filter(item=>!item.disabled),index=items.indexOf(document.activeElement);
+  const next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;
+  items[next]?.focus();
+ };
+ moreMenu.onclick=event=>{
+  const action=event.target.closest('[data-action]')?.dataset.action;
+  if(!action)return;
+  closeChatMore();
+  if(action==='details')$('#chat-info').click();
+  if(action==='control')$('#chat-control').click();
+  if(action==='clear')$('#chat-clear-context').click();
+ };
+ document.addEventListener('pointerdown',event=>{if(!moreMenu.hidden&&!moreMenu.contains(event.target)&&event.target!==moreButton)closeChatMore()});
+ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!moreMenu.hidden){closeChatMore();moreButton.focus()}});
  async function hibernateBox(box){
   try{
    await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
@@ -1990,6 +2028,7 @@
  async function enter(){
   try{
    const who=await api('/v1/whoami');owner=who.role==='owner';
+   document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
@@ -2011,36 +2050,72 @@
  function closeSheets(){document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
 
  /* ---------- saved Chat slash commands ---------- */
+ let selectedCommandName='';
  async function loadChatCommands(){
   const value=await api('/v1/chat-commands');chatCommands=Array.isArray(value)?value:[];renderChatCommands();
   if(composerToken()?.kind==='/')void updateComposerPicker();
  }
+ function selectChatCommand(command){
+  const form=$('#command-form');selectedCommandName=command?.name||'';
+  form.elements.name.value=command?.name||'';
+  form.elements.name.readOnly=!!command;
+  form.elements.prompt.value=command?.prompt||'';
+  $('#command-form-title').textContent=command?'Edit /'+command.name:'Create a command';
+  $('#command-editor-help').textContent=command?'Update this saved prompt or insert it into the open chat.':'Give your prompt a short name and save it for every box chat.';
+  $('#command-use').hidden=!command;
+  $('#command-delete').hidden=!command;
+  $('#command-form button[type="submit"]').textContent=command?'Save changes':'Save command';
+  $('#command-delete-confirm').hidden=true;
+  $('#command-status').textContent='';
+  renderChatCommands();
+ }
  function renderChatCommands(){
-  const root=$('#command-list');root.replaceChildren();
-  if(!chatCommands.length){root.append(mk('p','No commands saved yet.'));return}
-  for(const command of chatCommands){
-   const row=mk('div');row.className='command-row';const info=mk('div');
-   info.append(mk('strong','/'+command.name),mk('small',command.prompt));row.append(info);
-   const use=mk('button','Use');use.type='button';use.onclick=()=>{
-    if(!selected){$('#command-status').textContent='Open a box chat to insert this prompt.';return}
-    inputEl.value=command.prompt;inputEl.dispatchEvent(new Event('input',{bubbles:true}));$('#commands-modal').hidden=true;inputEl.focus();inputEl.setSelectionRange(inputEl.value.length,inputEl.value.length);
-   };
-   const edit=mk('button','Edit');edit.type='button';edit.onclick=()=>{const form=$('#command-form');form.elements.name.value=command.name;form.elements.prompt.value=command.prompt;form.elements.prompt.focus()};
-   const remove=mk('button','Delete');remove.type='button';remove.onclick=async()=>{
-    if(!confirm('Delete /'+command.name+'?'))return;
-    try{await api('/v1/chat-commands/'+encodeURIComponent(command.name),'DELETE');await loadChatCommands();$('#command-status').textContent='Deleted /'+command.name+'.'}catch(e){$('#command-status').textContent=e.message}
-   };
-   row.append(use,edit,remove);root.append(row);
+  const root=$('#command-list'),query=$('#command-filter').value.trim().toLocaleLowerCase();root.replaceChildren();
+  $('#command-count').textContent=chatCommands.length+' saved';
+  $('#command-new').hidden=!chatCommands.length;
+  if(!chatCommands.length){
+   const empty=mk('div');empty.className='command-empty';empty.innerHTML='<span aria-hidden="true">/</span><strong>No commands yet</strong><p>Save a prompt you use often to insert it from any chat.</p>';
+   root.append(empty);return;
+  }
+  const filtered=chatCommands.filter(command=>!query||command.name.toLocaleLowerCase().includes(query)||command.prompt.toLocaleLowerCase().includes(query));
+  if(!filtered.length){root.append(Object.assign(mk('p','No commands match your search.'),{className:'command-no-results'}));return}
+  for(const command of filtered){
+   const row=mk('button');row.type='button';row.className='command-row';row.setAttribute('aria-pressed',String(command.name===selectedCommandName));
+   row.append(mk('strong','/'+command.name),mk('small',command.prompt));
+   row.onclick=()=>selectChatCommand(command);root.append(row);
   }
  }
  $('#commands-toggle').onclick=async()=>{
-  closeSheets();$('#commands-modal').hidden=false;$('#command-status').textContent='';
-  try{await loadChatCommands()}catch(e){$('#command-status').textContent=e.message}
+  closeSheets();$('#commands-modal').hidden=false;$('#command-filter').value='';$('#command-status').textContent='';
+  try{await loadChatCommands();selectChatCommand(chatCommands.find(command=>command.name===selectedCommandName)||chatCommands[0]||null);(chatCommands.length?$('#command-filter'):$('#command-form input[name="name"]')).focus()}catch(e){$('#command-status').textContent=e.message}
+ };
+ $('#command-filter').addEventListener('input',renderChatCommands);
+ $('#command-new').onclick=()=>{selectChatCommand(null);$('#command-form input[name="name"]').focus()};
+ $('#command-use').onclick=()=>{
+  const command=chatCommands.find(item=>item.name===selectedCommandName);if(!command)return;
+  if(!selected){$('#command-status').textContent='Open a box chat to use this command.';return}
+  const existing=inputEl.value;
+  inputEl.value=existing+(existing&&!existing.endsWith('\n')?'\n\n':'')+command.prompt;
+  inputEl.dispatchEvent(new Event('input',{bubbles:true}));
+  $('#commands-modal').hidden=true;inputEl.focus();inputEl.setSelectionRange(inputEl.value.length,inputEl.value.length);
+ };
+ $('#command-delete').onclick=()=>{
+  if(!selectedCommandName)return;
+  $('#command-delete-question').textContent='Delete /'+selectedCommandName+'?';
+  $('#command-delete-confirm').hidden=false;
+  $('#command-delete-yes').focus();
+ };
+ $('#command-delete-no').onclick=()=>{$('#command-delete-confirm').hidden=true;$('#command-delete').focus()};
+ $('#command-delete-yes').onclick=async()=>{
+  const name=selectedCommandName;if(!name)return;
+  try{await api('/v1/chat-commands/'+encodeURIComponent(name),'DELETE');selectedCommandName='';await loadChatCommands();selectChatCommand(chatCommands[0]||null);$('#command-status').textContent='Deleted /'+name+'.'}
+  catch(e){$('#command-status').textContent=e.message}
  };
  $('#command-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,name=form.elements.name.value.trim(),prompt=form.elements.prompt.value;
   if(!/^[a-z0-9][a-z0-9_-]{0,39}$/.test(name)){ $('#command-status').textContent='Use 1–40 lowercase letters, digits, hyphens, or underscores.';return}
-  try{await api('/v1/chat-commands/'+encodeURIComponent(name),'PUT',{}, {prompt});form.reset();await loadChatCommands();$('#command-status').textContent='Saved /'+name+'.'}catch(e){$('#command-status').textContent=e.message}
+  if(!selectedCommandName&&chatCommands.some(command=>command.name===name)){$('#command-status').textContent='/'+name+' already exists. Select it in the list to edit.';return}
+  try{await api('/v1/chat-commands/'+encodeURIComponent(name),'PUT',{}, {prompt});selectedCommandName=name;await loadChatCommands();selectChatCommand(chatCommands.find(command=>command.name===name)||{name,prompt});$('#command-status').textContent='Saved /'+name+'.'}catch(e){$('#command-status').textContent=e.message}
  };
 
 
@@ -2054,31 +2129,66 @@
   const allowedAgents=new Set(cap.createAgentBox?.allowedAgents||[]);form.querySelectorAll('input[name=allowedAgents]').forEach(input=>input.checked=!allowedAgents.size||allowedAgents.has(input.value));
   const allowedMCP=new Set(cap.mcpTools?.enabled?(cap.mcpTools.allowedTools||[]):[]);form.querySelectorAll('input[name=mcpTools]').forEach(input=>input.checked=allowedMCP.has(input.value));form.querySelectorAll('.role-capability-options').forEach(details=>details.open=false);syncMCPToolGroups(form);$('#role-editor-modal').hidden=false;
  }
+ const policySummaries=new Map();let policySummaryEpoch=0;
+ const summaryToolGroups={
+  computer:['take_screenshot','capture_window','move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys'],
+  passwords:['secret_request','generate_password','type_secret'],
+  admin:['list_agent_boxes','get_agent_box','set_agent_box_tags','restart_agent_box','delete_agent_box']
+ };
+ function policySummaryCell(kind,policy){
+  const cell=mk('div');cell.className='role-perm-cell';cell.append(mk('small',kind==='contacts'?'Contacts':kind==='computer'?'Computer':kind==='passwords'?'Passwords':kind==='admin'?'Admin':'Create'));
+  const value=mk('strong');cell.append(value);
+  if(!policy){value.textContent='Loading…';value.className='unknown';return cell}
+  if(policy.error){value.textContent='Unavailable';value.className='unknown';return cell}
+  const cap=policy.capabilities||{},allowed=new Set(cap.mcpTools?.enabled?cap.mcpTools.allowedTools||[]:[]);
+  if(kind==='contacts'){value.textContent=cap.allContacts?.enabled?'All boxes':'Direct only';value.className=cap.allContacts?.enabled?'on':'limited';return cell}
+  if(kind==='create'){const on=!!cap.createAgentBox?.enabled&&allowed.has('create_agent_box');value.textContent=on?'Allowed':'None';value.className=on?'on':'off';return cell}
+  const group=summaryToolGroups[kind],count=group.filter(tool=>allowed.has(tool)).length;
+  value.textContent=count===0?'None':count===group.length?'All '+count+'/'+group.length:'Some '+count+'/'+group.length;
+  value.className=count?'on':'off';return cell;
+ }
  function permissionBoxes(){return [...boxes.values()].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))}
  function renderPermissionBoxes(){
   const root=$('#role-assignments');if(!root)return;root.replaceChildren();
   const query=($('#role-box-search')?.value||'').trim().toLocaleLowerCase(),values=permissionBoxes().filter(box=>!query||box.name.toLocaleLowerCase().includes(query));
   if(!values.length){root.append(mk('p',query?'No boxes match this search.':'No boxes available.'));return}
+  const header=mk('div');header.className='role-matrix-head';for(const label of ['Box / agent','Contacts','Computer','Passwords','Admin','Create',''])header.append(mk('span',label));root.append(header);
   const list=mk('div');list.className='role-assignment-list';
   for(const box of values){
    const card=mk('article');card.className='role-assignment-card';card.dataset.state=box.state;card.dataset.roleBoxId=box.id;
    const summary=mk('div');summary.className='role-assignment-summary';
    const mark=mk('span',(box.name||'?').slice(0,1).toUpperCase());mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');
-   const identity=mk('div');identity.className='role-assignment-identity';identity.append(mk('small','BOX / AGENT'),mk('strong',box.name));const meta=mk('div');meta.className='role-box-meta';meta.append(Object.assign(mk('span',box.defaultAgent||'agent'),{className:'role-agent-badge'}),Object.assign(mk('span',box.state),{className:'role-state-badge'}));identity.append(meta);
-   const current=mk('div');current.className='role-assignment-current';current.append(Object.assign(mk('span','Direct policy'),{className:'role-current-label'}),Object.assign(mk('span','MCP tools + contact reach'),{className:'role-pill'}));
-   const manage=mk('button','Manage permissions');manage.type='button';manage.className='role-assignment-toggle';manage.onclick=()=>void openBoxPolicyEditor(box.id);
-   summary.append(mark,identity,current,manage);card.append(summary);list.append(card);
+   const identity=mk('div');identity.className='role-assignment-identity';identity.append(mk('strong',box.name));const meta=mk('div');meta.className='role-box-meta';meta.append(Object.assign(mk('span',box.defaultAgent||'agent'),{className:'role-agent-badge'}),Object.assign(mk('span',box.state),{className:'role-state-badge'}));identity.append(meta);
+   const who=mk('div');who.className='role-box-identity';who.append(mark,identity);summary.append(who);
+   for(const kind of ['contacts','computer','passwords','admin','create'])summary.append(policySummaryCell(kind,policySummaries.get(box.id)));
+   const manage=mk('button','Edit');manage.type='button';manage.className='role-assignment-toggle';manage.setAttribute('aria-label','Edit permissions for '+box.name);manage.onclick=()=>void openBoxPolicyEditor(box.id);
+   summary.append(manage);card.append(summary);list.append(card);
   }
   root.append(list);
  }
+ async function loadPermissionSummaries(){
+  const epoch=++policySummaryEpoch,queue=permissionBoxes();
+  let next=0;
+  await Promise.all(Array.from({length:Math.min(5,queue.length)},async()=>{
+   while(next<queue.length){
+    const box=queue[next++];
+    let policy;try{policy=await api(boxPath(box.id)+'/agent-policy')}
+    catch(error){policy={error:error.message}}
+    if(epoch!==policySummaryEpoch)return;
+    policySummaries.set(box.id,policy);
+    if(epoch===policySummaryEpoch&&!$('#roles-modal').hidden)renderPermissionBoxes();
+   }
+  }));
+  if(epoch===policySummaryEpoch&&!$('#roles-modal').hidden){const failures=queue.filter(box=>policySummaries.get(box.id)?.error).length;$('#role-status').textContent=failures?failures+' policy summaries are unavailable. Select Edit to retry.':'Select Edit for individual tools and limits.'}
+ }
  async function openPermissionsModal(){
-  if(!owner)return;closeSheets();$('#roles-modal').hidden=false;$('#role-box-search').value='';$('#role-status').textContent='Permissions are attached directly to each box.';await loadBoxes(true);renderPermissionBoxes();
+  if(!owner)return;closeSheets();$('#roles-modal').hidden=false;$('#role-box-search').value='';$('#role-status').textContent='Loading box permissions…';await loadBoxes(true);renderPermissionBoxes();void loadPermissionSummaries();
  }
  async function openBoxPolicyEditor(boxID){
   if(!owner||!boxID)return;const box=boxes.get(boxID);if(!box)return;
   $('#role-editor-modal').hidden=false;$('#role-editor-title').textContent='Permissions · '+box.name;$('#role-editor-status').textContent='Loading permissions…';
   try{
-   const policy=await api(boxPath(boxID)+'/agent-policy');
+   const policy=await api(boxPath(boxID)+'/agent-policy');policySummaries.set(boxID,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes();
    populatePolicyEditor(box,policy.capabilities||{});
    $('#role-editor-title').textContent='Permissions · '+box.name;$('#role-assigned-count').textContent=policy.migratedFromRoles?'Existing role grants are shown below; saving converts them into this box’s direct policy.':'Changes sync automatically to the running MCP client.';$('#delete-role').hidden=true;$('#role-editor-status').textContent='';
   }catch(e){$('#role-editor-status').textContent=e.message}
@@ -2096,7 +2206,7 @@
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,boxID=form.elements.id.value,status=$('#role-editor-status');if(!boxID)return;
   status.textContent='Saving permissions…';
-  try{await api(boxPath(boxID)+'/agent-policy','PUT',{},directPolicyBody(form));status.textContent='Saved. Running MCP clients refresh their tools automatically.';$('#role-editor-modal').hidden=true;toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';renderInspect()}}
+  try{const body=directPolicyBody(form),policy=await api(boxPath(boxID)+'/agent-policy','PUT',{},body);policySummaryEpoch++;policySummaries.set(boxID,policy?.capabilities?policy:body);if(!$('#roles-modal').hidden){renderPermissionBoxes();void loadPermissionSummaries()}status.textContent='Saved. Running MCP clients refresh their tools automatically.';$('#role-editor-modal').hidden=true;toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';renderInspect()}}
   catch(e){status.textContent=e.message}
  };
  async function presetBody(name){
@@ -2297,7 +2407,7 @@
 
  /* ---------- generated-look controls ---------- */
  const randomSeed=()=>'0x'+Array.from({length:8},()=>'0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
- $('#variant-dice').onclick=()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new daylight seed.')};
+ $('#variant-dice').onclick=()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new mascot seed.')};
  $('#variant-seed').addEventListener('change',event=>{theme.seed=event.target.value.trim()||DEFAULT_SEED;saveTheme();applyVariant()});
  $('#chat-menu').onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});

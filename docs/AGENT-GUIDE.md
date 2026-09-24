@@ -72,8 +72,10 @@ a separate external-host proposal, not a dependency of this rollout.
 Grid automatically fills tiles from the authorized interactive box inventory.
 The default layout grows to display all running boxes; fixed layouts fill their
 available tiles and replace lost boxes from the remaining inventory. Each tile
-prefers enabled Desktop and offers TMUX; a running box without an interactive
-session gets a persistent shell. Sleeping boxes are never allocated or resumed.
+shows an enabled Desktop above a simultaneous TMUX connection; a running box
+without an interactive session gets a persistent shell. One disconnected viewer
+does not replace a box while its other viewer remains connected. Sleeping boxes
+are never allocated or resumed.
 Inventory refreshes every 15 seconds; failed connections cool down for 30 seconds.
 
 Preserve account and one-shot exclusions in `GET /v1/grid-boxes`, per-tile version

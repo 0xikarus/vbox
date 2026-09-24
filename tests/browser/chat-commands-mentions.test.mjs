@@ -48,6 +48,11 @@ test('saved slash prompts insert editable text, mentions send IDs, and stopped b
   const page=await browser.newPage();await page.setViewport({width:1100,height:800});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await page.focus('[data-box-id=reviewer] .chat-meta');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(()=>document.querySelector('[data-box-id=reviewer]').classList.contains('active'));
+  await page.click('[data-box-id=builder]');
+  await page.waitForFunction(()=>document.querySelector('[data-box-id=builder]').classList.contains('active'));
   await page.click('#chat-menu');await page.click('#commands-toggle');
   await page.type('#command-form input[name=name]','review');
   await page.type('#command-form textarea[name=prompt]','Review this change and list two risks.');
@@ -55,6 +60,13 @@ test('saved slash prompts insert editable text, mentions send IDs, and stopped b
   await page.waitForFunction(()=>document.querySelector('#command-list').textContent.includes('/review'));
   await page.click('#commands-modal button[data-close=commands-modal]');
   assert.equal(await page.$eval('#commands-modal',el=>el.hidden),true,'closing Commands must hide its sheet');
+  await page.type('#chat-input','Draft note');
+  await page.$eval('#chat-menu',button=>button.click());
+  await page.$eval('#commands-toggle',button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('#commands-modal').hidden && !document.querySelector('#command-use').hidden);
+  await page.click('#command-use');
+  assert.equal(await page.$eval('#chat-input',el=>el.value),'Draft note\n\nReview this change and list two risks.','using a command must preserve an unsent draft');
+  await page.$eval('#chat-input',el=>{el.value='';el.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.type('#chat-input','/rev');
   await page.waitForFunction(()=>!document.querySelector('#composer-picker').hidden);
   await page.keyboard.press('Enter');

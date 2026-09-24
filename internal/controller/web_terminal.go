@@ -1,7 +1,9 @@
 package controller
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -113,6 +115,23 @@ func (s *Server) workspaceStream(w http.ResponseWriter, r *http.Request, p Princ
 				return
 			}
 			if !desktop {
+				// Keep terminal latency probes on this WebSocket. They must not
+				// reach the worker's terminal input stream.
+				if len(data) <= 64 && bytes.HasPrefix(data, []byte(`{"probe":"`)) {
+					var probe struct {
+						Probe string `json:"probe"`
+					}
+					if json.Unmarshal(data, &probe) == nil && probe.Probe != "" && len(probe.Probe) <= 32 {
+						response, _ := json.Marshal(probe)
+						writeCtx, stop := context.WithTimeout(ctx, 5*time.Second)
+						err = ws.Write(writeCtx, websocket.MessageText, response)
+						stop()
+						if err != nil {
+							return
+						}
+						continue
+					}
+				}
 				data = append(data, '\n')
 			}
 			if _, err = writer.Write(data); err != nil {
