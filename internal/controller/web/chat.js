@@ -1129,7 +1129,10 @@
  function renderHeader(){
   const box=boxes.get(selected);if(!box)return;
   $('#chat-header-name').textContent=box.name;
-  $('#chat-header-state').replaceChildren(Object.assign(document.createElement('span'),{className:box.state==='running'?'running':'',textContent:(box.defaultAgent||'agent')+' · '+box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')}));
+  const state=mk('span');state.className=box.state==='running'?'running':'';
+  const agent=mk('span',(box.defaultAgent||'agent')+' · ');agent.className='chat-header-agent';
+  state.append(agent,document.createTextNode(box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')));
+  $('#chat-header-state').replaceChildren(state);
   inputEl.placeholder='Message '+box.name+'…';
   const key=box.id+'|'+box.state;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}

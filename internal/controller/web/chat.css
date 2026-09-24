@@ -511,6 +511,9 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
   font:inherit;color:var(--ink);padding:.5rem .55rem;border:1px solid var(--line);border-radius:var(--radius-sm);
   box-sizing:border-box;background:var(--bg)}
 .sheet-card.usage-card{width:min(44rem,100%)}
+.usage-card>header{position:sticky;top:0;z-index:1;background:var(--surface);padding:.25rem 0 .5rem;border-bottom:1px solid var(--line)}
+.usage-card #usage-title{min-width:0;overflow-wrap:anywhere}
+.usage-card>header button{min-width:2.25rem;min-height:2.25rem}
 .usage-card h3{font-size:1rem;margin:0 0 .25rem;overflow-wrap:anywhere}
 .usage-card #usage-status{min-height:1.2rem;color:var(--ink-soft);font-size:.85rem}
 .usage-profile{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.75rem;margin:.6rem 0}
@@ -1017,6 +1020,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
  #chat-header-text{flex:1}
  #chat-header-text strong{font-size:.87rem}
  #chat-header-state{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:11rem;font-size:.67rem}
+ #chat-header-state .chat-header-agent{display:none}
  #chat-usage .chat-usage-label{display:none}
  #chat-header #chat-usage{font-size:.68rem;padding:.35rem .5rem}
  #chat-header #chat-clear-context,#chat-header #chat-info,#chat-header #chat-control,#chat-header #chat-workspace{display:none}
