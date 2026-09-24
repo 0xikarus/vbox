@@ -38,6 +38,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
   font-weight:700;cursor:pointer;margin:0;display:inline-flex;align-items:center;justify-content:center;
   transition:transform .14s,background .14s,border-color .14s}
 #chat-top button:hover{background:var(--accent-soft);border-color:var(--accent)}
+#usage-toggle.usage-low{border-color:var(--warn);color:var(--warn-text)}
 #chat-top button:active{transform:scale(.94)}
 #chat-top button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 #chat-shell>#error:empty{display:none}
@@ -61,6 +62,8 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #chat-app{flex:1;display:flex;min-height:0;position:relative;overflow:hidden}
 #chat-list{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;min-height:0;
   background:var(--bg);padding-bottom:env(safe-area-inset-bottom)}
+#chat-resizer{display:none}
+body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:none!important}
 #chat-list-head{display:flex;align-items:center;gap:.6rem;padding:.7rem .8rem .1rem}
 #chat-list-head h1{margin:0;font-size:1.45rem;font-weight:800;letter-spacing:-.02em}
 #chat-list-head p{margin:.1rem 0 0;color:var(--ink-soft);font-size:.8rem}
@@ -511,9 +514,15 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .usage-profile{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.75rem;margin:.6rem 0}
 .usage-profile p{margin:.35rem 0;color:var(--ink-soft);font-size:.84rem;overflow-wrap:anywhere}
 .usage-profile small{color:var(--ink-soft);font-size:.75rem}
-.usage-window{margin:.6rem 0;font-size:.85rem}
+.usage-window{margin:.7rem 0;padding:.55rem .65rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2);font-size:.82rem}
+.usage-window-head{display:flex;align-items:baseline;justify-content:space-between;gap:.6rem;flex-wrap:wrap}
+.usage-window-head span{color:var(--ink-soft)}
+.usage-window-head strong{color:var(--ok-text);font-size:.95rem;white-space:nowrap}
+.usage-window small{display:block;margin-top:.25rem}
 .usage-track{height:.45rem;border-radius:1rem;background:var(--line);margin:.2rem 0;overflow:hidden}
-.usage-track span{display:block;height:100%;background:var(--accent)}
+.usage-track span{display:block;height:100%;background:var(--ok)}
+.usage-spend{padding:.5rem .65rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2)}
+.usage-spend strong{color:var(--ok-text)}
 .usage-caps{margin:.35rem 0;padding-left:1.2rem;color:var(--ink-soft);font-size:.82rem}
 .sheet-card textarea{min-height:6rem}
 .sheet-card .primary{display:block;width:100%;background:var(--accent);color:var(--accent-ink);font-weight:800;
@@ -786,7 +795,11 @@ body{max-width:none;margin:0;padding:0;height:100%;
 /* ── wider viewports: still mobile-first, but show both panes ────────── */
 @media (min-width:900px){
  #chat-app{gap:0}
- #chat-list{flex:0 0 clamp(16rem,28vw,24rem);border-right:1px solid var(--line)}
+ #chat-list{flex:0 0 var(--chat-sidebar-width,clamp(16rem,28vw,24rem));min-width:15rem;max-width:calc(100% - 29rem);border-right:1px solid var(--line)}
+ #chat-resizer{display:block;position:relative;flex:0 0 .7rem;cursor:col-resize;touch-action:none;background:var(--surface)}
+ #chat-resizer::before{content:"";position:absolute;top:50%;left:50%;width:2px;height:3rem;transform:translate(-50%,-50%);border-radius:2px;background:var(--line)}
+ #chat-resizer:hover::before,#chat-resizer:focus-visible::before{background:var(--accent)}
+ #chat-resizer:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
  #chat-main{position:relative;inset:auto;transform:none;box-shadow:none;flex:1}
  #chat-back{display:none}
  .msg{max-width:min(62%,32rem)}
@@ -977,7 +990,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 #inspect-contact-options{list-style:none;margin:0;padding:0;display:grid;gap:.3rem;max-height:14rem;overflow:auto}
 .inspect-quick button,.inspect-quick a{border-radius:var(--radius-sm);font-size:.73rem}
 @media(min-width:1100px){
- #chat-list{flex-basis:19.25rem}
+ #chat-list{flex-basis:var(--chat-sidebar-width,19.25rem)}
  #chat-conversation:has(#inspect:not([hidden])) #chat-messages,
  #chat-conversation:has(#inspect:not([hidden])) #chat-composer,
  #chat-conversation:has(#inspect:not([hidden])) #chat-status,

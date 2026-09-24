@@ -47,6 +47,7 @@
   <ul id="chat-entries"></ul>
   <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
  </aside>
+ <div id="chat-resizer" role="separator" aria-label="Resize Conversations sidebar" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="640" tabindex="0" title="Drag or use arrow keys to resize Conversations"></div>
  <main id="chat-main">
   <section id="chat-empty">
    <div id="chat-empty-mascot" class="mascot-host" aria-hidden="true"></div>
@@ -218,7 +219,7 @@
  <div class="sheet-backdrop" data-close="usage-modal"></div>
  <section class="sheet-card usage-card" role="dialog" aria-modal="true" aria-labelledby="usage-title">
   <header><strong id="usage-title">Profile usage limits</strong><span class="spacer"></span><button id="usage-refresh" type="button" title="Refresh cached results">↻</button><button type="button" data-close="usage-modal" aria-label="Close">×</button></header>
-  <p class="hint">Running boxes only. Each imported profile is queried once every five minutes; this view updates once a minute.</p>
+  <p class="hint">Running boxes only. Remaining percentages use the provider's reported usage and refresh from the cached check about every five minutes.</p>
   <p id="usage-status" role="status"></p>
   <div id="usage-list"></div>
  </section>

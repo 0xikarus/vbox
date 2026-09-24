@@ -21,6 +21,36 @@
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
 
+ /* ---------- desktop conversation sidebar ---------- */
+ const sidebar=$('#chat-list'),splitter=$('#chat-resizer'),sidebarStorageKey='vmboxChatSidebarWidth';
+ let preferredSidebarWidth=0,sidebarDrag=null;
+ try{preferredSidebarWidth=Number(localStorage.getItem(sidebarStorageKey))||0}catch{}
+ function sidebarLimits(){const width=appEl.getBoundingClientRect().width;return {min:240,max:Math.max(240,Math.min(640,width-464))}}
+ function applySidebarWidth(width=preferredSidebarWidth,persist=false){
+  if(!matchMedia('(min-width:900px)').matches)return;
+  const limits=sidebarLimits();
+  const initial=innerWidth>=1100?308:Math.max(256,Math.min(384,appEl.getBoundingClientRect().width*.28));
+  const next=Math.round(Math.max(limits.min,Math.min(limits.max,width||initial)));
+  appEl.style.setProperty('--chat-sidebar-width',next+'px');
+  splitter.setAttribute('aria-valuemin',String(limits.min));splitter.setAttribute('aria-valuemax',String(limits.max));
+  splitter.setAttribute('aria-valuenow',String(next));splitter.setAttribute('aria-valuetext',next+' pixels');
+  if(persist){preferredSidebarWidth=next;try{localStorage.setItem(sidebarStorageKey,String(next))}catch{}}
+ }
+ splitter.addEventListener('pointerdown',event=>{
+  if(event.button!==0||!matchMedia('(min-width:900px)').matches)return;
+  event.preventDefault();sidebarDrag={x:event.clientX,width:sidebar.getBoundingClientRect().width};
+  splitter.setPointerCapture(event.pointerId);document.body.classList.add('chat-resizing');
+ });
+ splitter.addEventListener('pointermove',event=>{if(sidebarDrag)applySidebarWidth(sidebarDrag.width+event.clientX-sidebarDrag.x)});
+ function endSidebarDrag(){if(!sidebarDrag)return;sidebarDrag=null;document.body.classList.remove('chat-resizing');applySidebarWidth(Number(splitter.getAttribute('aria-valuenow')),true)}
+ splitter.addEventListener('pointerup',endSidebarDrag);splitter.addEventListener('pointercancel',endSidebarDrag);splitter.addEventListener('lostpointercapture',endSidebarDrag);
+ splitter.addEventListener('keydown',event=>{
+  const limits=sidebarLimits(),current=sidebar.getBoundingClientRect().width;
+  const next=event.key==='ArrowLeft'?current-24:event.key==='ArrowRight'?current+24:event.key==='Home'?limits.min:event.key==='End'?limits.max:null;
+  if(next===null)return;event.preventDefault();applySidebarWidth(next,true);
+ });
+ addEventListener('resize',()=>{if(!sidebarDrag)applySidebarWidth()});
+
  async function api(path,method='GET',headers={},body,timeout=60000){
   let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
   if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
@@ -2120,7 +2150,8 @@
  $('#logout').onclick=async()=>{
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);
   $('#usage-modal').hidden=true;
-  $('#usage-toggle').hidden=true;owner=false;
+  usageGeneration++;usagePending=null;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
+  $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';owner=false;
   closeTakeover();
   inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
@@ -2137,19 +2168,20 @@
  };
  async function enter(){
   try{
-   const who=await api('/v1/whoami');owner=who.role==='owner';
+   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
-   $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;
+   $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();
    doodle('Loading chats…');
    try{await loadBoxes()}finally{doodle('')}
    const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box'),pair=params.get('pair');
    if(pair&&owner){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match)await openPair(match)}
    else if(id&&boxes.has(id))await openBox(id);
    if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
+   if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
@@ -2158,9 +2190,18 @@
  /* ---------- imported profile usage ---------- */
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
  function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
+ function remainingPercent(used){return typeof used==='number'&&Number.isFinite(used)?Math.max(0,Math.min(100,100-used)):null}
+ function renderUsageSummary(profiles){
+  const remaining=profiles.flatMap(profile=>(profile.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent))).filter(value=>value!==null);
+  const lowest=remaining.length?Math.min(...remaining):null,button=$('#usage-toggle');
+  button.textContent=lowest===null?'Usage':'Usage · '+usageNumber(lowest)+'% left';
+  button.title=lowest===null?'Open profile usage details':'Lowest reported remaining window across running profiles. Open for per-profile details and check times.';
+  button.classList.toggle('usage-low',lowest!==null&&lowest<=20);
+ }
  function renderUsage(data){
   const root=$('#usage-list');root.replaceChildren();
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
+  renderUsageSummary(profiles);
   if(!profiles.length){root.append(mk('p','No running boxes with imported profiles.'));return}
   for(const profile of profiles){
    const card=mk('article');card.className='usage-profile';
@@ -2171,43 +2212,46 @@
     const row=mk('div');row.className='usage-window';
     const names={session:'Current session',weekly_all:'Current week (all models)',weekly_scoped:'Current week',primary:'Primary',secondary:'Secondary'};
     const label=[names[window.name]||window.name,window.scope,window.group&&window.group!==window.name?(names[window.group]||window.group):null,window.durationMinutes?window.durationMinutes+' min':null].filter(Boolean).join(' · ');
-    const percent=typeof window.usedPercent==='number'?window.usedPercent:null;
-    row.append(mk('div',label+' · '+(percent===null?'unknown':usageNumber(percent)+'% used')));
-    if(percent!==null){const track=mk('div');track.className='usage-track';const fill=mk('span');fill.style.width=Math.max(0,Math.min(100,percent))+'%';track.append(fill);row.append(track)}
-    if(window.resetsAt)row.append(mk('small','Resets '+usageDate(window.resetsAt)));
+    const remaining=remainingPercent(window.usedPercent),head=mk('div');head.className='usage-window-head';
+    head.append(mk('span',label),mk('strong',remaining===null?'Remaining unavailable':usageNumber(remaining)+'% remaining'));row.append(head);
+    if(remaining!==null){const track=mk('div');track.className='usage-track';track.setAttribute('role','progressbar');track.setAttribute('aria-label',label+' remaining');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');track.setAttribute('aria-valuenow',String(remaining));const fill=mk('span');fill.style.width=remaining+'%';track.append(fill);row.append(track)}
+    row.append(mk('small',(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'')));
     card.append(row);
    }
    if(snapshot?.spend){
-    const spend=snapshot.spend,unit=spend.currency||spend.unit||'';
+    const spend=snapshot.spend,unit=spend.currency||spend.unit||'',remaining=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;
     const parts=[];
-    if(spend.remaining!=null)parts.push('remaining '+usageNumber(spend.remaining));
     if(spend.used!=null)parts.push('used '+usageNumber(spend.used));
     if(spend.limit!=null)parts.push('limit '+usageNumber(spend.limit));
-    card.append(mk('p','Spend'+(unit?' ('+unit+')':'')+': '+(parts.join(' · ')||'unavailable')+(spend.period?' · '+spend.period:'')));
+    const summary=mk('p');summary.className='usage-spend';summary.append(mk('strong',remaining===null?'Spend remaining unavailable':usageNumber(remaining)+(unit?' '+unit:'')+' remaining'));
+    summary.append(document.createTextNode((parts.length?' · '+parts.join(' · '):'')+(spend.period?' · '+spend.period:'')));card.append(summary);
    }
-   if(snapshot?.balances?.length)card.append(mk('p','Balances: '+snapshot.balances.map(balance=>balance.unit+' '+usageNumber(balance.amount)).join(' · ')));
-   if(snapshot?.rateCaps?.length){const list=mk('ul');list.className='usage-caps';for(const cap of snapshot.rateCaps)list.append(mk('li',[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')));card.append(list)}
+   if(snapshot?.balances?.length)card.append(mk('p','Available balances: '+snapshot.balances.map(balance=>balance.unit+' '+usageNumber(balance.amount)).join(' · ')));
+   if(snapshot?.rateCaps?.length){card.append(mk('p','Configured rate caps (remaining requests unavailable):'));const list=mk('ul');list.className='usage-caps';for(const cap of snapshot.rateCaps)list.append(mk('li',[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')));card.append(list)}
    if(snapshot?.note)card.append(mk('p',snapshot.note));
    if(profile.error)card.append(mk('p','Last check failed: '+profile.error));
    if(profile.checkedAt)card.append(mk('small','Last checked '+usageDate(profile.checkedAt)));
    root.append(card);
   }
  }
+ let usagePending=null,usageGeneration=0;
  async function refreshUsage(){
-  if($('#usage-modal').hidden||document.hidden)return;
-  const status=$('#usage-status');status.textContent='Loading…';
-  try{renderUsage(await api('/v1/profile-usage'));status.textContent=''}catch(error){status.textContent=error.message}
+  if(!owner||document.hidden)return;
+  if(usagePending)return usagePending;
+  const status=$('#usage-status');if(!$('#usage-modal').hidden)status.textContent='Loading…';
+  const generation=usageGeneration;
+  const pending=api('/v1/profile-usage').then(data=>{if(generation!==usageGeneration||!owner)return;renderUsage(data);status.textContent=''}).catch(error=>{if(generation===usageGeneration&&!$('#usage-modal').hidden)status.textContent=error.message}).finally(()=>{if(usagePending===pending)usagePending=null});
+  usagePending=pending;return pending;
  }
- $('#usage-toggle').onclick=()=>{if(!owner)return;closeSheets();$('#usage-modal').hidden=false;void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)};
+ $('#usage-toggle').onclick=()=>{if(!owner)return;closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
  $('#usage-refresh').onclick=()=>void refreshUsage();
- document.querySelectorAll('#usage-modal [data-close]').forEach(el=>el.addEventListener('click',()=>clearInterval(usageTimer)));
- document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('#usage-modal').hidden)void refreshUsage()});
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshUsage()});
 
  /* ---------- instruction presets, box instructions, imported profiles ---------- */
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
- function closeSheets(){clearInterval(usageTimer);document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
+ function closeSheets(){document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
 
  /* ---------- saved Chat slash commands ---------- */
  let selectedCommandName='';

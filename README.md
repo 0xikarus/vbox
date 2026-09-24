@@ -674,11 +674,18 @@ Owners can open **Usage** in the Agent chat header to see limits for profiles
 imported into running boxes. The controller checks each account/profile pair
 once every five minutes through one live box and caches the result; opening the
 view only reads that cache. A sleeping box is never started for a usage check.
+The header shows the lowest reported remaining window, and the Usage view shows
+remaining percentages beside each reset time. Spend remaining is shown when the
+provider reports it or when a limit and used amount are available.
 Claude shows `/usage` session and weekly windows, Codex shows ChatGPT quota
 windows, OpenRouter shows API-key spending and free-model daily requests, and
 Venice shows balances and configured model rates. These providers expose
 different metrics, so a missing quota window does not mean unlimited capacity.
 The view also shows the last observation time and any failed check.
+
+On desktop, drag the divider beside **Conversations** to resize the chat list.
+Arrow keys adjust the focused divider, and the chosen width is saved in the
+browser. Phones keep the full-width conversation list.
 
 ## Managed agent instructions
 
