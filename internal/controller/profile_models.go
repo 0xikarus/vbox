@@ -34,6 +34,8 @@ type profileModelCatalog struct {
 	Models []profileModelChoice `json:"models"`
 }
 
+var errClaudeCatalogLogin = errors.New("saved Claude access token was rejected")
+
 // getLoginProfileModels queries the selected harness with the saved profile on
 // demand. Codex ChatGPT logins are passed only to Codex app-server; they are not
 // API keys and must never be sent to the public OpenAI models endpoint.
@@ -67,6 +69,10 @@ func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p
 		}
 		models, err := queryClaudeModelCatalog(ctx, client, profile.Files, "https://api.anthropic.com/v1/models?limit=1000")
 		if err != nil {
+			if errors.Is(err, errClaudeCatalogLogin) {
+				writeError(w, http.StatusBadGateway, fmt.Errorf("saved Claude login was rejected by Anthropic; re-upload this profile to refresh it"))
+				return
+			}
 			writeError(w, http.StatusBadGateway, fmt.Errorf("could not load Claude models; the saved model and documented choices remain selectable"))
 			return
 		}
@@ -138,6 +144,9 @@ func queryClaudeModelCatalog(ctx context.Context, client *http.Client, files map
 		return nil, fmt.Errorf("Claude catalog request failed")
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("%w (HTTP %d)", errClaudeCatalogLogin, response.StatusCode)
+	}
 	if response.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("Claude catalog returned HTTP %d", response.StatusCode)
 	}

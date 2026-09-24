@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -72,7 +73,7 @@ func TestClaudeCatalogFailureDoesNotExposeCredential(t *testing.T) {
 	_, err := queryClaudeModelCatalog(context.Background(), client, map[string][]byte{
 		".credentials.json": []byte(`{"claudeAiOauth":{"accessToken":"synthetic-private-token"}}`),
 	}, "https://api.anthropic.com/v1/models?limit=1000")
-	if err == nil || strings.Contains(err.Error(), "synthetic-private-token") {
+	if !errors.Is(err, errClaudeCatalogLogin) || strings.Contains(err.Error(), "synthetic-private-token") {
 		t.Fatalf("credential leaked in catalog error: %v", err)
 	}
 }
