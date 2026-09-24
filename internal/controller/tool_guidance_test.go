@@ -83,6 +83,8 @@ func TestManagedChatConventionsStayFocusedOnVmboxCalls(t *testing.T) {
 		t.Fatalf("compose: %v %q", err, got)
 	}
 	for _, example := range []string{
+		`Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP tool chat_message.`,
+		`A response in terminal output, the agent's final answer, or a file does not reach Chat.`,
 		`chat_message {"replyTo":"KEY","text":"..."}`,
 		`chat_message {"contact":"BOX_ID","text":"..."}`,
 		`"files":["/absolute/image.png"]`,

@@ -5,15 +5,15 @@ import (
 	"testing"
 )
 
-func TestChatInstructionDefaultIsCompact(t *testing.T) {
+func TestChatInstructionDefaultRemindsAgentToReplyThroughMCP(t *testing.T) {
 	got := (&Server{}).chatInstruction("m1", "claude", 1)
 	for _, agent := range []string{"codex", "opencode"} {
 		if other := (&Server{}).chatInstruction("m1", agent, 1); other != got {
 			t.Fatalf("%s must receive the same envelope as claude: %q", agent, other)
 		}
 	}
-	if got != "\n\n[Message-ID: m1]" {
-		t.Fatalf("default appendix should carry only the reply ID: %q", got)
+	if got != "\n\n[Message-ID: m1]\nReply using the vmbox-desktop chat_message MCP tool with replyTo set to this Message-ID." {
+		t.Fatalf("default appendix should carry the reply ID and MCP reminder: %q", got)
 	}
 }
 
@@ -21,16 +21,16 @@ func TestChatInstructionIsThinOnEveryMessage(t *testing.T) {
 	server := &Server{}
 	for _, ordinal := range []int{1, 2, 3, 4, 5, 6, 7, 10} {
 		got := server.chatInstruction("m1", "claude", ordinal)
-		if got != "\n\n[Message-ID: m1]" {
+		if got != "\n\n[Message-ID: m1]\nReply using the vmbox-desktop chat_message MCP tool with replyTo set to this Message-ID." {
 			t.Fatalf("ordinal %d appendix: %q", ordinal, got)
 		}
 	}
 }
 
-func TestContactChatInstructionIsCompactAndKeepsRouting(t *testing.T) {
+func TestContactChatInstructionKeepsRoutingAndRemindsAgentToReplyThroughMCP(t *testing.T) {
 	got := (&Server{}).contactChatInstruction("m1", "box-2", "Helper", "claude")
-	if got != "\n\n[Message-ID: m1; From-Box-ID: box-2]" {
-		t.Fatalf("contact appendix must carry only IDs: %q", got)
+	if got != "\n\n[Message-ID: m1; From-Box-ID: box-2]\nReply using the vmbox-desktop chat_message MCP tool with contact set to this From-Box-ID." {
+		t.Fatalf("contact appendix must carry IDs and MCP reminder: %q", got)
 	}
 }
 
