@@ -161,7 +161,7 @@ func run() error {
 		defer cancel()
 		return boxruntime.DesktopInput(ctx, args[1], action)
 	case "desktop-enable", "desktop-start", "desktop-run", "desktop-stream", "desktop-status", "desktop-screenshot", "desktop-thumbnail":
-		if len(args) != 2 {
+		if len(args) != 2 && !(args[0] == "desktop-start" && len(args) == 3) {
 			return fmt.Errorf("desktop command requires ASSIGNMENT")
 		}
 		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
@@ -181,6 +181,9 @@ func run() error {
 		case "desktop-enable":
 			return boxruntime.EnableDesktop(ctx, args[1])
 		case "desktop-start":
+			if len(args) == 3 {
+				return boxruntime.StartDesktop(ctx, args[1], args[2])
+			}
 			return boxruntime.StartDesktop(ctx, args[1])
 		case "desktop-run":
 			return boxruntime.RunDesktop(ctx, args[1])
