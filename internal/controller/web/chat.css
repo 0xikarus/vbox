@@ -499,6 +499,16 @@ body{max-width:none;margin:0;padding:0;height:100%;
 .sheet-card label>input,.sheet-card label>select,.sheet-card label>textarea{display:block;width:100%;margin-top:.22rem;
   font:inherit;color:var(--ink);padding:.5rem .55rem;border:1px solid var(--line);border-radius:var(--radius-sm);
   box-sizing:border-box;background:var(--bg)}
+.sheet-card.usage-card{width:min(44rem,100%)}
+.usage-card h3{font-size:1rem;margin:0 0 .25rem;overflow-wrap:anywhere}
+.usage-card #usage-status{min-height:1.2rem;color:var(--ink-soft);font-size:.85rem}
+.usage-profile{background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.75rem;margin:.6rem 0}
+.usage-profile p{margin:.35rem 0;color:var(--ink-soft);font-size:.84rem;overflow-wrap:anywhere}
+.usage-profile small{color:var(--ink-soft);font-size:.75rem}
+.usage-window{margin:.6rem 0;font-size:.85rem}
+.usage-track{height:.45rem;border-radius:1rem;background:var(--line);margin:.2rem 0;overflow:hidden}
+.usage-track span{display:block;height:100%;background:var(--accent)}
+.usage-caps{margin:.35rem 0;padding-left:1.2rem;color:var(--ink-soft);font-size:.82rem}
 .sheet-card textarea{min-height:6rem}
 .sheet-card .primary{display:block;width:100%;background:var(--accent);color:var(--accent-ink);font-weight:800;
   border:0;border-radius:var(--radius);min-height:2.9rem;padding:.6rem 1.1rem;cursor:pointer}

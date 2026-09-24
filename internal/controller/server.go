@@ -294,6 +294,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/users/{id}", s.owner(s.removeUser))
 	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))
 	mux.HandleFunc("GET /v1/login-profiles", s.owner(s.listLoginProfiles))
+	mux.HandleFunc("GET /v1/profile-usage", s.owner(s.profileUsageOverview))
 	mux.HandleFunc("GET /v1/login-profiles/{application}/{name}/models", s.owner(s.getLoginProfileModels))
 	mux.HandleFunc("DELETE /v1/login-profiles/{application}/{name}", s.owner(s.deleteLoginProfile))
 	mux.HandleFunc("GET /v1/instruction-presets", s.auth(s.listInstructionPresets))
@@ -669,6 +670,7 @@ func (s *Server) StartReconciler(ctx context.Context) error {
 	// waits behind the shared Railway request budget.
 	s.startRunningWorkerReplacementReconciler(ctx)
 	s.startDesktopReplayRecorder(ctx)
+	s.startProfileUsagePoller(ctx)
 	if err := s.ReconcileNow(ctx); err != nil {
 		s.Logger.Error("initial controller reconciliation failed", "error", err)
 	}
