@@ -42,6 +42,7 @@ before(async()=>{
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
+  if(req.method==='GET' && path==='/v1/login-profiles/claude/personal/models')return res.end(JSON.stringify({source:'Claude Code catalog',models:['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'].map(id=>({id,label:id}))}));
   if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash',reasoning:false},{id:'openrouter/google/gemini-test',label:'Gemini test',reasoning:true}]}));
   if(req.method==='GET' && path==='/v1/login-profiles/codex/personal-codex/models')return res.end(JSON.stringify({source:'Codex account catalog',models:[{id:'account-codex-model',label:'Account Codex Model',reasoning:true,reasoningEfforts:['low','ultra']}]}));
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
@@ -253,6 +254,7 @@ test('creation offers documented Claude choices and Codex account models',async(
  assert.equal(await page.$eval(input,e=>e.value),'opus[1m]');
  await page.click('#create .model-picker-open');
  await page.waitForSelector('dialog.model-picker-dialog[open]');
+ await page.waitForFunction(()=>document.querySelector('.model-picker-source')?.textContent.includes('Claude Code catalog'));
  const claude=await page.$$eval('dialog.model-picker-dialog .model-picker-option:not([hidden])',nodes=>nodes.map(node=>node.dataset.model));
  for(const model of ['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'])assert.ok(claude.includes(model),model+' is offered');
  assert.match(await page.$eval('.model-picker-source',node=>node.textContent),/Claude Code/);

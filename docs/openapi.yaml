@@ -8,6 +8,58 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/agent-desktop/box-configs:
+    get:
+      security: [{desktopAgentAuth: []}]
+      summary: Agent-readable, non-secret creation options for a box with create_agent_box permission
+      responses:
+        '200':
+          description: Allowed agent types and limits, saved profile metadata, and assignable role IDs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowedAgents: {type: array, items: {enum: [codex, claude, opencode]}}
+                  maxBoxes: {type: integer}
+                  maxDiskGiB: {type: integer}
+                  loginProfiles: {type: array, items: {$ref: '#/components/schemas/LoginProfile'}}
+                  assignableRoles: {type: array, items: {$ref: '#/components/schemas/AgentRoleSummary'}}
+        '403': {description: Creator lacks create_agent_box permission}
+  /v1/agent-desktop/box-configs/{application}/{name}/models:
+    get:
+      security: [{desktopAgentAuth: []}]
+      summary: Live model catalog for one creator-visible saved Claude, Codex or OpenCode profile
+      parameters:
+        - {in: path, name: application, required: true, schema: {enum: [claude, codex, opencode]}}
+        - {in: path, name: name, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Model IDs and available reasoning levels; no credentials}
+        '403': {description: Creator lacks create_agent_box permission}
+        '404': {description: Profile unavailable to this creator}
+  /v1/agent-desktop/boxes:
+    post:
+      security: [{desktopAgentAuth: []}]
+      summary: Create an agent box using the creator's bounded grant
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, agent]
+              properties:
+                name: {type: string}
+                agent: {enum: [codex, claude, opencode]}
+                diskGiB: {type: integer, default: 10}
+                instructions: {type: string, maxLength: 65536}
+                loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/LoginProfileRef'}}
+                roleIds: {type: array, maxItems: 8, items: {type: string, format: uuid}}
+      responses:
+        '202': {description: Box creation accepted}
+        '403': {description: Agent type, role, disk size, or creation count is outside the creator grant}
+        '409': {description: Selected profile unavailable or creation conflicts}
   /v1/locations:
     get:
       summary: Available location presets from the controller-managed fleet
@@ -38,7 +90,7 @@ paths:
   /v1/profile-usage:
     get:
       summary: Owner-only cached usage limits for every saved agent profile
-      description: Reads cached results without waking a box. The controller polls each account, application, and saved profile about every five minutes, preferring an available live box and otherwise checking the saved credential snapshot.
+      description: Reads cached results without waking a box. The controller polls each account, application, and saved profile about every 30 minutes, preferring an available live box and otherwise checking the saved credential snapshot.
       responses:
         '200':
           description: Saved profile names, live box names, last observation, probe source, and normalized provider limits
@@ -71,6 +123,21 @@ paths:
                             rateCaps: {type: array, items: {type: object}}
                             note: {type: string}
         '403': {description: Owner role required}
+  /v1/profile-usage/refresh:
+    post:
+      summary: Request an immediate usage check for every saved agent profile owned by the account
+      description: Starts checks in the background and returns immediately. Active checks are deduplicated. Read GET /v1/profile-usage for progress and results; no sleeping box is started.
+      responses:
+        '202':
+          description: Usage checks accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profiles]
+                properties:
+                  profiles: {type: integer, description: Number of saved profiles selected for checking}
+        '403': {description: Owner role required}
   /v1/login-profiles/{application}/{name}:
     parameters:
       - {in: path, name: application, required: true, schema: {enum: [claude, codex, opencode, github]}}
@@ -98,11 +165,11 @@ paths:
         '409': {description: Name already exists or storage/encryption unavailable}
   /v1/login-profiles/{application}/{name}/models:
     parameters:
-      - {in: path, name: application, required: true, schema: {enum: [codex, opencode]}}
+      - {in: path, name: application, required: true, schema: {enum: [claude, codex, opencode]}}
       - {in: path, name: name, required: true, schema: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9@+_.:() -]{0,127}$'}}
     get:
       summary: Load models available to the selected saved profile
-      description: Codex uses the saved login only through an isolated Codex app-server model/list request. OpenCode queries the saved OpenRouter or Venice provider key. Credential contents are never returned.
+      description: Claude queries Anthropic's Models API with the saved OAuth access token; model access is checked by Claude Code when used. Codex uses the saved login only through an isolated Codex app-server model/list request. OpenCode queries the saved OpenRouter or Venice provider key. Credential contents are never returned.
       responses:
         '200': {description: Model IDs, labels and supported reasoning choices}
         '400': {description: Profile type has no supported live catalog}
@@ -607,6 +674,7 @@ paths:
 components:
   securitySchemes:
     bearerAuth: {type: http, scheme: bearer}
+    desktopAgentAuth: {type: apiKey, in: header, name: Authorization, description: Private DesktopAgent credential issued to the assigned box}
   parameters:
     ID: {name: id, in: path, required: true, schema: {type: string}}
     IdempotencyKey: {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 255}}
@@ -620,6 +688,7 @@ components:
         application: {enum: [claude, codex, opencode, github]}
         name: {type: string}
         model: {type: string, maxLength: 200, description: Optional per-box model override}
+        reasoningEffort: {type: string, description: Optional per-box reasoning choice paired with a model override}
     LoginProfile:
       allOf:
         - {$ref: '#/components/schemas/LoginProfileRef'}
@@ -679,8 +748,8 @@ components:
         roleIds: {type: array, items: {type: string, format: uuid}, description: Optional owner-only native role assignments.}
         loginProfiles:
           type: array
-          maxItems: 1
-          description: Owner-only single saved profile selection; an agent profile application also selects the box harness; omitted means no saved credentials provisioned
+          maxItems: 2
+          description: Owner-only selection of one agent profile and optionally one GitHub profile; an agent profile application also selects the box harness; omitted means no saved credentials provisioned
           items: {$ref: '#/components/schemas/LoginProfileRef'}
         diskGiB: {type: integer, format: int64, default: 10}
         volumeId: {type: string, description: Owner-only import; must be paired with volumeName.}

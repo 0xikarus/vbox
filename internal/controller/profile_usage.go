@@ -24,7 +24,7 @@ import (
 //go:embed usage_probe.py
 var usageProbeScript string
 
-const profileUsageFreshness = 5 * time.Minute
+const profileUsageFreshness = 30 * time.Minute
 
 type profileUsageWindow struct {
 	Name            string   `json:"name"`
@@ -173,14 +173,15 @@ func (s *Server) savedProfileUsageCandidates(ctx context.Context, accountID stri
 	return result, rows.Err()
 }
 
-func (s *Server) claimProfileUsage(ctx context.Context, candidate profileUsageCandidate, token string) (bool, error) {
+func (s *Server) claimProfileUsage(ctx context.Context, candidate profileUsageCandidate, token string, force bool) (bool, error) {
 	var claimed string
 	err := s.Store.DB.QueryRowContext(ctx, `INSERT INTO profile_usage_snapshots(account_id,application,profile_name,claim_until,claim_token)
 VALUES($1,$2,$3,now()+interval '90 seconds',$4)
 ON CONFLICT(account_id,application,profile_name) DO UPDATE SET claim_until=EXCLUDED.claim_until,claim_token=EXCLUDED.claim_token
 WHERE (profile_usage_snapshots.claim_until IS NULL OR profile_usage_snapshots.claim_until<now())
-AND (profile_usage_snapshots.checked_at IS NULL OR profile_usage_snapshots.checked_at<now()-interval '5 minutes')
-RETURNING claim_token`, candidate.AccountID, candidate.Application, candidate.Name, token).Scan(&claimed)
+AND ($5::boolean OR profile_usage_snapshots.checked_at IS NULL
+OR profile_usage_snapshots.checked_at<now()-make_interval(secs => $6::double precision))
+RETURNING claim_token`, candidate.AccountID, candidate.Application, candidate.Name, token, force, int64(profileUsageFreshness.Seconds())).Scan(&claimed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -319,9 +320,9 @@ func runSavedProfileUsage(ctx context.Context, application, providerName, modelI
 	return decodeProfileUsage(output, "saved profile")
 }
 
-func (s *Server) pollProfileUsage(ctx context.Context, candidate profileUsageCandidate) {
+func (s *Server) pollProfileUsage(ctx context.Context, candidate profileUsageCandidate, force bool) {
 	token := uuid()
-	claimed, err := s.claimProfileUsage(ctx, candidate, token)
+	claimed, err := s.claimProfileUsage(ctx, candidate, token, force)
 	if err != nil {
 		s.Logger.Error("claim profile usage failed", "error", err)
 		return
@@ -360,11 +361,7 @@ AND sl.service_id=$4 AND COALESCE(b.metadata->'importedLoginProfiles',b.metadata
 	}
 }
 
-func (s *Server) reconcileProfileUsageNow(ctx context.Context) error {
-	candidates, err := s.savedProfileUsageCandidates(ctx, "")
-	if err != nil {
-		return err
-	}
+func (s *Server) pollProfileUsageCandidates(ctx context.Context, candidates []profileUsageCandidate, force bool) {
 	semaphore := make(chan struct{}, 4)
 	var group sync.WaitGroup
 	for _, candidate := range candidates {
@@ -376,16 +373,41 @@ func (s *Server) reconcileProfileUsageNow(ctx context.Context) error {
 		go func(value profileUsageCandidate) {
 			defer group.Done()
 			defer func() { <-semaphore }()
-			s.pollProfileUsage(ctx, value)
+			checkCtx, cancel := context.WithTimeout(ctx, 80*time.Second)
+			defer cancel()
+			s.pollProfileUsage(checkCtx, value, force)
 		}(candidate)
 	}
 	group.Wait()
+}
+
+func (s *Server) reconcileProfileUsageNow(ctx context.Context) error {
+	candidates, err := s.savedProfileUsageCandidates(ctx, "")
+	if err != nil {
+		return err
+	}
+	s.pollProfileUsageCandidates(ctx, candidates, false)
 	return ctx.Err()
+}
+
+func (s *Server) refreshProfileUsage(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
+	candidates, err := s.savedProfileUsageCandidates(r.Context(), p.AccountID)
+	if err != nil {
+		writeError(w, 500, fmt.Errorf("usage refresh unavailable"))
+		return
+	}
+	if len(candidates) > 0 {
+		go func() {
+			s.pollProfileUsageCandidates(context.Background(), candidates, true)
+		}()
+	}
+	writeJSON(w, http.StatusAccepted, map[string]any{"profiles": len(candidates)})
 }
 
 func (s *Server) startProfileUsagePoller(ctx context.Context) {
 	go func() {
-		ticker := time.NewTicker(time.Minute)
+		ticker := time.NewTicker(profileUsageFreshness)
 		defer ticker.Stop()
 		for {
 			if err := s.reconcileProfileUsageNow(ctx); err != nil && ctx.Err() == nil {

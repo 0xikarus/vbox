@@ -44,9 +44,31 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 		if !ok || instructions["type"] != "string" || instructions["maxLength"] != v1.MaxInstructionMarkdownBytes {
 			t.Fatalf("instructions schema=%#v", instructions)
 		}
+		if properties["loginProfiles"] == nil || properties["roleIds"] == nil {
+			t.Fatalf("creation config missing from schema: %#v", properties)
+		}
 		return
 	}
 	t.Fatal("create_agent_box tool is missing")
+}
+
+func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
+	for _, test := range []struct {
+		args string
+		want string
+	}{
+		{`{"mode":"list"}`, "/v1/agent-desktop/box-configs"},
+		{`{"mode":"models","application":"opencode","name":"venice"}`, "/v1/agent-desktop/box-configs/opencode/venice/models"},
+		{`{"mode":"models","application":"claude","name":"personal"}`, "/v1/agent-desktop/box-configs/claude/personal/models"},
+		{`{}`, ""},
+		{`{"mode":"models","application":"opencode"}`, ""},
+		{`{"mode":"list","application":"opencode","name":"venice"}`, ""},
+	} {
+		got, err := agentBoxConfigPath(json.RawMessage(test.args))
+		if got != test.want || (err != nil) != (test.want == "") {
+			t.Fatalf("args=%s path=%q error=%v", test.args, got, err)
+		}
+	}
 }
 
 func TestRetiredCoordinationToolsAreNotCallable(t *testing.T) {

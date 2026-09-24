@@ -229,6 +229,9 @@ func TestChatStartupRecoversReplacedSharedWorkerBeforeDesktopProbe(t *testing.T)
 	mock.ExpectQuery("SELECT id::text FROM logical_boxes").
 		WithArgs("box", "account", "fence", int64(3)).
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("box"))
+	// The credential transaction must finish before the worker starts the task:
+	// Codex reads its MCP policy through that newly issued credential.
+	mock.ExpectCommit()
 	created := time.Now().UTC()
 	mock.ExpectQuery("SELECT created_at FROM box_messages").
 		WithArgs("account", "message").
@@ -240,9 +243,8 @@ func TestChatStartupRecoversReplacedSharedWorkerBeforeDesktopProbe(t *testing.T)
 		WithArgs("account", "message").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "ordinal", "download_token"}))
 	mock.ExpectExec("UPDATE logical_boxes SET metadata=").
-		WithArgs("account", "box", "shell-session", "shell").
+		WithArgs("account", "box", "shell-session", "shell", "fence", int64(3)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectCommit()
 
 	fixture := &sharedChatRecoveryFixture{t: t}
 	server := NewServer(&Store{DB: db}, nil)

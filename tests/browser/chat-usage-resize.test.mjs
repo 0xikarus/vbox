@@ -13,7 +13,7 @@ const usage={profiles:[{application:'claude',name:'work',boxes:['Builder'],obser
  {application:'opencode',name:'spare',boxes:[],observedAt:'2026-09-24T03:00:00Z',snapshot:{source:'saved profile',windows:[{name:'primary',usedPercent:40}]}}]};
 
 test('usage shows remaining capacity and Conversations width can be resized and restored',async()=>{
- let delayWriterProfile=false,writerProfileRequests=0;
+ let delayWriterProfile=false,writerProfileRequests=0,manualRefreshes=0;
  const server=http.createServer((request,response)=>{
   const path=request.url.split('?')[0];
   if(path==='/chat'){response.setHeader('Content-Type','text/html');return response.end(files['chat.html'])}
@@ -28,6 +28,11 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   }
   if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:'builder',boxBId:'writer',boxAName:'Builder',boxBName:'Writer',lastAt:'2026-09-24T03:00:00Z',lastText:'Hello'}]));
   if(path==='/v1/box-conversations/builder/writer/messages'||path==='/v1/logical-boxes/builder/messages'||path==='/v1/logical-boxes/writer/messages'||path==='/v1/logical-boxes/shell/messages'||path==='/v1/tool-presets'||path==='/v1/chat-commands')return response.end('[]');
+  if(path==='/v1/profile-usage/refresh'&&request.method==='POST'){
+   manualRefreshes++;
+   for(const profile of usage.profiles)profile.checkedAt='2026-09-24T04:00:00Z';
+   return response.end(JSON.stringify({profiles:usage.profiles.length}));
+  }
   if(path==='/v1/profile-usage')return response.end(JSON.stringify(usage));
   if(path==='/v1/push/vapid-key'){response.statusCode=404;return response.end('{}')}
   response.statusCode=404;response.end('{}');
@@ -64,6 +69,10 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/Profile usage limits/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
+  await page.click('#usage-refresh');
+  await page.waitForFunction(()=>document.querySelector('#usage-status')?.textContent.includes('Usage updated.'));
+  assert.equal(manualRefreshes,1,'manual refresh still checks saved profiles');
+  assert.equal(await page.$eval('#usage-refresh',element=>element.disabled),false);
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="shell"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Terminal');

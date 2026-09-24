@@ -128,12 +128,16 @@ running.
 
 The controller and chat creation forms filter saved profiles to the selected
 harness and prefill the model stored in that profile. **Choose model** opens a
-searchable popup: Claude Code shows documented CLI choices, Codex loads the
+searchable popup: Claude Code loads current model IDs and supported reasoning
+levels from Anthropic's Models API using the selected saved login, Codex loads the
 models and reasoning levels advertised by Codex app-server for the selected
 saved login, and an OpenCode profile with a saved OpenRouter or Venice key loads
 that provider's current tool-capable text-model catalog on demand. An exact
-model ID can also be entered in the popup. The saved encrypted profile remains
-unchanged by a box-specific choice.
+model ID can also be entered in the popup. Claude Code aliases remain available
+if the live request fails; an expired saved login may need to be uploaded again.
+The API list does not guarantee Claude Code subscription or organization access,
+which Claude Code checks when using the selected model. The saved encrypted
+profile remains unchanged by a box-specific choice.
 The same popup can set a box-specific reasoning level: Codex writes
 `model_reasoning_effort`, Claude Code writes `effortLevel`, and OpenCode selects a
 model variant for its Build agent. Leave **Default** to retain the profile/model
@@ -672,9 +676,10 @@ profile does not establish that its authentication is valid.
 
 Owners can open **Usage** in the Agent chat header to see limits for every saved
 Claude, Codex, and OpenCode profile, including profiles with no running box.
-The controller checks each account/profile pair once every five minutes and
-caches the result; opening the view only reads that cache. It prefers a running
-box's credential copy, then tries the encrypted saved profile in an isolated
+The controller checks each account/profile pair about every 30 minutes and
+caches the result; opening the view only reads that cache. Owners can use the
+refresh button to start an immediate check of all saved profiles. It prefers a
+running box's credential copy, then tries the encrypted saved profile in an isolated
 temporary home if no box is available or the live check fails. A sleeping box
 is never started for a usage check. A saved OAuth snapshot can be older than a
 box's refreshed login; failed checks are shown instead of an invented limit.
@@ -774,6 +779,16 @@ Manager gets All contacts plus safe box lifecycle and metadata-label tools,
 while Normal gets computer-use tools and relies on its box's direct contacts.
 Owners may rename or replace them, assign roles to boxes, and select initial
 roles during box creation from either the controller or the chat app.
+
+A box with `create_agent_box` permission can call `get_agent_box_configs {"mode":"list"}` to
+see which saved login profiles, agent types, and initial roles it may use. It
+can then pass `loginProfiles` and `roleIds` to `create_agent_box`. For example,
+`{"name":"researcher","agent":"opencode","loginProfiles":[{"application":"opencode","name":"venice"}],"roleIds":["NORMAL_ROLE_ID"],"idempotencyKey":"researcher-1"}`
+imports the named OpenCode profile and assigns the owner-approved role. The
+profile's saved model is used unless the reference includes a `model` override;
+`reasoningEffort` can accompany an override. A second GitHub profile is optional.
+`get_agent_box_configs {"mode":"models","application":"opencode","name":"venice"}` reads that
+profile's live model choices. Omitting `loginProfiles` imports no saved login.
 
 ## Optional tools
 

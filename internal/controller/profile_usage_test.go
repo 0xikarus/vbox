@@ -112,6 +112,49 @@ func TestProfileUsageIncludesSavedProfilesWithoutRunningBoxes(t *testing.T) {
 	}
 }
 
+func TestProfileUsageClaimUsesThirtyMinuteFreshnessAndAllowsManualRefresh(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	server := &Server{Store: &Store{DB: db}}
+	candidate := profileUsageCandidate{AccountID: "account-a", Application: "claude", Name: "personal"}
+	for _, force := range []bool{false, true} {
+		mock.ExpectQuery("INSERT INTO profile_usage_snapshots").
+			WithArgs("account-a", "claude", "personal", "claim-token", force, int64(1800)).
+			WillReturnRows(sqlmock.NewRows([]string{"claim_token"}).AddRow("claim-token"))
+		claimed, err := server.claimProfileUsage(context.Background(), candidate, "claim-token", force)
+		if err != nil || !claimed {
+			t.Fatalf("force=%t claimed=%t err=%v", force, claimed, err)
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProfileUsageManualRefreshScopesToOwner(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	mock.ExpectQuery("SELECT b.account_id::text").WithArgs("account-a").
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "id", "name", "provider", "provider_credential", "default_agent", "profiles", "service_id", "assignment_generation"}))
+	mock.ExpectQuery("SELECT account_id::text,application,name FROM login_profiles").WithArgs("account-a").
+		WillReturnRows(sqlmock.NewRows([]string{"account_id", "application", "name"}))
+	server := &Server{Store: &Store{DB: db}}
+	response := httptest.NewRecorder()
+	server.refreshProfileUsage(response, httptest.NewRequest("POST", "/v1/profile-usage/refresh", nil), Principal{AccountID: "account-a", Role: "owner"})
+	if response.Code != 202 || response.Body.String() != "{\"profiles\":0}\n" {
+		t.Fatalf("unexpected refresh response %d: %s", response.Code, response.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSavedProfileUsageUsesOnlyIsolatedClaudeCredential(t *testing.T) {
 	bin := t.TempDir()
 	command := `#!/bin/sh

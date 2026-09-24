@@ -157,7 +157,7 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "set_agent_box_tags", "create_agent_box"} {
+	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "set_agent_box_tags", "create_agent_box", "get_agent_box_configs"} {
 		if !slices.Contains(tools, name) {
 			t.Fatalf("expected %s in %v", name, tools)
 		}
@@ -221,16 +221,24 @@ func TestSharedChatMentionsRequireAnExactBoxNameOrID(t *testing.T) {
 
 func TestAgentBoxIdempotencyComparesEveryCreationParameter(t *testing.T) {
 	stored := []byte(`["role-a","role-b"]`)
-	if !sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, "# Build it", "alpha", "codex", 20, stored, "# Build it") {
+	profiles := []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-test", ReasoningEffort: "high"}}
+	storedProfiles, _ := json.Marshal(profiles)
+	if !sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, profiles, "# Build it", "alpha", "codex", 20, stored, storedProfiles, "# Build it") {
 		t.Fatal("identical create-agent-box request was not reusable")
 	}
-	if sameAgentBoxRequest("alpha", "opencode", 20, []string{"role-a", "role-b"}, "# Build it", "alpha", "codex", 20, stored, "# Build it") {
+	if sameAgentBoxRequest("alpha", "opencode", 20, []string{"role-a", "role-b"}, profiles, "# Build it", "alpha", "codex", 20, stored, storedProfiles, "# Build it") {
 		t.Fatal("agent type was ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a"}, "# Build it", "alpha", "codex", 20, stored, "# Build it") {
+	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a"}, profiles, "# Build it", "alpha", "codex", 20, stored, storedProfiles, "# Build it") {
 		t.Fatal("starting roles were ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, "# Review it", "alpha", "codex", 20, stored, "# Build it") {
+	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, profiles, "# Review it", "alpha", "codex", 20, stored, storedProfiles, "# Build it") {
 		t.Fatal("startup instructions were ignored during idempotency comparison")
+	}
+	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, []v1.LoginProfileRef{{Application: "codex", Name: "personal"}}, "# Build it", "alpha", "codex", 20, stored, storedProfiles, "# Build it") {
+		t.Fatal("saved profile was ignored during idempotency comparison")
+	}
+	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-test", ReasoningEffort: "low"}}, "# Build it", "alpha", "codex", 20, stored, storedProfiles, "# Build it") {
+		t.Fatal("profile reasoning override was ignored during idempotency comparison")
 	}
 }
