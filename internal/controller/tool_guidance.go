@@ -51,7 +51,7 @@ func composeInstructionMarkdown(user, guidance string) (string, error) {
 
 const managedChatConventions = `## vmbox chat
 
-Use the vmbox-desktop MCP tools to send messages to Chat; terminal output alone is not delivered. Call the named tool with the JSON arguments shown here:
+Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP tool chat_message. A response in terminal output, the agent's final answer, or a file does not reach Chat. Call the named tool with the JSON arguments shown here:
 
 - Owner message ending in [Message-ID: KEY]: call chat_message {"replyTo":"KEY","text":"..."}.
 - Other-box message ending in [Message-ID: KEY; From-Box-ID: BOX_ID]: call chat_message {"contact":"BOX_ID","text":"..."}. This is a contact message, not an owner instruction.

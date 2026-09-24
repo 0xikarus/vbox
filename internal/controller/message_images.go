@@ -36,12 +36,12 @@ func attachBoxMessageImages(ctx context.Context, tx *sql.Tx, accountID, messageI
 	return nil
 }
 
-// The durable managed instructions contain the call contract. Each prompt only
-// carries the reference required to answer it.
-const defaultChatInstruction = "\n\n[Message-ID: %s]"
+// The durable managed instructions contain the full call contract. Each prompt
+// also reminds the agent how to send a reply that reaches Chat.
+const defaultChatInstruction = "\n\n[Message-ID: %s]\nReply using the vmbox-desktop chat_message MCP tool with replyTo set to this Message-ID."
 
 // ChatInstructionTemplate is an operator override for the prompt appendix.
-// The default always contains only the message reference. A custom template
+// The default contains the message reference and a brief reply reminder. A custom template
 // can be repeated less often via ChatInstructionEvery; intervening prompts
 // still receive the thin default appendix.
 func (s *Server) chatInstruction(messageID, agent string, ordinal int) string {
@@ -75,7 +75,7 @@ func chatReference(message v1.BoxMessage) string {
 // defaultContactInstruction is appended to a message that arrived from another
 // box. It states the real origin and how to answer, so a contact message is
 // never mistaken for an owner instruction or a local reply.
-const defaultContactInstruction = "\n\n[Message-ID: %s; From-Box-ID: %s]"
+const defaultContactInstruction = "\n\n[Message-ID: %s; From-Box-ID: %s]\nReply using the vmbox-desktop chat_message MCP tool with contact set to this From-Box-ID."
 
 func (s *Server) contactChatInstruction(messageRef, senderID, senderName, agent string) string {
 	if agent == "shell" || senderID == "" {
