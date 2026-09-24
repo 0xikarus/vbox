@@ -8,7 +8,8 @@ const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.cs
 const usage={profiles:[{application:'claude',name:'work',boxes:['Builder'],observedAt:'2026-09-24T03:00:00Z',checkedAt:'2026-09-24T03:01:00Z',snapshot:{windows:[
  {name:'session',usedPercent:25,resetsAt:'2026-09-24T04:00:00Z'},
  {name:'weekly_all',usedPercent:90,resetsAt:'2026-09-30T00:00:00Z'}
-],spend:{currency:'USD',limit:100,used:40},balances:[{unit:'USD',amount:12}],rateCaps:[{model:'example',type:'RPM',amount:100}]}}]};
+],spend:{currency:'USD',limit:100,used:40},balances:[{unit:'USD',amount:12}],rateCaps:[{model:'example',type:'RPM',amount:100}],source:'live box'}},
+ {application:'opencode',name:'spare',boxes:[],observedAt:'2026-09-24T03:00:00Z',snapshot:{source:'saved profile',windows:[{name:'primary',usedPercent:40}]}}]};
 
 test('usage shows remaining capacity and Conversations width can be resized and restored',async()=>{
  const server=http.createServer((request,response)=>{
@@ -37,7 +38,8 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.match(text,/60 USD remaining/);
   assert.match(text,/Available balances: USD 12/);
   assert.match(text,/remaining requests unavailable/);
-  assert.deepEqual(await page.$$eval('.usage-track',tracks=>tracks.map(track=>track.getAttribute('aria-valuenow'))),['75','10']);
+  assert.match(text,/No running box · Source: saved profile/);
+  assert.deepEqual(await page.$$eval('.usage-track',tracks=>tracks.map(track=>track.getAttribute('aria-valuenow'))),['75','10','60']);
   await page.click('#usage-modal button[data-close]');
 
   const initial=await page.$eval('#chat-list',element=>element.getBoundingClientRect().width);
