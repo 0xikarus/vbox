@@ -73,7 +73,7 @@ func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p
 				writeError(w, http.StatusBadGateway, fmt.Errorf("saved Claude login was rejected by Anthropic; re-upload this profile to refresh it"))
 				return
 			}
-			writeError(w, http.StatusBadGateway, fmt.Errorf("could not load Claude models; the saved model and documented choices remain selectable"))
+			writeError(w, http.StatusBadGateway, fmt.Errorf("could not load Claude models (%s); the saved model and documented choices remain selectable", err))
 			return
 		}
 		writeJSON(w, http.StatusOK, profileModelCatalog{Source: "Anthropic live catalog · model access checked when used", Models: models})
