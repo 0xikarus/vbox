@@ -113,8 +113,36 @@ test('thread replies stay visible in the main timeline and use the thread compos
   assert.equal(await p.$('.msg-thread'),null,'a two-message thread has no count label');
   await p.click('.msg.user',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.includes('Reply in thread')).click());
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
+  const initialWidth=await p.$eval('#thread-panel',panel=>panel.getBoundingClientRect().width);
+  assert.ok(initialWidth>=400,'the thread sidebar starts at its intended desktop width');
+  const handle=await p.$eval('#thread-resizer',element=>element.getBoundingClientRect().toJSON());
+  await p.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);await p.mouse.down();await p.mouse.move(handle.x+handle.width/2-72,handle.y+handle.height/2,{steps:5});await p.mouse.up();
+  const draggedWidth=await p.$eval('#thread-panel',panel=>panel.getBoundingClientRect().width);
+  assert.ok(draggedWidth>=initialWidth+60,'dragging the thread edge left widens the sidebar');
+  await p.focus('#thread-resizer');await p.keyboard.press('ArrowRight');
+  const keyboardWidth=await p.$eval('#thread-panel',panel=>panel.getBoundingClientRect().width);
+  assert.ok(keyboardWidth<draggedWidth,'the thread separator supports keyboard resizing');
+  assert.equal(await p.evaluate(()=>Number(localStorage.getItem('vmboxChatThreadWidth'))),keyboardWidth,'thread width is remembered');
+  await p.evaluate(()=>document.activeElement.blur());
+  await p.screenshot({path:'/tmp/vmbox-chat-thread-resized.png'});
   await p.type('#thread-composer textarea','Ship it.');await p.click('#thread-composer button');await p.waitForFunction(()=>document.querySelector('#thread-composer textarea').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
   await (await p.$('#thread-panel')).screenshot({path:'docs/chat-ui/screenshots/chat-thread.png'});await p.close();
+ });
+});
+
+test('thread sidebar fits a phone without a resize handle',async()=>{
+ await withChat(async(browser,base)=>{
+  const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user');
+  await p.click('.msg.user',{button:'right'});
+  await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);
+  await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.includes('Reply in thread')).click());
+  await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden);
+  const layout=await p.evaluate(()=>({panel:document.querySelector('#thread-panel').getBoundingClientRect().toJSON(),handle:getComputedStyle(document.querySelector('#thread-resizer')).display}));
+  assert.ok(Math.abs(layout.panel.left)<1&&Math.abs(layout.panel.right-390)<1,'the thread sidebar fills the phone viewport');
+  assert.equal(layout.handle,'none','the desktop resize handle is hidden on phones');
+  await p.evaluate(()=>document.activeElement.blur());
+  await p.screenshot({path:'/tmp/vmbox-chat-thread-mobile.png'});await p.close();
  });
 });
 
