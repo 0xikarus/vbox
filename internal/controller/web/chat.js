@@ -2195,18 +2195,20 @@
   const remaining=profiles.flatMap(profile=>(profile.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent))).filter(value=>value!==null);
   const lowest=remaining.length?Math.min(...remaining):null,button=$('#usage-toggle');
   button.textContent=lowest===null?'Usage':'Usage · '+usageNumber(lowest)+'% left';
-  button.title=lowest===null?'Open profile usage details':'Lowest reported remaining window across running profiles. Open for per-profile details and check times.';
+  button.title=lowest===null?'Open profile usage details':'Lowest reported remaining window across saved profiles. Open for per-profile details and check times.';
   button.classList.toggle('usage-low',lowest!==null&&lowest<=20);
  }
  function renderUsage(data){
   const root=$('#usage-list');root.replaceChildren();
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
   renderUsageSummary(profiles);
-  if(!profiles.length){root.append(mk('p','No running boxes with imported profiles.'));return}
+  if(!profiles.length){root.append(mk('p','No saved agent profiles yet.'));return}
   for(const profile of profiles){
    const card=mk('article');card.className='usage-profile';
    const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
-   card.append(mk('p',(profile.boxes||[]).join(', ')+' · '+(profile.observedAt?'Observed '+usageDate(profile.observedAt):'Waiting for first check')));
+   const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
+   const source=profile.snapshot?.source?' · Source: '+profile.snapshot.source:'';
+   card.append(mk('p',boxes+source+' · '+(profile.observedAt?'Observed '+usageDate(profile.observedAt):'Waiting for first check')));
    const snapshot=profile.snapshot;
    for(const window of snapshot?.windows||[]){
     const row=mk('div');row.className='usage-window';
