@@ -2223,19 +2223,11 @@
   }catch{if(request!==chatUsageRequest||selected!==id||!owner)return;selectedUsageProfile=null}
   renderChatUsage();
  }
- function renderUsageSummary(profiles){
-  const remaining=profiles.flatMap(profile=>(profile.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent))).filter(value=>value!==null);
-  const lowest=remaining.length?Math.min(...remaining):null,button=$('#usage-toggle');
-  button.textContent=lowest===null?'Usage':'Usage · '+usageNumber(lowest)+'% left';
-  button.title=lowest===null?'Open profile usage details':'Lowest reported remaining window across saved profiles. Open for per-profile details and check times.';
-  button.classList.toggle('usage-low',lowest!==null&&lowest<=20);
- }
  function renderUsage(data){
   const root=$('#usage-list');root.replaceChildren();
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
   usageProfiles=profiles;
   if(data?.loaded)usageLoaded=true;
-  renderUsageSummary(profiles);
   renderChatUsage();
   $('#usage-title').textContent=usageScope?'Profile usage · '+usageScope.application+' · '+usageScope.name:'Profile usage limits';
   const visible=usageScope?profiles.filter(profile=>profile.application===usageScope.application&&profile.name===usageScope.name):profiles;

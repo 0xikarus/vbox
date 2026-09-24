@@ -38,7 +38,6 @@ body{max-width:none;margin:0;padding:0;height:100%;
   font-weight:700;cursor:pointer;margin:0;display:inline-flex;align-items:center;justify-content:center;
   transition:transform .14s,background .14s,border-color .14s}
 #chat-top button:hover{background:var(--accent-soft);border-color:var(--accent)}
-#usage-toggle.usage-low{border-color:var(--warn);color:var(--warn-text)}
 #chat-top button:active{transform:scale(.94)}
 #chat-top button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 #chat-shell>#error:empty{display:none}

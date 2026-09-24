@@ -42,8 +42,9 @@ test('usage shows remaining capacity and Conversations width can be resized and 
  try{
   const page=await browser.newPage();await page.setViewport({width:1200,height:800});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat');
-  await page.waitForFunction(()=>document.querySelector('#usage-toggle')?.textContent.includes('10% left'));
-  assert.match(await page.$eval('#usage-toggle',element=>element.title),/Lowest reported remaining/);
+  await page.waitForFunction(()=>!document.querySelector('#usage-toggle').hidden&&document.querySelector('#usage-list').textContent.includes('claude · work'));
+  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
+  assert.match(await page.$eval('#usage-toggle',element=>element.title),/all saved profiles/);
   await page.click('#usage-toggle');
   await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% remaining'));
   const text=await page.$eval('#usage-list',element=>element.textContent);
@@ -58,7 +59,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('80% left'));
   assert.match(await page.$eval('#chat-usage',element=>element.getAttribute('aria-label')),/claude personal usage: 80% remaining/);
-  assert.match(await page.$eval('#usage-toggle',element=>element.textContent),/10% left/,'navbar still summarizes all profiles');
+  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage','navbar opens all profiles without a percentage');
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/80% remaining/);
@@ -73,6 +74,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.waitForFunction(()=>document.querySelector('#usage-status')?.textContent.includes('Usage updated.'));
   assert.equal(manualRefreshes,1,'manual refresh still checks saved profiles');
   assert.equal(await page.$eval('#usage-refresh',element=>element.disabled),false);
+  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="shell"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Terminal');
@@ -107,7 +109,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.ok(await page.$eval('#chat-main',element=>element.getBoundingClientRect().width)>=448,'narrow desktop still has room for messages');
   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat');
-  await page.waitForFunction(()=>!document.querySelector('#chat-app').hidden&&document.querySelector('#usage-toggle').textContent.includes('10% left'));
+  await page.waitForFunction(()=>!document.querySelector('#chat-app').hidden&&!document.querySelector('#usage-toggle').hidden&&document.querySelector('#usage-list').textContent.includes('claude · work'));
   assert.equal(await page.$eval('#chat-resizer',element=>getComputedStyle(element).display),'none');
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name').textContent==='Writer'&&document.querySelector('#chat-usage').textContent.includes('80% left'));
@@ -127,7 +129,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await page.setViewport({width:320,height:700,isMobile:true,hasTouch:true});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat');
-  await page.waitForFunction(()=>!document.querySelector('#chat-app').hidden&&document.querySelector('#usage-toggle').textContent.includes('10% left'));
+  await page.waitForFunction(()=>!document.querySelector('#chat-app').hidden&&!document.querySelector('#usage-toggle').hidden&&document.querySelector('#usage-list').textContent.includes('claude · work'));
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage').textContent.includes('80% left'));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow phones do not overflow');
