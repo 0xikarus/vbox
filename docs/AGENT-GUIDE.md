@@ -177,11 +177,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `docs/chat-ui/screenshots/mobile-first/`.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Codex follow-ups use the visible thread's
-  app-server queue with structured image inputs. A fresh managed Codex TUI,
-  including one restored after hibernation, first creates an app-server thread
-  and resumes that exact ID in its tmux pane. Chat pins its first message to
-  that ID: an idle new thread may be absent from the recent-thread list while
-  an older saved thread remains there. Claude uses its
+  app-server queue with structured image inputs. After a fresh Codex TUI starts
+  (including after hibernation or Clear), its first Chat text message enters
+  that visible TUI. A first image message uses Codex's native startup image
+  input in the same pane. This materializes the new thread before Chat uses
+  app-server queueing: an idle thread may be absent from the recent-thread list
+  while an older saved thread remains there. Claude uses its
   experimental `claude/channel`, or OpenCode's loopback session API. The managed
   `vmbox-desktop` MCP exposes `chat_message`, `chat_ask`, and `set_busy`.
   Submitted prompts mark the active task busy in the controller; replies and

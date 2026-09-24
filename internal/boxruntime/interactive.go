@@ -36,8 +36,7 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 		return err
 	}
 	if agent == "codex" {
-		argv, err = startVisibleCodexThread(ctx, root, session)
-		if err != nil {
+		if err := markFreshCodexTUI(root, session); err != nil {
 			return err
 		}
 	}
@@ -95,8 +94,7 @@ func RestoreManagedAgent(ctx context.Context, root, session, agent string) error
 		return err
 	}
 	if agent == "codex" {
-		argv, err = startVisibleCodexThread(ctx, root, session)
-		if err != nil {
+		if err := markFreshCodexTUI(root, session); err != nil {
 			return err
 		}
 	}

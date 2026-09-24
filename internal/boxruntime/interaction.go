@@ -334,23 +334,20 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		} else if !os.IsNotExist(err) {
 			return err
 		}
-		id, err := CodexStartFreshThread(ctx, session)
+		argv, err := persistentAgentArgv(session, "codex")
 		if err != nil {
 			return err
 		}
-		if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", "="+session+":0.0", "-c", WorkspaceDirectory(), shellJoin(codexRemoteResumeArgv(session, id))); err != nil {
+		if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", "="+session+":0.0", "-c", WorkspaceDirectory(), shellJoin(argv)); err != nil {
 			return fmt.Errorf("show fresh Codex conversation: %w", err)
 		}
 		if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 			return err
 		}
-		if err := rememberCodexThread(root, session, id); err != nil {
+		if err := markFreshCodexTUI(root, session); err != nil {
 			return err
 		}
-		if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
-			return err
-		}
-		return writeTextAtomic(resetThreadPath, id+"\n", 0600)
+		return writeTextAtomic(resetThreadPath, "visible-tui\n", 0600)
 	case "opencode":
 		// Continue below.
 	default:

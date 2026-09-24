@@ -84,31 +84,29 @@ func TestCodexCurrentThreadPrefersFirstTurnAfterClear(t *testing.T) {
 	}
 }
 
-func TestStartVisibleCodexThreadPinsWakeToTheTerminalThread(t *testing.T) {
-	previous := CodexStartFreshThread
-	t.Cleanup(func() { CodexStartFreshThread = previous })
-	CodexStartFreshThread = func(context.Context, string) (string, error) { return "fresh-visible", nil }
+func TestMarkFreshCodexTUIInvalidatesOldThread(t *testing.T) {
 	root := t.TempDir()
-	argv, err := startVisibleCodexThread(context.Background(), root, "codex-wake")
-	if err != nil {
+	if err := rememberCodexThread(root, "codex-wake", "old-thread"); err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(argv, codexRemoteResumeArgv("codex-wake", "fresh-visible")) {
-		t.Fatalf("terminal did not attach to pinned thread: %v", argv)
+	if err := markFreshCodexTUI(root, "codex-wake"); err != nil {
+		t.Fatal(err)
 	}
-	selected, err := CodexCurrentThread(context.Background(), nil, root, "codex-wake", "/workspace")
-	if err != nil || selected != "fresh-visible" {
-		t.Fatalf("Chat chose %q instead of the visible fresh thread: %v", selected, err)
+	if data, err := os.ReadFile(codexResetPendingFile(root, "codex-wake")); err != nil || strings.TrimSpace(string(data)) != "visible-tui" {
+		t.Fatalf("fresh TUI marker = %q, %v", data, err)
+	}
+	if _, err := os.Stat(codexThreadFile(root, "codex-wake")); !os.IsNotExist(err) {
+		t.Fatalf("old thread binding survived wake: %v", err)
 	}
 }
 
-func TestNewestCreatedCodexThreadAfterVisibleClear(t *testing.T) {
-	threads := []any{
-		map[string]any{"id": "old-busy", "createdAt": float64(10), "recencyAt": float64(100)},
-		map[string]any{"id": "new-visible", "createdAt": float64(20), "recencyAt": float64(20)},
+func TestCodexCurrentThreadRejectsUnmaterializedTUI(t *testing.T) {
+	root := t.TempDir()
+	if err := markFreshCodexTUI(root, "codex-wake"); err != nil {
+		t.Fatal(err)
 	}
-	if got := newestCreatedCodexThread(threads); got != "new-visible" {
-		t.Fatalf("visible reset picked %q", got)
+	if _, err := CodexCurrentThread(context.Background(), nil, root, "codex-wake", "/workspace"); err == nil || !strings.Contains(err.Error(), "visible pane") {
+		t.Fatalf("unmaterialized TUI selected an old thread: %v", err)
 	}
 }
 

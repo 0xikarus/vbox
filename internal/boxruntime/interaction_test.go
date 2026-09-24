@@ -553,9 +553,9 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 }
 
 func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
-	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause
+	originalCommand, originalOpenCodeProbe, originalCodexProbe, originalPause := tmuxCommand, openCodeReadyProbe, CodexAppServerReady, tmuxSubmitPause
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, CodexStartFreshThread, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalFreshThread, originalPause
+		tmuxCommand, openCodeReadyProbe, CodexAppServerReady, tmuxSubmitPause = originalCommand, originalOpenCodeProbe, originalCodexProbe, originalPause
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
 	CodexAppServerReady = func(context.Context, string) (bool, error) { return true, nil }
@@ -568,7 +568,6 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 		{agent: "opencode", want: []string{"/new", "\r"}},
 	} {
 		t.Run(test.agent, func(t *testing.T) {
-			CodexStartFreshThread = func(context.Context, string) (string, error) { return "fresh-thread", nil }
 			var inputs []string
 			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
 				if len(args) > 0 && args[0] == "capture-pane" {
@@ -578,8 +577,8 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 					return nil, nil
 				}
 				if len(args) > 0 && args[0] == "respawn-pane" {
-					if !strings.Contains(strings.Join(args, " "), "--remote") || !strings.Contains(args[len(args)-1], "fresh-thread") {
-						t.Fatalf("fresh thread was not attached to the TUI: %v", args)
+					if !strings.Contains(strings.Join(args, " "), "--remote") || strings.Contains(strings.Join(args, " "), "fresh-thread") {
+						t.Fatalf("fresh TUI did not start without a stale thread ID: %v", args)
 					}
 					inputs = append(inputs, "respawn")
 				}
@@ -606,10 +605,10 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 			}
 			if test.agent == "codex" {
 				path := filepath.Join(root, "chat", "codex-reset-threads-v2", "reset-message")
-				if data, err := os.ReadFile(path); err != nil || strings.TrimSpace(string(data)) != "fresh-thread" {
+				if data, err := os.ReadFile(path); err != nil || strings.TrimSpace(string(data)) != "visible-tui" {
 					t.Fatalf("reset marker was not saved: %q %v", data, err)
 				}
-				if data, err := os.ReadFile(codexResetPendingFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "fresh-thread" {
+				if data, err := os.ReadFile(codexResetPendingFile(root, test.agent+"-session")); err != nil || strings.TrimSpace(string(data)) != "visible-tui" {
 					t.Fatalf("visible thread was not remembered: %q %v", data, err)
 				}
 			}
