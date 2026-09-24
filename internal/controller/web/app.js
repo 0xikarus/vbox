@@ -5,6 +5,7 @@ let boxRefreshTimer;
 let fleetSnapshots=[];
 let ownerTools=false,instructionPresets={defaultName:'',presets:[]};
 let roleBoxes=[];
+let listedProfiles=[],profileAccountName='';
 const presetBodyCache=new Map();
 let boxInstructionTarget=null,boxCredentialTarget=null;
 const poolKey=(provider,providerCredential)=>JSON.stringify({provider,providerCredential:providerCredential||''});
@@ -215,7 +216,7 @@ function renderBoxDetail(){
 function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus()}
 $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#box-detail').hidden&&!document.querySelector('.modal:not([hidden])'))closeBoxDetail()});
-function manageView(){const view=location.hash==='#boxes'?'boxes':location.hash==='#providers'?'providers':'all';document.body.dataset.manageView=view;document.querySelectorAll('.workspace-links a').forEach(link=>{const active=link.getAttribute('href')==='#'+view;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})}
+function manageView(){const view=['#boxes','#providers','#profiles'].includes(location.hash)?location.hash.slice(1):'all';document.body.dataset.manageView=view;document.querySelectorAll('.workspace-links a').forEach(link=>{const active=link.getAttribute('href')==='#'+view;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})}
 addEventListener('hashchange',manageView);manageView();
 function renderBoxes(boxes){
  listedBoxes=boxes;
@@ -293,13 +294,36 @@ async function openBoxPolicyEditor(box){
 	const policy=await api(bp(box.id)+'/agent-policy');populatePolicyEditor(box,policy.capabilities||{});
  $('#role-editor-title').textContent='Permissions · '+box.name;$('#delete-role').hidden=true;$('#role-assigned-count').textContent=policy.migratedFromRoles?'Imported the box’s previous role grants. Saving converts them to direct permissions.':'Saved directly on this box. Changes sync automatically to its running MCP client.';
 }
+function paintProfileLibrary(){
+ const query=$('#profile-search').value.trim().toLocaleLowerCase(),root=$('#profile-tree');root.replaceChildren();
+ $('#profile-summary').textContent=listedProfiles.length+' saved '+(listedProfiles.length===1?'profile':'profiles')+(profileAccountName?' · '+profileAccountName:'');
+ let shown=0;
+ for(const [app,label] of [['claude','Claude'],['codex','Codex'],['opencode','OpenCode'],['github','GitHub']]){
+  const all=listedProfiles.filter(profile=>profile.application===app),entries=all.filter(profile=>!query||[label,profile.name,profile.model||''].some(value=>value.toLocaleLowerCase().includes(query)));
+  if(query&&!entries.length)continue;
+  shown+=entries.length;
+  const card=node('article');card.className='profile-app';card.dataset.application=app;
+  const head=node('header');head.className='profile-app-head';const mark=node('span',label.slice(0,1));mark.className='profile-app-mark';mark.setAttribute('aria-hidden','true');
+  const heading=node('div'),title=node('h3',label),description=node('p',app==='github'?'Git credentials for cloning and pushing.':'Agent login snapshots for new boxes.');heading.append(title,description);
+  const count=node('span',String(query?entries.length:all.length));count.className='profile-app-count';count.setAttribute('aria-label',(query?entries.length:all.length)+' '+label+' profiles');head.append(mark,heading,count);card.append(head);
+  const list=node('div');list.className='profile-list';
+  for(const profile of entries){
+   const row=node('div');row.className='profile-row';row.dataset.profileName=profile.name;
+   const text=node('div'),name=node('strong',profile.name);text.className='profile-row-text';text.append(name);
+   if(profile.model){const model=node('span','Model · '+profile.model);model.className='profile-model';text.append(model)}
+   const date=new Date(profile.createdAt),saved=node('small',Number.isNaN(date.getTime())?'Saved date unavailable':'Saved '+date.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}));text.append(saved);
+   const remove=button('Delete',async()=>{if(!confirm('Delete saved profile '+label+' / '+profile.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(profile.name),'DELETE');await refresh();notice('Deleted '+label+' profile '+profile.name+'.')});remove.classList.add('danger');remove.setAttribute('aria-label','Delete '+label+' profile '+profile.name);
+   row.append(text,remove);list.append(row);
+  }
+  if(!entries.length)list.append(node('p','No saved '+label+' profiles.'));
+  card.append(list);root.append(card);
+ }
+ if(query&&!shown)root.append(node('p','No profiles match “'+$('#profile-search').value.trim()+'”.'));
+}
+$('#profile-search').addEventListener('input',paintProfileLibrary);
 function renderProfiles(identity,profiles){
- const tree=document.createElement('details');tree.open=true;tree.append(node('summary',identity.accountName+' ('+identity.accountId+')'));
+ listedProfiles=profiles;profileAccountName=identity.accountName||'';paintProfileLibrary();
  const choices=$('#profile-choices'),selected=choices.querySelector('select')?.value||'';choices.replaceChildren();
- for(const app of ['claude','codex','opencode','github']){
-  const entries=profiles.filter(p=>p.application===app),branch=document.createElement('details');branch.open=true;branch.append(node('summary',app+' ('+entries.length+')'));const list=document.createElement('ul');
-  for(const p of entries){const item=node('li',p.name+(p.model?' · '+p.model:'')+' · saved '+p.createdAt+' ');item.append(button('Delete',async()=>{if(!confirm('Delete saved profile '+app+' / '+p.name+'? This cannot be undone. Existing boxes keep their copied credentials; pending creations using this profile may fail.'))return;await api('/v1/login-profiles/'+encodeURIComponent(app)+'/'+encodeURIComponent(p.name),'DELETE');await refresh()}));list.append(item)}if(!entries.length)list.append(node('li','No saved profiles'));branch.append(list);tree.append(branch);
- }$('#profile-tree').replaceChildren(tree);
  renderCreationProfileChoices(choices,profiles,$('#create select[name="defaultAgent"]'),selected);
 }
 async function refresh(){
@@ -321,7 +345,7 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
 function resetCreationForm(form){
  const pool=form.elements.pool.value;

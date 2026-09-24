@@ -274,13 +274,14 @@ Bare `vmbox` is read-only in both terminals and scripts; `vmbox help` works offl
 Use `vmbox whoami --json` for machine-readable identity. This requires a controller
 with the `/v1/whoami` endpoint and does not display credentials.
 
-The web admin panel’s **Profiles** section shows an expandable account → application
-→ profile tree. Owners can delete saved profiles (with confirmation)
-and select them when creating a box. Uploads happen only through the CLI. Saved credentials are encrypted,
+The web admin panel’s **Profiles** page lists saved Codex, Claude, OpenCode, and
+GitHub logins by application, with search, saved dates, and model names where
+available. Owners can delete saved profiles (with confirmation) and select them
+when creating a box. Uploads happen only through the CLI. Saved credentials are encrypted,
 never exported, and immutable: upload refreshed credentials under a new name.
 Uploading byte-for-byte identical credentials and configuration under another
 name is rejected, preventing accidental double uploads; genuinely different
-snapshots can still coexist and can be deleted from the profile tree.
+snapshots can still coexist and can be deleted from the Profiles page.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
 Run `vmbox profiles upload` to detect and upload local Claude/Codex/OpenCode/GitHub logins
