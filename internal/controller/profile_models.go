@@ -40,8 +40,8 @@ type profileModelCatalog struct {
 func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p Principal) {
 	w.Header().Set("Cache-Control", "no-store")
 	application := r.PathValue("application")
-	if application != "codex" && application != "opencode" {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("live model catalogs are available for Codex and OpenCode profiles only"))
+	if application != "claude" && application != "codex" && application != "opencode" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("live model catalogs are available for Claude, Codex and OpenCode profiles only"))
 		return
 	}
 	profile, err := s.Store.LoadLoginProfile(r.Context(), p, application, r.PathValue("name"))
@@ -60,6 +60,19 @@ func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p
 	}()
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
+	if application == "claude" {
+		client := s.HTTP
+		if client == nil {
+			client = http.DefaultClient
+		}
+		models, err := queryClaudeModelCatalog(ctx, client, profile.Files, "https://api.anthropic.com/v1/models?limit=1000")
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Errorf("could not load Claude models; the saved model and documented choices remain selectable"))
+			return
+		}
+		writeJSON(w, http.StatusOK, profileModelCatalog{Source: "Anthropic live catalog · model access checked when used", Models: models})
+		return
+	}
 	if application == "codex" {
 		models, err := queryCodexModelCatalog(ctx, profile.Files, "codex")
 		if err != nil {
@@ -99,6 +112,75 @@ func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	writeJSON(w, http.StatusOK, profileModelCatalog{Source: source, Models: models})
+}
+
+// The saved Claude Code OAuth access token can read Anthropic's Models API.
+// This lists current model IDs and capabilities; subscription and organization
+// restrictions are still enforced by Claude Code when the box uses a model.
+func queryClaudeModelCatalog(ctx context.Context, client *http.Client, files map[string][]byte, endpoint string) ([]profileModelChoice, error) {
+	var credential struct {
+		OAuth struct {
+			Access string `json:"accessToken"`
+		} `json:"claudeAiOauth"`
+	}
+	if json.Unmarshal(files[".credentials.json"], &credential) != nil || strings.TrimSpace(credential.OAuth.Access) == "" {
+		return nil, fmt.Errorf("Claude profile has no access token")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+credential.OAuth.Access)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Accept", "application/json")
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Claude catalog request failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Claude catalog returned HTTP %d", response.StatusCode)
+	}
+	var catalog struct {
+		HasMore bool `json:"has_more"`
+		Data    []struct {
+			ID             string `json:"id"`
+			DisplayName    string `json:"display_name"`
+			MaxInputTokens int    `json:"max_input_tokens"`
+			Capabilities   struct {
+				Effort map[string]struct {
+					Supported bool `json:"supported"`
+				} `json:"effort"`
+			} `json:"capabilities"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(io.LimitReader(response.Body, 8<<20)).Decode(&catalog) != nil || catalog.HasMore {
+		return nil, fmt.Errorf("invalid or incomplete Claude model catalog")
+	}
+	models := make([]profileModelChoice, 0, len(catalog.Data))
+	seen := make(map[string]bool, len(catalog.Data))
+	for _, model := range catalog.Data {
+		id := strings.TrimSpace(model.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		label := strings.TrimSpace(model.DisplayName)
+		if label == "" {
+			label = id
+		}
+		efforts := make([]string, 0, 4)
+		for _, level := range []string{"low", "medium", "high", "xhigh"} {
+			if model.Capabilities.Effort[level].Supported {
+				efforts = append(efforts, level)
+			}
+		}
+		models = append(models, profileModelChoice{ID: id, Label: label, Context: model.MaxInputTokens, Reasoning: len(efforts) > 0, ReasoningEfforts: efforts})
+	}
+	if len(models) == 0 {
+		return nil, fmt.Errorf("Claude returned no models")
+	}
+	return models, nil
 }
 
 func queryCodexModelCatalog(ctx context.Context, files map[string][]byte, executable string) ([]profileModelChoice, error) {

@@ -39,8 +39,8 @@ func (s *Server) agentBoxConfigsHandler(w http.ResponseWriter, r *http.Request, 
 	profiles = agentBoxProfileOptions(grant.AllowedAgents, profiles)
 	if r.PathValue("application") != "" || r.PathValue("name") != "" {
 		application, name := r.PathValue("application"), r.PathValue("name")
-		if application != "codex" && application != "opencode" {
-			writeError(w, 400, fmt.Errorf("live model catalogs are available for Codex and OpenCode profiles only"))
+		if application != "claude" && application != "codex" && application != "opencode" {
+			writeError(w, 400, fmt.Errorf("live model catalogs are available for Claude, Codex and OpenCode profiles only"))
 			return
 		}
 		if !slices.ContainsFunc(profiles, func(profile v1.LoginProfile) bool {

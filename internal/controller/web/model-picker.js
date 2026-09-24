@@ -1,7 +1,8 @@
 'use strict';
 (()=>{
- // Claude Code exposes these documented aliases to CLI logins. An Anthropic
- // API model list cannot establish entitlement for a Claude CLI OAuth login.
+ // Claude Code exposes these documented aliases to CLI logins. The live API
+ // list provides current model IDs, while Claude Code enforces subscription
+ // and organization access when a model is used.
  // https://code.claude.com/docs/en/model-config
  // https://platform.claude.com/docs/en/models/overview
  // Codex IDs are documented CLI choices, not an account-specific model/list.
@@ -91,6 +92,9 @@
   }
   function levels(){
    if(application==='claude'){
+    const selected=findModel(current());
+    if(selected?.reasoningEfforts?.length)return selected.reasoningEfforts.filter(level=>level!=='max');
+    if(selected?.reasoning===false)return [];
     if(/haiku/i.test(current()))return [];
     return ['low','medium','high',...(/^(sonnet|opus|best|fable)(\[1m\])?$|(?:sonnet|opus|fable)-(?:5|4-[78])/i.test(current())?['xhigh']:[])];
    }

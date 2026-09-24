@@ -59,6 +59,7 @@ func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
 	}{
 		{`{"mode":"list"}`, "/v1/agent-desktop/box-configs"},
 		{`{"mode":"models","application":"opencode","name":"venice"}`, "/v1/agent-desktop/box-configs/opencode/venice/models"},
+		{`{"mode":"models","application":"claude","name":"personal"}`, "/v1/agent-desktop/box-configs/claude/personal/models"},
 		{`{}`, ""},
 		{`{"mode":"models","application":"opencode"}`, ""},
 		{`{"mode":"list","application":"opencode","name":"venice"}`, ""},

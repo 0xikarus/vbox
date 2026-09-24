@@ -128,12 +128,16 @@ running.
 
 The controller and chat creation forms filter saved profiles to the selected
 harness and prefill the model stored in that profile. **Choose model** opens a
-searchable popup: Claude Code shows documented CLI choices, Codex loads the
+searchable popup: Claude Code loads current model IDs and supported reasoning
+levels from Anthropic's Models API using the selected saved login, Codex loads the
 models and reasoning levels advertised by Codex app-server for the selected
 saved login, and an OpenCode profile with a saved OpenRouter or Venice key loads
 that provider's current tool-capable text-model catalog on demand. An exact
-model ID can also be entered in the popup. The saved encrypted profile remains
-unchanged by a box-specific choice.
+model ID can also be entered in the popup. Claude Code aliases remain available
+if the live request fails; an expired saved login may need to be uploaded again.
+The API list does not guarantee Claude Code subscription or organization access,
+which Claude Code checks when using the selected model. The saved encrypted
+profile remains unchanged by a box-specific choice.
 The same popup can set a box-specific reasoning level: Codex writes
 `model_reasoning_effort`, Claude Code writes `effortLevel`, and OpenCode selects a
 model variant for its Build agent. Leave **Default** to retain the profile/model

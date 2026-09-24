@@ -46,6 +46,72 @@ printf '%s\n' '{"id":2,"result":{"data":[{"id":"account-model","model":"account-
 	}
 }
 
+func TestClaudeCatalogUsesSavedOAuthAndFiltersUnsupportedEffort(t *testing.T) {
+	client := &http.Client{Transport: modelRoundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() != "https://api.anthropic.com/v1/models?limit=1000" || r.Header.Get("Authorization") != "Bearer synthetic-private-token" || r.Header.Get("anthropic-version") != "2023-06-01" {
+			t.Error("Claude catalog request does not use the saved token and fixed API version")
+		}
+		body := `{"data":[{"id":"claude-opus-test","display_name":"Claude Opus Test","max_input_tokens":1000000,"capabilities":{"effort":{"low":{"supported":true},"high":{"supported":true},"max":{"supported":true}}}},{"id":"claude-haiku-test","display_name":"Claude Haiku Test","max_input_tokens":200000}],"has_more":false}`
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})}
+	models, err := queryClaudeModelCatalog(context.Background(), client, map[string][]byte{
+		".credentials.json": []byte(`{"claudeAiOauth":{"accessToken":"synthetic-private-token"}}`),
+	}, "https://api.anthropic.com/v1/models?limit=1000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(models) != 2 || models[0].ID != "claude-opus-test" || models[0].Context != 1000000 || strings.Join(models[0].ReasoningEfforts, ",") != "low,high" || models[1].Reasoning {
+		t.Fatalf("wrong Claude model choices: %+v", models)
+	}
+}
+
+func TestClaudeCatalogFailureDoesNotExposeCredential(t *testing.T) {
+	client := &http.Client{Transport: modelRoundTrip(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 401, Body: io.NopCloser(strings.NewReader(`{"error":"synthetic-private-token"}`)), Header: make(http.Header)}, nil
+	})}
+	_, err := queryClaudeModelCatalog(context.Background(), client, map[string][]byte{
+		".credentials.json": []byte(`{"claudeAiOauth":{"accessToken":"synthetic-private-token"}}`),
+	}, "https://api.anthropic.com/v1/models?limit=1000")
+	if err == nil || strings.Contains(err.Error(), "synthetic-private-token") {
+		t.Fatalf("credential leaked in catalog error: %v", err)
+	}
+}
+
+func TestClaudeProfileModelEndpointReturnsCatalogWithoutToken(t *testing.T) {
+	store, mock := testStore(t)
+	var err error
+	store.Envelope, err = secrets.New(make([]byte, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile := v1.SaveLoginProfileRequest{Files: map[string][]byte{
+		".credentials.json": []byte(`{"claudeAiOauth":{"accessToken":"synthetic-private-token"}}`),
+	}}
+	plain, _ := json.Marshal(profile)
+	sealed, err := store.Envelope.Seal(profileEncryptionScope("account", "claude", "saved"), plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectQuery("SELECT encrypted_value FROM login_profiles").WithArgs("account", "claude", "saved").WillReturnRows(sqlmock.NewRows([]string{"encrypted_value"}).AddRow(sealed))
+	server := &Server{Store: store, HTTP: &http.Client{Transport: modelRoundTrip(func(r *http.Request) (*http.Response, error) {
+		if r.URL.String() != "https://api.anthropic.com/v1/models?limit=1000" || r.Header.Get("Authorization") != "Bearer synthetic-private-token" {
+			t.Error("Claude endpoint did not use its saved profile")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"data":[{"id":"claude-opus-test","display_name":"Claude Opus Test"}]}`)), Header: make(http.Header)}, nil
+	})}}
+	request := httptest.NewRequest(http.MethodGet, "/v1/login-profiles/claude/saved/models", nil)
+	request.SetPathValue("application", "claude")
+	request.SetPathValue("name", "saved")
+	response := httptest.NewRecorder()
+	server.getLoginProfileModels(response, request, Principal{AccountID: "account"})
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"claude-opus-test"`) || strings.Contains(response.Body.String(), "synthetic-private-token") {
+		t.Fatalf("unexpected model response: status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestOpenCodeCatalogFiltersToolCapableTextModels(t *testing.T) {
 	for _, tc := range []struct {
 		provider string
