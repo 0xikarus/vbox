@@ -15,6 +15,7 @@ const atBottom=element=>element.scrollHeight-element.scrollTop-element.clientHei
 
 test('new messages follow the bottom without stealing an intentionally scrolled transcript',async()=>{
  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'codex',provider:'railway'};
+ const secondBox={id:'observer',name:'Observer',state:'running',defaultAgent:'claude',provider:'railway'};
  const timestamp=index=>new Date(Date.UTC(2026,8,22,0,index)).toISOString();
  let messages=Array.from({length:30},(_,index)=>({
   id:'message-'+index,direction:index%2?'agent':'user',state:'delivered',
@@ -31,7 +32,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   if(!path.startsWith('/v1/'))return res.end('');
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify([box]));
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify([box,secondBox]));
   if(path==='/v1/tool-presets'||path==='/v1/agent-roles')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path==='/v1/logical-boxes/builder/messages'&&req.method==='POST'){
@@ -75,6 +76,32 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('MESSAGE WHILE READING'));
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await page.$eval('#chat-messages',element=>element.scrollTop)<20,'new output must not yank a reader away from older messages');
+  assert.equal(await page.$eval('#chat-new-messages',button=>button.hidden),false,'new output is discoverable while reading older messages');
+  await page.screenshot({path:'/tmp/vmbox-new-message-desktop.png'});
+  await page.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+  await new Promise(resolve=>setTimeout(resolve,300)); // let the mobile layout settle
+  await page.$eval('#chat-messages',element=>{element.scrollTop=0});
+  await page.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop===0);
+  await new Promise(resolve=>setTimeout(resolve,120)); // allow the scroll event to update follow intent
+  messages=[...messages,{id:'while-reading-mobile',direction:'agent',state:'delivered',text:'NEW REPLY ON MOBILE',createdAt:timestamp(33),updatedAt:timestamp(33)}];
+  await page.click('#refresh');
+  await page.waitForFunction(()=>!document.querySelector('#chat-new-messages').hidden);
+  await new Promise(resolve=>setTimeout(resolve,250));
+  await page.screenshot({path:'/tmp/vmbox-new-message-mobile.png'});
+  await page.click('#chat-new-messages');
+  assert.ok(await page.$eval('#chat-messages',atBottom)<3,'the new message control jumps to the latest reply');
+  assert.equal(await page.$eval('#chat-new-messages',button=>button.hidden),true);
+
+  await page.setViewport({width:900,height:620,deviceScaleFactor:1,isMobile:false,hasTouch:false});
+  await page.click('[data-box-id="observer"] .chat-meta');
+  await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Observer');
+  await page.click('[data-box-id="builder"] .chat-meta');
+  await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('MESSAGE WHILE READING'));
+  messages=[...messages,{id:'after-return',direction:'agent',state:'delivered',text:'VISIBLE AFTER RETURN',createdAt:timestamp(34),updatedAt:timestamp(34)}];
+  await page.click('#refresh');
+  await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('VISIBLE AFTER RETURN'));
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.ok(await page.$eval('#chat-messages',atBottom)<3,'a chat reopened at the bottom keeps following new replies');
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });

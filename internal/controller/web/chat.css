@@ -978,6 +978,8 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 #chat-input{background:#1d2a39;border-color:#51647b;border-radius:var(--radius);font-size:.87rem;min-height:2.6rem;padding:.55rem .75rem}
 #chat-input:focus{border-color:var(--accent);box-shadow:0 0 0 2px #8fb8f533}
 #chat-status{background:var(--bg);font-size:.7rem;padding:0 .8rem .35rem}
+#chat-new-messages{align-self:center;flex:none;margin:-.2rem 0 .35rem;padding:.45rem .8rem;border:1px solid var(--accent);border-radius:var(--radius);background:var(--accent-soft);color:var(--accent-text);font:700 .75rem system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
+#chat-new-messages:hover,#chat-new-messages:focus-visible{background:var(--accent);color:var(--accent-ink)}
 #chat-banner{background:#725b33;color:#fff4dd}
 .sheet-card,#new-box-card,#delete-box-card{border-color:#51647b;background:var(--surface);box-shadow:var(--shadow-pop)}
 .sheet-card header,.sheet-card h2,.sheet-card h3{letter-spacing:-.02em}
