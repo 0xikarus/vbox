@@ -16,6 +16,13 @@
  let boxInstructionTarget=null,boxCredentialTarget=null,createInstructionSource='';
  const seen=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatSeen')||'{}')}catch{return{}}})();
  const saveSeen=()=>localStorage.setItem('vmboxChatSeen',JSON.stringify(seen));
+ const pins=(()=>{try{const saved=JSON.parse(localStorage.getItem('vmboxChatPins')||'[]');return new Set(Array.isArray(saved)?saved.filter(key=>typeof key==='string'):[])}catch{return new Set()}})();
+ const pinKey=(kind,id)=>kind+':'+id;
+ function togglePin(key){
+  if(pins.has(key))pins.delete(key);else pins.add(key);
+  try{localStorage.setItem('vmboxChatPins',JSON.stringify([...pins]))}catch{}
+  renderRows();
+ }
  // Unsent composer text is kept per box so switching chats (or reloading the
  // page) never loses what you were typing. Uploaded attachment drafts are also
  // keyed per box below; their local previews intentionally live only this page.
@@ -793,6 +800,21 @@
  }
  const pairKey=pair=>pair.boxAId+'/'+pair.boxBId;
  const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
+ const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
+ function pinButton(key,label){
+  const button=document.createElement('button');button.type='button';button.className='chat-pin';
+  button.append(lucide('pin'));
+  button.onclick=event=>{event.stopPropagation();togglePin(key)};
+  updatePinButton(button,key,label);
+  return button;
+ }
+ function updatePinButton(button,key,label){
+  const pinned=pins.has(key);
+  button.setAttribute('aria-label',(pinned?'Unpin ':'Pin ')+label);
+  button.setAttribute('aria-pressed',String(pinned));
+  button.title=(pinned?'Unpin ':'Pin ')+label;
+  button.classList.toggle('is-pinned',pinned);
+ }
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter));
@@ -807,11 +829,12 @@
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
-    meta.append(r1,r2);row.append(meta);
+    meta.append(r1,r2);row.append(meta,pinButton(pinKey('box',box.id),box.name));
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
    row.classList.toggle('active',box.id===selected&&!selectedPair);
+   updatePinButton(row.querySelector('.chat-pin'),pinKey('box',box.id),box.name);
    // Make the box state readable at a glance, not just a tiny dot.
    const starting=['creating','attaching','reserved','starting','allocating','restoring','pending'];
    const stateClass=box.state==='running'?'running':box.state==='failed'?'failed':starting.includes(box.state)?'starting':'muted';
@@ -840,19 +863,26 @@
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
     const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
     const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';second.append(badge,preview);
-    meta.append(first,second);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
+    meta.append(first,second);row.append(avatar,meta,pinButton(pinKey('pair',key),pair.boxAName+' ↔ '+pair.boxBName));row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
    }
    const name=pair.boxAName+' ↔ '+pair.boxBName;
    row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
    row.querySelector('.chat-meta').setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
+   updatePinButton(row.querySelector('.chat-pin'),pinKey('pair',key),name);
    row.classList.toggle('active',key===selectedPair);
    row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
    row.querySelector('.preview').textContent=pair.lastText||'No messages yet';
   }
   for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
-  const desired=list.map(b=>rows.get(b.id));
-  if(pairList.length)desired.push(pairGroup,...pairList.map(pair=>pairRows.get(pairKey(pair))));
-  $('#chat-list-empty').hidden=desired.length>0;
+  const pinnedBoxes=list.filter(box=>pins.has(pinKey('box',box.id))).map(box=>rows.get(box.id));
+  const pinnedPairs=pairList.filter(pair=>pins.has(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
+  const otherBoxes=list.filter(box=>!pins.has(pinKey('box',box.id))).map(box=>rows.get(box.id));
+  const otherPairs=pairList.filter(pair=>!pins.has(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
+  const desired=[];
+  if(pinnedBoxes.length||pinnedPairs.length)desired.push(pinnedGroup,...pinnedBoxes,...pinnedPairs);
+  desired.push(...otherBoxes);
+  if(otherPairs.length)desired.push(pairGroup,...otherPairs);
+  $('#chat-list-empty').hidden=list.length+pairList.length>0;
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
  }
 
@@ -872,6 +902,7 @@
   copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
   reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
+  pin:[['path',{d:'m16 9 2-2V4H6v3l2 2v4l-2 2h12l-2-2V9Z'}],['path',{d:'M12 15v7'}]],
  };
  function lucide(name){
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');

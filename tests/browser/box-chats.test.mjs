@@ -63,6 +63,35 @@ test('owner and box conversations share the Chats list and transcript',async()=>
  });
 });
 
+test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned on desktop and mobile',async()=>{
+ await withChat(async(browser,base)=>{
+  const desktop=await browser.newPage();await desktop.setViewport({width:1200,height:800});
+  await desktop.goto(base+'/chat#box='+a);
+  await desktop.waitForSelector('[data-pair-key] .chat-pin');
+  await desktop.click('[data-box-id="'+b+'"] .chat-pin');
+  await desktop.click('[data-pair-key] .chat-pin');
+  assert.equal(new URL(desktop.url()).hash,'#box='+a,'pin controls must not navigate away from the open chat');
+  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'box:'+a]);
+  assert.equal(await desktop.$eval('[data-pair-key] .chat-pin',button=>button.getAttribute('aria-pressed')),'true');
+  await desktop.screenshot({path:'/tmp/vmbox-chat-pins-desktop.png'});
+  await desktop.reload();
+  await desktop.waitForSelector('[data-pair-key] .chat-pin');
+  assert.equal(await desktop.$eval('#chat-entries li:first-child',item=>item.textContent),'Pinned','pins survive refresh');
+
+  const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+  await mobile.goto(base+'/chat');
+  await mobile.waitForSelector('[data-pair-key] .chat-pin');
+  assert.equal(await mobile.$eval('[data-box-id="'+b+'"] .chat-pin',button=>button.getAttribute('aria-pressed')),'true');
+  assert.equal(await mobile.$eval('[data-pair-key] .chat-pin',button=>button.getAttribute('aria-pressed')),'true');
+  await mobile.screenshot({path:'/tmp/vmbox-chat-pins-mobile.png'});
+  await mobile.click('[data-pair-key] .chat-pin');
+  await mobile.click('[data-box-id="'+b+'"] .chat-pin');
+  assert.equal(await mobile.$('#chat-entries .conversation-group:first-child'),null,'the Pinned section disappears when empty');
+  assert.equal(await mobile.$eval('[data-pair-key] .chat-pin',button=>button.getAttribute('aria-pressed')),'false');
+  await mobile.close();await desktop.close();
+ });
+});
+
 test('old box conversation links open the unified mobile chat',async()=>{
  await withChat(async(browser,base)=>{
   const page=await browser.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});

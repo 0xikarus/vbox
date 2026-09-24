@@ -935,6 +935,13 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .chat-meta time{font-size:.69rem}
 .chat-meta .preview{font-size:.75rem}
 .chat-meta .row2{gap:.25rem;margin-top:.15rem}
+.chat-pin{flex:none;align-self:center;display:grid;place-items:center;width:2rem;height:2rem;padding:0;border:0;border-radius:var(--radius-sm);background:transparent;color:var(--ink-soft);cursor:pointer;opacity:.65}
+.chat-pin svg{width:1rem;height:1rem}
+.chat-pin:hover,.chat-pin:focus-visible{background:var(--surface2);color:var(--ink);opacity:1}
+.chat-pin.is-pinned{color:var(--accent-text);opacity:1}
+.chat-pin.is-pinned svg{fill:var(--accent-soft)}
+.chat-pin:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#chat-entries li.conversation-group:hover{background:none}
 .row-state,.agent-badge{font-size:.59rem;padding:.07rem .3rem;border-radius:.3rem}
 .unread{min-width:1.15rem;border-radius:.4rem;font-size:.65rem}
 #chat-main{background:var(--bg)}
