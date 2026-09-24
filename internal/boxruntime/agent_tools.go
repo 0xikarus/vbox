@@ -39,7 +39,9 @@ func desktopAgentAPIWithKey(ctx context.Context, assignment, method, path, idemp
 	if input != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
-	client := &http.Client{Transport: &http.Transport{Proxy: nil}, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	transport := &http.Transport{Proxy: nil}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("controller request failed")
