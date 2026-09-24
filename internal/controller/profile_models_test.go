@@ -52,7 +52,7 @@ func TestClaudeCatalogUsesSavedOAuthAndFiltersUnsupportedEffort(t *testing.T) {
 		if r.URL.String() != "https://api.anthropic.com/v1/models?limit=1000" || r.Header.Get("Authorization") != "Bearer synthetic-private-token" || r.Header.Get("anthropic-version") != "2023-06-01" {
 			t.Error("Claude catalog request does not use the saved token and fixed API version")
 		}
-		body := `{"data":[{"id":"claude-opus-test","display_name":"Claude Opus Test","max_input_tokens":1000000,"capabilities":{"effort":{"low":{"supported":true},"high":{"supported":true},"max":{"supported":true}}}},{"id":"claude-haiku-test","display_name":"Claude Haiku Test","max_input_tokens":200000}],"has_more":false}`
+		body := `{"data":[{"id":"claude-opus-test","display_name":"Claude Opus Test","max_input_tokens":1000000,"capabilities":{"effort":{"supported":true,"low":{"supported":true},"high":{"supported":true},"max":{"supported":true}}}},{"id":"claude-haiku-test","display_name":"Claude Haiku Test","max_input_tokens":200000}],"has_more":false}`
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})}
 	models, err := queryClaudeModelCatalog(context.Background(), client, map[string][]byte{

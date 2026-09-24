@@ -157,9 +157,7 @@ func queryClaudeModelCatalog(ctx context.Context, client *http.Client, files map
 			DisplayName    string `json:"display_name"`
 			MaxInputTokens int    `json:"max_input_tokens"`
 			Capabilities   struct {
-				Effort map[string]struct {
-					Supported bool `json:"supported"`
-				} `json:"effort"`
+				Effort map[string]json.RawMessage `json:"effort"`
 			} `json:"capabilities"`
 		} `json:"data"`
 	}
@@ -180,7 +178,10 @@ func queryClaudeModelCatalog(ctx context.Context, client *http.Client, files map
 		}
 		efforts := make([]string, 0, 4)
 		for _, level := range []string{"low", "medium", "high", "xhigh"} {
-			if model.Capabilities.Effort[level].Supported {
+			var capability struct {
+				Supported bool `json:"supported"`
+			}
+			if json.Unmarshal(model.Capabilities.Effort[level], &capability) == nil && capability.Supported {
 				efforts = append(efforts, level)
 			}
 		}
