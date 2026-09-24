@@ -6,6 +6,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"net/url"
 	"strings"
@@ -13,6 +15,10 @@ import (
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
+
+// Decoding a validated 40-megapixel attachment can still use substantial
+// memory. Bound simultaneous thumbnail requests before loading their blobs.
+var boxMessageThumbnailSlots = make(chan struct{}, 2)
 
 func attachBoxMessageImages(ctx context.Context, tx *sql.Tx, accountID, messageID string, refs []v1.BoxMessageImageRef) error {
 	if len(refs) > 8 {
@@ -178,6 +184,15 @@ func (s *Store) loadBoxMessageImages(ctx context.Context, accountID string, mess
 }
 
 func (s *Server) downloadBoxMessageImage(w http.ResponseWriter, r *http.Request, p Principal) {
+	thumbnail := r.URL.Query().Get("thumbnail") == "true"
+	if thumbnail {
+		select {
+		case boxMessageThumbnailSlots <- struct{}{}:
+			defer func() { <-boxMessageThumbnailSlots }()
+		case <-r.Context().Done():
+			return
+		}
+	}
 	var media string
 	var data []byte
 	err := s.Store.DB.QueryRowContext(r.Context(), `SELECT i.media_type,i.data
@@ -196,9 +211,57 @@ func (s *Server) downloadBoxMessageImage(w http.ResponseWriter, r *http.Request,
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("image unavailable"))
 		return
 	}
+	if thumbnail {
+		if !strings.HasPrefix(media, "image/") {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("thumbnail unavailable for this attachment"))
+			return
+		}
+		var previewErr error
+		data, previewErr = boxMessageThumbnail(data)
+		if previewErr != nil {
+			writeError(w, http.StatusUnprocessableEntity, fmt.Errorf("image thumbnail unavailable"))
+			return
+		}
+		media = "image/jpeg"
+	}
 	w.Header().Set("Content-Type", media)
 	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	// ServeContent adds Accept-Ranges and answers range requests (video seek).
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+}
+
+// boxMessageThumbnail decodes one frame and bounds the pixels sent to the
+// transcript. The original remains available through the same authenticated
+// route without ?thumbnail=true when the user opens the media viewer.
+func boxMessageThumbnail(data []byte) ([]byte, error) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 40000000 {
+		return nil, fmt.Errorf("invalid image dimensions")
+	}
+	source, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	bounds := source.Bounds()
+	width, height := bounds.Dx(), bounds.Dy()
+	if width > 320 {
+		height = max(1, height*320/width)
+		width = 320
+	}
+	if height > 240 {
+		width = max(1, width*240/height)
+		height = 240
+	}
+	thumbnail := image.NewRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			thumbnail.Set(x, y, source.At(bounds.Min.X+x*bounds.Dx()/width, bounds.Min.Y+y*bounds.Dy()/height))
+		}
+	}
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, thumbnail, &jpeg.Options{Quality: 68}); err != nil {
+		return nil, err
+	}
+	return encoded.Bytes(), nil
 }

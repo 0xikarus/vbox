@@ -123,7 +123,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /chat.css", uiHandler("chat.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /box-chats", uiHandler("box-chats.html", "text/html; charset=utf-8", false))
 	mux.HandleFunc("GET /box-chats.js", uiHandler("box-chats.js", "text/javascript; charset=utf-8", false))
-	mux.HandleFunc("GET /box-chats.css", uiHandler("box-chats.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /push-sw.js", uiHandler("push-sw.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /loading-doodle.svg", uiHandler("loading-doodle.svg", "image/svg+xml", false))
 	mux.HandleFunc("GET /manifest.json", uiHandler("manifest.json", "application/manifest+json; charset=utf-8", false))

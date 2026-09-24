@@ -169,7 +169,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
    assert.equal(await p.$eval('.tv-preview-timeline input',e=>e.value),'0');
    await p.$eval('.tv-preview-timeline button',e=>e.click());
    await p.waitForFunction(()=>document.querySelector('.tv-preview-note').textContent.startsWith('Live'));
-   await p.$eval('.tv-preview',e=>e.dispatchEvent(new MouseEvent('mouseleave')));
+   await p.mouse.move(0,0);
    await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden,{timeout:2000});
   }
   assert.equal(fullDesktopShots>0,true);
@@ -184,6 +184,21 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.waitForFunction(()=>document.querySelector('[data-box-id="builder"]').classList.contains('active'),{timeout:5000});
   assert.equal(await p.$eval('#chat-messages .msg.user .ticks svg',e=>!!e),true,'delivery ticks render as inline Lucide icons');
   await p.setViewport({width:1280,height:900,deviceScaleFactor:1});
+  await p.hover('#chat-entries [data-avatar="builder"]');
+  await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden&&document.querySelector('.tv-preview-note').textContent.startsWith('Live'));
+  const sidebarPreview=await p.evaluate(()=>({panel:document.querySelector('.tv-preview').getBoundingClientRect().toJSON(),sidebar:document.querySelector('#chat-list').getBoundingClientRect().toJSON(),avatar:document.querySelector('#chat-entries [data-avatar="builder"]').getBoundingClientRect().toJSON()}));
+  assert.ok(sidebarPreview.panel.left>=sidebarPreview.sidebar.right,'sidebar desktop preview must not cover the conversation being hovered');
+  assert.ok(sidebarPreview.panel.right<=1280,'sidebar desktop preview must fit inside the viewport');
+  await p.screenshot({path:'/tmp/vmbox-chat-sidebar-preview.png'});
+  await p.$eval('#refresh',button=>button.click());
+  await new Promise(resolve=>setTimeout(resolve,700));
+  assert.equal(await p.$eval('.tv-preview',element=>element.hidden),false,'sidebar preview stays open when the hovered avatar is refreshed');
+  await p.hover('#chat-header-avatar .preview-trigger');
+  await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden&&document.querySelector('.tv-preview-note').textContent.startsWith('Live'));
+  const headerPreview=await p.evaluate(()=>({panel:document.querySelector('.tv-preview').getBoundingClientRect().toJSON(),avatar:document.querySelector('#chat-header-avatar .preview-trigger').getBoundingClientRect().toJSON()}));
+  assert.ok(headerPreview.panel.top>=headerPreview.avatar.bottom,'header desktop preview must not cover its avatar');
+  await p.screenshot({path:'/tmp/vmbox-chat-header-preview.png'});
+  await p.mouse.move(0,0);
   await p.$eval('#chat-info',e=>e.click());
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await p.waitForFunction(()=>document.querySelector('#inspect-runtime-rows')?.textContent.includes('codex · team-login · gpt-6-sol · high'));

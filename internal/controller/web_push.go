@@ -315,7 +315,7 @@ func (s *Server) pushAgentReply(ctx context.Context, accountID string, task v1.B
 }
 
 func (s *Server) pushContactMessage(accountID, senderID, senderName, targetID, targetName, text string) {
-	s.pushAccountNotification(accountID, map[string]string{"title": senderName + " ↔ " + targetName, "body": text, "url": "/box-chats#pair=" + senderID + "/" + targetID})
+	s.pushAccountNotification(accountID, map[string]string{"title": senderName + " ↔ " + targetName, "body": text, "url": "/chat#pair=" + senderID + "/" + targetID})
 }
 
 func (s *Server) pushAccountNotification(accountID string, value map[string]string) {

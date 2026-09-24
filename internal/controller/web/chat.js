@@ -2,9 +2,11 @@
 (()=>{
  const $=s=>document.querySelector(s);
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle'),replyPreview=$('#reply-preview'),threadPanel=$('#thread-panel'),threadMessages=$('#thread-messages');
- const boxes=new Map(),rows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
+ const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),imagePreviewURLs=new Map(),imagePending=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
+ let imageGeneration=0;
  const resumeChecks=new Map();
- let selected='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let selected='',selectedPair='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
  const scrollMemory=new Map();
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
@@ -20,6 +22,65 @@
  const inputDrafts=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}')}catch{return{}}})();
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
+
+ /* ---------- desktop conversation sidebar ---------- */
+ const sidebar=$('#chat-list'),splitter=$('#chat-resizer'),sidebarStorageKey='vmboxChatSidebarWidth';
+ let preferredSidebarWidth=0,sidebarDrag=null;
+ try{preferredSidebarWidth=Number(localStorage.getItem(sidebarStorageKey))||0}catch{}
+ function sidebarLimits(){const width=appEl.getBoundingClientRect().width;return {min:240,max:Math.max(240,Math.min(640,width-464))}}
+ function applySidebarWidth(width=preferredSidebarWidth,persist=false){
+  if(!matchMedia('(min-width:900px)').matches)return;
+  const limits=sidebarLimits();
+  const initial=innerWidth>=1100?308:Math.max(256,Math.min(384,appEl.getBoundingClientRect().width*.28));
+  const next=Math.round(Math.max(limits.min,Math.min(limits.max,width||initial)));
+  appEl.style.setProperty('--chat-sidebar-width',next+'px');
+  splitter.setAttribute('aria-valuemin',String(limits.min));splitter.setAttribute('aria-valuemax',String(limits.max));
+  splitter.setAttribute('aria-valuenow',String(next));splitter.setAttribute('aria-valuetext',next+' pixels');
+  if(persist){preferredSidebarWidth=next;try{localStorage.setItem(sidebarStorageKey,String(next))}catch{}}
+  if(!threadPanel.hidden)applyThreadWidth();
+ }
+ splitter.addEventListener('pointerdown',event=>{
+  if(event.button!==0||!matchMedia('(min-width:900px)').matches)return;
+  event.preventDefault();sidebarDrag={x:event.clientX,width:sidebar.getBoundingClientRect().width};
+  splitter.setPointerCapture(event.pointerId);document.body.classList.add('chat-resizing');
+ });
+ splitter.addEventListener('pointermove',event=>{if(sidebarDrag)applySidebarWidth(sidebarDrag.width+event.clientX-sidebarDrag.x)});
+ function endSidebarDrag(){if(!sidebarDrag)return;sidebarDrag=null;document.body.classList.remove('chat-resizing');applySidebarWidth(Number(splitter.getAttribute('aria-valuenow')),true)}
+ splitter.addEventListener('pointerup',endSidebarDrag);splitter.addEventListener('pointercancel',endSidebarDrag);splitter.addEventListener('lostpointercapture',endSidebarDrag);
+ splitter.addEventListener('keydown',event=>{
+  const limits=sidebarLimits(),current=sidebar.getBoundingClientRect().width;
+  const next=event.key==='ArrowLeft'?current-24:event.key==='ArrowRight'?current+24:event.key==='Home'?limits.min:event.key==='End'?limits.max:null;
+  if(next===null)return;event.preventDefault();applySidebarWidth(next,true);
+ });
+ addEventListener('resize',()=>{if(!sidebarDrag)applySidebarWidth()});
+
+ /* ---------- thread sidebar width ---------- */
+ const threadSplitter=$('#thread-resizer'),threadStorageKey='vmboxChatThreadWidth';
+ let preferredThreadWidth=0,threadDrag=null;
+ try{preferredThreadWidth=Number(localStorage.getItem(threadStorageKey))||0}catch{}
+ function threadLimits(){const width=appEl.getBoundingClientRect().width;return {min:280,max:Math.max(280,Math.min(760,width-sidebar.getBoundingClientRect().width-160))}}
+ function applyThreadWidth(width=preferredThreadWidth,persist=false){
+  if(!matchMedia('(min-width:900px)').matches)return;
+  const limits=threadLimits(),next=Math.round(Math.max(limits.min,Math.min(limits.max,width||416)));
+  threadPanel.style.setProperty('--chat-thread-width',next+'px');
+  threadSplitter.setAttribute('aria-valuemin',String(limits.min));threadSplitter.setAttribute('aria-valuemax',String(limits.max));
+  threadSplitter.setAttribute('aria-valuenow',String(next));threadSplitter.setAttribute('aria-valuetext',next+' pixels');
+  if(persist){preferredThreadWidth=next;try{localStorage.setItem(threadStorageKey,String(next))}catch{}}
+ }
+ threadSplitter.addEventListener('pointerdown',event=>{
+  if(event.button!==0||!matchMedia('(min-width:900px)').matches)return;
+  event.preventDefault();threadDrag={x:event.clientX,width:threadPanel.getBoundingClientRect().width};
+  threadSplitter.setPointerCapture(event.pointerId);document.body.classList.add('chat-resizing');
+ });
+ threadSplitter.addEventListener('pointermove',event=>{if(threadDrag)applyThreadWidth(threadDrag.width+threadDrag.x-event.clientX)});
+ function endThreadDrag(){if(!threadDrag)return;threadDrag=null;document.body.classList.remove('chat-resizing');applyThreadWidth(Number(threadSplitter.getAttribute('aria-valuenow')),true)}
+ threadSplitter.addEventListener('pointerup',endThreadDrag);threadSplitter.addEventListener('pointercancel',endThreadDrag);threadSplitter.addEventListener('lostpointercapture',endThreadDrag);
+ threadSplitter.addEventListener('keydown',event=>{
+  const limits=threadLimits(),current=threadPanel.getBoundingClientRect().width;
+  const next=event.key==='ArrowLeft'?current+24:event.key==='ArrowRight'?current-24:event.key==='Home'?limits.min:event.key==='End'?limits.max:null;
+  if(next===null)return;event.preventDefault();applyThreadWidth(next,true);
+ });
+ addEventListener('resize',()=>{if(!threadDrag)applyThreadWidth()});
 
  async function api(path,method='GET',headers={},body,timeout=60000){
   let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
@@ -55,8 +116,8 @@
   pop:'#b691e6','bubble-out':'#294b65','bubble-in':'#1b2938','bubble-in-ink':'#eaf0f8',
   danger:'#ec727c','danger-text':'#ffadb5',warn:'#e3b66d','warn-text':'#f2cf8e',ok:'#69d3a4','ok-text':'#8ee5ba'};
  function deriveTheme(seed){
-  const t=Object.assign({},WORKSPACE_THEME,{radius:'10px','radius-sm':'7px','radius-lg':'16px',shadow:'0 5px 18px #08121d44','shadow-pop':'0 22px 70px #06101bbb',wall:'none'});
-  return {name:String(seed),font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:10,tokens:t};
+  const t=Object.assign({},WORKSPACE_THEME,{radius:'6px','radius-sm':'4px','radius-lg':'9px',shadow:'0 5px 18px #08121d44','shadow-pop':'0 22px 70px #06101bbb',wall:'none'});
+  return {name:String(seed),font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:6,tokens:t};
  }
  function applyVariant(){
   document.documentElement.dataset.variant='A';
@@ -352,20 +413,27 @@
  const mediaGlyph=kind=>kind==='video'?'▶':kind==='audio'?'♪':'▣';
  const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaOpen=$('#media-viewer-open'),
   mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count');
- let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null;
- function renderMediaItem(url,{kind='image',alt=''}={}){
+ let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null,mediaRequest=0;
+ function renderMediaItem(url,{kind='image',alt='',loading=false,status=''}={}){
   mediaBody.replaceChildren();
-  if(!url){const miss=document.createElement('div');miss.className='media-missing';miss.textContent='Attachment unavailable';mediaBody.append(miss);return}
+  if(!url&&!loading){const miss=document.createElement('div');miss.className='media-missing';miss.textContent=status||'Attachment unavailable';mediaBody.append(miss);return}
   if(kind==='video'||kind==='audio'){
    const el=document.createElement(kind);el.src=url;el.controls=true;el.playsInline=true;if(kind==='video')el.autoplay=true;
    el.setAttribute('aria-label',alt||('Embedded '+mediaKindLabel(kind)));mediaBody.append(el);
   }else{
-   const img=document.createElement('img');img.src=url;img.alt=alt||'Attachment';mediaBody.append(img);
+   const frame=document.createElement('div');frame.className='media-viewer-frame';
+   if(url){const img=document.createElement('img');img.src=url;img.alt=alt||'Attachment';frame.append(img)}
+   if(loading||status){const note=document.createElement('span');note.className='media-viewer-status';note.textContent=status||'Loading full image…';frame.append(note)}
+   mediaBody.append(frame);
   }
  }
  async function showMediaAt(index){
   const item=mediaGallery[index];if(!item)return;
-  mediaIndex=index;
+  mediaIndex=index;const request=++mediaRequest;
+  const many=mediaGallery.length>1;
+  mediaPrev.hidden=!many;mediaNext.hidden=!many;
+  mediaPrev.disabled=mediaIndex<=0;mediaNext.disabled=mediaIndex>=mediaGallery.length-1;
+  mediaCount.hidden=!many;mediaCount.textContent=(mediaIndex+1)+' / '+mediaGallery.length;
   let url=item.url;
   if(!url&&item.messageId){
    if(item.kind==='video'||item.kind==='audio'){
@@ -373,16 +441,20 @@
     // request and stream instead of buffering a blob.
     url=mediaEndpoint(item.messageId,item.imageId);
    }else{
-    const box=boxes.get(selected),m=(box&&box.messages||[]).find(x=>x.id===item.messageId),img=m&&(m.images||[]).find(x=>x.id===item.imageId);
-    if(m&&img)url=await imageURL(m,img);
+    const key=item.messageId+':'+item.imageId;
+    renderMediaItem(imagePreviewURLs.get(key),{...item,loading:true});
+    let fullFinished=false;
+    const previewRequest=imageURL(item.messageId,item.imageId,true);
+    void previewRequest.then(preview=>{if(request===mediaRequest&&!fullFinished)renderMediaItem(preview,{...item,loading:true})});
+    url=await imageURL(item.messageId,item.imageId);
+    if(!url)await previewRequest;
+    fullFinished=true;
+    if(request!==mediaRequest||mediaViewer.hidden)return;
+    renderMediaItem(url||imagePreviewURLs.get(key),{...item,status:url?'':'Full image unavailable'});
    }
   }
-  renderMediaItem(url,item);
+  if(item.kind!=='image'||!item.messageId||item.url)renderMediaItem(url,item);
   if(/^https?:/i.test(url||'')){mediaOpen.hidden=false;mediaOpen.href=url}else{mediaOpen.hidden=true;mediaOpen.removeAttribute('href')}
-  const many=mediaGallery.length>1;
-  mediaPrev.hidden=!many;mediaNext.hidden=!many;
-  mediaPrev.disabled=mediaIndex<=0;mediaNext.disabled=mediaIndex>=mediaGallery.length-1;
-  mediaCount.hidden=!many;mediaCount.textContent=(mediaIndex+1)+' / '+mediaGallery.length;
  }
  function openMediaViewer(gallery,index=0){
   mediaReturnFocus=document.activeElement;
@@ -394,6 +466,7 @@
  }
  function closeMediaViewer(){
   if(mediaViewer.hidden)return;
+  mediaRequest++;
   const playing=mediaBody.querySelector('video,audio');
   if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
   mediaBody.replaceChildren();mediaViewer.hidden=true;mediaGallery=[];mediaIndex=0;
@@ -409,7 +482,13 @@
   const btn=document.createElement('button');btn.type='button';btn.className='media-button';
   btn.setAttribute('aria-label','Open '+mediaKindLabel(kind)+(label?': '+label:alt?': '+alt:''));
   if(kind==='image'){
-   const img=document.createElement('img');img.className='chat-image';img.src=url;img.alt=alt||'';img.loading='lazy';btn.append(img);
+   const frame=document.createElement('span');frame.className='media-preview';
+   const placeholder=document.createElement('span');placeholder.className='media-preview-placeholder';placeholder.textContent='Loading '+(label||'image')+'…';
+   const img=document.createElement('img');img.className='chat-image';img.alt=alt||'';img.loading='lazy';
+   img.onload=()=>{placeholder.hidden=true;frame.classList.add('ready')};
+   img.onerror=()=>{placeholder.textContent='Preview unavailable';frame.classList.add('failed')};
+   frame.append(placeholder,img);btn.append(frame);
+   if(url)img.src=url;
   }else{
    const chip=document.createElement('span');chip.className='media-chip '+kind;
    const glyph=document.createElement('span');glyph.className='media-glyph';glyph.setAttribute('aria-hidden','true');glyph.textContent=mediaGlyph(kind);
@@ -420,7 +499,8 @@
    if(messageId&&imageId){
     const list=conversationImageGallery();
     const index=list.findIndex(entry=>entry.messageId===messageId&&entry.imageId===imageId);
-    openMediaViewer(list.length?list:[{url,kind,alt,label}],index<0?0:index);
+    if(index>=0)openMediaViewer(list,index);
+    else openMediaViewer([{url,kind,alt,label,messageId,imageId}]);
    }else{
     openMediaViewer([{url,kind,alt,label}]);
    }
@@ -530,7 +610,7 @@
  tvPreviewScreen.append(tvPreviewImg,tvPreviewLive,tvPreviewNoSignal);tvPreviewEl.append(tvPreviewScreen,tvPreviewNote,tvTimeline,tvPreviewControls);
  document.body.append(tvPreviewEl);
  const tvShotCache=new Map(),tvReplayCache=new Map();
- let tvPreviewBox='',tvPreviewConnected=false,tvPreviewDispose=null,tvPreviewHideTimer=0,tvReplayIndex=null,tvReplayURL='',tvReplayRequest=0,tvReplayTimer=0;
+ let tvPreviewBox='',tvPreviewAnchor=null,tvPreviewSidebar=false,tvPreviewConnected=false,tvPreviewDispose=null,tvPreviewHideTimer=0,tvReplayIndex=null,tvReplayURL='',tvReplayRequest=0,tvReplayTimer=0;
  tvPreviewEl.onmouseenter=()=>clearTimeout(tvPreviewHideTimer);
  tvPreviewEl.onmouseleave=scheduleHideTvPreview;
  tvPreviewEl.onclick=event=>{if(event.target.closest('button,input'))return;const box=boxes.get(tvPreviewBox);if(box)void openBoxControl(box,'desktop')};
@@ -625,20 +705,41 @@
  function showTvPreview(button,box){
   clearTimeout(tvPreviewHideTimer);
   if(tvPreviewBox!==box.id){stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewConnected=false;tvPreviewBox=box.id}
+  tvPreviewAnchor=button;
+  tvPreviewSidebar=!!button.closest('#chat-list');
   tvPreviewEl.hidden=false;
-  tvPreviewEl.style.width=Math.min(860,window.innerWidth-24)+'px';
   tvShotRender(box);tvShotRefresh(box);renderTvTimeline();void loadTvReplay(box);startTvLive(box);
-  const rect=button.getBoundingClientRect(),height=tvPreviewEl.offsetHeight;
-  const width=tvPreviewEl.offsetWidth;
-  const left=Math.min(Math.max(12,rect.left-8),Math.max(12,window.innerWidth-width-12));
-  let top=rect.top-height-10;
-  if(top<12)top=Math.min(rect.bottom+10,Math.max(12,window.innerHeight-height-12));
-  tvPreviewEl.style.left=left+'px';tvPreviewEl.style.top=top+'px';
+  positionTvPreview();
  }
- function scheduleHideTvPreview(){clearTimeout(tvPreviewHideTimer);tvPreviewHideTimer=setTimeout(hideTvPreview,250)}
- function hideTvPreview(){clearTimeout(tvPreviewHideTimer);stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewEl.hidden=true;tvPreviewNoSignal.hidden=true;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewLive.classList.remove('connected');tvPreviewConnected=false;tvPreviewBox=''}
- addEventListener('scroll',()=>{if(!tvPreviewEl.matches(':hover')&&!tvPreviewEl.contains(document.activeElement))hideTvPreview()},true);
- addEventListener('resize',hideTvPreview);
+ function currentTvPreviewAnchor(){
+  if(tvPreviewAnchor?.isConnected)return tvPreviewAnchor;
+  tvPreviewAnchor=[...document.querySelectorAll('.preview-trigger')].find(node=>node.dataset.avatar===tvPreviewBox&&Boolean(node.closest('#chat-list'))===tvPreviewSidebar)||null;
+  return tvPreviewAnchor;
+ }
+ function positionTvPreview(){
+  const anchor=currentTvPreviewAnchor();
+  if(tvPreviewEl.hidden||!anchor)return;
+  const rect=anchor.getBoundingClientRect(),sidebarPreview=tvPreviewSidebar;
+  const sidebarRight=sidebar.getBoundingClientRect().right;
+  const sideSpace=window.innerWidth-sidebarRight-24;
+  const useSide=sidebarPreview&&sideSpace>=280;
+  const availableBelow=Math.max(0,window.innerHeight-rect.bottom-24);
+  const availableAbove=Math.max(0,rect.top-24);
+  const verticalSpace=Math.max(availableBelow,availableAbove);
+  const fitWidth=Math.max(240,Math.floor((verticalSpace-88)*1.6));
+  const width=Math.min(860,window.innerWidth-24,useSide?sideSpace:fitWidth);
+  tvPreviewEl.style.width=width+'px';
+  const height=tvPreviewEl.offsetHeight;
+  const left=useSide?sidebarRight+12:Math.min(Math.max(12,rect.left),window.innerWidth-width-12);
+  let top;
+  if(useSide)top=Math.max(12,Math.min(rect.top,window.innerHeight-height-12));
+  else top=availableBelow>=height?rect.bottom+10:rect.top-height-10;
+  tvPreviewEl.style.left=left+'px';tvPreviewEl.style.top=Math.max(12,top)+'px';
+ }
+ function scheduleHideTvPreview(){clearTimeout(tvPreviewHideTimer);tvPreviewHideTimer=setTimeout(()=>{if(!currentTvPreviewAnchor()?.matches(':hover')&&!tvPreviewEl.matches(':hover')&&!tvPreviewEl.contains(document.activeElement))hideTvPreview()},550)}
+ function hideTvPreview(){clearTimeout(tvPreviewHideTimer);stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewEl.hidden=true;tvPreviewNoSignal.hidden=true;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewLive.classList.remove('connected');tvPreviewConnected=false;tvPreviewBox='';tvPreviewAnchor=null;tvPreviewSidebar=false}
+ addEventListener('scroll',()=>{if(tvPreviewEl.hidden)return;if(currentTvPreviewAnchor()?.matches(':hover')||tvPreviewEl.matches(':hover')||tvPreviewEl.contains(document.activeElement))positionTvPreview();else hideTvPreview()},true);
+ addEventListener('resize',()=>{if(!tvPreviewEl.hidden)positionTvPreview()});
  // Touch has no hover. A tap on a preview trigger opens the TV preview, a tap
  // outside dismisses it, and long-pressing the image must not offer "save as".
  tvPreviewEl.addEventListener('contextmenu',event=>event.preventDefault());
@@ -690,12 +791,13 @@
   if(m.images?.length)text=(text?text+' ':'')+'📷'.repeat(Math.min(3,m.images.length));
   return who+text;
  }
+ const pairKey=pair=>pair.boxAId+'/'+pair.boxBId;
+ const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter));
   // Keep the list stable: activity must not reshuffle rows under the pointer.
   list.sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
-  $('#chat-list-empty').hidden=list.length>0;
   for(const box of list){
    let row=rows.get(box.id);
    if(!row){
@@ -709,7 +811,7 @@
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
-   row.classList.toggle('active',box.id===selected);
+   row.classList.toggle('active',box.id===selected&&!selectedPair);
    // Make the box state readable at a glance, not just a tiny dot.
    const starting=['creating','attaching','reserved','starting','allocating','restoring','pending'];
    const stateClass=box.state==='running'?'running':box.state==='failed'?'failed':starting.includes(box.state)?'starting':'muted';
@@ -728,7 +830,30 @@
    const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=box.unread>99?'99+':box.unread;
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
-  const desired=list.map(b=>rows.get(b.id));if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
+  const pairList=owner?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)):[];
+  pairList.sort((a,b)=>a.boxAName.localeCompare(b.boxAName)||a.boxBName.localeCompare(b.boxBName));
+  for(const pair of pairList){
+   const key=pairKey(pair);let row=pairRows.get(key);
+   if(!row){
+    row=document.createElement('li');row.dataset.pairKey=key;
+    const avatar=document.createElement('span');avatar.className='pair-avatar';avatar.textContent='↔';avatar.setAttribute('aria-hidden','true');
+    const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
+    const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
+    const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';second.append(badge,preview);
+    meta.append(first,second);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
+   }
+   const name=pair.boxAName+' ↔ '+pair.boxBName;
+   row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
+   row.querySelector('.chat-meta').setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
+   row.classList.toggle('active',key===selectedPair);
+   row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
+   row.querySelector('.preview').textContent=pair.lastText||'No messages yet';
+  }
+  for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
+  const desired=list.map(b=>rows.get(b.id));
+  if(pairList.length)desired.push(pairGroup,...pairList.map(pair=>pairRows.get(pairKey(pair))));
+  $('#chat-list-empty').hidden=desired.length>0;
+  if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
  }
 
  /* ---------- messages ---------- */
@@ -754,11 +879,19 @@
   for(const [tag,attrs] of lucideShapes[name]||[]){const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const key in attrs)el.setAttribute(key,attrs[key]);svg.append(el)}
   return svg;
  }
- function imageURL(message,image){
-  const key=message.id+':'+image.id;
-  if(imageURLs.has(key))return Promise.resolve(imageURLs.get(key));
-  return fetch(mediaEndpoint(message.id,image.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
-   .then(r=>{if(!r.ok)throw Error('image unavailable');return r.blob()}).then(b=>{const url=URL.createObjectURL(b);imageURLs.set(key,url);return url}).catch(()=>null);
+ function imageURL(messageID,imageID,thumbnail=false){
+  const key=messageID+':'+imageID,cache=thumbnail?imagePreviewURLs:imageURLs,pendingKey=(thumbnail?'thumb:':'full:')+key;
+  if(cache.has(key))return Promise.resolve(cache.get(key));
+  if(imagePending.has(pendingKey))return imagePending.get(pendingKey);
+  const generation=imageGeneration;
+  const request=fetch(mediaEndpoint(messageID,imageID)+(thumbnail?'?thumbnail=true':''),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
+   .then(r=>{if(!r.ok)throw Error('image unavailable');return r.blob()}).then(b=>{if(generation!==imageGeneration)return null;const url=URL.createObjectURL(b);cache.set(key,url);return url}).catch(()=>null).finally(()=>{if(imagePending.get(pendingKey)===request)imagePending.delete(pendingKey)});
+  imagePending.set(pendingKey,request);return request;
+ }
+ function releaseImageURLs(){
+  imageGeneration++;
+  for(const cache of [imageURLs,imagePreviewURLs]){for(const url of cache.values())URL.revokeObjectURL(url);cache.clear()}
+  imagePending.clear();
  }
  const questionSelections=new Map();// messageId -> Set of picked choices; survives live re-renders
  function questionAnswered(box,message){
@@ -816,13 +949,14 @@
   if(last<text.length)fragment.append(text.slice(last));
   return fragment;
  }
- function bubble(box,message){
+ function bubble(box,message,readOnly=false){
   const row=document.createElement('div');
   if(message.direction==='system'){row.className='msg system';row.append(Object.assign(document.createElement('span'),{className:'text',textContent:message.text}));return row}
   const mine=message.direction==='user';
   row.className='msg '+(mine?'user':'agent')+(message.state==='silent'?' note':'')+(message.state==='streaming'?' streaming':'');
+  if(message.pairAuthor){const author=document.createElement('span');author.className='agent-origin';author.textContent=message.pairAuthor;row.append(author)}
   if(message.direction==='box'){const origin=document.createElement('span');origin.className='agent-origin';origin.textContent='From '+(boxes.get(message.senderBoxId)?.name||'agent box');row.append(origin)}
-  if(message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?messageAuthor(parent)+': ':'')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
+  if(!readOnly&&message.parentMessageId){const parent=(box.messages||[]).find(value=>value.id===message.parentMessageId),quote=document.createElement('button');quote.type='button';quote.className='msg-parent';quote.textContent=(parent?messageAuthor(parent)+': ':'')+(parent?.question?.text||parent?.text||'Earlier message');quote.title='Show the full thread';quote.onclick=()=>void openThread(message.threadId||message.parentMessageId);row.append(quote)}
   if(message.state==='silent'){const label=document.createElement('span');label.className='note-label';label.textContent='Note · not sent to the agent';row.append(label)}
   if(message.text.startsWith('Forwarded from ')){const mark=document.createElement('span');mark.className='fwd-mark';const end=message.text.indexOf(':\n');mark.textContent=end>0?message.text.slice(0,end+1):'Forwarded';row.append(mark)}
   const text=document.createElement('div');text.className='text';
@@ -840,13 +974,14 @@
     row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,messageId:message.id,imageId:image.id}));
     continue;
    }
-   imageURL(message,image).then(url=>{if(!url)return;const btn=mediaButton(url,{kind:mediaKind(image.mediaType,url),alt,label,messageId:message.id,imageId:image.id});row.insertBefore(btn,row.querySelector('.meta'))});
+   const btn=mediaButton('',{kind,alt,label,messageId:message.id,imageId:image.id});row.append(btn);
+   imageURL(message.id,image.id,true).then(url=>{if(!btn.isConnected)return;const frame=btn.querySelector('.media-preview'),img=frame?.querySelector('img'),placeholder=frame?.querySelector('.media-preview-placeholder');if(url&&img)img.src=url;else if(placeholder){placeholder.textContent='Preview unavailable';frame.classList.add('failed')}});
   }
-  const form=questionForm(box,message);if(form)row.append(form);
+  const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
-  const threadSize=(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>2){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
+  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>2){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
-  if(mine&&message.state!=='silent'){
+  if(mine&&!readOnly&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
    ticks.title=stateTicks[message.state]||'';
    const icon=stateIconName[message.state];
@@ -856,6 +991,7 @@
   }
   // Always-visible actions (hover-only controls are invisible on touch): the
   // chevron sits beside the delivery state and time, then reveals the menu.
+  if(readOnly){row.append(meta);return row}
   const actions=document.createElement('div');actions.className='msg-actions';
   const toggle=document.createElement('button');toggle.type='button';toggle.className='msg-more';toggle.setAttribute('aria-label','Message actions');toggle.setAttribute('aria-expanded','false');toggle.append(lucide('chevron-down'));
   const menu=document.createElement('div');menu.className='msg-actions-menu';menu.hidden=true;
@@ -871,8 +1007,8 @@
    inspect.onclick=()=>{closeAllMsgActions();void openTakeover('tmux',box.id)};
    menu.append(inspect);
   }
-  toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen){menu.hidden=false;toggle.setAttribute('aria-expanded','true')}};
-  row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();menu.hidden=false;toggle.setAttribute('aria-expanded','true')};
+  toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen)openMsgActions(menu,toggle)};
+  row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle)};
   actions.append(toggle,menu);meta.append(actions);row.append(meta);
   return row;
  }
@@ -883,7 +1019,7 @@
  let openThreadID='';
  $('#thread-close').onclick=()=>{openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren()};
  async function openThread(threadID){
-  if(!selected||!threadID)return;openThreadID=threadID;threadPanel.hidden=false;threadMessages.replaceChildren(mk('p','Loading thread…'));
+  if(!selected||!threadID)return;openThreadID=threadID;threadPanel.hidden=false;applyThreadWidth();threadMessages.replaceChildren(mk('p','Loading thread…'));
   try{const result=await chatHistory(boxPath(selected)+'/messages?limit=100&threadId='+encodeURIComponent(threadID)),box=boxes.get(selected);threadMessages.replaceChildren();$('#thread-origin').textContent=(box?.name||'Box')+' · '+(box?.defaultAgent||'agent');$('#thread-count').textContent=result.messages.length+' message'+(result.messages.length===1?'':'s');for(const message of result.messages)threadMessages.append(bubble({...box,messages:result.messages},message));const taskID=result.messages.find(message=>message.taskId)?.taskId;if(taskID)void api('/v1/tasks/'+encodeURIComponent(taskID)).then(task=>{if(openThreadID===threadID&&task?.agent)$('#thread-origin').textContent=(box?.name||'Box')+' · '+task.agent}).catch(()=>{})}
   catch(e){threadMessages.replaceChildren(mk('p',e.message))}
  }
@@ -893,14 +1029,39 @@
   catch(e){statusEl.textContent=e.message}finally{button.disabled=boxes.get(selected)?.state!=='running'}
  };
  function closeAllMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu'))menu.hidden=true;for(const toggle of document.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
+ function openMsgActions(menu,toggle){menu.hidden=false;toggle.setAttribute('aria-expanded','true');placeMsgActions(menu,toggle)}
+ function placeMsgActions(menu,toggle){
+  const scroller=toggle.closest('#chat-messages,#thread-messages');
+  if(!scroller)return;
+  const clip=scroller.getBoundingClientRect(),viewport=window.visualViewport;
+  const top=Math.max(8,clip.top,viewport?.offsetTop||0),bottom=Math.min(innerHeight-8,clip.bottom,(viewport?.offsetTop||0)+(viewport?.height||innerHeight));
+  const left=Math.max(8,clip.left,viewport?.offsetLeft||0),right=Math.min(innerWidth-8,clip.right,(viewport?.offsetLeft||0)+(viewport?.width||innerWidth));
+  const anchor=toggle.getBoundingClientRect();
+  if(anchor.bottom<top||anchor.top>bottom){closeAllMsgActions();return}
+  menu.style.top='100%';menu.style.bottom='auto';menu.style.marginTop='.2rem';menu.style.marginBottom='0';
+  menu.style.maxHeight='none';menu.style.transform='none';
+  const height=menu.getBoundingClientRect().height,below=Math.max(0,bottom-anchor.bottom-4),above=Math.max(0,anchor.top-top-4);
+  const up=height>below&&above>below;
+  menu.style.top=up?'auto':'100%';menu.style.bottom=up?'100%':'auto';
+  menu.style.marginTop=up?'0':'.2rem';menu.style.marginBottom=up?'.2rem':'0';
+  menu.style.maxHeight=Math.max(0,(up?above:below)-4)+'px';
+  menu.dataset.placement=up?'up':'down';
+  const rect=menu.getBoundingClientRect();
+  const shift=rect.left<left?left-rect.left:rect.right>right?right-rect.right:0;
+  menu.style.transform='translateX('+shift+'px)';
+ }
  document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
+ function repositionMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu:not([hidden])'))placeMsgActions(menu,menu.parentElement.querySelector('.msg-more'))}
+ document.addEventListener('scroll',repositionMsgActions,true);
+ addEventListener('resize',repositionMsgActions);
+ window.visualViewport?.addEventListener('resize',repositionMsgActions);
  function scrollMessagesToBottom(){
   messagesEl.scrollTop=messagesEl.scrollHeight;
   requestAnimationFrame(()=>{messagesEl.scrollTop=messagesEl.scrollHeight});
  }
  // A chat opens at its newest message and keeps following output until the
  // reader scrolls away; scrolling back to the bottom resumes following.
- messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;if(selected)scrollMemory.set(selected,messagesEl.scrollTop)});
+ messagesEl.addEventListener('scroll',()=>{stickToBottom=messagesEl.scrollHeight-messagesEl.scrollTop-messagesEl.clientHeight<120;if(selected)scrollMemory.set(selected,messagesEl.scrollTop);if(selectedPair)scrollMemory.set('pair:'+selectedPair,messagesEl.scrollTop)});
  function renderMessages(box){
   if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
@@ -1003,11 +1164,22 @@
    boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id);attachmentDrafts.delete(id);
   }
   for(const [id,b] of current)boxes.set(id,b);
-  if(selected&&!boxes.has(selected)){selected='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
+  if(selected&&!boxes.has(selected)){selected='';selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
   await loadPreviews(force);
+  if(owner)try{await loadPairs()}catch(e){if(selectedPair)statusEl.textContent='Could not refresh box conversations: '+e.message}
   if(selected)applySeen(selected);
   renderRows();
-  if(selected){renderHeader();renderInspect()}
+  if(selected){renderHeader();renderInspect();if(owner)void loadChatUsageProfile(selected)}
+ }
+ async function loadPairs(){
+  const values=await api('/v1/box-conversations');
+  if(!Array.isArray(values))return;
+  const alive=new Set();
+  for(const value of values){const key=pairKey(value);alive.add(key);pairs.set(key,Object.assign(pairs.get(key)||{messages:[]},value))}
+  for(const key of pairs.keys())if(!alive.has(key))pairs.delete(key);
+  if(selectedPair&&!pairs.has(selectedPair)){
+   selectedPair='';lastSignature='';viewEpoch++;appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;
+  }
  }
  async function loadPreviews(force){
   await Promise.allSettled([...boxes.keys()].map(async id=>{
@@ -1036,7 +1208,10 @@
  function renderHeader(){
   const box=boxes.get(selected);if(!box)return;
   $('#chat-header-name').textContent=box.name;
-  $('#chat-header-state').replaceChildren(Object.assign(document.createElement('span'),{className:box.state==='running'?'running':'',textContent:(box.defaultAgent||'agent')+' · '+box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')}));
+  const state=mk('span');state.className=box.state==='running'?'running':'';
+  const agent=mk('span',(box.defaultAgent||'agent')+' · ');agent.className='chat-header-agent';
+  state.append(agent,document.createTextNode(box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')));
+  $('#chat-header-state').replaceChildren(state);
   inputEl.placeholder='Message '+box.name+'…';
   const key=box.id+'|'+box.state;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
@@ -1089,6 +1264,47 @@
   renderRows();renderInspect();
   if(owner&&box.state==='running'&&box.defaultAgent==='codex')void refreshCodexResume(box,!!force);
  }
+ function renderPairMessages(pair){
+  const follow=stickToBottom;
+  messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=pairKey(pair);
+  let day='';
+  for(const message of pair.messages||[]){
+   const label=dayLabel(message.createdAt);
+   if(label!==day){day=label;const sep=mk('div',day);sep.className='day-sep';messagesEl.append(sep)}
+   const fromB=message.senderBoxId===pair.boxBId;
+   messagesEl.append(bubble(pair,{...message,direction:fromB?'user':'agent',pairAuthor:fromB?pair.boxBName:pair.boxAName},true));
+  }
+  if(!(pair.messages||[]).length){const empty=mk('p','No direct messages between these boxes yet.');empty.className='day-sep';messagesEl.append(empty)}
+  statusEl.textContent='Read only · '+(pair.messages||[]).length+' messages'+((pair.messages||[]).length===500?' (latest 500)':'');
+  if(follow)scrollMessagesToBottom();
+ }
+ async function refreshPairMessages(force=false){
+  const key=selectedPair,pair=pairs.get(key);if(!pair)return;
+  const epoch=viewEpoch;
+  const messages=await api('/v1/box-conversations/'+encodeURIComponent(pair.boxAId)+'/'+encodeURIComponent(pair.boxBId)+'/messages');
+  if(epoch!==viewEpoch||selectedPair!==key||pairs.get(key)!==pair)return;
+  pair.messages=Array.isArray(messages)?messages:[];
+  const last=pair.messages.at(-1);
+  if(last){pair.lastAt=last.createdAt;pair.lastText=last.text}
+  const signature=pair.messages.map(message=>message.id+message.updatedAt+message.state).join('|');
+  if(force||signature!==lastSignature){lastSignature=signature;renderPairMessages(pair)}
+  renderRows();
+ }
+ async function openPair(key){
+  const pair=pairs.get(key);if(!pair)return;
+  viewEpoch++;selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
+  openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
+  messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
+  stickToBottom=scrollMemory.get('pair:'+key)==null;
+  $('#chat-conversation').classList.add('pair-view');
+  $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;appEl.classList.add('in-chat');
+  $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
+  $('#chat-header-state').textContent='Direct messages between boxes · read only';
+  $('#chat-header-avatar').replaceChildren(Object.assign(mk('span','↔'),{className:'pair-avatar'}));headerAvatarKey='';
+  setBanner('');statusEl.textContent='';renderRows();doodle('Loading messages…');
+  try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
+  const saved=scrollMemory.get('pair:'+key);if(selectedPair===key&&saved!=null)requestAnimationFrame(()=>{if(selectedPair===key)messagesEl.scrollTop=saved});
+ }
  async function refreshCodexResume(box,force){
   const prior=resumeChecks.get(box.id);
   if(prior&&(!force&&Date.now()-prior.at<20000||prior.pending))return;
@@ -1129,10 +1345,12 @@
  async function openBox(id){
   if(!boxes.has(id))return;
   viewEpoch++;
+  selectedPair='';$('#chat-conversation').classList.remove('pair-view');
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
-  if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();messagesEl.dataset.box=id;hideTvPreview()}
+  if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
   if(selected!==id)cancelReply();selected=id;lastSignature='';hideComposerPicker();
+  selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
   const savedScroll=scrollMemory.get(id);
@@ -1372,7 +1590,11 @@
  },{passive:true});
  appEl.addEventListener('touchend',()=>{listSwipe=null},{passive:true});
  appEl.addEventListener('touchcancel',()=>{listSwipe=null},{passive:true});
- addEventListener('hashchange',()=>{const id=new URLSearchParams(location.hash.slice(1)).get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id)});
+ addEventListener('hashchange',()=>{
+  const params=new URLSearchParams(location.hash.slice(1)),pair=params.get('pair');
+  if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair)void openPair(match);return}
+  const id=params.get('box');if(id&&id!==selected&&boxes.has(id))void openBox(id);
+ });
 
  /* ---------- takeover popup: VNC/TMUX control ---------- */
  const takeover=$('#takeover'),takeoverScreen=$('#takeover-screen'),takeoverControls=$('#takeover-controls'),takeoverStatus=$('#takeover-status');
@@ -1988,7 +2210,7 @@
   finally{pushBtn.disabled=false;renderPushState()}
  };
  navigator.serviceWorker?.addEventListener('message',event=>{
-  if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void loadBoxes(true)},250)}
+  if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void refreshPairMessages();void loadBoxes(true)},250)}
   if(event.data?.type==='vmbox-open'&&event.data.url){const url=new URL(event.data.url,location.origin);if(url.hash!==location.hash)location.hash=url.hash}
  });
 
@@ -1999,10 +2221,10 @@
   msgTimer=setTimeout(tickMessages,3000);
  }
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
- async function tickMessages(){try{if(!document.hidden&&selected)await refreshMessages();reconnecting=false}catch(e){reconnecting=!!selected}updateBanner();msgTimer=setTimeout(tickMessages,3000)}
+ async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
  document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages()}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
- $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
+ $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
  /* ---------- auth ---------- */
  $('#login').onsubmit=async event=>{
@@ -2010,50 +2232,86 @@
   try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){$('#error').textContent=e.message}
  };
  $('#logout').onclick=async()=>{
-  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);
+  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   $('#usage-modal').hidden=true;
-  $('#usage-toggle').hidden=true;owner=false;
+  usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
+  $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';$('#chat-usage').hidden=true;owner=false;
   closeTakeover();
   inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
-  for(const url of imageURLs.values())URL.revokeObjectURL(url);imageURLs.clear();
+  releaseImageURLs();
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
   for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url);
   attachmentDrafts.clear();renderDrafts();pendingKey='';pendingFingerprint='';
-  boxes.clear();rows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;
+  boxes.clear();rows.clear();pairs.clear();pairRows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;delete messagesEl.dataset.pair;
   owner=false;extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
-  selected='';lastSignature='';appEl.classList.remove('in-chat');
+  selected='';selectedPair='';lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').classList.remove('pair-view');
   $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
  };
  async function enter(){
   try{
-   const who=await api('/v1/whoami');owner=who.role==='owner';
+   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
-   $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;
+   $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
    doodle('Loading chats…');
    try{await loadBoxes()}finally{doodle('')}
-   const id=new URLSearchParams(location.hash.slice(1)).get('box');
-   if(id&&boxes.has(id))await openBox(id);
-   if(owner)void loadChatCommands().catch(e=>{statusEl.textContent=e.message});
+   const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box'),pair=params.get('pair');
+   if(pair&&owner){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match)await openPair(match)}
+   else if(id&&boxes.has(id))await openBox(id);
+   if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
+   if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
- addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url);for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
+ addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
 
  /* ---------- imported profile usage ---------- */
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
  function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
+ function remainingPercent(used){return typeof used==='number'&&Number.isFinite(used)?Math.max(0,Math.min(100,100-used)):null}
+ function lowestRemaining(profile){
+  const remaining=(profile?.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent)).filter(value=>value!==null);
+  return remaining.length?Math.min(...remaining):null;
+ }
+ function renderChatUsage(){
+  const button=$('#chat-usage');
+  const ref=selectedUsageProfile;
+  button.hidden=!owner||!selected||!ref||!usageLoaded;
+  if(button.hidden)return;
+  const profile=usageProfiles.find(item=>item.application===ref.application&&item.name===ref.name);
+  const lowest=lowestRemaining(profile);
+  const label=mk('span','Usage · ');label.className='chat-usage-label';
+  button.replaceChildren(label,mk('span',lowest===null?'unavailable':usageNumber(lowest)+'% left'));
+  button.setAttribute('aria-label',ref.application+' '+ref.name+' usage: '+(lowest===null?'remaining unavailable':usageNumber(lowest)+'% remaining'));
+  button.title=ref.application+' · '+ref.name+(lowest===null?' · No remaining usage reported':' · Lowest reported remaining window: '+usageNumber(lowest)+'%. Open this profile’s usage details.');
+  button.classList.toggle('usage-low',lowest!==null&&lowest<=20);
+ }
+ async function loadChatUsageProfile(id){
+  const request=++chatUsageRequest;
+  try{
+   const state=await api(boxPath(id)+'/imported-credentials');
+   if(request!==chatUsageRequest||selected!==id||!owner)return;
+   const agent=boxes.get(id)?.defaultAgent;
+   selectedUsageProfile=(state.profiles||[]).find(ref=>ref.application===agent&&['claude','codex','opencode'].includes(ref.application))||null;
+  }catch{if(request!==chatUsageRequest||selected!==id||!owner)return;selectedUsageProfile=null}
+  renderChatUsage();
+ }
  function renderUsage(data){
   const root=$('#usage-list');root.replaceChildren();
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
-  if(!profiles.length){root.append(mk('p','No saved agent profiles.'));return}
-  for(const profile of profiles){
+  usageProfiles=profiles;
+  if(data?.loaded)usageLoaded=true;
+  renderChatUsage();
+  $('#usage-title').textContent=usageScope?'Profile usage · '+usageScope.application+' · '+usageScope.name:'Profile usage limits';
+  const visible=usageScope?profiles.filter(profile=>profile.application===usageScope.application&&profile.name===usageScope.name):profiles;
+  if(!visible.length){root.append(mk('p',usageScope?'No usage data for this chat’s profile yet.':'No saved agent profiles yet.'));return}
+  for(const profile of visible){
    const card=mk('article');card.className='usage-profile';
    const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
    const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
@@ -2064,33 +2322,39 @@
     const row=mk('div');row.className='usage-window';
     const names={session:'Current session',weekly_all:'Current week (all models)',weekly_scoped:'Current week',primary:'Primary',secondary:'Secondary'};
     const label=[names[window.name]||window.name,window.scope,window.group&&window.group!==window.name?(names[window.group]||window.group):null,window.durationMinutes?window.durationMinutes+' min':null].filter(Boolean).join(' · ');
-    const percent=typeof window.usedPercent==='number'?window.usedPercent:null;
-    row.append(mk('div',label+' · '+(percent===null?'unknown':usageNumber(percent)+'% used')));
-    if(percent!==null){const track=mk('div');track.className='usage-track';const fill=mk('span');fill.style.width=Math.max(0,Math.min(100,percent))+'%';track.append(fill);row.append(track)}
-    if(window.resetsAt)row.append(mk('small','Resets '+usageDate(window.resetsAt)));
+    const remaining=remainingPercent(window.usedPercent),head=mk('div');head.className='usage-window-head';
+    head.append(mk('span',label),mk('strong',remaining===null?'Remaining unavailable':usageNumber(remaining)+'% remaining'));row.append(head);
+    if(remaining!==null){const track=mk('div');track.className='usage-track';track.setAttribute('role','progressbar');track.setAttribute('aria-label',label+' remaining');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');track.setAttribute('aria-valuenow',String(remaining));const fill=mk('span');fill.style.width=remaining+'%';track.append(fill);row.append(track)}
+    row.append(mk('small',(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'')));
     card.append(row);
    }
    if(snapshot?.spend){
-    const spend=snapshot.spend,unit=spend.currency||spend.unit||'';
+    const spend=snapshot.spend,unit=spend.currency||spend.unit||'',remaining=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;
     const parts=[];
-    if(spend.remaining!=null)parts.push('remaining '+usageNumber(spend.remaining));
     if(spend.used!=null)parts.push('used '+usageNumber(spend.used));
     if(spend.limit!=null)parts.push('limit '+usageNumber(spend.limit));
-    card.append(mk('p','Spend'+(unit?' ('+unit+')':'')+': '+(parts.join(' · ')||'unavailable')+(spend.period?' · '+spend.period:'')));
+    const summary=mk('p');summary.className='usage-spend';summary.append(mk('strong',remaining===null?'Spend remaining unavailable':usageNumber(remaining)+(unit?' '+unit:'')+' remaining'));
+    summary.append(document.createTextNode((parts.length?' · '+parts.join(' · '):'')+(spend.period?' · '+spend.period:'')));card.append(summary);
    }
-   if(snapshot?.balances?.length)card.append(mk('p','Balances: '+snapshot.balances.map(balance=>balance.unit+' '+usageNumber(balance.amount)).join(' · ')));
-   if(snapshot?.rateCaps?.length){const list=mk('ul');list.className='usage-caps';for(const cap of snapshot.rateCaps)list.append(mk('li',[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')));card.append(list)}
+   if(snapshot?.balances?.length)card.append(mk('p','Available balances: '+snapshot.balances.map(balance=>balance.unit+' '+usageNumber(balance.amount)).join(' · ')));
+   if(snapshot?.rateCaps?.length){card.append(mk('p','Configured rate caps (remaining requests unavailable):'));const list=mk('ul');list.className='usage-caps';for(const cap of snapshot.rateCaps)list.append(mk('li',[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')));card.append(list)}
    if(snapshot?.note)card.append(mk('p',snapshot.note));
    if(profile.error)card.append(mk('p','Last check failed: '+profile.error));
    if(profile.checkedAt)card.append(mk('small','Last checked '+usageDate(profile.checkedAt)));
    root.append(card);
   }
  }
+ let usagePending=null,usageGeneration=0;
  async function refreshUsage(){
-  if($('#usage-modal').hidden||document.hidden)return;
-  const status=$('#usage-status');status.textContent='Loading…';
-  try{
-   const data=await api('/v1/profile-usage');renderUsage(data);
+  if(!owner||document.hidden)return;
+  if(usagePending)return usagePending;
+  const status=$('#usage-status');
+  if(!$('#usage-modal').hidden&&!usageManualBaseline)status.textContent='Loading…';
+  const generation=usageGeneration;
+  const pending=api('/v1/profile-usage').then(data=>{
+   if(generation!==usageGeneration||!owner)return;
+   renderUsage({...data,loaded:true});
+   if($('#usage-modal').hidden)return data;
    if(usageManualBaseline){
     const profiles=Array.isArray(data?.profiles)?data.profiles:[];
     const done=profiles.every(profile=>{
@@ -2102,34 +2366,41 @@
     else status.textContent='Checking profiles…';
    }else status.textContent='';
    return data;
-  }catch(error){if(usageManualBaseline&&Date.now()-usageManualStarted>180000)stopManualUsageRefresh();status.textContent=error.message}
+  }).catch(error=>{
+   if(generation!==usageGeneration||!owner)return;
+   if(usageManualBaseline&&Date.now()-usageManualStarted>180000)stopManualUsageRefresh();
+   if(!$('#usage-modal').hidden)status.textContent=error.message;
+  }).finally(()=>{if(usagePending===pending)usagePending=null});
+  usagePending=pending;return pending;
  }
  function stopManualUsageRefresh(){clearInterval(usageManualTimer);usageManualBaseline=null;$('#usage-refresh').disabled=false}
  async function requestUsageRefresh(){
-  if(usageManualBaseline)return;
-  const button=$('#usage-refresh'),status=$('#usage-status');button.disabled=true;
+  if(!owner||usageManualBaseline)return;
+  const button=$('#usage-refresh'),status=$('#usage-status'),generation=usageGeneration;button.disabled=true;
   try{
-   const before=await api('/v1/profile-usage');renderUsage(before);
+   const before=await refreshUsage();
+   if(generation!==usageGeneration||!owner||$('#usage-modal').hidden)return;
    const result=await api('/v1/profile-usage/refresh','POST');
-   if($('#usage-modal').hidden)return;
-   if(!result.profiles){status.textContent='No saved agent profiles to check.';return}
-   usageManualBaseline=new Map((before.profiles||[]).map(profile=>[profile.application+'\0'+profile.name,profile.checkedAt||'']));
+   if(generation!==usageGeneration||!owner||$('#usage-modal').hidden)return;
+   if(!result?.profiles){status.textContent='No saved agent profiles to check.';return}
+   usageManualBaseline=new Map((before?.profiles||[]).map(profile=>[profile.application+'\0'+profile.name,profile.checkedAt||'']));
    usageManualStarted=Date.now();status.textContent='Checking profiles…';
    usageManualTimer=setInterval(()=>void refreshUsage(),5000);
    await refreshUsage();
-  }catch(error){status.textContent=error.message}
+  }catch(error){if(generation===usageGeneration&&!$('#usage-modal').hidden)status.textContent=error.message}
   finally{if(!usageManualBaseline)button.disabled=false}
  }
- $('#usage-toggle').onclick=()=>{if(!owner)return;closeSheets();$('#usage-modal').hidden=false;void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)};
+ $('#usage-toggle').onclick=()=>{if(!owner)return;usageScope=null;renderUsage({profiles:usageProfiles});closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
+ $('#chat-usage').onclick=()=>{if(!owner||!selectedUsageProfile)return;usageScope={...selectedUsageProfile};renderUsage({profiles:usageProfiles});closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
  $('#usage-refresh').onclick=()=>void requestUsageRefresh();
- document.querySelectorAll('#usage-modal [data-close]').forEach(el=>el.addEventListener('click',()=>{clearInterval(usageTimer);stopManualUsageRefresh()}));
- document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!$('#usage-modal').hidden)void refreshUsage()});
+ document.querySelectorAll('#usage-modal [data-close]').forEach(el=>el.addEventListener('click',stopManualUsageRefresh));
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshUsage()});
 
  /* ---------- instruction presets, box instructions, imported profiles ---------- */
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
- function closeSheets(){clearInterval(usageTimer);stopManualUsageRefresh();document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
+ function closeSheets(){stopManualUsageRefresh();document.querySelectorAll('.sheet').forEach(sheet=>{sheet.hidden=true});closeAllMsgActions();closeForwardMenu();closeRowMenu()}
 
  /* ---------- saved Chat slash commands ---------- */
  let selectedCommandName='';
@@ -2482,6 +2753,7 @@
    const result=await api(boxPath(boxCredentialTarget.id)+'/login-profiles','PUT',{profiles});
    status.textContent=result.note||'Saved.';
    $('#box-credentials-current').textContent=(result.profiles||[]).length?'Imported: '+(result.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', ')+'.':'No imported login profiles recorded.';
+   if(selected===boxCredentialTarget.id){const agent=boxes.get(selected)?.defaultAgent;selectedUsageProfile=(result.profiles||[]).find(ref=>ref.application===agent&&['claude','codex','opencode'].includes(ref.application))||null;chatUsageRequest++;renderChatUsage()}
    if(inspectOpen&&selected===boxCredentialTarget.id){inspectProfilesFor='';maybeLoadInspectProfiles(boxCredentialTarget)}
    toast('Login profiles updated for '+boxCredentialTarget.name+'.');
   }catch(e){status.textContent=e.message}

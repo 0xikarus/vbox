@@ -148,8 +148,8 @@ box setting.
 Agents can also address each other through owner-managed direct contacts.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
 accept an optional `contact`; the message is delivered into that box's same
-native conversation, while the owner reads the direct exchange in the separate
-**Box ↔ Box** view in chats or the controller. `chat_message` can attach images
+native conversation, while the owner reads the direct exchange alongside agent
+chats in the controller's **Chats** list. `chat_message` can attach images
 to contact messages with the same `files` argument used for owner replies.
 Enabled mobile web push notifications open the relevant owner or box conversation. Owners
 choose each box's directional direct contacts. A role may add the explicit
@@ -278,13 +278,14 @@ Bare `vmbox` is read-only in both terminals and scripts; `vmbox help` works offl
 Use `vmbox whoami --json` for machine-readable identity. This requires a controller
 with the `/v1/whoami` endpoint and does not display credentials.
 
-The web admin panel’s **Profiles** section shows an expandable account → application
-→ profile tree. Owners can delete saved profiles (with confirmation)
-and select them when creating a box. Uploads happen only through the CLI. Saved credentials are encrypted,
+The web admin panel’s **Profiles** page lists saved Codex, Claude, OpenCode, and
+GitHub logins by application, with search, saved dates, and model names where
+available. Owners can delete saved profiles (with confirmation) and select them
+when creating a box. Uploads happen only through the CLI. Saved credentials are encrypted,
 never exported, and immutable: upload refreshed credentials under a new name.
 Uploading byte-for-byte identical credentials and configuration under another
 name is rejected, preventing accidental double uploads; genuinely different
-snapshots can still coexist and can be deleted from the profile tree.
+snapshots can still coexist and can be deleted from the Profiles page.
 Profiles are account-wide, not assigned to individual users; existing boxes are
 unchanged. Browsers cannot discover local logins automatically; use the CLI for that.
 Run `vmbox profiles upload` to detect and upload local Claude/Codex/OpenCode/GitHub logins
@@ -686,11 +687,18 @@ running box's credential copy, then tries the encrypted saved profile in an isol
 temporary home if no box is available or the live check fails. A sleeping box
 is never started for a usage check. A saved OAuth snapshot can be older than a
 box's refreshed login; failed checks are shown instead of an invented limit.
+The header shows the lowest reported remaining window, and the Usage view shows
+remaining percentages beside each reset time. Spend remaining is shown when the
+provider reports it or when a limit and used amount are available.
 Claude shows `/usage` session and weekly windows, Codex shows ChatGPT quota
 windows, OpenRouter shows API-key spending and free-model daily requests, and
 Venice shows balances and configured model rates. These providers expose
 different metrics, so a missing quota window does not mean unlimited capacity.
 The view also shows the last observation time and any failed check.
+
+On desktop, drag the divider beside **Conversations** to resize the chat list.
+Arrow keys adjust the focused divider, and the chosen width is saved in the
+browser. Phones keep the full-width conversation list.
 
 ## Managed agent instructions
 

@@ -17,10 +17,9 @@
 <header id="chat-top">
  <button id="chat-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
  <strong class="brand">vmbox <span>/ chats</span></strong>
- <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a></nav>
- <nav class="chat-scope-tabs" aria-label="Chat view"><a href="/chat" aria-current="page">Owner</a><a href="/box-chats">Box ↔ Box</a></nav>
+ <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a><a href="/#profiles" data-owner-nav>Profiles</a></nav>
  <span class="spacer"></span>
- <button id="usage-toggle" type="button" hidden title="Usage limits for saved agent profiles">Usage</button>
+ <button id="usage-toggle" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
  <button id="refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
 </header>
 
@@ -40,20 +39,21 @@
   <div id="chat-list-head">
    <div>
     <h1>Conversations</h1>
-    <p id="chat-list-sub">Your agent boxes</p>
+    <p id="chat-list-sub">Agent and box conversations</p>
    </div>
    <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
-  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search boxes…" autocomplete="off" aria-label="Search boxes"></div>
+  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"></div>
   <ul id="chat-entries"></ul>
-  <p id="chat-list-empty" hidden>No interactive boxes yet. Create one with the + button above.</p>
+  <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
  </aside>
+ <div id="chat-resizer" role="separator" aria-label="Resize Conversations sidebar" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="640" tabindex="0" title="Drag or use arrow keys to resize Conversations"></div>
  <main id="chat-main">
   <section id="chat-empty">
    <div id="chat-empty-mascot" class="mascot-host" aria-hidden="true"></div>
    <div class="empty-copy">
     <h2>vmbox agent chats</h2>
-    <p>One chat per agent box. Pick a box to read its history, steer the agent, or forward messages between boxes.</p>
+    <p>Pick an agent chat or a direct conversation between boxes.</p>
     <p class="hint">Avatars show a live desktop preview while a box is running.</p>
    </div>
   </section>
@@ -63,6 +63,7 @@
     <span id="chat-header-avatar"></span>
     <div id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></div>
     <span class="spacer"></span>
+    <button id="chat-usage" type="button" hidden aria-label="Usage for this chat">Usage</button>
     <button id="chat-wake" type="button" hidden>Wake box</button>
     <button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session">Clear context</button>
     <button id="chat-control" type="button" title="Take control: Desktop or TMUX in a popup">Desktop</button>
@@ -154,6 +155,7 @@
   </section>
  </main>
  <aside id="thread-panel" hidden aria-label="Thread">
+ <div id="thread-resizer" role="separator" aria-label="Resize thread sidebar" aria-controls="thread-panel" aria-orientation="vertical" tabindex="0"></div>
  <header><button id="thread-close" type="button" aria-label="Close thread">←</button><div><strong>Thread</strong><span id="thread-origin"></span><span id="thread-count"></span></div></header>
  <div id="thread-messages"></div>
  <form id="thread-composer"><textarea name="text" rows="1" maxlength="100000" placeholder="Reply in thread" aria-label="Reply in thread" required></textarea><button type="submit">Send</button></form>
@@ -354,7 +356,6 @@
    <a href="/#boxes">Boxes</a>
    <a href="/#providers" data-owner-nav>Providers</a>
    <a href="/grid" data-owner-nav>Grid</a>
-   <a href="/box-chats">Box ↔ Box</a>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>
