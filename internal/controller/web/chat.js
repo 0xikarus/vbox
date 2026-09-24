@@ -2,7 +2,8 @@
 (()=>{
  const $=s=>document.querySelector(s);
  const listEl=$('#chat-entries'),messagesEl=$('#chat-messages'),appEl=$('#chat-app'),statusEl=$('#chat-status'),inputEl=$('#chat-input'),composer=$('#chat-composer'),attachBtn=$('#attach'),fileInput=$('#attachments'),draftsEl=$('#chat-image-drafts'),forwardMenu=$('#forward-menu'),filterEl=$('#chat-filter'),pushBtn=$('#push-toggle'),replyPreview=$('#reply-preview'),threadPanel=$('#thread-panel'),threadMessages=$('#thread-messages');
- const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
+ const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),imagePreviewURLs=new Map(),imagePending=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
+ let imageGeneration=0;
  const resumeChecks=new Map();
  let selected='',selectedPair='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
  let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
@@ -412,20 +413,27 @@
  const mediaGlyph=kind=>kind==='video'?'▶':kind==='audio'?'♪':'▣';
  const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaOpen=$('#media-viewer-open'),
   mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count');
- let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null;
- function renderMediaItem(url,{kind='image',alt=''}={}){
+ let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null,mediaRequest=0;
+ function renderMediaItem(url,{kind='image',alt='',loading=false,status=''}={}){
   mediaBody.replaceChildren();
-  if(!url){const miss=document.createElement('div');miss.className='media-missing';miss.textContent='Attachment unavailable';mediaBody.append(miss);return}
+  if(!url&&!loading){const miss=document.createElement('div');miss.className='media-missing';miss.textContent=status||'Attachment unavailable';mediaBody.append(miss);return}
   if(kind==='video'||kind==='audio'){
    const el=document.createElement(kind);el.src=url;el.controls=true;el.playsInline=true;if(kind==='video')el.autoplay=true;
    el.setAttribute('aria-label',alt||('Embedded '+mediaKindLabel(kind)));mediaBody.append(el);
   }else{
-   const img=document.createElement('img');img.src=url;img.alt=alt||'Attachment';mediaBody.append(img);
+   const frame=document.createElement('div');frame.className='media-viewer-frame';
+   if(url){const img=document.createElement('img');img.src=url;img.alt=alt||'Attachment';frame.append(img)}
+   if(loading||status){const note=document.createElement('span');note.className='media-viewer-status';note.textContent=status||'Loading full image…';frame.append(note)}
+   mediaBody.append(frame);
   }
  }
  async function showMediaAt(index){
   const item=mediaGallery[index];if(!item)return;
-  mediaIndex=index;
+  mediaIndex=index;const request=++mediaRequest;
+  const many=mediaGallery.length>1;
+  mediaPrev.hidden=!many;mediaNext.hidden=!many;
+  mediaPrev.disabled=mediaIndex<=0;mediaNext.disabled=mediaIndex>=mediaGallery.length-1;
+  mediaCount.hidden=!many;mediaCount.textContent=(mediaIndex+1)+' / '+mediaGallery.length;
   let url=item.url;
   if(!url&&item.messageId){
    if(item.kind==='video'||item.kind==='audio'){
@@ -433,16 +441,20 @@
     // request and stream instead of buffering a blob.
     url=mediaEndpoint(item.messageId,item.imageId);
    }else{
-    const box=boxes.get(selected),m=(box&&box.messages||[]).find(x=>x.id===item.messageId),img=m&&(m.images||[]).find(x=>x.id===item.imageId);
-    if(m&&img)url=await imageURL(m,img);
+    const key=item.messageId+':'+item.imageId;
+    renderMediaItem(imagePreviewURLs.get(key),{...item,loading:true});
+    let fullFinished=false;
+    const previewRequest=imageURL(item.messageId,item.imageId,true);
+    void previewRequest.then(preview=>{if(request===mediaRequest&&!fullFinished)renderMediaItem(preview,{...item,loading:true})});
+    url=await imageURL(item.messageId,item.imageId);
+    if(!url)await previewRequest;
+    fullFinished=true;
+    if(request!==mediaRequest||mediaViewer.hidden)return;
+    renderMediaItem(url||imagePreviewURLs.get(key),{...item,status:url?'':'Full image unavailable'});
    }
   }
-  renderMediaItem(url,item);
+  if(item.kind!=='image'||!item.messageId||item.url)renderMediaItem(url,item);
   if(/^https?:/i.test(url||'')){mediaOpen.hidden=false;mediaOpen.href=url}else{mediaOpen.hidden=true;mediaOpen.removeAttribute('href')}
-  const many=mediaGallery.length>1;
-  mediaPrev.hidden=!many;mediaNext.hidden=!many;
-  mediaPrev.disabled=mediaIndex<=0;mediaNext.disabled=mediaIndex>=mediaGallery.length-1;
-  mediaCount.hidden=!many;mediaCount.textContent=(mediaIndex+1)+' / '+mediaGallery.length;
  }
  function openMediaViewer(gallery,index=0){
   mediaReturnFocus=document.activeElement;
@@ -454,6 +466,7 @@
  }
  function closeMediaViewer(){
   if(mediaViewer.hidden)return;
+  mediaRequest++;
   const playing=mediaBody.querySelector('video,audio');
   if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
   mediaBody.replaceChildren();mediaViewer.hidden=true;mediaGallery=[];mediaIndex=0;
@@ -469,7 +482,13 @@
   const btn=document.createElement('button');btn.type='button';btn.className='media-button';
   btn.setAttribute('aria-label','Open '+mediaKindLabel(kind)+(label?': '+label:alt?': '+alt:''));
   if(kind==='image'){
-   const img=document.createElement('img');img.className='chat-image';img.src=url;img.alt=alt||'';img.loading='lazy';btn.append(img);
+   const frame=document.createElement('span');frame.className='media-preview';
+   const placeholder=document.createElement('span');placeholder.className='media-preview-placeholder';placeholder.textContent='Loading '+(label||'image')+'…';
+   const img=document.createElement('img');img.className='chat-image';img.alt=alt||'';img.loading='lazy';
+   img.onload=()=>{placeholder.hidden=true;frame.classList.add('ready')};
+   img.onerror=()=>{placeholder.textContent='Preview unavailable';frame.classList.add('failed')};
+   frame.append(placeholder,img);btn.append(frame);
+   if(url)img.src=url;
   }else{
    const chip=document.createElement('span');chip.className='media-chip '+kind;
    const glyph=document.createElement('span');glyph.className='media-glyph';glyph.setAttribute('aria-hidden','true');glyph.textContent=mediaGlyph(kind);
@@ -480,7 +499,8 @@
    if(messageId&&imageId){
     const list=conversationImageGallery();
     const index=list.findIndex(entry=>entry.messageId===messageId&&entry.imageId===imageId);
-    openMediaViewer(list.length?list:[{url,kind,alt,label}],index<0?0:index);
+    if(index>=0)openMediaViewer(list,index);
+    else openMediaViewer([{url,kind,alt,label,messageId,imageId}]);
    }else{
     openMediaViewer([{url,kind,alt,label}]);
    }
@@ -859,11 +879,19 @@
   for(const [tag,attrs] of lucideShapes[name]||[]){const el=document.createElementNS('http://www.w3.org/2000/svg',tag);for(const key in attrs)el.setAttribute(key,attrs[key]);svg.append(el)}
   return svg;
  }
- function imageURL(message,image){
-  const key=message.id+':'+image.id;
-  if(imageURLs.has(key))return Promise.resolve(imageURLs.get(key));
-  return fetch(mediaEndpoint(message.id,image.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
-   .then(r=>{if(!r.ok)throw Error('image unavailable');return r.blob()}).then(b=>{const url=URL.createObjectURL(b);imageURLs.set(key,url);return url}).catch(()=>null);
+ function imageURL(messageID,imageID,thumbnail=false){
+  const key=messageID+':'+imageID,cache=thumbnail?imagePreviewURLs:imageURLs,pendingKey=(thumbnail?'thumb:':'full:')+key;
+  if(cache.has(key))return Promise.resolve(cache.get(key));
+  if(imagePending.has(pendingKey))return imagePending.get(pendingKey);
+  const generation=imageGeneration;
+  const request=fetch(mediaEndpoint(messageID,imageID)+(thumbnail?'?thumbnail=true':''),{credentials:'same-origin',signal:AbortSignal.timeout(30000)})
+   .then(r=>{if(!r.ok)throw Error('image unavailable');return r.blob()}).then(b=>{if(generation!==imageGeneration)return null;const url=URL.createObjectURL(b);cache.set(key,url);return url}).catch(()=>null).finally(()=>{if(imagePending.get(pendingKey)===request)imagePending.delete(pendingKey)});
+  imagePending.set(pendingKey,request);return request;
+ }
+ function releaseImageURLs(){
+  imageGeneration++;
+  for(const cache of [imageURLs,imagePreviewURLs]){for(const url of cache.values())URL.revokeObjectURL(url);cache.clear()}
+  imagePending.clear();
  }
  const questionSelections=new Map();// messageId -> Set of picked choices; survives live re-renders
  function questionAnswered(box,message){
@@ -946,7 +974,8 @@
     row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,messageId:message.id,imageId:image.id}));
     continue;
    }
-   imageURL(message,image).then(url=>{if(!url)return;const btn=mediaButton(url,{kind:mediaKind(image.mediaType,url),alt,label,messageId:message.id,imageId:image.id});row.insertBefore(btn,row.querySelector('.meta'))});
+   const btn=mediaButton('',{kind,alt,label,messageId:message.id,imageId:image.id});row.append(btn);
+   imageURL(message.id,image.id,true).then(url=>{if(!btn.isConnected)return;const frame=btn.querySelector('.media-preview'),img=frame?.querySelector('img'),placeholder=frame?.querySelector('.media-preview-placeholder');if(url&&img)img.src=url;else if(placeholder){placeholder.textContent='Preview unavailable';frame.classList.add('failed')}});
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
@@ -2210,7 +2239,7 @@
   closeTakeover();
   inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
-  for(const url of imageURLs.values())URL.revokeObjectURL(url);imageURLs.clear();
+  releaseImageURLs();
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   for(const cached of tvShotCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}
   avatarCache.clear();previewFetched.clear();tvReplayCache.clear();hideTvPreview();headerAvatarKey='';
@@ -2240,7 +2269,7 @@
    schedule();renderPushState();void syncPushSubscription();
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
- addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);for(const url of imageURLs.values())URL.revokeObjectURL(url);for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
+ addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
 
  /* ---------- imported profile usage ---------- */
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}

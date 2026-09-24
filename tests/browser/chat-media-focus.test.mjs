@@ -16,6 +16,8 @@ const modelPickerJS=await readFile('internal/controller/web/model-picker.js','ut
 // manages focus (opens on the close control, restores it on Escape).
 test('chat media is clickable and keyboard focusable',async()=>{
  const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
+ const preview=Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200"><rect width="320" height="200" fill="#142433"/><text x="18" y="32" fill="#dceaff" font-family="sans-serif" font-size="16" font-weight="bold">Build pipeline</text><path d="M96 107h25m77 0h25" stroke="#9ac5ff" stroke-width="3"/><path d="m115 101 7 6-7 6m102-12 7 6-7 6" fill="none" stroke="#9ac5ff" stroke-width="3"/><rect x="17" y="78" width="78" height="58" rx="5" fill="#31516b" stroke="#86b8f0"/><rect x="122" y="78" width="75" height="58" rx="5" fill="#31516b" stroke="#86b8f0"/><rect x="224" y="78" width="79" height="58" rx="5" fill="#31516b" stroke="#86b8f0"/><g fill="#e9f3ff" font-family="sans-serif" font-size="13" text-anchor="middle"><text x="56" y="112">Source</text><text x="159" y="112">Build</text><text x="264" y="112">Deploy</text></g><text x="18" y="174" fill="#8ba6bd" font-family="sans-serif" font-size="11">Compressed timeline preview</text></svg>`);
+ const imageRequests={thumbnail:[],full:[]};
  const now=new Date().toISOString();
  const galleryMessages=[
   {id:'g1',direction:'agent',state:'delivered',text:'Here is the diagram.',images:[{id:'img1',number:1,mediaType:'image/png'},{id:'img2',number:2,mediaType:'image/png'}],createdAt:now,updatedAt:now},
@@ -36,7 +38,12 @@ test('chat media is clickable and keyboard focusable',async()=>{
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
-  if(path==='/v1/messages/g1/images/img1'||path==='/v1/messages/g1/images/img2'){res.setHeader('Content-Type','image/png');return res.end(png)}
+  if(path==='/v1/messages/g1/images/img1'||path==='/v1/messages/g1/images/img2'){
+   const thumbnail=new URL(req.url,'http://localhost').searchParams.get('thumbnail')==='true';
+   imageRequests[thumbnail?'thumbnail':'full'].push(req.url);
+   await new Promise(resolve=>setTimeout(resolve,thumbnail?850:700));
+   res.setHeader('Content-Type',thumbnail?'image/svg+xml':'image/png');return res.end(thumbnail?preview:png);
+  }
   if(path==='/v1/logical-boxes/gallery/messages')return res.end(JSON.stringify(galleryMessages));
   if(path.endsWith('/messages'))return res.end('[]');
   return res.end('{}');
@@ -55,6 +62,13 @@ test('chat media is clickable and keyboard focusable',async()=>{
   assert.equal(button.tag,'BUTTON');
   assert.equal(button.tabIndex,0);
   assert.match(button.label,/^Open image/);
+  assert.equal(imageRequests.full.length,0,'the timeline must not download full-size images');
+  assert.equal(await p.$eval('.media-preview-placeholder',element=>!element.hidden),true,'a placeholder is visible while the thumbnail loads');
+  await p.screenshot({path:'/tmp/vmbox-chat-image-loading.png'});
+  await p.waitForFunction(()=>document.querySelectorAll('.media-preview.ready').length===2,{timeout:5000});
+  assert.equal(imageRequests.thumbnail.length,2,'the timeline loads compressed previews');
+  assert.equal(imageRequests.full.length,0,'full images remain unloaded until opened');
+  await p.screenshot({path:'/tmp/vmbox-chat-image-preview.png'});
 
   // activating it focuses the viewer's close control
   await p.$eval('.media-button',element=>element.focus());
@@ -62,7 +76,11 @@ test('chat media is clickable and keyboard focusable',async()=>{
   await p.keyboard.press('Enter');
   await p.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
   assert.equal(await p.evaluate(()=>document.activeElement?.id),'media-viewer-close');
+  assert.equal(await p.$eval('#media-viewer-body',element=>!!element.querySelector('img')&&element.textContent.includes('Loading full image')),true,'the viewer keeps the preview visible while loading the original');
+  await p.screenshot({path:'/tmp/vmbox-chat-image-viewer-loading.png'});
   await p.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth>=1,{timeout:3000});
+  await p.waitForFunction(()=>!document.querySelector('#media-viewer-body .media-viewer-status'),{timeout:3000});
+  assert.equal(imageRequests.full.length,1,'opening the viewer downloads one original');
 
   // step through the box's images (WhatsApp-style): arrows and keyboard
   assert.equal(await p.$eval('#media-viewer-count',element=>element.textContent),'1 / 2');
@@ -87,6 +105,9 @@ test('chat media is clickable and keyboard focusable',async()=>{
   const kinds=await p.$$eval('a.media-link',nodes=>nodes.map(n=>n.classList.contains('video')?'video':n.classList.contains('image')?'image':'other'));
   assert.ok(kinds.includes('image'),'markdown image embed should be recognised');
   assert.ok(kinds.includes('video'),'media URL embed should be recognised');
+  await p.setViewport({width:1200,height:800,deviceScaleFactor:1});
+  await p.evaluate(()=>document.activeElement?.blur());
+  await p.screenshot({path:'/tmp/vmbox-chat-image-desktop.png'});
   await p.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });
