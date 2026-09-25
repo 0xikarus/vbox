@@ -23,29 +23,29 @@ func (p *sessionProbeProvider) Exec(_ context.Context, _ string, argv []string, 
 	return p.result, p.err
 }
 
-func TestTaskSessionProbeDistinguishesExitFromConnectionFailure(t *testing.T) {
+func TestTaskSessionProbeUsesFencedInventory(t *testing.T) {
 	for _, tc := range []struct {
-		name               string
+		name, stdout       string
 		code               int
-		stderr             string
 		err                error
 		missing, wantError bool
 	}{
-		{name: "alive"},
-		{name: "missing session", code: 1, stderr: "can't find session: codex-one", missing: true},
-		{name: "last session exited", code: 1, stderr: "no server running on /tmp/tmux-10001/default", missing: true},
-		{name: "no socket", code: 1, stderr: "error connecting to /tmp/tmux-10001/default (No such file or directory)", missing: true},
-		{name: "permission denied", code: 1, stderr: "error connecting to /tmp/tmux-10001/default (Permission denied)", wantError: true},
-		{name: "SSH disconnected", code: 255, wantError: true},
+		{name: "alive", stdout: `{"state":"live","assignment":"fence-a","sessions":[{"name":"codex-one"}]}`},
+		{name: "missing session", stdout: `{"state":"live","assignment":"fence-a","sessions":[]}`, missing: true},
+		{name: "different session", stdout: `{"state":"live","assignment":"fence-a","sessions":[{"name":"codex-two"}]}`, missing: true},
+		{name: "partial inventory", stdout: `{"state":"live","assignment":"fence-a","partial":true}`, wantError: true},
+		{name: "stale assignment", stdout: `{"state":"live","assignment":"fence-b","sessions":[]}`, wantError: true},
+		{name: "invalid inventory", stdout: `{`, wantError: true},
+		{name: "worker command failed", code: 1, wantError: true},
 		{name: "request failed", err: errors.New("timeout"), wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := &sessionProbeProvider{result: provider.ExecResult{ExitCode: tc.code, Stderr: tc.stderr}, err: tc.err}
-			missing, err := taskSessionMissing(context.Background(), p, "slot", "codex-one")
+			p := &sessionProbeProvider{result: provider.ExecResult{ExitCode: tc.code, Stdout: tc.stdout}, err: tc.err}
+			missing, err := taskSessionMissing(context.Background(), p, "slot", "codex-one", "fence-a")
 			if missing != tc.missing || (err != nil) != tc.wantError {
 				t.Fatalf("missing=%v err=%v", missing, err)
 			}
-			if !reflect.DeepEqual(p.argv, []string{"tmux", "has-session", "-t", "=codex-one"}) {
+			if !reflect.DeepEqual(p.argv, []string{"vmbox-runtime", "native-sessions", "fence-a"}) {
 				t.Fatalf("argv=%v", p.argv)
 			}
 		})

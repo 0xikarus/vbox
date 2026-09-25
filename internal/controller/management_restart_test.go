@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 	"time"
@@ -33,7 +34,9 @@ func restartTestTaskRow(id, state string) *sqlmock.Rows {
 func TestDirectMessageRestartsClosedOpenCodeWithoutWaitingForReconciler(t *testing.T) {
 	store, mock := testStore(t)
 	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "user"}
-	probe := &sessionProbeProvider{result: provider.ExecResult{ExitCode: 1, Stderr: "can't find session: opencode-one"}}
+	fence := nativeFence(fleetAssignment{Box: v1.LogicalBox{ID: "box-1", AssignmentGeneration: 3}, FencingToken: "fence"})
+	inventory, _ := json.Marshal(v1.SessionInventory{State: "live", Assignment: fence})
+	probe := &sessionProbeProvider{result: provider.ExecResult{Stdout: string(inventory)}}
 	server := NewServer(store, nil)
 	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return probe, nil }
 	var started []string
@@ -65,7 +68,7 @@ func TestDirectMessageRestartsClosedOpenCodeWithoutWaitingForReconciler(t *testi
 	if err != nil || !response.Started || response.Task.ID != "new-task" || response.Message.TaskID != "new-task" {
 		t.Fatalf("response=%+v err=%v", response, err)
 	}
-	if !reflect.DeepEqual(started, []string{"new-task"}) || !reflect.DeepEqual(probe.argv, []string{"tmux", "has-session", "-t", "=opencode-one"}) {
+	if !reflect.DeepEqual(started, []string{"new-task"}) || !reflect.DeepEqual(probe.argv, []string{"vmbox-runtime", "native-sessions", fence}) {
 		t.Fatalf("started=%v probe=%v", started, probe.argv)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
