@@ -1978,7 +1978,7 @@
  }
   /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
   const newBoxModal=$('#new-box-modal'),createForm=$('#create-box'),previewCard=$('#create-preview-card');
-  let extrasLoaded=false,poolChoices=[],autoPoolIndex='';
+  let extrasLoaded=false,poolChoices=[],autoPoolIndex='',profileUsageLoadError=false,renderCreateProfileUsage=()=>{};
   const money=n=>'$'+(n>=0.1?n.toFixed(2):n.toFixed(3));
   const ctxLabel=n=>n>=1e6?(n/1e6).toFixed(n%1e6?1:0)+'M':n>=1e3?Math.round(n/1e3)+'k':n?'':'';
   function previewRows(){
@@ -2013,15 +2013,56 @@
   function renderCreationProfileChoices(profiles){
   const root=$('#profile-choices'),agentSelect=createForm.elements.defaultAgent;root._modelPicker?.destroy();root.replaceChildren();
   const profileLabel=document.createElement('label');profileLabel.className='field profile-field';profileLabel.textContent='Login profile';
-  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
+  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileSelect.hidden=true;profileLabel.append(profileSelect);
+  const profileList=document.createElement('div');profileList.className='create-profile-list';profileList.setAttribute('role','group');profileList.setAttribute('aria-label','Login profiles and remaining usage');
   const modelLabel=document.createElement('label');modelLabel.className='field profile-field';modelLabel.textContent='Model';
   const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);root._modelPicker=modelPicker;
   const githubLabel=document.createElement('label');githubLabel.className='field profile-field';githubLabel.textContent='GitHub profile';
   const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(new Option('None',''));
   for(const profile of profiles.filter(profile=>profile.application==='github'))githubSelect.append(new Option(profile.name,JSON.stringify({application:'github',name:profile.name})));
   githubLabel.append(githubSelect);githubLabel.hidden=githubSelect.options.length===1;
-   root.append(profileLabel,modelLabel,githubLabel);
-   const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setReasoningEffort('');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref&&['claude','codex','opencode'].includes(ref.application)?()=>api('/v1/login-profiles/'+encodeURIComponent(ref.application)+'/'+encodeURIComponent(ref.name)+'/models'):null);renderPreview()};
+   root.append(profileLabel,profileList,modelLabel,githubLabel);
+  renderCreateProfileUsage=()=>{
+   const app=agentSelect.value,choices=profiles.filter(profile=>profile.application===app);
+   const focusedValue=profileList.contains(document.activeElement)?document.activeElement.dataset.profile:null;
+   profileList.replaceChildren();profileList.hidden=app==='shell'||choices.length===0;
+   if(profileList.hidden)return;
+   const addChoice=(value,name,summary,details,profile)=>{
+    const button=document.createElement('button');button.type='button';button.className='create-profile-option';button.dataset.profile=value;
+    button.setAttribute('aria-pressed',String(profileSelect.value===value));
+    const heading=document.createElement('span');heading.className='create-profile-option-head';
+    const title=document.createElement('strong');title.textContent=name;
+    const remaining=document.createElement('span');remaining.className='create-profile-remaining';remaining.textContent=summary;
+    const lowest=profile?lowestRemaining(profile):null;
+    if(lowest!==null&&lowest<=20)remaining.classList.add('low');
+    heading.append(title,remaining);button.append(heading);
+    if(details){const detail=document.createElement('small');detail.textContent=details;button.append(detail)}
+    button.onclick=()=>{profileSelect.value=value;profileSelect.dispatchEvent(new Event('change',{bubbles:true}))};
+    profileList.append(button);
+   };
+   addChoice('','None','No profile','No saved profile selected');
+   for(const profile of choices){
+    const ref=JSON.stringify({application:profile.application,name:profile.name});
+    const measured=usageProfiles.find(item=>item.application===profile.application&&item.name===profile.name);
+    const remaining=lowestRemaining(measured);
+    const windows=(measured?.snapshot?.windows||[]).map(window=>{
+     const value=remainingPercent(window.usedPercent);if(value===null)return null;
+     const labels={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};
+     return (labels[window.name]||window.name)+(window.scope?' · '+window.scope:'')+' '+usageNumber(value)+'%';
+    }).filter(Boolean);
+    let summary=remaining===null?(usageLoaded||profileUsageLoadError?'Usage unavailable':'Checking usage…'):usageNumber(remaining)+'% left';
+    let details=windows.slice(0,3).join(' · ');
+    if(windows.length>3)details+=' · +'+(windows.length-3)+' more';
+    if(!details&&measured?.snapshot?.spend){const spend=measured.snapshot.spend;const left=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;if(left!==null){summary=usageNumber(left)+(spend.currency?' '+spend.currency:'')+' left';details='Spending balance'}}
+    if(!details&&measured?.snapshot?.balances?.length){const balance=measured.snapshot.balances[0];summary=usageNumber(balance.amount)+(balance.unit?' '+balance.unit:'')+' balance';details='Available balance'}
+    if(!details)details=measured?.error?'Last check failed':measured?.checkedAt?'No remaining limit reported':'No measurement yet';
+    const checkedAt=measured?.checkedAt||measured?.observedAt;
+    if(checkedAt){const date=new Date(checkedAt);if(!Number.isNaN(date.getTime()))details+=' · checked '+(date.toDateString()===new Date().toDateString()?date.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):date.toLocaleDateString(undefined,{month:'short',day:'numeric'}))}
+    addChoice(ref,profile.name,summary,details,measured);
+   }
+   if(focusedValue!==null)[...profileList.children].find(button=>button.dataset.profile===focusedValue)?.focus({preventScroll:true});
+  };
+  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setReasoningEffort('');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref&&['claude','codex','opencode'].includes(ref.application)?()=>api('/v1/login-profiles/'+encodeURIComponent(ref.application)+'/'+encodeURIComponent(ref.name)+'/models'):null);renderCreateProfileUsage();renderPreview()};
   const populate=()=>{
    const previous=profileSelect.value,app=agentSelect.value;profileSelect.replaceChildren(new Option('None',''));
    const choices=profiles.filter(profile=>profile.application===app);
@@ -2089,6 +2130,7 @@
   function openNewBoxModal(){
    createForm.reset();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
    void primeBoxExtras();
+   if(owner)void refreshUsage();
    createForm.elements.name.focus();
    renderPreview();
   }
@@ -2474,6 +2516,7 @@
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
   usageProfiles=profiles;
   if(data?.loaded)usageLoaded=true;
+  profileUsageLoadError=false;renderCreateProfileUsage();
   renderChatUsage();
   $('#usage-title').textContent=usageScope?'Profile usage · '+usageScope.application+' · '+usageScope.name:'Profile usage limits';
   const visible=usageScope?profiles.filter(profile=>profile.application===usageScope.application&&profile.name===usageScope.name):profiles;
@@ -2535,6 +2578,7 @@
    return data;
   }).catch(error=>{
    if(generation!==usageGeneration||!owner)return;
+   profileUsageLoadError=true;renderCreateProfileUsage();
    if(usageManualBaseline&&Date.now()-usageManualStarted>180000)stopManualUsageRefresh();
    if(!$('#usage-modal').hidden)status.textContent=error.message;
   }).finally(()=>{if(usagePending===pending)usagePending=null});

@@ -478,8 +478,19 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #create-instructions-editor{margin:0 0 .5rem}
 #create-instructions-editor summary{cursor:pointer;font-size:.85rem;color:var(--ink-soft)}
 #create-box input[type=checkbox]{display:inline-block;width:auto;margin:0}
-#create-box .profiles{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.5rem}
+#create-box .profiles{display:flex;flex:1 1 100%;flex-direction:column;gap:.4rem;min-width:0;margin-bottom:.5rem}
 #create-box .profile-field{display:flex;flex-direction:column;font-size:.8rem;color:var(--ink-soft)}
+#create-box select[name="loginProfile"][hidden]{display:none}
+#create-box .create-profile-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:.3rem;max-height:min(13rem,30dvh);overflow-y:auto;overscroll-behavior:contain;padding:.12rem;margin:-.45rem 0 .25rem}
+#create-box .create-profile-list[hidden]{display:none}
+#create-box button.create-profile-option{display:grid;gap:.15rem;min-height:0;width:100%;margin:0;padding:.5rem .65rem;text-align:left;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);color:var(--ink);font-size:.78rem;font-weight:400}
+#create-box button.create-profile-option:hover,#create-box button.create-profile-option:focus-visible{border-color:var(--accent);background:var(--accent-soft);outline:none}
+#create-box button.create-profile-option[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.create-profile-option-head{display:flex;align-items:baseline;justify-content:space-between;gap:.5rem;min-width:0}
+.create-profile-option-head strong{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.create-profile-remaining{flex:none;color:var(--accent-text);font-size:.72rem;font-weight:750;white-space:nowrap}
+.create-profile-remaining.low{color:var(--warn)}
+.create-profile-option small{color:var(--ink-soft);font-size:.68rem;line-height:1.3;overflow-wrap:anywhere}
 
 #row-menu{position:fixed;z-index:15;background:var(--surface);border:1px solid var(--line);
   border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.3rem;min-width:10rem;
