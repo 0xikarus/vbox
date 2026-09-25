@@ -21,7 +21,9 @@ See [the isolation contract and limitations](SHARED-CONTAINERS.md).
   `vmbox-runtime`, sudo, tmux and desktop packages. Authenticate privately if the
   repository or registry requires it; never put credentials in an image or guide.
 
-Each box currently has fixed limits of **2 GiB RAM, 1 CPU and 512 processes**.
+Each box currently has fixed limits of **2 GiB RAM, up to 1 GiB swap, 1 CPU and
+512 processes**. Configure host swap for the extra headroom; it cushions short
+memory peaks but is slower than RAM and does not replace adequate host capacity.
 For a 4-core/8-GB host, use at most three slots and reserve the remaining resources
 for the host/supervisor. Existing workloads must count toward that budget.
 There are no per-box disk quotas. Monitor free disk space and configure backups.
