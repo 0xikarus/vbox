@@ -100,7 +100,7 @@ func (s *Server) getAIHelperOpenRouter(w http.ResponseWriter, r *http.Request, p
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read AI helper setting"))
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"configured": true, "model": setting.Model})
+	writeJSON(w, http.StatusOK, map[string]any{"configured": true, "key": setting.Key, "model": setting.Model})
 }
 
 func (s *Server) putAIHelperOpenRouter(w http.ResponseWriter, r *http.Request, p Principal) {

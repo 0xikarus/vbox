@@ -15,10 +15,13 @@ const server=http.createServer(async(req,res)=>{
  if(path.slice(1) in assets){res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript':'text/css');return res.end(assets[path.slice(1)])}
  res.setHeader('Content-Type','application/json');
  if(path==='/v1/ai/openrouter'){
-  if(req.method==='PUT'){let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);aiSetting={configured:true,model:body.model};return res.end(JSON.stringify(aiSetting))}
+  if(req.method==='PUT'){let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);aiSetting={configured:true,key:body.key,model:body.model};return res.end(JSON.stringify(aiSetting))}
   if(req.method==='DELETE'){aiSetting={configured:false,model:'openrouter/auto'};res.statusCode=204;return res.end()}
   return res.end(JSON.stringify(aiSetting));
  }
+ if(path==='/v1/ai/openrouter/profiles/saved')return res.end(JSON.stringify({key:'sk-or-v1-imported-test-key',model:'openrouter/auto'}));
+ if(path==='/v1/ai/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/auto',label:'Automatic'},{id:'openrouter/anthropic/claude-test',label:'Claude Test'},{id:'openrouter/google/test-model',label:'Google Test'}]}));
+ if(path==='/v1/login-profiles')return res.end(JSON.stringify([{application:'opencode',name:'saved',model:'openrouter/auto'}]));
  if(path==='/v1/ai/rewrite'){
   let raw='';for await(const chunk of req)raw+=chunk;
   const body=JSON.parse(raw);requests.push(body);
@@ -47,8 +50,9 @@ try{
   await page.click('.ai-settings-save');
   await page.waitForFunction(()=>document.querySelector('.ai-settings-state').textContent.includes('Key saved'));
   assert.equal(aiSetting.model,'anthropic/claude-test');
-  assert.equal(await page.$eval('.ai-settings-dialog input[name="key"]',el=>el.value),'');
-  assert.equal(await page.$eval('.ai-settings-dialog input[name="key"]',el=>el.required),false);
+  assert.equal(await page.$eval('.ai-settings-dialog input[name="key"]',el=>el.value),'sk-or-v1-synthetic-test-key');
+  await page.click('.ai-key-visibility');
+  assert.equal(await page.$eval('.ai-settings-dialog input[name="key"]',el=>el.type),'text');
   await page.$eval('.ai-settings-dialog input[name="model"]',el=>el.value='openrouter/auto');
   await page.click('.ai-settings-save');
   await page.waitForFunction(()=>document.querySelector('.ai-settings-state').textContent.includes('Key saved'));
@@ -57,6 +61,14 @@ try{
   page.once('dialog',dialog=>dialog.accept());await page.click('.ai-settings-remove');
   await page.waitForFunction(()=>document.querySelector('.ai-settings-state').textContent.includes('No dedicated key'));
   assert.equal(aiSetting.configured,false);
+  await page.select('.ai-import-label select','saved');
+  await page.waitForFunction(()=>document.querySelector('.ai-settings-dialog input[name="key"]').value==='sk-or-v1-imported-test-key');
+  await page.$eval('.ai-settings-dialog input[name="model"]',el=>el.value='openrouter/google/test-model');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/ai-import-desktop.png'});
+  await page.click('.ai-settings-save');
+  await page.waitForFunction(()=>document.querySelector('.ai-settings-state').textContent.includes('Key saved'));
+  assert.equal(aiSetting.model,'openrouter/google/test-model');
+  assert.equal(aiSetting.key,'sk-or-v1-imported-test-key');
   await page.close();
  });
  await test('AI key settings fit on mobile',async()=>{
@@ -82,10 +94,12 @@ try{
   await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
   await page.waitForSelector('.ai-prompt-dialog[open]');
   await page.$eval('.ai-prompt-dialog textarea',el=>el.value='Keep the intent and fix typos.');
+  await page.$eval('.ai-prompt-dialog input[name="model"]',el=>el.value='openrouter/google/test-model');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-desktop.png'});
   await page.click('.ai-prompt-dialog button.primary');
   await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello again');
   assert.match(requests.at(-1).instruction,/Keep the intent/);
+  assert.equal(requests.at(-1).model,'openrouter/google/test-model');
   await page.close();
  });
  await test('mobile wand and Markdown preset share the same control',async()=>{
@@ -94,7 +108,16 @@ try{
   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden && !!document.querySelector('#chat-composer .ai-wand'));
   await page.$eval('#chat-input',el=>{el.value='';el.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.type('#chat-input','Helo from mobile');
+  const alignment=await page.evaluate(()=>{
+   const nodes=['#chat-composer .ai-field','#chat-composer #chat-input','#chat-composer #send','#chat-composer #chat-interrupt'].map(selector=>document.querySelector(selector)).filter(node=>node&&!node.hidden);
+   return nodes.map(node=>({name:node.id||node.className,bottom:node.getBoundingClientRect().bottom}));
+  });
+  assert.ok(Math.max(...alignment.map(item=>item.bottom))-Math.min(...alignment.map(item=>item.bottom))<2,JSON.stringify(alignment));
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-mobile.png'});
+  await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
+  await page.waitForSelector('.ai-prompt-dialog[open]');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-prompt-mobile.png'});
+  await page.click('.ai-prompt-actions button:nth-child(2)');
   await page.click('#chat-composer .ai-wand');
   await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello from mobile');
   await page.evaluate(()=>document.querySelector('#presets-modal').hidden=false);

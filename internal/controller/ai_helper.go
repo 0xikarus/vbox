@@ -21,6 +21,7 @@ type rewriteRequest struct {
 	Text        string `json:"text"`
 	Instruction string `json:"instruction"`
 	Kind        string `json:"kind"`
+	Model       string `json:"model,omitempty"`
 }
 
 func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -39,6 +40,14 @@ func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal
 		writeError(w, http.StatusBadRequest, fmt.Errorf("enter text up to 64 KiB and an instruction up to 2 KiB"))
 		return
 	}
+	if input.Model != "" {
+		selection := aiHelperOpenRouterSetting{Model: input.Model}
+		if err := validateAIHelperSetting(&selection); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		input.Model = selection.Model
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
 	setting, err := s.Store.AIHelperOpenRouter(ctx, p)
@@ -47,6 +56,9 @@ func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal
 		return
 	}
 	if err == nil {
+		if input.Model != "" {
+			setting.Model = input.Model
+		}
 		client := s.HTTP
 		if client == nil {
 			client = http.DefaultClient
@@ -91,6 +103,9 @@ func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal
 		writeError(w, http.StatusUnprocessableEntity, err)
 		return
 	}
+	if input.Model != "" {
+		model = input.Model
+	}
 	client := s.HTTP
 	if client == nil {
 		client = http.DefaultClient
@@ -104,18 +119,26 @@ func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal
 }
 
 func openRouterProfileKey(profile v1.SaveLoginProfileRequest, selectedModel string) (string, string, error) {
-	var credentials map[string]struct {
-		Type string `json:"type"`
-		Key  string `json:"key"`
-	}
-	if json.Unmarshal(profile.Files["auth.json"], &credentials) != nil || credentials["openrouter"].Type != "api" || credentials["openrouter"].Key == "" {
-		return "", "", fmt.Errorf("saved OpenRouter profile has no API key")
+	key, err := openRouterProfileCredential(profile)
+	if err != nil {
+		return "", "", err
 	}
 	model := strings.TrimPrefix(selectedModel, "openrouter/")
 	if model == selectedModel || model == "" {
 		return "", "", fmt.Errorf("saved OpenRouter profile has no model")
 	}
-	return credentials["openrouter"].Key, model, nil
+	return key, model, nil
+}
+
+func openRouterProfileCredential(profile v1.SaveLoginProfileRequest) (string, error) {
+	var credentials map[string]struct {
+		Type string `json:"type"`
+		Key  string `json:"key"`
+	}
+	if json.Unmarshal(profile.Files["auth.json"], &credentials) != nil || credentials["openrouter"].Type != "api" || credentials["openrouter"].Key == "" {
+		return "", fmt.Errorf("saved OpenRouter profile has no API key")
+	}
+	return credentials["openrouter"].Key, nil
 }
 
 func requestOpenRouterRewrite(ctx context.Context, client *http.Client, endpoint, key, model string, input rewriteRequest) (string, error) {
