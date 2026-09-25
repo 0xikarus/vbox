@@ -175,6 +175,35 @@ paths:
         '400': {description: Profile type has no supported live catalog}
         '404': {description: Profile not found}
         '502': {description: Model catalog unavailable; the saved model remains selectable}
+  /v1/ai/rewrite:
+    post:
+      summary: Rewrite a browser draft with a saved OpenRouter profile
+      description: Owner-only. Uses the first saved OpenCode profile whose selected model is on OpenRouter. The API key remains on the controller. Returns a suggestion for review; it never sends a chat message or saves an instruction preset.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, text]
+              properties:
+                kind: {type: string, enum: [chat, markdown]}
+                text: {type: string, maxLength: 65536}
+                instruction: {type: string, maxLength: 2000}
+      responses:
+        '200':
+          description: Revised text
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text]
+                properties:
+                  text: {type: string}
+        '400': {description: Invalid draft or instruction}
+        '403': {description: Owner role required}
+        '422': {description: No usable saved OpenRouter profile}
+        '502': {description: OpenRouter could not complete the rewrite}
   /v1/logical-boxes/{id}/process-tasks:
     parameters:
       - {in: path, name: id, required: true, schema: {type: string}}

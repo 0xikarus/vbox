@@ -139,6 +139,11 @@ if the live request fails; an expired saved login may need to be uploaded again.
 The API list does not guarantee Claude Code subscription or organization access,
 which Claude Code checks when using the selected model. The saved encrypted
 profile remains unchanged by a box-specific choice.
+The chat composer and Markdown instruction editors have a writing wand. Click it
+to revise a draft, or hold it (right-click or Shift+Enter with the wand focused)
+to edit the prompt. Review the result before sending or saving. This uses the
+first saved OpenCode profile with an OpenRouter model; the encrypted API key
+stays in the controller and is never sent to the browser.
 The same popup can set a box-specific reasoning level: Codex writes
 `model_reasoning_effort`, Claude Code writes `effortLevel`, and OpenCode selects a
 model variant for its Build agent. Leave **Default** to retain the profile/model

@@ -7,6 +7,7 @@ let ownerTools=false,instructionPresets={defaultName:'',presets:[]};
 let roleBoxes=[];
 let listedProfiles=[],profileAccountName='';
 const presetBodyCache=new Map();
+window.VMBoxAIHelper?.attach({input:$('#instruction-form textarea[name="markdown"]'),kind:'markdown',status:$('#instruction-status')});
 let boxInstructionTarget=null,boxCredentialTarget=null;
 const poolKey=(provider,providerCredential)=>JSON.stringify({provider,providerCredential:providerCredential||''});
 const poolLabel=(provider,alias)=>(provider==='shared-worker'?'Shared worker':'Dedicated · '+provider)+' / '+(alias||'default');

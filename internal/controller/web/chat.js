@@ -32,6 +32,12 @@
  const inputDrafts=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}')}catch{return{}}})();
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
+ if(window.VMBoxAIHelper){
+  window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected});
+  window.VMBoxAIHelper.attach({input:$('#preset-form textarea[name="markdown"]'),kind:'markdown',status:$('#preset-status')});
+  window.VMBoxAIHelper.attach({input:$('#box-instructions-markdown'),kind:'markdown',status:$('#box-instructions-status')});
+  window.VMBoxAIHelper.attach({input:$('#create-instructions-custom'),kind:'markdown'});
+ }
 
  /* ---------- desktop conversation sidebar ---------- */
  const sidebar=$('#chat-list'),splitter=$('#chat-resizer'),sidebarStorageKey='vmboxChatSidebarWidth';
