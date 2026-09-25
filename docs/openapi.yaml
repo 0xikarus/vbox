@@ -175,10 +175,39 @@ paths:
         '400': {description: Profile type has no supported live catalog}
         '404': {description: Profile not found}
         '502': {description: Model catalog unavailable; the saved model remains selectable}
+  /v1/ai/openrouter:
+    get:
+      summary: Read AI writing helper configuration
+      description: Owner-only. Returns whether a dedicated OpenRouter key is configured and its model ID; never returns the key.
+      responses:
+        '200': {description: Configuration status without secret material}
+        '403': {description: Owner role required}
+    put:
+      summary: Save an OpenRouter key for the AI writing helper
+      description: Owner-only. Encrypts the account-wide key on the controller. This key takes precedence over a saved OpenCode OpenRouter profile. Omit the key to change only the model when a key is already saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string, minLength: 8, maxLength: 512}
+                model: {type: string, default: openrouter/auto}
+      responses:
+        '200': {description: Configuration status without secret material}
+        '400': {description: Invalid key or model}
+        '403': {description: Owner role required}
+    delete:
+      summary: Remove the dedicated AI writing helper key
+      description: Owner-only. A saved OpenCode OpenRouter profile can still be used as a fallback.
+      responses:
+        '204': {description: Key removed}
+        '403': {description: Owner role required}
   /v1/ai/rewrite:
     post:
-      summary: Rewrite a browser draft with a saved OpenRouter profile
-      description: Owner-only. Uses the first saved OpenCode profile whose selected model is on OpenRouter. The API key remains on the controller. Returns a suggestion for review; it never sends a chat message or saves an instruction preset.
+      summary: Rewrite a browser draft with OpenRouter
+      description: Owner-only. Uses the dedicated encrypted OpenRouter key when configured, otherwise the first saved OpenCode profile whose selected model is on OpenRouter. The API key remains on the controller. Returns a suggestion for review; it never sends a chat message or saves an instruction preset.
       requestBody:
         required: true
         content:
@@ -202,7 +231,7 @@ paths:
                   text: {type: string}
         '400': {description: Invalid draft or instruction}
         '403': {description: Owner role required}
-        '422': {description: No usable saved OpenRouter profile}
+        '422': {description: No usable OpenRouter key or saved profile}
         '502': {description: OpenRouter could not complete the rewrite}
   /v1/logical-boxes/{id}/process-tasks:
     parameters:

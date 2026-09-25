@@ -64,5 +64,19 @@ window.VMBoxAIHelper = (() => {
   button.addEventListener('keydown',event=>{if(event.shiftKey && (event.key==='Enter'||event.key===' ')){event.preventDefault();editPrompt(kind,run)}});
   return {button,run};
  }
- return {attach};
+ async function openSettings() {
+  const dialog=document.createElement('dialog');dialog.className='ai-settings-dialog';
+  dialog.innerHTML='<form><header><span class="ai-settings-mark" aria-hidden="true">✦</span><div><h2>AI writing helper</h2><p>OpenRouter key for the writing wand</p></div><button class="ai-settings-close" type="button" aria-label="Close settings">×</button></header><p class="ai-settings-copy">The key is stored encrypted on the controller and used only when you improve a draft. It is never sent back to this browser.</p><p class="ai-settings-state" role="status">Loading setting…</p><label>OpenRouter API key<input name="key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your OpenRouter key" required></label><label>Model ID<input name="model" type="text" maxlength="200" spellcheck="false" value="openrouter/auto" required></label><p class="ai-settings-hint">Use <code>openrouter/auto</code> or an exact OpenRouter model ID. A saved OpenCode OpenRouter profile is used if no key is set here.</p><div class="ai-settings-actions"><button class="ai-settings-remove" type="button" hidden>Remove key</button><span></span><button class="ai-settings-cancel" type="button">Cancel</button><button class="ai-settings-save" type="submit">Save key</button></div></form>';
+  document.body.append(dialog);
+  const form=dialog.querySelector('form'),key=form.elements.key,model=form.elements.model,state=dialog.querySelector('.ai-settings-state'),remove=dialog.querySelector('.ai-settings-remove'),save=dialog.querySelector('.ai-settings-save');
+  const close=()=>dialog.close();dialog.querySelector('.ai-settings-close').onclick=close;dialog.querySelector('.ai-settings-cancel').onclick=close;
+  dialog.addEventListener('close',()=>{key.value='';dialog.remove()},{once:true});
+  dialog.showModal();
+  const request=async(method,body)=>{const response=await fetch('/v1/ai/openrouter',{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},body:body&&JSON.stringify(body)});if(response.status===204)return null;const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Could not update AI writing helper');return data};
+  const paint=data=>{model.value=data.model||'openrouter/auto';remove.hidden=!data.configured;key.required=!data.configured;key.placeholder=data.configured?'Leave blank to keep saved key':'Paste your OpenRouter key';save.textContent=data.configured?'Save changes':'Save key';state.textContent=data.configured?'Key saved · used for new writing wand requests.':'No dedicated key saved · an OpenCode OpenRouter profile can be used instead.';state.classList.remove('is-error')};
+  try{paint(await request('GET'));key.focus()}catch(error){state.textContent=error.message;state.classList.add('is-error')}
+  form.addEventListener('submit',async event=>{event.preventDefault();if(!form.reportValidity())return;save.disabled=true;state.textContent='Saving key…';state.classList.remove('is-error');try{paint(await request('PUT',{key:key.value,model:model.value}));key.value=''}catch(error){state.textContent=error.message;state.classList.add('is-error')}finally{save.disabled=false}});
+  remove.addEventListener('click',async()=>{if(!confirm('Remove the dedicated OpenRouter key? The writing wand will use a saved OpenCode OpenRouter profile if one is available.'))return;remove.disabled=true;try{await request('DELETE');paint({configured:false,model:'openrouter/auto'});key.value=''}catch(error){state.textContent=error.message;state.classList.add('is-error')}finally{remove.disabled=false}});
+ }
+ return {attach,openSettings};
 })();

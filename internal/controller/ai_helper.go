@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +41,25 @@ func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
 	defer cancel()
+	setting, err := s.Store.AIHelperOpenRouter(ctx, p)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read AI helper setting"))
+		return
+	}
+	if err == nil {
+		client := s.HTTP
+		if client == nil {
+			client = http.DefaultClient
+		}
+		rewritten, rewriteErr := requestOpenRouterRewrite(ctx, client, openRouterCompletionsURL, setting.Key, setting.Model, input)
+		setting.Key = ""
+		if rewriteErr != nil {
+			writeError(w, http.StatusBadGateway, rewriteErr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"text": rewritten})
+		return
+	}
 	profiles, err := s.Store.ListLoginProfiles(ctx, p)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not find saved OpenRouter profile"))
@@ -53,7 +73,7 @@ func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal
 		}
 	}
 	if choice == nil {
-		writeError(w, http.StatusUnprocessableEntity, fmt.Errorf("save an OpenCode profile with an OpenRouter key and model to use the AI helper"))
+		writeError(w, http.StatusUnprocessableEntity, fmt.Errorf("add an OpenRouter key in Profiles → AI writing helper, or save an OpenCode profile with an OpenRouter model"))
 		return
 	}
 	profile, err := s.Store.LoadLoginProfile(ctx, p, choice.Application, choice.Name)
@@ -132,7 +152,7 @@ func requestOpenRouterRewrite(ctx context.Context, client *http.Client, endpoint
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
-		return "", fmt.Errorf("OpenRouter rejected the saved key; update the OpenCode profile")
+		return "", fmt.Errorf("OpenRouter rejected the API key; update it in Profiles → AI writing helper or in the saved OpenCode profile")
 	}
 	if response.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("OpenRouter returned HTTP %d", response.StatusCode)

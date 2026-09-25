@@ -2395,6 +2395,7 @@
    $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
+   $('#ai-settings-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
    $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
    doodle('Loading chats…');
@@ -2580,6 +2581,7 @@
   closeSheets();$('#commands-modal').hidden=false;$('#command-filter').value='';$('#command-status').textContent='';
   try{await loadChatCommands();selectChatCommand(chatCommands.find(command=>command.name===selectedCommandName)||chatCommands[0]||null);(chatCommands.length?$('#command-filter'):$('#command-form input[name="name"]')).focus()}catch(e){$('#command-status').textContent=e.message}
  };
+ $('#ai-settings-toggle').onclick=()=>{closeSheets();window.VMBoxAIHelper.openSettings()};
  $('#command-filter').addEventListener('input',renderChatCommands);
  $('#command-new').onclick=()=>{selectChatCommand(null);$('#command-form input[name="name"]').focus()};
  $('#command-use').onclick=()=>{

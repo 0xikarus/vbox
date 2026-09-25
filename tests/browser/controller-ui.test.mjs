@@ -15,7 +15,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -42,6 +42,7 @@ before(async()=>{
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
+  if(path==='/v1/ai/openrouter'&&req.method==='GET')return res.end(JSON.stringify({configured:false,model:'openrouter/auto'}));
   if(req.method==='GET' && path==='/v1/login-profiles/claude/personal/models')return res.end(JSON.stringify({source:'Claude Code catalog',models:['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'].map(id=>({id,label:id}))}));
   if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash',reasoning:false},{id:'openrouter/google/gemini-test',label:'Gemini test',reasoning:true}]}));
   if(req.method==='GET' && path==='/v1/login-profiles/codex/personal-codex/models')return res.end(JSON.stringify({source:'Codex account catalog',models:[{id:'account-codex-model',label:'Account Codex Model',reasoning:true,reasoningEfforts:['low','ultra']}]}));
@@ -117,12 +118,18 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  assert.deepEqual(await page.$$eval('#profile-tree .profile-app',cards=>cards.map(card=>[card.dataset.application,card.querySelectorAll('.profile-row').length])),[['claude',1],['codex',1],['opencode',2],['github',1]]);
  assert.match(await page.$eval('.profile-app[data-application="github"]',card=>card.textContent),/gh-work/);
  assert.match(await page.$eval('.profile-app[data-application="opencode"]',card=>card.textContent),/venice\/deepseek-v4-1-flash/);
+ assert.match(await page.$eval('.ai-settings-card',card=>card.textContent),/AI writing helper/);
+ if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-desktop.png'});
+ await page.click('#ai-settings-open');await page.waitForSelector('.ai-settings-dialog[open]');
+ assert.match(await page.$eval('.ai-settings-state',node=>node.textContent),/No dedicated key/);
+ await page.click('.ai-settings-close');
  await page.type('#profile-search','venice');
  assert.deepEqual(await page.$$eval('#profile-tree .profile-app',cards=>cards.map(card=>[card.dataset.application,card.querySelectorAll('.profile-row').length])),[['opencode',1]]);
  await page.setViewport({width:390,height:844});
  await page.$eval('#profile-search',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
  assert.equal(await page.$$('#profile-tree .profile-app').then(cards=>cards.length),4);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-mobile.png'});
  await page.click('.workspace-links a[href="#boxes"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='boxes');
  await page.close();

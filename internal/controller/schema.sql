@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS login_profiles (
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id, application, name)
 );
+CREATE TABLE IF NOT EXISTS ai_helper_settings (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  encrypted_key text NOT NULL,
+  model text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 ALTER TABLE login_profiles DROP CONSTRAINT IF EXISTS login_profiles_application_check;
 ALTER TABLE login_profiles ADD CONSTRAINT login_profiles_application_check CHECK (application IN ('claude','codex','opencode','github'));
 CREATE TABLE IF NOT EXISTS profile_usage_snapshots (
