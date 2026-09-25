@@ -64,7 +64,7 @@ test('Grid shows desktop above TMUX and replaces boxes only when both viewers dr
   assert(calls.some(([method,url])=>method==='POST'&&url==='/v1/logical-boxes/b1/sessions/interactive'));
   assert(!calls.some(([,url])=>url.includes('/sleep/')||url.includes('/allocate')||url.includes('/enable')));
   assert.deepEqual(errors,[]);
-  await p.click('#logout');await p.waitForFunction(()=>document.querySelector('#grid-app').hidden);
+  await p.click('#grid-menu');await p.click('#logout');await p.waitForFunction(()=>document.querySelector('#grid-app').hidden);
   assert.equal(await p.evaluate(()=>connections.filter(c=>!c.closed).length),0);
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

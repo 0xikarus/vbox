@@ -308,6 +308,10 @@ func queryCodexModelCatalog(ctx context.Context, files map[string][]byte, execut
 }
 
 func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provider, key, endpoint string) ([]profileModelChoice, error) {
+	return queryOpenCodeModelCatalogFiltered(ctx, client, provider, key, endpoint, true)
+}
+
+func queryOpenCodeModelCatalogFiltered(ctx context.Context, client *http.Client, provider, key, endpoint string, requireTools bool) ([]profileModelChoice, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -359,7 +363,7 @@ func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provide
 		eligible := false
 		switch provider {
 		case "openrouter":
-			eligible = containsModelValue(model.Architecture.OutputModalities, "text") && (containsModelValue(model.SupportedParameters, "tools") || containsModelValue(model.SupportedParameters, "tool_choice"))
+			eligible = containsModelValue(model.Architecture.OutputModalities, "text") && (!requireTools || containsModelValue(model.SupportedParameters, "tools") || containsModelValue(model.SupportedParameters, "tool_choice"))
 		case "venice":
 			eligible = model.Type == "text" && model.ModelSpec.Capabilities.SupportsFunctionCalling && !model.ModelSpec.Offline
 		}
@@ -386,7 +390,7 @@ func queryOpenCodeModelCatalog(ctx context.Context, client *http.Client, provide
 	}
 	sort.Slice(models, func(i, j int) bool { return models[i].ID < models[j].ID })
 	if len(models) == 0 {
-		return nil, fmt.Errorf("provider returned no tool-capable text models")
+		return nil, fmt.Errorf("provider returned no compatible text models")
 	}
 	return models, nil
 }

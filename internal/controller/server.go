@@ -304,6 +304,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/login-profiles", s.owner(s.listLoginProfiles))
 	mux.HandleFunc("POST /v1/ai/rewrite", s.owner(s.rewriteText))
 	mux.HandleFunc("GET /v1/ai/openrouter", s.owner(s.getAIHelperOpenRouter))
+	mux.HandleFunc("GET /v1/ai/openrouter/profiles/{name}", s.owner(s.getAIHelperOpenCodeProfile))
+	mux.HandleFunc("GET /v1/ai/models", s.owner(s.getAIHelperModels))
 	mux.HandleFunc("PUT /v1/ai/openrouter", s.owner(s.putAIHelperOpenRouter))
 	mux.HandleFunc("DELETE /v1/ai/openrouter", s.owner(s.deleteAIHelperOpenRouter))
 	mux.HandleFunc("GET /v1/profile-usage", s.owner(s.profileUsageOverview))
