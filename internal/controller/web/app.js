@@ -216,7 +216,19 @@ function renderBoxDetail(){
 function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus()}
 $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#box-detail').hidden&&!document.querySelector('.modal:not([hidden])'))closeBoxDetail()});
-function manageView(){const view=['#boxes','#providers','#profiles'].includes(location.hash)?location.hash.slice(1):'all';document.body.dataset.manageView=view;document.querySelectorAll('.workspace-links a').forEach(link=>{const active=link.getAttribute('href')==='#'+view;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})}
+function manageView(){
+ const section=location.hash.slice(1);
+ const pageNames={boxes:'boxes',providers:'providers',profiles:'profiles',roles:'permissions',instructions:'instructions',fleet:'capacity',notifications:'notifications'};
+ const page=pageNames[section]||'manage';
+ const view=['boxes','providers','profiles'].includes(section)?section:'all';
+ document.body.dataset.manageView=view;
+ $('#manage-page-label').textContent=page;
+ document.title='vmbox / '+page;
+ document.querySelectorAll('.workspace-links a,.manage-subnav a').forEach(link=>{
+  if(link.getAttribute('href')==='#'+section&&section)link.setAttribute('aria-current','page');
+  else link.removeAttribute('aria-current');
+ });
+}
 addEventListener('hashchange',manageView);manageView();
 function renderBoxes(boxes){
  listedBoxes=boxes;

@@ -9,12 +9,12 @@ body :focus-visible{outline:2px solid #8fb8f5;outline-offset:2px}
 .manage-top .brand{font-size:1rem;letter-spacing:-.03em;white-space:nowrap}
 .manage-top .brand span{color:#91a0b3;font-weight:500}
 .manage-top .workspace-links{display:flex;align-items:center;gap:.2rem;flex:1;min-width:0}
-.manage-top .workspace-links a{padding:.46rem .72rem;border-radius:.55rem;color:#91a0b3;font-size:.79rem;font-weight:650;text-decoration:none;text-transform:none;white-space:nowrap}
+.manage-top .workspace-links a{padding:.46rem .72rem;border-radius:.4rem;color:#91a0b3;font-size:.79rem;font-weight:650;text-decoration:none;text-transform:none;white-space:nowrap}
 .manage-top .workspace-links a:hover,.manage-top .workspace-links a[aria-current="page"]{background:#263749;color:#eaf0f8}
-.manage-top .linkbtn{margin:0;padding:.42rem .65rem;border:1px solid #2b3848;border-radius:.5rem;background:#202e3d;color:#eaf0f8;text-decoration:none;white-space:nowrap}
+.manage-top .linkbtn{margin:0;padding:.42rem .65rem;border:1px solid #2b3848;border-radius:.4rem;background:#202e3d;color:#eaf0f8;text-decoration:none;text-transform:none;white-space:nowrap}
 .manage-subnav{display:flex;align-items:center;gap:.35rem;overflow-x:auto;padding:.65rem 0 .25rem}
 .manage-subnav a{padding:.34rem .6rem;border:1px solid #2b3848;border-radius:.5rem;color:#91a0b3;font-size:.75rem;font-weight:650;text-decoration:none;text-transform:none;white-space:nowrap}
-.manage-subnav a:hover{background:#263749;color:#eaf0f8}
+.manage-subnav a:hover,.manage-subnav a[aria-current="page"]{background:#263749;color:#eaf0f8}
 .manage-heading{padding:1.1rem 0 .2rem}
 .manage-heading h1{margin:0;font-size:1.5rem;letter-spacing:-.04em;text-transform:none}
 .manage-heading .sub{margin:.15rem 0 0;color:#91a0b3}
