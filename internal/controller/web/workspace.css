@@ -18,6 +18,13 @@ body{max-width:none;margin:0;padding:0;background:#fff}
  .workspace-top .workspace-links{order:2;flex:0 0 100%;overflow-x:auto}
  .workspace-top .workspace-links a{padding:.38rem .55rem}
  .workspace-body{padding:0 8px 48px}
+ #workspace{display:flex;flex-direction:column}
+ #workspace>*{order:4}
+ #workspace>.actions{order:0}
+ #connection-stats{order:1}
+ #workspace-tabs{order:2}
+ #desktop,#terminal{order:3}
+ #desktop-screen:not(:empty),#terminal-screen{height:55dvh;min-height:250px}
 }
 #terminal-screen{height:65vh;min-height:240px;background:#000;padding:4px}#terminal-screen:fullscreen{height:100vh;width:100vw;box-sizing:border-box}.terminal-keys{display:flex;gap:4px;flex-wrap:wrap;margin:8px 0}.terminal-keys button{min-width:38px;min-height:38px}#terminal-screen .xterm{height:100%}#desktop-screen{min-height:200px}
 .workspace-tabs{display:flex;gap:6px;margin:18px 0 10px;border-bottom:1px solid #e2e2e2}.workspace-tabs[hidden]{display:none}.workspace-tabs button{border-bottom-left-radius:0;border-bottom-right-radius:0;margin-bottom:-1px}.workspace-tabs button[aria-selected="true"]{font-weight:700;border-bottom-color:var(--background,#fff)}

@@ -126,6 +126,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /push-sw.js", uiHandler("push-sw.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /loading-doodle.svg", uiHandler("loading-doodle.svg", "image/svg+xml", false))
 	mux.HandleFunc("GET /manifest.json", uiHandler("manifest.json", "application/manifest+json; charset=utf-8", false))
+	for _, asset := range []string{"icon-192.png", "icon-512.png", "icon-maskable-512.png", "badge-96.png"} {
+		mux.HandleFunc("GET /"+asset, uiHandler(asset, "image/png", false))
+	}
 	mux.HandleFunc("GET /v1/push/vapid-key", s.auth(s.vapidKeyHandler))
 	mux.HandleFunc("PUT /v1/push/subscriptions", s.auth(s.putPushSubscriptionHandler))
 	mux.HandleFunc("DELETE /v1/push/subscriptions", s.auth(s.deletePushSubscriptionHandler))

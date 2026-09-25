@@ -159,6 +159,15 @@ box instead. Protected targets always stay hidden. Changes apply
 immediately and the controller reauthorizes every send, so a stale contact list
 cannot widen an agent's reach. A box needs no role to chat with its owner.
 
+On Android, open the controller over HTTPS in Chrome and use **Install Android app**
+from the Chat menu (or Chrome's **Install app** menu item). [Chrome packages the
+installable web app as a WebAPK](https://web.dev/articles/webapks). In the same Chat menu, **Enable notifications**
+asks for permission only after you tap it. **Check notification permission**
+reports whether Android/Chrome allows notifications and whether this device has
+an active push subscription; it reconnects a previously enabled subscription if
+needed. If notifications are blocked, allow them in Android app or Chrome site
+settings and check again. Logging out removes this device's subscription.
+
 ### Agent chat harness parity
 
 | Feature | Codex | Claude | OpenCode |

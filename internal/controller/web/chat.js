@@ -2245,45 +2245,97 @@
  $('#delete-box-backdrop').onclick=()=>{deleteModal.hidden=true};
 
  /* ---------- web push ---------- */
- const pushSupported='serviceWorker'in navigator&&'PushManager'in window&&'Notification'in window;
- let swRegistration=null;
+ const installBtn=$('#install-app'),installStatus=$('#install-status'),pushCheck=$('#push-check'),pushStatus=$('#push-status');
+ const pushSupported=isSecureContext&&'serviceWorker'in navigator&&'PushManager'in window&&'Notification'in window;
+ let swRegistration=null,pushSubscriptionPresent=null,installPrompt=null;
+ function renderInstallState(){
+  const installed=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+  installBtn.hidden=installed||!/Android/i.test(navigator.userAgent);
+  if(installed)installStatus.hidden=true;
+ }
+ addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;renderInstallState()});
+ addEventListener('appinstalled',()=>{installPrompt=null;renderInstallState()});
+ installBtn.onclick=async()=>{
+  if(!installPrompt){installStatus.textContent='In Chrome, open the ⋮ menu and choose Install app or Add to Home screen.';installStatus.hidden=false;return}
+  const prompt=installPrompt;installPrompt=null;
+  try{
+   await prompt.prompt();const choice=await prompt.userChoice;
+   installStatus.textContent=choice.outcome==='accepted'?'Installing vmbox…':'You can install later from the Chrome menu.';
+  }catch{installStatus.textContent='In Chrome, open the ⋮ menu and choose Install app.'}
+  installStatus.hidden=false;
+ };
  const urlB64ToBytes=value=>{const padding='='.repeat((4-value.length%4)%4);const raw=atob(value.replace(/-/g,'+').replace(/_/g,'/')+padding);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))};
  function renderPushState(){
-  if(!pushSupported){pushBtn.hidden=true;return}
+  pushCheck.hidden=false;pushStatus.hidden=false;
+  if(!pushSupported){pushBtn.hidden=true;pushStatus.textContent=isSecureContext?'This browser does not support web push.':'Notifications require an HTTPS controller.';return}
   pushBtn.hidden=false;
-  if(Notification.permission==='denied'){pushBtn.textContent='Notifications blocked';pushBtn.className='';pushBtn.disabled=true;return}
-  pushBtn.disabled=false;
-  const on=localStorage.getItem('vmboxChatPush')==='on';
-  pushBtn.textContent=on?'Notifications on':'Enable notifications';
-  pushBtn.classList.toggle('on',on);
+  const permission=Notification.permission;
+  pushBtn.disabled=permission==='denied';
+  if(permission==='denied'){
+   pushBtn.textContent='Notifications blocked';pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then tap Check notification permission.';
+  }else if(permission!=='granted'){
+   pushBtn.textContent='Enable notifications';pushStatus.textContent='Permission has not been granted.';
+  }else if(pushSubscriptionPresent===null){
+   pushBtn.textContent='Checking notifications…';pushStatus.textContent='Checking permission and subscription.';
+  }else if(pushSubscriptionPresent){
+   pushBtn.textContent='Notifications on';pushStatus.textContent='Permission allowed · push subscription active.';
+  }else{
+   pushBtn.textContent=localStorage.getItem('vmboxChatPush')==='on'?'Reconnect notifications':'Enable notifications';
+   pushStatus.textContent='Permission allowed · push subscription inactive.';
+  }
+  pushBtn.classList.toggle('on',permission==='granted'&&pushSubscriptionPresent===true);
  }
  async function syncPushSubscription(){
-  if(!pushSupported||Notification.permission!=='granted'||localStorage.getItem('vmboxChatPush')!=='on')return;
+  if(!pushSupported||Notification.permission!=='granted')return false;
   try{
    swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
    const {publicKey}=await api('/v1/push/vapid-key');
    let sub=await swRegistration.pushManager.getSubscription();
    if(!sub)sub=await swRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToBytes(publicKey)});
    await api('/v1/push/subscriptions','PUT',{},{endpoint:sub.endpoint,keys:{p256dh:btoa(String.fromCharCode(...new Uint8Array(sub.getKey('p256dh')))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),auth:btoa(String.fromCharCode(...new Uint8Array(sub.getKey('auth')))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')},userAgent:navigator.userAgent.slice(0,200)});
-   localStorage.setItem('vmboxChatPush','on');renderPushState();
-  }catch(e){$('#error').textContent=e.message}
+   pushSubscriptionPresent=true;localStorage.setItem('vmboxChatPush','on');renderPushState();return true;
+  }catch(e){pushSubscriptionPresent=false;renderPushState();pushStatus.textContent='Could not connect push: '+e.message;return false}
+ }
+ async function checkPushState({repair=false}={}){
+  if(!pushSupported){renderPushState();return}
+  if(Notification.permission!=='granted'){pushSubscriptionPresent=false;renderPushState();return}
+  pushCheck.disabled=true;
+  try{
+   swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
+   const sub=await swRegistration.pushManager.getSubscription();
+   pushSubscriptionPresent=!!sub;
+   if(sub)localStorage.setItem('vmboxChatPush','on');
+   if(repair&&(sub||localStorage.getItem('vmboxChatPush')==='on'))await syncPushSubscription();
+   else renderPushState();
+  }catch(e){pushSubscriptionPresent=false;renderPushState();pushStatus.textContent='Could not check push: '+e.message}
+  finally{pushCheck.disabled=false}
+ }
+ async function disablePushSubscription(){
+  if(!pushSupported)return true;
+  try{
+   swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
+   const sub=await swRegistration.pushManager.getSubscription();
+   if(sub){await api('/v1/push/subscriptions','DELETE',{},{endpoint:sub.endpoint});await sub.unsubscribe()}
+   pushSubscriptionPresent=false;localStorage.setItem('vmboxChatPush','off');renderPushState();return true;
+  }catch(e){pushStatus.textContent='Could not disable push: '+e.message;return false}
  }
  pushBtn.onclick=async()=>{
   pushBtn.disabled=true;
+  let error='';
   try{
-   if(localStorage.getItem('vmboxChatPush')==='on'){
-    swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
-    const sub=await swRegistration.pushManager.getSubscription();
-    if(sub){try{await api('/v1/push/subscriptions','DELETE',{},{endpoint:sub.endpoint})}catch{}await sub.unsubscribe()}
-    localStorage.setItem('vmboxChatPush','off');renderPushState();return;
+   if(pushSubscriptionPresent){
+    if(!await disablePushSubscription())error=pushStatus.textContent;
+    return;
    }
-   const permission=await Notification.requestPermission();
+   const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
    if(permission!=='granted'){renderPushState();return}
    localStorage.setItem('vmboxChatPush','on');
    await syncPushSubscription();
-  }catch(e){$('#error').textContent=e.message}
-  finally{pushBtn.disabled=false;renderPushState()}
+  }catch(e){error='Could not update push: '+e.message}
+  finally{pushBtn.disabled=false;renderPushState();if(error)pushStatus.textContent=error}
  };
+ pushCheck.onclick=()=>void checkPushState({repair:true});
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!appEl.hidden)void checkPushState({repair:true})});
  navigator.serviceWorker?.addEventListener('message',event=>{
   if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void refreshPairMessages();void loadBoxes(true)},250)}
   if(event.data?.type==='vmbox-open'&&event.data.url){const url=new URL(event.data.url,location.origin);if(url.hash!==location.hash)location.hash=url.hash}
@@ -2308,6 +2360,7 @@
  };
  $('#logout').onclick=async()=>{
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
+  await disablePushSubscription();
   $('#usage-modal').hidden=true;
   usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
   $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';$('#chat-usage').hidden=true;owner=false;
@@ -2341,7 +2394,7 @@
    else if(id&&boxes.has(id))await openBox(id);
    if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
    if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
-   schedule();renderPushState();void syncPushSubscription();
+   schedule();renderInstallState();renderPushState();void checkPushState({repair:true});
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
  addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});

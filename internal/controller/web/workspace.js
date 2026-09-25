@@ -98,6 +98,9 @@ async function requestDesktop({enable=false,automatic=false,tryStartBeforeEnable
 }
 async function openPreferredView(box,version){
  showInteractiveWorkspace();
+ // Select the preferred viewer before waiting for the background TMUX session.
+ // On phones the terminal otherwise fills the screen while Desktop connects.
+ if(workspaceRole==='owner'&&!selectedWorkspaceView)showWorkspaceView('desktop');
  await ensureTerminal(version);
  if(!workspaceCurrent(version))return;
  if(workspaceRole!=='owner'){await selectTerminal(version);return}

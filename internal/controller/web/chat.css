@@ -560,6 +560,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
   background:var(--surface2);color:var(--ink);border-radius:var(--radius-sm);padding:.7rem .8rem;font:inherit;
   font-weight:700;text-decoration:none;cursor:pointer}
 .menu-links a:hover,.menu-links button:hover{background:var(--accent-soft);border-color:var(--accent)}
+.menu-links .menu-status{margin:-.15rem .2rem .25rem;padding:0 .35rem;color:var(--ink-soft);font-size:.76rem;line-height:1.45}
 .menu-theme{border-top:1px solid var(--line);padding-top:.7rem}
 .seedrow{display:flex;gap:.35rem}
 .seedrow input{flex:1;min-width:0;font:inherit;font-size:.85rem;font-weight:700;color:var(--ink);

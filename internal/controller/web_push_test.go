@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
@@ -17,7 +18,24 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/DATA-DOG/go-sqlmock"
 )
+
+func TestPushSubscriptionMovesToCurrentAccount(t *testing.T) {
+	store, mock := testStore(t)
+	p := Principal{AccountID: "current-account", UserID: "current-user"}
+	request := v1.PutPushSubscriptionRequest{Endpoint: "https://push.example/sub/123", Keys: v1.PushKeySet{P256DH: "public", Auth: "auth"}, UserAgent: "Android Chrome"}
+	mock.ExpectBegin()
+	mock.ExpectExec("DELETE FROM push_subscriptions WHERE endpoint").WithArgs(request.Endpoint, p.AccountID, p.UserID).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO push_subscriptions").WithArgs(sqlmock.AnyArg(), p.AccountID, p.UserID, request.Endpoint, request.Keys.P256DH, request.Keys.Auth, request.UserAgent).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+	if err := store.PutPushSubscription(context.Background(), p, request); err != nil {
+		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 // subscriberKeypair simulates a browser subscription key pair and lets the
 // test decrypt a payload the way a push service client would (RFC 8291).

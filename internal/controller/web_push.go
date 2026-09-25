@@ -136,12 +136,25 @@ func (s *Store) PutPushSubscription(ctx context.Context, p Principal, req v1.Put
 	if len(agent) > 200 {
 		agent = agent[:200]
 	}
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO push_subscriptions(id,account_id,user_id,endpoint,p256dh,auth,user_agent)
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	// A browser endpoint belongs to one signed-in account. Reusing the same
+	// Android WebAPK after account switching must not deliver both accounts' chat.
+	if _, err := tx.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE endpoint=$1 AND (account_id<>$2 OR user_id<>$3)`, req.Endpoint, p.AccountID, p.UserID); err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO push_subscriptions(id,account_id,user_id,endpoint,p256dh,auth,user_agent)
 		VALUES($1,$2,$3,$4,$5,$6,$7)
 		ON CONFLICT(account_id,endpoint) DO UPDATE
 		SET user_id=EXCLUDED.user_id,p256dh=EXCLUDED.p256dh,auth=EXCLUDED.auth,user_agent=EXCLUDED.user_agent,updated_at=now()`,
 		uuid(), p.AccountID, p.UserID, req.Endpoint, req.Keys.P256DH, req.Keys.Auth, agent)
-	return err
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) DeletePushSubscription(ctx context.Context, p Principal, endpoint string) error {
