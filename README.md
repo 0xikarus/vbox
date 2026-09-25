@@ -71,6 +71,10 @@ vmbox fleet status              # wait for healthy capacity
 Choose location on an empty fleet; this command does not migrate existing boxes.
 Each running box needs a compute slot. A hibernated box retains its disk but frees
 its compute slot. Creating a workspace also needs a healthy free slot temporarily.
+Each box has an **Automatic hibernation** switch in chat details, box details,
+and its workspace. Turning it off prevents inactivity hibernation; turning it
+back on restores the box's last chosen idle interval. The hours field changes
+the interval while the switch is on. Manual hibernation remains available.
 
 ### 4. Save logins (optional)
 

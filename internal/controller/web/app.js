@@ -213,6 +213,7 @@ function renderBoxDetail(){
  if(boxPhase(box.state)==='running')actions.append(button('Restart…',()=>restartBox(box)));
  if(['stopped','failed'].includes(boxPhase(box.state)))actions.append(button('Resume',()=>{const row=document.querySelector('#box-list [data-box-id="'+CSS.escape(box.id)+'"]');row?.querySelector('[aria-label^="Resume box "]')?.click()}));
  root.append(intro,facts,node('h3','Manage box'),actions);
+ if(ownerTools&&window.VMBoxIdlePolicy){const idle=node('div');root.append(idle);window.VMBoxIdlePolicy.mount(idle,{boxId:box.id,boxName:box.name,request:seconds=>api(bp(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
 }
 function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus()}
 $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;

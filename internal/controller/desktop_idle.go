@@ -16,22 +16,27 @@ type idleReleaseCheckKey struct{}
 type idleReleaseCheck func(context.Context, *sql.Tx, fleetAssignment) error
 
 func (s *Server) desktopIdlePolicy(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
 	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
 	if err != nil {
 		writeError(w, 404, fmt.Errorf("box unavailable"))
 		return
 	}
 	var policy struct {
-		Seconds int `json:"seconds"`
+		Seconds       int `json:"seconds"`
+		ResumeSeconds int `json:"resumeSeconds"`
 	}
 	if r.Method == "PUT" {
 		if decodeJSON(r, &policy) != nil || policy.Seconds < 0 || policy.Seconds > 604800 || (policy.Seconds > 0 && policy.Seconds < 60) {
 			writeError(w, 400, fmt.Errorf("choose 0 to disable or 60–604800 seconds"))
 			return
 		}
-		_, err = s.Store.DB.ExecContext(r.Context(), `UPDATE logical_boxes SET idle_timeout_seconds=$3,updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID, policy.Seconds)
+		err = s.Store.DB.QueryRowContext(r.Context(), `UPDATE logical_boxes SET
+metadata=jsonb_set(metadata,'{idleTimeoutSavedSeconds}',to_jsonb(CASE WHEN $3>0 THEN $3 WHEN idle_timeout_seconds>0 THEN idle_timeout_seconds ELSE COALESCE(CASE WHEN (metadata->>'idleTimeoutSavedSeconds') ~ '^[0-9]{1,6}$' THEN (metadata->>'idleTimeoutSavedSeconds')::integer END,14400) END),true),
+idle_timeout_seconds=$3,updated_at=now() WHERE account_id=$1 AND id=$2
+RETURNING idle_timeout_seconds,(metadata->>'idleTimeoutSavedSeconds')::integer`, p.AccountID, box.ID, policy.Seconds).Scan(&policy.Seconds, &policy.ResumeSeconds)
 	} else {
-		err = s.Store.DB.QueryRowContext(r.Context(), `SELECT idle_timeout_seconds FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&policy.Seconds)
+		err = s.Store.DB.QueryRowContext(r.Context(), `SELECT idle_timeout_seconds,COALESCE(CASE WHEN (metadata->>'idleTimeoutSavedSeconds') ~ '^[0-9]{1,6}$' THEN (metadata->>'idleTimeoutSavedSeconds')::integer END,NULLIF(idle_timeout_seconds,0),14400) FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&policy.Seconds, &policy.ResumeSeconds)
 	}
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("idle policy unavailable"))
