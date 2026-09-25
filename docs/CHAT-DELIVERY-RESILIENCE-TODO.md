@@ -1,6 +1,23 @@
 # Agent chat delivery across TUI restarts
 
-Status: Codex correction deployed and verified on a disposable production box; cross-harness lifecycle work remains. Recorded 2026-09-25.
+Status: Codex correction deployed and verified on a disposable production box. Claude and OpenCode native-receipt changes pass local tests; production lifecycle verification remains. Updated 2026-09-25.
+
+## Harness delivery matrix
+
+| Concern | Codex | OpenCode | Claude |
+| --- | --- | --- | --- |
+| Visible input path | Initial CLI prompt or app-server queue into the visible persistent thread | TUI plugin submits structured parts to the current route's session | MCP channel notification into the live Claude TUI |
+| Current-conversation fence | TUI proxy binds the persistent thread and rejects ephemeral thread responses | Unix socket follows the current tmux pane; health checks listener PID ancestry and bridge instance; prompt checks the visible route | Channel MCP process must descend from the current tmux pane; readiness owner records its live PID |
+| Delivery acknowledgement | Matching native user item with exact client message ID | Matching native user text and file parts in the visible OpenCode session, plus unchanged bridge instance | Claude JSONL user record with the exact channel `message_id` and chat session |
+| Interrupted handoff | Durable inbox and pending markers; an uncertain queue is not blindly replayed | Durable inbox and pending marker; read-only receipt probe after interruption; no automatic repeat submission | Durable inbox until transcript receipt; one send per MCP connection, then read-only transcript reconciliation |
+| Incoming images | Native `-i` first turn and structured queue follow-ups | Native file parts with data URLs | Channel `image_path` and `image_paths` metadata |
+| Outbound MCP | `vmbox-desktop` registered in active app server | `vmbox-desktop` registered in TUI session | `vmbox-desktop` is the channel/tool MCP connection |
+| Live verification | First launch, follow-up, image, `/new`, `/resume`, TUI reopen, restore verified | Pending disposable-box lifecycle test | Pending disposable-box lifecycle test |
+
+The controller now treats a Claude channel write and an OpenCode `promptAsync`
+response as pending transport events. It advances the delivered checkmark only
+after the native receipt. Periodic reconciliation probes ambiguous Claude and
+OpenCode messages by exact ID without submitting a second prompt.
 
 ## Required behavior
 

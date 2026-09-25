@@ -204,6 +204,9 @@ func (c *lineCapture) Write(p []byte) (int, error) {
 
 func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	home := t.TempDir()
+	previousCurrent := claudeChannelCurrent
+	claudeChannelCurrent = func(context.Context, string) bool { return true }
+	t.Cleanup(func() { claudeChannelCurrent = previousCurrent })
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "claude-order")
 	imageData := "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
@@ -266,7 +269,7 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	if _, err := io.WriteString(write, `{"jsonrpc":"2.0","method":"notifications/initialized"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
-	for _, wantText := range []string{"hello", "follow up"} {
+	for index, wantText := range []string{"hello", "follow up"} {
 		select {
 		case second := <-output.lines:
 			var notification desktopMCPRequest
@@ -285,6 +288,37 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 			}
 			if _, err := os.Stat(params.Meta["image_path"]); err != nil {
 				t.Fatalf("channel image path is not readable: %v", err)
+			}
+			inbox := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "claude-order", params.Meta["message_id"]+".json")
+			if _, err := os.Stat(inbox); err != nil {
+				t.Fatalf("channel transport write removed durable inbox before native receipt: %v", err)
+			}
+			if index == 0 {
+				select {
+				case duplicate := <-output.lines:
+					t.Fatalf("channel resent before native receipt: %s", duplicate)
+				case <-time.After(600 * time.Millisecond):
+				}
+			}
+			transcript := filepath.Join(home, ".claude", "projects", "test", "conversation.jsonl")
+			if err := os.MkdirAll(filepath.Dir(transcript), 0700); err != nil {
+				t.Fatal(err)
+			}
+			record, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": "<channel source=\"vmbox-desktop\" chat_id=\"claude-order\" message_id=\"" + params.Meta["message_id"] + "\">\n" + wantText + "\n</channel>"}})
+			flag := os.O_CREATE | os.O_WRONLY
+			if index > 0 {
+				flag |= os.O_APPEND
+			}
+			file, err := os.OpenFile(transcript, flag, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = file.Write(append(record, '\n'))
+			if closeErr := file.Close(); err == nil {
+				err = closeErr
+			}
+			if err != nil {
+				t.Fatal(err)
 			}
 		case <-time.After(2 * time.Second):
 			t.Fatalf("channel notification for %q was not emitted after initialize", wantText)
@@ -383,7 +417,8 @@ func TestClaudeChannelOldProcessCannotRemoveReplacementReadiness(t *testing.T) {
 	oldPath := claudeChannelReadyPath(home, "session", "channel_old")
 	newPath := claudeChannelReadyPath(home, "session", "channel_new")
 	for _, path := range []string{oldPath, newPath} {
-		if err := os.WriteFile(path, []byte(filepath.Base(path)), 0600); err != nil {
+		marker, _ := json.Marshal(map[string]any{"owner": strings.TrimPrefix(filepath.Base(path), "session."), "pid": os.Getpid()})
+		if err := os.WriteFile(path, marker, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}

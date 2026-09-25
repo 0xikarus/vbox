@@ -10,9 +10,60 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
+
+type openCodeBridgeIdentity struct {
+	Pane      string `json:"pane"`
+	PID       int    `json:"pid"`
+	Instance  string `json:"instance"`
+	SessionID string `json:"sessionID"`
+}
+
+// The socket filename alone is not a lifecycle fence: tmux reuses a pane ID
+// when respawning its process. Require the listener to belong to the current
+// pane process tree before treating it as the visible TUI.
+var openCodeBridgeHealth = func(ctx context.Context, client *http.Client, session string) (openCodeBridgeIdentity, error) {
+	var identity openCodeBridgeIdentity
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://vmbox-tui/health", nil)
+	if err != nil {
+		return identity, err
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return identity, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK || json.NewDecoder(response.Body).Decode(&identity) != nil || identity.Instance == "" || identity.PID < 2 {
+		return identity, fmt.Errorf("OpenCode visible bridge is unhealthy")
+	}
+	pane, err := tmuxCommand(ctx, "", "display-message", "-p", "-t", "="+session+":", "#{pane_id}\t#{pane_pid}")
+	if err != nil {
+		return identity, fmt.Errorf("OpenCode visible terminal unavailable: %w", err)
+	}
+	fields := strings.Split(strings.TrimSpace(string(pane)), "\t")
+	if len(fields) != 2 || identity.Pane != fields[0] {
+		return identity, fmt.Errorf("OpenCode bridge belongs to a stale pane")
+	}
+	rootPID, err := strconv.Atoi(fields[1])
+	if err != nil || rootPID < 2 {
+		return identity, fmt.Errorf("invalid OpenCode pane process")
+	}
+	pid := identity.PID
+	for depth := 0; pid > 1 && depth < 128; depth++ {
+		if pid == rootPID {
+			return identity, nil
+		}
+		parent, err := parentProcessID(pid)
+		if err != nil || parent == pid || parent <= 0 {
+			break
+		}
+		pid = parent
+	}
+	return identity, fmt.Errorf("OpenCode bridge belongs to a stale TUI process")
+}
 
 //go:embed opencode_tui_plugin.mjs
 var openCodeTUIPlugin []byte

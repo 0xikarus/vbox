@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func desktopMCPHTTPRequest(t *testing.T, handler http.Handler, method, target, token, body string) (int, map[string]any) {
@@ -53,9 +54,12 @@ func TestDesktopMCPHTTPRequiresToken(t *testing.T) {
 	}
 }
 
-func TestDesktopMCPHTTPPromptDeliversToRunningClaudeConversation(t *testing.T) {
+func TestDesktopMCPHTTPPromptKeepsUnacknowledgedClaudeInbox(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	previousWait := claudeNativeReceiptWait
+	claudeNativeReceiptWait = 20 * time.Millisecond
+	t.Cleanup(func() { claudeNativeReceiptWait = previousWait })
 	original := tmuxCommand
 	t.Cleanup(func() { tmuxCommand = original })
 	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
@@ -70,7 +74,7 @@ func TestDesktopMCPHTTPPromptDeliversToRunningClaudeConversation(t *testing.T) {
 	}
 	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
 	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"run the local check"}`)
-	if status != http.StatusAccepted || response["accepted"] != true || response["session"] != "agent-session" {
+	if status != http.StatusConflict || !strings.Contains(response["error"].(string), ErrAmbiguousMessage.Error()) {
 		t.Fatalf("prompt returned %d %v", status, response)
 	}
 	inbound, _, found, err := nextChatInbound(home, "agent-session")

@@ -621,7 +621,18 @@ type queuedBoxMessage struct {
 }
 
 func (s *Store) QueuedActiveBoxMessages(ctx context.Context) ([]queuedBoxMessage, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT m.account_id::text,m.id::text,m.task_id::text,m.submit FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id WHERE m.state='queued' AND t.state='active' ORDER BY m.created_at,m.id")
+	return s.activeBoxMessagesByState(ctx, "queued")
+}
+
+func (s *Store) AmbiguousActiveBoxMessages(ctx context.Context) ([]queuedBoxMessage, error) {
+	return s.activeBoxMessagesByState(ctx, "ambiguous")
+}
+
+func (s *Store) activeBoxMessagesByState(ctx context.Context, state string) ([]queuedBoxMessage, error) {
+	if state != "queued" && state != "ambiguous" {
+		return nil, fmt.Errorf("unsupported message state")
+	}
+	rows, err := s.DB.QueryContext(ctx, "SELECT m.account_id::text,m.id::text,m.task_id::text,m.submit FROM box_messages m JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id WHERE m.state='"+state+"' AND t.state='active' ORDER BY m.created_at,m.id")
 	if err != nil {
 		return nil, err
 	}

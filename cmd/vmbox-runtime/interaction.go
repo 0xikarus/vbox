@@ -219,7 +219,33 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		if err != nil {
 			return true, err
 		}
-		return true, boxruntime.StoreChatInbound(home, args[1], inbound)
+		return true, boxruntime.DeliverClaudeChat(context.Background(), home, args[1], inbound)
+	case "chat-claude-receipt", "chat-opencode-receipt":
+		if len(args) != 2 {
+			return true, fmt.Errorf("%s requires SESSION", args[0])
+		}
+		data, err := io.ReadAll(io.LimitReader(os.Stdin, 100<<20))
+		if err != nil {
+			return true, err
+		}
+		var inbound boxruntime.ChatInbound
+		if err := json.Unmarshal(data, &inbound); err != nil || inbound.ID == "" {
+			return true, fmt.Errorf("invalid inbound chat envelope")
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return true, err
+		}
+		var accepted bool
+		if args[0] == "chat-claude-receipt" {
+			accepted, err = boxruntime.ConfirmClaudeChat(context.Background(), home, args[1], inbound.ID)
+		} else {
+			accepted, err = boxruntime.ConfirmOpenCodeChat(context.Background(), home, args[1], inbound)
+		}
+		if err != nil {
+			return true, err
+		}
+		return true, json.NewEncoder(os.Stdout).Encode(map[string]bool{"accepted": accepted})
 	case "chat-codex":
 		if len(args) != 2 {
 			return true, fmt.Errorf("chat-codex requires SESSION")

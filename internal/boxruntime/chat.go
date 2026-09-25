@@ -322,7 +322,7 @@ func StoreChatInbound(home, session string, inbound ChatInbound) error {
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	return os.WriteFile(path, data, 0600)
+	return writeTextAtomic(path, string(data), 0600)
 }
 
 func nextChatInbound(home, session string) (chatInboundFile, string, bool, error) {
@@ -656,64 +656,127 @@ func OpenCodeChatPort(session string) int {
 var openCodeReadyProbe = func(ctx context.Context, session string) (bool, error) {
 	client, err := openCodeVisibleClient(ctx, os.Getenv("HOME"), session)
 	if err != nil {
-		return false, err
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://vmbox-tui/health", nil)
-	if err != nil {
-		return false, err
-	}
-	response, err := client.Do(request)
-	if err != nil {
 		return false, nil
 	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return false, nil
-	}
-	return true, nil
+	_, err = openCodeBridgeHealth(ctx, client, session)
+	return err == nil, nil
 }
 
 func DeliverOpenCodeChat(ctx context.Context, home, session string, inbound ChatInbound) error {
-	if err := StoreChatInbound(home, session, inbound); err != nil {
+	accepted, err := openCodeChatReceipt(ctx, home, session, inbound, false)
+	if err != nil {
 		return err
+	}
+	if !accepted {
+		return ErrAmbiguousMessage
+	}
+	return nil
+}
+
+// ConfirmOpenCodeChat inspects the active native conversation using the same
+// message ID and structured parts, but never submits a new prompt.
+func ConfirmOpenCodeChat(ctx context.Context, home, session string, inbound ChatInbound) (bool, error) {
+	return openCodeChatReceipt(ctx, home, session, inbound, true)
+}
+
+func openCodeChatReceipt(ctx context.Context, home, session string, inbound ChatInbound, confirmOnly bool) (bool, error) {
+	if err := StoreChatInbound(home, session, inbound); err != nil {
+		return false, err
 	}
 	eventPath := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, inbound.ID+".json")
 	data, err := os.ReadFile(eventPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	var event chatInboundFile
 	if json.Unmarshal(data, &event) != nil {
-		return fmt.Errorf("invalid inbound chat event")
+		return false, fmt.Errorf("invalid inbound chat event")
+	}
+	if !confirmOnly {
+		if err := waitForAgentReady(ctx, session, "opencode"); err != nil {
+			return false, err
+		}
 	}
 	client, err := openCodeVisibleClient(ctx, home, session)
 	if err != nil {
-		return err
+		if confirmOnly {
+			return false, nil
+		}
+		return false, err
+	}
+	bridge, err := openCodeBridgeHealth(ctx, client, session)
+	if err != nil {
+		if confirmOnly {
+			return false, nil
+		}
+		return false, err
 	}
 	parts := []map[string]any{{"type": "text", "text": inbound.Text}}
 	for _, path := range event.Paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return err
+			return false, err
 		}
 		media, err := validateChatImage(data)
 		if err != nil {
-			return err
+			return false, err
 		}
 		parts = append(parts, map[string]any{"type": "file", "mime": media, "filename": filepath.Base(path), "url": "data:" + media + ";base64," + base64.StdEncoding.EncodeToString(data)})
 	}
-	payload, _ := json.Marshal(map[string]any{"parts": parts})
+	pending := strings.TrimSuffix(eventPath, ".json") + ".pending"
+	delivered := strings.TrimSuffix(eventPath, ".json") + ".delivered"
+	if _, err := os.Stat(delivered); err == nil {
+		return true, os.Remove(eventPath)
+	} else if !os.IsNotExist(err) {
+		return false, err
+	}
+	retryOnly := confirmOnly
+	if !confirmOnly {
+		file, err := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if errors.Is(err, os.ErrExist) {
+			retryOnly = true
+		} else if err != nil {
+			return false, err
+		} else if err := file.Close(); err != nil {
+			return false, err
+		}
+	}
+	payload, _ := json.Marshal(map[string]any{"messageID": event.ID, "parts": parts, "retryOnly": retryOnly})
 	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://vmbox-tui/prompt", bytes.NewReader(payload))
 	request.Header.Set("Content-Type", "application/json")
 	response, err := client.Do(request)
 	if err != nil {
-		return err
+		return false, ErrAmbiguousMessage
 	}
 	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("OpenCode prompt API returned status %d", response.StatusCode)
+	if confirmOnly && response.StatusCode == http.StatusConflict {
+		return false, nil
 	}
-	return os.Remove(eventPath)
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return false, fmt.Errorf("%w: OpenCode native receipt unavailable (status %d)", ErrAmbiguousMessage, response.StatusCode)
+	}
+	var receipt struct {
+		SessionID string `json:"sessionID"`
+		MessageID string `json:"messageID"`
+		Instance  string `json:"instance"`
+		Accepted  bool   `json:"accepted"`
+	}
+	if json.NewDecoder(response.Body).Decode(&receipt) != nil || !receipt.Accepted ||
+		receipt.MessageID != event.ID || receipt.SessionID == "" || receipt.Instance != bridge.Instance ||
+		(bridge.SessionID != "" && bridge.SessionID != receipt.SessionID) {
+		return false, ErrAmbiguousMessage
+	}
+	current, err := openCodeBridgeHealth(ctx, client, session)
+	if err != nil || current.Instance != bridge.Instance || current.SessionID != receipt.SessionID {
+		return false, ErrAmbiguousMessage
+	}
+	if err := writeTextAtomic(delivered, "native\n", 0600); err != nil {
+		return false, ErrAmbiguousMessage
+	}
+	if err := os.Remove(pending); err != nil && !os.IsNotExist(err) {
+		return false, ErrAmbiguousMessage
+	}
+	return true, os.Remove(eventPath)
 }
 
 func validateChatImage(data []byte) (string, error) {

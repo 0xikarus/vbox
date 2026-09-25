@@ -223,7 +223,7 @@ func localAgentPromptHandler() http.HandlerFunc {
 		case "codex":
 			err = DeliverCodexChat(ctx, New("").Root, home, session, inbound)
 		case "claude":
-			err = StoreChatInbound(home, session, inbound)
+			err = DeliverClaudeChat(ctx, home, session, inbound)
 		case "opencode":
 			err = DeliverOpenCodeChat(ctx, home, session, inbound)
 		default:

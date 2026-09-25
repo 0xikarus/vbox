@@ -9,6 +9,8 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -61,6 +63,112 @@ func TestChatAskPersistsMultipleChoiceQuestion(t *testing.T) {
 	event, found, err := PullChatEvent(home, "claude-chat")
 	if err != nil || !found || event.Kind != "question" || event.Question == nil || !event.Question.Multiple || len(event.Question.Choices) != 2 {
 		t.Fatalf("unexpected question: found=%t err=%v event=%+v", found, err, event)
+	}
+}
+
+func TestDeliverClaudeChatRequiresNativeTranscriptReceipt(t *testing.T) {
+	home := t.TempDir()
+	session := "claude-receipt"
+	inbound := ChatInbound{ID: "message-claude-1", Text: "inspect this"}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- DeliverClaudeChat(ctx, home, session, inbound) }()
+	inbox := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, inbound.ID+".json")
+	for attempt := 0; attempt < 100; attempt++ {
+		if _, err := os.Stat(inbox); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := os.Stat(inbox); err != nil {
+		t.Fatalf("Claude inbox was not persisted: %v", err)
+	}
+	transcript := filepath.Join(home, ".claude", "projects", "workspace", "native.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	record, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": "<channel source=\"vmbox-desktop\" chat_id=\"" + session + "\" message_id=\"" + inbound.ID + "\">\ninspect this\n</channel>"}})
+	if err := os.WriteFile(transcript, append(record, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(inbox); !os.IsNotExist(err) {
+		t.Fatalf("native-acknowledged inbox remains: %v", err)
+	}
+	if _, err := os.Stat(claudeChatReceiptPath(home, session, inbound.ID)); err != nil {
+		t.Fatalf("native receipt marker missing: %v", err)
+	}
+}
+
+func TestDeliverClaudeChatKeepsUncertainInbox(t *testing.T) {
+	home := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	inbound := ChatInbound{ID: "message-claude-uncertain", Text: "inspect this"}
+	err := DeliverClaudeChat(ctx, home, "claude-uncertain", inbound)
+	if !errors.Is(err, ErrAmbiguousMessage) {
+		t.Fatalf("missing native receipt reported %v, want ambiguous", err)
+	}
+	inbox := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "claude-uncertain", inbound.ID+".json")
+	if _, err := os.Stat(inbox); err != nil {
+		t.Fatalf("uncertain inbox was removed: %v", err)
+	}
+}
+
+func TestDeliverOpenCodeChatReconcilesUncertainSubmissionWithoutResending(t *testing.T) {
+	home := t.TempDir()
+	originalProbe, originalVisible, originalHealth, originalTransport := openCodeReadyProbe, openCodeVisibleClient, openCodeBridgeHealth, http.DefaultTransport
+	t.Cleanup(func() {
+		openCodeReadyProbe, openCodeVisibleClient, openCodeBridgeHealth, http.DefaultTransport = originalProbe, originalVisible, originalHealth, originalTransport
+	})
+	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
+	openCodeVisibleClient = func(context.Context, string, string) (*http.Client, error) { return &http.Client{}, nil }
+	openCodeBridgeHealth = func(context.Context, *http.Client, string) (openCodeBridgeIdentity, error) {
+		return openCodeBridgeIdentity{Instance: "bridge-1", SessionID: "native-1"}, nil
+	}
+	requests := 0
+	http.DefaultTransport = openCodeTestTransport(func(request *http.Request) (*http.Response, error) {
+		requests++
+		var payload struct {
+			MessageID string `json:"messageID"`
+			RetryOnly bool   `json:"retryOnly"`
+		}
+		if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.MessageID != "message-opencode-1" || payload.RetryOnly != (requests > 1) {
+			t.Fatalf("wrong retry fence: %+v, call %d", payload, requests)
+		}
+		status, body := http.StatusServiceUnavailable, `{"error":"Native receipt pending"}`
+		if requests > 1 {
+			status, body = http.StatusOK, `{"sessionID":"native-1","messageID":"message-opencode-1","instance":"bridge-1","accepted":true}`
+		}
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	})
+	inbound := ChatInbound{ID: "message-opencode-1", Text: "hello"}
+	err := DeliverOpenCodeChat(context.Background(), home, "opencode-receipt", inbound)
+	if !errors.Is(err, ErrAmbiguousMessage) {
+		t.Fatalf("uncertain prompt returned %v", err)
+	}
+	inbox := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "opencode-receipt", inbound.ID+".json")
+	if _, err := os.Stat(inbox); err != nil {
+		t.Fatalf("uncertain inbox missing: %v", err)
+	}
+	accepted, err := ConfirmOpenCodeChat(context.Background(), home, "opencode-receipt", inbound)
+	if err != nil || !accepted {
+		t.Fatalf("receipt reconciliation: accepted=%t error=%v", accepted, err)
+	}
+	if err := DeliverOpenCodeChat(context.Background(), home, "opencode-receipt", inbound); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 2 {
+		t.Fatalf("prompt requests = %d", requests)
+	}
+	if _, err := os.Stat(inbox); !os.IsNotExist(err) {
+		t.Fatalf("acknowledged inbox remains: %v", err)
 	}
 }
 

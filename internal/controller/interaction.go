@@ -96,6 +96,12 @@ func (s *Server) executeBoxTask(ctx context.Context, accountID string, task v1.B
 	}
 	if result.ExitCode != 0 {
 		detail := strings.TrimSpace(result.Stderr)
+		if strings.Contains(detail, boxruntime.ErrAmbiguousMessage.Error()) {
+			_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "ambiguous", detail)
+			_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "active", "")
+			s.watchAgentReply(accountID, task, message)
+			return fmt.Errorf("initial native message receipt is uncertain: %s", detail)
+		}
 		_ = s.Store.SetBoxMessageState(ctx, accountID, message.ID, "failed", detail)
 		_ = s.Store.SetBoxTaskState(ctx, accountID, task.ID, "failed", detail)
 		return fmt.Errorf("start tmux task exited with status %d: %s", result.ExitCode, detail)
@@ -221,7 +227,7 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	}
 	var result provider.ExecResult
 	var execErr error
-	if task.Agent == "codex" && submit && len(s.WorkerRuntime) > 0 {
+	if (task.Agent == "codex" || task.Agent == "claude" || task.Agent == "opencode") && submit && len(s.WorkerRuntime) > 0 {
 		digest := fmt.Sprintf("%x", sha256.Sum256(s.WorkerRuntime))
 		matches, _ := installedWorkspaceRuntimeMatches(ctx, digest, func(ctx context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
 			return prov.Exec(ctx, assignment.Slot.ServiceID, argv, options)
@@ -229,7 +235,7 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 		if !matches {
 			if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
 				_ = settle("failed", err.Error())
-				return fmt.Errorf("update Codex workspace runtime: %w", err)
+				return fmt.Errorf("update workspace runtime: %w", err)
 			}
 		}
 	}
@@ -273,7 +279,7 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	}
 	if result.ExitCode != 0 {
 		detail := strings.TrimSpace(result.Stderr)
-		if task.Agent == "codex" && strings.Contains(detail, boxruntime.ErrAmbiguousMessage.Error()) {
+		if strings.Contains(detail, boxruntime.ErrAmbiguousMessage.Error()) {
 			_ = settle("ambiguous", detail)
 		} else {
 			_ = settle("failed", detail)
@@ -330,8 +336,74 @@ func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
 			failures = append(failures, fmt.Errorf("message %s: %w", value.Message.ID, err))
 		}
 	}
+	if err := s.reconcileNativeMessageReceipts(ctx); err != nil {
+		failures = append(failures, err)
+	}
 	if err := s.reconcileActiveTasks(ctx); err != nil {
 		failures = append(failures, err)
+	}
+	return errors.Join(failures...)
+}
+
+// Ambiguous native handoffs are probed by exact message ID. This operation
+// never submits a second prompt; the worker inspects Claude's transcript or
+// OpenCode's visible session before the controller advances checkmarks.
+func (s *Server) reconcileNativeMessageReceipts(ctx context.Context) error {
+	messages, err := s.Store.AmbiguousActiveBoxMessages(ctx)
+	if err != nil {
+		return fmt.Errorf("list ambiguous messages: %w", err)
+	}
+	var failures []error
+	for _, value := range messages {
+		if !value.Submit || (value.Task.Agent != "claude" && value.Task.Agent != "opencode") {
+			continue
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		box, err := s.Store.LogicalBox(probeCtx, taskPrincipal(value.AccountID, value.Task), value.Task.LogicalBoxID)
+		if err != nil || box.State != v1.LogicalBoxRunning {
+			cancel()
+			continue
+		}
+		assignment, err := s.Store.assignment(probeCtx, value.AccountID, box.ID)
+		if err != nil {
+			cancel()
+			continue
+		}
+		prov, err := s.provider(probeCtx, value.AccountID, box.Provider, box.ProviderCredential)
+		if err != nil {
+			cancel()
+			continue
+		}
+		if len(s.WorkerRuntime) > 0 {
+			digest := fmt.Sprintf("%x", sha256.Sum256(s.WorkerRuntime))
+			matches, _ := installedWorkspaceRuntimeMatches(probeCtx, digest, func(ctx context.Context, argv []string, options provider.ExecOptions) (provider.ExecResult, error) {
+				return prov.Exec(ctx, assignment.Slot.ServiceID, argv, options)
+			})
+			if !matches {
+				if err := stageWorkspaceRuntime(probeCtx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+					cancel()
+					failures = append(failures, fmt.Errorf("stage receipt runtime for %s: %w", value.Message.ID, err))
+					continue
+				}
+			}
+		}
+		command := "chat-" + value.Task.Agent + "-receipt"
+		result, execErr := s.deliverNativeAgentChat(probeCtx, prov, assignment.Slot.ServiceID, value.AccountID, command, value.Task, value.Message)
+		cancel()
+		if execErr != nil || result.ExitCode != 0 {
+			continue
+		}
+		var receipt struct {
+			Accepted bool `json:"accepted"`
+		}
+		if json.Unmarshal([]byte(result.Stdout), &receipt) != nil || !receipt.Accepted {
+			continue
+		}
+		if err := s.Store.SetBoxMessageState(ctx, value.AccountID, value.Message.ID, "delivered", ""); err != nil {
+			failures = append(failures, fmt.Errorf("confirm native receipt for %s: %w", value.Message.ID, err))
+			continue
+		}
+		s.watchAgentReply(value.AccountID, value.Task, value.Message)
 	}
 	return errors.Join(failures...)
 }

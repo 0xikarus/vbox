@@ -333,16 +333,43 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 	defer os.Remove(ready)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
+	sent := map[string]bool{}
+	missingPane := 0
 	for {
-		_ = os.WriteFile(ready, []byte(owner), 0600)
-		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
-			content := event.Text
-			meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
-			if len(event.Paths) > 0 {
-				meta["image_path"] = event.Paths[0]
+		if !claudeChannelCurrent(ctx, session) {
+			missingPane++
+			if missingPane >= 3 {
+				return
 			}
-			if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": content, "meta": meta}}) == nil {
-				_ = os.Remove(path)
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				continue
+			}
+		}
+		missingPane = 0
+		marker, _ := json.Marshal(map[string]any{"owner": owner, "pid": os.Getpid()})
+		if writeTextAtomic(ready, string(marker), 0600) != nil {
+			return
+		}
+		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
+			info, statErr := os.Stat(path)
+			if statErr == nil {
+				accepted, receiptErr := claudeNativeReceipt(ctx, home, session, event.ID, info.ModTime())
+				if receiptErr == nil && accepted {
+					_ = ackClaudeNativeReceipt(home, session, event.ID, path)
+				} else if receiptErr == nil && !sent[event.ID] {
+					meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
+					if len(event.Paths) > 0 {
+						meta["image_path"] = event.Paths[0]
+						paths, _ := json.Marshal(event.Paths)
+						meta["image_paths"] = string(paths)
+					}
+					if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": event.Text, "meta": meta}}) == nil {
+						sent[event.ID] = true
+					}
+				}
 			}
 		}
 		select {
@@ -373,7 +400,17 @@ func claudeChannelOwners(home, session string) (map[string]struct{}, error) {
 	prefix := session + ".channel_"
 	for _, entry := range entries {
 		if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
-			owners[strings.TrimPrefix(entry.Name(), session+".")] = struct{}{}
+			path := filepath.Join(claudeChannelReadyDir(home), entry.Name())
+			data, err := os.ReadFile(path)
+			var marker struct {
+				Owner string `json:"owner"`
+				PID   int    `json:"pid"`
+			}
+			if err == nil && json.Unmarshal(data, &marker) == nil && marker.Owner == strings.TrimPrefix(entry.Name(), session+".") && claudeChannelOwnerAlive(marker.PID) {
+				owners[marker.Owner] = struct{}{}
+			} else {
+				_ = os.Remove(path)
+			}
 		}
 	}
 	return owners, nil

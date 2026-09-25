@@ -424,13 +424,16 @@ func TestStartOpenCodeChatStartsBareAndSubmitsStructuredPrompt(t *testing.T) {
 	stubRegisteredAgent(t, "opencode")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	originalCommand, originalProbe, originalSettle, originalVisible, originalTransport := tmuxCommand, openCodeReadyProbe, agentReadySettlePause, openCodeVisibleClient, http.DefaultTransport
+	originalCommand, originalProbe, originalSettle, originalVisible, originalHealth, originalTransport := tmuxCommand, openCodeReadyProbe, agentReadySettlePause, openCodeVisibleClient, openCodeBridgeHealth, http.DefaultTransport
 	t.Cleanup(func() {
-		tmuxCommand, openCodeReadyProbe, agentReadySettlePause, openCodeVisibleClient, http.DefaultTransport = originalCommand, originalProbe, originalSettle, originalVisible, originalTransport
+		tmuxCommand, openCodeReadyProbe, agentReadySettlePause, openCodeVisibleClient, openCodeBridgeHealth, http.DefaultTransport = originalCommand, originalProbe, originalSettle, originalVisible, originalHealth, originalTransport
 	})
 	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
 	agentReadySettlePause = func(context.Context) error { return nil }
 	openCodeVisibleClient = func(context.Context, string, string) (*http.Client, error) { return &http.Client{}, nil }
+	openCodeBridgeHealth = func(context.Context, *http.Client, string) (openCodeBridgeIdentity, error) {
+		return openCodeBridgeIdentity{Instance: "bridge-1", SessionID: "session-1"}, nil
+	}
 	var encoded bytes.Buffer
 	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	canvas.Set(0, 0, color.RGBA{R: 80, G: 20, B: 180, A: 255})
@@ -462,7 +465,7 @@ func TestStartOpenCodeChatStartsBareAndSubmitsStructuredPrompt(t *testing.T) {
 			t.Fatalf("wrong OpenCode image part: %+v", file)
 		}
 		submitted = true
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"sessionID":"session-1"}`)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"sessionID":"session-1","messageID":"message-start","instance":"bridge-1","accepted":true}`)), Header: make(http.Header)}, nil
 	})
 	var calls []string
 	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
@@ -496,9 +499,12 @@ func (transport openCodeTestTransport) RoundTrip(request *http.Request) (*http.R
 
 func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	originalVisible := openCodeVisibleClient
-	t.Cleanup(func() { openCodeVisibleClient = originalVisible })
+	originalVisible, originalHealth := openCodeVisibleClient, openCodeBridgeHealth
+	t.Cleanup(func() { openCodeVisibleClient, openCodeBridgeHealth = originalVisible, originalHealth })
 	openCodeVisibleClient = func(context.Context, string, string) (*http.Client, error) { return &http.Client{}, nil }
+	openCodeBridgeHealth = func(context.Context, *http.Client, string) (openCodeBridgeIdentity, error) {
+		return openCodeBridgeIdentity{Instance: "bridge-1", SessionID: "session-1"}, nil
+	}
 	originalCommand, originalProbe, originalSettle, originalTransport := tmuxCommand, openCodeReadyProbe, agentReadySettlePause, http.DefaultTransport
 	t.Cleanup(func() {
 		tmuxCommand, openCodeReadyProbe, agentReadySettlePause, http.DefaultTransport = originalCommand, originalProbe, originalSettle, originalTransport
@@ -521,7 +527,7 @@ func TestStartTmuxTaskDeliversToExistingOpenCodeWithoutRestart(t *testing.T) {
 	}
 	submitted := 0
 	http.DefaultTransport = openCodeTestTransport(func(request *http.Request) (*http.Response, error) {
-		body := "{}"
+		body := `{"sessionID":"session-1","messageID":"message-existing","instance":"bridge-1","accepted":true}`
 		switch request.URL.Path {
 		case "/prompt":
 			if request.Method != http.MethodPost {
