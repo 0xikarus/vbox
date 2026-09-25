@@ -957,11 +957,10 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .msg.agent{border-bottom-left-radius:var(--radius-sm)}
 .msg.user{border-color:#42647c;border-bottom-right-radius:var(--radius-sm);color:#ecf6ff}
 .msg .meta{font-size:.65rem;margin-top:.35rem}
-.msg.system{align-self:center;display:flex;align-items:center;justify-content:center;gap:.4rem;
-  max-width:min(92%,37rem);padding:.12rem .35rem;border:0;border-radius:0;background:none;
-  color:var(--ink-soft);box-shadow:none;font-size:.7rem;line-height:1.4;text-align:center}
-.msg.system::before{content:"";flex:none;width:.25rem;height:.25rem;border-radius:50%;background:currentColor;opacity:.7}
-.msg.system+.msg.system{margin-top:-.3rem}
+.msg.system{align-self:center;max-width:min(88%,37rem);padding:.3rem .65rem;
+  border:1px solid #3a4f63;border-radius:var(--radius-sm);background:var(--accent-soft);
+  color:#ced9e6;box-shadow:none;font-size:.73rem;line-height:1.4;text-align:center}
+.msg.system+.msg.system{margin-top:-.18rem}
 .msg.note{border-color:var(--line);box-shadow:none;font-size:.75rem}
 .msg .choice{min-height:2.3rem;border-radius:var(--radius-sm);font-size:.81rem}
 .msg .question .send{background:var(--accent);color:var(--accent-ink)}
