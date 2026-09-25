@@ -431,6 +431,8 @@
   mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count');
  let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null,mediaRequest=0;
  function renderMediaItem(url,{kind='image',alt='',loading=false,status=''}={}){
+  const playing=mediaBody.querySelector('video,audio');
+  if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
   mediaBody.replaceChildren();
   if(!url&&!loading){const miss=document.createElement('div');miss.className='media-missing';miss.textContent=status||'Attachment unavailable';mediaBody.append(miss);return}
   if(kind==='video'||kind==='audio'){
@@ -489,12 +491,10 @@
   if(mediaReturnFocus&&document.contains(mediaReturnFocus))mediaReturnFocus.focus();
   mediaReturnFocus=null;
  }
- function conversationImageGallery(){
-  const list=[],box=boxes.get(selected);
-  for(const m of box&&box.messages||[])for(const img of m.images||[])list.push({messageId:m.id,imageId:img.id,kind:mediaKind(img.mediaType,''),alt:'Attachment '+img.number,label:'Attachment '+img.number});
-  return list;
+ function messageMediaGallery(message){
+  return (message.images||[]).map(image=>({messageId:message.id,imageId:image.id,kind:mediaKind(image.mediaType,''),alt:'Attachment '+image.number+' from '+message.direction,label:'Attachment '+image.number}));
  }
- function mediaButton(url,{kind='image',alt='',label='',messageId='',imageId=''}={}){
+ function mediaButton(url,{kind='image',alt='',label='',gallery=null,index=0}={}){
   const btn=document.createElement('button');btn.type='button';btn.className='media-button';
   btn.setAttribute('aria-label','Open '+mediaKindLabel(kind)+(label?': '+label:alt?': '+alt:''));
   if(kind==='image'){
@@ -511,16 +511,7 @@
    const name=document.createElement('span');name.textContent=label||alt||(kind==='video'?'Play video':'Play audio');
    chip.append(glyph,name);btn.append(chip);
   }
-  btn.onclick=()=>{
-   if(messageId&&imageId){
-    const list=conversationImageGallery();
-    const index=list.findIndex(entry=>entry.messageId===messageId&&entry.imageId===imageId);
-    if(index>=0)openMediaViewer(list,index);
-    else openMediaViewer([{url,kind,alt,label,messageId,imageId}]);
-   }else{
-    openMediaViewer([{url,kind,alt,label}]);
-   }
-  };
+  btn.onclick=()=>openMediaViewer(gallery?.length?gallery:[{url,kind,alt,label}],index);
   return btn;
  }
  function enhanceMediaLinks(root){
@@ -1005,7 +996,8 @@
   const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
   renderRichText(text,body);
   row.append(text);
-  for(const image of message.images||[]){
+  const gallery=messageMediaGallery(message);
+  for(const [index,image] of (message.images||[]).entries()){
    const label='Attachment '+image.number,alt=label+' from '+message.direction;
    const kind=mediaKind(image.mediaType,'');
    if(kind==='video'||kind==='audio'){
@@ -1013,10 +1005,10 @@
     // authenticated endpoint, so never buffer a whole clip into a blob here:
     // a 100 MiB video would download on every transcript render and a slow
     // link would time out and drop the attachment from the conversation.
-    row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,messageId:message.id,imageId:image.id}));
+    row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,gallery,index}));
     continue;
    }
-   const btn=mediaButton('',{kind,alt,label,messageId:message.id,imageId:image.id});row.append(btn);
+   const btn=mediaButton('',{kind,alt,label,gallery,index});row.append(btn);
    imageURL(message.id,image.id,true).then(url=>{if(!btn.isConnected)return;const frame=btn.querySelector('.media-preview'),img=frame?.querySelector('img'),placeholder=frame?.querySelector('.media-preview-placeholder');if(url&&img)img.src=url;else if(placeholder){placeholder.textContent='Preview unavailable';frame.classList.add('failed')}});
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
