@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
@@ -11,6 +11,7 @@ const usage={profiles:[{application:'claude',name:'work',boxes:['Builder'],obser
 ],spend:{currency:'USD',limit:100,used:40},balances:[{unit:'USD',amount:12}],rateCaps:[{model:'example',type:'RPM',amount:100}],source:'live box'}},
  {application:'claude',name:'personal',boxes:['Writer'],observedAt:'2026-09-24T03:00:00Z',snapshot:{source:'live box',windows:[{name:'session',usedPercent:20}]}},
  {application:'opencode',name:'spare',boxes:[],observedAt:'2026-09-24T03:00:00Z',snapshot:{source:'saved profile',windows:[{name:'primary',usedPercent:40}]}}]};
+const screenshotDir=process.env.VMBOX_PROFILE_SCREENSHOTS;
 
 test('usage shows remaining capacity and Conversations width can be resized and restored',async()=>{
  let delayWriterProfile=false,writerProfileRequests=0,manualRefreshes=0;
@@ -27,6 +28,10 @@ test('usage shows remaining capacity and Conversations width can be resized and 
    return response.end(body);
   }
   if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:'builder',boxBId:'writer',boxAName:'Builder',boxBName:'Writer',lastAt:'2026-09-24T03:00:00Z',lastText:'Hello'}]));
+  if(path==='/v1/login-profiles')return response.end(JSON.stringify([{application:'claude',name:'work',model:'sonnet'},{application:'claude',name:'personal',model:'opus'},{application:'opencode',name:'spare',model:'openrouter/auto'}]));
+  if(path==='/v1/controller-defaults')return response.end('{}');
+  if(path==='/v1/provider-credentials')return response.end('[]');
+  if(path==='/v1/instruction-presets')return response.end(JSON.stringify({defaultName:'',presets:[]}));
   if(path==='/v1/box-conversations/builder/writer/messages'||path==='/v1/logical-boxes/builder/messages'||path==='/v1/logical-boxes/writer/messages'||path==='/v1/logical-boxes/shell/messages'||path==='/v1/tool-presets'||path==='/v1/chat-commands')return response.end('[]');
   if(path==='/v1/profile-usage/refresh'&&request.method==='POST'){
    manualRefreshes++;
@@ -55,6 +60,17 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.match(text,/No running box · Source: saved profile/);
   assert.deepEqual(await page.$$eval('.usage-track',tracks=>tracks.map(track=>track.getAttribute('aria-valuenow'))),['75','10','80','60']);
   await page.click('#usage-modal button[data-close]');
+  await page.click('#new-box');
+  await page.waitForFunction(()=>document.querySelectorAll('.create-profile-option').length===3&&document.querySelector('.create-profile-list').textContent.includes('10% left'));
+  const choices=await page.$$eval('.create-profile-option',buttons=>buttons.map(button=>({name:button.querySelector('strong').textContent,summary:button.querySelector('.create-profile-remaining').textContent,details:button.querySelector('small').textContent})));
+  assert.deepEqual(choices.map(choice=>choice.name),['None','work','personal']);
+  assert.match(choices[1].details,/Session 75%.*Week 10%/);
+  assert.equal(choices[2].summary,'80% left');
+  await page.click('.create-profile-option[data-profile*="personal"]');
+  assert.equal(await page.$eval('#create-box select[name=loginProfile]',element=>JSON.parse(element.value).name),'personal');
+  assert.equal(await page.$eval('#create-box input[name=agentModel]',element=>element.value),'opus');
+  if(screenshotDir){await mkdir(screenshotDir,{recursive:true});await page.screenshot({path:screenshotDir+'/create-profiles-desktop.png'})}
+  await page.click('#new-box-close');
 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('80% left'));
@@ -120,6 +136,17 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.doesNotMatch(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-back');
+  await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  await new Promise(resolve=>setTimeout(resolve,350));
+  await page.click('#new-box');
+  await page.waitForFunction(()=>!document.querySelector('#new-box-modal').hidden&&document.querySelector('.create-profile-list')?.textContent.includes('10% left'));
+  await page.select('#create-box select[name=defaultAgent]','opencode');
+  await page.waitForFunction(()=>document.querySelectorAll('.create-profile-option').length===2&&document.querySelector('.create-profile-list').textContent.includes('60% left'));
+  await page.click('.create-profile-option[data-profile*="spare"]');
+  assert.equal(await page.$eval('#create-box select[name=loginProfile]',element=>JSON.parse(element.value).name),'spare');
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'new box profile list fits mobile width');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/create-profiles-mobile.png'});
+  await page.click('#new-box-close');
   await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
@@ -133,6 +160,12 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage').textContent.includes('80% left'));
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'narrow phones do not overflow');
+  await page.click('#chat-back');
+  await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  await new Promise(resolve=>setTimeout(resolve,350));
+  await page.click('#new-box');
+  await page.waitForFunction(()=>!document.querySelector('#new-box-modal').hidden&&document.querySelectorAll('.create-profile-option').length===3);
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'profile choices fit a narrow phone');
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });

@@ -1,6 +1,7 @@
 'use strict';
 (()=>{
  const $=s=>document.querySelector(s),tiles=[];let boxes=[],epoch=0,timer,automaticLayout=true;const unavailable=new Map();
+ const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'grid-menu',panelId:'grid-menu-panel',usageId:'grid-usage'});
  const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e};
  function connectionBadge(label,title){const badge=node('span');badge.className='connection-badge';badge.title=title;badge.dataset.viewer=label;badge.dataset.state='idle';badge.dataset.ping='';updateConnectionBadge(badge,{state:'idle'});return badge}
  function updateConnectionBadge(badge,metrics){
@@ -88,9 +89,9 @@
  }
  function layout(){const form=$('#layout'),columns=Number(form.elements.columns.value),rows=automaticLayout?Math.max(1,Math.ceil(boxes.filter(b=>b.state==='running').length/columns)):Number(form.elements.rows.value);while(tiles.length>columns*rows){const t=tiles.pop();t.disconnect();t.element.remove()}while(tiles.length<columns*rows)makeTile();$('#tiles').style.setProperty('--columns',columns);$('#tiles').style.setProperty('--rows',rows);tiles.forEach(picker);fill();}
  async function refresh(){clearTimeout(timer);const ticket=++epoch;try{const current=await api('/v1/grid-boxes');if(ticket!==epoch)return;boxes=current;$('#grid-count').textContent=boxes.filter(box=>box.state==='running').length+' running · '+boxes.length+' total';$('#error').textContent='';for(const t of tiles){const selected=t.box.value,b=boxes.find(b=>b.id===selected);if(selected&&(!b||b.state!=='running')){t.disconnect();t.box.value='';t.session.replaceChildren();t.status.textContent=b?b.name+' · '+b.state+' · not connected.':'Box removed or no longer interactive.';}picker(t)}if(automaticLayout)layout();else fill()}catch(e){if(ticket===epoch)$('#error').textContent=e.message}finally{if(ticket===epoch&&!$('#grid-app').hidden)timer=setTimeout(refresh,15000)}}
- async function enter(){try{await api('/v1/whoami');$('#login').hidden=true;$('#logout').hidden=false;$('#grid-app').hidden=false;if(!tiles.length)layout();await refresh()}catch(e){$('#error').textContent=e.message;$('#login').hidden=false}}
+ async function enter(){try{const who=await api('/v1/whoami');workspaceNav?.setOwner(who.role==='owner');$('#login').hidden=true;$('#logout').hidden=false;$('#grid-app').hidden=false;if(!tiles.length)layout();await refresh()}catch(e){workspaceNav?.setOwner(false);$('#error').textContent=e.message;$('#login').hidden=false}}
  $('#layout').onsubmit=e=>{e.preventDefault();automaticLayout=$('#layout').elements.rows.value==='auto';layout()};$('#refresh').onclick=refresh;
  $('#login').onsubmit=async e=>{e.preventDefault();try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();await enter()}catch(err){$('#error').textContent=err.message}};
- $('#logout').onclick=async()=>{stop();try{await api('/v1/browser-session','DELETE');$('#grid-app').hidden=true;$('#logout').hidden=true;$('#login').hidden=false}catch(e){$('#error').textContent=e.message}};
+ $('#logout').onclick=async()=>{workspaceNav?.closeMenu();stop();try{await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);$('#grid-app').hidden=true;$('#logout').hidden=true;$('#login').hidden=false}catch(e){$('#error').textContent=e.message}};
  window.addEventListener('pagehide',stop);enter();
 })();

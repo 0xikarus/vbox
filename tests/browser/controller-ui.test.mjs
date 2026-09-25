@@ -15,7 +15,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/workspace-nav.js','/workspace-nav.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -34,7 +34,7 @@ before(async()=>{
    '/v1/fleet/status':{desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,unhealthySlots:0,slots:[{ordinal:1,state:'occupied',health:'healthy',region:'europe-west4',logicalBoxName:'helper ü'},{ordinal:2,state:'free',health:'healthy',region:'europe-west4'}]},
    '/v1/fleet/costs':{provider:'railway',providerCredential:'primary',period:'current provider billing period',observedAt:revision,total:{currency:'USD',accrued:1.23,available:true,detail:'Sum of available fleet service costs.'},availableSlotCount:1,unavailableSlotCount:1,slots:[{ordinal:1,state:'occupied',logicalBoxName:'helper ü',cost:{currency:'USD',accrued:1.23,available:true,detail:'Railway service entries'}},{ordinal:2,state:'free',cost:{currency:'USD',available:false,detail:'Project token cannot read billing'}}]},
    '/v1/notifications':[],
-   '/v1/whoami':{accountId:'account-1',accountName:'Team'},
+   '/v1/whoami':{accountId:'account-1',accountName:'Team',role:'owner'},
    '/v1/login-profiles':[{application:'claude',name:'personal',model:'opus[1m]',createdAt:revision},{application:'codex',name:'personal-codex',model:'account-codex-model',createdAt:revision},{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash',createdAt:revision},{application:'opencode',name:'venice',model:'venice/deepseek-v4-1-flash',createdAt:revision},{application:'github',name:'gh-work',createdAt:revision}],
    '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
    '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
@@ -649,7 +649,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.equal(await page.$('#terminal'),null);
  assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
  await page.screenshot({path:mobile?'/tmp/vmbox-config-mobile.png':'/tmp/vmbox-config-desktop.png',fullPage:true});
- await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#app').hidden);assert.equal(await page.$eval('#provider textarea[name=secret]',n=>n.value),'');
+ await page.click('#manage-menu');await page.click('#logout');await page.waitForFunction(()=>document.querySelector('#app').hidden);assert.equal(await page.$eval('#provider textarea[name=secret]',n=>n.value),'');
  assert.deepEqual(errors,[]);await page.close();
 });
 
