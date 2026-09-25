@@ -83,14 +83,32 @@ func resolveContact(ctx context.Context, assignment, ref string) (string, error)
 
 func resolveContactFromList(contacts []ContactSummary, ref string) (string, error) {
 	for _, contact := range contacts {
-		if contact.ID == ref || strings.EqualFold(contact.Name, ref) {
+		if contact.ID == ref || strings.EqualFold(contact.Name, ref) || fullBoxIDMatchesCompact(contact.ID, ref) {
 			if !contact.CanMessage {
 				return "", fmt.Errorf("messaging contact %q is not permitted", ref)
 			}
-			// The controller accepts exact box names. Normalize both short IDs and
-			// case-insensitive names to that canonical value before enqueueing.
+			// The controller accepts exact box names. Normalize compact IDs,
+			// incoming full box IDs, and case-insensitive names before enqueueing.
 			return contact.Name, nil
 		}
 	}
 	return "", fmt.Errorf("contact %q is not in your contact list; call get_contacts first", ref)
+}
+
+// Incoming contact prompts carry a full UUID. Match it against the unique
+// compact ID from the authorized contact directory, never against a box that
+// is absent from that directory.
+func fullBoxIDMatchesCompact(compactID, ref string) bool {
+	if len(ref) != 36 || ref[8] != '-' || ref[13] != '-' || ref[18] != '-' || ref[23] != '-' {
+		return false
+	}
+	for index, character := range ref {
+		if index == 8 || index == 13 || index == 18 || index == 23 {
+			continue
+		}
+		if !((character >= '0' && character <= '9') || (character >= 'a' && character <= 'f') || (character >= 'A' && character <= 'F')) {
+			return false
+		}
+	}
+	return strings.HasPrefix(strings.ReplaceAll(strings.ToLower(ref), "-", ""), strings.ToLower(compactID))
 }

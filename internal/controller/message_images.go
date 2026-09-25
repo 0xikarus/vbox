@@ -81,13 +81,13 @@ func chatReference(message v1.BoxMessage) string {
 // defaultContactInstruction is appended to a message that arrived from another
 // box. It states the real origin and how to answer, so a contact message is
 // never mistaken for an owner instruction or a local reply.
-const defaultContactInstruction = "\n\n[Message-ID: %s; From-Box-ID: %s]\nReply using the vmbox-desktop chat_message MCP tool with contact set to this From-Box-ID."
+const defaultContactInstruction = "\n\n[Message-ID: %s; From-Box-ID: %s]\nFormat to reply: call the vmbox-desktop chat_message MCP tool with {\"contact\":\"%s\",\"text\":\"...\"}. Do not use replyTo for a contact message."
 
 func (s *Server) contactChatInstruction(messageRef, senderID, senderName, agent string) string {
 	if agent == "shell" || senderID == "" {
 		return ""
 	}
-	return fmt.Sprintf(defaultContactInstruction, messageRef, senderID)
+	return fmt.Sprintf(defaultContactInstruction, messageRef, senderID, senderID)
 }
 
 func (s *Server) boxMessagePrompt(ctx context.Context, accountID, agent string, message v1.BoxMessage) (string, error) {

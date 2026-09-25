@@ -80,6 +80,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
           /opt/vmbox/blender-5.1.2/5.1/python/lib/python3.13/config-3.13-x86_64-linux-gnu/libpython3.13.a \
     && rm /tmp/blender.tar.xz \
     && /opt/vmbox/blender-5.1.2/blender --version | head -1 | grep -Fx 'Blender 5.1.2' \
+    && ln -s /opt/vmbox/blender-5.1.2/blender /usr/local/bin/blender \
+    && test "$(command -v blender)" = /usr/local/bin/blender \
+    && blender --version | head -1 | grep -Fx 'Blender 5.1.2' \
     && python3 -m venv /opt/vmbox/blender-mcp-1.9.1 \
     && /opt/vmbox/blender-mcp-1.9.1/bin/pip install --no-cache-dir blender-mcp==1.9.1
 LABEL org.opencontainers.image.version=$VMBOX_IMAGE_VERSION \
@@ -123,6 +126,7 @@ RUN set -eux; \
       printf 'image-version=%s\ncomponents=%s\n' "$VMBOX_IMAGE_VERSION" "$normalized_components"; \
       git --version; gh --version | sed -n '1p'; railway --version; tmux -V; node --version; \
       ffmpeg -version | sed -n '1p'; ffprobe -version | sed -n '1p'; \
+      blender --version | sed -n '1p'; \
       npm --version; python --version; python3 --version; python3 -m pip --version; pipx --version; uv --version; uvx --version; \
       bun --version; codex --version; claude --version; opencode --version; forge --version | sed -n '1p'; \
       sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-worker-agent /usr/local/bin/vmbox-entrypoint /etc/vmbox/tmux.conf; \

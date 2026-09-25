@@ -8,7 +8,7 @@ const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.cs
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
 
-async function withChat(fn,{pairDelay=0}={}){
+async function withChat(fn,{pairDelay=0,pairMessages=null}={}){
  const server=http.createServer(async(request,response)=>{
   const path=request.url.split('?')[0];
   if(path==='/chat'||path==='/box-chats'){response.setHeader('Content-Type','text/html');if(path==='/box-chats')response.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'");return response.end(files[path==='/chat'?'chat.html':'box-chats.html'])}
@@ -17,10 +17,10 @@ async function withChat(fn,{pairDelay=0}={}){
   response.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return response.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'}]));
-  if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:now,lastText:'The review is ready'}]));
+  if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:pairMessages?.at(-1)?.createdAt||now,lastText:pairMessages?.at(-1)?.text||'The review is ready'}]));
   if(path==='/v1/box-conversations/'+a+'/'+b+'/messages'){
    if(pairDelay)await new Promise(resolve=>setTimeout(resolve,pairDelay));
-   return response.end(JSON.stringify([
+   return response.end(JSON.stringify(pairMessages||[
    {id:'m1',senderBoxId:a,recipientBoxId:b,direction:'box',text:'Please inspect this image',state:'delivered',createdAt:now,updatedAt:now,images:[{id:'image-1',number:1,mediaType:'image/png'}]},
    {id:'m2',senderBoxId:b,recipientBoxId:a,direction:'box',text:'The review is ready',state:'delivered',createdAt:now,updatedAt:now}
    ]));
@@ -60,6 +60,95 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('The review is ready'));
   assert.equal(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
   await page.close();
+ });
+});
+
+test('box conversations open at the latest message on desktop and mobile',async()=>{
+ const pairMessages=Array.from({length:36},(_,index)=>({
+  id:'pair-'+index,senderBoxId:index%2?a:b,recipientBoxId:index%2?b:a,direction:'box',
+  text:index===35?'LATEST BOX MESSAGE':'Box message '+index+' '+('discussion '.repeat(12)),
+  state:'delivered',createdAt:new Date(Date.now()-(36-index)*60000).toISOString(),updatedAt:new Date(Date.now()-(36-index)*60000).toISOString()
+ }));
+ await withChat(async(browser,base)=>{
+  const bottom=element=>element.scrollHeight-element.scrollTop-element.clientHeight;
+  const desktop=await browser.newPage();await desktop.setViewport({width:1100,height:760});
+  await desktop.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
+  await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'a direct link starts at the newest box message');
+  await desktop.screenshot({path:'/tmp/vmbox-pair-latest-desktop.png'});
+  await desktop.$eval('#chat-messages',element=>{element.scrollTop=0});
+  await desktop.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop===0);
+  await desktop.click('[data-box-id="'+a+'"] .chat-meta');
+  await desktop.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');
+  pairMessages.push({id:'pair-new',senderBoxId:b,recipientBoxId:a,direction:'box',text:'A NEW BOX REPLY',state:'delivered',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
+  await desktop.click('#refresh');
+  await desktop.waitForFunction(()=>!document.querySelector('[data-pair-key] .unread-note').hidden);
+  await desktop.screenshot({path:'/tmp/vmbox-pair-note-desktop.png'});
+  await desktop.click('[data-pair-key] .chat-meta');
+  await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===37);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'returning to a box conversation starts at its newest message');
+  assert.equal(await desktop.$eval('[data-pair-key] .unread-note',note=>note.hidden),true,'opening the newest pair message clears its left-list note');
+
+  const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+  await mobile.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
+  await mobile.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===37);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  assert.ok(await mobile.$eval('#chat-messages',bottom)<3,'mobile opens at the newest box message');
+  await mobile.screenshot({path:'/tmp/vmbox-pair-latest-mobile.png'});
+  await mobile.click('#chat-back');
+  await mobile.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  pairMessages.push({id:'pair-new-mobile',senderBoxId:a,recipientBoxId:b,direction:'box',text:'NEW BOX REPLY ON MOBILE',state:'delivered',createdAt:new Date(Date.now()+1000).toISOString(),updatedAt:new Date(Date.now()+1000).toISOString()});
+  await mobile.click('#refresh');
+  await mobile.waitForFunction(()=>!document.querySelector('[data-pair-key] .unread-note').hidden);
+  await new Promise(resolve=>setTimeout(resolve,350));
+  await mobile.screenshot({path:'/tmp/vmbox-pair-note-mobile.png'});
+  await mobile.close();await desktop.close();
+ },{pairMessages});
+});
+
+test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned on desktop and mobile',async()=>{
+ await withChat(async(browser,base)=>{
+  const desktop=await browser.newPage();await desktop.setViewport({width:1200,height:800});
+  await desktop.goto(base+'/chat#box='+a);
+  await desktop.waitForSelector('[data-pair-key]');
+  assert.equal(await desktop.$('.chat-pin'),null,'rows do not show a permanent pin control');
+  await desktop.click('[data-box-id="'+b+'"]',{button:'right'});
+  await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Pin chat');
+  await desktop.click('#row-menu button:first-child');
+  await desktop.click('[data-pair-key]',{button:'right'});
+  await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  await desktop.click('#row-menu button:first-child');
+  assert.equal(new URL(desktop.url()).hash,'#box='+a,'pinning from a context menu must not navigate away from the open chat');
+  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'box:'+a]);
+  await desktop.click('[data-pair-key]',{button:'right'});
+  assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
+  await desktop.screenshot({path:'/tmp/vmbox-chat-pins-desktop.png'});
+  await desktop.reload();
+  await desktop.waitForSelector('[data-pair-key]');
+  assert.equal(await desktop.$eval('#chat-entries li:first-child',item=>item.textContent),'Pinned','pins survive refresh');
+
+  const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+  await mobile.goto(base+'/chat');
+  await mobile.waitForSelector('[data-pair-key]');
+  const hold=async selector=>{
+   const point=await mobile.$eval(selector,element=>{const rect=element.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2}});
+   await mobile.touchscreen.touchStart(point.x,point.y);
+   await new Promise(resolve=>setTimeout(resolve,650));
+   await mobile.touchscreen.touchEnd();
+   await mobile.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  };
+  await hold('[data-pair-key]');
+  assert.equal(await mobile.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
+  await mobile.screenshot({path:'/tmp/vmbox-chat-pins-mobile.png'});
+  await mobile.click('#row-menu button:first-child');
+  await hold('[data-box-id="'+b+'"]');
+  await mobile.click('#row-menu button:first-child');
+  assert.equal(await mobile.$('#chat-entries .conversation-group:first-child'),null,'the Pinned section disappears when empty');
+  assert.equal(await mobile.$eval('[data-pair-key]',row=>row.textContent.includes('Builder ↔ Reviewer')),true);
+  await mobile.close();await desktop.close();
  });
 });
 
