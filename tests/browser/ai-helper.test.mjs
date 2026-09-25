@@ -63,7 +63,11 @@ try{
   assert.equal(aiSetting.configured,false);
   await page.select('.ai-import-label select','saved');
   await page.waitForFunction(()=>document.querySelector('.ai-settings-dialog input[name="key"]').value==='sk-or-v1-imported-test-key');
-  await page.$eval('.ai-settings-dialog input[name="model"]',el=>el.value='openrouter/google/test-model');
+  await page.click('.ai-settings-dialog .ai-model-row button');
+  await page.waitForSelector('.ai-model-dialog[open] .ai-model-option[data-model="openrouter/google/test-model"]');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/ai-model-picker-desktop.png'});
+  await page.click('.ai-model-dialog .ai-model-option[data-model="openrouter/google/test-model"]');
+  assert.equal(await page.$eval('.ai-settings-dialog input[name="model"]',el=>el.value),'openrouter/google/test-model');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/ai-import-desktop.png'});
   await page.click('.ai-settings-save');
   await page.waitForFunction(()=>document.querySelector('.ai-settings-state').textContent.includes('Key saved'));
@@ -79,6 +83,19 @@ try{
   const geometry=await page.$eval('.ai-settings-dialog',el=>({right:el.getBoundingClientRect().right,width:el.getBoundingClientRect().width}));
   assert.ok(geometry.right<=391&&geometry.width>=300,JSON.stringify(geometry));
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/ai-settings-mobile.png'});
+  await page.click('.ai-settings-dialog .ai-model-row button');
+  await page.waitForSelector('.ai-model-dialog[open] .ai-model-option[data-model="openrouter/google/test-model"]');
+  const pickerBounds=await page.$eval('.ai-model-dialog',el=>({left:el.getBoundingClientRect().left,right:el.getBoundingClientRect().right,bottom:el.getBoundingClientRect().bottom}));
+  assert.ok(pickerBounds.left>=0&&pickerBounds.right<=391&&pickerBounds.bottom<=845,JSON.stringify(pickerBounds));
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/ai-model-picker-mobile.png'});
+  await page.type('.ai-model-search','Google');
+  assert.equal(await page.$$('.ai-model-option[data-model="openrouter/anthropic/claude-test"]').then(items=>items.length),0);
+  await page.click('.ai-model-dialog .ai-model-option[data-model="openrouter/google/test-model"]');
+  assert.equal(await page.$eval('.ai-settings-dialog input[name="model"]',el=>el.value),'openrouter/google/test-model');
+  await page.click('.ai-settings-dialog .ai-model-row button');
+  await page.type('.ai-model-custom input','openrouter/example/custom');
+  await page.click('.ai-model-custom button');
+  assert.equal(await page.$eval('.ai-settings-dialog input[name="model"]',el=>el.value),'openrouter/example/custom');
   await page.close();
  });
  await test('chat wand rewrites only the draft and long press edits its prompt',async()=>{
@@ -94,7 +111,9 @@ try{
   await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
   await page.waitForSelector('.ai-prompt-dialog[open]');
   await page.$eval('.ai-prompt-dialog textarea',el=>el.value='Keep the intent and fix typos.');
-  await page.$eval('.ai-prompt-dialog input[name="model"]',el=>el.value='openrouter/google/test-model');
+  await page.click('.ai-prompt-dialog .ai-model-row button');
+  await page.waitForSelector('.ai-model-dialog[open] .ai-model-option[data-model="openrouter/google/test-model"]');
+  await page.click('.ai-model-dialog .ai-model-option[data-model="openrouter/google/test-model"]');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-desktop.png'});
   await page.click('.ai-prompt-dialog button.primary');
   await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello again');
@@ -116,6 +135,10 @@ try{
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-mobile.png'});
   await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
   await page.waitForSelector('.ai-prompt-dialog[open]');
+  await page.click('.ai-prompt-dialog .ai-model-row button');
+  await page.waitForSelector('.ai-model-dialog[open] .ai-model-option[data-model="openrouter/anthropic/claude-test"]');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/ai-prompt-model-picker-mobile.png'});
+  await page.click('.ai-model-dialog .ai-model-option[data-model="openrouter/anthropic/claude-test"]');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-prompt-mobile.png'});
   await page.click('.ai-prompt-actions button:nth-child(2)');
   await page.click('#chat-composer .ai-wand');

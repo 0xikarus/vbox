@@ -8,30 +8,61 @@ window.VMBoxAIHelper = (() => {
  const wand = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 20 12-12"/><path d="m14 5 5 5"/><path d="m17 2 .5 2.5L20 5l-2.5.5L17 8l-.5-2.5L14 5l2.5-.5z"/><path d="m7 2 .35 1.65L9 4l-1.65.35L7 6l-.35-1.65L5 4l1.65-.35z"/></svg>';
  const currentPrompt = kind => {try{return localStorage.getItem('vmbox.aiPrompt.'+kind)||defaults[kind]}catch{return defaults[kind]}};
  const currentModel = kind => {try{return localStorage.getItem('vmbox.aiModel.'+kind)||''}catch{return ''}};
- let modelListID=0;
  function modelControl({value='',optional=false}={}) {
   const label=document.createElement('label');label.className='ai-model-label';label.textContent='Model';
   const row=document.createElement('span');row.className='ai-model-row';
-  const input=document.createElement('input');input.type='text';input.name='model';input.maxLength=200;input.spellcheck=false;input.autocomplete='off';input.placeholder=optional?'Use helper default':'openrouter/auto';input.value=value;input.required=!optional;
-  const list=document.createElement('datalist');list.id='ai-models-'+(++modelListID);input.setAttribute('list',list.id);
-  const browse=document.createElement('button');browse.type='button';browse.textContent='Browse';browse.title='Browse OpenRouter models';browse.onclick=()=>{input.focus();if(input.showPicker)input.showPicker()};
-  const note=document.createElement('small');note.className='ai-model-note';note.textContent=optional?'Leave blank to use the helper model, or choose a model for this prompt.':'Choose a model or enter an exact OpenRouter model ID.';
-  row.append(input,browse);label.append(row,list,note);
-  let version=0;
+  const input=document.createElement('input');input.type='text';input.name='model';input.readOnly=true;input.placeholder=optional?'Use helper default':'openrouter/auto';input.value=value;input.required=!optional;
+  const browse=document.createElement('button');browse.type='button';browse.textContent='Choose';browse.setAttribute('aria-haspopup','dialog');browse.title='Choose an OpenRouter model';
+  const note=document.createElement('small');note.className='ai-model-note';note.textContent=optional?'Use the helper model, or choose a model for this prompt.':'Choose from OpenRouter models or enter an exact ID.';
+  row.append(input,browse);label.append(row,note);
+  const picker=document.createElement('dialog');picker.className='ai-model-dialog';picker.setAttribute('aria-label','Choose OpenRouter model');
+  const header=document.createElement('header');
+  const title=document.createElement('h2');title.textContent='Choose model';
+  const close=document.createElement('button');close.type='button';close.className='ai-model-close';close.textContent='×';close.setAttribute('aria-label','Close model picker');close.onclick=()=>picker.close();header.append(title,close);
+  const search=document.createElement('input');search.type='search';search.className='ai-model-search';search.placeholder='Search models';search.setAttribute('aria-label','Search models');
+  const summary=document.createElement('p');summary.className='ai-model-summary';summary.setAttribute('role','status');
+  const results=document.createElement('div');results.className='ai-model-results';results.setAttribute('role','listbox');results.setAttribute('aria-label','OpenRouter models');
+  const custom=document.createElement('div');custom.className='ai-model-custom';
+  const exact=document.createElement('input');exact.type='text';exact.maxLength=200;exact.required=true;exact.pattern='[A-Za-z0-9][A-Za-z0-9._:/~-]{0,199}';exact.spellcheck=false;exact.autocomplete='off';exact.placeholder='Exact model ID';exact.setAttribute('aria-label','Exact OpenRouter model ID');
+  const useExact=document.createElement('button');useExact.type='button';useExact.textContent='Use ID';custom.append(exact,useExact);
+  picker.append(header,search,summary,results,custom);document.body.append(picker);
+  let version=0,models=[],loading=false,loadError='';
+  const select=id=>{input.value=id;input.dispatchEvent(new Event('change',{bubbles:true}));picker.close()};
+  function render() {
+   results.replaceChildren();
+   const query=search.value.trim().toLowerCase();
+   const defaultLabel=optional?'Use helper default':'Automatic · openrouter/auto';
+   const showDefault=!query||defaultLabel.toLowerCase().includes(query);
+   if(showDefault){const automatic=document.createElement('button');automatic.type='button';automatic.className='ai-model-option';automatic.textContent=defaultLabel;automatic.dataset.model=optional?'':'openrouter/auto';automatic.setAttribute('role','option');automatic.setAttribute('aria-selected',String(input.value===automatic.dataset.model));automatic.onclick=()=>select(automatic.dataset.model);results.append(automatic)}
+   const matches=models.filter(item=>item.id!=='openrouter/auto'&&`${item.label||''} ${item.id}`.toLowerCase().includes(query));
+   for(const item of matches.slice(0,80)){
+    const option=document.createElement('button');option.type='button';option.className='ai-model-option';option.dataset.model=item.id;option.setAttribute('role','option');option.setAttribute('aria-selected',String(input.value===item.id));
+    const name=document.createElement('strong');name.textContent=item.label||item.id;
+    const id=document.createElement('small');id.textContent=item.id;
+    option.append(name,id);option.onclick=()=>select(item.id);results.append(option);
+   }
+   summary.textContent=loading?'Loading OpenRouter models…':loadError?loadError+' · exact IDs still work':models.length?`${matches.length+(showDefault?1:0)} matching choices${matches.length>80?' · showing first 80':''}`:'No catalog loaded · exact IDs still work';
+  }
+  browse.onclick=()=>{search.value='';exact.value='';render();picker.showModal();search.focus()};
+  input.onclick=()=>browse.click();
+  search.oninput=render;
+  exact.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();useExact.click()}};
+  useExact.onclick=()=>{exact.value=exact.value.trim();if(exact.reportValidity())select(exact.value);else exact.focus()};
+  picker.onclick=event=>{if(event.target===picker)picker.close()};
   async function load(profile='') {
    const current=++version;
+   loading=true;loadError='';models=[];render();
    note.textContent='Loading OpenRouter models…';
    try {
     const path='/v1/ai/models'+(profile?'?profile='+encodeURIComponent(profile):'');
     const response=await fetch(path,{credentials:'same-origin',cache:'no-store'});
     const data=await response.json();if(!response.ok)throw Error(data.error||'Model list unavailable');
     if(current!==version)return;
-    list.replaceChildren();
-    for(const item of data.models||[]){const option=document.createElement('option');option.value=item.id;option.label=item.label||item.id;list.append(option)}
-    note.textContent=(data.models?.length||0)+' models available · exact IDs also work'+(optional?' · blank uses the helper default':'');
-   }catch(error){if(current===version)note.textContent=error.message+' · enter an exact model ID instead.'}
+    models=Array.isArray(data.models)?data.models:[];loading=false;render();
+    note.textContent=models.length+' models available · choose to browse'+(optional?' · default uses the helper model':'');
+   }catch(error){if(current===version){loading=false;loadError=error.message;render();note.textContent=error.message+' · enter an exact model ID instead.'}}
   }
-  return {label,input,load};
+  return {label,input,load,destroy(){version++;if(picker.open)picker.close();picker.remove()}};
  }
  function editPrompt(kind, run) {
   const dialog=document.createElement('dialog');dialog.className='ai-prompt-dialog';
@@ -46,7 +77,7 @@ window.VMBoxAIHelper = (() => {
   const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.onclick=()=>dialog.close();
   const save=document.createElement('button');save.type='submit';save.className='primary';save.textContent='Save & improve';
   actions.append(reset,cancel,save);form.append(title,hint,label,model.label,actions);dialog.append(form);document.body.append(dialog);
-  const cleanup=()=>dialog.remove();dialog.addEventListener('close',cleanup,{once:true});
+  const cleanup=()=>{model.destroy();dialog.remove()};dialog.addEventListener('close',cleanup,{once:true});
   form.addEventListener('submit',event=>{
    event.preventDefault();if(!textarea.reportValidity())return;
    const instruction=textarea.value.trim();
@@ -102,7 +133,7 @@ window.VMBoxAIHelper = (() => {
   const visibility=dialog.querySelector('.ai-key-visibility');
   visibility.onclick=()=>{const shown=key.type==='password';key.type=shown?'text':'password';visibility.textContent=shown?'Hide':'Show';visibility.setAttribute('aria-label',shown?'Hide API key':'Show API key');visibility.setAttribute('aria-pressed',String(shown))};
   const close=()=>dialog.close();dialog.querySelector('.ai-settings-close').onclick=close;dialog.querySelector('.ai-settings-cancel').onclick=close;
-  dialog.addEventListener('close',()=>{key.value='';dialog.remove()},{once:true});
+  dialog.addEventListener('close',()=>{key.value='';model.destroy();dialog.remove()},{once:true});
   dialog.showModal();
   const request=async(method,body)=>{const response=await fetch('/v1/ai/openrouter',{method,credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:body&&JSON.stringify(body)});if(response.status===204)return null;const data=await response.json().catch(()=>({}));if(!response.ok)throw Error(data.error||'Could not update AI writing helper');return data};
   const paint=data=>{key.value=data.key||'';model.input.value=data.model||'openrouter/auto';remove.hidden=!data.configured;save.textContent=data.configured?'Save changes':'Save key and model';state.textContent=data.configured?'Key saved · select Show to reveal it.':'No dedicated key saved · import an OpenCode profile or paste a key.';state.classList.remove('is-error')};
