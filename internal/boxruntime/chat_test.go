@@ -118,6 +118,48 @@ func TestDeliverClaudeChatKeepsUncertainInbox(t *testing.T) {
 	}
 }
 
+func TestClaudeNativeReceiptFindsChannelInStructuredContent(t *testing.T) {
+	home := t.TempDir()
+	session, messageID := "claude-images", "message-with-images"
+	transcript := filepath.Join(home, ".claude", "projects", "workspace", "native.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	content := []map[string]any{
+		{"type": "image", "source": map[string]any{"type": "base64", "data": "test"}},
+		{"type": "text", "text": "<channel source=\"vmbox-desktop\" chat_id=\"" + session + "\" message_id=\"" + messageID + "\">\nimage message\n</channel>"},
+	}
+	record, _ := json.Marshal(map[string]any{"type": "user", "message": map[string]any{"role": "user", "content": content}})
+	if err := os.WriteFile(transcript, append(record, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := claudeNativeReceipt(context.Background(), home, session, messageID, time.Now().Add(-time.Minute))
+	if err != nil || !accepted {
+		t.Fatalf("structured native receipt accepted=%t error=%v", accepted, err)
+	}
+}
+
+func TestPendingChatInboundUsesArrivalOrder(t *testing.T) {
+	home, session := t.TempDir(), "claude-ordered"
+	for _, event := range []ChatInbound{{ID: "z-first", Text: "one"}, {ID: "a-second", Text: "two"}} {
+		if err := StoreChatInbound(home, session, event); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, event.ID+".json")
+		mtime := time.Now().Add(time.Duration(len(event.Text)) * time.Second)
+		if event.ID == "z-first" {
+			mtime = time.Now().Add(-time.Minute)
+		}
+		if err := os.Chtimes(path, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	events, err := pendingChatInbound(home, session)
+	if err != nil || len(events) != 2 || events[0].event.ID != "z-first" || events[1].event.ID != "a-second" {
+		t.Fatalf("pending order=%v error=%v", events, err)
+	}
+}
+
 func TestDeliverOpenCodeChatReconcilesUncertainSubmissionWithoutResending(t *testing.T) {
 	home := t.TempDir()
 	originalProbe, originalVisible, originalHealth, originalTransport := openCodeReadyProbe, openCodeVisibleClient, openCodeBridgeHealth, http.DefaultTransport

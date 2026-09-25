@@ -86,13 +86,17 @@ func claudeNativeReceipt(ctx context.Context, home, session, messageID string, s
 				var record struct {
 					Type    string `json:"type"`
 					Message struct {
-						Role    string `json:"role"`
-						Content string `json:"content"`
+						Role    string          `json:"role"`
+						Content json.RawMessage `json:"content"`
 					} `json:"message"`
 				}
 				if json.Unmarshal(line, &record) == nil && record.Type == "user" && record.Message.Role == "user" {
-					if end := strings.IndexByte(record.Message.Content, '>'); end >= 0 {
-						header := record.Message.Content[:end]
+					for _, content := range claudeUserTexts(record.Message.Content) {
+						end := strings.IndexByte(content, '>')
+						if end < 0 {
+							continue
+						}
+						header := content[:end]
 						if strings.HasPrefix(header, "<channel ") &&
 							strings.Contains(header, `source="vmbox-desktop"`) &&
 							strings.Contains(header, `chat_id="`+session+`"`) &&
@@ -116,6 +120,27 @@ func claudeNativeReceipt(ctx context.Context, home, session, messageID string, s
 		return false, nil
 	}
 	return found, err
+}
+
+func claudeUserTexts(raw json.RawMessage) []string {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return []string{text}
+	}
+	var parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &parts) != nil {
+		return nil
+	}
+	texts := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part.Type == "text" {
+			texts = append(texts, part.Text)
+		}
+	}
+	return texts
 }
 
 func claudeChatReceiptPath(home, session, messageID string) string {

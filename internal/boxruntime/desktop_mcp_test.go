@@ -293,13 +293,9 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 			if _, err := os.Stat(inbox); err != nil {
 				t.Fatalf("channel transport write removed durable inbox before native receipt: %v", err)
 			}
-			if index == 0 {
-				select {
-				case duplicate := <-output.lines:
-					t.Fatalf("channel resent before native receipt: %s", duplicate)
-				case <-time.After(600 * time.Millisecond):
-				}
-			}
+			// The channel may send the next pending event before the first
+			// native receipt. It must keep both inbox files until each exact
+			// user record appears in Claude's transcript.
 			transcript := filepath.Join(home, ".claude", "projects", "test", "conversation.jsonl")
 			if err := os.MkdirAll(filepath.Dir(transcript), 0700); err != nil {
 				t.Fatal(err)

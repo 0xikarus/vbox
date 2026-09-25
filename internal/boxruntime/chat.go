@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -326,29 +327,54 @@ func StoreChatInbound(home, session string, inbound ChatInbound) error {
 }
 
 func nextChatInbound(home, session string) (chatInboundFile, string, bool, error) {
-	var event chatInboundFile
+	events, err := pendingChatInbound(home, session)
+	if err != nil || len(events) == 0 {
+		return chatInboundFile{}, "", false, err
+	}
+	return events[0].event, events[0].path, true, nil
+}
+
+type pendingInbound struct {
+	event chatInboundFile
+	path  string
+	mtime time.Time
+}
+
+func pendingChatInbound(home, session string) ([]pendingInbound, error) {
 	directory := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session)
 	entries, err := os.ReadDir(directory)
 	if os.IsNotExist(err) {
-		return event, "", false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return event, "", false, err
+		return nil, err
 	}
+	pending := make([]pendingInbound, 0, len(entries))
 	for _, entry := range entries {
 		if entry.Type().IsRegular() && strings.HasSuffix(entry.Name(), ".json") {
 			path := filepath.Join(directory, entry.Name())
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return event, "", false, err
+				return nil, err
 			}
+			var event chatInboundFile
 			if json.Unmarshal(data, &event) != nil {
-				return event, "", false, fmt.Errorf("invalid inbound chat event")
+				return nil, fmt.Errorf("invalid inbound chat event")
 			}
-			return event, path, true, nil
+			info, err := entry.Info()
+			if err != nil {
+				return nil, err
+			}
+			pending = append(pending, pendingInbound{event: event, path: path, mtime: info.ModTime()})
 		}
 	}
-	return event, "", false, nil
+	sort.Slice(pending, func(i, j int) bool {
+		if pending[i].mtime.Equal(pending[j].mtime) {
+			return pending[i].path < pending[j].path
+		}
+		return pending[i].mtime.Before(pending[j].mtime)
+	})
+	return pending, nil
 }
 
 func DeliverCodexChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {

@@ -56,7 +56,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
-		makeTool("chat_message", "Send a message to the vmbox Agent chat. Pass replyTo to answer a specific owner message; without it the message is delivered on its own. Call this once for each completed response, including any image files the user should receive. Pass a compact id or exact box name returned by get_contacts to send to another box. To reply to an incoming contact message, pass its From-Box-ID as contact and omit replyTo. Image files are supported for both owner and contact messages.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
+		makeTool("chat_message", "Send a message to the vmbox Agent chat. For the account owner, pass text and optionally replyTo; OMIT contact entirely. replyTo is the chat message reference, never a box contact. Call this once for each completed response, including any image files the user should receive. To send to another box, pass contact as a compact id or exact box name returned by get_contacts. To reply to an incoming contact message, pass its From-Box-ID as contact and omit replyTo. Image files are supported for both owner and contact messages.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
 		makeTool("chat_ask", "Ask the user to choose one or more options in vmbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass a compact id or exact box name returned by get_contacts to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
@@ -333,7 +333,7 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 	defer os.Remove(ready)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	sent := map[string]bool{}
+	sent := map[string]time.Time{}
 	missingPane := 0
 	for {
 		if !claudeChannelCurrent(ctx, session) {
@@ -353,13 +353,15 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		if writeTextAtomic(ready, string(marker), 0600) != nil {
 			return
 		}
-		if event, path, found, err := nextChatInbound(home, session); err == nil && found {
-			info, statErr := os.Stat(path)
-			if statErr == nil {
-				accepted, receiptErr := claudeNativeReceipt(ctx, home, session, event.ID, info.ModTime())
+		if events, err := pendingChatInbound(home, session); err == nil {
+			emitted := false
+			for _, pending := range events {
+				event, path := pending.event, pending.path
+				accepted, receiptErr := claudeNativeReceipt(ctx, home, session, event.ID, pending.mtime)
 				if receiptErr == nil && accepted {
 					_ = ackClaudeNativeReceipt(home, session, event.ID, path)
-				} else if receiptErr == nil && !sent[event.ID] {
+					delete(sent, event.ID)
+				} else if receiptErr == nil && !emitted && time.Since(sent[event.ID]) >= 30*time.Second {
 					meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
 					if len(event.Paths) > 0 {
 						meta["image_path"] = event.Paths[0]
@@ -367,7 +369,8 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 						meta["image_paths"] = string(paths)
 					}
 					if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": event.Text, "meta": meta}}) == nil {
-						sent[event.ID] = true
+						sent[event.ID] = time.Now()
+						emitted = true
 					}
 				}
 			}
