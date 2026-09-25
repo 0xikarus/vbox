@@ -77,6 +77,9 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-entries li.active{background:var(--surface);border-color:var(--accent);box-shadow:var(--shadow)}
 .conversation-group{padding:.9rem .7rem .35rem!important;cursor:default!important;border:0!important;color:var(--ink-soft);font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .conversation-group:hover{background:none!important}
+.conversation-divider{display:flex!important;align-items:center;gap:.55rem;padding:.5rem .55rem .35rem!important;margin:.35rem 0 .15rem!important;border:0!important;background:none!important;color:var(--ink-soft);font-size:.68rem;font-weight:750;letter-spacing:.04em;cursor:default!important;white-space:nowrap}
+.conversation-divider::before,.conversation-divider::after{content:"";height:1px;flex:1;background:var(--line)}
+.conversation-divider:hover{background:none!important}
 .pair-avatar{flex:none;display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-size:1.45rem;font-weight:800}
 #chat-entries li[data-pair-key] .chat-meta .name{font-size:.86rem}
 #chat-conversation.pair-view #chat-composer,#chat-conversation.pair-view #chat-image-drafts,#chat-conversation.pair-view #reply-preview,#chat-conversation.pair-view #chat-usage,#chat-conversation.pair-view #chat-wake,#chat-conversation.pair-view #chat-clear-context,#chat-conversation.pair-view #chat-control,#chat-conversation.pair-view #chat-info,#chat-conversation.pair-view #chat-workspace,#chat-conversation.pair-view #chat-more,#chat-conversation.pair-view #chat-more-menu{display:none!important}

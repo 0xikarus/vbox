@@ -122,10 +122,17 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   await desktop.click('#row-menu button:first-child');
   assert.equal(new URL(desktop.url()).hash,'#box='+a,'pinning from a context menu must not navigate away from the open chat');
-  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'box:'+a]);
+  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'||item.className==='conversation-divider'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Other chats','box:'+a]);
+  assert.equal(await desktop.$eval('#chat-entries .conversation-divider',item=>item.getAttribute('role')),'separator');
   await desktop.click('[data-pair-key]',{button:'right'});
   assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
+  await desktop.click('#chat-list-head h1');
+  await desktop.waitForFunction(()=>document.querySelector('#row-menu').hidden);
   await desktop.screenshot({path:'/tmp/vmbox-chat-pins-desktop.png'});
+  await desktop.type('#chat-filter','Reviewer');
+  await desktop.waitForFunction(()=>!document.querySelector('#chat-entries .conversation-divider'));
+  await desktop.$eval('#chat-filter',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
+  await desktop.waitForSelector('#chat-entries .conversation-divider');
   await desktop.reload();
   await desktop.waitForSelector('[data-pair-key]');
   assert.equal(await desktop.$eval('#chat-entries li:first-child',item=>item.textContent),'Pinned','pins survive refresh');
@@ -133,6 +140,8 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat');
   await mobile.waitForSelector('[data-pair-key]');
+  await mobile.waitForSelector('#chat-entries .conversation-divider');
+  await mobile.screenshot({path:'/tmp/vmbox-chat-pins-mobile.png'});
   const hold=async selector=>{
    const point=await mobile.$eval(selector,element=>{const rect=element.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2}});
    await mobile.touchscreen.touchStart(point.x,point.y);
@@ -142,7 +151,6 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   };
   await hold('[data-pair-key]');
   assert.equal(await mobile.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
-  await mobile.screenshot({path:'/tmp/vmbox-chat-pins-mobile.png'});
   await mobile.click('#row-menu button:first-child');
   await hold('[data-box-id="'+b+'"]');
   await mobile.click('#row-menu button:first-child');

@@ -821,6 +821,7 @@
  }
  const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
  const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
+ const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Other chats'));
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter));
@@ -890,6 +891,7 @@
   const otherPairs=pairList.filter(pair=>!pins.has(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const desired=[];
   if(pinnedBoxes.length||pinnedPairs.length)desired.push(pinnedGroup,...pinnedBoxes,...pinnedPairs);
+  if((pinnedBoxes.length||pinnedPairs.length)&&(otherBoxes.length||otherPairs.length))desired.push(unpinnedDivider);
   desired.push(...otherBoxes);
   if(otherPairs.length)desired.push(pairGroup,...otherPairs);
   $('#chat-list-empty').hidden=list.length+pairList.length>0;
