@@ -251,7 +251,7 @@ func (s *Server) routeBoxMessage(ctx context.Context, p Principal, boxID, idempo
 		if err != nil {
 			return response, fmt.Errorf("check active chat session: %w", err)
 		}
-		missing, err := taskSessionMissing(ctx, prov, assignment.Slot.ServiceID, selected.Session)
+		missing, err := taskSessionMissing(ctx, prov, assignment.Slot.ServiceID, selected.Session, nativeFence(assignment))
 		if err != nil {
 			return response, fmt.Errorf("check active chat session: %w", err)
 		}

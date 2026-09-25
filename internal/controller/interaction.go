@@ -363,36 +363,40 @@ func (s *Server) reconcileActiveTask(ctx context.Context, accountID string, task
 	if err := s.drainAgentChat(ctx, accountID, task); err != nil {
 		s.Logger.Warn("agent chat drain failed", "task", task.ID, "error", err)
 	}
-	missing, err := taskSessionMissing(ctx, prov, assignment.Slot.ServiceID, task.Session)
+	missing, err := taskSessionMissing(ctx, prov, assignment.Slot.ServiceID, task.Session, nativeFence(assignment))
 	if err != nil || !missing {
 		return err
 	}
 	return s.Store.failMissingTask(ctx, accountID, task, box)
 }
 
-func taskSessionMissing(ctx context.Context, prov provider.Provider, serviceID, session string) (bool, error) {
+func taskSessionMissing(ctx context.Context, prov provider.Provider, serviceID, session, fence string) (bool, error) {
 	if !validSessionName(session) {
 		return false, fmt.Errorf("invalid task session")
 	}
-	// '=' requests an exact name, never tmux's prefix match. Provider Exec runs
-	// this as the workload user, using that user's tmux socket and HOME.
-	result, err := prov.Exec(ctx, serviceID, []string{"tmux", "has-session", "-t", "=" + session}, provider.ExecOptions{})
+	// The fenced inventory distinguishes an absent session from an unreachable
+	// worker. tmux has-session can exit 1 without a diagnostic on shared workers,
+	// so parsing its stderr can leave a dead task active forever after resume.
+	result, err := prov.Exec(ctx, serviceID, []string{"vmbox-runtime", "native-sessions", fence}, provider.ExecOptions{})
 	if err != nil {
 		return false, err
 	}
-	switch result.ExitCode {
-	case 0:
-		return false, nil
-	case 1:
-		// Require a tmux absence diagnostic; permission and transport failures
-		// are not evidence that a task exited.
-		missing := strings.Contains(result.Stderr, "can't find session") || strings.Contains(result.Stderr, "no server running") ||
-			(strings.Contains(result.Stderr, "error connecting to") && strings.Contains(result.Stderr, "No such file or directory"))
-		if missing {
-			return true, nil
+	if result.ExitCode != 0 {
+		return false, fmt.Errorf("session inventory probe failed with status %d", result.ExitCode)
+	}
+	var inventory v1.SessionInventory
+	if err := json.Unmarshal([]byte(result.Stdout), &inventory); err != nil {
+		return false, fmt.Errorf("invalid session inventory: %w", err)
+	}
+	if inventory.State != "live" || inventory.Assignment != fence || inventory.Partial {
+		return false, fmt.Errorf("session inventory unavailable or assignment changed")
+	}
+	for _, existing := range inventory.Sessions {
+		if existing.Name == session {
+			return false, nil
 		}
 	}
-	return false, fmt.Errorf("tmux session probe failed with status %d", result.ExitCode)
+	return true, nil
 }
 
 // tmux can keep a managed session after its Codex process has exited. A plain
