@@ -69,6 +69,9 @@ RUN if [ "$VMBOX_DESKTOP" = true ]; then \
     fi
 
 ARG VMBOX_COMPONENTS=codex,claude,opencode,bun,foundry
+ARG VMBOX_CODEX_VERSION=0.157.0
+ARG VMBOX_CLAUDE_VERSION=2.1.282
+ARG VMBOX_OPENCODE_VERSION=1.18.32
 RUN apt-get update && apt-get install -y --no-install-recommends \
       xz-utils libxxf86vm1 libxfixes3 libxi6 libxrender1 libxkbcommon0 libgl1 libsm6 libice6 \
     && rm -rf /var/lib/apt/lists/* \
@@ -92,9 +95,9 @@ LABEL org.opencontainers.image.version=$VMBOX_IMAGE_VERSION \
 # may create caches under root; runtime credentials are synchronized only to /data.
 RUN set -eux; \
     packages="@railway/cli"; \
-    case ",$VMBOX_COMPONENTS," in *,codex,*) packages="$packages @openai/codex" ;; esac; \
-    case ",$VMBOX_COMPONENTS," in *,claude,*) packages="$packages @anthropic-ai/claude-code" ;; esac; \
-    case ",$VMBOX_COMPONENTS," in *,opencode,*) packages="$packages opencode-ai" ;; esac; \
+    case ",$VMBOX_COMPONENTS," in *,codex,*) packages="$packages @openai/codex@$VMBOX_CODEX_VERSION" ;; esac; \
+    case ",$VMBOX_COMPONENTS," in *,claude,*) packages="$packages @anthropic-ai/claude-code@$VMBOX_CLAUDE_VERSION" ;; esac; \
+    case ",$VMBOX_COMPONENTS," in *,opencode,*) packages="$packages opencode-ai@$VMBOX_OPENCODE_VERSION" ;; esac; \
     if [ -n "$packages" ]; then npm install --global --foreground-scripts $packages; fi; \
     rm -rf /root/.cache /root/.claude /root/.codex /root/.config /root/.docker /root/.npm /root/.ssh /tmp/* /var/tmp/*
 
