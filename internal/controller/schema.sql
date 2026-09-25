@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS login_profiles (
   created_at timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY(account_id, application, name)
 );
+CREATE TABLE IF NOT EXISTS ai_helper_settings (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  encrypted_key text NOT NULL,
+  model text NOT NULL,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 ALTER TABLE login_profiles DROP CONSTRAINT IF EXISTS login_profiles_application_check;
 ALTER TABLE login_profiles ADD CONSTRAINT login_profiles_application_check CHECK (application IN ('claude','codex','opencode','github'));
 CREATE TABLE IF NOT EXISTS profile_usage_snapshots (
@@ -552,6 +558,18 @@ CREATE TABLE IF NOT EXISTS box_notes (
  created_at timestamptz NOT NULL DEFAULT now(),
  UNIQUE(account_id,idempotency_key)
 );
+
+-- Box lifecycle and settings changes remain visible even without an active chat task.
+CREATE TABLE IF NOT EXISTS box_events (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id),
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ body text NOT NULL,
+ event_key text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id,event_key)
+);
+CREATE INDEX IF NOT EXISTS box_events_history_idx ON box_events(account_id,box_id,created_at DESC,id DESC);
 
 -- Short-lived, account-scoped desktop replay. Each frame is a bounded JPEG
 -- captured inside the running box, never from a browser VNC canvas.

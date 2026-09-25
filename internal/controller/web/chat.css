@@ -77,6 +77,9 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-entries li.active{background:var(--surface);border-color:var(--accent);box-shadow:var(--shadow)}
 .conversation-group{padding:.9rem .7rem .35rem!important;cursor:default!important;border:0!important;color:var(--ink-soft);font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .conversation-group:hover{background:none!important}
+.conversation-divider{display:flex!important;align-items:center;gap:.55rem;padding:.5rem .55rem .35rem!important;margin:.35rem 0 .15rem!important;border:0!important;background:none!important;color:var(--ink-soft);font-size:.68rem;font-weight:750;letter-spacing:.04em;cursor:default!important;white-space:nowrap}
+.conversation-divider::before,.conversation-divider::after{content:"";height:1px;flex:1;background:var(--line)}
+.conversation-divider:hover{background:none!important}
 .pair-avatar{flex:none;display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-size:1.45rem;font-weight:800}
 #chat-entries li[data-pair-key] .chat-meta .name{font-size:.86rem}
 #chat-conversation.pair-view #chat-composer,#chat-conversation.pair-view #chat-image-drafts,#chat-conversation.pair-view #reply-preview,#chat-conversation.pair-view #chat-usage,#chat-conversation.pair-view #chat-wake,#chat-conversation.pair-view #chat-clear-context,#chat-conversation.pair-view #chat-control,#chat-conversation.pair-view #chat-info,#chat-conversation.pair-view #chat-workspace,#chat-conversation.pair-view #chat-more,#chat-conversation.pair-view #chat-more-menu{display:none!important}
@@ -159,9 +162,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .msg-thread{border:0;background:none;color:var(--accent-text);font:inherit;font-size:.7rem;font-weight:800;cursor:pointer;padding:.1rem .25rem;margin-right:auto}
 .msg.user{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:var(--radius-sm)}
 .msg.agent{align-self:flex-start;border-bottom-left-radius:var(--radius-sm)}
-.msg.system,.msg.note{align-self:center;background:var(--accent-soft);color:var(--ink);font-size:.8rem;
-  text-align:center;box-shadow:var(--shadow)}
-.msg.note{border:1px dashed var(--accent)}
+.msg.note{align-self:center;background:var(--accent-soft);color:var(--ink);font-size:.8rem;
+  text-align:center;box-shadow:var(--shadow);border:1px dashed var(--accent)}
 .codex-resume-card{align-self:center;display:flex;flex-direction:column;gap:.55rem;width:min(100%,34rem);padding:.9rem;border:1px solid var(--accent);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
 .codex-resume-card>span{font-size:.83rem;color:var(--ink-soft)}
 .codex-resume-actions{display:flex;gap:.5rem;flex-wrap:wrap}
@@ -477,7 +479,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #create-box .profile-field{display:flex;flex-direction:column;font-size:.8rem;color:var(--ink-soft)}
 
 #row-menu{position:fixed;z-index:15;background:var(--surface);border:1px solid var(--line);
-  border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.3rem;min-width:10rem}
+  border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.3rem;min-width:10rem;
+  max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow-y:auto}
 #row-menu button{display:flex;align-items:center;gap:.5rem;width:100%;border:0;background:none;
   color:var(--ink);padding:.4rem .5rem;border-radius:var(--radius-sm);cursor:pointer;font:inherit;text-align:left;margin:0;font-size:.84rem}
 #row-menu button:hover{background:var(--accent-soft)}
@@ -561,6 +564,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
   background:var(--surface2);color:var(--ink);border-radius:var(--radius-sm);padding:.7rem .8rem;font:inherit;
   font-weight:700;text-decoration:none;cursor:pointer}
 .menu-links a:hover,.menu-links button:hover{background:var(--accent-soft);border-color:var(--accent)}
+.menu-links .menu-status{margin:-.15rem .2rem .25rem;padding:0 .35rem;color:var(--ink-soft);font-size:.76rem;line-height:1.45}
 .menu-theme{border-top:1px solid var(--line);padding-top:.7rem}
 .seedrow{display:flex;gap:.35rem}
 .seedrow input{flex:1;min-width:0;font:inherit;font-size:.85rem;font-weight:700;color:var(--ink);
@@ -876,13 +880,10 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
    bleed through a modal backdrop or card. */
 body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 
-/* ── mobile bottom-sheet menus ───────────────────────────────────────── */
+/* ── touch context menu ──────────────────────────────────────────────── */
 #menu-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:14}
 #menu-backdrop[hidden]{display:none}
-#row-menu.sheet-mode{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:15;min-width:0;
-  border-radius:var(--radius-lg) var(--radius-lg) 0 0;padding:.5rem .6rem calc(env(safe-area-inset-bottom) + .6rem);
-  max-height:72vh;overflow-y:auto}
-#row-menu.sheet-mode button{min-height:2.6rem;font-size:.9rem}
+#row-menu.touch-mode button{min-height:2.6rem;font-size:.9rem}
 
 /* ── connection / stalled banner ─────────────────────────────────────── */
 #chat-banner{margin:0;padding:.42rem .8rem;background:var(--warn);color:#fff;font-size:.82rem;font-weight:600;text-align:center}
@@ -958,7 +959,11 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .msg.agent{border-bottom-left-radius:var(--radius-sm)}
 .msg.user{border-color:#42647c;border-bottom-right-radius:var(--radius-sm);color:#ecf6ff}
 .msg .meta{font-size:.65rem;margin-top:.35rem}
-.msg.system,.msg.note{border-color:var(--line);box-shadow:none;font-size:.75rem}
+.msg.system{align-self:center;max-width:min(88%,37rem);padding:.3rem .65rem;
+  border:1px solid #3a4f63;border-radius:var(--radius-sm);background:var(--accent-soft);
+  color:#ced9e6;box-shadow:none;font-size:.73rem;line-height:1.4;text-align:center}
+.msg.system+.msg.system{margin-top:-.18rem}
+.msg.note{border-color:var(--line);box-shadow:none;font-size:.75rem}
 .msg .choice{min-height:2.3rem;border-radius:var(--radius-sm);font-size:.81rem}
 .msg .question .send{background:var(--accent);color:var(--accent-ink)}
 .msg.processing{box-shadow:none;border-color:var(--line);font-size:.74rem}

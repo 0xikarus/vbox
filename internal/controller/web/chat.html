@@ -3,13 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-<title>vmbox chats</title>
+<title>vmbox / chats</title>
 <meta name="theme-color" content="#313338">
 <link rel="icon" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/xterm.css">
 <link rel="stylesheet" href="/chat.css">
+<link rel="stylesheet" href="/ai-helper.css">
+<link rel="stylesheet" href="/idle-policy.css">
 </head>
 <body>
 <div id="chat-shell">
@@ -105,6 +107,7 @@
       <details class="inspect-block inspect-fold" data-fold="config" open>
        <summary><h3>Config</h3></summary>
        <div id="inspect-config-actions" class="inspect-actions"></div>
+       <div id="inspect-idle-policy"></div>
       </details>
      </section>
      <section id="inspect-contacts" hidden>
@@ -360,7 +363,12 @@
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>
+   <button id="ai-settings-toggle" type="button" hidden>AI writing helper</button>
+   <button id="install-app" type="button" hidden>Install Android app</button>
+   <p id="install-status" class="menu-status" role="status" hidden></p>
    <button id="push-toggle" type="button" hidden title="Send new chat replies and box conversation activity to this phone">Enable notifications</button>
+   <button id="push-check" type="button" hidden>Check notification permission</button>
+   <p id="push-status" class="menu-status" role="status" hidden></p>
    <button id="logout" type="button" hidden>Log out</button>
   </div>
   <div class="menu-theme">
@@ -399,6 +407,8 @@
 <script src="/workspace-terminal.js" defer></script>
 <script src="/novnc.js" defer></script>
 <script src="/workspace-desktop.js" defer></script>
+<script src="/ai-helper.js" defer></script>
+<script src="/idle-policy.js" defer></script>
 <script src="/chat.js" defer></script>
 </body>
 </html>

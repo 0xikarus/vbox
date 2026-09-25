@@ -167,6 +167,9 @@ func TestCompleteLogicalBoxHibernateWaitsForSlowFlushBeforeDetaching(t *testing.
 	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5,restoration_state='saved'").
 		WithArgs("account-a", "box-1", int64(3), "fence-1", v1.LogicalBoxHibernated).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO box_events").
+		WithArgs(sqlmock.AnyArg(), "account-a", "box-1", "hibernated · workspace saved", "hibernate:box-1:3").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").
 		WillReturnRows(logicalBoxRowWithSlot(v1.LogicalBoxHibernated, "claude", ""))
@@ -228,6 +231,9 @@ func TestCompleteLogicalBoxHibernateFinalizesAnAlreadyDetachedWorkspace(t *testi
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5,restoration_state='saved'").
 		WithArgs("account-a", "box-1", int64(3), "fence-1", v1.LogicalBoxHibernated).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO box_events").
+		WithArgs(sqlmock.AnyArg(), "account-a", "box-1", "hibernated · workspace saved", "hibernate:box-1:3").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").

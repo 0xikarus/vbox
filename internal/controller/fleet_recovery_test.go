@@ -255,6 +255,9 @@ func TestReleaseAssignmentMarksHibernateSnapshotSaved(t *testing.T) {
 	mock.ExpectExec("UPDATE logical_boxes SET state=\\$5,restoration_state='saved'.*failure_reason=NULL").
 		WithArgs("account-a", "box-1", int64(4), "fence-1", v1.LogicalBoxHibernated).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO box_events").
+		WithArgs(sqlmock.AnyArg(), "account-a", "box-1", "hibernated · workspace saved", "hibernate:box-1:4").
+		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	if err := store.ReleaseAssignment(context.Background(), "account-a", "box-1", 4, "fence-1", v1.LogicalBoxHibernated); err != nil {
 		t.Fatal(err)

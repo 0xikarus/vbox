@@ -71,6 +71,10 @@ vmbox fleet status              # wait for healthy capacity
 Choose location on an empty fleet; this command does not migrate existing boxes.
 Each running box needs a compute slot. A hibernated box retains its disk but frees
 its compute slot. Creating a workspace also needs a healthy free slot temporarily.
+Each box has an **Automatic hibernation** switch in chat details, box details,
+and its workspace. Turning it off prevents inactivity hibernation; turning it
+back on restores the box's last chosen idle interval. The hours field changes
+the interval while the switch is on. Manual hibernation remains available.
 
 ### 4. Save logins (optional)
 
@@ -139,6 +143,13 @@ if the live request fails; an expired saved login may need to be uploaded again.
 The API list does not guarantee Claude Code subscription or organization access,
 which Claude Code checks when using the selected model. The saved encrypted
 profile remains unchanged by a box-specific choice.
+The chat composer and Markdown instruction editors have a writing wand. Click it
+to revise a draft, or hold it (right-click or Shift+Enter with the wand focused)
+to edit the prompt. Review the result before sending or saving. This uses the
+dedicated OpenRouter key configured from **Profiles → AI writing helper** (also
+available in the chat menu), with a saved OpenCode OpenRouter profile as a
+fallback. Choose `openrouter/auto` or an exact model ID. The key is encrypted
+on the controller and is never sent back to the browser.
 The same popup can set a box-specific reasoning level: Codex writes
 `model_reasoning_effort`, Claude Code writes `effortLevel`, and OpenCode selects a
 model variant for its Build agent. Leave **Default** to retain the profile/model
@@ -158,6 +169,15 @@ choose each box's directional direct contacts. A role may add the explicit
 box instead. Protected targets always stay hidden. Changes apply
 immediately and the controller reauthorizes every send, so a stale contact list
 cannot widen an agent's reach. A box needs no role to chat with its owner.
+
+On Android, open the controller over HTTPS in Chrome and use **Install Android app**
+from the Chat menu (or Chrome's **Install app** menu item). [Chrome packages the
+installable web app as a WebAPK](https://web.dev/articles/webapks). In the same Chat menu, **Enable notifications**
+asks for permission only after you tap it. **Check notification permission**
+reports whether Android/Chrome allows notifications and whether this device has
+an active push subscription; it reconnects a previously enabled subscription if
+needed. If notifications are blocked, allow them in Android app or Chrome site
+settings and check again. Logging out removes this device's subscription.
 
 ### Agent chat harness parity
 

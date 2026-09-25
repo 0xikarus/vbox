@@ -391,13 +391,18 @@ func TestControllerUIIsEmbeddedResponsiveAndClosesCleanly(t *testing.T) {
 		contentType string
 		contains    []string
 	}{
-		{path: "/", contentType: "text/html", contains: []string{"width=device-width", "vmbox <span>/ manage</span>", "app.js"}},
+		{path: "/", contentType: "text/html", contains: []string{"width=device-width", "id=\"manage-page-label\">manage</span>", "app.js"}},
 		{path: "/app.css", contentType: "text/css", contains: []string{"@media(max-width:600px)", "[hidden]"}},
 		{path: "/controller.css", contentType: "text/css", contains: []string{"@media(max-width:600px)", "table-layout:fixed"}},
 		{path: "/app.js", contentType: "text/javascript", contains: []string{"/v1/provider-schemas", "If-Match", "defaultAgent", "epoch++", "agentModel"}},
 		{path: "/model-picker.js", contentType: "text/javascript", contains: []string{"model-picker-dialog", "showModal", "model-picker-search"}},
 		{path: "/chat", contentType: "text/html", contains: []string{"chat-clear-context", "Clear context"}},
 		{path: "/chat.js", contentType: "text/javascript", contains: []string{"#chat-clear-context", "/messages/clear-context", "agentModel"}},
+		{path: "/manifest.json", contentType: "application/manifest+json", contains: []string{"\"id\": \"/chat\"", "icon-192.png", "icon-512.png", "icon-maskable-512.png"}},
+		{path: "/icon-192.png", contentType: "image/png"},
+		{path: "/icon-512.png", contentType: "image/png"},
+		{path: "/icon-maskable-512.png", contentType: "image/png"},
+		{path: "/badge-96.png", contentType: "image/png"},
 		{path: "/favicon.svg", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
 		{path: "/favicon.ico", contentType: "image/svg+xml", contains: []string{"<svg", "#146c5c", "#f4f1ea"}},
 	} {

@@ -71,7 +71,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox']});
  const desktop='/v1/logical-boxes/test/desktop';
- async function page(){requests=[];interactiveRequests=[];release=undefined;const p=await browser.newPage();await p.goto('http://127.0.0.1:'+server.address().port+'/boxes/test');return p}
+ async function page(viewport){requests=[];interactiveRequests=[];release=undefined;const p=await browser.newPage();if(viewport)await p.setViewport(viewport);await p.goto('http://127.0.0.1:'+server.address().port+'/boxes/test');return p}
  async function terminalReady(p){await p.waitForFunction(()=>window.terminals===1&&!document.querySelector('#connect').disabled)}
  async function selected(p,id){return p.$eval(id,e=>({selected:e.getAttribute('aria-selected'),panel:document.getElementById(e.getAttribute('aria-controls')).hidden}))}
  try{
@@ -147,6 +147,17 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
   await t.test('enabled non-Blender desktop also opens automatically',async()=>{
    tools=['foundry'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1);
    assert.equal(await p.evaluate(()=>window.terminals),1);assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);await p.close();
+  });
+  await t.test('mobile selects Desktop before the background terminal attaches',async()=>{
+   tools=['foundry'];enabled=true;role='owner';hold='POST /v1/logical-boxes/test/sessions/interactive';
+   const p=await page({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+   await p.waitForFunction(()=>document.querySelector('#desktop-tab').getAttribute('aria-selected')==='true'&&window.terminals===0);
+   assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});
+   await new Promise((resolve,reject)=>{const start=Date.now();const poll=()=>release?resolve():Date.now()-start>5000?reject(Error('terminal request did not start')):setTimeout(poll,10);poll()});
+   release();hold='';
+   await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
+   assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});
+   await p.close();
   });
   await t.test('missing Blender desktop enables before start',async()=>{
    tools=['blender'];enabled=false;const p=await page();await p.waitForFunction(()=>window.attaches===1);

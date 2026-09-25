@@ -1,8 +1,8 @@
 <!doctype html>
 <!-- Index of /controller -->
 <html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>vmbox controller</title><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/controller.css"><link rel="stylesheet" href="/manager-theme.css">
-<header class="topbar manage-top"><strong class="brand">vmbox <span>/ manage</span></strong><nav class="workspace-links" aria-label="Workspace"><a href="/chat">Chats</a><a href="/grid" data-owner hidden>Grid</a><a href="#boxes" class="on">Boxes</a><a href="#providers" data-owner hidden>Providers</a><a href="#profiles" data-owner hidden>Profiles</a></nav><button id="refresh" class="linkbtn">Refresh</button><button id="logout" class="linkbtn">Log out</button></header>
+<title>vmbox / manage</title><link rel="manifest" href="/manifest.json"><link rel="stylesheet" href="/app.css"><link rel="stylesheet" href="/controller.css"><link rel="stylesheet" href="/manager-theme.css"><link rel="stylesheet" href="/ai-helper.css"><link rel="stylesheet" href="/idle-policy.css">
+<header class="topbar manage-top"><strong class="brand">vmbox <span>/ <span id="manage-page-label">manage</span></span></strong><nav class="workspace-links" aria-label="Workspace"><a href="/chat">Chats</a><a href="/grid" data-owner hidden>Grid</a><a href="#boxes">Boxes</a><a href="#providers" data-owner hidden>Providers</a><a href="#profiles" data-owner hidden>Profiles</a></nav><button id="refresh" class="linkbtn">Refresh</button><button id="logout" class="linkbtn">Log out</button></header>
 <nav class="manage-subnav" aria-label="Management sections"><a href="#roles" data-owner hidden>Permissions</a><a href="#instructions">Instructions</a><a href="#fleet" data-owner hidden>Capacity</a><a href="#notifications" data-owner hidden>Notifications</a></nav>
 <div class="manage-heading"><h1>Manage your workspace</h1><p class="sub">Boxes, providers, permissions, and capacity in one place.</p></div>
 <form id="login"><label class="field">controller token <input name="token" type="password" autocomplete="current-password" required></label><div class="form-actions"><button class="primary">log in</button></div></form>
@@ -35,6 +35,7 @@
 <div class="role-toolbar"><label class="field">search boxes <input id="role-box-search" type="search" placeholder="Filter by box name"></label></div>
 <div id="role-assignments"></div><p id="role-status" role="status"></p></section>
 <section id="profiles" data-owner><div class="section-heading"><div><h2>Profiles</h2><p class="hint">Saved Codex, Claude, OpenCode, and GitHub logins for this account. Credentials are never displayed or downloaded.</p></div><label class="field">Search profiles <input id="profile-search" type="search" placeholder="Filter by name or application"></label></div>
+<div class="ai-settings-card"><span class="ai-settings-mark" aria-hidden="true">✦</span><div><h3>AI writing helper</h3><p>Set the OpenRouter key and model used by the writing wand in chats and instruction editors.</p></div><button id="ai-settings-open" type="button">Configure</button></div>
 <p id="profile-summary" class="profile-summary" role="status"></p><div id="profile-tree" class="profile-grid"></div>
 <p class="hint profile-help">Save or refresh a login with the CLI: <code>vmbox profiles save APPLICATION NAME --from SOURCE</code>. Choose a saved agent login and optional GitHub login when creating a box. Deleting a profile does not remove credentials already copied into boxes; pending creations using it may fail.</p></section>
 <section id="instructions"><h2>instruction presets</h2><div id="instruction-list"></div>
@@ -86,4 +87,4 @@
 <div class="form-actions"><button class="primary">save permissions</button><button type="button" id="delete-role" hidden></button></div><p id="role-editor-status" role="status"></p></form>
 </section></div>
 <p class="hint tiny">vmbox controller · box access is via the CLI or the box workspace</p>
-</main><script src="/markdown.js" defer></script><script src="/model-picker.js" defer></script><script src="/app.js" defer></script></html>
+</main><script src="/markdown.js" defer></script><script src="/model-picker.js" defer></script><script src="/ai-helper.js" defer></script><script src="/idle-policy.js" defer></script><script src="/app.js" defer></script></html>

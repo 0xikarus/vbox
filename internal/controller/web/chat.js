@@ -32,6 +32,12 @@
  const inputDrafts=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}')}catch{return{}}})();
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
+ if(window.VMBoxAIHelper){
+  window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected});
+  window.VMBoxAIHelper.attach({input:$('#preset-form textarea[name="markdown"]'),kind:'markdown',status:$('#preset-status')});
+  window.VMBoxAIHelper.attach({input:$('#box-instructions-markdown'),kind:'markdown',status:$('#box-instructions-status')});
+  window.VMBoxAIHelper.attach({input:$('#create-instructions-custom'),kind:'markdown'});
+ }
 
  /* ---------- desktop conversation sidebar ---------- */
  const sidebar=$('#chat-list'),splitter=$('#chat-resizer'),sidebarStorageKey='vmboxChatSidebarWidth';
@@ -425,6 +431,8 @@
   mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count');
  let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null,mediaRequest=0;
  function renderMediaItem(url,{kind='image',alt='',loading=false,status=''}={}){
+  const playing=mediaBody.querySelector('video,audio');
+  if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
   mediaBody.replaceChildren();
   if(!url&&!loading){const miss=document.createElement('div');miss.className='media-missing';miss.textContent=status||'Attachment unavailable';mediaBody.append(miss);return}
   if(kind==='video'||kind==='audio'){
@@ -483,12 +491,10 @@
   if(mediaReturnFocus&&document.contains(mediaReturnFocus))mediaReturnFocus.focus();
   mediaReturnFocus=null;
  }
- function conversationImageGallery(){
-  const list=[],box=boxes.get(selected);
-  for(const m of box&&box.messages||[])for(const img of m.images||[])list.push({messageId:m.id,imageId:img.id,kind:mediaKind(img.mediaType,''),alt:'Attachment '+img.number,label:'Attachment '+img.number});
-  return list;
+ function messageMediaGallery(message){
+  return (message.images||[]).map(image=>({messageId:message.id,imageId:image.id,kind:mediaKind(image.mediaType,''),alt:'Attachment '+image.number+' from '+message.direction,label:'Attachment '+image.number}));
  }
- function mediaButton(url,{kind='image',alt='',label='',messageId='',imageId=''}={}){
+ function mediaButton(url,{kind='image',alt='',label='',gallery=null,index=0}={}){
   const btn=document.createElement('button');btn.type='button';btn.className='media-button';
   btn.setAttribute('aria-label','Open '+mediaKindLabel(kind)+(label?': '+label:alt?': '+alt:''));
   if(kind==='image'){
@@ -505,16 +511,7 @@
    const name=document.createElement('span');name.textContent=label||alt||(kind==='video'?'Play video':'Play audio');
    chip.append(glyph,name);btn.append(chip);
   }
-  btn.onclick=()=>{
-   if(messageId&&imageId){
-    const list=conversationImageGallery();
-    const index=list.findIndex(entry=>entry.messageId===messageId&&entry.imageId===imageId);
-    if(index>=0)openMediaViewer(list,index);
-    else openMediaViewer([{url,kind,alt,label,messageId,imageId}]);
-   }else{
-    openMediaViewer([{url,kind,alt,label}]);
-   }
-  };
+  btn.onclick=()=>openMediaViewer(gallery?.length?gallery:[{url,kind,alt,label}],index);
   return btn;
  }
  function enhanceMediaLinks(root){
@@ -815,6 +812,7 @@
  }
  const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
  const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
+ const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Other chats'));
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter));
@@ -824,8 +822,8 @@
    let row=rows.get(box.id);
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
-    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{left:x,right:x,bottom:y+4,top:y})});
-    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
+    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
+    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{x:event.clientX,y:event.clientY})};
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
@@ -860,8 +858,8 @@
    const key=pairKey(pair);let row=pairRows.get(key);
    if(!row){
     row=document.createElement('li');row.dataset.pairKey=key;
-    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{left:x,right:x,bottom:y+4,top:y})});
-    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
+    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
+    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{x:event.clientX,y:event.clientY})};
     const avatar=document.createElement('span');avatar.className='pair-avatar';avatar.textContent='↔';avatar.setAttribute('aria-hidden','true');
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
     const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
@@ -884,6 +882,7 @@
   const otherPairs=pairList.filter(pair=>!pins.has(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const desired=[];
   if(pinnedBoxes.length||pinnedPairs.length)desired.push(pinnedGroup,...pinnedBoxes,...pinnedPairs);
+  if((pinnedBoxes.length||pinnedPairs.length)&&(otherBoxes.length||otherPairs.length))desired.push(unpinnedDivider);
   desired.push(...otherBoxes);
   if(otherPairs.length)desired.push(pairGroup,...otherPairs);
   $('#chat-list-empty').hidden=list.length+pairList.length>0;
@@ -997,7 +996,8 @@
   const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
   renderRichText(text,body);
   row.append(text);
-  for(const image of message.images||[]){
+  const gallery=messageMediaGallery(message);
+  for(const [index,image] of (message.images||[]).entries()){
    const label='Attachment '+image.number,alt=label+' from '+message.direction;
    const kind=mediaKind(image.mediaType,'');
    if(kind==='video'||kind==='audio'){
@@ -1005,10 +1005,10 @@
     // authenticated endpoint, so never buffer a whole clip into a blob here:
     // a 100 MiB video would download on every transcript render and a slow
     // link would time out and drop the attachment from the conversation.
-    row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,messageId:message.id,imageId:image.id}));
+    row.append(mediaButton(mediaEndpoint(message.id,image.id),{kind,alt,label,gallery,index}));
     continue;
    }
-   const btn=mediaButton('',{kind,alt,label,messageId:message.id,imageId:image.id});row.append(btn);
+   const btn=mediaButton('',{kind,alt,label,gallery,index});row.append(btn);
    imageURL(message.id,image.id,true).then(url=>{if(!btn.isConnected)return;const frame=btn.querySelector('.media-preview'),img=frame?.querySelector('img'),placeholder=frame?.querySelector('.media-preview-placeholder');if(url&&img)img.src=url;else if(placeholder){placeholder.textContent='Preview unavailable';frame.classList.add('failed')}});
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
@@ -1818,6 +1818,8 @@
   if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
   if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
+  const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
+  if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   maybeLoadInspectProfiles(box);
   maybeLoadInspectContacts(box);
  }
@@ -2100,8 +2102,8 @@
  const rowMenu=$('#row-menu'),menuBackdrop=$('#menu-backdrop');
  const wakingBoxes=new Set();
  const canWakeBox=box=>box&&['hibernated','detached','failed'].includes(box.state);
- function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('sheet-mode');menuBackdrop.hidden=true}
- function openRowMenu({box,pair},rect){
+ function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('touch-mode');menuBackdrop.hidden=true}
+ function openRowMenu({box,pair},point){
   rowMenu.replaceChildren();
   const key=box?pinKey('box',box.id):pinKey('pair',pairKey(pair));
   // Keep the menu small: everything else lives in the Details panel.
@@ -2115,17 +2117,19 @@
    items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
   }
   for(const item of items){const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
-  const sheet=coarsePointer()||innerWidth<=640;
-  rowMenu.classList.toggle('sheet-mode',sheet);
+  const touch=coarsePointer();
+  rowMenu.classList.toggle('touch-mode',touch);
   rowMenu.hidden=false;
-  if(sheet){
-   menuBackdrop.hidden=false;
-   try{navigator.vibrate?.(10)}catch{}
-   rowMenu.style.left=rowMenu.style.top='';
-  }else{
-   rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
-   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
-  }
+  menuBackdrop.hidden=!touch;
+  if(touch)try{navigator.vibrate?.(10)}catch{}
+  const viewport=window.visualViewport,pad=8;
+  const minX=(viewport?.offsetLeft||0)+pad,maxX=(viewport?.offsetLeft||0)+(viewport?.width||innerWidth)-pad;
+  const minY=(viewport?.offsetTop||0)+pad,maxY=(viewport?.offsetTop||0)+(viewport?.height||innerHeight)-pad;
+  rowMenu.style.maxWidth=Math.max(1,maxX-minX)+'px';rowMenu.style.maxHeight=Math.max(1,maxY-minY)+'px';
+  const x=point.x,y=point.y,width=rowMenu.offsetWidth,height=rowMenu.offsetHeight;
+  const left=x+width<=maxX?Math.max(minX,x):x-width>=minX?x-width:Math.max(minX,maxX-width);
+  const top=y+height<=maxY?Math.max(minY,y):y-height>=minY?y-height:Math.max(minY,maxY-height);
+  rowMenu.style.left=left+'px';rowMenu.style.top=top+'px';
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
@@ -2245,45 +2249,97 @@
  $('#delete-box-backdrop').onclick=()=>{deleteModal.hidden=true};
 
  /* ---------- web push ---------- */
- const pushSupported='serviceWorker'in navigator&&'PushManager'in window&&'Notification'in window;
- let swRegistration=null;
+ const installBtn=$('#install-app'),installStatus=$('#install-status'),pushCheck=$('#push-check'),pushStatus=$('#push-status');
+ const pushSupported=isSecureContext&&'serviceWorker'in navigator&&'PushManager'in window&&'Notification'in window;
+ let swRegistration=null,pushSubscriptionPresent=null,installPrompt=null;
+ function renderInstallState(){
+  const installed=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+  installBtn.hidden=installed||!/Android/i.test(navigator.userAgent);
+  if(installed)installStatus.hidden=true;
+ }
+ addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;renderInstallState()});
+ addEventListener('appinstalled',()=>{installPrompt=null;renderInstallState()});
+ installBtn.onclick=async()=>{
+  if(!installPrompt){installStatus.textContent='In Chrome, open the ⋮ menu and choose Install app or Add to Home screen.';installStatus.hidden=false;return}
+  const prompt=installPrompt;installPrompt=null;
+  try{
+   await prompt.prompt();const choice=await prompt.userChoice;
+   installStatus.textContent=choice.outcome==='accepted'?'Installing vmbox…':'You can install later from the Chrome menu.';
+  }catch{installStatus.textContent='In Chrome, open the ⋮ menu and choose Install app.'}
+  installStatus.hidden=false;
+ };
  const urlB64ToBytes=value=>{const padding='='.repeat((4-value.length%4)%4);const raw=atob(value.replace(/-/g,'+').replace(/_/g,'/')+padding);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))};
  function renderPushState(){
-  if(!pushSupported){pushBtn.hidden=true;return}
+  pushCheck.hidden=false;pushStatus.hidden=false;
+  if(!pushSupported){pushBtn.hidden=true;pushCheck.disabled=true;pushStatus.textContent=isSecureContext?'This browser does not support web push.':'Notifications require an HTTPS controller.';return}
   pushBtn.hidden=false;
-  if(Notification.permission==='denied'){pushBtn.textContent='Notifications blocked';pushBtn.className='';pushBtn.disabled=true;return}
-  pushBtn.disabled=false;
-  const on=localStorage.getItem('vmboxChatPush')==='on';
-  pushBtn.textContent=on?'Notifications on':'Enable notifications';
-  pushBtn.classList.toggle('on',on);
+  const permission=Notification.permission;
+  pushBtn.disabled=permission==='denied';
+  if(permission==='denied'){
+   pushBtn.textContent='Notifications blocked';pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then tap Check notification permission.';
+  }else if(permission!=='granted'){
+   pushBtn.textContent='Enable notifications';pushStatus.textContent='Permission has not been granted.';
+  }else if(pushSubscriptionPresent===null){
+   pushBtn.textContent='Checking notifications…';pushStatus.textContent='Checking permission and subscription.';
+  }else if(pushSubscriptionPresent){
+   pushBtn.textContent='Notifications on';pushStatus.textContent='Permission allowed · push subscription active.';
+  }else{
+   pushBtn.textContent=localStorage.getItem('vmboxChatPush')==='on'?'Reconnect notifications':'Enable notifications';
+   pushStatus.textContent='Permission allowed · push subscription inactive.';
+  }
+  pushBtn.classList.toggle('on',permission==='granted'&&pushSubscriptionPresent===true);
  }
  async function syncPushSubscription(){
-  if(!pushSupported||Notification.permission!=='granted'||localStorage.getItem('vmboxChatPush')!=='on')return;
+  if(!pushSupported||Notification.permission!=='granted')return false;
   try{
    swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
    const {publicKey}=await api('/v1/push/vapid-key');
    let sub=await swRegistration.pushManager.getSubscription();
    if(!sub)sub=await swRegistration.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToBytes(publicKey)});
    await api('/v1/push/subscriptions','PUT',{},{endpoint:sub.endpoint,keys:{p256dh:btoa(String.fromCharCode(...new Uint8Array(sub.getKey('p256dh')))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),auth:btoa(String.fromCharCode(...new Uint8Array(sub.getKey('auth')))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'')},userAgent:navigator.userAgent.slice(0,200)});
-   localStorage.setItem('vmboxChatPush','on');renderPushState();
-  }catch(e){$('#error').textContent=e.message}
+   pushSubscriptionPresent=true;localStorage.setItem('vmboxChatPush','on');renderPushState();return true;
+  }catch(e){pushSubscriptionPresent=false;renderPushState();pushStatus.textContent='Could not connect push: '+e.message;return false}
+ }
+ async function checkPushState({repair=false}={}){
+  if(!pushSupported){renderPushState();return}
+  if(Notification.permission!=='granted'){pushSubscriptionPresent=false;renderPushState();return}
+  pushCheck.disabled=true;
+  try{
+   swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
+   const sub=await swRegistration.pushManager.getSubscription();
+   pushSubscriptionPresent=!!sub;
+   if(sub)localStorage.setItem('vmboxChatPush','on');
+   if(repair&&(sub||localStorage.getItem('vmboxChatPush')==='on'))await syncPushSubscription();
+   else renderPushState();
+  }catch(e){pushSubscriptionPresent=false;renderPushState();pushStatus.textContent='Could not check push: '+e.message}
+  finally{pushCheck.disabled=false}
+ }
+ async function disablePushSubscription(){
+  if(!pushSupported)return true;
+  try{
+   swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
+   const sub=await swRegistration.pushManager.getSubscription();
+   if(sub){await api('/v1/push/subscriptions','DELETE',{},{endpoint:sub.endpoint});await sub.unsubscribe()}
+   pushSubscriptionPresent=false;localStorage.setItem('vmboxChatPush','off');renderPushState();return true;
+  }catch(e){pushStatus.textContent='Could not disable push: '+e.message;return false}
  }
  pushBtn.onclick=async()=>{
   pushBtn.disabled=true;
+  let error='';
   try{
-   if(localStorage.getItem('vmboxChatPush')==='on'){
-    swRegistration=swRegistration||await navigator.serviceWorker.register('/push-sw.js');
-    const sub=await swRegistration.pushManager.getSubscription();
-    if(sub){try{await api('/v1/push/subscriptions','DELETE',{},{endpoint:sub.endpoint})}catch{}await sub.unsubscribe()}
-    localStorage.setItem('vmboxChatPush','off');renderPushState();return;
+   if(pushSubscriptionPresent){
+    if(!await disablePushSubscription())error=pushStatus.textContent;
+    return;
    }
-   const permission=await Notification.requestPermission();
+   const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
    if(permission!=='granted'){renderPushState();return}
    localStorage.setItem('vmboxChatPush','on');
    await syncPushSubscription();
-  }catch(e){$('#error').textContent=e.message}
-  finally{pushBtn.disabled=false;renderPushState()}
+  }catch(e){error='Could not update push: '+e.message}
+  finally{pushBtn.disabled=false;renderPushState();if(error)pushStatus.textContent=error}
  };
+ pushCheck.onclick=()=>void checkPushState({repair:true});
+ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&!appEl.hidden)void checkPushState({repair:true})});
  navigator.serviceWorker?.addEventListener('message',event=>{
   if(event.data?.type==='vmbox-push'){clearTimeout(pushTimer);pushTimer=setTimeout(()=>{if(document.hidden)return;void refreshMessages();void refreshPairMessages();void loadBoxes(true)},250)}
   if(event.data?.type==='vmbox-open'&&event.data.url){const url=new URL(event.data.url,location.origin);if(url.hash!==location.hash)location.hash=url.hash}
@@ -2308,6 +2364,7 @@
  };
  $('#logout').onclick=async()=>{
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
+  await disablePushSubscription();
   $('#usage-modal').hidden=true;
   usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
   $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';$('#chat-usage').hidden=true;owner=false;
@@ -2332,6 +2389,7 @@
    $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
+   $('#ai-settings-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
    $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
    doodle('Loading chats…');
@@ -2341,7 +2399,7 @@
    else if(id&&boxes.has(id))await openBox(id);
    if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
    if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
-   schedule();renderPushState();void syncPushSubscription();
+   schedule();renderInstallState();renderPushState();void checkPushState({repair:true});
   }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
  }
  addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
@@ -2517,6 +2575,7 @@
   closeSheets();$('#commands-modal').hidden=false;$('#command-filter').value='';$('#command-status').textContent='';
   try{await loadChatCommands();selectChatCommand(chatCommands.find(command=>command.name===selectedCommandName)||chatCommands[0]||null);(chatCommands.length?$('#command-filter'):$('#command-form input[name="name"]')).focus()}catch(e){$('#command-status').textContent=e.message}
  };
+ $('#ai-settings-toggle').onclick=()=>{closeSheets();window.VMBoxAIHelper.openSettings()};
  $('#command-filter').addEventListener('input',renderChatCommands);
  $('#command-new').onclick=()=>{selectChatCommand(null);$('#command-form input[name="name"]').focus()};
  $('#command-use').onclick=()=>{

@@ -17,7 +17,7 @@ const modelPickerJS=await readFile('internal/controller/web/model-picker.js','ut
 test('video attachments play inline and can be uploaded',async()=>{
  const now=new Date().toISOString();
  const videoBytes=Buffer.concat([Buffer.from([0x1a,0x45,0xdf,0xa3]),Buffer.alloc(64,7)]);
- const messages=[{id:'m1',direction:'agent',state:'delivered',text:'Here is the clip.',images:[{id:'v1',number:1,mediaType:'video/mp4'}],createdAt:now,updatedAt:now}];
+ const messages=[{id:'m1',direction:'agent',state:'delivered',text:'Here is the clip and a frame.',images:[{id:'v1',number:1,mediaType:'video/mp4'},{id:'i2',number:2,mediaType:'image/svg+xml'}],createdAt:now,updatedAt:now}];
  const boxes=[{id:'gallery',name:'gallery',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'}];
  // A snap-packaged Chromium gets a private /tmp, so a fixture in os.tmpdir()
  // fails to upload with ERR_FILE_NOT_FOUND. Keep it in the working directory.
@@ -33,6 +33,7 @@ test('video attachments play inline and can be uploaded',async()=>{
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
   if(path==='/v1/messages/m1/images/v1'){mediaHits++;res.setHeader('Content-Type','video/mp4');return res.end(videoBytes)}
+  if(path==='/v1/messages/m1/images/i2'){res.setHeader('Content-Type','image/svg+xml');return res.end('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="#31516b"/></svg>')}
   if(path==='/v1/run-once-images'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({id:'up1'}))}
   if(!path.startsWith('/v1/'))return res.end('');
   if(path.endsWith('/desktop/screenshot')){res.statusCode=409;return res.end('{}')}
@@ -60,6 +61,12 @@ test('video attachments play inline and can be uploaded',async()=>{
   await p.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
   const src=await p.$eval('#media-viewer-body video',el=>el.getAttribute('src'));
   assert.match(src,/^\/v1\/messages\/m1\/images\/v1$/,'video must stream from the authenticated endpoint, not a blob');
+  assert.equal(await p.$eval('#media-viewer-count',el=>el.textContent),'1 / 2');
+  await p.click('#media-viewer-next');
+  await p.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth===320);
+  assert.equal(await p.$eval('#media-viewer-count',el=>el.textContent),'2 / 2');
+  await p.click('#media-viewer-prev');
+  assert.equal(await p.$eval('#media-viewer-body video',el=>el.getAttribute('src')),src);
   await p.keyboard.press('Escape');
   await p.waitForFunction(()=>document.querySelector('#media-viewer').hidden,{timeout:3000});
 

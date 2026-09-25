@@ -98,6 +98,9 @@ async function requestDesktop({enable=false,automatic=false,tryStartBeforeEnable
 }
 async function openPreferredView(box,version){
  showInteractiveWorkspace();
+ // Select the preferred viewer before waiting for the background TMUX session.
+ // On phones the terminal otherwise fills the screen while Desktop connects.
+ if(workspaceRole==='owner'&&!selectedWorkspaceView)showWorkspaceView('desktop');
  await ensureTerminal(version);
  if(!workspaceCurrent(version))return;
  if(workspaceRole!=='owner'){await selectTerminal(version);return}
@@ -180,7 +183,7 @@ let deletePending=false;
 function statusLine(b){const phase=boxPhase(b.state);const hint=phase==='creating'?'being created; connect becomes available when it is running':phase==='transitioning'?'transitioning; this page updates automatically':phase==='deleting'?'being deleted':'';return [b.state,b.restorationState,b.failureReason,hint].filter(Boolean).join(' · ')}
 function applyBoxState(b){
  boxSummary=b;renderStats();
- $('#name').textContent=b.name;document.title=b.name+' · vmbox';
+ $('#name').textContent=b.name;document.title='vmbox / workspace / '+b.name;
  const phase=boxPhase(b.state),owner=workspaceRole==='owner',connectable=phase==='running'||phase==='stopped'||phase==='failed';
  $('#status').textContent=statusLine(b);
  $('#connect').hidden=!connectable;
@@ -188,6 +191,8 @@ function applyBoxState(b){
  $('#hibernate').hidden=!(phase==='running'&&owner);
  $('#box-settings').hidden=!(phase==='running'&&owner);
  $('#box-contacts').hidden=!owner;
+ $('#workspace-idle-policy').hidden=!owner;
+ if(owner)window.VMBoxIdlePolicy?.mount($('#workspace-idle-policy'),{boxId:b.id,boxName:b.name,request:seconds=>api(bp+'/idle-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})});
  $('#delete-box').hidden=!owner||!(phase==='running'||phase==='stopped'||phase==='failed');
  $('#delete-box').disabled=deletePending||phase==='deleting';
  $('#lifecycle-note').textContent={
@@ -453,13 +458,6 @@ if(interruptAgent)interruptAgent.onclick=async()=>{
  try{await api(bp+'/terminal/input?session='+encodeURIComponent(managedSession),'POST',{keys:[boxSummary.defaultAgent==='shell'?'C-c':'Escape']},{'Idempotency-Key':crypto.randomUUID()});status.textContent='Interrupt sent to the managed session.'}
  catch(e){status.textContent=e.message}finally{interruptAgent.disabled=false}
 };
-
-const idlePolicyForm=document.querySelector('#idle-policy-form');
-if(idlePolicyForm){
- const status=document.querySelector('#idle-policy-status');
- document.querySelector('#load-idle-policy').onclick=async()=>{try{const policy=await api(bp+'/idle-policy');idlePolicyForm.elements.hours.value=policy.seconds/3600;idlePolicyForm.hidden=false;status.textContent=policy.seconds?'Automatic hibernation after '+policy.seconds/3600+' idle hours, when no managed task or handoff is active.':'Automatic hibernation is disabled.'}catch(e){status.textContent=e.message}};
- idlePolicyForm.onsubmit=async event=>{event.preventDefault();const button=idlePolicyForm.querySelector('button');button.disabled=true;try{await api(bp+'/idle-policy','PUT',{seconds:Math.round(Number(idlePolicyForm.elements.hours.value)*3600)});status.textContent='Idle policy saved. Hibernate remains available at any time.'}catch(e){status.textContent=e.message}finally{button.disabled=false}};
-}
 
 const importedCredentials=document.querySelector('#imported-credentials');
 if(importedCredentials){

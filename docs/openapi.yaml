@@ -175,6 +175,64 @@ paths:
         '400': {description: Profile type has no supported live catalog}
         '404': {description: Profile not found}
         '502': {description: Model catalog unavailable; the saved model remains selectable}
+  /v1/ai/openrouter:
+    get:
+      summary: Read AI writing helper configuration
+      description: Owner-only. Returns whether a dedicated OpenRouter key is configured and its model ID; never returns the key.
+      responses:
+        '200': {description: Configuration status without secret material}
+        '403': {description: Owner role required}
+    put:
+      summary: Save an OpenRouter key for the AI writing helper
+      description: Owner-only. Encrypts the account-wide key on the controller. This key takes precedence over a saved OpenCode OpenRouter profile. Omit the key to change only the model when a key is already saved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: {type: string, minLength: 8, maxLength: 512}
+                model: {type: string, default: openrouter/auto}
+      responses:
+        '200': {description: Configuration status without secret material}
+        '400': {description: Invalid key or model}
+        '403': {description: Owner role required}
+    delete:
+      summary: Remove the dedicated AI writing helper key
+      description: Owner-only. A saved OpenCode OpenRouter profile can still be used as a fallback.
+      responses:
+        '204': {description: Key removed}
+        '403': {description: Owner role required}
+  /v1/ai/rewrite:
+    post:
+      summary: Rewrite a browser draft with OpenRouter
+      description: Owner-only. Uses the dedicated encrypted OpenRouter key when configured, otherwise the first saved OpenCode profile whose selected model is on OpenRouter. The API key remains on the controller. Returns a suggestion for review; it never sends a chat message or saves an instruction preset.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, text]
+              properties:
+                kind: {type: string, enum: [chat, markdown]}
+                text: {type: string, maxLength: 65536}
+                instruction: {type: string, maxLength: 2000}
+      responses:
+        '200':
+          description: Revised text
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [text]
+                properties:
+                  text: {type: string}
+        '400': {description: Invalid draft or instruction}
+        '403': {description: Owner role required}
+        '422': {description: No usable OpenRouter key or saved profile}
+        '502': {description: OpenRouter could not complete the rewrite}
   /v1/logical-boxes/{id}/process-tasks:
     parameters:
       - {in: path, name: id, required: true, schema: {type: string}}
@@ -520,6 +578,24 @@ paths:
       description: Snapshot tmux, detach the retained volume, sanitize the service, and free its slot.
       parameters: [{$ref: '#/components/parameters/ID'}]
       responses: {'200': {description: Hibernated logical box, content: {application/json: {schema: {$ref: '#/components/schemas/LogicalBox'}}}}}
+  /v1/logical-boxes/{id}/volume:
+  /v1/logical-boxes/{id}/idle-policy:
+    get:
+      summary: Read a box's automatic hibernation policy
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      responses:
+        '200': {description: Active timeout in seconds and last enabled timeout in resumeSeconds}
+    put:
+      summary: Set a box's automatic hibernation policy
+      description: Owner-only. Set seconds to zero to turn automatic hibernation off; resumeSeconds preserves the previous interval for later use.
+      parameters: [{$ref: '#/components/parameters/ID'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [seconds], properties: {seconds: {type: integer, minimum: 0, maximum: 604800}}}}}
+      responses:
+        '200': {description: Saved seconds and resumeSeconds}
+        '400': {description: Enabled timeouts must be at least 60 seconds}
+        '403': {description: Owner role required}
   /v1/logical-boxes/{id}/volume:
     delete:
       description: Queue permanent deletion of this exact logical box volume. Processing survives client disconnects and is resumed after controller restart; inspect box state, restorationState and failureReason for progress. Fleet capacity is unchanged.

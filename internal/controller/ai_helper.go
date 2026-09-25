@@ -1,0 +1,182 @@
+package controller
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+	"time"
+
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+)
+
+const openRouterCompletionsURL = "https://openrouter.ai/api/v1/chat/completions"
+
+type rewriteRequest struct {
+	Text        string `json:"text"`
+	Instruction string `json:"instruction"`
+	Kind        string `json:"kind"`
+}
+
+func (s *Server) rewriteText(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
+	r.Body = http.MaxBytesReader(w, r.Body, 80<<10)
+	var input rewriteRequest
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("invalid rewrite request"))
+		return
+	}
+	if input.Kind != "chat" && input.Kind != "markdown" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("choose chat or markdown"))
+		return
+	}
+	if strings.TrimSpace(input.Text) == "" || len(input.Text) > 65536 || len(input.Instruction) > 2000 {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("enter text up to 64 KiB and an instruction up to 2 KiB"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	setting, err := s.Store.AIHelperOpenRouter(ctx, p)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read AI helper setting"))
+		return
+	}
+	if err == nil {
+		client := s.HTTP
+		if client == nil {
+			client = http.DefaultClient
+		}
+		rewritten, rewriteErr := requestOpenRouterRewrite(ctx, client, openRouterCompletionsURL, setting.Key, setting.Model, input)
+		setting.Key = ""
+		if rewriteErr != nil {
+			writeError(w, http.StatusBadGateway, rewriteErr)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"text": rewritten})
+		return
+	}
+	profiles, err := s.Store.ListLoginProfiles(ctx, p)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not find saved OpenRouter profile"))
+		return
+	}
+	var choice *v1.LoginProfile
+	for i := range profiles {
+		if profiles[i].Application == "opencode" && strings.HasPrefix(profiles[i].Model, "openrouter/") {
+			choice = &profiles[i]
+			break
+		}
+	}
+	if choice == nil {
+		writeError(w, http.StatusUnprocessableEntity, fmt.Errorf("add an OpenRouter key in Profiles → AI writing helper, or save an OpenCode profile with an OpenRouter model"))
+		return
+	}
+	profile, err := s.Store.LoadLoginProfile(ctx, p, choice.Application, choice.Name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("could not read saved OpenRouter profile"))
+		return
+	}
+	defer func() {
+		for _, data := range profile.Files {
+			clear(data)
+		}
+	}()
+	key, model, err := openRouterProfileKey(profile, choice.Model)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, err)
+		return
+	}
+	client := s.HTTP
+	if client == nil {
+		client = http.DefaultClient
+	}
+	rewritten, err := requestOpenRouterRewrite(ctx, client, openRouterCompletionsURL, key, model, input)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"text": rewritten})
+}
+
+func openRouterProfileKey(profile v1.SaveLoginProfileRequest, selectedModel string) (string, string, error) {
+	var credentials map[string]struct {
+		Type string `json:"type"`
+		Key  string `json:"key"`
+	}
+	if json.Unmarshal(profile.Files["auth.json"], &credentials) != nil || credentials["openrouter"].Type != "api" || credentials["openrouter"].Key == "" {
+		return "", "", fmt.Errorf("saved OpenRouter profile has no API key")
+	}
+	model := strings.TrimPrefix(selectedModel, "openrouter/")
+	if model == selectedModel || model == "" {
+		return "", "", fmt.Errorf("saved OpenRouter profile has no model")
+	}
+	return credentials["openrouter"].Key, model, nil
+}
+
+func requestOpenRouterRewrite(ctx context.Context, client *http.Client, endpoint, key, model string, input rewriteRequest) (string, error) {
+	instruction := "Fix spelling, grammar and punctuation. Preserve the writer's meaning, voice, formatting, names, code, URLs and commands. Return only the revised text without quotes or commentary."
+	if input.Kind == "markdown" {
+		instruction = "Improve the clarity, spelling and structure of this Markdown instruction or skill. Preserve its intent, headings, code fences, examples, links and exact technical terms. Return only revised Markdown without commentary or wrapping fences."
+	}
+	if custom := strings.TrimSpace(input.Instruction); custom != "" {
+		instruction = custom + " Return only the revised text without commentary or wrapping quotes."
+	}
+	limit := 4096
+	if input.Kind == "markdown" {
+		limit = 12000
+	}
+	body, err := json.Marshal(map[string]any{
+		"model":       model,
+		"messages":    []map[string]string{{"role": "system", "content": instruction}, {"role": "user", "content": input.Text}},
+		"temperature": 0.2,
+		"max_tokens":  limit,
+	})
+	if err != nil {
+		return "", fmt.Errorf("could not prepare rewrite")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("could not prepare rewrite")
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	response, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("OpenRouter is unavailable")
+	}
+	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return "", fmt.Errorf("OpenRouter rejected the API key; update it in Profiles → AI writing helper or in the saved OpenCode profile")
+	}
+	if response.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("OpenRouter returned HTTP %d", response.StatusCode)
+	}
+	var result struct {
+		Choices []struct {
+			FinishReason string `json:"finish_reason"`
+			Message      struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(io.LimitReader(response.Body, 256<<10)).Decode(&result); err != nil || len(result.Choices) == 0 {
+		return "", fmt.Errorf("OpenRouter returned an invalid response")
+	}
+	if result.Choices[0].FinishReason == "length" {
+		return "", fmt.Errorf("the rewrite was too long; shorten the draft and try again")
+	}
+	text := strings.TrimSpace(result.Choices[0].Message.Content)
+	if text == "" {
+		return "", errors.New("OpenRouter returned an empty rewrite")
+	}
+	if len(text) > 65536 {
+		return "", fmt.Errorf("OpenRouter rewrite exceeds the editor limit")
+	}
+	return text, nil
+}

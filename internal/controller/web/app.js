@@ -7,6 +7,8 @@ let ownerTools=false,instructionPresets={defaultName:'',presets:[]};
 let roleBoxes=[];
 let listedProfiles=[],profileAccountName='';
 const presetBodyCache=new Map();
+window.VMBoxAIHelper?.attach({input:$('#instruction-form textarea[name="markdown"]'),kind:'markdown',status:$('#instruction-status')});
+$('#ai-settings-open').addEventListener('click',()=>window.VMBoxAIHelper.openSettings());
 let boxInstructionTarget=null,boxCredentialTarget=null;
 const poolKey=(provider,providerCredential)=>JSON.stringify({provider,providerCredential:providerCredential||''});
 const poolLabel=(provider,alias)=>(provider==='shared-worker'?'Shared worker':'Dedicated · '+provider)+' / '+(alias||'default');
@@ -212,11 +214,24 @@ function renderBoxDetail(){
  if(boxPhase(box.state)==='running')actions.append(button('Restart…',()=>restartBox(box)));
  if(['stopped','failed'].includes(boxPhase(box.state)))actions.append(button('Resume',()=>{const row=document.querySelector('#box-list [data-box-id="'+CSS.escape(box.id)+'"]');row?.querySelector('[aria-label^="Resume box "]')?.click()}));
  root.append(intro,facts,node('h3','Manage box'),actions);
+ if(ownerTools&&window.VMBoxIdlePolicy){const idle=node('div');root.append(idle);window.VMBoxIdlePolicy.mount(idle,{boxId:box.id,boxName:box.name,request:seconds=>api(bp(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
 }
 function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus()}
 $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#box-detail').hidden&&!document.querySelector('.modal:not([hidden])'))closeBoxDetail()});
-function manageView(){const view=['#boxes','#providers','#profiles'].includes(location.hash)?location.hash.slice(1):'all';document.body.dataset.manageView=view;document.querySelectorAll('.workspace-links a').forEach(link=>{const active=link.getAttribute('href')==='#'+view;if(active)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current')})}
+function manageView(){
+ const section=location.hash.slice(1);
+ const pageNames={boxes:'boxes',providers:'providers',profiles:'profiles',roles:'permissions',instructions:'instructions',fleet:'capacity',notifications:'notifications'};
+ const page=pageNames[section]||'manage';
+ const view=['boxes','providers','profiles'].includes(section)?section:'all';
+ document.body.dataset.manageView=view;
+ $('#manage-page-label').textContent=page;
+ document.title='vmbox / '+page;
+ document.querySelectorAll('.workspace-links a,.manage-subnav a').forEach(link=>{
+  if(link.getAttribute('href')==='#'+section&&section)link.setAttribute('aria-current','page');
+  else link.removeAttribute('aria-current');
+ });
+}
 addEventListener('hashchange',manageView);manageView();
 function renderBoxes(boxes){
  listedBoxes=boxes;

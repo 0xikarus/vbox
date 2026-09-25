@@ -43,8 +43,16 @@ func testDesktopPrivateDataRoutes(t *testing.T, store *Store, owner, other Princ
 		t.Fatal("new box idle default missing")
 	}
 	response = invoke(server.desktopIdlePolicy, "PUT", `{"seconds":0}`, "", owner)
-	if response.Code != 200 {
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"resumeSeconds":14400`) {
 		t.Fatal("cannot disable inactivity")
+	}
+	response = invoke(server.desktopIdlePolicy, "PUT", `{"seconds":21600}`, "", owner)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"resumeSeconds":21600`) {
+		t.Fatal("cannot set inactivity interval")
+	}
+	response = invoke(server.desktopIdlePolicy, "PUT", `{"seconds":0}`, "", owner)
+	if response.Code != 200 || !strings.Contains(response.Body.String(), `"resumeSeconds":21600`) {
+		t.Fatal("disabled policy did not retain the chosen interval")
 	}
 	response = invoke(server.desktopIdlePolicy, "PUT", `{"seconds":60}`, "", other)
 	if response.Code != 404 {

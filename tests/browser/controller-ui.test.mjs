@@ -15,7 +15,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -42,6 +42,7 @@ before(async()=>{
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
+  if(path==='/v1/ai/openrouter'&&req.method==='GET')return res.end(JSON.stringify({configured:false,model:'openrouter/auto'}));
   if(req.method==='GET' && path==='/v1/login-profiles/claude/personal/models')return res.end(JSON.stringify({source:'Claude Code catalog',models:['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'].map(id=>({id,label:id}))}));
   if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash',reasoning:false},{id:'openrouter/google/gemini-test',label:'Gemini test',reasoning:true}]}));
   if(req.method==='GET' && path==='/v1/login-profiles/codex/personal-codex/models')return res.end(JSON.stringify({source:'Codex account catalog',models:[{id:'account-codex-model',label:'Account Codex Model',reasoning:true,reasoningEfforts:['low','ultra']}]}));
@@ -86,6 +87,8 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.goto(base+'/#boxes');await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('railway-worker-01'));
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'boxes');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / boxes');
+ assert.equal(await page.title(),'vmbox / boxes');
  assert.equal(await page.$eval('#providers',section=>getComputedStyle(section).display),'none');
  await page.click('[aria-label="Details for box helper ü"]');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),false);
@@ -94,6 +97,8 @@ test('management views expose box placement and keep details easy to close',asyn
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),true);
  await page.click('.workspace-links a[href="#providers"]');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'providers');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / providers');
+ assert.equal(await page.title(),'vmbox / providers');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
  await page.waitForSelector('.provider-card');
  await page.setViewport({width:390,height:844});
@@ -105,20 +110,47 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#profile-tree .profile-app[data-application="github"]');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'profiles');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / profiles');
+ assert.equal(await page.title(),'vmbox / profiles');
  assert.equal(await page.$eval('.workspace-links a[href="#profiles"]',link=>link.getAttribute('aria-current')),'page');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
  assert.equal(await page.$eval('#profile-summary',summary=>summary.textContent),'5 saved profiles · Team');
  assert.deepEqual(await page.$$eval('#profile-tree .profile-app',cards=>cards.map(card=>[card.dataset.application,card.querySelectorAll('.profile-row').length])),[['claude',1],['codex',1],['opencode',2],['github',1]]);
  assert.match(await page.$eval('.profile-app[data-application="github"]',card=>card.textContent),/gh-work/);
  assert.match(await page.$eval('.profile-app[data-application="opencode"]',card=>card.textContent),/venice\/deepseek-v4-1-flash/);
+ assert.match(await page.$eval('.ai-settings-card',card=>card.textContent),/AI writing helper/);
+ if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-desktop.png'});
+ await page.click('#ai-settings-open');await page.waitForSelector('.ai-settings-dialog[open]');
+ assert.match(await page.$eval('.ai-settings-state',node=>node.textContent),/No dedicated key/);
+ await page.click('.ai-settings-close');
  await page.type('#profile-search','venice');
  assert.deepEqual(await page.$$eval('#profile-tree .profile-app',cards=>cards.map(card=>[card.dataset.application,card.querySelectorAll('.profile-row').length])),[['opencode',1]]);
  await page.setViewport({width:390,height:844});
  await page.$eval('#profile-search',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
  assert.equal(await page.$$('#profile-tree .profile-app').then(cards=>cards.length),4);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-mobile.png'});
  await page.click('.workspace-links a[href="#boxes"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='boxes');
+ await page.close();
+});
+test('secondary management sections and box workspaces use the same page navbar',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base+'/#roles');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / permissions');
+ assert.equal(await page.title(),'vmbox / permissions');
+ assert.equal(await page.$eval('.manage-subnav a[href="#roles"]',link=>link.getAttribute('aria-current')),'page');
+ for(const [section,label] of [['instructions','instructions'],['fleet','capacity'],['notifications','notifications']]){
+  await page.evaluate(value=>{location.hash=value},section);
+  await page.waitForFunction(expected=>document.querySelector('#manage-page-label').textContent===expected,{},label);
+  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / '+label);
+  assert.equal(await page.title(),'vmbox / '+label);
+ }
+ await page.goto(base+'/boxes/box-1');
+ assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.textContent.trim()),'vmbox / workspace');
+ assert.deepEqual(await page.$$eval('.workspace-top .workspace-links a',links=>links.map(link=>link.textContent)),['Chats','Grid','Boxes','Providers','Profiles']);
+ await page.setViewport({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.close();
 });
 test('direct per-box permissions can be edited without a role matrix',async()=>{
