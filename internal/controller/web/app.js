@@ -1,5 +1,6 @@
 'use strict';
 const $=s=>document.querySelector(s);
+const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'manage-menu',panelId:'manage-menu-panel',usageId:'manage-usage'});
 let token='',defaults=null,epoch=0;
 let boxRefreshTimer;
 let fleetSnapshots=[];
@@ -344,11 +345,13 @@ function renderProfiles(identity,profiles){
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
  ownerTools=caps.providerEdits;
+ if(!ownerTools)workspaceNav?.setOwner(false);
  document.querySelectorAll('[data-owner]:not(.modal)').forEach(n=>n.hidden=!ownerTools);
  applyInstructionPresets(instructionList);
  renderBoxes(boxes);
  if(!ownerTools)return;
  const [providers,schema,notifications,identity,profiles,toolPresets]=await Promise.all([api('/v1/provider-credentials'),api('/v1/provider-schemas'),api('/v1/notifications'),api('/v1/whoami'),api('/v1/login-profiles'),api('/v1/tool-presets')]);if(version!==epoch)return;
+ workspaceNav?.setOwner(identity.role==='owner');
  renderPermissionBoxes(boxes);
  renderPoolChoices(providers);
  const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{return {...await api('/v1/fleet/status?'+new URLSearchParams(target)),...target}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
@@ -360,7 +363,7 @@ async function refresh(){
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
 $('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{await api('/v1/browser-session','DELETE');epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
 $('#refresh').addEventListener('click',action(refresh));
 function resetCreationForm(form){
  const pool=form.elements.pool.value;
