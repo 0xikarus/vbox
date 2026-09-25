@@ -31,8 +31,14 @@ func TestMentionContactsAreGrantedReciprocallyInOneTransaction(t *testing.T) {
 	store, mock := testStore(t)
 	p := Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}
 	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT name FROM logical_boxes").WithArgs("account-a", "source").WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("builder"))
+	mock.ExpectQuery("SELECT name FROM logical_boxes").WithArgs("account-a", "target").WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("reviewer"))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WithArgs("account-a", "source", "target").WillReturnRows(sqlmock.NewRows([]string{"can_message"}))
 	mock.ExpectExec("INSERT INTO box_contacts").WithArgs("account-a", "source", "target", true, "user-a").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO box_events").WithArgs(sqlmock.AnyArg(), "account-a", "source", "contact added · reviewer", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WithArgs("account-a", "target", "source").WillReturnRows(sqlmock.NewRows([]string{"can_message"}))
 	mock.ExpectExec("INSERT INTO box_contacts").WithArgs("account-a", "target", "source", true, "user-a").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO box_events").WithArgs(sqlmock.AnyArg(), "account-a", "target", "contact added · builder", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectExec("INSERT INTO audit_log").WithArgs("account-a", "user-a", "source", "target").WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 	if err := store.allowMentionContacts(context.Background(), p, "source", []string{"target"}); err != nil {

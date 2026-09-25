@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"reflect"
+	"strings"
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
@@ -171,6 +173,10 @@ func (s *Store) PutAgentBoxPolicy(ctx context.Context, p Principal, boxRef strin
 	if err != nil {
 		return v1.AgentBoxPolicy{}, err
 	}
+	previous, err := s.EffectiveAgentCapabilities(ctx, p.AccountID, box.ID)
+	if err != nil {
+		return v1.AgentBoxPolicy{}, err
+	}
 	raw, err := json.Marshal(request.Capabilities)
 	if err != nil {
 		return v1.AgentBoxPolicy{}, err
@@ -193,10 +199,68 @@ func (s *Store) PutAgentBoxPolicy(ctx context.Context, p Principal, boxRef strin
 	if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'agent_box_policy.update','logical_box',$3,jsonb_build_object('allowed_tools',$4::jsonb))`, p.AccountID, p.UserID, box.ID, roleIDsJSON(request.Capabilities.MCPTools.AllowedTools)); err != nil {
 		return v1.AgentBoxPolicy{}, err
 	}
+	if !reflect.DeepEqual(previous, request.Capabilities) {
+		if err := appendBoxEvent(ctx, tx, p.AccountID, box.ID, policyEventText(previous, request.Capabilities), "policy:"+uuid()); err != nil {
+			return v1.AgentBoxPolicy{}, err
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return v1.AgentBoxPolicy{}, err
 	}
 	return v1.AgentBoxPolicy{BoxID: box.ID, BoxName: box.Name, Capabilities: request.Capabilities, UpdatedAt: updatedAt}, nil
+}
+
+func policyEventText(before, after v1.AgentRoleCapabilities) string {
+	tools := func(grant v1.MCPToolsGrant) []string {
+		if !grant.Enabled {
+			return nil
+		}
+		return canonicalAgentMCPTools(grant.AllowedTools)
+	}
+	oldTools, newTools := tools(before.MCPTools), tools(after.MCPTools)
+	added, removed := []string{}, []string{}
+	for _, name := range newTools {
+		if !containsString(oldTools, name) {
+			added = append(added, name)
+		}
+	}
+	for _, name := range oldTools {
+		if !containsString(newTools, name) {
+			removed = append(removed, name)
+		}
+	}
+	parts := []string{}
+	if len(added) > 0 {
+		parts = append(parts, "MCP tools added · "+shortToolList(added))
+	}
+	if len(removed) > 0 {
+		parts = append(parts, "MCP tools removed · "+shortToolList(removed))
+	}
+	before.MCPTools = v1.MCPToolsGrant{}
+	after.MCPTools = v1.MCPToolsGrant{}
+	if !reflect.DeepEqual(before, after) {
+		parts = append(parts, "other agent permissions updated")
+	}
+	if len(parts) == 0 {
+		return "agent permissions updated"
+	}
+	return strings.Join(parts, "; ")
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func shortToolList(values []string) string {
+	if len(values) <= 3 {
+		return strings.Join(values, ", ")
+	}
+	return strings.Join(values[:3], ", ") + fmt.Sprintf(" +%d more", len(values)-3)
 }
 
 func (s *Server) agentBoxPolicyHandler(w http.ResponseWriter, r *http.Request, p Principal) {

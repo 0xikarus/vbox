@@ -125,6 +125,31 @@ func putContactOverride(ctx context.Context, tx *sql.Tx, p Principal, boxID, con
 	}
 }
 
+func putContactOverrideWithEvent(ctx context.Context, tx *sql.Tx, p Principal, boxID, contactID, contactName, state string) error {
+	var previous sql.NullBool
+	err := tx.QueryRowContext(ctx, `SELECT can_message FROM box_contacts WHERE account_id=$1 AND box_id=$2 AND contact_box_id=$3 FOR UPDATE`, p.AccountID, boxID, contactID).Scan(&previous)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err := putContactOverride(ctx, tx, p, boxID, contactID, state); err != nil {
+		return err
+	}
+	changed := state == "inherit" && previous.Valid || state == "allow" && (!previous.Valid || !previous.Bool) || state == "block" && (!previous.Valid || previous.Bool)
+	if !changed {
+		return nil
+	}
+	label := "contact added"
+	if state == "block" {
+		label = "contact blocked"
+	} else if state == "inherit" {
+		label = "contact removed"
+		if !previous.Bool {
+			label = "contact block removed"
+		}
+	}
+	return appendBoxEvent(ctx, tx, p.AccountID, boxID, label+" · "+contactName, "contact:"+uuid())
+}
+
 func boxNameByte(char byte) bool {
 	return char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' || char == '.' || char == '_' || char == '-'
 }
@@ -185,11 +210,19 @@ func (s *Store) allowMentionContacts(ctx context.Context, p Principal, sourceID 
 		return err
 	}
 	defer tx.Rollback()
+	var sourceName string
+	if err := tx.QueryRowContext(ctx, `SELECT name FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, sourceID).Scan(&sourceName); err != nil {
+		return err
+	}
 	for _, id := range ids {
-		if err := putContactOverride(ctx, tx, p, sourceID, id, "allow"); err != nil {
+		var targetName string
+		if err := tx.QueryRowContext(ctx, `SELECT name FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, id).Scan(&targetName); err != nil {
 			return err
 		}
-		if err := putContactOverride(ctx, tx, p, id, sourceID, "allow"); err != nil {
+		if err := putContactOverrideWithEvent(ctx, tx, p, sourceID, id, targetName, "allow"); err != nil {
+			return err
+		}
+		if err := putContactOverrideWithEvent(ctx, tx, p, id, sourceID, sourceName, "allow"); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail)
@@ -208,7 +241,7 @@ func (s *Store) PutBoxContact(ctx context.Context, p Principal, boxRef string, r
 	if err != nil {
 		return v1.BoxContact{}, err
 	}
-	contactID, _, _, _, _, err := s.contactBox(ctx, p.AccountID, request.Contact)
+	contactID, contactName, _, _, _, err := s.contactBox(ctx, p.AccountID, request.Contact)
 	if err != nil {
 		return v1.BoxContact{}, err
 	}
@@ -221,11 +254,11 @@ func (s *Store) PutBoxContact(ctx context.Context, p Principal, boxRef string, r
 		return v1.BoxContact{}, err
 	}
 	defer tx.Rollback()
-	if err := putContactOverride(ctx, tx, p, box.ID, contactID, request.State); err != nil {
+	if err := putContactOverrideWithEvent(ctx, tx, p, box.ID, contactID, contactName, request.State); err != nil {
 		return v1.BoxContact{}, err
 	}
 	if request.TwoWay {
-		if err := putContactOverride(ctx, tx, p, contactID, box.ID, request.State); err != nil {
+		if err := putContactOverrideWithEvent(ctx, tx, p, contactID, box.ID, box.Name, request.State); err != nil {
 			return v1.BoxContact{}, err
 		}
 	}
@@ -378,16 +411,33 @@ func (s *Store) SetBoxProtection(ctx context.Context, p Principal, boxRef string
 	if err != nil {
 		return err
 	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var changed sql.Result
 	if protected {
-		_, err = s.DB.ExecContext(ctx, `INSERT INTO box_protection(account_id,box_id,protected_by) VALUES($1,$2,$3) ON CONFLICT(account_id,box_id) DO NOTHING`, p.AccountID, box.ID, p.UserID)
+		changed, err = tx.ExecContext(ctx, `INSERT INTO box_protection(account_id,box_id,protected_by) VALUES($1,$2,$3) ON CONFLICT(account_id,box_id) DO NOTHING`, p.AccountID, box.ID, p.UserID)
 	} else {
-		_, err = s.DB.ExecContext(ctx, `DELETE FROM box_protection WHERE account_id=$1 AND box_id=$2`, p.AccountID, box.ID)
+		changed, err = tx.ExecContext(ctx, `DELETE FROM box_protection WHERE account_id=$1 AND box_id=$2`, p.AccountID, box.ID)
 	}
 	if err != nil {
 		return err
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.protection','logical_box',$3,jsonb_build_object('protected',$4::bool))`, p.AccountID, p.UserID, box.ID, protected)
-	return err
+	if _, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.protection','logical_box',$3,jsonb_build_object('protected',$4::bool))`, p.AccountID, p.UserID, box.ID, protected); err != nil {
+		return err
+	}
+	if rows, _ := changed.RowsAffected(); rows > 0 {
+		label := "box protection removed"
+		if protected {
+			label = "box protected · incoming contacts blocked"
+		}
+		if err := appendBoxEvent(ctx, tx, p.AccountID, box.ID, label, "protection:"+uuid()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Server) boxContactsHandler(w http.ResponseWriter, r *http.Request, p Principal) {

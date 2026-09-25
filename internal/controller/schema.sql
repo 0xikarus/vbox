@@ -553,6 +553,18 @@ CREATE TABLE IF NOT EXISTS box_notes (
  UNIQUE(account_id,idempotency_key)
 );
 
+-- Box lifecycle and settings changes remain visible even without an active chat task.
+CREATE TABLE IF NOT EXISTS box_events (
+ id uuid PRIMARY KEY,
+ account_id uuid NOT NULL REFERENCES accounts(id),
+ box_id uuid NOT NULL REFERENCES logical_boxes(id) ON DELETE CASCADE,
+ body text NOT NULL,
+ event_key text NOT NULL,
+ created_at timestamptz NOT NULL DEFAULT now(),
+ UNIQUE(account_id,event_key)
+);
+CREATE INDEX IF NOT EXISTS box_events_history_idx ON box_events(account_id,box_id,created_at DESC,id DESC);
+
 -- Short-lived, account-scoped desktop replay. Each frame is a bounded JPEG
 -- captured inside the running box, never from a browser VNC canvas.
 CREATE TABLE IF NOT EXISTS desktop_replay_frames (

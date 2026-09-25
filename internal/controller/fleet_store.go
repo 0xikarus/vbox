@@ -412,5 +412,10 @@ func (s *Store) ReleaseAssignment(ctx context.Context, accountID, logicalBoxID s
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale logical-box fencing token")
 	}
+	if finalState == v1.LogicalBoxHibernated {
+		if err := appendBoxEvent(ctx, tx, accountID, logicalBoxID, "hibernated · workspace saved", fmt.Sprintf("hibernate:%s:%d", logicalBoxID, generation)); err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
 }

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -64,16 +65,43 @@ func (s *Store) SetBoxTags(ctx context.Context, p Principal, boxRef string, valu
 	if err != nil {
 		return nil, err
 	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	var previous []byte
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(metadata->'tags','[]'::jsonb) FROM logical_boxes WHERE account_id=$1 AND id=$2 FOR UPDATE`, p.AccountID, box.ID).Scan(&previous); err != nil {
+		return nil, err
+	}
 	raw, _ := json.Marshal(tags)
-	result, err := s.DB.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{tags}',$3::jsonb,true),updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID, string(raw))
+	result, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(COALESCE(metadata,'{}'::jsonb),'{tags}',$3::jsonb,true),updated_at=now() WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID, string(raw))
 	if err != nil {
 		return nil, err
 	}
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return nil, fmt.Errorf("box not found")
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.tags','logical_box',$3,jsonb_build_object('tags',$4::jsonb))`, p.AccountID, p.UserID, box.ID, string(raw))
-	return tags, err
+	if _, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.tags','logical_box',$3,jsonb_build_object('tags',$4::jsonb))`, p.AccountID, p.UserID, box.ID, string(raw)); err != nil {
+		return nil, err
+	}
+	var oldTags []string
+	if err := json.Unmarshal(previous, &oldTags); err != nil {
+		return nil, err
+	}
+	if strings.Join(oldTags, "\x00") != strings.Join(tags, "\x00") {
+		label := "box labels updated"
+		if len(tags) == 0 {
+			label = "box labels cleared"
+		}
+		if err := appendBoxEvent(ctx, tx, p.AccountID, box.ID, label, "tags:"+uuid()); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return tags, nil
 }
 
 func (s *Server) boxTagsHandler(w http.ResponseWriter, r *http.Request, p Principal) {
