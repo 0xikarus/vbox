@@ -139,6 +139,28 @@ func TestClaudeNativeReceiptFindsChannelInStructuredContent(t *testing.T) {
 	}
 }
 
+func TestClaudeNativeReceiptFindsQueuedChannelAttachment(t *testing.T) {
+	home := t.TempDir()
+	session, messageID := "claude-busy", "message-queued"
+	transcript := filepath.Join(home, ".claude", "projects", "workspace", "native.jsonl")
+	if err := os.MkdirAll(filepath.Dir(transcript), 0700); err != nil {
+		t.Fatal(err)
+	}
+	header := "<channel source=\"vmbox-desktop\" chat_id=\"" + session + "\" message_id=\"" + messageID + "\">\nmessage\n</channel>"
+	record, _ := json.Marshal(map[string]any{"type": "attachment", "attachment": map[string]any{"type": "queued_command", "prompt": header, "origin": map[string]string{"kind": "channel", "server": "vmbox-desktop"}}})
+	if err := os.WriteFile(transcript, append(record, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := claudeNativeReceipt(context.Background(), home, session, messageID, time.Now().Add(-time.Minute))
+	if err != nil || !accepted {
+		t.Fatalf("queued native receipt accepted=%t error=%v", accepted, err)
+	}
+	accepted, err = claudeNativeReceipt(context.Background(), home, session, "another-message", time.Now().Add(-time.Minute))
+	if err != nil || accepted {
+		t.Fatalf("unrelated native receipt accepted=%t error=%v", accepted, err)
+	}
+}
+
 func TestPendingChatInboundUsesArrivalOrder(t *testing.T) {
 	home, session := t.TempDir(), "claude-ordered"
 	for _, event := range []ChatInbound{{ID: "z-first", Text: "one"}, {ID: "a-second", Text: "two"}} {

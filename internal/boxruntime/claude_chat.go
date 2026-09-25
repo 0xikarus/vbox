@@ -89,18 +89,26 @@ func claudeNativeReceipt(ctx context.Context, home, session, messageID string, s
 						Role    string          `json:"role"`
 						Content json.RawMessage `json:"content"`
 					} `json:"message"`
+					Attachment struct {
+						Type   string `json:"type"`
+						Prompt string `json:"prompt"`
+						Origin struct {
+							Kind   string `json:"kind"`
+							Server string `json:"server"`
+						} `json:"origin"`
+					} `json:"attachment"`
 				}
-				if json.Unmarshal(line, &record) == nil && record.Type == "user" && record.Message.Role == "user" {
+				if json.Unmarshal(line, &record) == nil && record.Type == "attachment" &&
+					record.Attachment.Type == "queued_command" &&
+					record.Attachment.Origin.Kind == "channel" &&
+					record.Attachment.Origin.Server == "vmbox-desktop" &&
+					claudeChannelHeaderMatches(record.Attachment.Prompt, session, messageID) {
+					found = true
+					return nil
+				}
+				if record.Type == "user" && record.Message.Role == "user" {
 					for _, content := range claudeUserTexts(record.Message.Content) {
-						end := strings.IndexByte(content, '>')
-						if end < 0 {
-							continue
-						}
-						header := content[:end]
-						if strings.HasPrefix(header, "<channel ") &&
-							strings.Contains(header, `source="vmbox-desktop"`) &&
-							strings.Contains(header, `chat_id="`+session+`"`) &&
-							strings.Contains(header, `message_id="`+messageID+`"`) {
+						if claudeChannelHeaderMatches(content, session, messageID) {
 							found = true
 							return nil
 						}
@@ -120,6 +128,18 @@ func claudeNativeReceipt(ctx context.Context, home, session, messageID string, s
 		return false, nil
 	}
 	return found, err
+}
+
+func claudeChannelHeaderMatches(content, session, messageID string) bool {
+	end := strings.IndexByte(content, '>')
+	if end < 0 {
+		return false
+	}
+	header := content[:end]
+	return strings.HasPrefix(header, "<channel ") &&
+		strings.Contains(header, `source="vmbox-desktop"`) &&
+		strings.Contains(header, `chat_id="`+session+`"`) &&
+		strings.Contains(header, `message_id="`+messageID+`"`)
 }
 
 func claudeUserTexts(raw json.RawMessage) []string {
