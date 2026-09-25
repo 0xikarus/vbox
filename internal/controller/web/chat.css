@@ -226,6 +226,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-image-drafts .draft-open video,#chat-image-drafts .draft-open audio{width:4.4rem;height:4.4rem;object-fit:cover;border-radius:var(--radius-sm);display:block;background:#000}
 #chat-image-drafts .draft-remove{position:absolute;top:-.4rem;right:-.4rem;border-radius:var(--radius-sm);border:0;
   background:var(--ink);color:var(--bg);width:1.4rem;height:1.4rem;font-size:.8rem;line-height:1;cursor:pointer;margin:0}
+#chat-image-drafts .ai-attachment-context{align-self:center;color:var(--ink-soft);font-size:.68rem;line-height:1.35}
 #reply-preview{display:flex;align-items:center;gap:.5rem;padding:.45rem .65rem;background:var(--surface2);border-top:1px solid var(--line);border-left:3px solid var(--accent)}
 #reply-preview[hidden]{display:none}
 #reply-preview>div{display:flex;flex-direction:column;min-width:0;flex:1;font-size:.78rem}

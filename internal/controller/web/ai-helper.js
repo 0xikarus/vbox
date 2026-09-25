@@ -97,7 +97,34 @@ window.VMBoxAIHelper = (() => {
   });
   dialog.showModal();void model.load();textarea.focus();textarea.select();
  }
- function attach({input,kind='chat',status,getContext=()=>''}) {
+ async function visualPreview(attachment) {
+  const video=attachment.kind==='video';
+  const element=document.createElement(video?'video':'img');
+  if(video){element.preload='auto';element.muted=true;element.playsInline=true}
+  const loaded=await new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(Error('Could not read an attached '+(video?'video':'image')+' for AI context.')),10000);
+   element.addEventListener(video?'loadeddata':'load',()=>{clearTimeout(timer);resolve(element)},{once:true});
+   element.addEventListener('error',()=>{clearTimeout(timer);reject(Error('Could not read an attached '+(video?'video':'image')+' for AI context.'))},{once:true});
+   element.src=attachment.url;
+  });
+  try{
+   if(video&&Number.isFinite(loaded.duration)&&loaded.duration>0.3){
+    const target=Math.min(2,loaded.duration/2);
+    await new Promise(resolve=>{const timer=setTimeout(resolve,2000);loaded.addEventListener('seeked',()=>{clearTimeout(timer);resolve()},{once:true});loaded.currentTime=target});
+   }
+   const width=video?loaded.videoWidth:loaded.naturalWidth,height=video?loaded.videoHeight:loaded.naturalHeight;
+   if(!width||!height)throw Error('An attached file has no readable visual frame.');
+   for(const side of [1536,1200,960]){
+    const scale=Math.min(1,side/Math.max(width,height));
+    const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
+    const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(loaded,0,0,canvas.width,canvas.height);
+    const image=canvas.toDataURL('image/jpeg',.8);
+    if(image.length<=650000)return {number:attachment.number,kind:video?'video':'image',image};
+   }
+   throw Error('An attached image is too detailed for an AI preview.');
+  }finally{if(video){loaded.pause();loaded.removeAttribute('src');loaded.load()}}
+ }
+ function attach({input,kind='chat',status,getContext=()=>'',getAttachments=()=>[]}) {
   if(!input || !defaults[kind])throw Error('AI helper requires a supported editor');
   const field=document.createElement('span');field.className='ai-field';
   input.parentNode.insertBefore(field,input);field.append(input);
@@ -111,14 +138,18 @@ window.VMBoxAIHelper = (() => {
   async function run(instruction=currentPrompt(kind),model=currentModel(kind)) {
    if(busy)return false;
    if(input.readOnly || input.disabled){report('Switch to an editable draft first.');return false}
-   const original=input.value,context=getContext();
+   const original=input.value,context=getContext(),drafts=[...getAttachments()];
+   const sameAttachments=()=>{const current=getAttachments();return current.length===drafts.length&&current.every((item,index)=>item.id===drafts[index].id&&item.number===drafts[index].number)};
    if(!original.trim()){report('Write something first, then use the wand.');input.focus();return false}
    busy=true;button.disabled=true;button.classList.add('is-busy');report('Improving draft…');
    try{
-    const response=await fetch('/v1/ai/rewrite',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:original,instruction,kind,model}),signal:AbortSignal.timeout(50000)});
+    const attachments=[];
+    for(const draft of drafts)attachments.push(await visualPreview(draft));
+    if(!sameAttachments()||input.value!==original||getContext()!==context){report('Draft or attachments changed while the wand was working; try again.');return false}
+    const response=await fetch('/v1/ai/rewrite',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:original,instruction,kind,model,attachments}),signal:AbortSignal.timeout(50000)});
     let result;try{result=await response.json()}catch{}
     if(!response.ok)throw Error(result?.error||'AI helper request failed.');
-    if(input.value!==original || getContext()!==context){report('Draft changed while the wand was working; the new text was not applied.');return false}
+    if(input.value!==original || getContext()!==context || !sameAttachments()){report('Draft or attachments changed while the wand was working; the new text was not applied.');return false}
     if(!result?.text)throw Error('AI helper returned no text.');
     input.value=result.text;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();
     report(result.text===original?'No changes needed.':'Draft improved. Review it before sending or saving.');

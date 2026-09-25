@@ -34,7 +34,7 @@
  let inputDraftTimer=0;
  let chatAI=null;
  if(window.VMBoxAIHelper){
-  chatAI=window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected});
+  chatAI=window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected,getAttachments:()=>attachmentDrafts.get(selected)||[]});
   window.VMBoxAIHelper.attach({input:$('#preset-form textarea[name="markdown"]'),kind:'markdown',status:$('#preset-status')});
   window.VMBoxAIHelper.attach({input:$('#box-instructions-markdown'),kind:'markdown',status:$('#box-instructions-status')});
   window.VMBoxAIHelper.attach({input:$('#create-instructions-custom'),kind:'markdown'});
@@ -1507,7 +1507,7 @@
   const drafts=attachmentDrafts.get(selected)||[];
   const hasContent=!!inputEl.value.trim()||drafts.length>0;
   const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate;send.disabled=!hasContent||!running||autoEnhancing;
-  const count=drafts.length,autoLabel=chatAI?.isAutoEnabled()&&inputEl.value.trim()?(autoReady?.box===selected&&autoReady.text===inputEl.value?'Send improved message':'Improve draft'):'Send';
+  const count=drafts.length,autoLabel=chatAI?.isAutoEnabled()&&inputEl.value.trim()?(autoReady?.box===selected&&autoReady.text===inputEl.value&&autoReady.attachments===attachmentKey(selected)?'Send improved message':'Improve draft'):'Send';
   const label=count?autoLabel+' ('+count+' attachment'+(count===1?'':'s')+')':autoLabel;
   send.setAttribute('aria-label',label);
   send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved Codex session first.':'Wait for this box to be running before sending';
@@ -1553,6 +1553,7 @@
    remove.onclick=()=>{const remaining=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);remaining.forEach((d,i)=>d.number=i+1);if(remaining.length)attachmentDrafts.set(selected,remaining);else attachmentDrafts.delete(selected);renderDrafts()};
    wrap.append(open,remove);draftsEl.append(wrap);
   }
+  if(drafts.length&&chatAI){const hint=document.createElement('span');hint.className='ai-attachment-context';hint.textContent=drafts.some(draft=>draft.kind==='video')?'✦ Wand uses images and video preview frames':'✦ Wand uses attached images';draftsEl.append(hint)}
   updateSendState();
  }
  async function uploadImages(files){
@@ -1590,6 +1591,7 @@
  composer.addEventListener('drop',event=>{const files=[...(event.dataTransfer?.files||[])];if(files.length){event.preventDefault();void uploadImages(files)}});
  const sendButton=$('#send');
  let autoReady=null,autoEnhancing=false,skipAutoOnce=false,sendHoldTimer=0,sendHoldTriggered=false;
+ const attachmentKey=boxID=>(attachmentDrafts.get(boxID)||[]).map(draft=>draft.id).join('|');
  async function improveForSend(sendAfter){
   if(autoEnhancing||!chatAI||!selected||!inputEl.value.trim())return;
   const boxID=selected;
@@ -1597,7 +1599,7 @@
   try{
    const improved=await chatAI.run();
    if(!improved||selected!==boxID)return;
-   autoReady={box:boxID,text:inputEl.value};
+   autoReady={box:boxID,text:inputEl.value,attachments:attachmentKey(boxID)};
    if(sendAfter){skipAutoOnce=true;composer.requestSubmit()}
   }finally{autoEnhancing=false;updateSendState()}
  }
@@ -1623,7 +1625,7 @@
   if(box?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';updateSendState();return}
   if(autoEnhancing&&!bypassAuto)return;
   if(!bypassAuto&&chatAI?.isAutoEnabled()&&inputEl.value.trim()){
-   if(autoReady?.box!==boxID||autoReady.text!==inputEl.value){void improveForSend(false);return}
+   if(autoReady?.box!==boxID||autoReady.text!==inputEl.value||autoReady.attachments!==attachmentKey(boxID)){void improveForSend(false);return}
   }
   autoReady=null;
   const drafts=attachmentDrafts.get(boxID)||[];
