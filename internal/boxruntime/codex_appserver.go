@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -141,65 +142,22 @@ func (c *codexClient) call(ctx context.Context, method string, params any) (map[
 	return c.await(ctx, id)
 }
 
-// CodexCurrentThread reports the most recently active persisted thread for the
-// workspace. A new TUI's first message must enter its visible pane first;
-// thread/list can omit that idle thread and still return old rollouts.
-func CodexCurrentThread(ctx context.Context, client *codexClient, root, session, workspace string) (string, error) {
-	if data, err := os.ReadFile(codexResetPendingFile(root, session)); err == nil {
-		if id := strings.TrimSpace(string(data)); id != "" {
-			if id == "visible-tui" {
-				return "", fmt.Errorf("fresh Codex TUI needs its first message through the visible pane")
-			}
-			return id, nil
-		}
-	} else if !os.IsNotExist(err) {
-		return "", err
-	}
-	remembered := ""
-	if data, err := os.ReadFile(codexThreadFile(root, session)); err == nil {
-		remembered = strings.TrimSpace(string(data))
-	}
-	result, err := client.call(ctx, "thread/list", map[string]any{})
-	if err != nil {
-		return "", err
-	}
-	threads, _ := result["data"].([]any)
-	newest := newestCodexThread(threads, remembered)
-	if newest != "" {
-		return newest, rememberCodexThread(root, session, newest)
-	}
-	// A new thread created here would not be attached to the visible TUI.
-	return "", fmt.Errorf("visible Codex thread is not available yet")
-}
+var codexVisibleThreadState = codexTUIProxyState
 
-func newestCodexThread(threads []any, remembered string) string {
-	newest, fallback := "", ""
-	newestAt := float64(0)
-	hasRecency, rememberedFound := false, false
-	for _, value := range threads {
-		thread, _ := value.(map[string]any)
-		id, _ := thread["id"].(string)
-		if id == "" {
-			continue
-		}
-		if fallback == "" {
-			fallback = id
-		}
-		if id == remembered {
-			rememberedFound = true
-		}
-		if at, ok := thread["recencyAt"].(float64); ok && (!hasRecency || at > newestAt) {
-			newest, newestAt = id, at
-			hasRecency = true
-		}
+// CodexCurrentThread returns the thread selected on the TUI's own app-server
+// connection. Persisted recency and loaded-list order cannot identify it.
+func CodexCurrentThread(ctx context.Context, client *codexClient, root, session, workspace string) (string, error) {
+	connected, id, err := codexVisibleThreadState(ctx, session)
+	if err != nil {
+		return "", fmt.Errorf("Codex TUI connection unavailable: %w", err)
 	}
-	if hasRecency {
-		return newest
+	if !connected {
+		return "", fmt.Errorf("Codex TUI is disconnected; reopen it before sending chat")
 	}
-	if rememberedFound {
-		return remembered
+	if id == "" {
+		return "", fmt.Errorf("fresh Codex TUI needs its first message through the visible pane")
 	}
-	return fallback
+	return id, nil
 }
 
 func rememberCodexThread(root, session, id string) error {
@@ -222,40 +180,37 @@ func markFreshCodexTUI(root, session string) error {
 	return nil
 }
 
-// codexRecentRolloutThread finds a thread with an actual rollout modified
-// since the fresh TUI appeared. A zero-turn ID returned by thread/list alone
-// cannot accept queue/add on Codex releases that have not persisted it yet.
+// A new, empty TUI may own a zero-turn ID that older Codex releases cannot
+// queue into. Resume an older selected thread immediately, or queue after the
+// selected thread has materialized a rollout since this TUI started.
 var codexRecentRolloutThread = func(ctx context.Context, session, home string, since time.Time) (string, error) {
-	client, err := dialCodexAppServer(ctx, session)
+	connected, id, err := codexVisibleThreadState(ctx, session)
 	if err != nil {
 		return "", err
 	}
-	defer client.Close()
-	result, err := client.call(ctx, "thread/list", map[string]any{})
+	if !connected {
+		return "", fmt.Errorf("Codex TUI is disconnected")
+	}
+	if id == "" {
+		return "", nil
+	}
+	compact := strings.ReplaceAll(id, "-", "")
+	if len(compact) >= 12 {
+		if millis, err := strconv.ParseInt(compact[:12], 16, 64); err == nil && time.UnixMilli(millis).Before(since) {
+			return id, nil
+		}
+	}
+	paths, err := filepath.Glob(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "rollout-*-"+id+".jsonl"))
 	if err != nil {
 		return "", err
 	}
-	threads, _ := result["data"].([]any)
-	newest := ""
-	var newestAt time.Time
-	for _, value := range threads {
-		thread, _ := value.(map[string]any)
-		id, _ := thread["id"].(string)
-		if id == "" {
-			continue
-		}
-		paths, err := filepath.Glob(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "rollout-*-"+id+".jsonl"))
-		if err != nil {
-			return "", err
-		}
-		for _, path := range paths {
-			info, err := os.Stat(path)
-			if err == nil && info.ModTime().After(since) && info.ModTime().After(newestAt) {
-				newest, newestAt = id, info.ModTime()
-			}
+	for _, path := range paths {
+		info, err := os.Stat(path)
+		if err == nil && info.ModTime().After(since) {
+			return id, nil
 		}
 	}
-	return newest, nil
+	return "", nil
 }
 
 // CodexStartTurn sends one message to the thread the terminal is showing and
@@ -310,6 +265,9 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
 		return err
 	}
+	if err := EnsureCodexTUIProxy(ctx, root, session); err != nil {
+		return err
+	}
 	client, err := dialCodexAppServer(ctx, session)
 	if err != nil {
 		return err
@@ -322,8 +280,67 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	if err := codexQueueInput(ctx, client, thread, messageID, text, images); err != nil {
 		return err
 	}
+	if err := waitForCodexUserItem(ctx, client, thread, messageID); err != nil {
+		return err
+	}
 	_ = os.Remove(codexResetPendingFile(root, session))
 	return nil
+}
+
+// A queue receipt only confirms storage. The matching native user item proves
+// that this thread consumed the exact message before Chat shows it as delivered.
+func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, messageID string) error {
+	deadline := time.NewTimer(90 * time.Second)
+	defer deadline.Stop()
+	useThreadRead := false
+	for {
+		var result map[string]any
+		var err error
+		if !useThreadRead {
+			result, err = client.call(ctx, "thread/items/list", map[string]any{
+				"threadId": thread, "sortDirection": "desc", "limit": 100,
+			})
+			if err != nil {
+				useThreadRead = true
+			}
+		}
+		if useThreadRead {
+			result, err = client.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
+		}
+		if err != nil {
+			return fmt.Errorf("%w: Codex queue accepted but native consumption could not be checked: %v", ErrAmbiguousMessage, err)
+		}
+		if useThreadRead {
+			threadData, _ := result["thread"].(map[string]any)
+			turns, _ := threadData["turns"].([]any)
+			for _, value := range turns {
+				turn, _ := value.(map[string]any)
+				items, _ := turn["items"].([]any)
+				for _, value := range items {
+					item, _ := value.(map[string]any)
+					if item["type"] == "userMessage" && item["clientId"] == messageID {
+						return nil
+					}
+				}
+			}
+		} else {
+			entries, _ := result["data"].([]any)
+			for _, value := range entries {
+				entry, _ := value.(map[string]any)
+				item, _ := entry["item"].(map[string]any)
+				if item["type"] == "userMessage" && item["clientId"] == messageID {
+					return nil
+				}
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("%w: Codex queue accepted but native consumption was not confirmed: %v", ErrAmbiguousMessage, ctx.Err())
+		case <-deadline.C:
+			return fmt.Errorf("%w: Codex queue accepted but native consumption was not confirmed within 90 seconds", ErrAmbiguousMessage)
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
 }
 
 func codexQueueInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {

@@ -290,22 +290,6 @@ func TestDeliverCodexChatLeavesUnsentTUIDraftUntouched(t *testing.T) {
 	}
 }
 
-func TestNewestCodexThreadDoesNotPinRememberedConversation(t *testing.T) {
-	threads := []any{
-		map[string]any{"id": "new-visible", "recencyAt": float64(200)},
-		map[string]any{"id": "old-remembered", "recencyAt": float64(100)},
-	}
-	if got := newestCodexThread(threads, "old-remembered"); got != "new-visible" {
-		t.Fatalf("post-/new delivery selected %q, want the newly active thread", got)
-	}
-	withoutRecency := []any{
-		map[string]any{"id": "first"},
-		map[string]any{"id": "old-remembered"},
-	}
-	if got := newestCodexThread(withoutRecency, "old-remembered"); got != "old-remembered" {
-		t.Fatalf("old server fallback selected %q, want remembered thread", got)
-	}
-}
 func TestStartCodexChatPassesInitialMessageAndImagesAsArguments(t *testing.T) {
 	stubRegisteredAgent(t, "codex")
 	stubCodexBackend(t)
@@ -515,9 +499,10 @@ func TestChatAskAllowsStandaloneQuestion(t *testing.T) {
 // path that starts one.
 func stubCodexBackend(t *testing.T) {
 	t.Helper()
-	original := EnsureCodexAppServer
-	t.Cleanup(func() { EnsureCodexAppServer = original })
+	original, originalProxy := EnsureCodexAppServer, EnsureCodexTUIProxy
+	t.Cleanup(func() { EnsureCodexAppServer, EnsureCodexTUIProxy = original, originalProxy })
 	EnsureCodexAppServer = func(context.Context, string) error { return nil }
+	EnsureCodexTUIProxy = func(context.Context, string, string) error { return nil }
 }
 
 func stubCodexDeliveryHealth(t *testing.T) {

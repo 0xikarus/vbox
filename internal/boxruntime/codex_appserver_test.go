@@ -11,7 +11,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/coder/websocket"
 )
@@ -71,15 +73,16 @@ func TestCodexStartTurnStartsFreshThreadOnlyWhenOldOneIsMissing(t *testing.T) {
 	}
 }
 
-func TestCodexCurrentThreadPrefersFirstTurnAfterClear(t *testing.T) {
+func TestCodexCurrentThreadUsesVisibleBindingInsteadOfPersistedRecency(t *testing.T) {
 	root := t.TempDir()
-	if err := writeTextAtomic(codexResetPendingFile(root, "session"), "fresh-thread\n", 0600); err != nil {
+	if err := writeTextAtomic(codexResetPendingFile(root, "session"), "old-thread\n", 0600); err != nil {
 		t.Fatal(err)
 	}
-	// No app-server query is needed while the freshly created thread is idle;
-	// the older conversation may still appear more recently active in its list.
+	originalState := codexVisibleThreadState
+	t.Cleanup(func() { codexVisibleThreadState = originalState })
+	codexVisibleThreadState = func(context.Context, string) (bool, string, error) { return true, "visible-thread", nil }
 	id, err := CodexCurrentThread(context.Background(), nil, root, "session", "/workspace")
-	if err != nil || id != "fresh-thread" {
+	if err != nil || id != "visible-thread" {
 		t.Fatalf("thread=%q err=%v", id, err)
 	}
 }
@@ -102,11 +105,46 @@ func TestMarkFreshCodexTUIInvalidatesOldThread(t *testing.T) {
 
 func TestCodexCurrentThreadRejectsUnmaterializedTUI(t *testing.T) {
 	root := t.TempDir()
+	originalState := codexVisibleThreadState
+	t.Cleanup(func() { codexVisibleThreadState = originalState })
+	codexVisibleThreadState = func(context.Context, string) (bool, string, error) { return true, "", nil }
 	if err := markFreshCodexTUI(root, "codex-wake"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := CodexCurrentThread(context.Background(), nil, root, "codex-wake", "/workspace"); err == nil || !strings.Contains(err.Error(), "visible pane") {
 		t.Fatalf("unmaterialized TUI selected an old thread: %v", err)
+	}
+}
+
+func TestFreshCodexTUIWaitsForItsOwnRolloutButAllowsResume(t *testing.T) {
+	home := t.TempDir()
+	since := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+	originalState := codexVisibleThreadState
+	t.Cleanup(func() { codexVisibleThreadState = originalState })
+	active := "01a0d9be-6f3d-7021-b836-ca708ceb50b2"
+	codexVisibleThreadState = func(context.Context, string) (bool, string, error) { return true, active, nil }
+	id, err := codexRecentRolloutThread(context.Background(), "codex-test", home, since)
+	if err != nil || id != "" {
+		t.Fatalf("empty new thread=%q err=%v", id, err)
+	}
+	path := filepath.Join(home, ".codex", "sessions", "2026", "09", "25", "rollout-test-"+active+".jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("materialized"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, since.Add(time.Minute), since.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	id, err = codexRecentRolloutThread(context.Background(), "codex-test", home, since)
+	if err != nil || id != active {
+		t.Fatalf("materialized thread=%q err=%v", id, err)
+	}
+	active = "0199d9be-6f3d-7021-b836-ca708ceb50b2"
+	id, err = codexRecentRolloutThread(context.Background(), "codex-test", home, since)
+	if err != nil || id != active {
+		t.Fatalf("resumed older thread=%q err=%v", id, err)
 	}
 }
 
@@ -165,6 +203,52 @@ func TestCodexQueueInputSendsImageAsStructuredPart(t *testing.T) {
 	defer client.Close()
 	if err := codexQueueInput(context.Background(), client, "visible-thread", "message-1", "inspect this", []string{"/tmp/scene.png"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCodexQueueReceiptWaitsForMatchingNativeUserItem(t *testing.T) {
+	var reads atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			_ = json.Unmarshal(raw, &request)
+			if request.Method != "thread/items/list" {
+				t.Errorf("unexpected method %q", request.Method)
+			}
+			count := reads.Add(1)
+			clientID := "other-message"
+			if count > 1 {
+				clientID = "expected-message"
+			}
+			response, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{"data": []any{map[string]any{"item": map[string]any{"type": "userMessage", "clientId": clientID}}}}})
+			_ = conn.Write(r.Context(), websocket.MessageText, response)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := waitForCodexUserItem(context.Background(), client, "visible-thread", "expected-message"); err != nil {
+		t.Fatal(err)
+	}
+	if reads.Load() != 2 {
+		t.Fatalf("confirmed after %d reads, wanted 2", reads.Load())
 	}
 }
 

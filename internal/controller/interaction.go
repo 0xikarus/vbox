@@ -14,6 +14,7 @@ import (
 	"time"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/boxruntime"
 	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
@@ -272,7 +273,11 @@ func (s *Server) deliverBoxMessage(ctx context.Context, p Principal, task v1.Box
 	}
 	if result.ExitCode != 0 {
 		detail := strings.TrimSpace(result.Stderr)
-		_ = settle("failed", detail)
+		if task.Agent == "codex" && strings.Contains(detail, boxruntime.ErrAmbiguousMessage.Error()) {
+			_ = settle("ambiguous", detail)
+		} else {
+			_ = settle("failed", detail)
+		}
 		return fmt.Errorf("message delivery exited with status %d: %s", result.ExitCode, detail)
 	}
 	if err := settle("delivered", ""); err != nil {

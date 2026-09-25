@@ -22,7 +22,7 @@ func managedAgent(value string) bool {
 }
 
 func managedAgentSessionName(name string) bool {
-	return strings.HasPrefix(name, codexAppServerPrefix)
+	return strings.HasPrefix(name, codexAppServerPrefix) || strings.HasPrefix(name, codexTUIProxyPrefix)
 }
 
 func managedSnapshotSession(session TmuxSession) bool {

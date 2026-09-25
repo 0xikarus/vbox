@@ -278,16 +278,19 @@ func TestDesktopMCPPortIsPerAssignment(t *testing.T) {
 // The façade is not a Codex detail: every harness gets it, and a box with no
 // managed desktop has no assignment to serve under.
 func TestEnsureAgentBackendStartsTheFacadeForEveryAgent(t *testing.T) {
-	originalFacade, originalCodex := EnsureDesktopMCPHTTP, EnsureCodexAppServer
-	t.Cleanup(func() { EnsureDesktopMCPHTTP, EnsureCodexAppServer = originalFacade, originalCodex })
+	originalFacade, originalCodex, originalProxy := EnsureDesktopMCPHTTP, EnsureCodexAppServer, EnsureCodexTUIProxy
+	t.Cleanup(func() {
+		EnsureDesktopMCPHTTP, EnsureCodexAppServer, EnsureCodexTUIProxy = originalFacade, originalCodex, originalProxy
+	})
 	EnsureCodexAppServer = func(context.Context, string) error { return nil }
+	EnsureCodexTUIProxy = func(context.Context, string, string) error { return nil }
 	for _, agent := range []string{"codex", "claude", "opencode", "shell"} {
 		started := ""
 		EnsureDesktopMCPHTTP = func(_ context.Context, assignment string) error {
 			started = assignment
 			return nil
 		}
-		if err := ensureAgentBackend(context.Background(), "session", agent, "worker-a"); err != nil {
+		if err := ensureAgentBackend(context.Background(), t.TempDir(), "session", agent, "worker-a"); err != nil {
 			t.Fatalf("%s: %v", agent, err)
 		}
 		if started != "worker-a" {

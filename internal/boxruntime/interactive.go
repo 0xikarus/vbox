@@ -32,7 +32,7 @@ func StartInteractiveCommand(ctx context.Context, root, session, agent, startCLI
 	if err != nil {
 		return err
 	}
-	if err := ensureAgentBackend(ctx, session, agent, assignment); err != nil {
+	if err := ensureAgentBackend(ctx, root, session, agent, assignment); err != nil {
 		return err
 	}
 	if agent == "codex" {
@@ -90,7 +90,7 @@ func RestoreManagedAgent(ctx context.Context, root, session, agent string) error
 	if err != nil {
 		return err
 	}
-	if err := ensureAgentBackend(ctx, session, agent, assignment); err != nil {
+	if err := ensureAgentBackend(ctx, root, session, agent, assignment); err != nil {
 		return err
 	}
 	if agent == "codex" {
@@ -214,14 +214,17 @@ func recoverCodexMCPStartup(ctx context.Context, session string) error {
 // attach. Every box gets the HTTP tool façade so scripts can reach the desktop
 // tools; OpenCode serves its own API in-process, and Codex needs its app server
 // running first, because the terminal joins it with --remote.
-func ensureAgentBackend(ctx context.Context, session, agent, assignment string) error {
+func ensureAgentBackend(ctx context.Context, root, session, agent, assignment string) error {
 	if err := EnsureDesktopMCPHTTP(ctx, assignment); err != nil {
 		return err
 	}
 	if agent != "codex" {
 		return nil
 	}
-	return EnsureCodexAppServer(ctx, session)
+	if err := EnsureCodexAppServer(ctx, session); err != nil {
+		return err
+	}
+	return EnsureCodexTUIProxy(ctx, root, session)
 }
 
 func persistentAgentArgv(session, agent string) ([]string, error) {
@@ -231,7 +234,7 @@ func persistentAgentArgv(session, agent string) ([]string, error) {
 		// its own, so chat and the box show the same thread. Full access is set
 		// in ~/.codex/config.toml; a CLI permission override prevents the remote
 		// TUI from switching threads after Clear context.
-		return []string{agent, "--remote", codexAppServerURL(session),
+		return []string{agent, "--remote", codexTUIProxyURL(session),
 			"-c", "check_for_update_on_startup=false",
 			"-c", "suppress_unstable_features_warning=true",
 			"-c", "notice.hide_rate_limit_model_nudge=true"}, nil

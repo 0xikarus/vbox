@@ -19,6 +19,11 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		return false, nil
 	}
 	switch args[0] {
+	case "codex-tui-proxy":
+		if len(args) != 2 {
+			return true, fmt.Errorf("codex-tui-proxy requires SESSION")
+		}
+		return true, boxruntime.ServeCodexTUIProxy(context.Background(), runtime.Root, args[1])
 	case "codex-resume-candidate":
 		if len(args) != 2 {
 			return true, fmt.Errorf("codex-resume-candidate requires SESSION")

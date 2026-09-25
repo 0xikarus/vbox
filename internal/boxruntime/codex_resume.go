@@ -141,7 +141,7 @@ func RestoreCodexConversation(ctx context.Context, root, session string, expecte
 }
 
 func codexRemoteResumeArgv(session, threadID string) []string {
-	return []string{"codex", "resume", "--remote", codexAppServerURL(session),
+	return []string{"codex", "resume", "--remote", codexTUIProxyURL(session),
 		"-c", "check_for_update_on_startup=false", "-c", "suppress_unstable_features_warning=true",
 		"-c", "notice.hide_rate_limit_model_nudge=true", threadID}
 }
