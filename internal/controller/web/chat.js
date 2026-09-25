@@ -32,8 +32,9 @@
  const inputDrafts=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}')}catch{return{}}})();
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
+ let chatAI=null;
  if(window.VMBoxAIHelper){
-  window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected});
+  chatAI=window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected});
   window.VMBoxAIHelper.attach({input:$('#preset-form textarea[name="markdown"]'),kind:'markdown',status:$('#preset-status')});
   window.VMBoxAIHelper.attach({input:$('#box-instructions-markdown'),kind:'markdown',status:$('#box-instructions-status')});
   window.VMBoxAIHelper.attach({input:$('#create-instructions-custom'),kind:'markdown'});
@@ -1505,12 +1506,13 @@
  function updateSendState(){
   const drafts=attachmentDrafts.get(selected)||[];
   const hasContent=!!inputEl.value.trim()||drafts.length>0;
-  const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate;send.disabled=!hasContent||!running;
-  const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
+  const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate;send.disabled=!hasContent||!running||autoEnhancing;
+  const count=drafts.length,autoLabel=chatAI?.isAutoEnabled()&&inputEl.value.trim()?(autoReady?.box===selected&&autoReady.text===inputEl.value?'Send improved message':'Improve draft'):'Send';
+  const label=count?autoLabel+' ('+count+' attachment'+(count===1?'':'s')+')':autoLabel;
   send.setAttribute('aria-label',label);
   send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved Codex session first.':'Wait for this box to be running before sending';
  }
- inputEl.addEventListener('input',()=>{grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ inputEl.addEventListener('input',()=>{if(autoReady?.text!==inputEl.value)autoReady=null;grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
  inputEl.addEventListener('focus',()=>{
   if(composerHintShown)return;composerHintShown=true;
@@ -1586,12 +1588,44 @@
  });
  composer.addEventListener('dragover',event=>{if([...(event.dataTransfer?.types||[])].includes('Files'))event.preventDefault()});
  composer.addEventListener('drop',event=>{const files=[...(event.dataTransfer?.files||[])];if(files.length){event.preventDefault();void uploadImages(files)}});
+ const sendButton=$('#send');
+ let autoReady=null,autoEnhancing=false,skipAutoOnce=false,sendHoldTimer=0,sendHoldTriggered=false;
+ async function improveForSend(sendAfter){
+  if(autoEnhancing||!chatAI||!selected||!inputEl.value.trim())return;
+  const boxID=selected;
+  autoEnhancing=true;autoReady=null;updateSendState();
+  try{
+   const improved=await chatAI.run();
+   if(!improved||selected!==boxID)return;
+   autoReady={box:boxID,text:inputEl.value};
+   if(sendAfter){skipAutoOnce=true;composer.requestSubmit()}
+  }finally{autoEnhancing=false;updateSendState()}
+ }
+ sendButton.addEventListener('pointerdown',event=>{
+  if(event.button!==0||sendButton.disabled||!chatAI?.isAutoEnabled()||!inputEl.value.trim())return;
+  sendHoldTriggered=false;
+  sendButton.classList.add('send-holding');
+  sendHoldTimer=setTimeout(()=>{
+   sendHoldTimer=0;sendHoldTriggered=true;sendButton.classList.remove('send-holding');
+   void improveForSend(true);
+  },2000);
+ });
+ function endSendHold(){clearTimeout(sendHoldTimer);sendHoldTimer=0;sendButton.classList.remove('send-holding');if(sendHoldTriggered)setTimeout(()=>{sendHoldTriggered=false},300)}
+ for(const name of ['pointerup','pointercancel','pointerleave'])sendButton.addEventListener(name,endSendHold);
+ sendButton.addEventListener('click',event=>{if(sendHoldTriggered){event.preventDefault();event.stopImmediatePropagation();sendHoldTriggered=false}},true);
+ sendButton.addEventListener('contextmenu',event=>{if(sendHoldTimer||sendHoldTriggered)event.preventDefault()});
  composer.onsubmit=async event=>{
   event.preventDefault();
+  const bypassAuto=skipAutoOnce;skipAutoOnce=false;
   if(!selected)return;
   const boxID=selected,box=boxes.get(boxID);
   if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved Codex session first.';updateSendState();return}
   if(box?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';updateSendState();return}
+  if(autoEnhancing&&!bypassAuto)return;
+  if(!bypassAuto&&chatAI?.isAutoEnabled()&&inputEl.value.trim()){
+   if(autoReady?.box!==boxID||autoReady.text!==inputEl.value){void improveForSend(false);return}
+  }
+  autoReady=null;
   const drafts=attachmentDrafts.get(boxID)||[];
   const text=inputEl.value,images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo,mentionedBoxIds=mentionedBoxIDs(text);
   if(!text.trim()&&!images.length)return;
