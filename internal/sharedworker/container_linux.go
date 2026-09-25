@@ -73,8 +73,9 @@ func (r *ContainerRuntime) run(ctx context.Context, args ...string) ([]byte, err
 }
 
 type containerInspect struct {
-	State  struct{ Running bool }
-	Config struct{ Labels map[string]string }
+	State      struct{ Running bool }
+	Config     struct{ Labels map[string]string }
+	HostConfig struct{ Memory, MemorySwap int64 }
 }
 
 func (r *ContainerRuntime) inspect(ctx context.Context, w Workspace) (*containerInspect, error) {
@@ -154,6 +155,13 @@ func (r *ContainerRuntime) Prepare(ctx context.Context, w Workspace) error {
 		if err != nil {
 			return err
 		}
+		// Upgrade only the previous no-swap policy. Preserve any host-side
+		// resource customization and keep live agent sessions intact.
+		if existing.HostConfig.Memory == 2<<30 && existing.HostConfig.MemorySwap == 2<<30 {
+			if _, err = r.run(ctx, "update", "--memory-swap", "3g", r.name(w)); err != nil {
+				return err
+			}
+		}
 		return r.waitReady(ctx, w)
 	}
 	// A separate bridge for each workspace prevents ordinary inter-container
@@ -221,7 +229,7 @@ func (r *ContainerRuntime) createArgs(w Workspace) []string {
 	args := []string{"create", "--name", r.name(w), "--hostname", "box-" + w.ID[:12], "--label", "io.vmbox.workspace=" + w.ID, "--label", "io.vmbox.root=" + r.Root, "--label", "io.vmbox.policy=" + r.Image + ":v2-sudo",
 		"--network", r.name(w) + "-net", "--user", "0:0", "--cap-drop=ALL",
 		"--cap-add=CHOWN", "--cap-add=DAC_OVERRIDE", "--cap-add=FOWNER", "--cap-add=FSETID", "--cap-add=SETUID", "--cap-add=SETGID", "--cap-add=SETFCAP", "--cap-add=SYS_CHROOT", "--cap-add=KILL", "--cap-add=NET_BIND_SERVICE", "--cap-add=AUDIT_WRITE",
-		"--memory", "2g", "--memory-swap", "2g", "--cpus", "1", "--pids-limit", "512", "--shm-size", "256m", "--restart", "no", "--no-healthcheck",
+		"--memory", "2g", "--memory-swap", "3g", "--cpus", "1", "--pids-limit", "512", "--shm-size", "256m", "--restart", "no", "--no-healthcheck",
 		"--log-opt", "max-size=10m", "--log-opt", "max-file=2", "--workdir", "/",
 		"--mount", "type=bind,src=" + r.root(w) + ",dst=/data,bind-propagation=rprivate",
 		"--tmpfs", "/tmp:rw,nosuid,nodev,size=256m,mode=1777", "--tmpfs", "/var/tmp:rw,nosuid,nodev,size=128m,mode=1777", "--tmpfs", "/run:rw,nosuid,nodev,size=64m,mode=1777",

@@ -31,11 +31,16 @@ through authenticated supervisor exec, so VNC and MCP operate on the correct
 private localhost. IPv4 internet/DNS is available; host services, sibling
 networks, private/metadata addresses and IPv6 egress are denied.
 
-Initial fixed limits per container are 2 GiB RAM (no additional swap), 1 CPU,
-512 processes, and 256 MiB shared memory. These are reported in connection
+Initial fixed limits per container are 2 GiB RAM plus up to 1 GiB swap when
+the host has swap available, 1 CPU, 512 processes, and 256 MiB shared memory.
+The swap allowance gives memory-heavy desktop and agent sessions room for short
+peaks; sustained swapping is slower and workloads can still exhaust the limit.
+The RAM, CPU, process, and shared-memory limits are reported in connection
 metadata and enforced over all descendants by Docker/cgroup v2. They are not
 yet configurable per box or exposed in a dedicated UI. Disk space is shared
 without quotas. Reserve host/supervisor capacity when choosing slot counts.
+Supervisor preparation updates the swap limit of existing containers in place,
+without restarting their agent sessions.
 
 Stop removes the container and private network, retaining workspace files.
 System packages and changes outside `/data` are deliberately discarded on

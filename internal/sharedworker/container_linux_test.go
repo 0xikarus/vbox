@@ -14,7 +14,7 @@ func TestContainerCreateBoundary(t *testing.T) {
 	r := &ContainerRuntime{Root: "/srv/disposable", Image: "example@sha256:abc", Prefix: "vmbox-12345678"}
 	w := Workspace{ID: "0123456789abcdef0123456789abcdef", UID: 30000, Display: 1000}
 	args := strings.Join(r.createArgs(w), " ")
-	for _, want := range []string{"--cap-drop=ALL", "--cap-add=SETUID", "--cap-add=SETGID", "--memory 2g", "--cpus 1", "--pids-limit 512", "NOPASSWD: ALL", "dst=/data,bind-propagation=rprivate", "--network " + r.name(w) + "-net"} {
+	for _, want := range []string{"--cap-drop=ALL", "--cap-add=SETUID", "--cap-add=SETGID", "--memory 2g --memory-swap 3g", "--cpus 1", "--pids-limit 512", "NOPASSWD: ALL", "dst=/data,bind-propagation=rprivate", "--network " + r.name(w) + "-net"} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("missing boundary %q", want)
 		}
@@ -86,7 +86,7 @@ func TestDisposableContainerBoundary(t *testing.T) {
 		if run(w, "id -un") != workspaceUser(w) {
 			t.Fatal("workspace identity files unreadable")
 		}
-		run(w, `set -eu; test ! -e /data/workspaces; test ! -e /data/.shared-worker; test ! -e /var/run/docker.sock; test ! -w /usr; test -z "${VMBOX_SHARED_TOKEN:-}"; test "$(cat /sys/fs/cgroup/memory.max)" = 2147483648; test "$(cat /sys/fs/cgroup/pids.max)" = 512; test "$(cat /sys/fs/cgroup/cpu.max)" = '100000 100000'; test "$(tmux list-sessions -F '#{session_name}' | grep -c persistent)" = 1; curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:18765/ >/dev/null; curl -fsS --max-time 20 https://example.com >/dev/null`)
+		run(w, `set -eu; test ! -e /data/workspaces; test ! -e /data/.shared-worker; test ! -e /var/run/docker.sock; test ! -w /usr; test -z "${VMBOX_SHARED_TOKEN:-}"; test "$(cat /sys/fs/cgroup/memory.max)" = 2147483648; test "$(cat /sys/fs/cgroup/memory.swap.max)" = 1073741824; test "$(cat /sys/fs/cgroup/pids.max)" = 512; test "$(cat /sys/fs/cgroup/cpu.max)" = '100000 100000'; test "$(tmux list-sessions -F '#{session_name}' | grep -c persistent)" = 1; curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:18765/ >/dev/null; curl -fsS --max-time 20 https://example.com >/dev/null`)
 	}
 	if run(a, `cat "$HOME/marker"`) != "alpha" || run(b, `cat "$HOME/marker"`) != "beta" {
 		t.Fatal("workspace content crossed")
@@ -97,8 +97,17 @@ func TestDisposableContainerBoundary(t *testing.T) {
 		}
 	}
 	// Restart preparation reuses the same environment, rather than duplicating it.
+	if _, err := r.run(ctx, "update", "--memory-swap", "2g", r.name(a)); err != nil {
+		t.Fatal(err)
+	}
+	if got := run(a, "cat /sys/fs/cgroup/memory.swap.max"); got != "0" {
+		t.Fatalf("swap should be disabled before policy reconciliation, got %s", got)
+	}
 	if err := r.Prepare(ctx, a); err != nil {
 		t.Fatal(err)
+	}
+	if got := run(a, "cat /sys/fs/cgroup/memory.swap.max"); got != "1073741824" {
+		t.Fatalf("swap headroom was not restored in place: %s", got)
 	}
 	run(a, "tmux has-session -t persistent")
 	if err := r.Stop(ctx, a); err != nil {
