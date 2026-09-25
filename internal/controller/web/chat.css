@@ -159,9 +159,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .msg-thread{border:0;background:none;color:var(--accent-text);font:inherit;font-size:.7rem;font-weight:800;cursor:pointer;padding:.1rem .25rem;margin-right:auto}
 .msg.user{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:var(--radius-sm)}
 .msg.agent{align-self:flex-start;border-bottom-left-radius:var(--radius-sm)}
-.msg.system,.msg.note{align-self:center;background:var(--accent-soft);color:var(--ink);font-size:.8rem;
-  text-align:center;box-shadow:var(--shadow)}
-.msg.note{border:1px dashed var(--accent)}
+.msg.note{align-self:center;background:var(--accent-soft);color:var(--ink);font-size:.8rem;
+  text-align:center;box-shadow:var(--shadow);border:1px dashed var(--accent)}
 .codex-resume-card{align-self:center;display:flex;flex-direction:column;gap:.55rem;width:min(100%,34rem);padding:.9rem;border:1px solid var(--accent);border-radius:var(--radius);background:var(--surface);box-shadow:var(--shadow)}
 .codex-resume-card>span{font-size:.83rem;color:var(--ink-soft)}
 .codex-resume-actions{display:flex;gap:.5rem;flex-wrap:wrap}
@@ -958,7 +957,12 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .msg.agent{border-bottom-left-radius:var(--radius-sm)}
 .msg.user{border-color:#42647c;border-bottom-right-radius:var(--radius-sm);color:#ecf6ff}
 .msg .meta{font-size:.65rem;margin-top:.35rem}
-.msg.system,.msg.note{border-color:var(--line);box-shadow:none;font-size:.75rem}
+.msg.system{align-self:center;display:flex;align-items:center;justify-content:center;gap:.4rem;
+  max-width:min(92%,37rem);padding:.12rem .35rem;border:0;border-radius:0;background:none;
+  color:var(--ink-soft);box-shadow:none;font-size:.7rem;line-height:1.4;text-align:center}
+.msg.system::before{content:"";flex:none;width:.25rem;height:.25rem;border-radius:50%;background:currentColor;opacity:.7}
+.msg.system+.msg.system{margin-top:-.3rem}
+.msg.note{border-color:var(--line);box-shadow:none;font-size:.75rem}
 .msg .choice{min-height:2.3rem;border-radius:var(--radius-sm);font-size:.81rem}
 .msg .question .send{background:var(--accent);color:var(--accent-ink)}
 .msg.processing{box-shadow:none;border-color:var(--line);font-size:.74rem}
