@@ -33,7 +33,7 @@
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
  if(window.VMBoxAIHelper){
-  window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected,getAttachments:()=>attachmentDrafts.get(selected)||[]});
+  window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected,getAttachments:()=>attachmentDrafts.get(selected)||[],prepareText:expandChatCommands});
   window.VMBoxAIHelper.attach({input:$('#preset-form textarea[name="markdown"]'),kind:'markdown',status:$('#preset-status')});
   window.VMBoxAIHelper.attach({input:$('#box-instructions-markdown'),kind:'markdown',status:$('#box-instructions-status')});
   window.VMBoxAIHelper.attach({input:$('#create-instructions-custom'),kind:'markdown'});
@@ -1450,6 +1450,11 @@
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
  const composerPicker=$('#composer-picker'),mentionCache=new Map();
  let pickerItems=[],pickerIndex=0,pickerRange=null,pickerRequest=0;
+ function expandChatCommands(text){
+  const commands=new Map(chatCommands.map(command=>[command.name,command.prompt]));
+  // Expand each draft token once; saved prompt text remains literal.
+  return text.replace(/(^|\s)\/([a-z0-9][a-z0-9_-]{0,39})(?=$|[^a-z0-9_-])/g,(match,prefix,name)=>commands.has(name)?prefix+commands.get(name):match);
+ }
  function hideComposerPicker(){pickerRequest++;pickerItems=[];pickerRange=null;composerPicker.hidden=true;composerPicker.replaceChildren()}
  function composerToken(){
   const before=inputEl.value.slice(0,inputEl.selectionStart),match=/(^|\s)([\/@])([A-Za-z0-9._-]*)$/.exec(before);
@@ -1478,7 +1483,7 @@
   const token=composerToken(),boxID=selected,request=++pickerRequest;
   if(!owner||!boxID||!token){hideComposerPicker();return}
   if(token.kind==='/'){
-   renderComposerPicker(chatCommands.filter(command=>command.name.startsWith(token.query)).map(command=>({kind:'/',name:command.name,detail:command.prompt,prompt:command.prompt})),token);
+   renderComposerPicker(chatCommands.filter(command=>command.name.startsWith(token.query)).map(command=>({kind:'/',name:command.name,detail:command.prompt})),token);
    return;
   }
   try{
@@ -1489,7 +1494,7 @@
  }
  function chooseComposerSuggestion(index){
   const item=pickerItems[index],range=pickerRange;if(!item||!range)return;
-  const insertion=item.kind==='/'?item.prompt:'@'+item.name+' ';
+  const insertion=item.kind==='/'?'/'+item.name:'@'+item.name+' ';
   inputEl.value=inputEl.value.slice(0,range.start)+insertion+inputEl.value.slice(range.end);
   const caret=range.start+insertion.length;hideComposerPicker();inputEl.focus();inputEl.setSelectionRange(caret,caret);
   inputEl.dispatchEvent(new Event('input',{bubbles:true}));
@@ -1593,7 +1598,7 @@
   if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved Codex session first.';updateSendState();return}
   if(box?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';updateSendState();return}
   const drafts=attachmentDrafts.get(boxID)||[];
-  const text=inputEl.value,images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo,mentionedBoxIds=mentionedBoxIDs(text);
+  const draftText=inputEl.value,text=expandChatCommands(draftText),images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo,mentionedBoxIds=mentionedBoxIDs(text);
   if(!text.trim()&&!images.length)return;
   if(mentionedBoxIds.length>8){statusEl.textContent='Mention at most eight boxes in one message.';return}
   hideComposerPicker();
@@ -1628,7 +1633,7 @@
    settled=true;
   }catch(e){
    statusEl.textContent=e.message;
-   if(!inputEl.value)inputEl.value=text;if(!replyingTo&&replyTarget)setReply(replyTarget);
+   if(!inputEl.value)inputEl.value=draftText;if(!replyingTo&&replyTarget)setReply(replyTarget);
    inputDrafts[boxID]=inputEl.value;saveInputDrafts();
    // Restore the drafts handed to the failed send alongside anything the user
    // attached meanwhile, so no blob URL is lost or leaked.
@@ -2626,7 +2631,7 @@
   const command=chatCommands.find(item=>item.name===selectedCommandName);if(!command)return;
   if(!selected){$('#command-status').textContent='Open a box chat to use this command.';return}
   const existing=inputEl.value;
-  inputEl.value=existing+(existing&&!existing.endsWith('\n')?'\n\n':'')+command.prompt;
+  inputEl.value=existing+(existing&&!existing.endsWith('\n')?'\n\n':'')+'/'+command.name;
   inputEl.dispatchEvent(new Event('input',{bubbles:true}));
   $('#commands-modal').hidden=true;inputEl.focus();inputEl.setSelectionRange(inputEl.value.length,inputEl.value.length);
  };

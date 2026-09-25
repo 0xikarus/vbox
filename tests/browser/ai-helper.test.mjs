@@ -31,7 +31,7 @@ const server=http.createServer(async(req,res)=>{
  }
  if(path==='/v1/run-once-images'&&req.method==='POST')return res.end(JSON.stringify({id:'uploaded-'+(++uploaded)}));
  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'codex',provider:'railway',volumeName:'v1'};
- const values={'/v1/whoami':{role:'owner'},'/v1/grid-boxes':[box],'/v1/logical-boxes':[box],'/v1/box-conversations':[],'/v1/profile-usage':[],'/v1/chat-commands':[],'/v1/tool-presets':[],'/v1/instruction-presets':{defaultName:'',presets:[]}};
+ const values={'/v1/whoami':{role:'owner'},'/v1/grid-boxes':[box],'/v1/logical-boxes':[box],'/v1/box-conversations':[],'/v1/profile-usage':[],'/v1/chat-commands':[{name:'polish',prompt:'Helo wrold'}],'/v1/tool-presets':[],'/v1/instruction-presets':{defaultName:'',presets:[]}};
  if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
  if(path.endsWith('/messages')){
   if(req.method==='POST'){let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);sentMessages.push(body);return res.end(JSON.stringify({message:{id:'sent-'+sentMessages.length,state:'complete'}}))}
@@ -125,6 +125,22 @@ try{
   await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello again');
   assert.match(requests.at(-1).instruction,/Keep the intent/);
   assert.equal(requests.at(-1).model,'openrouter/google/test-model');
+  await page.close();
+ });
+ await test('chat wand expands a saved slash command before rewriting',async()=>{
+  const page=await browser.newPage();await page.setViewport({width:1320,height:850});
+  await page.goto(base+'/chat#box=builder');
+  await page.evaluate(()=>localStorage.removeItem('vmboxChatInputDrafts'));await page.reload();
+  await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden && !!document.querySelector('#chat-composer .ai-wand'));
+  await page.type('#chat-input','/pol');
+  await page.waitForFunction(()=>!document.querySelector('#composer-picker').hidden);
+  await page.keyboard.press('Enter');
+  assert.equal(await page.$eval('#chat-input',el=>el.value),'/polish');
+  await page.click('#chat-composer .ai-wand');
+  await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello world');
+  assert.equal(requests.at(-1).text,'Helo wrold');
+  await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
+  assert.equal(sentMessages.at(-1).text,'Hello world');
   await page.close();
  });
  await test('mobile wand and Markdown preset share the same control',async()=>{

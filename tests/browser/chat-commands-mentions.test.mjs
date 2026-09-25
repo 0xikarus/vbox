@@ -6,7 +6,7 @@ import puppeteer from 'puppeteer-core';
 
 const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
-test('saved slash prompts insert editable text, mentions send IDs, and stopped boxes cannot send',async()=>{
+test('saved slash commands stay in drafts until send, mentions send IDs, and stopped boxes cannot send',async()=>{
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'codex'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex'},{id:'sleeping',name:'sleeping',state:'hibernated',defaultAgent:'codex'}];
  const commands=new Map(),posts=[],contactWrites=[];let wakeRequests=0;
  const server=http.createServer(async(req,res)=>{
@@ -65,31 +65,37 @@ test('saved slash prompts insert editable text, mentions send IDs, and stopped b
   await page.$eval('#commands-toggle',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#commands-modal').hidden && !document.querySelector('#command-use').hidden);
   await page.click('#command-use');
-  assert.equal(await page.$eval('#chat-input',el=>el.value),'Draft note\n\nReview this change and list two risks.','using a command must preserve an unsent draft');
+  assert.equal(await page.$eval('#chat-input',el=>el.value),'Draft note\n\n/review','using a command must preserve an unsent draft and its slash token');
   await page.$eval('#chat-input',el=>{el.value='';el.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.type('#chat-input','/rev');
   await page.waitForFunction(()=>!document.querySelector('#composer-picker').hidden);
   await page.keyboard.press('Enter');
-  assert.equal(await page.$eval('#chat-input',el=>el.value),'Review this change and list two risks.');
+  assert.equal(await page.$eval('#chat-input',el=>el.value),'/review');
   assert.equal(posts.length,0,'selecting a slash command must not send it');
+  await page.waitForFunction(()=>JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}').builder==='/review');
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('#chat-input').value==='/review');
   await page.type('#chat-input',' Include tests.');
   await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts[0].text,'Review this change and list two risks. Include tests.');
+  await page.type('#chat-input','Before /review. Keep /missing and https://example.test/review intact.');
+  await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
+  assert.equal(posts[1].text,'Before Review this change and list two risks.. Keep /missing and https://example.test/review intact.');
   await page.type('#chat-input','Please coordinate with @rev');
   await page.waitForFunction(()=>!document.querySelector('#composer-picker').hidden);
   await page.click('#composer-picker button');
   assert.equal(await page.$eval('#chat-input',el=>el.value),'Please coordinate with @reviewer ');
-  assert.equal(posts.length,1,'unsent mention must not create a message');
+  assert.equal(posts.length,2,'unsent mention must not create a message');
   assert.equal(contactWrites.length,0,'unsent mention must not alter contacts');
   await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
-  assert.deepEqual(posts[1].mentionedBoxIds,['reviewer']);
+  assert.deepEqual(posts[2].mentionedBoxIds,['reviewer']);
   await page.click('[data-box-id=sleeping]');
   await page.waitForFunction(()=>!document.querySelector('#chat-wake').hidden);
   assert.match(await page.$eval('#chat-banner',el=>el.textContent),/Files and chat history are saved/);
   await page.type('#chat-input','Wait until running');
   assert.equal(await page.$eval('#send',el=>el.disabled),true);
   await page.keyboard.press('Enter');
-  assert.equal(posts.length,2,'Enter must not bypass the stopped-box send guard');
+  assert.equal(posts.length,3,'Enter must not bypass the stopped-box send guard');
   await page.click('#chat-wake');
   await page.waitForFunction(()=>!document.querySelector('#send').disabled);
   assert.equal(wakeRequests,1);

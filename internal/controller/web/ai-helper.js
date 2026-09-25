@@ -115,7 +115,7 @@ window.VMBoxAIHelper = (() => {
    throw Error('An attached image is too detailed for an AI preview.');
   }finally{if(video){loaded.pause();loaded.removeAttribute('src');loaded.load()}}
  }
- function attach({input,kind='chat',status,getContext=()=>'',getAttachments=()=>[]}) {
+ function attach({input,kind='chat',status,getContext=()=>'',getAttachments=()=>[],prepareText=text=>text}) {
   if(!input || !defaults[kind])throw Error('AI helper requires a supported editor');
   const field=document.createElement('span');field.className='ai-field';
   input.parentNode.insertBefore(field,input);field.append(input);
@@ -135,7 +135,8 @@ window.VMBoxAIHelper = (() => {
     const attachments=[];
     for(const draft of drafts)attachments.push(await visualPreview(draft));
     if(!sameAttachments()||input.value!==original||getContext()!==context){report('Draft or attachments changed while the wand was working; try again.');return false}
-    const response=await fetch('/v1/ai/rewrite',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:original,instruction,kind,model,attachments}),signal:AbortSignal.timeout(50000)});
+    const prepared=prepareText(original);
+    const response=await fetch('/v1/ai/rewrite',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:prepared,instruction,kind,model,attachments}),signal:AbortSignal.timeout(50000)});
     let result;try{result=await response.json()}catch{}
     if(!response.ok)throw Error(result?.error||'AI helper request failed.');
     if(input.value!==original || getContext()!==context || !sameAttachments()){report('Draft or attachments changed while the wand was working; the new text was not applied.');return false}
