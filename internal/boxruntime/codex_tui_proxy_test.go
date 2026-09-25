@@ -19,6 +19,7 @@ func TestCodexTUIProxyTracksStartResumeAndDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var starts atomic.Int64
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
@@ -40,10 +41,15 @@ func TestCodexTUIProxyTracksStartResumeAndDisconnect(t *testing.T) {
 				return
 			}
 			threadID := "first-thread"
+			ephemeral := false
+			if request.Method == "thread/start" && starts.Add(1) > 1 {
+				threadID = "auxiliary-thread"
+				ephemeral = true
+			}
 			if request.Method == "thread/resume" {
 				threadID = "resumed-thread"
 			}
-			response, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{"thread": map[string]any{"id": threadID}}})
+			response, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{"thread": map[string]any{"id": threadID, "ephemeral": ephemeral}}})
 			if err := conn.Write(r.Context(), websocket.MessageText, response); err != nil {
 				return
 			}
@@ -71,7 +77,7 @@ func TestCodexTUIProxyTracksStartResumeAndDisconnect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for index, method := range []string{"thread/start", "thread/resume"} {
+	for index, method := range []string{"thread/start", "thread/start", "thread/resume"} {
 		request, _ := json.Marshal(map[string]any{"id": index + 1, "method": method, "params": map[string]any{}})
 		if err := conn.Write(context.Background(), websocket.MessageText, request); err != nil {
 			t.Fatal(err)

@@ -185,13 +185,17 @@ func forwardCodexServer(ctx context.Context, from, to *websocket.Conn, requests 
 			ID     json.RawMessage `json:"id"`
 			Result struct {
 				Thread struct {
-					ID string `json:"id"`
+					ID        string `json:"id"`
+					Ephemeral bool   `json:"ephemeral"`
 				} `json:"thread"`
 			} `json:"result"`
 		}
 		if json.Unmarshal(data, &message) == nil && pending[string(message.ID)] {
 			delete(pending, string(message.ID))
-			if message.Result.Thread.ID != "" {
+			// Codex can start an auxiliary ephemeral thread on the TUI's
+			// connection after a real turn. It cannot accept queued chat and
+			// does not replace the conversation shown in the terminal.
+			if message.Result.Thread.ID != "" && !message.Result.Thread.Ephemeral {
 				if err := state.bind(generation, message.Result.Thread.ID); err != nil {
 					return err
 				}
