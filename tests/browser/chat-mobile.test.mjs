@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const html=await readFile('internal/controller/web/chat.html','utf8');
@@ -10,6 +10,8 @@ const css=await readFile('internal/controller/web/chat.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
+const screenshotDir=process.env.VMBOX_CHAT_SCREENSHOTS||'docs/chat-ui/screenshots';
+if(process.env.VMBOX_CHAT_SCREENSHOTS)await mkdir(screenshotDir,{recursive:true});
 
 const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
 
@@ -68,7 +70,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   const tvPoint=await p.$eval('.msg.processing .tv-button',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
   await p.touchscreen.tap(tvPoint.x,tvPoint.y);
   await p.waitForFunction(()=>!document.querySelector('.tv-preview').hidden,{timeout:5000});
-  await p.screenshot({path:'docs/chat-ui/screenshots/mobile-chat-tv-preview.png'});
+  await p.screenshot({path:screenshotDir+'/mobile-chat-tv-preview.png'});
   assert.equal(await p.evaluate(()=>{const el=document.querySelector('.tv-preview');const e=new MouseEvent('contextmenu',{bubbles:true,cancelable:true});el.dispatchEvent(e);return e.defaultPrevented}),true,'long-press on the preview must not offer save-image');
   await p.touchscreen.tap(6,240);
   await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden);
@@ -82,7 +84,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.touchscreen.tap(morePoint.x,morePoint.y);
   await p.waitForFunction(()=>!document.querySelector('.msg-actions-menu').hidden);
   assert.equal(await p.$eval('.msg-actions-menu',el=>['Copy','Forward…'].every(label=>el.textContent.includes(label))),true,'message actions expose Copy and Forward');
-  await p.screenshot({path:'docs/chat-ui/screenshots/mobile-chat-message-actions.png'});
+  await p.screenshot({path:screenshotDir+'/mobile-chat-message-actions.png'});
   await p.touchscreen.tap(6,300);
   await p.waitForFunction(()=>document.querySelector('.msg-actions-menu').hidden);
 
@@ -92,7 +94,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await p.waitForFunction(()=>!!document.querySelector('#inspect-contacts'));
   await p.evaluate(()=>{document.activeElement?.blur()});
-  await p.screenshot({path:'docs/chat-ui/screenshots/mobile-chat-details.png'});
+  await p.screenshot({path:screenshotDir+'/mobile-chat-details.png'});
   const fit=await p.evaluate(()=>{
    const panel=document.querySelector('#inspect'),contacts=document.querySelector('#inspect-contacts');
    return {overflowX:document.documentElement.scrollWidth-document.documentElement.clientWidth,contactsWidth:contacts.getBoundingClientRect().width,panelWidth:panel.getBoundingClientRect().width};
@@ -111,7 +113,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.touchscreen.touchEnd();
   await new Promise(r=>setTimeout(r,300));
   await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')===false);
-  await p.screenshot({path:'docs/chat-ui/screenshots/mobile-chat-swipe-list.png'});
+  await p.screenshot({path:screenshotDir+'/mobile-chat-swipe-list.png'});
 
   // Long-press a row to open the context menu.
   const rowPoint=await p.$eval('[data-box-id="reviewer"]',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
@@ -119,8 +121,28 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await new Promise(resolve=>setTimeout(resolve,650));
   await p.touchscreen.touchEnd();
   await p.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
-  await p.screenshot({path:'docs/chat-ui/screenshots/mobile-chat-row-menu.png'});
+  await p.screenshot({path:screenshotDir+'/mobile-chat-row-menu.png'});
   assert.equal(await p.$eval('#row-menu',el=>el.textContent.includes('Show details')),true,'long-press opens the row context menu');
+  const mobileMenu=await p.$eval('#row-menu',el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
+  assert.ok(Math.abs(mobileMenu.left-rowPoint.x)<=10 && Math.abs(mobileMenu.top-rowPoint.y)<=10,'mobile menu starts at the hold point');
+
+  // Near the screen edges, place the menu above and to the left of the point.
+  const edgePoint=await p.evaluate(()=>({x:innerWidth-12,y:innerHeight-12}));
+  await p.evaluate(({x,y})=>{document.querySelector('[data-box-id="reviewer"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:x,clientY:y}))},edgePoint);
+  const edgeMenu=await p.$eval('#row-menu',el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
+  assert.ok(Math.abs(edgeMenu.right-edgePoint.x)<=10 && Math.abs(edgeMenu.bottom-edgePoint.y)<=10,'menu flips at the screen edge');
+  assert.ok(edgeMenu.left>=0&&edgeMenu.top>=0,'menu stays in the viewport');
+
   await p.close();
+  const desktop=await browser.newPage();await desktop.setViewport({width:1280,height:800});
+  await desktop.goto('http://127.0.0.1:'+server.address().port+'/chat');
+  await desktop.waitForSelector('[data-box-id="reviewer"]');
+  const desktopPoint=await desktop.$eval('[data-box-id="reviewer"]',el=>{const r=el.getBoundingClientRect();return {x:r.left+80,y:r.top+25}});
+  await desktop.mouse.click(desktopPoint.x,desktopPoint.y,{button:'right'});
+  await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  const desktopMenu=await desktop.$eval('#row-menu',el=>{const r=el.getBoundingClientRect();return {left:r.left,top:r.top}});
+  assert.ok(Math.abs(desktopMenu.left-desktopPoint.x)<=10&&Math.abs(desktopMenu.top-desktopPoint.y)<=10,'desktop menu starts at the right-click point');
+  await desktop.screenshot({path:screenshotDir+'/desktop-chat-row-menu.png'});
+  await desktop.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });

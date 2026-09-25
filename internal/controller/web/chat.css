@@ -479,7 +479,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #create-box .profile-field{display:flex;flex-direction:column;font-size:.8rem;color:var(--ink-soft)}
 
 #row-menu{position:fixed;z-index:15;background:var(--surface);border:1px solid var(--line);
-  border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.3rem;min-width:10rem}
+  border-radius:var(--radius);box-shadow:var(--shadow-pop);padding:.3rem;min-width:10rem;
+  max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px);overflow-y:auto}
 #row-menu button{display:flex;align-items:center;gap:.5rem;width:100%;border:0;background:none;
   color:var(--ink);padding:.4rem .5rem;border-radius:var(--radius-sm);cursor:pointer;font:inherit;text-align:left;margin:0;font-size:.84rem}
 #row-menu button:hover{background:var(--accent-soft)}
@@ -879,13 +880,10 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
    bleed through a modal backdrop or card. */
 body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 
-/* ── mobile bottom-sheet menus ───────────────────────────────────────── */
+/* ── touch context menu ──────────────────────────────────────────────── */
 #menu-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:14}
 #menu-backdrop[hidden]{display:none}
-#row-menu.sheet-mode{position:fixed;left:0;right:0;bottom:0;top:auto;z-index:15;min-width:0;
-  border-radius:var(--radius-lg) var(--radius-lg) 0 0;padding:.5rem .6rem calc(env(safe-area-inset-bottom) + .6rem);
-  max-height:72vh;overflow-y:auto}
-#row-menu.sheet-mode button{min-height:2.6rem;font-size:.9rem}
+#row-menu.touch-mode button{min-height:2.6rem;font-size:.9rem}
 
 /* ── connection / stalled banner ─────────────────────────────────────── */
 #chat-banner{margin:0;padding:.42rem .8rem;background:var(--warn);color:#fff;font-size:.82rem;font-weight:600;text-align:center}

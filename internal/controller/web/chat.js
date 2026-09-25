@@ -831,8 +831,8 @@
    let row=rows.get(box.id);
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
-    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{left:x,right:x,bottom:y+4,top:y})});
-    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
+    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
+    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{x:event.clientX,y:event.clientY})};
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
@@ -867,8 +867,8 @@
    const key=pairKey(pair);let row=pairRows.get(key);
    if(!row){
     row=document.createElement('li');row.dataset.pairKey=key;
-    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{left:x,right:x,bottom:y+4,top:y})});
-    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{left:event.clientX,right:event.clientX,bottom:event.clientY+4,top:event.clientY})};
+    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
+    row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{x:event.clientX,y:event.clientY})};
     const avatar=document.createElement('span');avatar.className='pair-avatar';avatar.textContent='↔';avatar.setAttribute('aria-hidden','true');
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
     const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
@@ -2110,8 +2110,8 @@
  const rowMenu=$('#row-menu'),menuBackdrop=$('#menu-backdrop');
  const wakingBoxes=new Set();
  const canWakeBox=box=>box&&['hibernated','detached','failed'].includes(box.state);
- function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('sheet-mode');menuBackdrop.hidden=true}
- function openRowMenu({box,pair},rect){
+ function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('touch-mode');menuBackdrop.hidden=true}
+ function openRowMenu({box,pair},point){
   rowMenu.replaceChildren();
   const key=box?pinKey('box',box.id):pinKey('pair',pairKey(pair));
   // Keep the menu small: everything else lives in the Details panel.
@@ -2125,17 +2125,19 @@
    items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
   }
   for(const item of items){const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
-  const sheet=coarsePointer()||innerWidth<=640;
-  rowMenu.classList.toggle('sheet-mode',sheet);
+  const touch=coarsePointer();
+  rowMenu.classList.toggle('touch-mode',touch);
   rowMenu.hidden=false;
-  if(sheet){
-   menuBackdrop.hidden=false;
-   try{navigator.vibrate?.(10)}catch{}
-   rowMenu.style.left=rowMenu.style.top='';
-  }else{
-   rowMenu.style.left=Math.max(8,Math.min(rect.left,innerWidth-rowMenu.offsetWidth-8))+'px';
-   rowMenu.style.top=Math.max(8,Math.min((rect.bottom||rect.top)+4,innerHeight-rowMenu.offsetHeight-8))+'px';
-  }
+  menuBackdrop.hidden=!touch;
+  if(touch)try{navigator.vibrate?.(10)}catch{}
+  const viewport=window.visualViewport,pad=8;
+  const minX=(viewport?.offsetLeft||0)+pad,maxX=(viewport?.offsetLeft||0)+(viewport?.width||innerWidth)-pad;
+  const minY=(viewport?.offsetTop||0)+pad,maxY=(viewport?.offsetTop||0)+(viewport?.height||innerHeight)-pad;
+  rowMenu.style.maxWidth=Math.max(1,maxX-minX)+'px';rowMenu.style.maxHeight=Math.max(1,maxY-minY)+'px';
+  const x=point.x,y=point.y,width=rowMenu.offsetWidth,height=rowMenu.offsetHeight;
+  const left=x+width<=maxX?Math.max(minX,x):x-width>=minX?x-width:Math.max(minX,maxX-width);
+  const top=y+height<=maxY?Math.max(minY,y):y-height>=minY?y-height:Math.max(minY,maxY-height);
+  rowMenu.style.left=left+'px';rowMenu.style.top=top+'px';
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
