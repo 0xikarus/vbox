@@ -8,7 +8,6 @@ window.VMBoxAIHelper = (() => {
  const wand = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 20 12-12"/><path d="m14 5 5 5"/><path d="m17 2 .5 2.5L20 5l-2.5.5L17 8l-.5-2.5L14 5l2.5-.5z"/><path d="m7 2 .35 1.65L9 4l-1.65.35L7 6l-.35-1.65L5 4l1.65-.35z"/></svg>';
  const currentPrompt = kind => {try{return localStorage.getItem('vmbox.aiPrompt.'+kind)||defaults[kind]}catch{return defaults[kind]}};
  const currentModel = kind => {try{return localStorage.getItem('vmbox.aiModel.'+kind)||''}catch{return ''}};
- const autoEnabled = () => {try{return localStorage.getItem('vmbox.aiAuto.chat')==='1'}catch{return false}};
  function modelControl({value='',optional=false}={}) {
   const label=document.createElement('label');label.className='ai-model-label';label.textContent='Model';
   const row=document.createElement('span');row.className='ai-model-row';
@@ -65,7 +64,7 @@ window.VMBoxAIHelper = (() => {
   }
   return {label,input,load,destroy(){version++;if(picker.open)picker.close();picker.remove()}};
  }
- function editPrompt(kind, run, onAutoChange=()=>{}) {
+ function editPrompt(kind, run) {
   const dialog=document.createElement('dialog');dialog.className='ai-prompt-dialog';
   const form=document.createElement('form');form.method='dialog';
   const title=document.createElement('h2');title.textContent='AI writing prompt';
@@ -73,18 +72,11 @@ window.VMBoxAIHelper = (() => {
   const label=document.createElement('label');label.textContent='Prompt';
   const textarea=document.createElement('textarea');textarea.rows=5;textarea.maxLength=2000;textarea.required=true;textarea.value=currentPrompt(kind);label.append(textarea);
   const model=modelControl({value:currentModel(kind),optional:true});
-  let autoToggle=null;
-  if(kind==='chat'){
-   autoToggle=document.createElement('label');autoToggle.className='ai-auto-toggle';
-   const copy=document.createElement('span');copy.innerHTML='<strong>Auto format on Send</strong><small>First tap improves your draft; second tap sends it. Hold Send for 2 seconds to improve and send.</small>';
-   const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=autoEnabled();checkbox.setAttribute('aria-label','Auto format on Send');
-   autoToggle.append(copy,checkbox);
-  }
   const actions=document.createElement('div');actions.className='ai-prompt-actions';
   const reset=document.createElement('button');reset.type='button';reset.textContent='Reset';reset.onclick=()=>{textarea.value=defaults[kind];model.input.value='';textarea.focus()};
   const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.onclick=()=>dialog.close();
   const save=document.createElement('button');save.type='submit';save.className='primary';save.textContent='Save & improve';
-  actions.append(reset,cancel,save);form.append(title,hint,label,model.label);if(autoToggle)form.append(autoToggle);form.append(actions);dialog.append(form);document.body.append(dialog);
+  actions.append(reset,cancel,save);form.append(title,hint,label,model.label,actions);dialog.append(form);document.body.append(dialog);
   const cleanup=()=>{model.destroy();dialog.remove()};dialog.addEventListener('close',cleanup,{once:true});
   form.addEventListener('submit',event=>{
    event.preventDefault();if(!textarea.reportValidity())return;
@@ -92,7 +84,6 @@ window.VMBoxAIHelper = (() => {
    try{localStorage.setItem('vmbox.aiPrompt.'+kind,instruction)}catch{}
    const selectedModel=model.input.value.trim();
    try{localStorage.setItem('vmbox.aiModel.'+kind,selectedModel)}catch{}
-   if(autoToggle){try{localStorage.setItem('vmbox.aiAuto.chat',autoToggle.querySelector('input').checked?'1':'0')}catch{}onAutoChange()}
    dialog.close();run(instruction,selectedModel);
   });
   dialog.showModal();void model.load();textarea.focus();textarea.select();
@@ -132,8 +123,6 @@ window.VMBoxAIHelper = (() => {
   button.title='Improve text · hold or right-click to edit prompt';button.setAttribute('aria-label','Improve text with AI. Hold or press Shift+Enter to edit prompt');
   field.append(button);
   let timer=0,longPress=false,busy=false;
-  const syncAuto=()=>{if(kind==='chat'){button.classList.toggle('ai-auto-on',autoEnabled());button.setAttribute('aria-pressed',String(autoEnabled()));button.title=autoEnabled()?'Auto format on · hold to edit prompt and settings':'Improve text · hold or right-click to edit prompt'}};
-  syncAuto();
   const report=message=>{if(status)status.textContent=message};
   async function run(instruction=currentPrompt(kind),model=currentModel(kind)) {
    if(busy)return false;
@@ -159,13 +148,13 @@ window.VMBoxAIHelper = (() => {
   }
   button.addEventListener('pointerdown',event=>{
    if(event.button!==0)return;longPress=false;
-   timer=setTimeout(()=>{longPress=true;editPrompt(kind,run,syncAuto)},550);
+   timer=setTimeout(()=>{longPress=true;editPrompt(kind,run)},550);
   });
   for(const name of ['pointerup','pointercancel','pointerleave'])button.addEventListener(name,()=>{clearTimeout(timer)});
   button.addEventListener('click',event=>{event.preventDefault();if(longPress){longPress=false;return}void run()});
-  button.addEventListener('contextmenu',event=>{event.preventDefault();clearTimeout(timer);if(longPress)return;longPress=true;editPrompt(kind,run,syncAuto)});
-  button.addEventListener('keydown',event=>{if(event.shiftKey && (event.key==='Enter'||event.key===' ')){event.preventDefault();editPrompt(kind,run,syncAuto)}});
-  return {button,run,isAutoEnabled:kind==='chat'?autoEnabled:()=>false};
+  button.addEventListener('contextmenu',event=>{event.preventDefault();clearTimeout(timer);if(longPress)return;longPress=true;editPrompt(kind,run)});
+  button.addEventListener('keydown',event=>{if(event.shiftKey && (event.key==='Enter'||event.key===' ')){event.preventDefault();editPrompt(kind,run)}});
+  return {button,run};
  }
  async function openSettings() {
   const dialog=document.createElement('dialog');dialog.className='ai-settings-dialog';
