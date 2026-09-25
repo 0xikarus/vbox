@@ -2267,7 +2267,7 @@
  const urlB64ToBytes=value=>{const padding='='.repeat((4-value.length%4)%4);const raw=atob(value.replace(/-/g,'+').replace(/_/g,'/')+padding);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))};
  function renderPushState(){
   pushCheck.hidden=false;pushStatus.hidden=false;
-  if(!pushSupported){pushBtn.hidden=true;pushStatus.textContent=isSecureContext?'This browser does not support web push.':'Notifications require an HTTPS controller.';return}
+  if(!pushSupported){pushBtn.hidden=true;pushCheck.disabled=true;pushStatus.textContent=isSecureContext?'This browser does not support web push.':'Notifications require an HTTPS controller.';return}
   pushBtn.hidden=false;
   const permission=Notification.permission;
   pushBtn.disabled=permission==='denied';
