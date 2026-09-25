@@ -32,8 +32,9 @@
  const inputDrafts=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}')}catch{return{}}})();
  const saveInputDrafts=()=>{try{localStorage.setItem('vmboxChatInputDrafts',JSON.stringify(inputDrafts))}catch{}};
  let inputDraftTimer=0;
+ let chatAI=null;
  if(window.VMBoxAIHelper){
-  window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected});
+  chatAI=window.VMBoxAIHelper.attach({input:inputEl,kind:'chat',status:statusEl,getContext:()=>selected,getAttachments:()=>attachmentDrafts.get(selected)||[]});
   window.VMBoxAIHelper.attach({input:$('#preset-form textarea[name="markdown"]'),kind:'markdown',status:$('#preset-status')});
   window.VMBoxAIHelper.attach({input:$('#box-instructions-markdown'),kind:'markdown',status:$('#box-instructions-status')});
   window.VMBoxAIHelper.attach({input:$('#create-instructions-custom'),kind:'markdown'});
@@ -1505,12 +1506,13 @@
  function updateSendState(){
   const drafts=attachmentDrafts.get(selected)||[];
   const hasContent=!!inputEl.value.trim()||drafts.length>0;
-  const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate;send.disabled=!hasContent||!running;
-  const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
+  const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate;send.disabled=!hasContent||!running||autoEnhancing;
+  const count=drafts.length,autoLabel=chatAI?.isAutoEnabled()&&inputEl.value.trim()?(autoReady?.box===selected&&autoReady.text===inputEl.value&&autoReady.attachments===attachmentKey(selected)?'Send improved message':'Improve draft'):'Send';
+  const label=count?autoLabel+' ('+count+' attachment'+(count===1?'':'s')+')':autoLabel;
   send.setAttribute('aria-label',label);
   send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved Codex session first.':'Wait for this box to be running before sending';
  }
- inputEl.addEventListener('input',()=>{grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ inputEl.addEventListener('input',()=>{if(autoReady?.text!==inputEl.value)autoReady=null;grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
  inputEl.addEventListener('focus',()=>{
   if(composerHintShown)return;composerHintShown=true;
@@ -1551,6 +1553,7 @@
    remove.onclick=()=>{const remaining=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);remaining.forEach((d,i)=>d.number=i+1);if(remaining.length)attachmentDrafts.set(selected,remaining);else attachmentDrafts.delete(selected);renderDrafts()};
    wrap.append(open,remove);draftsEl.append(wrap);
   }
+  if(drafts.length&&chatAI){const hint=document.createElement('span');hint.className='ai-attachment-context';hint.textContent=drafts.some(draft=>draft.kind==='video')?'✦ Wand uses images and video preview frames':'✦ Wand uses attached images';draftsEl.append(hint)}
   updateSendState();
  }
  async function uploadImages(files){
@@ -1586,12 +1589,45 @@
  });
  composer.addEventListener('dragover',event=>{if([...(event.dataTransfer?.types||[])].includes('Files'))event.preventDefault()});
  composer.addEventListener('drop',event=>{const files=[...(event.dataTransfer?.files||[])];if(files.length){event.preventDefault();void uploadImages(files)}});
+ const sendButton=$('#send');
+ let autoReady=null,autoEnhancing=false,skipAutoOnce=false,sendHoldTimer=0,sendHoldTriggered=false;
+ const attachmentKey=boxID=>(attachmentDrafts.get(boxID)||[]).map(draft=>draft.id).join('|');
+ async function improveForSend(sendAfter){
+  if(autoEnhancing||!chatAI||!selected||!inputEl.value.trim())return;
+  const boxID=selected;
+  autoEnhancing=true;autoReady=null;updateSendState();
+  try{
+   const improved=await chatAI.run();
+   if(!improved||selected!==boxID)return;
+   autoReady={box:boxID,text:inputEl.value,attachments:attachmentKey(boxID)};
+   if(sendAfter){skipAutoOnce=true;composer.requestSubmit()}
+  }finally{autoEnhancing=false;updateSendState()}
+ }
+ sendButton.addEventListener('pointerdown',event=>{
+  if(event.button!==0||sendButton.disabled||!chatAI?.isAutoEnabled()||!inputEl.value.trim())return;
+  sendHoldTriggered=false;
+  sendButton.classList.add('send-holding');
+  sendHoldTimer=setTimeout(()=>{
+   sendHoldTimer=0;sendHoldTriggered=true;sendButton.classList.remove('send-holding');
+   void improveForSend(true);
+  },2000);
+ });
+ function endSendHold(){clearTimeout(sendHoldTimer);sendHoldTimer=0;sendButton.classList.remove('send-holding');if(sendHoldTriggered)setTimeout(()=>{sendHoldTriggered=false},300)}
+ for(const name of ['pointerup','pointercancel','pointerleave'])sendButton.addEventListener(name,endSendHold);
+ sendButton.addEventListener('click',event=>{if(sendHoldTriggered){event.preventDefault();event.stopImmediatePropagation();sendHoldTriggered=false}},true);
+ sendButton.addEventListener('contextmenu',event=>{if(sendHoldTimer||sendHoldTriggered)event.preventDefault()});
  composer.onsubmit=async event=>{
   event.preventDefault();
+  const bypassAuto=skipAutoOnce;skipAutoOnce=false;
   if(!selected)return;
   const boxID=selected,box=boxes.get(boxID);
   if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved Codex session first.';updateSendState();return}
   if(box?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';updateSendState();return}
+  if(autoEnhancing&&!bypassAuto)return;
+  if(!bypassAuto&&chatAI?.isAutoEnabled()&&inputEl.value.trim()){
+   if(autoReady?.box!==boxID||autoReady.text!==inputEl.value||autoReady.attachments!==attachmentKey(boxID)){void improveForSend(false);return}
+  }
+  autoReady=null;
   const drafts=attachmentDrafts.get(boxID)||[];
   const text=inputEl.value,images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo,mentionedBoxIds=mentionedBoxIDs(text);
   if(!text.trim()&&!images.length)return;
@@ -1944,7 +1980,7 @@
  }
   /* ---------- new box (full controller feature set: agent, disk, placement defaults, login profiles, tools, setup script) ---------- */
   const newBoxModal=$('#new-box-modal'),createForm=$('#create-box'),previewCard=$('#create-preview-card');
-  let extrasLoaded=false,poolChoices=[],autoPoolIndex='';
+  let extrasLoaded=false,poolChoices=[],autoPoolIndex='',profileUsageLoadError=false,renderCreateProfileUsage=()=>{};
   const money=n=>'$'+(n>=0.1?n.toFixed(2):n.toFixed(3));
   const ctxLabel=n=>n>=1e6?(n/1e6).toFixed(n%1e6?1:0)+'M':n>=1e3?Math.round(n/1e3)+'k':n?'':'';
   function previewRows(){
@@ -1979,15 +2015,56 @@
   function renderCreationProfileChoices(profiles){
   const root=$('#profile-choices'),agentSelect=createForm.elements.defaultAgent;root._modelPicker?.destroy();root.replaceChildren();
   const profileLabel=document.createElement('label');profileLabel.className='field profile-field';profileLabel.textContent='Login profile';
-  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
+  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileSelect.hidden=true;profileLabel.append(profileSelect);
+  const profileList=document.createElement('div');profileList.className='create-profile-list';profileList.setAttribute('role','group');profileList.setAttribute('aria-label','Login profiles and remaining usage');
   const modelLabel=document.createElement('label');modelLabel.className='field profile-field';modelLabel.textContent='Model';
   const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);root._modelPicker=modelPicker;
   const githubLabel=document.createElement('label');githubLabel.className='field profile-field';githubLabel.textContent='GitHub profile';
   const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(new Option('None',''));
   for(const profile of profiles.filter(profile=>profile.application==='github'))githubSelect.append(new Option(profile.name,JSON.stringify({application:'github',name:profile.name})));
   githubLabel.append(githubSelect);githubLabel.hidden=githubSelect.options.length===1;
-   root.append(profileLabel,modelLabel,githubLabel);
-   const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setReasoningEffort('');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref&&['claude','codex','opencode'].includes(ref.application)?()=>api('/v1/login-profiles/'+encodeURIComponent(ref.application)+'/'+encodeURIComponent(ref.name)+'/models'):null);renderPreview()};
+   root.append(profileLabel,profileList,modelLabel,githubLabel);
+  renderCreateProfileUsage=()=>{
+   const app=agentSelect.value,choices=profiles.filter(profile=>profile.application===app);
+   const focusedValue=profileList.contains(document.activeElement)?document.activeElement.dataset.profile:null;
+   profileList.replaceChildren();profileList.hidden=app==='shell'||choices.length===0;
+   if(profileList.hidden)return;
+   const addChoice=(value,name,summary,details,profile)=>{
+    const button=document.createElement('button');button.type='button';button.className='create-profile-option';button.dataset.profile=value;
+    button.setAttribute('aria-pressed',String(profileSelect.value===value));
+    const heading=document.createElement('span');heading.className='create-profile-option-head';
+    const title=document.createElement('strong');title.textContent=name;
+    const remaining=document.createElement('span');remaining.className='create-profile-remaining';remaining.textContent=summary;
+    const lowest=profile?lowestRemaining(profile):null;
+    if(lowest!==null&&lowest<=20)remaining.classList.add('low');
+    heading.append(title,remaining);button.append(heading);
+    if(details){const detail=document.createElement('small');detail.textContent=details;button.append(detail)}
+    button.onclick=()=>{profileSelect.value=value;profileSelect.dispatchEvent(new Event('change',{bubbles:true}))};
+    profileList.append(button);
+   };
+   addChoice('','None','No profile','No saved profile selected');
+   for(const profile of choices){
+    const ref=JSON.stringify({application:profile.application,name:profile.name});
+    const measured=usageProfiles.find(item=>item.application===profile.application&&item.name===profile.name);
+    const remaining=lowestRemaining(measured);
+    const windows=(measured?.snapshot?.windows||[]).map(window=>{
+     const value=remainingPercent(window.usedPercent);if(value===null)return null;
+     const labels={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};
+     return (labels[window.name]||window.name)+(window.scope?' · '+window.scope:'')+' '+usageNumber(value)+'%';
+    }).filter(Boolean);
+    let summary=remaining===null?(usageLoaded||profileUsageLoadError?'Usage unavailable':'Checking usage…'):usageNumber(remaining)+'% left';
+    let details=windows.slice(0,3).join(' · ');
+    if(windows.length>3)details+=' · +'+(windows.length-3)+' more';
+    if(!details&&measured?.snapshot?.spend){const spend=measured.snapshot.spend;const left=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;if(left!==null){summary=usageNumber(left)+(spend.currency?' '+spend.currency:'')+' left';details='Spending balance'}}
+    if(!details&&measured?.snapshot?.balances?.length){const balance=measured.snapshot.balances[0];summary=usageNumber(balance.amount)+(balance.unit?' '+balance.unit:'')+' balance';details='Available balance'}
+    if(!details)details=measured?.error?'Last check failed':measured?.checkedAt?'No remaining limit reported':'No measurement yet';
+    const checkedAt=measured?.checkedAt||measured?.observedAt;
+    if(checkedAt){const date=new Date(checkedAt);if(!Number.isNaN(date.getTime()))details+=' · checked '+(date.toDateString()===new Date().toDateString()?date.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}):date.toLocaleDateString(undefined,{month:'short',day:'numeric'}))}
+    addChoice(ref,profile.name,summary,details,measured);
+   }
+   if(focusedValue!==null)[...profileList.children].find(button=>button.dataset.profile===focusedValue)?.focus({preventScroll:true});
+  };
+  const syncModel=()=>{const option=profileSelect.selectedOptions[0],hasProfile=!!profileSelect.value;modelInput.disabled=!hasProfile;modelPicker.setValue(hasProfile?option?.dataset.model||'':'');modelPicker.setReasoningEffort('');modelPicker.setOptions(window.VMBoxModelPicker.optionsFor(agentSelect.value,[option?.dataset.model]));modelLabel.hidden=!hasProfile;const ref=hasProfile?JSON.parse(profileSelect.value):null;modelPicker.setLoader(ref&&['claude','codex','opencode'].includes(ref.application)?()=>api('/v1/login-profiles/'+encodeURIComponent(ref.application)+'/'+encodeURIComponent(ref.name)+'/models'):null);renderCreateProfileUsage();renderPreview()};
   const populate=()=>{
    const previous=profileSelect.value,app=agentSelect.value;profileSelect.replaceChildren(new Option('None',''));
    const choices=profiles.filter(profile=>profile.application===app);
@@ -2055,6 +2132,7 @@
   function openNewBoxModal(){
    createForm.reset();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
    void primeBoxExtras();
+   if(owner)void refreshUsage();
    createForm.elements.name.focus();
    renderPreview();
   }
@@ -2440,6 +2518,7 @@
   const profiles=Array.isArray(data?.profiles)?data.profiles:[];
   usageProfiles=profiles;
   if(data?.loaded)usageLoaded=true;
+  profileUsageLoadError=false;renderCreateProfileUsage();
   renderChatUsage();
   $('#usage-title').textContent=usageScope?'Profile usage · '+usageScope.application+' · '+usageScope.name:'Profile usage limits';
   const visible=usageScope?profiles.filter(profile=>profile.application===usageScope.application&&profile.name===usageScope.name):profiles;
@@ -2501,6 +2580,7 @@
    return data;
   }).catch(error=>{
    if(generation!==usageGeneration||!owner)return;
+   profileUsageLoadError=true;renderCreateProfileUsage();
    if(usageManualBaseline&&Date.now()-usageManualStarted>180000)stopManualUsageRefresh();
    if(!$('#usage-modal').hidden)status.textContent=error.message;
   }).finally(()=>{if(usagePending===pending)usagePending=null});

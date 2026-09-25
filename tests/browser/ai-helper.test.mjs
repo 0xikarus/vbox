@@ -8,6 +8,8 @@ const root='internal/controller/web/';
 const files=['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css'];
 const assets=Object.fromEntries(await Promise.all(files.map(async name=>[name,await readFile(root+name)])));
 const requests=[];
+const sentMessages=[];
+let uploaded=0;
 let aiSetting={configured:false,model:'openrouter/auto'};
 const server=http.createServer(async(req,res)=>{
  const path=new URL(req.url,'http://local').pathname;
@@ -27,10 +29,14 @@ const server=http.createServer(async(req,res)=>{
   const body=JSON.parse(raw);requests.push(body);
   return res.end(JSON.stringify({text:body.text.replaceAll('Helo','Hello').replaceAll('wrold','world')}));
  }
+ if(path==='/v1/run-once-images'&&req.method==='POST')return res.end(JSON.stringify({id:'uploaded-'+(++uploaded)}));
  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'codex',provider:'railway',volumeName:'v1'};
  const values={'/v1/whoami':{role:'owner'},'/v1/grid-boxes':[box],'/v1/logical-boxes':[box],'/v1/box-conversations':[],'/v1/profile-usage':[],'/v1/chat-commands':[],'/v1/tool-presets':[],'/v1/instruction-presets':{defaultName:'',presets:[]}};
  if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
- if(path.endsWith('/messages'))return res.end('[]');
+ if(path.endsWith('/messages')){
+  if(req.method==='POST'){let raw='';for await(const chunk of req)raw+=chunk;const body=JSON.parse(raw);sentMessages.push(body);return res.end(JSON.stringify({message:{id:'sent-'+sentMessages.length,state:'complete'}}))}
+  return res.end('[]');
+ }
  return res.end(JSON.stringify(values[path]??{}));
 });
 await new Promise(done=>server.listen(0,'127.0.0.1',done));
@@ -150,6 +156,116 @@ try{
   await page.waitForFunction(()=>document.querySelector('#preset-form textarea[name="markdown"]').value==='# Hello skill');
   assert.equal(requests.at(-1).kind,'markdown');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/markdown-wand-mobile.png'});
+  await page.close();
+ });
+ await test('Auto mode improves on the first Send tap and sends on the second',async()=>{
+  const page=await browser.newPage();await page.setViewport({width:1320,height:850});
+  await page.goto(base+'/chat#box=builder');
+  await page.evaluate(()=>localStorage.removeItem('vmboxChatInputDrafts'));await page.reload();
+  await page.waitForSelector('#chat-composer .ai-wand');
+  await page.type('#chat-input','Helo wrold');
+  await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
+  await page.waitForSelector('.ai-prompt-dialog[open]');
+  await page.click('.ai-auto-toggle input');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/auto-prompt-desktop.png'});
+  await page.click('.ai-prompt-actions button.primary');
+  await page.waitForFunction(()=>document.querySelector('#chat-composer .ai-wand').classList.contains('ai-auto-on'));
+  await page.$eval('#chat-input',el=>{el.value='Helo wrold';el.dispatchEvent(new Event('input',{bubbles:true}))});
+  const before=sentMessages.length;
+  await page.click('#send');
+  await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello world');
+  assert.equal(sentMessages.length,before);
+  assert.match(await page.$eval('#send',el=>el.getAttribute('aria-label')),/Send improved message/);
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/auto-ready-desktop.png'});
+  await page.click('#send');
+  await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
+  assert.equal(sentMessages.length,before+1);
+  assert.equal(sentMessages.at(-1).text,'Hello world');
+  await page.close();
+ });
+ await test('holding Send in Auto mode shows progress then improves and sends',async()=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await page.goto(base+'/chat#box=builder');await page.waitForSelector('#chat-composer .ai-wand');
+  await page.evaluate(()=>{localStorage.setItem('vmbox.aiAuto.chat','1');localStorage.removeItem('vmboxChatInputDrafts')});
+  await page.reload();await page.waitForFunction(()=>document.querySelector('#chat-composer .ai-wand')?.classList.contains('ai-auto-on'));
+  await page.type('#chat-input','Helo from mobile');
+  await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
+  await page.waitForSelector('.ai-prompt-dialog[open]');
+  assert.equal(await page.$eval('.ai-auto-toggle input',el=>el.checked),true);
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/auto-prompt-mobile.png'});
+  await page.click('.ai-prompt-actions button:nth-child(2)');
+  const before=sentMessages.length;
+  await page.hover('#send');await page.mouse.down();
+  await page.waitForFunction(()=>document.querySelector('#send').classList.contains('send-holding'));
+  await new Promise(done=>setTimeout(done,850));
+  assert.equal(sentMessages.length,before);
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/auto-hold-mobile.png'});
+  await new Promise(done=>setTimeout(done,1350));
+  await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
+  await page.mouse.up();
+  assert.equal(sentMessages.length,before+1);
+  assert.equal(sentMessages.at(-1).text,'Hello from mobile');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/auto-sent-mobile.png'});
+  await page.close();
+ });
+ await test('chat wand includes attached image previews on desktop and mobile',async()=>{
+  for(const mobile of [false,true]){
+   const page=await browser.newPage();await page.setViewport(mobile?{width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true}:{width:1320,height:850});
+   await page.goto(base+'/chat#box=builder');await page.waitForSelector('#chat-composer .ai-wand');
+   await page.evaluate(mobile=>{localStorage.removeItem('vmboxChatInputDrafts');localStorage.setItem('vmbox.aiAuto.chat',mobile?'0':'1')},mobile);await page.reload();
+   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+   await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=240;canvas.height=140;
+    const context=canvas.getContext('2d');context.fillStyle='#3a6fb2';context.fillRect(0,0,240,140);context.fillStyle='#fff';context.font='bold 42px sans-serif';context.fillText('IMG',78,85);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/png'));
+    const transfer=new DataTransfer();transfer.items.add(new File([blob],'reference.png',{type:'image/png'}));
+    const input=document.querySelector('#attachments');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+   });
+   await page.waitForFunction(()=>document.querySelector('#chat-image-drafts .draft')&&document.querySelector('.ai-attachment-context')?.textContent.includes('Wand uses attached images'));
+   await page.type('#chat-input','Helo from image');
+   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-image-context-'+(mobile?'mobile':'desktop')+'.png'});
+   await page.click(mobile?'#chat-composer .ai-wand':'#send');
+   await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello from image');
+   const attachment=requests.at(-1).attachments[0];
+   assert.equal(attachment.kind,'image');assert.equal(attachment.number,1);
+   assert.match(attachment.image,/^data:image\/jpeg;base64,/);
+   assert.equal(requests.at(-1).attachments.length,1);
+   if(!mobile){
+    await page.waitForFunction(()=>document.querySelector('#send').getAttribute('aria-label').startsWith('Send improved message'));
+    const before=sentMessages.length;
+    await page.click('#chat-image-drafts .draft-remove');
+    assert.equal(await page.$eval('#send',button=>button.getAttribute('aria-label')),'Improve draft');
+    await page.click('#send');
+    await page.waitForFunction(()=>document.querySelector('#send').getAttribute('aria-label')==='Send improved message');
+    assert.equal(sentMessages.length,before,'changing attachments requires another enhancement');
+    assert.equal(requests.at(-1).attachments.length,0);
+    await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
+    assert.equal(sentMessages.length,before+1);
+   }
+   await page.close();
+  }
+ });
+ await test('video attachments provide a labelled preview frame to the wand',async()=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await page.goto(base+'/chat#box=builder');await page.waitForSelector('#chat-composer .ai-wand');
+  await page.evaluate(()=>localStorage.removeItem('vmboxChatInputDrafts'));await page.reload();
+  await page.evaluate(async()=>{
+   const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;const context=canvas.getContext('2d');
+   const stream=canvas.captureStream(15),chunks=[];
+   const recorder=new MediaRecorder(stream,{mimeType:'video/webm'});recorder.ondataavailable=event=>chunks.push(event.data);
+   recorder.start();const timer=setInterval(()=>{context.fillStyle='#455ea5';context.fillRect(0,0,160,90);context.fillStyle='white';context.font='bold 26px sans-serif';context.fillText('VID',52,55)},60);
+   await new Promise(resolve=>setTimeout(resolve,650));clearInterval(timer);recorder.stop();
+   await new Promise(resolve=>recorder.onstop=resolve);stream.getTracks().forEach(track=>track.stop());
+   const transfer=new DataTransfer();transfer.items.add(new File(chunks,'clip.webm',{type:'video/webm'}));
+   const input=document.querySelector('#attachments');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
+  });
+  await page.waitForFunction(()=>document.querySelector('#chat-image-drafts video')&&document.querySelector('.ai-attachment-context')?.textContent.includes('video preview frames'));
+  await page.type('#chat-input','Helo from video');
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-video-context-mobile.png'});
+  await page.click('#chat-composer .ai-wand');
+  await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello from video');
+  assert.equal(requests.at(-1).attachments[0].kind,'video');
+  assert.match(requests.at(-1).attachments[0].image,/^data:image\/jpeg;base64,/);
   await page.close();
  });
 }finally{await browser.close();await new Promise(done=>server.close(done))}

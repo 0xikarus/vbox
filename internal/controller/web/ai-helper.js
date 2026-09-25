@@ -8,6 +8,7 @@ window.VMBoxAIHelper = (() => {
  const wand = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 20 12-12"/><path d="m14 5 5 5"/><path d="m17 2 .5 2.5L20 5l-2.5.5L17 8l-.5-2.5L14 5l2.5-.5z"/><path d="m7 2 .35 1.65L9 4l-1.65.35L7 6l-.35-1.65L5 4l1.65-.35z"/></svg>';
  const currentPrompt = kind => {try{return localStorage.getItem('vmbox.aiPrompt.'+kind)||defaults[kind]}catch{return defaults[kind]}};
  const currentModel = kind => {try{return localStorage.getItem('vmbox.aiModel.'+kind)||''}catch{return ''}};
+ const autoEnabled = () => {try{return localStorage.getItem('vmbox.aiAuto.chat')==='1'}catch{return false}};
  function modelControl({value='',optional=false}={}) {
   const label=document.createElement('label');label.className='ai-model-label';label.textContent='Model';
   const row=document.createElement('span');row.className='ai-model-row';
@@ -64,7 +65,7 @@ window.VMBoxAIHelper = (() => {
   }
   return {label,input,load,destroy(){version++;if(picker.open)picker.close();picker.remove()}};
  }
- function editPrompt(kind, run) {
+ function editPrompt(kind, run, onAutoChange=()=>{}) {
   const dialog=document.createElement('dialog');dialog.className='ai-prompt-dialog';
   const form=document.createElement('form');form.method='dialog';
   const title=document.createElement('h2');title.textContent='AI writing prompt';
@@ -72,11 +73,18 @@ window.VMBoxAIHelper = (() => {
   const label=document.createElement('label');label.textContent='Prompt';
   const textarea=document.createElement('textarea');textarea.rows=5;textarea.maxLength=2000;textarea.required=true;textarea.value=currentPrompt(kind);label.append(textarea);
   const model=modelControl({value:currentModel(kind),optional:true});
+  let autoToggle=null;
+  if(kind==='chat'){
+   autoToggle=document.createElement('label');autoToggle.className='ai-auto-toggle';
+   const copy=document.createElement('span');copy.innerHTML='<strong>Auto format on Send</strong><small>First tap improves your draft; second tap sends it. Hold Send for 2 seconds to improve and send.</small>';
+   const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.checked=autoEnabled();checkbox.setAttribute('aria-label','Auto format on Send');
+   autoToggle.append(copy,checkbox);
+  }
   const actions=document.createElement('div');actions.className='ai-prompt-actions';
   const reset=document.createElement('button');reset.type='button';reset.textContent='Reset';reset.onclick=()=>{textarea.value=defaults[kind];model.input.value='';textarea.focus()};
   const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.onclick=()=>dialog.close();
   const save=document.createElement('button');save.type='submit';save.className='primary';save.textContent='Save & improve';
-  actions.append(reset,cancel,save);form.append(title,hint,label,model.label,actions);dialog.append(form);document.body.append(dialog);
+  actions.append(reset,cancel,save);form.append(title,hint,label,model.label);if(autoToggle)form.append(autoToggle);form.append(actions);dialog.append(form);document.body.append(dialog);
   const cleanup=()=>{model.destroy();dialog.remove()};dialog.addEventListener('close',cleanup,{once:true});
   form.addEventListener('submit',event=>{
    event.preventDefault();if(!textarea.reportValidity())return;
@@ -84,11 +92,39 @@ window.VMBoxAIHelper = (() => {
    try{localStorage.setItem('vmbox.aiPrompt.'+kind,instruction)}catch{}
    const selectedModel=model.input.value.trim();
    try{localStorage.setItem('vmbox.aiModel.'+kind,selectedModel)}catch{}
+   if(autoToggle){try{localStorage.setItem('vmbox.aiAuto.chat',autoToggle.querySelector('input').checked?'1':'0')}catch{}onAutoChange()}
    dialog.close();run(instruction,selectedModel);
   });
   dialog.showModal();void model.load();textarea.focus();textarea.select();
  }
- function attach({input,kind='chat',status,getContext=()=>''}) {
+ async function visualPreview(attachment) {
+  const video=attachment.kind==='video';
+  const element=document.createElement(video?'video':'img');
+  if(video){element.preload='auto';element.muted=true;element.playsInline=true}
+  const loaded=await new Promise((resolve,reject)=>{
+   const timer=setTimeout(()=>reject(Error('Could not read an attached '+(video?'video':'image')+' for AI context.')),10000);
+   element.addEventListener(video?'loadeddata':'load',()=>{clearTimeout(timer);resolve(element)},{once:true});
+   element.addEventListener('error',()=>{clearTimeout(timer);reject(Error('Could not read an attached '+(video?'video':'image')+' for AI context.'))},{once:true});
+   element.src=attachment.url;
+  });
+  try{
+   if(video&&Number.isFinite(loaded.duration)&&loaded.duration>0.3){
+    const target=Math.min(2,loaded.duration/2);
+    await new Promise(resolve=>{const timer=setTimeout(resolve,2000);loaded.addEventListener('seeked',()=>{clearTimeout(timer);resolve()},{once:true});loaded.currentTime=target});
+   }
+   const width=video?loaded.videoWidth:loaded.naturalWidth,height=video?loaded.videoHeight:loaded.naturalHeight;
+   if(!width||!height)throw Error('An attached file has no readable visual frame.');
+   for(const side of [1536,1200,960]){
+    const scale=Math.min(1,side/Math.max(width,height));
+    const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
+    const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(loaded,0,0,canvas.width,canvas.height);
+    const image=canvas.toDataURL('image/jpeg',.8);
+    if(image.length<=650000)return {number:attachment.number,kind:video?'video':'image',image};
+   }
+   throw Error('An attached image is too detailed for an AI preview.');
+  }finally{if(video){loaded.pause();loaded.removeAttribute('src');loaded.load()}}
+ }
+ function attach({input,kind='chat',status,getContext=()=>'',getAttachments=()=>[]}) {
   if(!input || !defaults[kind])throw Error('AI helper requires a supported editor');
   const field=document.createElement('span');field.className='ai-field';
   input.parentNode.insertBefore(field,input);field.append(input);
@@ -96,33 +132,40 @@ window.VMBoxAIHelper = (() => {
   button.title='Improve text · hold or right-click to edit prompt';button.setAttribute('aria-label','Improve text with AI. Hold or press Shift+Enter to edit prompt');
   field.append(button);
   let timer=0,longPress=false,busy=false;
+  const syncAuto=()=>{if(kind==='chat'){button.classList.toggle('ai-auto-on',autoEnabled());button.setAttribute('aria-pressed',String(autoEnabled()));button.title=autoEnabled()?'Auto format on · hold to edit prompt and settings':'Improve text · hold or right-click to edit prompt'}};
+  syncAuto();
   const report=message=>{if(status)status.textContent=message};
   async function run(instruction=currentPrompt(kind),model=currentModel(kind)) {
-   if(busy)return;
-   if(input.readOnly || input.disabled){report('Switch to an editable draft first.');return}
-   const original=input.value,context=getContext();
-   if(!original.trim()){report('Write something first, then use the wand.');input.focus();return}
+   if(busy)return false;
+   if(input.readOnly || input.disabled){report('Switch to an editable draft first.');return false}
+   const original=input.value,context=getContext(),drafts=[...getAttachments()];
+   const sameAttachments=()=>{const current=getAttachments();return current.length===drafts.length&&current.every((item,index)=>item.id===drafts[index].id&&item.number===drafts[index].number)};
+   if(!original.trim()){report('Write something first, then use the wand.');input.focus();return false}
    busy=true;button.disabled=true;button.classList.add('is-busy');report('Improving draft…');
    try{
-    const response=await fetch('/v1/ai/rewrite',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:original,instruction,kind,model}),signal:AbortSignal.timeout(50000)});
+    const attachments=[];
+    for(const draft of drafts)attachments.push(await visualPreview(draft));
+    if(!sameAttachments()||input.value!==original||getContext()!==context){report('Draft or attachments changed while the wand was working; try again.');return false}
+    const response=await fetch('/v1/ai/rewrite',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:original,instruction,kind,model,attachments}),signal:AbortSignal.timeout(50000)});
     let result;try{result=await response.json()}catch{}
     if(!response.ok)throw Error(result?.error||'AI helper request failed.');
-    if(input.value!==original || getContext()!==context){report('Draft changed while the wand was working; the new text was not applied.');return}
+    if(input.value!==original || getContext()!==context || !sameAttachments()){report('Draft or attachments changed while the wand was working; the new text was not applied.');return false}
     if(!result?.text)throw Error('AI helper returned no text.');
     input.value=result.text;input.dispatchEvent(new Event('input',{bubbles:true}));input.focus();
     report(result.text===original?'No changes needed.':'Draft improved. Review it before sending or saving.');
-   }catch(error){report(error.name==='TimeoutError'?'AI helper timed out. Try again.':error.message)}
+    return true;
+   }catch(error){report(error.name==='TimeoutError'?'AI helper timed out. Try again.':error.message);return false}
    finally{busy=false;button.disabled=false;button.classList.remove('is-busy')}
   }
   button.addEventListener('pointerdown',event=>{
    if(event.button!==0)return;longPress=false;
-   timer=setTimeout(()=>{longPress=true;editPrompt(kind,run)},550);
+   timer=setTimeout(()=>{longPress=true;editPrompt(kind,run,syncAuto)},550);
   });
   for(const name of ['pointerup','pointercancel','pointerleave'])button.addEventListener(name,()=>{clearTimeout(timer)});
   button.addEventListener('click',event=>{event.preventDefault();if(longPress){longPress=false;return}void run()});
-  button.addEventListener('contextmenu',event=>{event.preventDefault();clearTimeout(timer);if(longPress)return;longPress=true;editPrompt(kind,run)});
-  button.addEventListener('keydown',event=>{if(event.shiftKey && (event.key==='Enter'||event.key===' ')){event.preventDefault();editPrompt(kind,run)}});
-  return {button,run};
+  button.addEventListener('contextmenu',event=>{event.preventDefault();clearTimeout(timer);if(longPress)return;longPress=true;editPrompt(kind,run,syncAuto)});
+  button.addEventListener('keydown',event=>{if(event.shiftKey && (event.key==='Enter'||event.key===' ')){event.preventDefault();editPrompt(kind,run,syncAuto)}});
+  return {button,run,isAutoEnabled:kind==='chat'?autoEnabled:()=>false};
  }
  async function openSettings() {
   const dialog=document.createElement('dialog');dialog.className='ai-settings-dialog';
