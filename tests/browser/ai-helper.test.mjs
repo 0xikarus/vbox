@@ -221,7 +221,8 @@ try{
     const transfer=new DataTransfer();transfer.items.add(new File([blob],'reference.png',{type:'image/png'}));
     const input=document.querySelector('#attachments');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
    });
-   await page.waitForFunction(()=>document.querySelector('#chat-image-drafts .draft')&&document.querySelector('.ai-attachment-context')?.textContent.includes('Wand uses attached images'));
+   await page.waitForSelector('#chat-image-drafts .draft img');
+   assert.equal((await page.$$('.ai-attachment-context')).length,0);
    await page.type('#chat-input','Helo from image');
    if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-image-context-'+(mobile?'mobile':'desktop')+'.png'});
    await page.click(mobile?'#chat-composer .ai-wand':'#send');
@@ -259,7 +260,8 @@ try{
    const transfer=new DataTransfer();transfer.items.add(new File(chunks,'clip.webm',{type:'video/webm'}));
    const input=document.querySelector('#attachments');input.files=transfer.files;input.dispatchEvent(new Event('change',{bubbles:true}));
   });
-  await page.waitForFunction(()=>document.querySelector('#chat-image-drafts video')&&document.querySelector('.ai-attachment-context')?.textContent.includes('video preview frames'));
+  await page.waitForSelector('#chat-image-drafts video');
+  assert.equal((await page.$$('.ai-attachment-context')).length,0);
   await page.type('#chat-input','Helo from video');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-video-context-mobile.png'});
   await page.click('#chat-composer .ai-wand');

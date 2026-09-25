@@ -1553,7 +1553,6 @@
    remove.onclick=()=>{const remaining=drafts.filter(d=>d!==entry);URL.revokeObjectURL(entry.url);remaining.forEach((d,i)=>d.number=i+1);if(remaining.length)attachmentDrafts.set(selected,remaining);else attachmentDrafts.delete(selected);renderDrafts()};
    wrap.append(open,remove);draftsEl.append(wrap);
   }
-  if(drafts.length&&chatAI){const hint=document.createElement('span');hint.className='ai-attachment-context';hint.textContent=drafts.some(draft=>draft.kind==='video')?'✦ Wand uses images and video preview frames':'✦ Wand uses attached images';draftsEl.append(hint)}
   updateSendState();
  }
  async function uploadImages(files){
