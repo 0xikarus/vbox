@@ -158,7 +158,9 @@ func (r *ContainerRuntime) Prepare(ctx context.Context, w Workspace) error {
 		// Upgrade only the previous no-swap policy. Preserve any host-side
 		// resource customization and keep live agent sessions intact.
 		if existing.HostConfig.Memory == 2<<30 && existing.HostConfig.MemorySwap == 2<<30 {
-			if _, err = r.run(ctx, "update", "--memory-swap", "3g", r.name(w)); err != nil {
+			// Docker 26 requires the memory limit alongside --memory-swap even
+			// when that limit is already set on the running container.
+			if _, err = r.run(ctx, "update", "--memory", "2g", "--memory-swap", "3g", r.name(w)); err != nil {
 				return err
 			}
 		}
