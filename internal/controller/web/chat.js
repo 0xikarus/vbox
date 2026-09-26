@@ -1136,12 +1136,12 @@
   if(!(box.messages||[]).length&&!pending){const hint=document.createElement('p');hint.className='day-sep';hint.textContent='No messages yet — say hello to '+box.name;messagesEl.append(hint)}
   if(box.resumeCandidate){
    const card=document.createElement('div');card.className='codex-resume-card';
-   const title=document.createElement('strong');title.textContent='Restore your Codex conversation?';
+   const title=document.createElement('strong');title.textContent='Restore your '+agentLabel(box)+' conversation?';
    const detail=document.createElement('span');detail.textContent='Found the last active session saved before hibernation ('+new Date(box.resumeCandidate.lastActiveAt||box.resumeCandidate.startedAt).toLocaleString()+'). Restore its context in the visible terminal, or continue fresh.';
    const actions=document.createElement('div');actions.className='codex-resume-actions';
    for(const [choice,label] of [['restore','Restore session'],['fresh','Start fresh']]){
     const button=document.createElement('button');button.type='button';button.textContent=label;
-    button.onclick=()=>void chooseCodexResume(box,choice,actions);actions.append(button);
+    button.onclick=()=>void chooseAgentResume(box,choice,actions);actions.append(button);
    }
    card.append(title,detail,actions);messagesEl.append(card);
   }
@@ -1210,11 +1210,11 @@
  async function fetchBoxes(force){
   const values=await api('/v1/logical-boxes');
   const current=new Map();const alive=new Set();
-  for(const b of values||[]){const old=boxes.get(b.id);alive.add(b.id);current.set(b.id,Object.assign(old||{messages:[],historyLoaded:false,hasOlder:false,historyLoading:false},b))}
+  for(const b of values||[]){const old=boxes.get(b.id);alive.add(b.id);if(old&&(old.state!==b.state||old.assignmentGeneration!==b.assignmentGeneration)){resumeChecks.delete(b.id);old.resumeCandidate=null;old.resumeCheckPending=false}current.set(b.id,Object.assign(old||{messages:[],historyLoaded:false,hasOlder:false,historyLoading:false},b))}
   for(const id of [...boxes.keys()])if(!alive.has(id)){
    const cached=avatarCache.get(id);if(cached?.url)URL.revokeObjectURL(cached.url);
    for(const draft of attachmentDrafts.get(id)||[])URL.revokeObjectURL(draft.url);
-   boxes.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id);attachmentDrafts.delete(id);
+   boxes.delete(id);resumeChecks.delete(id);avatarCache.delete(id);previewFetched.delete(id);tvReplayCache.delete(id);attachmentDrafts.delete(id);
   }
   for(const [id,b] of current)boxes.set(id,b);
   if(selected&&!boxes.has(selected)){selected='';restoringTranscript=false;newMessagesBtn.hidden=true;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
@@ -1319,7 +1319,7 @@
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
   if(hasNewReply&&!stickToBottom)newMessagesBtn.hidden=false;
   renderRows();renderInspect();
-  if(owner&&box.state==='running'&&box.defaultAgent==='codex')void refreshCodexResume(box,!!force);
+  if(owner&&box.state==='running'&&['codex','claude'].includes(box.defaultAgent))void refreshAgentResume(box,!!force);
  }
  function renderPairMessages(pair){
   const follow=stickToBottom;
@@ -1372,26 +1372,28 @@
    restoringTranscript=false;
   });
  }
- async function refreshCodexResume(box,force){
+ function agentLabel(box){return box.defaultAgent==='claude'?'Claude':'Codex'}
+ async function refreshAgentResume(box,force){
   const prior=resumeChecks.get(box.id);
   if(prior&&(!force&&Date.now()-prior.at<20000||prior.pending))return;
   const check={at:Date.now(),pending:true};resumeChecks.set(box.id,check);
+  box.resumeCheckPending=true;if(selected===box.id)updateSendState();
   try{
-   const result=await api(boxPath(box.id)+'/codex-resume');
+   const result=await api(boxPath(box.id)+'/agent-resume');
    if(resumeChecks.get(box.id)!==check)return;
    box.resumeCandidate=result.candidate||null;
    if(selected===box.id){renderMessages(box);updateSendState()}
-  }catch(e){if(selected===box.id)statusEl.textContent='Could not check saved Codex sessions: '+e.message}
-  finally{check.pending=false}
+  }catch(e){if(selected===box.id)statusEl.textContent='Could not check saved '+agentLabel(box)+' sessions: '+e.message}
+  finally{check.pending=false;if(resumeChecks.get(box.id)===check){box.resumeCheckPending=false;if(selected===box.id)updateSendState()}}
  }
- async function chooseCodexResume(box,choice,actions){
+ async function chooseAgentResume(box,choice,actions){
   const candidate=box.resumeCandidate;if(!candidate)return;
   for(const button of actions.querySelectorAll('button'))button.disabled=true;
   try{
-   await api(boxPath(box.id)+'/codex-resume','POST',{}, {choice,sessionId:candidate.sessionId,savedAt:candidate.savedAt});
+   await api(boxPath(box.id)+'/agent-resume','POST',{}, {choice,sessionId:candidate.sessionId,savedAt:candidate.savedAt});
    box.resumeCandidate=null;resumeChecks.delete(box.id);
    if(selected===box.id){renderMessages(box);updateSendState()}
-   toast(choice==='restore'?'Saved Codex conversation restored.':'Continuing with a fresh Codex conversation.');
+   toast(choice==='restore'?'Saved '+agentLabel(box)+' conversation restored.':'Continuing with a fresh '+agentLabel(box)+' conversation.');
   }catch(e){statusEl.textContent=e.message;for(const button of actions.querySelectorAll('button'))button.disabled=false}
  }
  async function loadOlderMessages(id){
@@ -1510,10 +1512,10 @@
  function updateSendState(){
   const drafts=attachmentDrafts.get(selected)||[];
   const hasContent=!!inputEl.value.trim()||drafts.length>0;
-  const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate;send.disabled=!hasContent||!running;
+  const send=$('#send'),box=boxes.get(selected),running=box?.state==='running'&&!box?.resumeCandidate&&!box?.resumeCheckPending;send.disabled=!hasContent||!running;
   const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
   send.setAttribute('aria-label',label);
-  send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved Codex session first.':'Wait for this box to be running before sending';
+  send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved '+agentLabel(box)+' session first.':box?.resumeCheckPending?'Checking for a saved conversation…':'Wait for this box to be running before sending';
  }
  inputEl.addEventListener('input',()=>{grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
@@ -1595,7 +1597,8 @@
   event.preventDefault();
   if(!selected)return;
   const boxID=selected,box=boxes.get(boxID);
-  if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved Codex session first.';updateSendState();return}
+  if(box?.resumeCheckPending){statusEl.textContent='Checking for a saved conversation…';updateSendState();return}
+  if(box?.resumeCandidate){statusEl.textContent='Choose whether to restore the saved '+agentLabel(box)+' session first.';updateSendState();return}
   if(box?.state!=='running'){statusEl.textContent='Wait for this box to be running before sending.';updateSendState();return}
   const drafts=attachmentDrafts.get(boxID)||[];
   const draftText=inputEl.value,text=expandChatCommands(draftText),images=drafts.map(({id,number})=>({id,number})),replyTarget=replyingTo,mentionedBoxIds=mentionedBoxIDs(text);
@@ -1810,7 +1813,7 @@
   quick.append(link);
   if(canWakeBox(box)){
    const wake=document.createElement('button');wake.type='button';wake.textContent='Wake box';wake.disabled=wakingBoxes.has(box.id);
-   wake.title='Restore the saved workspace and start a fresh agent session';wake.onclick=()=>void wakeBox(box);quick.append(wake);
+   wake.title='Restore the saved workspace and check for a saved agent conversation';wake.onclick=()=>void wakeBox(box);quick.append(wake);
   }
   if(box.state==='running'&&agent!=='shell'){
    const clear=document.createElement('button');clear.type='button';clear.textContent='Clear context';

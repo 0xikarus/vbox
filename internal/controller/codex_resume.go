@@ -20,6 +20,14 @@ type codexResumeDecision struct {
 }
 
 func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	s.resumeHandler(w, r, p, "codex")
+}
+
+func (s *Server) agentResumeHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	s.resumeHandler(w, r, p, "")
+}
+
+func (s *Server) resumeHandler(w http.ResponseWriter, r *http.Request, p Principal, requiredAgent string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 40*time.Second)
 	defer cancel()
 	box, err := s.Store.LogicalBox(ctx, p, r.PathValue("id"))
@@ -27,12 +35,13 @@ func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Pr
 		writeError(w, 404, fmt.Errorf("box unavailable"))
 		return
 	}
-	if box.State != v1.LogicalBoxRunning || box.DefaultAgent != "codex" {
+	agent := box.DefaultAgent
+	if box.State != v1.LogicalBoxRunning || (agent != "codex" && agent != "claude") || (requiredAgent != "" && agent != requiredAgent) {
 		if r.Method == http.MethodGet {
 			writeJSON(w, 200, map[string]any{"candidate": nil})
 			return
 		}
-		writeError(w, 409, fmt.Errorf("box must be running Codex"))
+		writeError(w, 409, fmt.Errorf("box must be running Codex or Claude"))
 		return
 	}
 	tasks, err := s.Store.ListBoxTasks(ctx, p, box.ID)
@@ -40,13 +49,13 @@ func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Pr
 		writeError(w, 500, fmt.Errorf("chat task unavailable"))
 		return
 	}
-	task := reusableBoxTask(tasks, box.State, "codex", "")
+	task := reusableBoxTask(tasks, box.State, agent, "")
 	if task == nil || task.State != "active" {
 		if r.Method == http.MethodGet {
 			writeJSON(w, 200, map[string]any{"candidate": nil})
 			return
 		}
-		writeError(w, 409, fmt.Errorf("Codex chat is not active"))
+		writeError(w, 409, fmt.Errorf("%s chat is not active", agent))
 		return
 	}
 	a, err := s.Store.assignment(ctx, p.AccountID, box.ID)
@@ -69,23 +78,24 @@ func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Pr
 		})
 		if !matches {
 			if err := stageWorkspaceRuntime(ctx, prov, a.Slot.ServiceID, s.WorkerRuntime); err != nil {
-				writeError(w, 502, fmt.Errorf("could not update Codex workspace runtime"))
+				writeError(w, 502, fmt.Errorf("could not update workspace runtime"))
 				return
 			}
 		}
 	}
-	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "codex-resume-candidate", task.Session}, provider.ExecOptions{})
+	result, err := prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", agent + "-resume-candidate", task.Session}, provider.ExecOptions{})
 	if err != nil || result.ExitCode != 0 {
-		writeError(w, 502, fmt.Errorf("saved Codex session lookup failed"))
+		writeError(w, 502, fmt.Errorf("saved %s session lookup failed", agent))
 		return
 	}
-	var candidate *boxruntime.CodexResumeCandidate
+	var candidate *boxruntime.ResumeCandidate
 	if err := json.Unmarshal([]byte(result.Stdout), &candidate); err != nil {
-		writeError(w, 502, fmt.Errorf("invalid saved Codex session response"))
+		writeError(w, 502, fmt.Errorf("invalid saved %s session response", agent))
 		return
 	}
 	var raw []byte
-	if err := s.Store.DB.QueryRowContext(ctx, `SELECT COALESCE(metadata->'codexResumeDecision','null'::jsonb) FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID).Scan(&raw); err != nil {
+	decisionKey := agent + "ResumeDecision"
+	if err := s.Store.DB.QueryRowContext(ctx, `SELECT COALESCE(metadata -> $3,'null'::jsonb) FROM logical_boxes WHERE account_id=$1 AND id=$2`, p.AccountID, box.ID, decisionKey).Scan(&raw); err != nil {
 		writeError(w, 500, fmt.Errorf("resume choice unavailable"))
 		return
 	}
@@ -96,7 +106,7 @@ func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Pr
 			writeJSON(w, 200, map[string]any{"candidate": nil})
 			return
 		}
-		writeError(w, 409, fmt.Errorf("no pending saved Codex session"))
+		writeError(w, 409, fmt.Errorf("no pending saved %s session", agent))
 		return
 	}
 	// A new owner message after the hibernation snapshot has already committed
@@ -138,14 +148,14 @@ func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Pr
 		return
 	}
 	if request.Choice == "restore" {
-		result, err = prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", "codex-resume-session", task.Session, candidate.SessionID, candidate.SavedAt.Format(time.RFC3339Nano)}, provider.ExecOptions{})
+		result, err = prov.Exec(ctx, a.Slot.ServiceID, []string{"vmbox-runtime", agent + "-resume-session", task.Session, candidate.SessionID, candidate.SavedAt.Format(time.RFC3339Nano)}, provider.ExecOptions{})
 		if err != nil || result.ExitCode != 0 {
-			writeError(w, 409, fmt.Errorf("Codex session could not be restored: %s", strings.TrimSpace(result.Stderr)))
+			writeError(w, 409, fmt.Errorf("%s session could not be restored: %s", agent, strings.TrimSpace(result.Stderr)))
 			return
 		}
 	}
 	encoded, _ := json.Marshal(codexResumeDecision{SavedAt: candidate.SavedAt, Choice: request.Choice})
-	updated, err := s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,'{codexResumeDecision}',$3::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2 AND state='running' AND slot_id=$4 AND assignment_generation=$5 AND fencing_token=$6`, p.AccountID, box.ID, string(encoded), a.Slot.ID, a.Box.AssignmentGeneration, a.FencingToken)
+	updated, err := s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,ARRAY[$7],$3::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2 AND state='running' AND slot_id=$4 AND assignment_generation=$5 AND fencing_token=$6`, p.AccountID, box.ID, string(encoded), a.Slot.ID, a.Box.AssignmentGeneration, a.FencingToken, decisionKey)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("could not save resume choice"))
 		return

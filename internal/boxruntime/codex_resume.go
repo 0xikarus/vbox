@@ -14,42 +14,24 @@ import (
 
 var codexRolloutID = regexp.MustCompile(`^rollout-.*-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\.jsonl$`)
 
-// CodexResumeCandidate is scoped to a hibernation snapshot, never to a later
+// ResumeCandidate is scoped to a hibernation snapshot, never to a later
 // empty conversation created when the box wakes.
-type CodexResumeCandidate struct {
+type ResumeCandidate struct {
 	SessionID    string    `json:"sessionId"`
 	SavedAt      time.Time `json:"savedAt"`
 	StartedAt    time.Time `json:"startedAt"`
 	LastActiveAt time.Time `json:"lastActiveAt"`
 }
 
+type CodexResumeCandidate = ResumeCandidate
+
 func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate, error) {
 	if !processID.MatchString(session) || !strings.HasPrefix(session, "codex-") {
 		return nil, fmt.Errorf("invalid managed Codex session")
 	}
-	data, err := os.ReadFile(TmuxSnapshotPath(root))
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
+	snapshot, err := savedManagedSession(root, session, "codex")
+	if err != nil || snapshot == nil {
 		return nil, err
-	}
-	var snapshot TmuxSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return nil, fmt.Errorf("decode hibernation snapshot: %w", err)
-	}
-	if snapshot.SavedAt.IsZero() {
-		return nil, nil
-	}
-	found := false
-	for _, saved := range snapshot.Sessions {
-		if saved.Name == session && saved.ManagedAgent == "codex" {
-			found = true
-			break
-		}
-	}
-	if !found {
-		return nil, nil
 	}
 	paths, err := filepath.Glob(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "rollout-*.jsonl"))
 	if err != nil {
@@ -102,6 +84,34 @@ func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate
 		}
 	}
 	return newest, nil
+}
+
+func savedManagedSession(root, session, agent string) (*TmuxSnapshot, error) {
+	data, err := os.ReadFile(TmuxSnapshotPath(root))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var snapshot TmuxSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return nil, fmt.Errorf("decode hibernation snapshot: %w", err)
+	}
+	if snapshot.SavedAt.IsZero() {
+		return nil, nil
+	}
+	found := false
+	for _, saved := range snapshot.Sessions {
+		if saved.Name == session && saved.ManagedAgent == agent {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, nil
+	}
+	return &snapshot, nil
 }
 
 // RestoreCodexConversation replaces only the selected managed pane, after an
