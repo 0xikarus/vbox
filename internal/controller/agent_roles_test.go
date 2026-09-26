@@ -223,25 +223,33 @@ func TestAgentBoxIdempotencyComparesEveryCreationParameter(t *testing.T) {
 	stored := []byte(`["role-a","role-b"]`)
 	profiles := []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-test", ReasoningEffort: "high"}}
 	storedProfiles, _ := json.Marshal(profiles)
-	if !sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, profiles, "# Build it", "slot-a", "alpha", "codex", 20, stored, storedProfiles, "# Build it", "slot-a") {
+	tools := []string{"blender", "foundry"}
+	storedTools := []byte(`["foundry","blender"]`)
+	match := func(agent string, roles []string, selectedProfiles []v1.LoginProfileRef, selectedTools []string, instructions, slotID string) bool {
+		return sameAgentBoxRequest("alpha", agent, 20, roles, selectedProfiles, selectedTools, instructions, slotID, "alpha", "codex", 20, stored, storedProfiles, storedTools, "# Build it", "slot-a")
+	}
+	if !match("codex", []string{"role-a", "role-b"}, profiles, tools, "# Build it", "slot-a") {
 		t.Fatal("identical create-agent-box request was not reusable")
 	}
-	if sameAgentBoxRequest("alpha", "opencode", 20, []string{"role-a", "role-b"}, profiles, "# Build it", "slot-a", "alpha", "codex", 20, stored, storedProfiles, "# Build it", "slot-a") {
+	if match("opencode", []string{"role-a", "role-b"}, profiles, tools, "# Build it", "slot-a") {
 		t.Fatal("agent type was ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a"}, profiles, "# Build it", "slot-a", "alpha", "codex", 20, stored, storedProfiles, "# Build it", "slot-a") {
+	if match("codex", []string{"role-a"}, profiles, tools, "# Build it", "slot-a") {
 		t.Fatal("starting roles were ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, profiles, "# Review it", "slot-a", "alpha", "codex", 20, stored, storedProfiles, "# Build it", "slot-a") {
+	if match("codex", []string{"role-a", "role-b"}, profiles, tools, "# Review it", "slot-a") {
 		t.Fatal("startup instructions were ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, []v1.LoginProfileRef{{Application: "codex", Name: "personal"}}, "# Build it", "slot-a", "alpha", "codex", 20, stored, storedProfiles, "# Build it", "slot-a") {
+	if match("codex", []string{"role-a", "role-b"}, []v1.LoginProfileRef{{Application: "codex", Name: "personal"}}, tools, "# Build it", "slot-a") {
 		t.Fatal("saved profile was ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-test", ReasoningEffort: "low"}}, "# Build it", "slot-a", "alpha", "codex", 20, stored, storedProfiles, "# Build it", "slot-a") {
+	if match("codex", []string{"role-a", "role-b"}, []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-test", ReasoningEffort: "low"}}, tools, "# Build it", "slot-a") {
 		t.Fatal("profile reasoning override was ignored during idempotency comparison")
 	}
-	if sameAgentBoxRequest("alpha", "codex", 20, []string{"role-a", "role-b"}, profiles, "# Build it", "slot-b", "alpha", "codex", 20, stored, storedProfiles, "# Build it", "slot-a") {
+	if match("codex", []string{"role-a", "role-b"}, profiles, []string{"blender"}, "# Build it", "slot-a") {
+		t.Fatal("tool presets were ignored during idempotency comparison")
+	}
+	if match("codex", []string{"role-a", "role-b"}, profiles, tools, "# Build it", "slot-b") {
 		t.Fatal("selected worker slot was ignored during idempotency comparison")
 	}
 }

@@ -44,6 +44,10 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 		if !ok || instructions["type"] != "string" || instructions["maxLength"] != v1.MaxInstructionMarkdownBytes {
 			t.Fatalf("instructions schema=%#v", instructions)
 		}
+		presets, ok := properties["tools"].(map[string]any)
+		if !ok || presets["type"] != "array" || presets["maxItems"] != 3 {
+			t.Fatalf("tool preset schema=%#v", properties["tools"])
+		}
 		if properties["loginProfiles"] == nil || properties["roleIds"] == nil || properties["slotId"] == nil {
 			t.Fatalf("creation config missing from schema: %#v", properties)
 		}

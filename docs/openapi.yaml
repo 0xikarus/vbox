@@ -14,7 +14,7 @@ paths:
       summary: Agent-readable, non-secret creation options for a box with create_agent_box permission
       responses:
         '200':
-          description: Allowed agent types and limits, saved profile metadata, and assignable role IDs
+          description: Allowed agent types and limits, saved profile metadata, assignable role IDs, and tool presets
           content:
             application/json:
               schema:
@@ -25,6 +25,7 @@ paths:
                   maxDiskGiB: {type: integer}
                   loginProfiles: {type: array, items: {$ref: '#/components/schemas/LoginProfile'}}
                   assignableRoles: {type: array, items: {$ref: '#/components/schemas/AgentRoleSummary'}}
+                  toolPresets: {type: array, items: {$ref: '#/components/schemas/ToolPreset'}}
         '403': {description: Creator lacks create_agent_box permission}
   /v1/agent-desktop/available-workers:
     get:
@@ -72,6 +73,7 @@ paths:
                 name: {type: string}
                 agent: {enum: [codex, claude, opencode]}
                 diskGiB: {type: integer, default: 10}
+                tools: {type: array, uniqueItems: true, maxItems: 3, items: {enum: [foundry, blender, desktop]}}
                 slotId: {type: string, format: uuid, description: Exact available worker slot; omission uses automatic placement}
                 instructions: {type: string, maxLength: 65536}
                 loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/LoginProfileRef'}}
@@ -792,6 +794,14 @@ components:
           properties:
             createdAt: {type: string, format: date-time}
             model: {type: string, description: Non-secret model default read from the saved profile configuration}
+    ToolPreset:
+      type: object
+      required: [id, name, version, description]
+      properties:
+        id: {enum: [foundry, blender, desktop]}
+        name: {type: string}
+        version: {type: string}
+        description: {type: string}
     FleetConfig:
       type: object
       required: [provider, compute_box_slots]

@@ -17,6 +17,7 @@ type agentBoxConfigs struct {
 	MaxDiskGiB      int                   `json:"maxDiskGiB"`
 	LoginProfiles   []v1.LoginProfile     `json:"loginProfiles"`
 	AssignableRoles []v1.AgentRoleSummary `json:"assignableRoles"`
+	ToolPresets     []v1.ToolPreset       `json:"toolPresets"`
 }
 
 func (s *Server) agentBoxConfigsHandler(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -71,6 +72,7 @@ func (s *Server) agentBoxConfigsHandler(w http.ResponseWriter, r *http.Request, 
 		MaxDiskGiB:      min(grant.MaxDiskGiB, 1000),
 		LoginProfiles:   profiles,
 		AssignableRoles: assignable,
+		ToolPresets:     v1.ToolPresets(),
 	})
 }
 
