@@ -337,7 +337,7 @@ func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation lo
 			key = "create-and-allocate:" + creation.Assignment.Box.ID
 		}
 		principal := Principal{AccountID: creation.AccountID, UserID: creation.UserID, Role: "user", Subject: "logical-box-creator"}
-		allocation, err := s.Store.ReserveAllocation(ctx, principal, creation.Assignment.Box.ID, key, "user:"+creation.UserID, 2*time.Minute)
+		allocation, err := s.Store.ReserveAllocationOnSlot(ctx, principal, creation.Assignment.Box.ID, key, "user:"+creation.UserID, 2*time.Minute, creation.Request.SlotID)
 		if err != nil {
 			return fmt.Errorf("logical box was created, but allocation failed: %w", err)
 		}
@@ -371,7 +371,7 @@ func (s *Server) ReconcileLogicalBoxCreationsNow(ctx context.Context) error {
 				key = "create-and-allocate:" + item.boxID
 			}
 			principal := Principal{AccountID: item.accountID, UserID: item.userID, Role: "user", Subject: "logical-box-creator"}
-			if _, err := s.Store.ReserveAllocation(ctx, principal, item.boxID, key, "user:"+item.userID, 2*time.Minute); err != nil {
+			if _, err := s.Store.ReserveAllocationOnSlot(ctx, principal, item.boxID, key, "user:"+item.userID, 2*time.Minute, item.slotID); err != nil {
 				failures = append(failures, fmt.Errorf("auto-start box %s: %w", item.boxID, err))
 			}
 		}

@@ -25,6 +25,7 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 	// manager policies gain the companion tool without an owner migration.
 	if selected["create_agent_box"] {
 		selected["get_agent_box_configs"] = true
+		selected["get_available_workers"] = true
 	}
 	allowed := append([]string(nil), v1.BasicAgentMCPTools...)
 	for _, name := range v1.OptionalAgentMCPTools {
@@ -37,7 +38,7 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 
 func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bool {
 	switch name {
-	case "create_agent_box", "get_agent_box_configs":
+	case "create_agent_box", "get_agent_box_configs", "get_available_workers":
 		return capabilities.CreateAgentBox.Enabled
 	case "list_agent_boxes":
 		return capabilities.ManageAgentBoxes.List

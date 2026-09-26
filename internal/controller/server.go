@@ -169,6 +169,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/agent-desktop/email-addresses", s.desktopAgentAuth(s.agentEmailHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/boxes", s.desktopAgentAuth(s.agentBoxCreationHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/box-configs", s.desktopAgentAuth(s.agentBoxConfigsHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/available-workers", s.desktopAgentAuth(s.agentBoxWorkersHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/box-configs/{application}/{name}/models", s.desktopAgentAuth(s.agentBoxConfigsHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/boxes", s.desktopAgentAuth(s.agentBoxesHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/boxes/{box}", s.desktopAgentAuth(s.agentBoxHandler))

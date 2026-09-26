@@ -815,6 +815,10 @@ profile's saved model is used unless the reference includes a `model` override;
 `reasoningEffort` can accompany an override. A second GitHub profile is optional.
 `get_agent_box_configs {"mode":"models","application":"opencode","name":"venice"}` reads that
 profile's live model choices. Omitting `loginProfiles` imports no saved login.
+`get_available_workers {}` lists healthy free slots in the creator's provider
+pool. Passing a returned `slotId` to `create_agent_box` chooses that worker for
+the new box's initial start; the controller rechecks the slot when reserving it.
+Omitting `slotId` uses automatic placement.
 
 ## Optional tools
 

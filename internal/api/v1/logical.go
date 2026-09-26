@@ -20,6 +20,7 @@ type CreateLogicalBoxRequest struct {
 	Instructions *InstructionSelection `json:"instructions,omitempty"`
 	RoleIDs      []string              `json:"roleIds,omitempty"`
 	Region       string                `json:"region,omitempty"`
+	SlotID       string                `json:"slotId,omitempty"`
 	DiskGiB      int64                 `json:"diskGiB,omitempty"`
 	VolumeID     string                `json:"volumeId,omitempty"`
 	VolumeName   string                `json:"volumeName,omitempty"`

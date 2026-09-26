@@ -84,8 +84,15 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		locationFilter = " AND s.region=$4"
 		queryArgs = append(queryArgs, request.Region)
 	}
+	if request.SlotID != "" {
+		locationFilter += fmt.Sprintf(" AND s.id::text=$%d", len(queryArgs)+1)
+		queryArgs = append(queryArgs, request.SlotID)
+	}
 	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy'"+locationFilter+" AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", queryArgs...))
 	if errors.Is(err, sql.ErrNoRows) {
+		if request.SlotID != "" {
+			return creation, fmt.Errorf("selected worker slot is no longer available")
+		}
 		return creation, errNoCreationSlot
 	}
 	if err != nil {
@@ -100,7 +107,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "creationSlotId": request.SlotID, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript})
 	if err != nil {
 		return creation, err
 	}
@@ -196,20 +203,20 @@ func (s *Store) FailLogicalBoxCreation(ctx context.Context, creation logicalBoxC
 }
 
 func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBoxCreation, error) {
-	rows, err := s.DB.QueryContext(ctx, "SELECT b.account_id::text,b.owner_user_id::text,b.id::text,COALESCE((b.metadata->>'diskGiB')::bigint,10),COALESCE(b.metadata->>'region',''),COALESCE((b.metadata->>'allocateWhenReady')::boolean,false),COALESCE(b.metadata->>'allocationIdempotencyKey','') FROM logical_boxes b WHERE b.state='attaching' AND b.slot_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM allocation_requests r WHERE r.logical_box_id=b.id) ORDER BY b.created_at")
+	rows, err := s.DB.QueryContext(ctx, "SELECT b.account_id::text,b.owner_user_id::text,b.id::text,COALESCE((b.metadata->>'diskGiB')::bigint,10),COALESCE(b.metadata->>'region',''),COALESCE((b.metadata->>'allocateWhenReady')::boolean,false),COALESCE(b.metadata->>'allocationIdempotencyKey',''),COALESCE(b.metadata->>'creationSlotId','') FROM logical_boxes b WHERE b.state='attaching' AND b.slot_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM allocation_requests r WHERE r.logical_box_id=b.id) ORDER BY b.created_at")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	type key struct {
-		accountID, userID, id, region, allocationKey string
-		disk                                         int64
-		allocate                                     bool
+		accountID, userID, id, region, allocationKey, slotID string
+		disk                                                 int64
+		allocate                                             bool
 	}
 	var keys []key
 	for rows.Next() {
 		var value key
-		if err := rows.Scan(&value.accountID, &value.userID, &value.id, &value.disk, &value.region, &value.allocate, &value.allocationKey); err != nil {
+		if err := rows.Scan(&value.accountID, &value.userID, &value.id, &value.disk, &value.region, &value.allocate, &value.allocationKey, &value.slotID); err != nil {
 			return nil, err
 		}
 		keys = append(keys, value)
@@ -233,7 +240,7 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 			return nil, err
 		}
 		allocate := value.allocate
-		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
+		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, SlotID: value.slotID, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
 		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
 		result[len(result)-1].Request.Tools = stored.Tools
 		result[len(result)-1].Request.SetupScript = stored.SetupScript
@@ -242,7 +249,7 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 }
 
 type pendingAutoStart struct {
-	accountID, userID, boxID, allocationKey string
+	accountID, userID, boxID, allocationKey, slotID string
 }
 
 // Creation commits the retained volume before reserving compute. If the
@@ -251,7 +258,7 @@ type pendingAutoStart struct {
 // not resumed by a controller restart.
 func (s *Store) PendingAutoStarts(ctx context.Context) ([]pendingAutoStart, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT b.account_id::text,b.owner_user_id::text,b.id::text,
- COALESCE(b.metadata->>'allocationIdempotencyKey','')
+ COALESCE(b.metadata->>'allocationIdempotencyKey',''),COALESCE(b.metadata->>'creationSlotId','')
  FROM logical_boxes b WHERE b.state='hibernated' AND b.slot_id IS NULL
  AND b.restoration_state='saved' AND b.volume_id NOT LIKE 'pending:%'
  AND b.metadata->>'allocateWhenReady'='true'
@@ -264,7 +271,7 @@ func (s *Store) PendingAutoStarts(ctx context.Context) ([]pendingAutoStart, erro
 	var pending []pendingAutoStart
 	for rows.Next() {
 		var item pendingAutoStart
-		if err := rows.Scan(&item.accountID, &item.userID, &item.boxID, &item.allocationKey); err != nil {
+		if err := rows.Scan(&item.accountID, &item.userID, &item.boxID, &item.allocationKey, &item.slotID); err != nil {
 			return nil, err
 		}
 		pending = append(pending, item)

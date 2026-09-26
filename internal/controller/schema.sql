@@ -830,6 +830,7 @@ CREATE TABLE IF NOT EXISTS agent_box_creations (
   requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
   requested_login_profiles jsonb NOT NULL DEFAULT '[]'::jsonb,
   requested_instructions text NOT NULL DEFAULT '',
+  requested_slot_id text NOT NULL DEFAULT '',
   idempotency_key text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id,creator_box_id,idempotency_key)
@@ -839,6 +840,7 @@ ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_disk_gib bigi
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_login_profiles jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_instructions text NOT NULL DEFAULT '';
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_slot_id text NOT NULL DEFAULT '';
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS completed_at timestamptz;
 UPDATE agent_box_creations SET completed_at=created_at WHERE created_box_id IS NOT NULL AND completed_at IS NULL;
 CREATE TABLE IF NOT EXISTS agent_box_policies (

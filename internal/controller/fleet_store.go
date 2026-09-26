@@ -217,6 +217,16 @@ func (s *Store) allocationByKey(ctx context.Context, accountID, idempotency stri
 }
 
 func (s *Store) ReserveAllocation(ctx context.Context, p Principal, logicalBox, idempotency, leaseOwner string, leaseDuration time.Duration) (v1.Allocation, error) {
+	return s.reserveAllocation(ctx, p, logicalBox, idempotency, leaseOwner, leaseDuration, "")
+}
+
+// ReserveAllocationOnSlot keeps new-box placement on the worker selected at
+// creation. Unlike automatic allocation, it does not queue for another slot.
+func (s *Store) ReserveAllocationOnSlot(ctx context.Context, p Principal, logicalBox, idempotency, leaseOwner string, leaseDuration time.Duration, slotID string) (v1.Allocation, error) {
+	return s.reserveAllocation(ctx, p, logicalBox, idempotency, leaseOwner, leaseDuration, slotID)
+}
+
+func (s *Store) reserveAllocation(ctx context.Context, p Principal, logicalBox, idempotency, leaseOwner string, leaseDuration time.Duration, preferredSlotID string) (v1.Allocation, error) {
 	if idempotency == "" {
 		return v1.Allocation{}, fmt.Errorf("Idempotency-Key is required")
 	}
@@ -293,9 +303,18 @@ func (s *Store) ReserveAllocation(ctx context.Context, p Principal, logicalBox, 
 		return v1.Allocation{}, fmt.Errorf("logical box %q is %s, not detached", box.Name, box.State)
 	}
 	requestID := uuid()
-	row := tx.QueryRowContext(ctx, computeSlotSelect+` WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND EXISTS (SELECT 1 FROM logical_boxes location WHERE location.id=$4 AND location.account_id=$1 AND (COALESCE(location.metadata->>'region','')='' OR location.metadata->>'region'=s.region)) AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1`, p.AccountID, box.Provider, box.ProviderCredential, box.ID)
+	slotFilter := ""
+	slotArgs := []any{p.AccountID, box.Provider, box.ProviderCredential, box.ID}
+	if preferredSlotID != "" {
+		slotFilter = " AND s.id::text=$5"
+		slotArgs = append(slotArgs, preferredSlotID)
+	}
+	row := tx.QueryRowContext(ctx, computeSlotSelect+` WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND EXISTS (SELECT 1 FROM logical_boxes location WHERE location.id=$4 AND location.account_id=$1 AND (COALESCE(location.metadata->>'region','')='' OR location.metadata->>'region'=s.region)) AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id)`+slotFilter+` ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1`, slotArgs...)
 	slot, slotErr := scanComputeSlot(row)
 	if errors.Is(slotErr, sql.ErrNoRows) {
+		if preferredSlotID != "" {
+			return v1.Allocation{}, fmt.Errorf("selected worker slot is no longer available")
+		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO allocation_requests(id,account_id,logical_box_id,state,idempotency_key,requested_by,phase) VALUES($1,$2,$3,'queued',$4,$5,'waiting-for-capacity') ON CONFLICT(account_id,idempotency_key) DO NOTHING`, requestID, p.AccountID, box.ID, idempotency, p.UserID)
 		if err != nil {
 			return v1.Allocation{}, err

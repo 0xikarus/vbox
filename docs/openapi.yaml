@@ -26,6 +26,25 @@ paths:
                   loginProfiles: {type: array, items: {$ref: '#/components/schemas/LoginProfile'}}
                   assignableRoles: {type: array, items: {$ref: '#/components/schemas/AgentRoleSummary'}}
         '403': {description: Creator lacks create_agent_box permission}
+  /v1/agent-desktop/available-workers:
+    get:
+      security: [{desktopAgentAuth: []}]
+      summary: Healthy free worker slots in the creator box's provider pool
+      responses:
+        '200':
+          description: Worker slots eligible for explicit new-box placement at the time of the request
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    slotId: {type: string, format: uuid}
+                    serviceName: {type: string}
+                    ordinal: {type: integer}
+                    region: {type: string}
+        '403': {description: Creator lacks create_agent_box permission}
   /v1/agent-desktop/box-configs/{application}/{name}/models:
     get:
       security: [{desktopAgentAuth: []}]
@@ -53,13 +72,14 @@ paths:
                 name: {type: string}
                 agent: {enum: [codex, claude, opencode]}
                 diskGiB: {type: integer, default: 10}
+                slotId: {type: string, format: uuid, description: Exact available worker slot; omission uses automatic placement}
                 instructions: {type: string, maxLength: 65536}
                 loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/LoginProfileRef'}}
                 roleIds: {type: array, maxItems: 8, items: {type: string, format: uuid}}
       responses:
         '202': {description: Box creation accepted}
         '403': {description: Agent type, role, disk size, or creation count is outside the creator grant}
-        '409': {description: Selected profile unavailable or creation conflicts}
+        '409': {description: Selected worker or profile unavailable, or creation conflicts}
   /v1/locations:
     get:
       summary: Available location presets from the controller-managed fleet
