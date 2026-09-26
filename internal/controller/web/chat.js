@@ -1208,7 +1208,7 @@
   boxesPending=fetchBoxes(force).finally(()=>{boxesPending=null});return boxesPending;
  }
  async function fetchBoxes(force){
-  const values=await api(owner?'/v1/grid-boxes':'/v1/logical-boxes');
+  const values=await api('/v1/logical-boxes');
   const current=new Map();const alive=new Set();
   for(const b of values||[]){const old=boxes.get(b.id);alive.add(b.id);current.set(b.id,Object.assign(old||{messages:[],historyLoaded:false,hasOlder:false,historyLoading:false},b))}
   for(const id of [...boxes.keys()])if(!alive.has(id)){
