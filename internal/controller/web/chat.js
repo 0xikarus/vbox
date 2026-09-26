@@ -1319,7 +1319,7 @@
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
   if(hasNewReply&&!stickToBottom)newMessagesBtn.hidden=false;
   renderRows();renderInspect();
-  if(owner&&box.state==='running'&&['codex','claude'].includes(box.defaultAgent))void refreshAgentResume(box,!!force);
+  if(owner&&box.state==='running'&&['codex','claude','opencode'].includes(box.defaultAgent))void refreshAgentResume(box,!!force);
  }
  function renderPairMessages(pair){
   const follow=stickToBottom;
@@ -1372,7 +1372,7 @@
    restoringTranscript=false;
   });
  }
- function agentLabel(box){return box.defaultAgent==='claude'?'Claude':'Codex'}
+ function agentLabel(box){return box.defaultAgent==='claude'?'Claude':box.defaultAgent==='opencode'?'OpenCode':'Codex'}
  async function refreshAgentResume(box,force){
   const prior=resumeChecks.get(box.id);
   if(prior&&(!force&&Date.now()-prior.at<20000||prior.pending))return;
@@ -2211,18 +2211,13 @@
     if(current.state==='hibernated'||current.state==='stopped'||current.state==='failed')break;
     if(Date.now()>deadline)throw Error('Still '+current.state+' after 3 minutes; start it again from the box menu once it settles.');
    }
-   await api(boxPath(box.id)+'/allocate','POST',{'Idempotency-Key':crypto.randomUUID()},{leaseOwner:'chat'});
-   toast(box.name+' is starting again.');
-   await loadBoxes();
-  }catch(e){toast(e.message)}
- }
- async function wakeBox(box){
-  if(!canWakeBox(box)||wakingBoxes.has(box.id))return;
-  wakingBoxes.add(box.id);renderHeader();
-  try{
-   toast('Waking '+box.name+'…');
    const allocation=await api(boxPath(box.id)+'/allocate','POST',{'Idempotency-Key':crypto.randomUUID()},{leaseOwner:'chat'});
    await loadBoxes();
+   await waitForChatAllocation(box,allocation);
+   toast(box.name+' is running again.');
+  }catch(e){toast(e.message)}
+ }
+ async function waitForChatAllocation(box,allocation){
    const deadline=Date.now()+180000;
    let current=allocation;
    while(current.state!=='ready'){
@@ -2233,6 +2228,15 @@
    }
    await loadBoxes();
    if(selected===box.id)await refreshMessages(true);
+ }
+ async function wakeBox(box){
+  if(!canWakeBox(box)||wakingBoxes.has(box.id))return;
+  wakingBoxes.add(box.id);renderHeader();
+  try{
+   toast('Waking '+box.name+'…');
+   const allocation=await api(boxPath(box.id)+'/allocate','POST',{'Idempotency-Key':crypto.randomUUID()},{leaseOwner:'chat'});
+   await loadBoxes();
+   await waitForChatAllocation(box,allocation);
    toast(box.name+' is running.');
   }catch(e){toast(e.message);await loadBoxes().catch(()=>{})}
   finally{wakingBoxes.delete(box.id);renderHeader()}

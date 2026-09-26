@@ -330,6 +330,10 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		return
 	}
 	owner := ID("channel_")
+	claudeConversationID := os.Getenv("CLAUDE_CODE_SESSION_ID")
+	if !claudeSessionID.MatchString(claudeConversationID) {
+		claudeConversationID = ""
+	}
 	ready := claudeChannelReadyPath(home, session, owner)
 	defer os.Remove(ready)
 	ticker := time.NewTicker(500 * time.Millisecond)
@@ -350,7 +354,7 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 			}
 		}
 		missingPane = 0
-		marker, _ := json.Marshal(map[string]any{"owner": owner, "pid": os.Getpid()})
+		marker, _ := json.Marshal(map[string]any{"owner": owner, "pid": os.Getpid(), "sessionId": claudeConversationID})
 		if writeTextAtomic(ready, string(marker), 0600) != nil {
 			return
 		}

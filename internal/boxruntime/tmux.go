@@ -28,10 +28,14 @@ type TmuxSnapshot struct {
 }
 
 type TmuxSession struct {
-	Name         string       `json:"name"`
-	ShellFirst   bool         `json:"shellFirst,omitempty"`
-	ManagedAgent string       `json:"managedAgent,omitempty"`
-	Windows      []TmuxWindow `json:"windows"`
+	Name         string `json:"name"`
+	ShellFirst   bool   `json:"shellFirst,omitempty"`
+	ManagedAgent string `json:"managedAgent,omitempty"`
+	// The visible native conversation at hibernation, when its TUI could be
+	// queried. An empty checked ID means that TUI was on its fresh home screen.
+	ConversationChecked bool         `json:"conversationChecked,omitempty"`
+	ConversationID      string       `json:"conversationId,omitempty"`
+	Windows             []TmuxWindow `json:"windows"`
 }
 
 type TmuxWindow struct {
@@ -118,6 +122,11 @@ func SaveTmuxState(ctx context.Context, root string) (TmuxSnapshot, error) {
 				if agent == "codex" || agent == "claude" || agent == "opencode" {
 					session.ManagedAgent = agent
 				}
+			}
+			if session.ManagedAgent == "codex" || session.ManagedAgent == "opencode" || session.ManagedAgent == "claude" {
+				probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				session.ConversationID, session.ConversationChecked = visibleManagedConversation(probeCtx, session.ManagedAgent, session.Name)
+				cancel()
 			}
 			marker, markerErr := tmuxOutput(ctx, "show-options", "-v", "-t", "="+session.Name+":", "@vmbox-shell")
 			// Older controller-created shells used this prefix before the

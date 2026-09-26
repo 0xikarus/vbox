@@ -58,6 +58,14 @@ func TestFindClaudeResumeCandidateUsesSavedManagedWorkspace(t *testing.T) {
 	if err != nil || other != nil {
 		t.Fatalf("unrelated session candidate = %+v, %v", other, err)
 	}
+	selected, _ := json.Marshal(TmuxSnapshot{Version: TmuxSnapshotVersion, SavedAt: saved, Sessions: []TmuxSession{{Name: "claude-test", ManagedAgent: "claude", ConversationChecked: true, ConversationID: oldID}}})
+	if err := os.WriteFile(TmuxSnapshotPath(root), selected, 0600); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err = FindClaudeResumeCandidate(root, home, workspace, "claude-test")
+	if err != nil || candidate == nil || candidate.SessionID != oldID {
+		t.Fatalf("selected Claude conversation = %+v, %v", candidate, err)
+	}
 }
 
 func TestRestoreClaudeConversationRespawnsVisiblePaneWithSavedSession(t *testing.T) {

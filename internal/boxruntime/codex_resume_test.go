@@ -60,4 +60,20 @@ func TestFindCodexResumeCandidateUsesPreHibernateInteractiveThread(t *testing.T)
 	if err != nil || other != nil {
 		t.Fatalf("unrelated session candidate = %+v, %v", other, err)
 	}
+	selected, _ := json.Marshal(TmuxSnapshot{Version: TmuxSnapshotVersion, SavedAt: saved, Sessions: []TmuxSession{{Name: "codex-test", ManagedAgent: "codex", ConversationChecked: true, ConversationID: newID}}})
+	if err := os.WriteFile(TmuxSnapshotPath(root), selected, 0600); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err = FindCodexResumeCandidate(root, home, "codex-test")
+	if err != nil || candidate == nil || candidate.SessionID != newID {
+		t.Fatalf("visible thread candidate = %+v, %v", candidate, err)
+	}
+	fresh, _ := json.Marshal(TmuxSnapshot{Version: TmuxSnapshotVersion, SavedAt: saved, Sessions: []TmuxSession{{Name: "codex-test", ManagedAgent: "codex", ConversationChecked: true}}})
+	if err := os.WriteFile(TmuxSnapshotPath(root), fresh, 0600); err != nil {
+		t.Fatal(err)
+	}
+	candidate, err = FindCodexResumeCandidate(root, home, "codex-test")
+	if err != nil || candidate != nil {
+		t.Fatalf("fresh visible TUI candidate = %+v, %v", candidate, err)
+	}
 }

@@ -36,12 +36,12 @@ func (s *Server) resumeHandler(w http.ResponseWriter, r *http.Request, p Princip
 		return
 	}
 	agent := box.DefaultAgent
-	if box.State != v1.LogicalBoxRunning || (agent != "codex" && agent != "claude") || (requiredAgent != "" && agent != requiredAgent) {
+	if box.State != v1.LogicalBoxRunning || (agent != "codex" && agent != "claude" && agent != "opencode") || (requiredAgent != "" && agent != requiredAgent) {
 		if r.Method == http.MethodGet {
 			writeJSON(w, 200, map[string]any{"candidate": nil})
 			return
 		}
-		writeError(w, 409, fmt.Errorf("box must be running Codex or Claude"))
+		writeError(w, 409, fmt.Errorf("box must be running Codex, Claude, or OpenCode"))
 		return
 	}
 	tasks, err := s.Store.ListBoxTasks(ctx, p, box.ID)

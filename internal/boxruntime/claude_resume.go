@@ -24,6 +24,10 @@ func FindClaudeResumeCandidate(root, home, workspace, session string) (*ResumeCa
 	if err != nil || snapshot == nil {
 		return nil, err
 	}
+	saved := savedConversation(snapshot, session)
+	if saved.ConversationChecked && saved.ConversationID == "" {
+		return nil, nil
+	}
 	project := "-" + strings.ReplaceAll(strings.TrimPrefix(filepath.Clean(workspace), "/"), "/", "-")
 	paths, err := filepath.Glob(filepath.Join(home, ".claude", "projects", project, "*.jsonl"))
 	if err != nil {
@@ -33,6 +37,9 @@ func FindClaudeResumeCandidate(root, home, workspace, session string) (*ResumeCa
 	for _, path := range paths {
 		id := strings.TrimSuffix(filepath.Base(path), ".jsonl")
 		if !claudeSessionID.MatchString(id) {
+			continue
+		}
+		if saved.ConversationID != "" && id != saved.ConversationID {
 			continue
 		}
 		file, err := os.Open(path)

@@ -33,6 +33,10 @@ func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate
 	if err != nil || snapshot == nil {
 		return nil, err
 	}
+	saved := savedConversation(snapshot, session)
+	if saved.ConversationChecked && saved.ConversationID == "" {
+		return nil, nil
+	}
 	paths, err := filepath.Glob(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "rollout-*.jsonl"))
 	if err != nil {
 		return nil, err
@@ -41,6 +45,9 @@ func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate
 	for _, path := range paths {
 		match := codexRolloutID.FindStringSubmatch(filepath.Base(path))
 		if match == nil {
+			continue
+		}
+		if saved.ConversationID != "" && match[1] != saved.ConversationID {
 			continue
 		}
 		file, err := os.Open(path)
@@ -84,6 +91,15 @@ func FindCodexResumeCandidate(root, home, session string) (*CodexResumeCandidate
 		}
 	}
 	return newest, nil
+}
+
+func savedConversation(snapshot *TmuxSnapshot, session string) TmuxSession {
+	for _, saved := range snapshot.Sessions {
+		if saved.Name == session {
+			return saved
+		}
+	}
+	return TmuxSession{}
 }
 
 func savedManagedSession(root, session, agent string) (*TmuxSnapshot, error) {
