@@ -52,7 +52,7 @@ func writeRunList(output io.Writer, runs []v1.Run) error {
 	}
 	sort.Slice(runs, func(i, j int) bool { return runs[i].CreatedAt.After(runs[j].CreatedAt) })
 	table := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(table, "BOX\tSTATE\tPROVIDER\tREGION\tCPU\tRAM\tDISK\tRUN ID\tOPEN / RESUME"); err != nil {
+	if _, err := fmt.Fprintln(table, "BOX\tSTATE\tWORKER POOL\tREGION\tCPU\tRAM\tDISK\tRUN ID\tOPEN / RESUME"); err != nil {
 		return err
 	}
 	for _, run := range runs {
@@ -107,7 +107,7 @@ func writeInventoryList(output io.Writer, inventory v1.BoxInventory) error {
 	sort.Slice(inventory.LogicalBoxes, func(i, j int) bool { return inventory.LogicalBoxes[i].Name < inventory.LogicalBoxes[j].Name })
 	sort.Slice(inventory.ConnectedBoxes, func(i, j int) bool { return inventory.ConnectedBoxes[i].Name < inventory.ConnectedBoxes[j].Name })
 	table := tabwriter.NewWriter(output, 0, 4, 2, ' ', 0)
-	if _, err := fmt.Fprintln(table, "NAME\tSTATE\tPROVIDER\tSTORAGE\tCOMPUTE\tMANAGEMENT\tOPEN / RESUME"); err != nil {
+	if _, err := fmt.Fprintln(table, "NAME\tSTATE\tWORKER POOL\tSTORAGE\tCOMPUTE\tMANAGEMENT\tOPEN / RESUME"); err != nil {
 		return err
 	}
 	for _, box := range inventory.LogicalBoxes {

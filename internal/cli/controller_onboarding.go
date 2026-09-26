@@ -12,48 +12,54 @@ import (
 	"golang.org/x/term"
 )
 
-// promptControllerContext makes controller management the safe first-run
-// default. There is no standalone fallback.
-func (a *App) promptControllerContext(file config.File, requestedName string, existing config.Context) (config.File, config.Context, error) {
+// promptControllerConnection makes a controller the safe first-run default.
+func (a *App) promptControllerConnection(file config.File) (config.File, config.Context, error) {
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return file, existing, fmt.Errorf("controller is not configured; run 'vmbox context add NAME --controller URL'")
+		return file, config.Context{}, fmt.Errorf("controller is not configured; run 'vmbox connect URL'")
 	}
 	reader := bufio.NewReader(singleByteReader{a.In})
 	fmt.Fprintln(a.Err, "vmbox: no controller is configured; connect this CLI to one now.")
-
-	controller, err := a.readControllerPrompt(reader, "Controller URL", existing.Controller)
+	controller, err := a.readControllerPrompt(reader, "Controller URL", "")
 	if err != nil {
-		return file, existing, err
+		return file, config.Context{}, err
 	}
-	if err := validateControllerURL(controller); err != nil {
-		return file, existing, err
-	}
-
-	nameDefault := requestedName
-	if nameDefault == "" {
-		nameDefault = existing.Name
-	}
-	if nameDefault == "" {
-		nameDefault = "production"
-	}
-	name, err := a.readControllerPrompt(reader, "Context name", nameDefault)
+	configured, err := a.setControllerConnection(&file, controller, "VMBOX_CONTROLLER_TOKEN")
 	if err != nil {
-		return file, existing, err
+		return file, config.Context{}, err
 	}
-	configured := config.Context{Name: name, Controller: strings.TrimRight(controller, "/"), TokenEnv: existing.TokenEnv}
-	if configured.TokenEnv == "" {
-		configured.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
-	}
-	if file.Contexts == nil {
-		file.Contexts = make(map[string]config.Context)
-	}
-	file.Contexts[name] = configured
-	file.Current = name
-	if err := config.Save(a.ConfigPath, file); err != nil {
-		return file, existing, fmt.Errorf("save controller context: %w", err)
-	}
-	fmt.Fprintf(a.Err, "vmbox: saved controller context %q; authentication is read from %s and is never stored in the config\n", name, configured.TokenEnv)
+	fmt.Fprintf(a.Err, "vmbox: connected to %s; authentication is read from %s and is never stored in the config\n", configured.Controller, configured.TokenEnv)
 	return file, configured, nil
+}
+
+func (a *App) setControllerConnection(file *config.File, controller, tokenEnv string) (config.Context, error) {
+	if err := validateControllerURL(controller); err != nil {
+		return config.Context{}, err
+	}
+	controller = strings.TrimRight(controller, "/")
+	if tokenEnv == "" {
+		tokenEnv = "VMBOX_CONTROLLER_TOKEN"
+	}
+	previous, _ := file.Connected()
+	connection := &config.ControllerConnection{Controller: controller, TokenEnv: tokenEnv}
+	if previous.Controller == controller {
+		connection.LocationPresets = previous.LocationPresets
+		if previous.Name != "" {
+			legacy, err := os.ReadFile(a.legacyTokenPath(previous))
+			if err != nil && !os.IsNotExist(err) {
+				return config.Context{}, fmt.Errorf("cannot read saved controller token")
+			}
+			if len(legacy) > 0 {
+				if err := a.saveControllerToken(config.Context{Controller: controller}, string(legacy)); err != nil {
+					return config.Context{}, err
+				}
+			}
+		}
+	}
+	file.Connection = connection
+	if err := config.Save(a.ConfigPath, *file); err != nil {
+		return config.Context{}, fmt.Errorf("save controller connection: %w", err)
+	}
+	return file.Connected()
 }
 
 // Avoid buffering keys meant for the next picker, password prompt, or SSH.
@@ -111,6 +117,9 @@ func validateControllerURL(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Host == "" {
 		return fmt.Errorf("controller URL must be an absolute HTTPS URL")
+	}
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("controller URL must not contain credentials, a query, or a fragment")
 	}
 	if parsed.Scheme == "https" {
 		return nil

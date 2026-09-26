@@ -51,8 +51,8 @@ func TestBareCommandShowsInfoWithoutDialogOrMutation(t *testing.T) {
 				}
 				t.Fatal(err)
 			}
-			if strings.Contains(out.String(), "\x1b[") || stderr.Len() != 0 || !strings.Contains(out.String(), "test-context") {
-				t.Fatal("overview prompted or hid context", out.String(), stderr.String())
+			if strings.Contains(out.String(), "\x1b[") || stderr.Len() != 0 || !strings.Contains(out.String(), server.URL) {
+				t.Fatal("overview prompted or hid controller", out.String(), stderr.String())
 			}
 			if strings.Contains(out.String(), "vmbox menu") || !strings.Contains(out.String(), "vmbox delete BOX") || !strings.Contains(out.String(), "vmbox new NAME") {
 				t.Fatal("overview must show compact command hints without a picker")

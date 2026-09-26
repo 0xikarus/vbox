@@ -17,8 +17,36 @@ func (a *App) tokenPath(c config.Context) string {
 	if path == "" {
 		path = config.DefaultPath()
 	}
+	key := sha256.Sum256([]byte(strings.TrimRight(c.Controller, "/")))
+	return filepath.Join(filepath.Dir(path), "controller-tokens", fmt.Sprintf("%x", key))
+}
+
+func (a *App) legacyTokenPath(c config.Context) string {
+	if c.Name == "" {
+		return ""
+	}
+	path := a.ConfigPath
+	if path == "" {
+		path = config.DefaultPath()
+	}
 	key := sha256.Sum256([]byte(c.Name + "\x00" + strings.TrimRight(c.Controller, "/")))
 	return filepath.Join(filepath.Dir(path), "controller-tokens", fmt.Sprintf("%x", key))
+}
+
+func (a *App) readControllerToken(c config.Context) (string, error) {
+	for _, path := range []string{a.tokenPath(c), a.legacyTokenPath(c)} {
+		if path == "" {
+			continue
+		}
+		data, err := os.ReadFile(path)
+		if err == nil && len(data) > 0 {
+			return string(data), nil
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("cannot read saved controller token")
+		}
+	}
+	return "", nil
 }
 
 func (a *App) saveControllerToken(c config.Context, token string) error {
@@ -46,12 +74,8 @@ func (a *App) controllerToken(ctx context.Context, c config.Context) (string, er
 	if token := a.Environ[c.TokenEnv]; token != "" {
 		return token, nil
 	}
-	data, err := os.ReadFile(a.tokenPath(c))
-	if err == nil && len(data) > 0 {
-		return string(data), nil
-	}
-	if err != nil && !os.IsNotExist(err) {
-		return "", fmt.Errorf("cannot read saved controller token")
+	if saved, err := a.readControllerToken(c); err != nil || saved != "" {
+		return saved, err
 	}
 	if a.IsTerminal == nil || !a.IsTerminal() {
 		return "", fmt.Errorf("controller authentication missing; run vmbox in a terminal to sign in, or set %s", c.TokenEnv)
@@ -72,21 +96,27 @@ func (a *App) controllerToken(ctx context.Context, c config.Context) (string, er
 // A stale shell export must not hide a successful interactive login forever.
 // Environment credentials still win when accepted; automation stays fail-closed.
 func (a *App) savedControllerToken(c config.Context) (string, error) {
-	data, err := os.ReadFile(a.tokenPath(c))
-	if os.IsNotExist(err) {
-		return "", nil
-	}
-	if err != nil {
-		return "", fmt.Errorf("cannot read saved controller token")
-	}
-	return string(data), nil
+	return a.readControllerToken(c)
 }
 
 func (a *App) controllerLogout(c config.Context) error {
 	if err := os.Remove(a.tokenPath(c)); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("cannot remove saved controller token")
 	}
-	fmt.Fprintln(a.Out, "Saved controller token cleared for this context. Server token is not revoked.")
+	file, err := config.Load(a.ConfigPath)
+	if err != nil {
+		return err
+	}
+	for name, legacy := range file.Contexts {
+		if strings.TrimRight(legacy.Controller, "/") != strings.TrimRight(c.Controller, "/") {
+			continue
+		}
+		legacy.Name = name
+		if err := os.Remove(a.legacyTokenPath(legacy)); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("cannot remove saved controller token")
+		}
+	}
+	fmt.Fprintln(a.Out, "Saved controller token cleared. Server token is not revoked.")
 	if a.Environ[c.TokenEnv] != "" {
 		fmt.Fprintf(a.Out, "An environment token is still set; run: unset %s\n", tuiLabel(c.TokenEnv, 100))
 	}

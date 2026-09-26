@@ -18,7 +18,7 @@ import (
 
 func (a *App) pickProvider(ctx context.Context, c config.Context, token string) (v1.ProviderCredential, error) {
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return v1.ProviderCredential{}, fmt.Errorf("specify PROVIDER ALIAS; use vmbox providers list to see configured providers")
+		return v1.ProviderCredential{}, fmt.Errorf("specify TYPE ALIAS; use vmbox pools list to see configured worker pools")
 	}
 	var values []v1.ProviderCredential
 	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/provider-credentials", nil, &values, nil); err != nil {
@@ -31,7 +31,7 @@ func (a *App) pickProvider(ctx context.Context, c config.Context, token string) 
 	for i, value := range values {
 		labels[i] = value.Provider + " · " + value.Name
 	}
-	i, err := a.selectTUI(ctx, "Choose a controller provider", labels, 0)
+	i, err := a.selectTUI(ctx, "Choose a worker pool", labels, 0)
 	if err != nil {
 		return v1.ProviderCredential{}, err
 	}
@@ -43,7 +43,7 @@ func (a *App) pickProvider(ctx context.Context, c config.Context, token string) 
 func (a *App) setupProvider(ctx context.Context, c config.Context, token, requested string) (v1.ProviderCredential, error) {
 	var zero v1.ProviderCredential
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return zero, fmt.Errorf("use vmbox providers create PROVIDER ALIAS --config-file FILE --secret-env ENV; see vmbox providers schema")
+		return zero, fmt.Errorf("use vmbox pools create TYPE ALIAS --config-file FILE --secret-env ENV; see vmbox pools schema")
 	}
 	var schema struct {
 		Providers   map[string]map[string]string `json:"providers"`
@@ -59,7 +59,7 @@ func (a *App) setupProvider(ctx context.Context, c config.Context, token, reques
 	}
 	sort.Strings(names)
 	if requested == "" {
-		i, err := a.selectTUI(ctx, "Set up a controller provider", names, 0)
+		i, err := a.selectTUI(ctx, "Set up a worker pool type", names, 0)
 		if err != nil {
 			return zero, err
 		}
@@ -67,10 +67,10 @@ func (a *App) setupProvider(ctx context.Context, c config.Context, token, reques
 	}
 	fields, ok := schema.Providers[requested]
 	if !ok {
-		return zero, fmt.Errorf("provider is not supported by this controller; use vmbox providers schema")
+		return zero, fmt.Errorf("worker pool type is not supported by this controller; use vmbox pools schema")
 	}
 	reader := bufio.NewReader(singleByteReader{a.In})
-	alias, err := a.readControllerPrompt(reader, "Provider alias", "primary")
+	alias, err := a.readControllerPrompt(reader, "Worker pool alias", "primary")
 	if err != nil {
 		return zero, err
 	}
@@ -164,7 +164,7 @@ func (a *App) chooseDefaultProvider(ctx context.Context, c config.Context, token
 	if err != nil {
 		return v1.FleetConfig{}, err
 	}
-	choice, err := a.selectTUI(ctx, "Use "+value.Provider+" · "+value.Name+" as the controller default?", []string{"Confirm", "Cancel"}, 1)
+	choice, err := a.selectTUI(ctx, "Use worker pool "+value.Provider+" · "+value.Name+" as the controller default?", []string{"Confirm", "Cancel"}, 1)
 	if err != nil {
 		return v1.FleetConfig{}, err
 	}

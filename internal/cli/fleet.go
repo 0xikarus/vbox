@@ -27,16 +27,78 @@ func fleetQuery(c config.Context) string {
 	return "?provider=" + url.QueryEscape(c.Provider) + "&providerCredential=" + url.QueryEscape(c.ProviderCredential)
 }
 
+func parseWorkerPool(value string) (string, string, error) {
+	providerName, alias, ok := strings.Cut(value, "/")
+	if !ok || providerName == "" || alias == "" || strings.Contains(alias, "/") {
+		return "", "", fmt.Errorf("worker pool must be TYPE/ALIAS; see vmbox pools list")
+	}
+	return providerName, alias, nil
+}
+
+func hasWorkerPoolOption(args []string) bool {
+	for _, arg := range args {
+		if arg == "--" {
+			break
+		}
+		if arg == "--pool" || strings.HasPrefix(arg, "--pool=") {
+			return true
+		}
+	}
+	return false
+}
+
+func fleetPoolOption(args []string) ([]string, string, error) {
+	result := make([]string, 0, len(args))
+	pool := ""
+	seen := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--pool" || strings.HasPrefix(arg, "--pool=") {
+			if seen {
+				return nil, "", fmt.Errorf("--pool may be specified only once")
+			}
+			seen = true
+			if arg == "--pool" {
+				i++
+				if i >= len(args) {
+					return nil, "", fmt.Errorf("--pool requires TYPE/ALIAS")
+				}
+				pool = args[i]
+			} else {
+				pool = strings.TrimPrefix(arg, "--pool=")
+			}
+			if pool == "" {
+				return nil, "", fmt.Errorf("--pool requires TYPE/ALIAS")
+			}
+			continue
+		}
+		result = append(result, arg)
+	}
+	return result, pool, nil
+}
+
 func (a *App) controllerFleet(ctx context.Context, c config.Context, token string, args []string) error {
+	var pool string
+	var err error
+	args, pool, err = fleetPoolOption(args)
+	if err != nil {
+		return err
+	}
+	if pool != "" {
+		c.Provider, c.ProviderCredential, err = parseWorkerPool(pool)
+		if err != nil {
+			return err
+		}
+	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox fleet status|slots|slots set COUNT|location [set REGION]")
+		return fmt.Errorf("usage: vmbox fleet status|slots|slots set COUNT|location [set REGION] [--pool TYPE/ALIAS]")
 	}
 	switch args[0] {
 	case "location":
 		return a.controllerFleetLocation(ctx, c, token, args[1:])
 	case "status":
 		if len(args) > 2 || (len(args) == 2 && args[1] != "--json") {
-			return fmt.Errorf("usage: vmbox fleet status [--json]")
+			return fmt.Errorf("usage: vmbox fleet status [--json] [--pool TYPE/ALIAS]")
 		}
 		var status v1.FleetStatus
 		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/fleet/status"+fleetQuery(c), nil, &status, nil); err != nil {
@@ -57,7 +119,7 @@ func (a *App) controllerFleet(ctx context.Context, c config.Context, token strin
 			return nil
 		}
 		if len(args) != 3 || args[1] != "set" {
-			return fmt.Errorf("usage: vmbox fleet slots set COUNT")
+			return fmt.Errorf("usage: vmbox fleet slots set COUNT [--pool TYPE/ALIAS]")
 		}
 		requested, err := parseFleetSlotCount(args[2], c.Provider, c.ProviderCredential)
 		if err != nil {
@@ -76,7 +138,7 @@ func (a *App) controllerFleet(ctx context.Context, c config.Context, token strin
 }
 
 func writeFleetStatus(output interface{ Write([]byte) (int, error) }, status v1.FleetStatus) {
-	fmt.Fprintf(output, "Fleet %s", status.Provider)
+	fmt.Fprintf(output, "Worker pool %s", status.Provider)
 	if status.ProviderCredential != "" {
 		fmt.Fprintf(output, "/%s", status.ProviderCredential)
 	}

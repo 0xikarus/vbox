@@ -26,16 +26,16 @@ import (
 var errSetupCancelled = errors.New("box setup cancelled")
 
 type runOptions struct {
-	name, region, workspace, notification, onSuccess, onFailure, maxTTL string
-	detach, reuse, hibernateOnExit                                      bool
-	cpu                                                                 float64
-	memory, disk                                                        int64
-	argv                                                                []string
-	components                                                          []string
-	profiles                                                            []config.ApplicationProfile
-	instructions                                                        []string
-	github                                                              *config.GitHubCredential
-	componentsSet, resourcesSet, regionSet, workspaceSet                bool
+	name, pool, region, workspace, notification, onSuccess, onFailure, maxTTL string
+	detach, reuse, hibernateOnExit                                            bool
+	cpu                                                                       float64
+	memory, disk                                                              int64
+	argv                                                                      []string
+	components                                                                []string
+	profiles                                                                  []config.ApplicationProfile
+	instructions                                                              []string
+	github                                                                    *config.GitHubCredential
+	componentsSet, resourcesSet, regionSet, workspaceSet                      bool
 }
 
 func parseRunOptions(args []string) (runOptions, error) {
@@ -65,6 +65,18 @@ func parseRunOptions(args []string) (runOptions, error) {
 			result.detach = true
 		case arg == "--reuse":
 			result.reuse = true
+		case arg == "--pool" || strings.HasPrefix(arg, "--pool="):
+			if result.pool != "" {
+				return result, fmt.Errorf("--pool may be specified only once")
+			}
+			pool, err := value(&i, arg, "--pool")
+			if err != nil {
+				return result, err
+			}
+			if _, _, err := parseWorkerPool(pool); err != nil {
+				return result, err
+			}
+			result.pool = pool
 		case arg == "--hibernate-on-exit":
 			result.hibernateOnExit = true
 		case arg == "--component" || strings.HasPrefix(arg, "--component="):
@@ -479,7 +491,7 @@ func (a *App) configureSetup(ctx context.Context, c config.Context, p provider.P
 		if regionSelected >= 0 {
 			displayRegion = regions[regionSelected].ID
 		}
-		fmt.Fprintf(output, "Context  %s / %s    Region  %s    Workspace  %s\n", c.Name, c.Provider, displayRegion, setup.Workspace)
+		fmt.Fprintf(output, "Worker pool  %s / %s    Region  %s    Workspace  %s\n", c.Provider, c.ProviderCredential, displayRegion, setup.Workspace)
 		fmt.Fprintf(output, "Exact argv  %s    Save for --reuse  %t\n", command, setup.Save)
 		last := ""
 		for i, row := range rows {
@@ -1009,8 +1021,15 @@ func loadSetup(file config.File, contextName, workingDirectory string) (config.C
 		return config.CreationSetup{}, err
 	}
 	setup, ok := file.LastSetups[key]
+	if !ok && file.Current != "" && file.Contexts[file.Current].Controller == contextName {
+		legacyKey, _, err := setupScopeKey(file.Current, workingDirectory)
+		if err != nil {
+			return config.CreationSetup{}, err
+		}
+		setup, ok = file.LastSetups[legacyKey]
+	}
 	if !ok || setup.Version != 1 {
-		return setup, fmt.Errorf("no complete reusable setup is saved for context %q in %s", contextName, directory)
+		return setup, fmt.Errorf("no complete reusable setup is saved for this controller in %s", directory)
 	}
 	setup.Save = true
 	return setup, nil
@@ -1144,7 +1163,7 @@ func (a *App) selectControllerRun(ctx context.Context, c config.Context, token, 
 
 func (a *App) selectControllerLogicalBox(ctx context.Context, c config.Context, token, title string) (string, error) {
 	var boxes []v1.LogicalBox
-	if _, err := a.request(ctx, c, token, "GET", "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
+	if _, err := a.request(ctx, c, token, "GET", "/v1/logical-boxes", nil, &boxes, nil); err != nil {
 		return "", err
 	}
 	if len(boxes) == 0 {

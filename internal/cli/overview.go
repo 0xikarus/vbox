@@ -14,20 +14,20 @@ import (
 
 // The default command is observational, even in a terminal. In particular it
 // must never allocate compute or attach SSH. Authentication may prompt.
-func (a *App) overview(ctx context.Context, contextName string) error {
+func (a *App) overview(ctx context.Context) error {
 	file, err := config.Load(a.ConfigPath)
 	if err != nil {
 		return err
 	}
-	c, err := file.Active(contextName)
+	c, err := file.Connected()
 	if err != nil || c.Controller == "" {
-		fmt.Fprintln(a.Out, "No controller connected.\nSetup: vmbox context add NAME --controller URL\nHelp:  vmbox help")
+		fmt.Fprintln(a.Out, "No controller connected.\nSetup: vmbox connect URL\nHelp:  vmbox help")
 		return nil
 	}
-	fmt.Fprintf(a.Out, "Boxes · %s\n", tuiLabel(c.Name, 100))
 	if err := validateControllerURL(c.Controller); err != nil {
 		return err
 	}
+	fmt.Fprintf(a.Out, "Boxes · %s\n", tuiLabel(c.Controller, 100))
 	if c.TokenEnv == "" {
 		c.TokenEnv = "VMBOX_CONTROLLER_TOKEN"
 	}
@@ -38,7 +38,7 @@ func (a *App) overview(ctx context.Context, contextName string) error {
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	var boxes []v1.LogicalBox
-	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
+	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes", nil, &boxes, nil); err != nil {
 		return err
 	}
 	sort.Slice(boxes, func(i, j int) bool { return boxes[i].Name < boxes[j].Name })

@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -88,27 +87,22 @@ func envMap() map[string]string {
 }
 
 func (a *App) Run(ctx context.Context, args []string) error {
-	contextName := ""
 	for len(args) > 0 {
 		switch args[0] {
 		case "--verbose":
 			a.Verbose = true
 			args = args[1:]
 		case "--standalone":
-			return fmt.Errorf("standalone mode has been removed; configure a controller context; existing standalone resources are untouched")
+			return fmt.Errorf("standalone mode has been removed; connect to a controller with vmbox connect URL")
 		case "--context":
-			if len(args) < 2 {
-				return fmt.Errorf("--context requires a name")
-			}
-			contextName = args[1]
-			args = args[2:]
+			return fmt.Errorf("--context has been removed; this CLI connects to one controller; use vmbox connect URL")
 		default:
 			goto parsed
 		}
 	}
 parsed:
 	if len(args) == 0 {
-		return a.overview(ctx, contextName)
+		return a.overview(ctx)
 	}
 	if args[0] == "help" || args[0] == "--help" || args[0] == "-h" {
 		if len(args) == 2 && args[1] == "--all" {
@@ -123,11 +117,44 @@ parsed:
 		return err
 	}
 	if args[0] == "context" {
-		return a.context(file, args[1:])
+		return fmt.Errorf("context commands have been removed; use vmbox connect URL")
 	}
-	active, err := file.Active(contextName)
+	if args[0] == "connect" {
+		if len(args) == 1 {
+			connected, err := file.Connected()
+			if err != nil {
+				return err
+			}
+			if err := validateControllerURL(connected.Controller); err != nil {
+				return err
+			}
+			fmt.Fprintln(a.Out, connected.Controller)
+			return nil
+		}
+		fs := flag.NewFlagSet("connect", flag.ContinueOnError)
+		fs.SetOutput(a.Err)
+		previous, _ := file.Connected()
+		tokenEnv := "VMBOX_CONTROLLER_TOKEN"
+		if strings.TrimRight(previous.Controller, "/") == strings.TrimRight(args[1], "/") && previous.TokenEnv != "" {
+			tokenEnv = previous.TokenEnv
+		}
+		fs.StringVar(&tokenEnv, "token-env", tokenEnv, "controller token environment variable")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return fmt.Errorf("usage: vmbox connect URL [--token-env ENV]")
+		}
+		connected, err := a.setControllerConnection(&file, args[1], tokenEnv)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(a.Out, "Connected to %s\n", connected.Controller)
+		return nil
+	}
+	active, err := file.Connected()
 	if err != nil {
-		file, active, err = a.promptControllerContext(file, contextName, config.Context{})
+		file, active, err = a.promptControllerConnection(file)
 		if err != nil {
 			return err
 		}
@@ -136,7 +163,7 @@ parsed:
 		return fmt.Errorf("controller bootstrap is operator-only; see docs/CONTROLLER-FIRST.md; no provider operation performed")
 	}
 	if active.Controller == "" {
-		return fmt.Errorf("provider-only context cannot be used; create a controller context; no standalone resources changed")
+		return fmt.Errorf("controller is not configured; run vmbox connect URL")
 	}
 	if err := validateControllerURL(active.Controller); err != nil {
 		return err
@@ -151,70 +178,9 @@ parsed:
 		return a.controllerLogout(active)
 	}
 	if a.Verbose {
-		fmt.Fprintf(a.Err, "vmbox: controller · context %s\n", active.Name)
+		fmt.Fprintf(a.Err, "vmbox: controller %s\n", active.Controller)
 	}
 	return a.controller(ctx, file, active, args)
-}
-
-func (a *App) context(file config.File, args []string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox context add|use|list")
-	}
-	switch args[0] {
-	case "list":
-		names := make([]string, 0, len(file.Contexts))
-		for name := range file.Contexts {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			ctx := file.Contexts[name]
-			marker := " "
-			if file.Current == name {
-				marker = "*"
-			}
-			fmt.Fprintf(a.Out, "%s %-20s %-8s %s\n", marker, name, ctx.Provider, ctx.Controller)
-		}
-		return nil
-	case "use":
-		if len(args) != 2 {
-			return fmt.Errorf("context use requires a name")
-		}
-		if _, ok := file.Contexts[args[1]]; !ok {
-			return fmt.Errorf("context %q does not exist", args[1])
-		}
-		file.Current = args[1]
-		return config.Save(a.ConfigPath, file)
-	case "add":
-		if len(args) < 2 {
-			return fmt.Errorf("context add requires a name")
-		}
-		name := args[1]
-		if _, exists := file.Contexts[name]; exists {
-			return fmt.Errorf("context already exists; use a new name after explicitly configuring its controller default; old context preserved")
-		}
-		fs := flag.NewFlagSet("context add", flag.ContinueOnError)
-		fs.SetOutput(a.Err)
-		ctx := config.Context{Name: name, TokenEnv: "VMBOX_CONTROLLER_TOKEN"}
-		fs.StringVar(&ctx.Controller, "controller", "", "controller HTTPS URL")
-		fs.StringVar(&ctx.TokenEnv, "token-env", "VMBOX_CONTROLLER_TOKEN", "controller token environment variable")
-		if err := fs.Parse(args[2:]); err != nil {
-			return err
-		}
-		if fs.NArg() != 0 {
-			return fmt.Errorf("unexpected context argument")
-		}
-		if err := validateControllerURL(ctx.Controller); err != nil {
-			return err
-		}
-		file.Contexts[name] = ctx
-		if file.Current == "" {
-			file.Current = name
-		}
-		return config.Save(a.ConfigPath, file)
-	default:
-		return fmt.Errorf("unknown context command %q", args[0])
-	}
 }
 
 func randomBytes(size int) ([]byte, error) {
@@ -235,9 +201,8 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	if err != nil {
 		return err
 	}
-	// Provider selection comes from controller state, not client SDKs or local
-	// provisioning credentials. Legacy selectors must match before mutation.
-	needsDefault := args[0] == "new" || args[0] == "create" || args[0] == "fleet" || args[0] == "run" || ((args[0] == "boxes" || args[0] == "box") && len(args) > 1 && (args[1] == "new" || args[1] == "create"))
+	// Worker pool selection comes from controller state, never a saved CLI context.
+	needsDefault := !hasWorkerPoolOption(args) && (args[0] == "new" || args[0] == "create" || args[0] == "fleet" || args[0] == "run" || ((args[0] == "boxes" || args[0] == "box") && len(args) > 1 && (args[1] == "new" || args[1] == "create")))
 	creationDialog := (args[0] == "new" || args[0] == "create" || ((args[0] == "boxes" || args[0] == "box") && len(args) > 1 && (args[1] == "new" || args[1] == "create"))) && a.IsTerminal != nil && a.IsTerminal()
 	for _, arg := range args {
 		if arg == "--no-dialog" || arg == "--json" {
@@ -257,9 +222,6 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			if err != nil {
 				return err
 			}
-		}
-		if (c.Provider != "" && c.Provider != def.Provider) || (c.ProviderCredential != "" && c.ProviderCredential != def.ProviderCredential) {
-			return fmt.Errorf("legacy context provider selection differs from controller default; migrate explicitly before proceeding")
 		}
 		c.Provider = def.Provider
 		c.ProviderCredential = def.ProviderCredential
@@ -285,7 +247,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return a.controllerSessions(ctx, c, token, args[1:])
 	case "updates":
 		return a.controllerUpdates(ctx, c, token, args[1:])
-	case "providers":
+	case "pools", "providers":
 		return a.controllerProviders(ctx, c, token, args[1:])
 	case "profiles":
 		return a.controllerLoginProfiles(ctx, c, token, args[1:])
@@ -304,13 +266,19 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		if err != nil {
 			return err
 		}
+		if opts.pool != "" {
+			c.Provider, c.ProviderCredential, err = parseWorkerPool(opts.pool)
+			if err != nil {
+				return err
+			}
+		}
 		workingDirectory, err := a.workingDirectory()
 		if err != nil {
 			return err
 		}
 		setup := defaultSetup(c)
 		if opts.reuse {
-			setup, err = loadSetup(file, c.Name, workingDirectory)
+			setup, err = loadSetup(file, c.Controller, workingDirectory)
 			if err != nil {
 				return err
 			}
@@ -349,7 +317,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		}
 		fmt.Fprintf(a.Out, "accepted %s (%d)\n", run.ID, status)
 		if prepared.setup.Save {
-			return saveSetup(a.ConfigPath, file, c.Name, workingDirectory, prepared.setup)
+			return saveSetup(a.ConfigPath, file, c.Controller, workingDirectory, prepared.setup)
 		}
 		return nil
 	case "status":
@@ -519,7 +487,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			return json.NewEncoder(a.Out).Encode(values)
 		}
 		if len(args) < 4 {
-			return fmt.Errorf("credentials %s requires PROVIDER NAME", args[1])
+			return fmt.Errorf("credentials %s requires TYPE ALIAS", args[1])
 		}
 		path := "/v1/provider-credentials/" + url.PathEscape(args[2]) + "/" + url.PathEscape(args[3])
 		switch args[1] {
@@ -704,7 +672,7 @@ func (a *App) requestOnce(ctx context.Context, c config.Context, token, method, 
 func (a *App) usage() {
 	fmt.Fprint(a.Out, `vmbox — persistent remote boxes
 
-  vmbox                         Show context and box states (read-only)
+  vmbox                         Show controller and box states (read-only)
   vmbox BOX                     Open its shell; wake it if needed
   vmbox desktop BOX             Open its desktop in a local VNC viewer
   vmbox new NAME                Configure, create and connect
@@ -726,16 +694,16 @@ Inside a box, run claude, codex, or any shell command yourself.
 Detach: Ctrl-a, then d. Choose Leave unchanged to leave programs alive.
 Hibernation retains files, not live processes. One-shots hibernate when idle.
 
-Setup: vmbox providers | vmbox profiles list | vmbox context list
+Setup: vmbox connect URL | vmbox pools | vmbox profiles list
 Full reference: vmbox help --all    Diagnostics: vmbox --verbose COMMAND
 `)
 }
 
 func (a *App) usageFull() {
 	fmt.Fprint(a.Out, `vmbox — controller-managed persistent boxes
-  vmbox [--context NAME] BOX [codex|claude|shell | --session [NAME] | --start-cli COMMAND]
+  vmbox BOX [codex|claude|shell | --session [NAME] | --start-cli COMMAND]
   vmbox ls [--json] | status BOX [--json] | sessions BOX [--json]
-  vmbox new BOX [--disk GiB] [--region ID] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]
+  vmbox new BOX [--pool TYPE/ALIAS] [--disk GiB] [--region ID] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]
   vmbox task [BOX] [codex|claude|shell] [--prompt TEXT]
              [--session NAME] [--idempotency-key KEY] [--json]
   vmbox task-status BOX [TASK_ID]
@@ -743,15 +711,15 @@ func (a *App) usageFull() {
   vmbox updates [BOX] [--json]
   vmbox updates ack BOX --session NAME --revision REV
   vmbox boxes update BOX --default-agent AGENT
-  vmbox providers list|schema|show|create|update|validate|default
-  vmbox fleet status|slots|slots set COUNT
+  vmbox pools list|schema|show|create|update|validate|default
+  vmbox fleet status|slots|slots set COUNT [--pool TYPE/ALIAS]
   vmbox allocate|hibernate|delete BOX
-  vmbox context add NAME --controller URL [--token-env ENV]
-  vmbox context use|list
+  vmbox connect URL [--token-env ENV]
+  vmbox connect | logout | whoami
   vmbox users list|add|remove
   vmbox notifications list|setup|test|remove
   vmbox auth BOX [authentication options]
-  vmbox run BOX [job options] -- COMMAND [ARG...]
+  vmbox run BOX [--pool TYPE/ALIAS] [job options] -- COMMAND [ARG...]
 
 Controller login does not provision SSH identity. Configure your SSH agent or
 VMBOX_SSH_IDENTITY_FILE; optionally VMBOX_SSH_KNOWN_HOSTS_FILE. Changed host keys

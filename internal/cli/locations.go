@@ -35,13 +35,17 @@ func (a *App) pickLocation(ctx context.Context, c config.Context, token string) 
 }
 
 func (a *App) rememberLocation(c config.Context, region string) error {
-	if c.Name == "" {
-		return nil
-	}
 	key := c.Provider + "/" + c.ProviderCredential
 	file, err := config.Load(a.ConfigPath)
 	if err != nil {
 		return err
+	}
+	if file.Connection != nil && file.Connection.Controller == c.Controller {
+		if file.Connection.LocationPresets == nil {
+			file.Connection.LocationPresets = map[string]string{}
+		}
+		file.Connection.LocationPresets[key] = region
+		return config.Save(a.ConfigPath, file)
 	}
 	if stored, ok := file.Contexts[c.Name]; ok && stored.Controller == c.Controller {
 		if stored.LocationPresets == nil {

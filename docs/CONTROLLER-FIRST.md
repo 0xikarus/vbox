@@ -9,14 +9,18 @@ records and backend integration/message APIs are retained, not deleted.
 ## Setup and migration
 
 ```
-vmbox context add team --controller https://YOUR-CONTROLLER --token-env VMBOX_CONTROLLER_TOKEN
-vmbox providers schema
-vmbox providers create railway primary --config-file railway.json --secret-env PROVIDER_SECRET_JSON
-vmbox providers default railway primary
+vmbox connect https://YOUR-CONTROLLER --token-env VMBOX_CONTROLLER_TOKEN
+vmbox pools schema
+vmbox pools create railway primary --config-file railway.json --secret-env PROVIDER_SECRET_JSON
+vmbox pools default railway primary
 vmbox ls --json
 vmbox sessions BOX --json
 vmbox BOX --session NAME
 ```
+
+Use `--pool TYPE/ALIAS` on `vmbox new`, `vmbox run`, or `vmbox fleet` to target
+a specific worker pool. Otherwise, commands that need a pool use the controller
+default; inventory and box pickers include every box visible to the account.
 
 Supply the controller token through secure environment configuration. Secret input
 is a JSON object in the named environment variable; never a raw command-line token.
@@ -24,13 +28,13 @@ For Railway, config includes `projectId`, `environmentId`, `tokenEnvironment`
 (`RAILWAY_TOKEN` for a project token, `RAILWAY_API_TOKEN` for an account token),
 and optional `image`. Secret JSON contains `token`. Do not put secrets in config.
 
-New contexts contain only controller URL and token reference. Existing controller
-contexts are readable without rewriting them. Before creating/scaling resources,
-their legacy provider selection must match the controller default; mismatch fails.
-To migrate, explicitly select the matching alias on the controller, create a new
-controller-only context under a different name, and switch to it. Existing contexts
-are never overwritten by `context add`. Defaults cannot be silently retargeted.
-Provider-only contexts and `--standalone` fail without touching existing resources.
+The CLI keeps one controller URL and token reference. Existing installations read
+the selected legacy context without rewriting it; its old provider selection no
+longer filters boxes or overrides controller worker pool choices. Run `vmbox
+connect URL` to save the single connection and carry over the selected context's
+login and location preferences. Saved tokens stay separate from config. Defaults
+cannot be silently retargeted. Provider-only legacy contexts and `--standalone`
+fail without touching existing resources.
 The installer installs only the CLI and preserves legacy deployment bundles.
 
 An old controller lacks `/v1/capabilities`: new attachment fails before allocation.
@@ -124,7 +128,7 @@ ack metadata survive controller restarts; agent lifecycle notifications are defe
 
 ## Provider administration
 
-`providers list|show|schema|create|update|validate|default` use the same encrypted
+`pools list|show|schema|create|update|validate|default` use the same encrypted
 credential store as the web. Output is JSON; diagnostics go to stderr. Updates
 accept `--config-file FILE` (`-` means stdin), `--secret-env NAME`, and optional
 `--revision UPDATED_AT`. Without a supplied revision the CLI fetches one first.

@@ -67,10 +67,33 @@ type Context struct {
 	ProviderCredential string            `json:"providerCredential,omitempty"`
 	ComputeBoxSlots    *int              `json:"compute_box_slots,omitempty"`
 }
+
+// ControllerConnection is the sole controller selected by the normal CLI.
+// Context remains only for reading older installations and operator bootstrap.
+type ControllerConnection struct {
+	Controller      string            `json:"controller"`
+	TokenEnv        string            `json:"tokenEnv,omitempty"`
+	LocationPresets map[string]string `json:"locationPresets,omitempty"`
+}
 type File struct {
-	Current    string                   `json:"current"`
-	Contexts   map[string]Context       `json:"contexts"`
+	Connection *ControllerConnection    `json:"connection,omitempty"`
+	Current    string                   `json:"current,omitempty"`
+	Contexts   map[string]Context       `json:"contexts,omitempty"`
 	LastSetups map[string]CreationSetup `json:"lastSetups,omitempty"`
+}
+
+// Connected reads the new single connection or the selected legacy context.
+// Legacy provider selection is intentionally discarded: it must not filter
+// inventory or override the controller's worker pool selection.
+func (f File) Connected() (Context, error) {
+	if f.Connection != nil && f.Connection.Controller != "" {
+		return Context{Controller: f.Connection.Controller, TokenEnv: f.Connection.TokenEnv, LocationPresets: f.Connection.LocationPresets}, nil
+	}
+	legacy, err := f.Active("")
+	if err != nil || legacy.Controller == "" {
+		return Context{}, fmt.Errorf("controller is not configured; run: vmbox connect URL")
+	}
+	return Context{Name: legacy.Name, Controller: legacy.Controller, TokenEnv: legacy.TokenEnv, LocationPresets: legacy.LocationPresets}, nil
 }
 
 func DefaultPath() string {

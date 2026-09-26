@@ -12,7 +12,7 @@ import (
 
 func (a *App) controllerFleetLocation(ctx context.Context, c config.Context, token string, args []string) error {
 	if len(args) != 0 && !(len(args) == 2 && args[0] == "set") {
-		return fmt.Errorf("usage: vmbox fleet location [set REGION]")
+		return fmt.Errorf("usage: vmbox fleet location [set REGION] [--pool TYPE/ALIAS]")
 	}
 	region := ""
 	if len(args) == 2 {
@@ -27,7 +27,7 @@ func (a *App) controllerFleetLocation(ctx context.Context, c config.Context, tok
 			return err
 		}
 		if len(regions) == 0 {
-			return fmt.Errorf("provider returned no fleet regions")
+			return fmt.Errorf("worker pool returned no locations")
 		}
 		labels := make([]string, len(regions))
 		initial := 0
