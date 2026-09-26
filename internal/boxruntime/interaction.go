@@ -807,12 +807,42 @@ func agentInputReady(agent, content string) bool {
 		}
 		return false
 	case "claude":
-		if !strings.Contains(content, "Claude Code v") {
-			return false
+		lines := strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n")
+		visible := make([]string, 0, len(lines))
+		for _, line := range lines {
+			if line = strings.TrimSpace(line); line != "" {
+				visible = append(visible, line)
+			}
 		}
-		for _, line := range strings.Split(strings.ReplaceAll(content, "\u00a0", " "), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "❯ Try \"") {
-				return true
+		// The startup placeholder and the resumed composer both sit just
+		// above Claude's permission footer. The header can scroll off screen
+		// in a long conversation, so use the live footer and nearby composer.
+		for i := len(visible) - 1; i >= 0 && i >= len(visible)-3; i-- {
+			if !strings.Contains(visible[i], "bypass permissions on") {
+				continue
+			}
+			for j := i - 1; j >= 0 && j >= i-3; j-- {
+				if !strings.HasPrefix(visible[j], "❯") {
+					continue
+				}
+				betweenAreDividers := true
+				for _, line := range visible[j+1 : i] {
+					if strings.Trim(line, "─ ") != "" {
+						betweenAreDividers = false
+						break
+					}
+				}
+				if betweenAreDividers {
+					return true
+				}
+			}
+		}
+		// Older Claude versions can omit the permission footer at startup.
+		if strings.Contains(content, "Claude Code v") {
+			for i := len(visible) - 1; i >= 0 && i >= len(visible)-3; i-- {
+				if strings.HasPrefix(visible[i], "❯ Try \"") {
+					return true
+				}
 			}
 		}
 		return false

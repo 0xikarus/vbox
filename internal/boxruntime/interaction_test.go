@@ -721,6 +721,19 @@ func TestClaudeInputReadinessRejectsBareStartupPrompt(t *testing.T) {
 	}
 }
 
+func TestClaudeInputReadinessRecognizesResumedComposer(t *testing.T) {
+	resumed := "● Sent READY. Standing by.\n────────────────\n❯\u00a0\n────────────────\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n"
+	if !agentInputReady("claude", resumed) {
+		t.Fatal("resumed Claude composer was not recognized")
+	}
+	if agentInputReady("claude", "❯ Send another test message\n● Still working\n⏵⏵ bypass permissions on\n") {
+		t.Fatal("old prompt in Claude output was accepted as the live composer")
+	}
+	if agentInputReady("claude", "❯\n────────────────\nChoose a session to resume\n") {
+		t.Fatal("Claude resume menu was accepted as an input-ready conversation")
+	}
+}
+
 func TestWaitForAgentReadyUsesOpenCodeSessionAPI(t *testing.T) {
 	originalProbe, originalInterval, originalTimeout := openCodeReadyProbe, agentReadyPollInterval, agentReadyTimeout
 	t.Cleanup(func() {
