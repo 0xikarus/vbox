@@ -256,7 +256,7 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 			return true, err
 		}
 		return true, boxruntime.DeliverClaudeChat(context.Background(), home, args[1], inbound)
-	case "chat-claude-receipt", "chat-opencode-receipt":
+	case "chat-claude-receipt", "chat-opencode-receipt", "chat-codex-receipt":
 		if len(args) != 2 {
 			return true, fmt.Errorf("%s requires SESSION", args[0])
 		}
@@ -275,8 +275,10 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 		var accepted bool
 		if args[0] == "chat-claude-receipt" {
 			accepted, err = boxruntime.ConfirmClaudeChat(context.Background(), home, args[1], inbound.ID)
-		} else {
+		} else if args[0] == "chat-opencode-receipt" {
 			accepted, err = boxruntime.ConfirmOpenCodeChat(context.Background(), home, args[1], inbound)
+		} else {
+			accepted, err = boxruntime.ConfirmCodexChat(context.Background(), runtime.Root, home, args[1], inbound.ID)
 		}
 		if err != nil {
 			return true, err
