@@ -48,7 +48,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 	disk := &formField{Label: "Disk GiB", Value: strconv.FormatInt(request.DiskGiB, 10)}
 	after := &formField{Label: "After creation", Value: mode, Choices: []string{creationConnect, creationDetached, creationHibernated}}
 	startup := &formField{Label: "Start CLI (optional)", Value: startCLI}
-	providerField := &formField{Label: "Provider"}
+	providerField := &formField{Label: "Worker pool"}
 	providerChoices := map[string]v1.ProviderCredential{}
 	regionFields := map[string]*formField{}
 	if dialog {
@@ -57,7 +57,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			return err
 		}
 		if len(providers) == 0 {
-			return fmt.Errorf("no controller provider configured; run vmbox providers create first")
+			return fmt.Errorf("no worker pool configured; run vmbox pools create first")
 		}
 		var defaults v1.FleetConfig
 		status, err := a.request(ctx, c, token, http.MethodGet, "/v1/controller-defaults", nil, &defaults, nil)
@@ -69,7 +69,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			label := p.Provider + " / " + p.Name
 			providerField.Choices = append(providerField.Choices, label)
 			providerChoices[label] = p
-			if providerField.Value == "" || (p.Provider == defaults.Provider && p.Name == defaults.ProviderCredential) {
+			if providerField.Value == "" || (request.Provider != "" && p.Provider == request.Provider && p.Name == request.ProviderCredential) || (request.Provider == "" && p.Provider == defaults.Provider && p.Name == defaults.ProviderCredential) {
 				providerField.Value = label
 			}
 			pc := c
@@ -90,6 +90,11 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			}
 			regionFields[label] = r
 			fields = append(fields, r)
+		}
+		if request.Provider != "" {
+			if _, ok := providerChoices[request.Provider+" / "+request.ProviderCredential]; !ok {
+				return fmt.Errorf("worker pool %s/%s is not configured; see vmbox pools list", request.Provider, request.ProviderCredential)
+			}
 		}
 		fields = append(fields, disk)
 		var roles []v1.AgentRole

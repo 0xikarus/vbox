@@ -56,7 +56,7 @@ func (a *App) controllerProviders(ctx context.Context, c config.Context, token s
 			return a.providerOutput(value, jsonOutput)
 		}
 		if len(args) != 3 {
-			return fmt.Errorf("usage: providers default PROVIDER NAME")
+			return fmt.Errorf("usage: pools default TYPE ALIAS")
 		}
 		var value v1.FleetConfig
 		_, err := a.request(ctx, c, token, http.MethodPut, "/v1/controller-defaults", v1.FleetConfig{Provider: args[1], ProviderCredential: args[2]}, &value, nil)
@@ -68,7 +68,7 @@ func (a *App) controllerProviders(ctx context.Context, c config.Context, token s
 	var out any
 	if args[0] == "list" || args[0] == "schema" {
 		if len(args) > 2 || (len(args) == 2 && args[1] != "--json") {
-			return fmt.Errorf("unexpected provider argument")
+			return fmt.Errorf("unexpected worker pool argument")
 		}
 		path := "/v1/provider-credentials"
 		if args[0] == "schema" {
@@ -80,7 +80,7 @@ func (a *App) controllerProviders(ctx context.Context, c config.Context, token s
 		return a.providerOutput(out, jsonOutput)
 	}
 	if len(args) < 3 {
-		return fmt.Errorf("providers %s requires PROVIDER NAME", args[0])
+		return fmt.Errorf("pools %s requires TYPE ALIAS", args[0])
 	}
 	path := "/v1/provider-credentials/" + url.PathEscape(args[1]) + "/" + url.PathEscape(args[2])
 	fs := flag.NewFlagSet("providers", flag.ContinueOnError)
@@ -93,7 +93,7 @@ func (a *App) controllerProviders(ctx context.Context, c config.Context, token s
 		return err
 	}
 	if fs.NArg() != 0 {
-		return fmt.Errorf("unexpected provider argument")
+		return fmt.Errorf("unexpected worker pool argument")
 	}
 	method := http.MethodGet
 	var input any
@@ -151,7 +151,7 @@ func (a *App) controllerProviders(ctx context.Context, c config.Context, token s
 		}
 		input = request
 	default:
-		return fmt.Errorf("unsupported provider command %q", args[0])
+		return fmt.Errorf("unsupported worker pool command %q", args[0])
 	}
 	if _, err := a.request(ctx, c, token, method, path, input, &out, headers); err != nil {
 		return err

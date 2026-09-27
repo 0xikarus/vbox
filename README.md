@@ -42,8 +42,7 @@ To add isolated agent containers on your own Linux server, follow the
 [Linux VPS setup guide](docs/LINUX-VPS-SETUP.md).
 
 ```bash
-vmbox context add team --controller https://YOUR-CONTROLLER
-vmbox context use team
+vmbox connect https://YOUR-CONTROLLER
 vmbox whoami
 ```
 
@@ -60,9 +59,9 @@ Native shell access requires the account owner role.
 Skip this step if your administrator already configured the fleet.
 
 ```bash
-vmbox providers                  # inspect existing providers
-vmbox providers create           # guided setup, if none exists
-vmbox providers default          # choose the default provider
+vmbox pools                      # inspect worker pools
+vmbox pools create               # guided setup, if none exists
+vmbox pools default              # choose the default worker pool
 vmbox fleet location             # choose location before provisioning slots
 vmbox fleet slots set 1          # provision one compute slot; incurs provider costs
 vmbox fleet status              # wait for healthy capacity
@@ -71,6 +70,11 @@ vmbox fleet status              # wait for healthy capacity
 Choose location on an empty fleet; this command does not migrate existing boxes.
 Each running box needs a compute slot. A hibernated box retains its disk but frees
 its compute slot. Creating a workspace also needs a healthy free slot temporarily.
+Use `--pool TYPE/ALIAS` with `vmbox new`, `vmbox run`, or `vmbox fleet` to target
+a particular worker pool for that command. The CLI does not save a worker pool
+selection with its controller connection. `TYPE` names the backend (for example,
+`shared-worker` or `railway`); `ALIAS` names the pool. A shared-worker alias names
+one physical worker, while a dedicated pool can contain several workers.
 Each box has an **Automatic hibernation** switch in chat details, box details,
 and its workspace. Turning it off prevents inactivity hibernation; turning it
 back on restores the box's last chosen idle interval. The hours field changes
@@ -238,8 +242,7 @@ second controller or Railway fleet.
 3. Connect to the existing controller (replace the URL):
 
    ```bash
-   vmbox context add team --controller https://YOUR-CONTROLLER
-   vmbox context use team
+   vmbox connect https://YOUR-CONTROLLER
    vmbox whoami
    ```
 
@@ -284,7 +287,7 @@ It does not open a box picker, start compute, or connect to a shell.
 If authentication is missing, a terminal can prompt for your controller token.
 
 ```bash
-vmbox                         # show context and box states
+vmbox                         # show controller and box states
 vmbox whoami                  # show authenticated account, user, and role
 vmbox new work                # configure, create, then connect
 vmbox work                    # return to its shell (wake if needed)
@@ -342,7 +345,7 @@ No Railway, Docker or Incus client/token is needed for ordinary CLI operations.
 
 In a terminal, missing controller configuration starts a connection guide. Missing
 authentication offers hidden input and saves a verified token in a separate local
-0600 file under the CLI config directory, scoped to context and controller URL.
+0600 file under the CLI config directory, scoped to the controller URL.
 This includes bare `vmbox`. Run `vmbox logout` to delete that saved token (not revoke
 it on the server). Environment tokens take precedence when accepted; use
 `unset VMBOX_CONTROLLER_TOKEN` to clear an exported token too. In an interactive
@@ -350,13 +353,13 @@ terminal, a rejected environment token falls back to the saved login before
 asking again, so a stale shell export cannot hide your saved replacement.
 If neither works, the CLI asks for a replacement and saves it after a successful
 retry; permission denials and server outages do not prompt.
-Scripts never prompt: configure the controller context and token
-environment first. The controller/context banner is hidden unless you put
+Scripts never prompt: configure the controller connection and token
+environment first. The controller banner is hidden unless you put
 `--verbose` before the command.
 
 ```bash
 ./install.sh
-vmbox context add team --controller https://YOUR-CONTROLLER
+vmbox connect https://YOUR-CONTROLLER
 # Run vmbox whoami and enter your token when prompted.
 vmbox ls --json
 vmbox helper1
@@ -605,14 +608,14 @@ not task completion. It does not replace `task-status` or `task-output`.
 
 ## Controller administration
 
-`vmbox providers` lists readable provider aliases. Bare `providers show` and
-`providers default` offer an arrow-key picker. With no providers, the guide asks
+`vmbox pools` lists configured worker pools. Bare `pools show` and
+`pools default` offer an arrow-key picker. With no pools, the guide asks
 for controller-defined configuration fields, accepts secret JSON from a secure
 environment variable or hidden input, and confirms before saving. Missing default
 selection is guided before resuming the original creation command.
 
 Interactive box creation asks for a location from the controller's existing fleet
-and remembers it per provider alias. `--region ID` overrides the picker; creation
+and remembers it per worker pool. `--region ID` overrides the picker; creation
 fails if that region has no healthy free initialization slot. This does not create
 new regional fleet capacity. The selected region is retained for direct and queued
 restores; a box waits for matching capacity instead of moving regions. Regional
@@ -629,25 +632,25 @@ replaced by a guessed list. The configured project token may not allow this quer
 The controller validates the selected region against the same live catalogue.
 
 Changing placement currently requires **no logical boxes and zero desired and
-actual slots** for that provider alias. For an already-empty fleet, run
+actual slots** for that worker pool. For an already-empty fleet, run
 `vmbox fleet slots set 0`, wait for `vmbox fleet status` to show zero actual slots,
 select its location, then scale back up. Existing boxes/volumes are never migrated
 by this command. Do not delete workspaces just to change placement. A saved region
 is retained across scaling and controller restarts; new slots use it explicitly.
 
 ```bash
-vmbox providers schema
-vmbox providers create railway primary --config-file railway.json --secret-env PROVIDER_SECRET_JSON
-vmbox providers default railway primary
-vmbox providers update railway primary --config-file image-edit.json --json
+vmbox pools schema
+vmbox pools create railway primary --config-file railway.json --secret-env PROVIDER_SECRET_JSON
+vmbox pools default railway primary
+vmbox pools update railway primary --config-file image-edit.json --json
 vmbox boxes update helper1 --default-agent codex
 vmbox fleet slots set 2
 ```
 
 Provider secrets stay encrypted on the controller; public reads never return
 them. Updates are revision-protected and preserve omitted secrets. Retargeting
-or deleting provider aliases requires explicit resource migration.
-Standalone mode and provider-specific client contexts are removed. Existing
+or deleting worker pools requires explicit resource migration.
+Standalone mode and named client contexts are removed. Existing
 resources, credentials and legacy local bundles are preserved. The optional
 web workspace is described above, including its verification limits.
 

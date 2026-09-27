@@ -38,5 +38,5 @@ func creationCapacityMessage(f v1.FleetStatus, region string) string {
 	default:
 		advice = "No healthy free slot could be reserved; capacity may have changed.\nRun: vmbox fleet status; retry when a slot is free and healthy."
 	}
-	return heading + advice + "\nUse that provider alias for these commands.\nKeep this form open and run commands in another terminal, then retry Create."
+	return heading + advice + "\nUse that worker pool for these commands.\nKeep this form open and run commands in another terminal, then retry Create."
 }

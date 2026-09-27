@@ -230,14 +230,14 @@ func TestControllerFailureDoesNotFallback(t *testing.T) {
 		t.Fatal("run was accepted despite unavailable controller")
 	}
 }
-func TestContextContainsNoAmbientToken(t *testing.T) {
+func TestConnectionContainsNoAmbientToken(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	app := New()
 	app.ConfigPath = path
 	app.Environ = map[string]string{"RAILWAY_API_TOKEN": "super-secret"}
 	app.Out = &bytes.Buffer{}
 	app.Err = &bytes.Buffer{}
-	if err := app.Run(context.Background(), []string{"context", "add", "team", "--controller", "https://controller.example"}); err != nil {
+	if err := app.Run(context.Background(), []string{"connect", "https://controller.example"}); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
@@ -245,7 +245,7 @@ func TestContextContainsNoAmbientToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	if bytes.Contains(data, []byte("super-secret")) {
-		t.Fatal("ambient token persisted in context")
+		t.Fatal("ambient token persisted in connection")
 	}
 	info, err := os.Stat(path)
 	if err != nil {
@@ -256,14 +256,14 @@ func TestContextContainsNoAmbientToken(t *testing.T) {
 	}
 }
 
-func TestContextRejectsRemovedProvider(t *testing.T) {
+func TestRemovedContextCommandCannotCreateConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	app := New()
 	app.ConfigPath = path
 	app.Out = &bytes.Buffer{}
 	app.Err = &bytes.Buffer{}
 	err := app.Run(context.Background(), []string{"context", "add", "old", "--provider", "sevalla"})
-	if err == nil || !strings.Contains(err.Error(), "flag provided but not defined") {
+	if err == nil || !strings.Contains(err.Error(), "context commands have been removed") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, statErr := os.Stat(path); !errors.Is(statErr, os.ErrNotExist) {

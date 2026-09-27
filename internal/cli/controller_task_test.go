@@ -53,6 +53,9 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/logical-boxes":
+			if r.URL.RawQuery != "" {
+				t.Errorf("task picker filtered boxes: %s", r.URL.String())
+			}
 			_ = json.NewEncoder(w).Encode([]v1.LogicalBox{{ID: "box-1", Name: "research", State: v1.LogicalBoxHibernated}})
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/logical-boxes/research/process-tasks":
 			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
@@ -67,7 +70,7 @@ func TestControllerTaskInteractiveDialogChoosesBoxAndAgent(t *testing.T) {
 	defer server.Close()
 
 	app := New()
-	app.In = strings.NewReader("\x1b[B\r\x1b[B\r\x1b[B\rwhat's today's date?\r\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r")
+	app.In = strings.NewReader("\x1b[B\r\x1b[B\r\x1b[B\rwhat's today's date?\r\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r")
 	app.Out, app.Err = &bytes.Buffer{}, &bytes.Buffer{}
 	app.IsTerminal = func() bool { return true }
 	c := config.Context{Controller: server.URL}

@@ -65,5 +65,5 @@ if ((update_rc)); then
  fi
 fi
 echo "Installed $bin/vmbox (controller-only; no provider tools or deployment bundle)"
-echo 'Configure: vmbox context add team --controller https://YOUR-CONTROLLER'
+echo 'Configure: vmbox connect https://YOUR-CONTROLLER'
 echo 'Provide controller authentication securely through VMBOX_CONTROLLER_TOKEN.'

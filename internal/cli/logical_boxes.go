@@ -33,7 +33,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			return fmt.Errorf("usage: vmbox boxes [list] [--json]")
 		}
 		var boxes []v1.LogicalBox
-		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes", nil, &boxes, nil); err != nil {
 			return err
 		}
 		if jsonOutput {
@@ -166,12 +166,13 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return nil
 	case "create", "new":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox new NAME [--disk GiB] [--region ID] [--role NAME]... [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
+			return fmt.Errorf("usage: vmbox new NAME [--pool TYPE/ALIAS] [--disk GiB] [--region ID] [--role NAME]... [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
 		}
 		fs := flag.NewFlagSet("new", flag.ContinueOnError)
 		fs.SetOutput(a.Err)
 		disk := fs.Int64("disk", 10, "persistent workspace size in GiB")
 		region := fs.String("region", "", "preferred region")
+		pool := fs.String("pool", "", "worker pool TYPE/ALIAS; see vmbox pools list")
 		var roleRefs []string
 		fs.Func("role", "native role name or id; repeat to assign several roles", func(value string) error {
 			value = strings.TrimSpace(value)
@@ -254,6 +255,13 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			}
 		}
 		request := v1.CreateLogicalBoxRequest{Name: args[1], Provider: c.Provider, ProviderCredential: c.ProviderCredential, RoleIDs: roleIDs, Region: *region, DiskGiB: *disk, DefaultAgent: "shell", AllocationRequestKey: "cli-create:" + args[1] + ":" + fmt.Sprint(time.Now().UnixNano())}
+		if hasWorkerPoolOption(args) {
+			var err error
+			request.Provider, request.ProviderCredential, err = parseWorkerPool(*pool)
+			if err != nil {
+				return err
+			}
+		}
 		request.LoginProfiles = selectedProfiles
 		request.Tools = tools
 		request.SetupScript = *setupScript
@@ -506,7 +514,7 @@ func (a *App) refreshControllerWelcome(ctx context.Context, resolved v1.LogicalB
 	if metadata["vmboxDiskGiB"] != "" {
 		disk = metadata["vmboxDiskGiB"] + " GiB disk"
 	}
-	welcome := fmt.Sprintf("vmbox %s is ready\nProvider: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: %s  Compute slot: %s\nState: %s  Network: %s\nConnection: direct OpenSSH, resolved for this deployment\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vmbox %s | vmbox hibernate %s\n\n",
+	welcome := fmt.Sprintf("vmbox %s is ready\nWorker pool: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: %s  Compute slot: %s\nState: %s  Network: %s\nConnection: direct OpenSSH, resolved for this deployment\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vmbox %s | vmbox hibernate %s\n\n",
 		value("vmboxBoxName", resolved.BoxName), value("vmboxProvider", "managed"), value("vmboxRegion", "provider default"),
 		cpu, memory, disk,
 		value("vmboxWorkspace", "/data/workspace"), value("vmboxComputeSlot", "managed"),

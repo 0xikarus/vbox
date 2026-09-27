@@ -47,3 +47,18 @@ func TestSaveAndLoadGoConfiguration(t *testing.T) {
 		t.Fatalf("config mode = %o", info.Mode().Perm())
 	}
 }
+
+func TestConnectedIgnoresLegacyProviderSelection(t *testing.T) {
+	file := File{Current: "team", Contexts: map[string]Context{
+		"team": {Controller: "https://controller.example", TokenEnv: "TEAM_TOKEN", Provider: "railway", ProviderCredential: "primary"},
+	}}
+	connected, err := file.Connected()
+	if err != nil || connected.Name != "team" || connected.Controller != "https://controller.example" || connected.Provider != "" || connected.ProviderCredential != "" {
+		t.Fatalf("legacy connection: %+v, %v", connected, err)
+	}
+	file.Connection = &ControllerConnection{Controller: "https://new.example", TokenEnv: "NEW_TOKEN"}
+	connected, err = file.Connected()
+	if err != nil || connected.Name != "" || connected.Controller != "https://new.example" || connected.TokenEnv != "NEW_TOKEN" {
+		t.Fatalf("single connection: %+v, %v", connected, err)
+	}
+}

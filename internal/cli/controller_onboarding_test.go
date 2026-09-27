@@ -27,7 +27,7 @@ func TestMissingControllerFailsClosedNonInteractively(t *testing.T) {
 	app.IsTerminal = func() bool { return false }
 
 	err := app.Run(context.Background(), []string{"ls"})
-	if err == nil || !strings.Contains(err.Error(), "provider-only context cannot be used") {
+	if err == nil || !strings.Contains(err.Error(), "controller is not configured") {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -47,7 +47,7 @@ func TestFirstRunPromptsForAndSavesController(t *testing.T) {
 	app := New()
 	app.ConfigPath = path
 	app.Environ = map[string]string{"VMBOX_CONTROLLER_TOKEN": "controller-token"}
-	app.In = strings.NewReader(server.URL + "\n\n\n\n")
+	app.In = strings.NewReader(server.URL + "\n")
 	var output, stderr bytes.Buffer
 	app.Out, app.Err = &output, &stderr
 	app.IsTerminal = func() bool { return true }
@@ -59,14 +59,14 @@ func TestFirstRunPromptsForAndSavesController(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx, err := saved.Active("")
+	ctx, err := saved.Connected()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ctx.Name != "production" || ctx.Controller != server.URL || ctx.Provider != "" || ctx.ProviderCredential != "" || ctx.TokenEnv != "VMBOX_CONTROLLER_TOKEN" {
-		t.Fatalf("saved context=%+v", ctx)
+	if ctx.Name != "" || ctx.Controller != server.URL || ctx.Provider != "" || ctx.ProviderCredential != "" || ctx.TokenEnv != "VMBOX_CONTROLLER_TOKEN" {
+		t.Fatalf("saved connection=%+v", ctx)
 	}
-	for _, expected := range []string{"Controller URL", "Context name [production]", "never stored"} {
+	for _, expected := range []string{"Controller URL", "connected to", "never stored"} {
 		if !strings.Contains(stderr.String(), expected) {
 			t.Fatalf("prompt missing %q: %s", expected, stderr.String())
 		}

@@ -103,7 +103,7 @@ func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token st
 	box := &formField{Label: "Box", Value: opts.box, List: true, ChoiceNoun: "boxes"}
 	if opts.box == "" {
 		var boxes []v1.LogicalBox
-		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
+		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes", nil, &boxes, nil); err != nil {
 			return err
 		}
 		for _, b := range boxes {
@@ -276,7 +276,7 @@ func parseControllerTaskOptions(args []string) (controllerTaskOptions, error) {
 
 func (a *App) promptTaskBox(ctx context.Context, c config.Context, token string) (string, error) {
 	var boxes []v1.LogicalBox
-	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes"+fleetQuery(c), nil, &boxes, nil); err != nil {
+	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes", nil, &boxes, nil); err != nil {
 		return "", err
 	}
 	if len(boxes) == 0 {
