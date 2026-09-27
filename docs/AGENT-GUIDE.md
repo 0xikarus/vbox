@@ -178,6 +178,15 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   page and chat Details drawer expose each box's direct contacts and labels. Entry points:
   `internal/controller/agent_roles.go`, `internal/controller/contacts.go`,
   `internal/boxruntime/contacts.go`.
+- Agent-initiated `create_agent_box` inserts reciprocal direct-contact grants
+  and contact events in the same transaction as the new logical box. An
+  idempotent retry observes the existing grants. The delegated
+  `clear_agent_box_context` tool is available with the restart permission and
+  resets another running, unprotected box through the owner chat reset path;
+  it requires an exact target name and idempotency key. Entry points:
+  `internal/controller/agent_box_creation.go`,
+  `internal/controller/fleet_create_store.go`,
+  `internal/controller/agent_box_management.go`.
 - The chat PWA is mobile-first: a single-column app shell with push navigation
   on phones and a two-pane view from 900px. It ships a dark, Discord-like
   palette; a hex seed still shapes the seeded emoji mascot, the corner radii and

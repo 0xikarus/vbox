@@ -139,7 +139,9 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 			return
 		}
 		if existingBoxID == "" {
-			_ = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND name=$2`, p.AccountID, requestedName).Scan(&existingBoxID)
+			// A name alone could identify a box from another request. The
+			// allocation key is tied to this creator's reservation.
+			_ = s.Store.DB.QueryRowContext(r.Context(), `SELECT id::text FROM logical_boxes WHERE account_id=$1 AND metadata->>'allocationIdempotencyKey'=$2`, p.AccountID, "agent-box:"+reservationID).Scan(&existingBoxID)
 			if existingBoxID != "" {
 				_, _ = s.Store.DB.ExecContext(r.Context(), `UPDATE agent_box_creations SET created_box_id=$3,completed_at=COALESCE(completed_at,now()) WHERE account_id=$1 AND id=$2`, p.AccountID, reservationID, existingBoxID)
 			}
@@ -239,7 +241,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 400, fmt.Errorf("selected instructions and tool guidance: %w", err))
 		return
 	}
-	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), owner, create)
+	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), owner, create, creatorID)
 	if err != nil {
 		_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2 AND created_box_id IS NULL`, p.AccountID, reservationID)
 		status := http.StatusConflict
