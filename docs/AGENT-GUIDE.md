@@ -222,6 +222,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   remains a compatibility fallback for clients that do not call the tool. The
   same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
   `type_text`, `press_keys`), so an agent can operate the box's computer.
+  Local scripts can send text into a running managed conversation with the
+  authenticated box-side `POST /prompt` endpoint. It does not wake an agent;
+  the [local prompt API guide](LOCAL-AGENT-PROMPT.md) covers its contract and
+  retry limits.
 - A new OpenCode Agent chat starts a bare TUI, waits for the visible bridge, then
   submits its first message through the loopback API with structured image parts.
   Persistent OpenCode and OpenCode one-shot

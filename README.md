@@ -128,6 +128,16 @@ Agent choice requests render as radio buttons or checkboxes. The managed
 same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
 `type_text`, `press_keys`), so agents can operate the box's computer.
 
+#### Send a message from an app running in the box
+
+The same box-local HTTP service accepts `POST /prompt`. An app can read
+`~/.local/share/vmbox/mcp-http.json` for its loopback `promptUrl` and Bearer
+`token`, then send `{"text":"Check the latest build result"}`. The message
+enters the existing managed agent conversation. It does not start or wake an
+agent, and the HTTP response does not contain the agent's reply. See the
+[local prompt API guide](docs/LOCAL-AGENT-PROMPT.md) for a complete Python
+example, session selection, responses, and retry behavior.
+
 In Chat, account owners can save prompts under **Commands** and insert them by
 typing `/` in a box conversation. The `/command` stays in the draft and expands
 to its saved prompt when sent or improved with the AI writing wand. Typing `@`
