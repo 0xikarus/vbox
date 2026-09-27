@@ -242,7 +242,11 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), owner, create)
 	if err != nil {
 		_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2 AND created_box_id IS NULL`, p.AccountID, reservationID)
-		writeError(w, 409, err)
+		status := http.StatusConflict
+		if errors.Is(err, errAgentCLIRegistryUnavailable) {
+			status = http.StatusBadGateway
+		}
+		writeError(w, status, err)
 		return
 	}
 	if err := s.Store.PutNewBoxInstructionSnapshot(r.Context(), owner, creation.Assignment.Box.ID, resolved, toolGuidance); err != nil {

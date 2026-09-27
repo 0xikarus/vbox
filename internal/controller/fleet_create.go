@@ -269,6 +269,21 @@ func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation lo
 		if err := probeInitializedWorkspace(ctx, prov, serviceID, s.WorkerRuntime); err != nil {
 			return fail(err)
 		}
+		if creation.AgentCLIVersion != "" {
+			if err := s.Store.UpdateLogicalBoxCreationPhase(ctx, creation, "creation-installing-agent-cli"); err != nil {
+				return fail(err)
+			}
+			creation.Assignment.Box.RestorationState = "creation-installing-agent-cli"
+			installCtx, cancel := context.WithTimeout(ctx, 8*time.Minute)
+			installed, installErr := prov.Exec(installCtx, serviceID, []string{"vmbox-runtime", "install-agent-cli", creation.Request.DefaultAgent, creation.AgentCLIVersion}, provider.ExecOptions{})
+			cancel()
+			if installErr != nil {
+				return fail(fmt.Errorf("install selected agent CLI: %w", installErr))
+			}
+			if installed.ExitCode != 0 {
+				return fail(fmt.Errorf("agent CLI installation failed: %s", strings.TrimSpace(installed.Stderr)))
+			}
+		}
 		if err := s.provisionCreationProfiles(ctx, prov, creation); err != nil {
 			return fail(err)
 		}

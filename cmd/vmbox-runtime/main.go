@@ -237,6 +237,11 @@ func run() error {
 		return json.NewEncoder(os.Stdout).Encode(result)
 	case "install-tools":
 		return boxruntime.InstallTools(context.Background(), os.Getenv("HOME"), args[1:], os.Stdout)
+	case "install-agent-cli":
+		if len(args) != 3 {
+			return fmt.Errorf("install-agent-cli requires agent and exact version")
+		}
+		return boxruntime.InstallAgentCLI(context.Background(), os.Getenv("HOME"), args[1], args[2], os.Stdout)
 	case "configure-tools":
 		if len(args) != 1 {
 			return fmt.Errorf("configure-tools reads install commands from stdin")

@@ -14,10 +14,11 @@ import (
 )
 
 type logicalBoxCreation struct {
-	AccountID  string
-	UserID     string
-	Request    v1.CreateLogicalBoxRequest
-	Assignment fleetAssignment
+	AccountID       string
+	UserID          string
+	Request         v1.CreateLogicalBoxRequest
+	AgentCLIVersion string
+	Assignment      fleetAssignment
 }
 
 var errNoCreationSlot = errors.New("no healthy free compute slot is available to initialize the workspace volume")
@@ -56,6 +57,17 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		return creation, err
 	}
 	defer tx.Rollback()
+	if request.DefaultAgent == "claude" || request.DefaultAgent == "codex" || request.DefaultAgent == "opencode" {
+		var versions AgentCLIVersions
+		err := tx.QueryRowContext(ctx, `SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions WHERE account_id=$1`, p.AccountID).Scan(&versions.Claude, &versions.Codex, &versions.OpenCode)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return creation, err
+		}
+		creation.AgentCLIVersion = versions.ForAgent(request.DefaultAgent)
+		if err := s.checkAgentCLIPackageVersion(ctx, request.DefaultAgent, creation.AgentCLIVersion); err != nil {
+			return creation, err
+		}
+	}
 	seenProfiles := map[string]bool{}
 	for _, profile := range request.LoginProfiles {
 		if p.Role != "owner" {
@@ -107,7 +119,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "creationSlotId": request.SlotID, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "creationSlotId": request.SlotID, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript, "agentCliVersion": creation.AgentCLIVersion})
 	if err != nil {
 		return creation, err
 	}
@@ -235,12 +247,15 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 		if err := s.DB.QueryRowContext(ctx, `SELECT metadata FROM logical_boxes WHERE account_id=$1 AND id=$2`, value.accountID, value.id).Scan(&raw); err != nil {
 			return nil, err
 		}
-		var stored v1.CreateLogicalBoxRequest
+		var stored struct {
+			v1.CreateLogicalBoxRequest
+			AgentCLIVersion string `json:"agentCliVersion"`
+		}
 		if err := json.Unmarshal(raw, &stored); err != nil {
 			return nil, err
 		}
 		allocate := value.allocate
-		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, SlotID: value.slotID, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, Assignment: assignment})
+		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, SlotID: value.slotID, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, AgentCLIVersion: stored.AgentCLIVersion, Assignment: assignment})
 		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
 		result[len(result)-1].Request.Tools = stored.Tools
 		result[len(result)-1].Request.SetupScript = stored.SetupScript
