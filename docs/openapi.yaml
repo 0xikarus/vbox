@@ -200,13 +200,13 @@ paths:
   /v1/agent-cli-versions:
     get:
       summary: Get account defaults for new-box agent CLI versions
-      description: Owner-only. Empty values use the worker image's bundled CLI.
+      description: Owner-only. Empty values use the worker image's bundled CLI; latest resolves at each new box's creation.
       responses:
         '200': {description: Claude Code, Codex CLI and OpenCode version defaults}
         '403': {description: Owner role required}
     put:
       summary: Set account defaults for new-box agent CLI versions
-      description: Owner-only. Exact release versions are installed into each new box's persistent home before it becomes ready. Existing boxes are unchanged.
+      description: Owner-only. Exact release versions or the npm latest tag are resolved to an exact release before a new box reserves a slot and installed into its persistent home. Existing boxes are unchanged.
       requestBody:
         required: true
         content:
@@ -216,14 +216,25 @@ paths:
               additionalProperties: false
               required: [claude, codex, opencode]
               properties:
-                claude: {type: string, description: Exact Claude Code version or empty for image version}
-                codex: {type: string, description: Exact Codex CLI version or empty for image version}
-                opencode: {type: string, description: Exact OpenCode version or empty for image version}
+                claude: {type: string, description: Exact Claude Code version, latest, or empty for image version}
+                codex: {type: string, description: Exact Codex CLI version, latest, or empty for image version}
+                opencode: {type: string, description: Exact OpenCode version, latest, or empty for image version}
       responses:
         '200': {description: Saved version defaults}
         '400': {description: Invalid version}
         '403': {description: Owner role required}
         '502': {description: npm registry unavailable; settings were not changed}
+  /v1/agent-cli-versions/catalog/{agent}:
+    get:
+      summary: List published npm releases for an agent CLI
+      description: Owner-only. Returns the current npm latest tag and published exact versions for the selected harness.
+      parameters:
+        - {in: path, name: agent, required: true, schema: {enum: [claude, codex, opencode]}}
+      responses:
+        '200': {description: Agent name, latest release, and exact versions}
+        '400': {description: Unsupported agent}
+        '403': {description: Owner role required}
+        '502': {description: npm registry unavailable}
   /v1/ai/openrouter:
     get:
       summary: Read AI writing helper configuration

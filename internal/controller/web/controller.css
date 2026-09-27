@@ -173,3 +173,5 @@ table.markets tr.row:hover{background:#fafafa}
  .role-capability-fields{grid-template-columns:1fr}
 }
 .instruction-effective{white-space:pre-wrap;overflow-wrap:anywhere;max-height:22rem;overflow:auto;padding:.75rem;background:#f7f7f7;border:1px solid #ddd;border-radius:6px;font-size:.78rem;text-transform:none}
+#agent-cli-versions select{width:14rem}
+#agent-cli-versions-status{margin:0;align-self:center}

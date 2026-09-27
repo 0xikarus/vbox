@@ -66,8 +66,8 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return creation, err
 		}
-		creation.AgentCLIVersion = versions.ForAgent(request.DefaultAgent)
-		if err := s.checkAgentCLIPackageVersion(ctx, request.DefaultAgent, creation.AgentCLIVersion); err != nil {
+		creation.AgentCLIVersion, err = s.resolveAgentCLIVersion(ctx, request.DefaultAgent, versions.ForAgent(request.DefaultAgent))
+		if err != nil {
 			return creation, err
 		}
 	}

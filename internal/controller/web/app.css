@@ -23,7 +23,5 @@ p,li{overflow-wrap:anywhere}
 #agent-cli-versions{border:1px solid #e2e2e2;padding:12px;align-items:end}
 #agent-cli-versions>div{flex-basis:100%}
 #agent-cli-versions>div p{margin:4px 0 0}
-#agent-cli-versions input{width:10rem}
-#agent-cli-versions-status{margin:0;align-self:center}
 
 @media(max-width:600px){body{padding:0 8px 48px}.form-actions{flex-direction:column;align-items:stretch}.modal .card{width:min(46rem,96vw)}}

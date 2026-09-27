@@ -8,6 +8,7 @@ let ownerTools=false,instructionPresets={defaultName:'',presets:[]};
 let roleBoxes=[];
 let listedProfiles=[],profileAccountName='';
 const presetBodyCache=new Map();
+const agentCLICatalogCache=new Map();
 window.VMBoxAIHelper?.attach({input:$('#instruction-form textarea[name="markdown"]'),kind:'markdown',status:$('#instruction-status')});
 $('#ai-settings-open').addEventListener('click',()=>window.VMBoxAIHelper.openSettings());
 let boxInstructionTarget=null,boxCredentialTarget=null;
@@ -342,6 +343,47 @@ function renderProfiles(identity,profiles){
  const choices=$('#profile-choices'),selected=choices.querySelector('select')?.value||'';choices.replaceChildren();
  renderCreationProfileChoices(choices,profiles,$('#create select[name="defaultAgent"]'),selected);
 }
+const agentCLIChoices=['claude','codex','opencode'];
+function agentCLIVersionNewestFirst(left,right){
+ const leftDash=left.indexOf('-'),rightDash=right.indexOf('-');
+ const leftCore=leftDash<0?left:left.slice(0,leftDash),rightCore=rightDash<0?right:right.slice(0,rightDash);
+ const leftPre=leftDash<0?'':left.slice(leftDash+1),rightPre=rightDash<0?'':right.slice(rightDash+1);
+ const coreOrder=rightCore.localeCompare(leftCore,undefined,{numeric:true});
+ if(coreOrder)return coreOrder;
+ if(!leftPre&&rightPre)return -1;
+ if(leftPre&&!rightPre)return 1;
+ return (rightPre||'').localeCompare(leftPre||'',undefined,{numeric:true});
+}
+function renderAgentCLIVersionChoice(agent,selected,catalog,loading=false){
+ const select=$('#agent-cli-versions').elements[agent],options=document.createDocumentFragment(),values=new Set();
+ const add=(value,label,disabled=false)=>{const option=node('option',label);option.value=value;option.disabled=disabled;options.append(option);values.add(value)};
+ add('','Worker image version');
+ add('latest',catalog?.latest?'Latest at box creation (now '+catalog.latest+')':'Latest at box creation');
+ if(catalog){
+  const versions=[...catalog.versions].sort(agentCLIVersionNewestFirst);
+  for(const version of versions)add(version,version===catalog.latest?version+' (current latest)':version);
+ }else add('__unavailable',loading?'Loading published versions…':'Published versions unavailable',true);
+ if(selected&&!values.has(selected))add(selected,selected+' (saved)');
+ select.replaceChildren(options);select.value=selected;
+}
+async function agentCLICatalog(agent){
+ const cached=agentCLICatalogCache.get(agent);
+ if(cached&&Date.now()-cached.at<5*60*1000)return cached.value;
+ const value=await api('/v1/agent-cli-versions/catalog/'+agent);
+ agentCLICatalogCache.set(agent,{at:Date.now(),value});
+ return value;
+}
+async function loadAgentCLIVersionChoices(version){
+ const results=await Promise.allSettled(agentCLIChoices.map(agent=>agentCLICatalog(agent)));
+ if(version!==epoch)return;
+ const failed=[];
+ for(let index=0;index<agentCLIChoices.length;index++){
+  const agent=agentCLIChoices[index],result=results[index],selected=$('#agent-cli-versions').elements[agent].value;
+  renderAgentCLIVersionChoice(agent,selected,result.status==='fulfilled'?result.value:null);
+  if(result.status==='rejected')failed.push(agent);
+ }
+ if(failed.length)$('#agent-cli-versions-status').textContent='Could not load published versions for '+failed.join(', ')+'. Use Refresh to retry; saved choices remain available.';
+}
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
  ownerTools=caps.providerEdits;
@@ -358,7 +400,8 @@ async function refresh(){
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){if(preset.id==='desktop')continue;const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
  renderProfiles(identity,profiles);
- const versionFields=$('#agent-cli-versions').elements;for(const agent of ['claude','codex','opencode'])versionFields[agent].value=cliVersions[agent]||'';
+ for(const agent of agentCLIChoices)renderAgentCLIVersionChoice(agent,cliVersions[agent]||'',null,true);
+ void loadAgentCLIVersionChoices(version);
  renderProviders(providers);
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
