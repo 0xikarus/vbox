@@ -25,6 +25,8 @@ var schema string
 type Store struct {
 	DB       *sql.DB
 	Envelope *secrets.Envelope
+	// Tests may substitute the npm registry lookup; production uses npmjs.org.
+	agentCLIPackageVersionCheck func(context.Context, string, string) error
 }
 type Principal struct{ AccountID, UserID, Role, Subject string }
 

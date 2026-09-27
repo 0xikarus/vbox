@@ -40,6 +40,16 @@ func (v AgentCLIVersions) validate() error {
 	return nil
 }
 
+func (s *Store) checkAgentCLIPackageVersion(ctx context.Context, agent, version string) error {
+	if version == "" {
+		return nil
+	}
+	if s.agentCLIPackageVersionCheck != nil {
+		return s.agentCLIPackageVersionCheck(ctx, agent, version)
+	}
+	return checkAgentCLIPackageVersion(ctx, agent, version)
+}
+
 func (s *Store) AgentCLIVersions(ctx context.Context, accountID string) (AgentCLIVersions, error) {
 	var value AgentCLIVersions
 	err := s.DB.QueryRowContext(ctx, `SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions WHERE account_id=$1`, accountID).Scan(&value.Claude, &value.Codex, &value.OpenCode)
@@ -67,6 +77,16 @@ func (s *Server) agentCLIVersionsHandler(w http.ResponseWriter, r *http.Request,
 		if err := value.validate(); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
+		}
+		for _, entry := range []struct{ agent, version string }{{"claude", value.Claude}, {"codex", value.Codex}, {"opencode", value.OpenCode}} {
+			if err := s.Store.checkAgentCLIPackageVersion(r.Context(), entry.agent, entry.version); err != nil {
+				status := http.StatusBadRequest
+				if errors.Is(err, errAgentCLIRegistryUnavailable) {
+					status = http.StatusBadGateway
+				}
+				writeError(w, status, err)
+				return
+			}
 		}
 		_, err := s.Store.DB.ExecContext(r.Context(), `INSERT INTO agent_cli_versions(account_id,claude_version,codex_version,opencode_version)
 			VALUES($1,$2,$3,$4) ON CONFLICT(account_id) DO UPDATE SET

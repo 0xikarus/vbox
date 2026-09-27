@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -82,7 +83,11 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 	}
 	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), p, request)
 	if err != nil {
-		writeError(w, http.StatusConflict, err)
+		status := http.StatusConflict
+		if errors.Is(err, errAgentCLIRegistryUnavailable) {
+			status = http.StatusBadGateway
+		}
+		writeError(w, status, err)
 		return
 	}
 	if err := s.Store.PutNewBoxInstructionSnapshot(r.Context(), p, creation.Assignment.Box.ID, resolvedInstructions, toolGuidance); err != nil {

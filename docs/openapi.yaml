@@ -223,6 +223,7 @@ paths:
         '200': {description: Saved version defaults}
         '400': {description: Invalid version}
         '403': {description: Owner role required}
+        '502': {description: npm registry unavailable; settings were not changed}
   /v1/ai/openrouter:
     get:
       summary: Read AI writing helper configuration

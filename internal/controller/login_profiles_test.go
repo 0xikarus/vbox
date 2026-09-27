@@ -142,6 +142,12 @@ func TestLoginProfilesPostgres(t *testing.T) {
 	if _, err = s.DB.ExecContext(ctx, `INSERT INTO agent_cli_versions(account_id,codex_version) VALUES($1,$2)`, p.AccountID, "0.130.0"); err != nil {
 		t.Fatal(err)
 	}
+	s.agentCLIPackageVersionCheck = func(_ context.Context, agent, version string) error {
+		if agent != "codex" || version != "0.130.0" {
+			t.Fatalf("unexpected agent CLI lookup: %s %s", agent, version)
+		}
+		return nil
+	}
 	creation, err := s.BeginLogicalBoxCreation(ctx, p, createReq)
 	if err != nil {
 		t.Fatal(err)

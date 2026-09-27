@@ -17,7 +17,7 @@ func ValidAgentCLIVersion(version string) bool {
 	return len(version) <= 64 && agentCLIVersionPattern.MatchString(version)
 }
 
-func agentCLIPackage(agent string) (string, error) {
+func AgentCLIPackage(agent string) (string, error) {
 	switch agent {
 	case "claude":
 		return "@anthropic-ai/claude-code", nil
@@ -40,7 +40,7 @@ func InstallAgentCLI(ctx context.Context, home, agent, version string, output io
 	if !ValidAgentCLIVersion(version) {
 		return fmt.Errorf("agent CLI version must be an exact release version")
 	}
-	packageName, err := agentCLIPackage(agent)
+	packageName, err := AgentCLIPackage(agent)
 	if err != nil {
 		return err
 	}

@@ -164,6 +164,9 @@ box's persistent home before it becomes ready, so future worker image changes
 do not replace that box's CLI. Changing a setting affects future boxes created
 from the controller, Chat, CLI, or agent MCP. Leaving a version blank uses the
 worker image's bundled CLI. Existing boxes keep their installed version.
+The controller checks each selected release against npm when you save it and
+again before it reserves a slot for a new box. If npm is unavailable, retry
+after the registry is reachable; the setting or new box is not saved.
 
 Agents can also address each other through owner-managed direct contacts.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,12 @@ func TestBeginLogicalBoxCreationFencesExactlyOneFreeSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	store := &Store{DB: db}
+	store := &Store{DB: db, agentCLIPackageVersionCheck: func(_ context.Context, agent, version string) error {
+		if agent != "claude" || version != "2.1.280" {
+			t.Fatalf("unexpected agent CLI lookup: %s %s", agent, version)
+		}
+		return nil
+	}}
 	now := time.Now().UTC()
 	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}).AddRow("2.1.280", "", ""))
@@ -41,6 +47,30 @@ func TestBeginLogicalBoxCreationFencesExactlyOneFreeSlot(t *testing.T) {
 	}
 	if !pendingVolume(creation.Assignment.Box.VolumeID) || creation.Assignment.FencingToken == "" {
 		t.Fatalf("creation was not fenced with a non-adoptable placeholder: %+v", creation)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBeginLogicalBoxCreationRejectsUnpublishedCLIBeforeSlotReservation(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &Store{DB: db, agentCLIPackageVersionCheck: func(_ context.Context, agent, version string) error {
+		if agent != "claude" || version != "999.999.999" {
+			t.Fatalf("unexpected agent CLI lookup: %s %s", agent, version)
+		}
+		return errors.New("version is not published")
+	}}
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}).AddRow("999.999.999", "", ""))
+	mock.ExpectRollback()
+	_, err = store.BeginLogicalBoxCreation(context.Background(), Principal{AccountID: "account-a", UserID: "user-a"}, v1.CreateLogicalBoxRequest{Name: "research", Provider: "railway", ProviderCredential: "primary", DiskGiB: 20})
+	if err == nil || !strings.Contains(err.Error(), "not published") {
+		t.Fatalf("unpublished agent CLI was accepted: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

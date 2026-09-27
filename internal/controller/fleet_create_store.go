@@ -64,6 +64,9 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 			return creation, err
 		}
 		creation.AgentCLIVersion = versions.ForAgent(request.DefaultAgent)
+		if err := s.checkAgentCLIPackageVersion(ctx, request.DefaultAgent, creation.AgentCLIVersion); err != nil {
+			return creation, err
+		}
 	}
 	seenProfiles := map[string]bool{}
 	for _, profile := range request.LoginProfiles {
