@@ -15,6 +15,71 @@ func computeSlotColumns() []string {
 	return []string{"id", "account_id", "provider", "provider_credential", "ordinal", "state", "service_id", "service_name", "deployment_instance_id", "logical_box_id", "logical_box_name", "region", "image", "image_version", "health", "assignment_generation", "lease_owner", "lease_expires_at", "failure_reason", "created_at", "updated_at"}
 }
 
+func TestAgentBoxCreationGrantsBothContactsInCreationTransaction(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &Store{DB: db}
+	now := time.Now().UTC()
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}))
+	mock.ExpectQuery("SELECT name FROM logical_boxes.*state='running' FOR UPDATE").WithArgs("account-a", "creator-id").WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("manager"))
+	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WithArgs("account-a", "research").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s SKIP LOCKED LIMIT 1").WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows(computeSlotColumns()).AddRow("slot-1", "account-a", "railway", "primary", 1, "free", "service-1", "slot-a-01", "deployment-1", "", "", "ams", "image@sha256:digest", "v1", "healthy", int64(7), "", nil, "", now, now))
+	mock.ExpectExec("UPDATE compute_slots SET state='reserved'").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO logical_boxes").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WithArgs("account-a", "creator-id", sqlmock.AnyArg()).WillReturnRows(sqlmock.NewRows([]string{"can_message"}))
+	mock.ExpectExec("INSERT INTO box_contacts").WithArgs("account-a", "creator-id", sqlmock.AnyArg(), true, "user-a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO box_events").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WithArgs("account-a", sqlmock.AnyArg(), "creator-id").WillReturnRows(sqlmock.NewRows([]string{"can_message"}))
+	mock.ExpectExec("INSERT INTO box_contacts").WithArgs("account-a", sqlmock.AnyArg(), "creator-id", true, "user-a").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO box_events").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO audit_log").WithArgs("account-a", "user-a", sqlmock.AnyArg(), "creator-id").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectCommit()
+	creation, err := store.BeginLogicalBoxCreation(context.Background(), Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}, v1.CreateLogicalBoxRequest{Name: "research", Provider: "railway", ProviderCredential: "primary", DiskGiB: 10}, "creator-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if creation.Assignment.Box.Name != "research" {
+		t.Fatalf("creation=%+v", creation)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAgentBoxCreationRollsBackIfReciprocalContactFails(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &Store{DB: db}
+	now := time.Now().UTC()
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}))
+	mock.ExpectQuery("SELECT name FROM logical_boxes.*state='running' FOR UPDATE").WithArgs("account-a", "creator-id").WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("manager"))
+	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WithArgs("account-a", "research").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s SKIP LOCKED LIMIT 1").WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows(computeSlotColumns()).AddRow("slot-1", "account-a", "railway", "primary", 1, "free", "service-1", "slot-a-01", "deployment-1", "", "", "ams", "image@sha256:digest", "v1", "healthy", int64(7), "", nil, "", now, now))
+	mock.ExpectExec("UPDATE compute_slots SET state='reserved'").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec("INSERT INTO logical_boxes").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WillReturnRows(sqlmock.NewRows([]string{"can_message"}))
+	mock.ExpectExec("INSERT INTO box_contacts").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectExec("INSERT INTO box_events").WillReturnResult(sqlmock.NewResult(1, 1))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WillReturnRows(sqlmock.NewRows([]string{"can_message"}))
+	mock.ExpectExec("INSERT INTO box_contacts").WillReturnError(errors.New("contact insert failed"))
+	mock.ExpectRollback()
+	_, err = store.BeginLogicalBoxCreation(context.Background(), Principal{AccountID: "account-a", UserID: "user-a", Role: "owner"}, v1.CreateLogicalBoxRequest{Name: "research", Provider: "railway", ProviderCredential: "primary", DiskGiB: 10}, "creator-id")
+	if err == nil || !strings.Contains(err.Error(), "contact insert failed") {
+		t.Fatalf("error=%v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBeginLogicalBoxCreationFencesExactlyOneFreeSlot(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

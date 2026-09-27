@@ -840,6 +840,14 @@ retry comparisons.
 pool. Passing a returned `slotId` to `create_agent_box` chooses that worker for
 the new box's initial start; the controller rechecks the slot when reserving it.
 Omitting `slotId` uses automatic placement.
+The creator and the new box are added as direct contacts in both directions
+when `create_agent_box` succeeds. This also applies when the creator lacks the
+All contacts capability; contact protection still takes precedence.
+An admin box with `restart_agent_box` permission also gets
+`clear_agent_box_context {"box":"researcher","confirmation":"researcher","idempotencyKey":"clear-researcher-1"}`.
+This starts a fresh context in another running Codex, Claude, or OpenCode box
+while retaining its chat history and workspace. The target must have an active
+chat session and must not be protected.
 
 ## Optional tools
 

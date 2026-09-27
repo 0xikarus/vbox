@@ -168,11 +168,30 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	if slices.Contains(tools, "delete_agent_box") {
 		t.Fatalf("allowlist bypassed typed delete permission: %v", tools)
 	}
-	if slices.Contains(tools, "restart_agent_box") {
+	if slices.Contains(tools, "restart_agent_box") || slices.Contains(tools, "clear_agent_box_context") {
 		t.Fatalf("allowlist bypassed typed restart permission: %v", tools)
 	}
 	if slices.Contains(tools, "type_text") {
 		t.Fatalf("unselected optional tool was advertised: %v", tools)
+	}
+}
+
+func TestEffectiveAgentToolNamesAddsContextClearToRestartGrant(t *testing.T) {
+	store, mock := testStore(t)
+	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{Restart: true})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"restart_agent_box"}})
+	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionManageAgentBoxes, manage).AddRow(v1.RolePermissionMCPTools, mcp))
+	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"restart_agent_box", "clear_agent_box_context"} {
+		if !slices.Contains(tools, name) {
+			t.Fatalf("expected %s in %v", name, tools)
+		}
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -23,7 +23,10 @@ type logicalBoxCreation struct {
 
 var errNoCreationSlot = errors.New("no healthy free compute slot is available to initialize the workspace volume")
 
-func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, request v1.CreateLogicalBoxRequest) (logicalBoxCreation, error) {
+func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, request v1.CreateLogicalBoxRequest, creatorBoxIDs ...string) (logicalBoxCreation, error) {
+	if len(creatorBoxIDs) > 1 {
+		return logicalBoxCreation{}, fmt.Errorf("only one creator box may be specified")
+	}
 	request.Normalize()
 	if err := validateBoxProfileSelection(request.LoginProfiles); err != nil {
 		return logicalBoxCreation{}, err
@@ -65,6 +68,19 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		}
 		creation.AgentCLIVersion = versions.ForAgent(request.DefaultAgent)
 		if err := s.checkAgentCLIPackageVersion(ctx, request.DefaultAgent, creation.AgentCLIVersion); err != nil {
+			return creation, err
+		}
+	}
+	var creatorBoxID, creatorName string
+	if len(creatorBoxIDs) == 1 {
+		creatorBoxID = creatorBoxIDs[0]
+		if creatorBoxID == "" {
+			return creation, fmt.Errorf("creator box ID is required")
+		}
+		if err := tx.QueryRowContext(ctx, `SELECT name FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='running' FOR UPDATE`, p.AccountID, creatorBoxID).Scan(&creatorName); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return creation, fmt.Errorf("creator box is unavailable")
+			}
 			return creation, err
 		}
 	}
@@ -138,6 +154,18 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	}
 	if err := assignInitialRoles(ctx, tx, p, box.ID, request.RoleIDs); err != nil {
 		return creation, err
+	}
+	if creatorBoxID != "" {
+		if err := putContactOverrideWithEvent(ctx, tx, p, creatorBoxID, box.ID, box.Name, "allow"); err != nil {
+			return creation, err
+		}
+		if err := putContactOverrideWithEvent(ctx, tx, p, box.ID, creatorBoxID, creatorName, "allow"); err != nil {
+			return creation, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail)
+			VALUES($1,$2,'box_contact.agent_created','logical_box',$3,jsonb_build_object('creator_box_id',$4::text,'two_way',true))`, p.AccountID, p.UserID, box.ID, creatorBoxID); err != nil {
+			return creation, err
+		}
 	}
 	if err := tx.Commit(); err != nil {
 		return creation, err
