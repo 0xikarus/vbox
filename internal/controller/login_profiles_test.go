@@ -139,12 +139,18 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	createReq := v1.CreateLogicalBoxRequest{Name: "profile-box", Provider: "railway", Tools: []string{"foundry"}, SetupScript: "printf custom-install", LoginProfiles: []v1.LoginProfileRef{{Application: "codex", Name: "work", Model: "gpt-box-override"}}}
+	if _, err = s.DB.ExecContext(ctx, `INSERT INTO agent_cli_versions(account_id,codex_version) VALUES($1,$2)`, p.AccountID, "0.130.0"); err != nil {
+		t.Fatal(err)
+	}
 	creation, err := s.BeginLogicalBoxCreation(ctx, p, createReq)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if creation.Request.Region != "test-region" {
 		t.Fatal("implicit creation location was not pinned")
+	}
+	if creation.AgentCLIVersion != "0.130.0" {
+		t.Fatalf("agent CLI version=%q", creation.AgentCLIVersion)
 	}
 	box, err := fresh.LogicalBox(ctx, p, creation.Assignment.Box.ID)
 	if err != nil || len(box.Tools) != 1 || box.Tools[0] != "foundry" {
@@ -155,7 +161,7 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		t.Fatal("box API exposed private creation metadata")
 	}
 	recovered, err := fresh.RecoverableLogicalBoxCreations(ctx)
-	if err != nil || len(recovered) != 1 || len(recovered[0].Request.LoginProfiles) != 1 || recovered[0].Request.LoginProfiles[0].Name != "work" || recovered[0].Request.LoginProfiles[0].Model != "gpt-box-override" {
+	if err != nil || len(recovered) != 1 || len(recovered[0].Request.LoginProfiles) != 1 || recovered[0].Request.LoginProfiles[0].Name != "work" || recovered[0].Request.LoginProfiles[0].Model != "gpt-box-override" || recovered[0].AgentCLIVersion != "0.130.0" {
 		t.Fatalf("selection recovery failed: %v", err)
 	}
 	if len(recovered[0].Request.Tools) != 1 || recovered[0].Request.Tools[0] != "foundry" {

@@ -23,6 +23,7 @@ func TestBeginLogicalBoxCreationFencesExactlyOneFreeSlot(t *testing.T) {
 	store := &Store{DB: db}
 	now := time.Now().UTC()
 	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}).AddRow("2.1.280", "", ""))
 	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WithArgs("account-a", "research").WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s SKIP LOCKED LIMIT 1").WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows(computeSlotColumns()).AddRow("slot-1", "account-a", "railway", "primary", 1, "free", "service-1", "slot-a-01", "deployment-1", "", "", "ams", "image@sha256:digest", "v1", "healthy", int64(7), "", nil, "", now, now))
 	mock.ExpectExec("UPDATE compute_slots SET state='reserved'").WithArgs("account-a", "slot-1", int64(8), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -34,6 +35,9 @@ func TestBeginLogicalBoxCreationFencesExactlyOneFreeSlot(t *testing.T) {
 	}
 	if creation.Assignment.Slot.ID != "slot-1" || creation.Assignment.Box.SlotID != "slot-1" || creation.Assignment.Box.AssignmentGeneration != 8 {
 		t.Fatalf("creation=%+v", creation)
+	}
+	if creation.AgentCLIVersion != "2.1.280" {
+		t.Fatalf("agent CLI version snapshot=%q", creation.AgentCLIVersion)
 	}
 	if !pendingVolume(creation.Assignment.Box.VolumeID) || creation.Assignment.FencingToken == "" {
 		t.Fatalf("creation was not fenced with a non-adoptable placeholder: %+v", creation)
@@ -52,6 +56,7 @@ func TestBeginLogicalBoxCreationReservesSelectedWorkerSlot(t *testing.T) {
 	store := &Store{DB: db}
 	now := time.Now().UTC()
 	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}))
 	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WithArgs("account-a", "research").WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery(`FROM compute_slots.*s.id::text=\$4.*FOR UPDATE OF s SKIP LOCKED LIMIT 1`).WithArgs("account-a", "railway", "primary", "slot-2").WillReturnRows(sqlmock.NewRows(computeSlotColumns()).AddRow("slot-2", "account-a", "railway", "primary", 2, "free", "service-2", "worker-two", "deployment-2", "", "", "ams", "image@sha256:digest", "v1", "healthy", int64(7), "", nil, "", now, now))
 	mock.ExpectExec("UPDATE compute_slots SET state='reserved'").WithArgs("account-a", "slot-2", int64(8), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -74,6 +79,7 @@ func TestBeginLogicalBoxCreationDoesNotFallBackFromSelectedWorker(t *testing.T) 
 	defer db.Close()
 	store := &Store{DB: db}
 	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}))
 	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WithArgs("account-a", "research").WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery(`FROM compute_slots.*s.id::text=\$4.*FOR UPDATE OF s SKIP LOCKED LIMIT 1`).WithArgs("account-a", "railway", "primary", "slot-2").WillReturnRows(sqlmock.NewRows(computeSlotColumns()))
 	mock.ExpectRollback()
@@ -94,6 +100,7 @@ func TestBeginLogicalBoxCreationQueuesNoUnmanagedServiceWhenFleetIsFull(t *testi
 	defer db.Close()
 	store := &Store{DB: db}
 	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}))
 	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WithArgs("account-a", "research").WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s SKIP LOCKED LIMIT 1").WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows(computeSlotColumns()))
 	mock.ExpectRollback()
@@ -144,6 +151,7 @@ func TestCreationDoesNotFallBackFromRequestedRegion(t *testing.T) {
 	defer db.Close()
 	store := &Store{DB: db}
 	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}))
 	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery(`FROM compute_slots.*AND s.region=\$4.*FOR UPDATE OF s SKIP LOCKED LIMIT 1`).WithArgs("account-a", "railway", "primary", "requested-region").WillReturnRows(sqlmock.NewRows(computeSlotColumns()))
 	mock.ExpectRollback()

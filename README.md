@@ -158,6 +158,13 @@ setting. OpenCode variant support depends on the selected provider model; Claude
 Haiku has no effort control, and Claude's session-only `max` is not a persistent
 box setting.
 
+In **Profiles**, account owners can set exact Claude Code, Codex CLI, and
+OpenCode versions for new boxes. A configured version is installed into the new
+box's persistent home before it becomes ready, so future worker image changes
+do not replace that box's CLI. Changing a setting affects future boxes created
+from the controller, Chat, CLI, or agent MCP. Leaving a version blank uses the
+worker image's bundled CLI. Existing boxes keep their installed version.
+
 Agents can also address each other through owner-managed direct contacts.
 `get_contacts` lists the boxes this box may message, and `chat_message`/`chat_ask`
 accept an optional `contact`; the message is delivered into that box's same

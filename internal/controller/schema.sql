@@ -46,6 +46,15 @@ CREATE TABLE IF NOT EXISTS ai_helper_settings (
   model text NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+-- Optional CLI versions installed into new boxes' persistent homes. Empty
+-- values use the worker image's bundled CLI.
+CREATE TABLE IF NOT EXISTS agent_cli_versions (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  claude_version text NOT NULL DEFAULT '',
+  codex_version text NOT NULL DEFAULT '',
+  opencode_version text NOT NULL DEFAULT '',
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 ALTER TABLE login_profiles DROP CONSTRAINT IF EXISTS login_profiles_application_check;
 ALTER TABLE login_profiles ADD CONSTRAINT login_profiles_application_check CHECK (application IN ('claude','codex','opencode','github'));
 CREATE TABLE IF NOT EXISTS profile_usage_snapshots (

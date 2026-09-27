@@ -305,6 +305,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/users/{id}", s.owner(s.removeUser))
 	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))
 	mux.HandleFunc("GET /v1/login-profiles", s.owner(s.listLoginProfiles))
+	mux.HandleFunc("GET /v1/agent-cli-versions", s.owner(s.agentCLIVersionsHandler))
+	mux.HandleFunc("PUT /v1/agent-cli-versions", s.owner(s.agentCLIVersionsHandler))
 	mux.HandleFunc("POST /v1/ai/rewrite", s.owner(s.rewriteText))
 	mux.HandleFunc("GET /v1/ai/openrouter", s.owner(s.getAIHelperOpenRouter))
 	mux.HandleFunc("GET /v1/ai/openrouter/profiles/{name}", s.owner(s.getAIHelperOpenCodeProfile))
