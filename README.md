@@ -136,7 +136,8 @@ The same box-local HTTP service accepts `POST /prompt`. An app can read
 enters the existing managed agent conversation. It does not start or wake an
 agent, and the HTTP response does not contain the agent's reply. See the
 [local prompt API guide](docs/LOCAL-AGENT-PROMPT.md) for a complete Python
-example, session selection, responses, and retry behavior.
+example, session selection, responses, and retry behavior. The agent can also
+read the box-local `~/.config/vmbox/mcp-tools.md` guide for the request format.
 
 In Chat, account owners can save prompts under **Commands** and insert them by
 typing `/` in a box conversation. The `/command` stays in the draft and expands

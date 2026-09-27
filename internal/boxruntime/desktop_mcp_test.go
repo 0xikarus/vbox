@@ -562,7 +562,7 @@ func TestDesktopMCPGuideMatchesAdvertisedTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## Contacting other boxes", "get_contacts {}", `chat_message {"contact":"reviewer"`, `chat_message {"contact":"a1b2c3d4"`, `chat_message {"contact":"a1b2c3d4-1234-4000-8000-000000000000"`, "exact box `name`", "## chat_message", "## type_secret", "## take_screenshot", `Schema: `} {
+	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## Contacting other boxes", "get_contacts {}", `chat_message {"contact":"reviewer"`, `chat_message {"contact":"a1b2c3d4"`, `chat_message {"contact":"a1b2c3d4-1234-4000-8000-000000000000"`, "exact box `name`", "## Send a prompt from a box-local app", "mcp-http.json", "promptUrl", `{"text":"Check the latest build result"}`, "Authorization: Bearer", "## chat_message", "## type_secret", "## take_screenshot", `Schema: `} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("guide missing %q: %s", fragment, text)
 		}
