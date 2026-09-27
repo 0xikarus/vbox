@@ -22,3 +22,9 @@ Updated 2026-09-27. This compares the implementation paths. A transport response
 4. Verify native handling of all image parts. Codex and OpenCode submit structured image/file parts. Claude currently supplies only the first image path as channel metadata.
 
 See [CHAT-DELIVERY-RESILIENCE-TODO.md](CHAT-DELIVERY-RESILIENCE-TODO.md) for the remaining work and failure-recovery cases.
+
+## OpenCode repeat audit, 2026-09-27
+
+Two further disposable production boxes used the saved OpenRouter profile with GLM 5.3 Flash. Both answered the same first-message prompt through a linked `chat_message` MCP call. Box A also sent a linked follow-up, restored its saved conversation after hibernation, and answered again after its TUI process was closed and reopened on that session. Box B switched its visible TUI to a new conversation and back; native OpenCode records show completed MCP tool parts for `READY` and `BACK` in the original session and `NEW_THREAD` in the new session. Both boxes were deleted after the checks.
+
+The earlier text-only MCP syntax response was not reproduced in these checks. Its cause remains unconfirmed; a text part containing tool syntax does not count as a tool call or a Chat reply.
