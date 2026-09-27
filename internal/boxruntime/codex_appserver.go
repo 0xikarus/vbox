@@ -280,6 +280,11 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	if err := codexQueueInput(ctx, client, thread, messageID, text, images); err != nil {
 		return err
 	}
+	// Queueing only stores the submission. After an interrupted turn Codex can
+	// leave that queue idle until another client explicitly starts its head.
+	if err := codexStartQueuedIfIdle(ctx, client, thread); err != nil {
+		return fmt.Errorf("%w: Codex message queued but pending queue could not start: %v", ErrAmbiguousMessage, err)
+	}
 	if err := waitForCodexUserItem(ctx, client, thread, messageID); err != nil {
 		return err
 	}
@@ -287,51 +292,101 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	return nil
 }
 
+// codexStartQueuedIfIdle starts the oldest native submission, including one
+// queued before the current message. Never starts a second turn while the TUI
+// already has one in progress. The queue itself preserves submission order.
+func codexStartQueuedIfIdle(ctx context.Context, client *codexClient, thread string) error {
+	active := func() (bool, error) {
+		result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
+		if err != nil {
+			return false, err
+		}
+		turns, _ := result["data"].([]any)
+		if len(turns) == 0 {
+			return false, nil
+		}
+		latest, _ := turns[0].(map[string]any)
+		return latest["status"] == "inProgress", nil
+	}
+	busy, err := active()
+	if codexQueueMethodUnavailable(err, "thread/turns/list") {
+		return nil
+	}
+	if err != nil || busy {
+		return err
+	}
+	result, err := client.call(ctx, "thread/queue/list", map[string]any{"threadId": thread, "limit": 1})
+	if codexQueueMethodUnavailable(err, "thread/queue/list") {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	queue, _ := result["data"].([]any)
+	if len(queue) == 0 {
+		return nil
+	}
+	first, _ := queue[0].(map[string]any)
+	id, _ := first["id"].(string)
+	if id == "" {
+		return fmt.Errorf("Codex queue returned no submission ID")
+	}
+	if _, err := client.call(ctx, "thread/queue/start", map[string]any{"threadId": thread, "queuedSubmissionId": id}); err != nil {
+		if codexQueueMethodUnavailable(err, "thread/queue/start") {
+			return nil
+		}
+		// Another client may have started the queue after our idle check.
+		if running, checkErr := active(); checkErr == nil && running {
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+func codexQueueMethodUnavailable(err error, method string) bool {
+	return err != nil && strings.Contains(err.Error(), "unknown variant `"+method+"`")
+}
+
+// ConfirmCodexChat probes an earlier ambiguous handoff without submitting it
+// again. An idle native queue may be started, but its existing contents stay
+// in their original order and the receipt is confirmed only after consumption.
+func ConfirmCodexChat(ctx context.Context, root, home, session, messageID string) (bool, error) {
+	client, err := dialCodexAppServer(ctx, session)
+	if err != nil {
+		return false, err
+	}
+	defer client.Close()
+	thread, err := CodexCurrentThread(ctx, client, root, session, WorkspaceDirectory())
+	if err != nil {
+		return false, err
+	}
+	accepted, err := codexUserItemPresent(ctx, client, thread, messageID, true)
+	if err != nil || !accepted {
+		if err == nil {
+			err = codexStartQueuedIfIdle(ctx, client, thread)
+		}
+		return false, err
+	}
+	path := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, messageID+".json")
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return false, err
+	}
+	return true, nil
+}
+
 // A queue receipt only confirms storage. The matching native user item proves
 // that this thread consumed the exact message before Chat shows it as delivered.
 func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, messageID string) error {
 	deadline := time.NewTimer(90 * time.Second)
 	defer deadline.Stop()
-	useThreadRead := false
 	for {
-		var result map[string]any
-		var err error
-		if !useThreadRead {
-			result, err = client.call(ctx, "thread/items/list", map[string]any{
-				"threadId": thread, "sortDirection": "desc", "limit": 100,
-			})
-			if err != nil {
-				useThreadRead = true
-			}
-		}
-		if useThreadRead {
-			result, err = client.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
-		}
+		accepted, err := codexUserItemPresent(ctx, client, thread, messageID, false)
 		if err != nil {
 			return fmt.Errorf("%w: Codex queue accepted but native consumption could not be checked: %v", ErrAmbiguousMessage, err)
 		}
-		if useThreadRead {
-			threadData, _ := result["thread"].(map[string]any)
-			turns, _ := threadData["turns"].([]any)
-			for _, value := range turns {
-				turn, _ := value.(map[string]any)
-				items, _ := turn["items"].([]any)
-				for _, value := range items {
-					item, _ := value.(map[string]any)
-					if item["type"] == "userMessage" && item["clientId"] == messageID {
-						return nil
-					}
-				}
-			}
-		} else {
-			entries, _ := result["data"].([]any)
-			for _, value := range entries {
-				entry, _ := value.(map[string]any)
-				item, _ := entry["item"].(map[string]any)
-				if item["type"] == "userMessage" && item["clientId"] == messageID {
-					return nil
-				}
-			}
+		if accepted {
+			return nil
 		}
 		select {
 		case <-ctx.Done():
@@ -341,6 +396,41 @@ func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, mess
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
+
+func codexUserItemPresent(ctx context.Context, client *codexClient, thread, messageID string, searchHistory bool) (bool, error) {
+	result, err := client.call(ctx, "thread/items/list", map[string]any{"threadId": thread, "sortDirection": "desc", "limit": 100})
+	if err == nil {
+		entries, _ := result["data"].([]any)
+		for _, value := range entries {
+			entry, _ := value.(map[string]any)
+			item, _ := entry["item"].(map[string]any)
+			if item["type"] == "userMessage" && item["clientId"] == messageID {
+				return true, nil
+			}
+		}
+		if !searchHistory {
+			return false, nil
+		}
+	}
+	// A long Codex turn can push the user item outside the newest 100 items.
+	result, err = client.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
+	if err != nil {
+		return false, err
+	}
+	threadData, _ := result["thread"].(map[string]any)
+	turns, _ := threadData["turns"].([]any)
+	for _, value := range turns {
+		turn, _ := value.(map[string]any)
+		items, _ := turn["items"].([]any)
+		for _, value := range items {
+			item, _ := value.(map[string]any)
+			if item["type"] == "userMessage" && item["clientId"] == messageID {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
 }
 
 func codexQueueInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {

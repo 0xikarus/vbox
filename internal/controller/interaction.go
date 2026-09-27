@@ -346,8 +346,8 @@ func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
 }
 
 // Ambiguous native handoffs are probed by exact message ID. This operation
-// never submits a second prompt; the worker inspects Claude's transcript or
-// OpenCode's visible session before the controller advances checkmarks.
+// never submits a second prompt; the worker inspects the native Claude,
+// OpenCode, or Codex session before the controller advances checkmarks.
 func (s *Server) reconcileNativeMessageReceipts(ctx context.Context) error {
 	messages, err := s.Store.AmbiguousActiveBoxMessages(ctx)
 	if err != nil {
@@ -355,7 +355,7 @@ func (s *Server) reconcileNativeMessageReceipts(ctx context.Context) error {
 	}
 	var failures []error
 	for _, value := range messages {
-		if !value.Submit || (value.Task.Agent != "claude" && value.Task.Agent != "opencode") {
+		if !value.Submit || (value.Task.Agent != "claude" && value.Task.Agent != "opencode" && value.Task.Agent != "codex") {
 			continue
 		}
 		probeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

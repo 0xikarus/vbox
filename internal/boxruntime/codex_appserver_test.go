@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -249,6 +250,151 @@ func TestCodexQueueReceiptWaitsForMatchingNativeUserItem(t *testing.T) {
 	}
 	if reads.Load() != 2 {
 		t.Fatalf("confirmed after %d reads, wanted 2", reads.Load())
+	}
+}
+
+func TestCodexIdleInterruptedQueueStartsOldestSubmission(t *testing.T) {
+	var methodsMu sync.Mutex
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64          `json:"id"`
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			methodsMu.Lock()
+			methods = append(methods, request.Method)
+			methodsMu.Unlock()
+			var result map[string]any
+			switch request.Method {
+			case "thread/turns/list":
+				result = map[string]any{"data": []any{map[string]any{"status": "interrupted"}}}
+			case "thread/queue/list":
+				result = map[string]any{"data": []any{map[string]any{"id": "oldest-submission"}}}
+			case "thread/queue/start":
+				if request.Params["queuedSubmissionId"] != "oldest-submission" {
+					t.Errorf("started wrong queue item: %v", request.Params)
+				}
+				result = map[string]any{"turn": map[string]any{"status": "inProgress"}}
+			default:
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			response, _ := json.Marshal(map[string]any{"id": request.ID, "result": result})
+			_ = conn.Write(r.Context(), websocket.MessageText, response)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexStartQueuedIfIdle(context.Background(), client, "visible-thread"); err != nil {
+		t.Fatal(err)
+	}
+	methodsMu.Lock()
+	defer methodsMu.Unlock()
+	if !reflect.DeepEqual(methods, []string{"thread/turns/list", "thread/queue/list", "thread/queue/start"}) {
+		t.Fatalf("methods=%v", methods)
+	}
+}
+
+func TestCodexActiveTurnLeavesNativeQueueAlone(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		_, raw, err := conn.Read(r.Context())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var request struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		_ = json.Unmarshal(raw, &request)
+		calls.Add(1)
+		if request.Method != "thread/turns/list" {
+			t.Errorf("unexpected method %q", request.Method)
+		}
+		response, _ := json.Marshal(map[string]any{"id": request.ID, "result": map[string]any{"data": []any{map[string]any{"status": "inProgress"}}}})
+		_ = conn.Write(r.Context(), websocket.MessageText, response)
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexStartQueuedIfIdle(context.Background(), client, "visible-thread"); err != nil || calls.Load() != 1 {
+		t.Fatalf("error=%v calls=%d", err, calls.Load())
+	}
+}
+
+func TestCodexReceiptFindsUserItemBeyondRecentPage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			_ = json.Unmarshal(raw, &request)
+			var result map[string]any
+			if request.Method == "thread/items/list" {
+				result = map[string]any{"data": []any{map[string]any{"item": map[string]any{"type": "agentMessage"}}}}
+			} else if request.Method == "thread/read" {
+				result = map[string]any{"thread": map[string]any{"turns": []any{map[string]any{"items": []any{map[string]any{"type": "userMessage", "clientId": "old-message"}}}}}}
+			} else {
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			response, _ := json.Marshal(map[string]any{"id": request.ID, "result": result})
+			_ = conn.Write(r.Context(), websocket.MessageText, response)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	accepted, err := codexUserItemPresent(context.Background(), client, "visible-thread", "old-message", true)
+	if err != nil || !accepted {
+		t.Fatalf("accepted=%t error=%v", accepted, err)
 	}
 }
 
