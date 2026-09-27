@@ -86,15 +86,15 @@ func TestBeginLogicalBoxCreationFencesExactlyOneFreeSlot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	store := &Store{DB: db, agentCLIPackageVersionCheck: func(_ context.Context, agent, version string) error {
-		if agent != "claude" || version != "2.1.280" {
-			t.Fatalf("unexpected agent CLI lookup: %s %s", agent, version)
+	store := &Store{DB: db, agentCLILatestResolve: func(_ context.Context, agent string) (string, error) {
+		if agent != "claude" {
+			t.Fatalf("unexpected agent CLI lookup: %s", agent)
 		}
-		return nil
+		return "2.1.280", nil
 	}}
 	now := time.Now().UTC()
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}).AddRow("2.1.280", "", ""))
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}).AddRow("latest", "", ""))
 	mock.ExpectQuery("SELECT id::text FROM logical_boxes").WithArgs("account-a", "research").WillReturnRows(sqlmock.NewRows([]string{"id"}))
 	mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s SKIP LOCKED LIMIT 1").WithArgs("account-a", "railway", "primary").WillReturnRows(sqlmock.NewRows(computeSlotColumns()).AddRow("slot-1", "account-a", "railway", "primary", 1, "free", "service-1", "slot-a-01", "deployment-1", "", "", "ams", "image@sha256:digest", "v1", "healthy", int64(7), "", nil, "", now, now))
 	mock.ExpectExec("UPDATE compute_slots SET state='reserved'").WithArgs("account-a", "slot-1", int64(8), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), int64(7)).WillReturnResult(sqlmock.NewResult(0, 1))
@@ -136,6 +136,30 @@ func TestBeginLogicalBoxCreationRejectsUnpublishedCLIBeforeSlotReservation(t *te
 	_, err = store.BeginLogicalBoxCreation(context.Background(), Principal{AccountID: "account-a", UserID: "user-a"}, v1.CreateLogicalBoxRequest{Name: "research", Provider: "railway", ProviderCredential: "primary", DiskGiB: 20})
 	if err == nil || !strings.Contains(err.Error(), "not published") {
 		t.Fatalf("unpublished agent CLI was accepted: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBeginLogicalBoxCreationRejectsUnavailableLatestBeforeSlotReservation(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	store := &Store{DB: db, agentCLILatestResolve: func(_ context.Context, agent string) (string, error) {
+		if agent != "claude" {
+			t.Fatalf("unexpected latest lookup for %s", agent)
+		}
+		return "", errAgentCLIRegistryUnavailable
+	}}
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT claude_version,codex_version,opencode_version FROM agent_cli_versions").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"claude_version", "codex_version", "opencode_version"}).AddRow("latest", "", ""))
+	mock.ExpectRollback()
+	_, err = store.BeginLogicalBoxCreation(context.Background(), Principal{AccountID: "account-a", UserID: "user-a"}, v1.CreateLogicalBoxRequest{Name: "research", Provider: "railway", ProviderCredential: "primary", DiskGiB: 20})
+	if !errors.Is(err, errAgentCLIRegistryUnavailable) {
+		t.Fatalf("unavailable latest resolved or reserved a slot: %v", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

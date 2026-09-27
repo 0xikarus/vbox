@@ -27,6 +27,8 @@ type Store struct {
 	Envelope *secrets.Envelope
 	// Tests may substitute the npm registry lookup; production uses npmjs.org.
 	agentCLIPackageVersionCheck func(context.Context, string, string) error
+	agentCLILatestResolve       func(context.Context, string) (string, error)
+	agentCLIPackageCatalog      func(context.Context, string) (AgentCLIVersionCatalog, error)
 }
 type Principal struct{ AccountID, UserID, Role, Subject string }
 

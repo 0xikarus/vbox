@@ -308,6 +308,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/login-profiles", s.owner(s.listLoginProfiles))
 	mux.HandleFunc("GET /v1/agent-cli-versions", s.owner(s.agentCLIVersionsHandler))
 	mux.HandleFunc("PUT /v1/agent-cli-versions", s.owner(s.agentCLIVersionsHandler))
+	mux.HandleFunc("GET /v1/agent-cli-versions/catalog/{agent}", s.owner(s.agentCLIVersionCatalogHandler))
 	mux.HandleFunc("POST /v1/ai/rewrite", s.owner(s.rewriteText))
 	mux.HandleFunc("GET /v1/ai/openrouter", s.owner(s.getAIHelperOpenRouter))
 	mux.HandleFunc("GET /v1/ai/openrouter/profiles/{name}", s.owner(s.getAIHelperOpenCodeProfile))

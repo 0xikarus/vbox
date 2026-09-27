@@ -36,6 +36,10 @@ before(async()=>{
    '/v1/notifications':[],
    '/v1/whoami':{accountId:'account-1',accountName:'Team',role:'owner'},
    '/v1/login-profiles':[{application:'claude',name:'personal',model:'opus[1m]',createdAt:revision},{application:'codex',name:'personal-codex',model:'account-codex-model',createdAt:revision},{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash',createdAt:revision},{application:'opencode',name:'venice',model:'venice/deepseek-v4-1-flash',createdAt:revision},{application:'github',name:'gh-work',createdAt:revision}],
+   '/v1/agent-cli-versions':{claude:'latest',codex:'0.130.0',opencode:''},
+   '/v1/agent-cli-versions/catalog/claude':{agent:'claude',latest:'2.1.281',versions:['2.1.280','2.1.281']},
+   '/v1/agent-cli-versions/catalog/codex':{agent:'codex',latest:'0.131.0',versions:['0.129.0','0.130.0','0.131.0-beta.1','0.131.0']},
+   '/v1/agent-cli-versions/catalog/opencode':{agent:'opencode',latest:'1.2.3',versions:['1.2.2','1.2.3']},
    '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
    '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
    '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision},effectiveMarkdown:'## vmbox chat delivery\nUse chat_message with Message-ID.',pending:false},
@@ -49,6 +53,7 @@ before(async()=>{
   if(req.method==='POST' && path==='/v1/logical-boxes/box-1/sessions/interactive')return res.end(JSON.stringify({session:'persistent-shell'}));
   if(req.method==='PATCH' && (path==='/v1/logical-boxes/box-1'||path==='/v1/provider-credentials/railway/primary'))return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/fleet/slots')return res.end(JSON.stringify(body));
+  if(req.method==='PUT' && path==='/v1/agent-cli-versions')return res.end(JSON.stringify(body));
   if(req.method==='PUT' && path==='/v1/login-profiles/codex/browser-test')return res.end(JSON.stringify({application:'codex',name:'browser-test'}));
   if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/instructions')return res.end(JSON.stringify({...values['/v1/logical-boxes/box-1/instructions'],note:'fixture applied'}));
   if(req.method==='PUT' && path==='/v1/logical-boxes/box-1/login-profiles')return res.end(JSON.stringify({profiles:body.profiles,pending:[],verified:true,note:'fixture applied'}));
@@ -96,6 +101,7 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.keyboard.press('Escape');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),true);
  await page.click('.workspace-links a[href="#providers"]');
+ await page.waitForFunction(()=>document.body.dataset.manageView==='providers');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'providers');
  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / providers');
  assert.equal(await page.title(),'vmbox / providers');
@@ -132,6 +138,42 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-mobile.png'});
  await page.click('.workspace-links a[href="#boxes"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='boxes');
+ await page.close();
+});
+test('harness version dropdowns offer image, latest, and published releases',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForFunction(()=>document.querySelector('#agent-cli-versions select[name=codex]')?.options.length>=5);
+ assert.equal(await page.$eval('#agent-cli-versions select[name=claude]',select=>select.value),'latest');
+ assert.equal(await page.$eval('#agent-cli-versions select[name=codex]',select=>select.value),'0.130.0');
+ assert.deepEqual(await page.$$eval('#agent-cli-versions select[name=codex] option',options=>options.map(option=>option.value)),['','latest','0.131.0','0.131.0-beta.1','0.130.0','0.129.0']);
+ assert.deepEqual(await page.$$eval('#agent-cli-versions select[name=opencode] option',options=>options.map(option=>option.value)),['','latest','1.2.3','1.2.2']);
+ assert.match(await page.$eval('#agent-cli-versions select[name=claude] option[value=latest]',option=>option.textContent),/2\.1\.281/);
+ await page.select('#agent-cli-versions select[name=claude]','2.1.280');
+ await page.select('#agent-cli-versions select[name=codex]','latest');
+ await page.click('#agent-cli-versions button[type=submit]');
+ await page.waitForFunction(()=>document.querySelector('#agent-cli-versions-status').textContent.startsWith('Saved.'));
+ assert.deepEqual(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/agent-cli-versions').body,{claude:'2.1.280',codex:'latest',opencode:''});
+ await page.setViewport({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ await page.close();
+});
+test('a registry catalog outage keeps saved version choices available',async()=>{
+ const page=await browser.newPage();
+ await page.evaluateOnNewDocument(()=>{
+  const original=window.fetch;
+  window.fetch=(path,options)=>String(path).endsWith('/v1/agent-cli-versions/catalog/codex')?
+   Promise.resolve(new Response(JSON.stringify({error:'npm registry unavailable'}),{status:502,headers:{'Content-Type':'application/json'}})):
+   original(path,options);
+ });
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForFunction(()=>document.querySelector('#agent-cli-versions-status').textContent.includes('codex'));
+ assert.equal(await page.$eval('#agent-cli-versions select[name=codex]',select=>select.value),'0.130.0');
+ assert.deepEqual(await page.$$eval('#agent-cli-versions select[name=codex] option',options=>options.map(option=>option.value)),['','latest','__unavailable','0.130.0']);
+ await page.select('#agent-cli-versions select[name=codex]','latest');
+ await page.click('#agent-cli-versions button[type=submit]');
+ await page.waitForFunction(()=>document.querySelector('#agent-cli-versions-status').textContent.startsWith('Saved.'));
+ assert.equal(requests.findLast(request=>request.method==='PUT'&&request.path==='/v1/agent-cli-versions').body.codex,'latest');
  await page.close();
 });
 test('secondary management sections and box workspaces use the same page navbar',async()=>{
