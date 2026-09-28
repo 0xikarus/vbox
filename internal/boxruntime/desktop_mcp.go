@@ -161,6 +161,9 @@ func writeDesktopMCPGuide(home string) error {
 	guide.WriteString("3. Ask a choice: `chat_ask {\"contact\":\"planner\",\"question\":\"Which option should we ship?\",\"choices\":[\"A\",\"B\"],\"multiple\":false}`\n")
 	guide.WriteString("4. Reply to an incoming box message using its `From-Box-ID`: `chat_message {\"contact\":\"a1b2c3d4-1234-4000-8000-000000000000\",\"text\":\"Applied your feedback.\"}`. Omit `replyTo`.\n\n")
 	guide.WriteString("Only contacts returned by `get_contacts` are permitted. If a box is absent, ask the owner to add it as a direct contact or grant All contacts. Omit `contact` to message the owner. Add `files` with absolute PNG, JPEG, or GIF paths to attach images to either kind of message.\n\n")
+	guide.WriteString("## Send a prompt from a box-local app\n\n")
+	guide.WriteString("Read `~/.local/share/vmbox/mcp-http.json` inside the box. Its `promptUrl` is a local `http://127.0.0.1:<port>/prompt` address and its `token` authorizes the request. POST one JSON object with non-empty `text`, for example `{\"text\":\"Check the latest build result\"}`, and send `Authorization: Bearer <token>` and `Content-Type: application/json` headers. The token also authorizes HTTP MCP tools, so keep it private.\n\n")
+	guide.WriteString("A `202` response contains `accepted`, `session`, and `messageId`; the agent's reply goes through its normal conversation, not the HTTP response. `/prompt` requires a running managed agent and never starts or wakes one. If several conversations are running, include `session` in the JSON body or use an `X-Vmbox-Session` header. A `409` can mean delivery is uncertain, and retries can duplicate the prompt because callers cannot set the message ID.\n\n")
 	for _, tool := range desktopMCPTools() {
 		name := tool["name"].(string)
 		description := tool["description"].(string)
