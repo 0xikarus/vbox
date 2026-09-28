@@ -42,7 +42,7 @@ before(async()=>{
    '/v1/agent-cli-versions/catalog/opencode':{agent:'opencode',latest:'1.2.3',versions:['1.2.2','1.2.3']},
    '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
    '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
-   '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision},effectiveMarkdown:'## vmbox chat delivery\nUse chat_message with Message-ID.',pending:false},
+   '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision,appliedAt:revision},effectiveMarkdown:'## vmbox chat delivery\nUse chat_message with Message-ID.',pending:false},
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
@@ -98,6 +98,8 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.click('[aria-label="Details for box helper ü"]');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),false);
  assert.match(await page.$eval('#box-detail-body',body=>body.textContent),/railway-worker-01/);
+ await page.waitForFunction(()=>document.querySelector('#box-detail-body')?.textContent.includes('2026'));
+ assert.match(await page.$eval('#box-detail-body',body=>body.textContent),/Last instructions sync.*2026/);
  await page.keyboard.press('Escape');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),true);
  await page.click('.workspace-links a[href="#providers"]');
