@@ -93,7 +93,10 @@ The table lists discovered accounts and their source paths. Use **↑/↓** to m
 **Add entry** accepts an undiscovered path or GitHub account. Names are derived
 from account identity; selected Claude and Codex profiles also expose an editable
 model field and are named `account (model)`. Nothing is uploaded until you
-submit. **Add OpenCode API key** accepts an OpenRouter or Venice key, verifies
+submit. Uploading a matching saved name replaces its saved copy. Choose
+**Replace** to target a saved name you chose manually. Boxes already using it
+retain their imported credentials until you reapply the profile to them.
+**Add OpenCode API key** accepts an OpenRouter or Venice key, verifies
 it without running a paid completion, loads the provider's current tool-capable
 text models, and saves the chosen model with the encrypted OpenCode profile. You
 can also select local logins while creating a box.
@@ -286,7 +289,8 @@ second controller or Railway fleet.
 - **SSH permission denied on a legacy worker or port forward:** check your SSH
   agent/key; controller login does not authenticate Railway SSH.
 - **Agent login expired:** refresh the login locally, then run
-  `vmbox profiles upload` again. Saved profiles are snapshots, not live sync.
+  `vmbox profiles upload` again. Selecting the same name replaces the saved
+  copy; reapply it to existing boxes through Imported credentials.
 
 More detail: [controller administration](#controller-administration),
 [interactive sessions](#interactive-mode), [one-shot tasks](#one-shot-mode).
@@ -679,8 +683,9 @@ and provisions a private `~/.config/gh/hosts.yml` for the box user.
 
 Malformed or expired saved Claude/Codex/OpenCode profiles are rejected before a slot or
 volume is reserved. Refresh locally with the corresponding client's login command,
-save under a **new profile name**, then select that profile and retry creation.
-Existing saved profiles are immutable snapshots, not a live sync of local logins.
+then use `vmbox profiles upload` to replace the saved copy under the same name,
+or save under a new name and select it. Saved profiles are snapshots, not a live
+sync of local logins or credentials already imported into boxes.
 
 After transfer, creation checks the selected logins as the unprivileged box user.
 Claude uses `claude auth status --json`; a separate `claude -p` request does not
@@ -699,8 +704,9 @@ vmbox new clean-box --no-profiles
 ```
 
 Profiles are encrypted under the controller account, with encryption bound to
-the application and profile name. Saving an existing name fails instead of
-overwriting it. Only supported profile files are uploaded (512 KiB total limit).
+the application and profile name. The explicit `profiles save` command refuses
+an existing name; `profiles upload` replaces a matching saved name. Only
+supported profile files are uploaded (512 KiB total limit).
 The list API returns metadata only; there is no plaintext export endpoint.
 
 Interactive creation offers one saved Claude, Codex, or OpenCode profile, or no

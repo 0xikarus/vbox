@@ -242,6 +242,25 @@ func TestLoginProfilesPostgres(t *testing.T) {
 		}
 	}
 
+	refreshed := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": []byte(`{"OPENAI_API_KEY":"synthetic-refreshed-profile"}`)}, ReplaceExisting: true}
+	replaced, err := s.SaveLoginProfile(ctx, p, "codex", "work", refreshed)
+	if err != nil || !replaced.CreatedAt.Equal(listed[1].CreatedAt) {
+		t.Fatal("replacement failed or changed the profile identity")
+	}
+	got, err = fresh.LoadLoginProfile(ctx, p, "codex", "work")
+	if err != nil || !bytes.Equal(got.Files["auth.json"], refreshed.Files["auth.json"]) || got.ReplaceExisting {
+		t.Fatal("replacement did not persist only refreshed credential bytes")
+	}
+	if _, err = s.SaveLoginProfile(ctx, p, "codex", "work", refreshed); err != nil {
+		t.Fatal("replacing identical content at the same name should succeed", err)
+	}
+	if _, err = s.SaveLoginProfile(ctx, p, "codex", "missing", refreshed); err == nil {
+		t.Fatal("replacement created a missing saved profile")
+	}
+	if _, err = s.SaveLoginProfile(ctx, p, "codex", "personal", refreshed); err == nil {
+		t.Fatal("replacement duplicated credentials under another name")
+	}
+
 }
 
 // Real PostgreSQL above; worker transport here is a controlled test double.

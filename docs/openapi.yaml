@@ -165,8 +165,8 @@ paths:
       - {in: path, name: application, required: true, schema: {enum: [claude, codex, opencode, github]}}
       - {in: path, name: name, required: true, schema: {type: string, pattern: '^[a-zA-Z0-9][a-zA-Z0-9@+_.:() -]{0,127}$'}}
     put:
-      summary: Owner-only encrypted account profile creation; refuses overwrite
-      description: Maximum 512 KiB decoded. Codex accepts auth.json and config.toml. Claude accepts .credentials.json, settings.json and .claude.json. OpenCode accepts auth.json plus optional opencode.json or opencode.jsonc. GitHub accepts the controller's portable credential object. No plaintext export endpoint exists.
+      summary: Owner-only encrypted account profile creation or explicit replacement
+      description: Maximum 512 KiB decoded. Set replaceExisting to true to replace only the saved profile with this exact name; existing boxes keep their imported credential copy. Codex accepts auth.json and config.toml. Claude accepts .credentials.json, settings.json and .claude.json. OpenCode accepts auth.json plus optional opencode.json or opencode.jsonc. GitHub accepts the controller's portable credential object. No plaintext export endpoint exists.
       requestBody:
         required: true
         content:
@@ -179,12 +179,16 @@ paths:
                   type: object
                   minProperties: 1
                   additionalProperties: {type: string, contentEncoding: base64}
+                replaceExisting: {type: boolean, default: false}
       responses:
         '201':
           description: Saved metadata
           content: {application/json: {schema: {$ref: '#/components/schemas/LoginProfile'}}}
+        '200':
+          description: Replaced saved profile metadata
+          content: {application/json: {schema: {$ref: '#/components/schemas/LoginProfile'}}}
         '400': {description: Invalid name, application, file or size}
-        '409': {description: Name already exists or storage/encryption unavailable}
+        '409': {description: Name already exists without replacement, replacement target is missing, duplicate content under another name, or storage/encryption unavailable}
   /v1/login-profiles/{application}/{name}/models:
     parameters:
       - {in: path, name: application, required: true, schema: {enum: [claude, codex, opencode]}}

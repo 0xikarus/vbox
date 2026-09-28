@@ -122,13 +122,13 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 }
 
 func (a *App) saveLocalLoginProfile(ctx context.Context, c config.Context, token, application, name, path string) (v1.LoginProfile, error) {
-	return a.saveLocalLoginProfileWithModel(ctx, c, token, application, name, path, "")
+	return a.saveLocalLoginProfileWithModel(ctx, c, token, application, name, path, "", false)
 }
 
-func (a *App) saveLocalLoginProfileWithModel(ctx context.Context, c config.Context, token, application, name, path, model string) (v1.LoginProfile, error) {
+func (a *App) saveLocalLoginProfileWithModel(ctx context.Context, c config.Context, token, application, name, path, model string, replaceExisting bool) (v1.LoginProfile, error) {
 	var result v1.LoginProfile
 	if application == "github" {
-		return a.saveGitHubLoginProfile(ctx, c, token, name, path)
+		return a.saveGitHubLoginProfile(ctx, c, token, name, path, replaceExisting)
 	}
 	if application != "claude" && application != "codex" && application != "opencode" {
 		return result, fmt.Errorf("saved profiles support claude, codex or opencode")
@@ -137,7 +137,7 @@ func (a *App) saveLocalLoginProfileWithModel(ctx context.Context, c config.Conte
 	if err != nil {
 		return result, err
 	}
-	req := v1.SaveLoginProfileRequest{Files: map[string][]byte{}}
+	req := v1.SaveLoginProfileRequest{Files: map[string][]byte{}, ReplaceExisting: replaceExisting}
 	defer func() {
 		for _, data := range req.Files {
 			clear(data)

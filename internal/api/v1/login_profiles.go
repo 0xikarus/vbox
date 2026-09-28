@@ -18,7 +18,8 @@ type LoginProfile struct {
 }
 
 type SaveLoginProfileRequest struct {
-	Files map[string][]byte `json:"files"`
+	Files           map[string][]byte `json:"files"`
+	ReplaceExisting bool              `json:"replaceExisting,omitempty"`
 }
 
 // PutBoxLoginProfilesRequest replaces the login profiles imported into one box.
