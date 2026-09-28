@@ -2,7 +2,9 @@
 !tmux.conf
 !Dockerfile
 !.dockerignore
-!entrypoint.sh
+!scripts/
+!scripts/worker-entrypoint.sh
+!scripts/worker-agent-trust.sh
 !go.mod
 !go.sum
 !cmd/

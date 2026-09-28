@@ -9,3 +9,9 @@
 node_modules/
 Codex conversation.md
 .worktrees/
+
+# Browser test screenshots are generated artifacts.
+/docs/chat-ui/screenshots/*.png
+/docs/screenshots/agent-roles/*.png
+/vmbox-clip-*.webm
+/vmbox-draft-*.png

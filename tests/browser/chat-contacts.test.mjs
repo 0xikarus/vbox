@@ -14,7 +14,7 @@ const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 // The chat Details drawer edits the same controller-side contact access graph as the
 // single-box workspace page (whose non-owner gating is covered in
 // workspace-desktop.test.mjs). This test drives the real page against fixture
-// APIs and writes the screenshot the PR references.
+// APIs and captures a screenshot for local inspection.
 test('chat details drawer edits the per-box contact graph',async()=>{
  let protectedBox=false,requests=[],creations=[],fullDesktopShots=0,explicitIdle=false,tags=['backend','priority'];
  let usageCheckedAt=new Date(Date.now()-60000).toISOString();
