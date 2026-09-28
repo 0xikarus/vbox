@@ -55,8 +55,8 @@ func TestAgentBoxQuotaCountsPendingReservationsWhileHoldingActorLock(t *testing.
 	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").
 		WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, grant))
 	mock.ExpectBegin()
-	mock.ExpectQuery("SELECT provider,provider_credential,COALESCE.*FROM logical_boxes.*FOR UPDATE").WithArgs("account-a", "box-a").
-		WillReturnRows(sqlmock.NewRows([]string{"provider", "provider_credential", "region"}).AddRow("railway", "primary", "eu"))
+	mock.ExpectQuery("SELECT provider,provider_credential FROM logical_boxes.*FOR UPDATE").WithArgs("account-a", "box-a").
+		WillReturnRows(sqlmock.NewRows([]string{"provider", "provider_credential"}).AddRow("railway", "primary"))
 	mock.ExpectQuery("SELECT id::text,requested_name").WithArgs("account-a", "box-a", "create-key").
 		WillReturnRows(sqlmock.NewRows([]string{"id", "requested_name", "requested_agent", "requested_disk_gib", "requested_role_ids", "requested_login_profiles", "requested_tools", "requested_instructions", "requested_slot_id", "created_box_id"}))
 	mock.ExpectQuery("SELECT count\\(\\*\\) FROM agent_box_creations").WithArgs("account-a", "box-a").

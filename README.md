@@ -843,10 +843,12 @@ Blender includes desktop setup, so `"desktop"` need not be selected with it.
 To install both presets, use `"tools":["blender","foundry"]`. The presets are
 installed before the new box becomes usable and are included in idempotent
 retry comparisons.
-`get_available_workers {}` lists healthy free slots in the creator's provider
-pool. Passing a returned `slotId` to `create_agent_box` chooses that worker for
-the new box's initial start; the controller rechecks the slot when reserving it.
-Omitting `slotId` uses automatic placement.
+`get_available_workers {}` lists healthy free slots across the account's
+configured worker pools, including each slot's `provider` and
+`providerCredential`. Passing a returned `slotId` to `create_agent_box` chooses
+that slot and pool for the new box's initial start; the controller rechecks the
+slot when reserving it. Omitting `slotId` prefers the creator's pool when it has
+a free slot, then uses another available pool.
 The creator and the new box are added as direct contacts in both directions
 when `create_agent_box` succeeds. This also applies when the creator lacks the
 All contacts capability; contact protection still takes precedence.
