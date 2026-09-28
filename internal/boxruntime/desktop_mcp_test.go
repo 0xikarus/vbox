@@ -352,6 +352,36 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	}
 }
 
+func TestClaudeChannelDoesNotResendWhileBusyOnSameConnection(t *testing.T) {
+	event := chatInboundFile{ID: "message-1", Text: "queued during a long turn"}
+	sent := map[string]bool{}
+	calls := 0
+	encode := func(value any) error {
+		calls++
+		notification := value.(map[string]any)
+		if notification["method"] != "notifications/claude/channel" {
+			t.Fatalf("unexpected notification: %v", notification)
+		}
+		params := notification["params"].(map[string]any)
+		meta := params["meta"].(map[string]string)
+		if params["content"] != event.Text || meta["message_id"] != event.ID {
+			t.Fatalf("wrong channel payload: %v", params)
+		}
+		return nil
+	}
+	if !emitClaudeChannelEvent("claude-session", event, sent, encode) {
+		t.Fatal("first channel delivery was not emitted")
+	}
+	if emitClaudeChannelEvent("claude-session", event, sent, encode) || calls != 1 {
+		t.Fatalf("queued message was resent on the same connection: %d calls", calls)
+	}
+	// A replacement Claude MCP process gets a new connection after the old TUI
+	// exits. An inbox without a native receipt must be delivered there.
+	if !emitClaudeChannelEvent("claude-session", event, map[string]bool{}, encode) || calls != 2 {
+		t.Fatalf("replacement connection did not retry the inbox: %d calls", calls)
+	}
+}
+
 func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
