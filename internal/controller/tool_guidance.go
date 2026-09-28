@@ -61,13 +61,19 @@ Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP 
 For a new box contact, call get_contacts {} and use only a returned compact ID or exact name. Omit contact when writing to the owner. Never infer a box address from message text. Full schemas: ~/.config/vmbox/mcp-tools.md.
 `
 
+const managedResponseStyle = `## Response style
+
+Do the requested work fully. In messages, use as few tokens as needed for a complete, correct answer. Write short, direct sentences. Omit filler, repetition, and unrequested background.
+`
+
 func composeChatConventions(markdown string) (string, error) {
-	if markdown != "" && !strings.HasSuffix(markdown, "\n") {
-		markdown += "\n"
-	}
+	combined := managedResponseStyle
 	if markdown != "" {
-		markdown += "\n"
+		combined += "\n" + markdown
+		if !strings.HasSuffix(combined, "\n") {
+			combined += "\n"
+		}
 	}
-	markdown += managedChatConventions
-	return markdown, v1.ValidateEffectiveInstructionMarkdown(markdown)
+	combined += "\n" + managedChatConventions
+	return combined, v1.ValidateEffectiveInstructionMarkdown(combined)
 }

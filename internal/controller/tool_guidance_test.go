@@ -79,8 +79,14 @@ func TestComposeInstructionMarkdownPreservesPresetAndBounds(t *testing.T) {
 
 func TestManagedChatConventionsStayFocusedOnVmboxCalls(t *testing.T) {
 	got, err := composeChatConventions("# Owner preset\n")
-	if err != nil || !strings.HasPrefix(got, "# Owner preset\n\n## vmbox chat\n") {
+	if err != nil || !strings.HasPrefix(got, "## Response style\n\n") || !strings.Contains(got, "\n\n# Owner preset\n\n## vmbox chat\n") {
 		t.Fatalf("compose: %v %q", err, got)
+	}
+	if !strings.Contains(got, "few tokens as needed for a complete, correct answer") {
+		t.Fatal("managed concise response guidance is missing")
+	}
+	if empty, err := composeChatConventions(""); err != nil || !strings.Contains(empty, "## Response style\n\n") || !strings.Contains(empty, "\n\n## vmbox chat\n") {
+		t.Fatalf("empty snapshot must retain managed guidance: %v %q", err, empty)
 	}
 	for _, example := range []string{
 		`Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP tool chat_message.`,

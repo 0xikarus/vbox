@@ -760,16 +760,20 @@ their agent instructions when Desktop/Chromium, Blender, or Foundry is selected.
 It lists paths only (for example `~/bin/blender` and the Chromium profile path),
 is stored separately from the editable preset snapshot, and is re-applied on
 restore. Existing boxes are not backfilled with this section.
-Selecting **None** skips user Markdown but keeps these selected-tool references.
+Every managed box also receives a short response-style prefix asking the agent
+to answer briefly while completing the requested work, plus the required Chat
+MCP instructions. Selecting **None** skips user Markdown but keeps this managed
+guidance and any selected-tool references.
 
-Existing boxes change only through an explicit **Instructions…** action
-(controller box list and chat box menu): it previews the current snapshot, lets
-you apply None, a preset, or edited/custom Markdown, and reports whether the
-running box accepted it. A running box is updated in place; a stopped box keeps
-the selection pending and applies it during its next start. Agents never restart
-automatically: a new conversation or a restarted agent process reads the new
-instructions, while an already-running session keeps what it loaded. Editing a
-new box's user instructions does not remove its generated tool references.
+An existing box's user-selected snapshot changes only through an explicit
+**Instructions…** action (controller box list and chat box menu): it previews
+the current snapshot, lets you apply None, a preset, or edited/custom Markdown,
+and reports whether the running box accepted it. A running box is updated in
+place; a stopped box keeps the selection pending and applies it during its next
+start. Agents never restart automatically: a new conversation or a restarted
+agent process reads the new instructions, while an already-running session keeps
+what it loaded. Editing a new box's user instructions does not remove its
+generated tool references.
 
 One canonical per-box file holds the guidance:
 `~/.config/vmbox/instructions.md`. It is linked into each agent's global
@@ -784,9 +788,11 @@ instruction slot:
 Links are tracked in a vmbox ledger. A pre-existing file at one of those paths
 is never overwritten or appended to: vmbox reports it as a conflict and that
 agent keeps its own file. Repository-owned `AGENTS.md`/`CLAUDE.md` files are
-never written. Applying **None** removes only vmbox-owned links. Snapshots live
-in the controller database and are re-applied idempotently on hibernation
-resume, worker replacement, and shared-worker recovery.
+never written. Applying **None** keeps the managed guidance in vmbox-owned
+links. Snapshots live in the controller database and are re-applied idempotently
+on hibernation resume, worker replacement, and shared-worker recovery. Updates
+to service-managed guidance reach existing boxes on their next instruction
+sync; an already-running agent reads them when it next starts.
 
 ### Editing the login profiles imported into a box
 
