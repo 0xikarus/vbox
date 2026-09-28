@@ -1750,6 +1750,17 @@
  let inspectOpen=false,inspectTimer,controllerPing=null;
  let inspectProfilesFor='',inspectProfileCache=null;
  let inspectWorkerKey='',inspectWorker=null;
+ let inspectInstructionsFor='',inspectInstructions=null,inspectInstructionsRequest=0;
+ async function loadInspectInstructions(box){
+  const id=box.id,request=++inspectInstructionsRequest;
+  inspectInstructionsFor=id;inspectInstructions=null;
+  try{
+   const state=await api(boxPath(id)+'/instructions');
+   if(inspectOpen&&selected===id&&inspectInstructionsFor===id&&inspectInstructionsRequest===request){inspectInstructions=state;renderInspect()}
+  }catch{
+   if(inspectOpen&&selected===id&&inspectInstructionsFor===id&&inspectInstructionsRequest===request){inspectInstructions={error:true};renderInspect()}
+  }
+ }
  async function loadInspectWorker(box,key){
   if(!box.slotId){inspectWorker={name:'Unassigned',serviceId:'',slot:'—'};renderInspect();return}
   try{
@@ -1765,6 +1776,14 @@
   renderInspect();
  }
  const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
+ function instructionSyncLabel(state){
+  if(!state)return 'Loading…';
+  if(state.error)return 'Unavailable';
+  const appliedAt=state.instructions?.appliedAt;
+  const date=appliedAt?new Date(appliedAt):null;
+  const last=date&&!Number.isNaN(date.getTime())?date.toLocaleString():'Never';
+  return last+(state.pending?' · changes pending':'');
+ }
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
  const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
  const importedProfileLabel=ref=>[ref.application,ref.name,ref.model,ref.reasoningEffort].filter(Boolean).join(' · ');
@@ -1811,6 +1830,7 @@
    ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
    ['Box ping (live VNC)',livePing!=null?livePing+' ms':'opens with the desktop popup'],
    ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
+   ['Last instructions sync',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null)],
    ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
   ]);
   const quick=$('#inspect-quick-actions');quick.replaceChildren();
@@ -1837,6 +1857,7 @@
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
   if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   maybeLoadInspectProfiles(box);
+  if(inspectInstructionsFor!==box.id)void loadInspectInstructions(box);
   maybeLoadInspectContacts(box);
  }
  function maybeLoadInspectProfiles(box){
@@ -1865,7 +1886,7 @@
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectWorkerKey='';inspectWorker=null}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null}
  $('#inspect-close').onclick=closeInspect;
  $('#inspect-backdrop').onclick=closeInspect;
  // Collapsible details sections, remembered per browser.
@@ -2199,6 +2220,7 @@
   try{
    const result=await api(boxPath(box.id)+'/instructions/resync','POST',{'Idempotency-Key':crypto.randomUUID()},{},120000);
    toast(result?.note||'Config re-synced to '+box.name+'.');
+   if(inspectOpen&&selected===box.id){inspectInstructionsRequest++;inspectInstructionsFor=box.id;inspectInstructions=result;renderInspect()}
    if(!result?.pending)closeInspect();
    await loadBoxes();
   }catch(e){toast(e.message)}
@@ -2918,6 +2940,7 @@
    else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
    status.textContent='Applying…';
    const result=await api(boxPath(boxInstructionTarget.id)+'/instructions','PUT',body);
+   if(inspectOpen&&selected===boxInstructionTarget.id){inspectInstructionsRequest++;inspectInstructionsFor=boxInstructionTarget.id;inspectInstructions=result;renderInspect()}
    status.textContent=result.note||describeBoxInstructions(result);
    if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
    $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';

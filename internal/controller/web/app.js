@@ -197,8 +197,25 @@ function renderProviders(providers){
  }
 }
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
-let listedBoxes=[],selectedManagedBoxID='',boxDetailTrigger=null;
-function closeBoxDetail(){selectedManagedBoxID='';$('#box-detail').hidden=true;$('#box-detail-backdrop').hidden=true;boxDetailTrigger?.focus();boxDetailTrigger=null}
+let listedBoxes=[],selectedManagedBoxID='',boxDetailTrigger=null,boxDetailInstructions=null,boxDetailInstructionsRequest=0;
+function closeBoxDetail(){selectedManagedBoxID='';boxDetailInstructions=null;boxDetailInstructionsRequest++;$('#box-detail').hidden=true;$('#box-detail-backdrop').hidden=true;boxDetailTrigger?.focus();boxDetailTrigger=null}
+async function loadBoxDetailInstructions(id){
+ const request=++boxDetailInstructionsRequest;
+ try{
+  const state=await api(bp(id)+'/instructions');
+  if(selectedManagedBoxID===id&&boxDetailInstructionsRequest===request){boxDetailInstructions=state;renderBoxDetail()}
+ }catch{
+  if(selectedManagedBoxID===id&&boxDetailInstructionsRequest===request){boxDetailInstructions={error:true};renderBoxDetail()}
+ }
+}
+function boxDetailSyncLabel(){
+ if(!boxDetailInstructions)return 'Loading…';
+ if(boxDetailInstructions.error)return 'Unavailable';
+ const appliedAt=boxDetailInstructions.instructions?.appliedAt;
+ const date=appliedAt?new Date(appliedAt):null;
+ const last=date&&!Number.isNaN(date.getTime())?date.toLocaleString():'Never';
+ return last+(boxDetailInstructions.pending?' · changes pending':'');
+}
 function renderBoxDetail(){
  const box=listedBoxes.find(item=>item.id===selectedManagedBoxID);if(!box){closeBoxDetail();return}
  $('#box-detail-title').textContent=box.name;
@@ -206,7 +223,7 @@ function renderBoxDetail(){
  const state=node('span',box.state);state.className='box-detail-state';state.dataset.state=box.state;
  const intro=node('div');intro.className='box-detail-intro';intro.append(state,node('span',box.defaultAgent||'shell'));
  const facts=node('dl');facts.className='box-detail-facts';
- for(const [label,value] of [['Worker / slot',boxPlacement(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
+ for(const [label,value] of [['Worker / slot',boxPlacement(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Last instructions sync',boxDetailSyncLabel()],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
  if(box.failureReason){const error=node('p',box.failureReason);error.className='box-detail-error';root.append(error)}
  const actions=node('div');actions.className='box-detail-actions';
  const workspace=node('a','Open workspace');workspace.href='/boxes/'+encodeURIComponent(box.id);
@@ -219,7 +236,7 @@ function renderBoxDetail(){
  if(ownerTools&&window.VMBoxIdlePolicy){const idle=node('div');root.append(idle);window.VMBoxIdlePolicy.mount(idle,{boxId:box.id,boxName:box.name,request:seconds=>api(bp(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
  if(ownerTools&&window.VMBoxRunBudgetPolicy){const budget=node('div');root.append(budget);window.VMBoxRunBudgetPolicy.mount(budget,{boxId:box.id,request:seconds=>api(bp(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
 }
-function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus()}
+function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailInstructions=null;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus();void loadBoxDetailInstructions(box.id)}
 $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#box-detail').hidden&&!document.querySelector('.modal:not([hidden])'))closeBoxDetail()});
 function manageView(){
@@ -579,6 +596,7 @@ $('#box-instructions-apply').addEventListener('click',action(async()=>{
  else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
  status.textContent='Applying…';
  const result=await api(bp(boxInstructionTarget.id)+'/instructions','PUT',body);
+ if(selectedManagedBoxID===boxInstructionTarget.id){boxDetailInstructionsRequest++;boxDetailInstructions=result;renderBoxDetail()}
  status.textContent=result.note||describeBoxInstructions(result);
  if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
  $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';
