@@ -76,6 +76,56 @@ func TestProfileUploadDialogNeverCreatesBox(t *testing.T) {
 	}
 }
 
+func TestProfileUploadDialogReplacesChosenSavedName(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude")
+	if err := os.Mkdir(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, ".credentials.json"), []byte(`{"email":"person@example.test","synthetic":"refreshed"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "settings.json"), []byte(`{"model":"sonnet"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	puts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/login-profiles":
+			_ = json.NewEncoder(w).Encode([]v1.LoginProfile{{Application: "claude", Name: "custom-saved-name"}})
+		case r.Method == http.MethodPut && r.URL.Path == "/v1/login-profiles/claude/custom-saved-name":
+			puts++
+			var request v1.SaveLoginProfileRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Error(err)
+			}
+			if !request.ReplaceExisting || !bytes.Contains(request.Files[".credentials.json"], []byte("refreshed")) {
+				t.Error("replacement omitted the selected saved name or refreshed credential")
+			}
+			_ = json.NewEncoder(w).Encode(v1.LoginProfile{Application: "claude", Name: "custom-saved-name"})
+		default:
+			t.Errorf("unexpected operation %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	a := New()
+	a.Environ = map[string]string{"HOME": home}
+	a.Runner = &procexec.FakeRunner{}
+	a.IsTerminal = func() bool { return true }
+	var output bytes.Buffer
+	a.Out, a.Err = &output, &bytes.Buffer{}
+	// Space twice selects Replace; the saved-name field defaults to the only
+	// saved Claude profile. Tab past it, the model, and two add actions.
+	a.In = strings.NewReader("  " + strings.Repeat("\t", 5) + "\r")
+	if err := a.controllerLoginProfiles(context.Background(), config.Context{Controller: server.URL}, "test", []string{"upload"}); err != nil {
+		t.Fatal(err)
+	}
+	if puts != 1 || !strings.Contains(output.String(), "replacing 1") {
+		t.Fatalf("replace requests=%d output=%q", puts, output.String())
+	}
+}
+
 func TestProfileUploadDialogAllowsClaudeAndCodexWithoutModel(t *testing.T) {
 	for _, tc := range []struct {
 		app, dir, authFile, configFile, config string

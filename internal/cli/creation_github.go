@@ -56,7 +56,7 @@ func (a *App) addCreationGitHubAccounts(ctx context.Context, profiles []creation
 	}
 }
 
-func (a *App) saveGitHubLoginProfile(ctx context.Context, c config.Context, token, name, source string) (v1.LoginProfile, error) {
+func (a *App) saveGitHubLoginProfile(ctx context.Context, c config.Context, token, name, source string, replaceExisting ...bool) (v1.LoginProfile, error) {
 	var profile v1.LoginProfile
 	host, user, ok := strings.Cut(source, ":")
 	if !ok || host == "" || user == "" {
@@ -76,6 +76,9 @@ func (a *App) saveGitHubLoginProfile(ctx context.Context, c config.Context, toke
 	}
 	defer clear(data)
 	req := v1.SaveLoginProfileRequest{Files: map[string][]byte{"credential.json": data}}
+	if len(replaceExisting) > 0 {
+		req.ReplaceExisting = replaceExisting[0]
+	}
 	if err = loginprofile.Validate("github", req.Files, time.Now()); err != nil {
 		return profile, err
 	}

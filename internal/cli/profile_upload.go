@@ -10,8 +10,8 @@ import (
 )
 
 type uploadEntry struct {
-	application, path, model, choice *formField
-	saved                            bool
+	application, path, model, choice, target *formField
+	saved                                    bool
 }
 
 func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token string) error {
@@ -21,6 +21,14 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	var saved []v1.LoginProfile
 	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/login-profiles", nil, &saved, nil); err != nil {
 		return err
+	}
+	savedIndex := func(app, name string) int {
+		for i, profile := range saved {
+			if profile.Application == app && profile.Name == name {
+				return i
+			}
+		}
+		return -1
 	}
 	profiles, err := a.discoverCreationLogins(saved, nil)
 	if err != nil {
@@ -42,15 +50,36 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			if path == "" {
 				continue
 			}
-			entry := &uploadEntry{application: &formField{Value: p.app}, path: &formField{Value: path}, choice: &formField{Label: p.app + " / " + profileAccountName(p.app, path), Value: "Skip", Choices: []string{"Skip", "Upload"}}}
+			choices := []string{"Skip", "Upload"}
+			var savedNames []string
+			for _, profile := range saved {
+				if profile.Application == p.app {
+					savedNames = append(savedNames, profile.Name)
+				}
+			}
+			if len(savedNames) > 0 {
+				choices = append(choices, "Replace")
+			}
+			entry := &uploadEntry{application: &formField{Value: p.app}, path: &formField{Value: path}, choice: &formField{Label: p.app + " / " + profileAccountName(p.app, path), Value: "Skip", Choices: choices}}
 			entries = append(entries, entry)
 			entry.choice.Checkbox = true
+			if len(savedNames) > 0 {
+				entry.target = &formField{Label: "Replace saved name", Value: savedNames[0], Choices: savedNames}
+				entry.target.When = func() bool { return entry.choice.Value == "Replace" && !entry.saved }
+			}
 			account := profileAccountName(p.app, path)
 			entry.choice.TableHeader = fmt.Sprintf("    %-8s %-*s %s", "Agent", accountWidth, "Account", "Source")
 			entry.choice.RenderRow = func(width int) string {
 				mark := "[ ]"
-				if entry.choice.Value == "Upload" {
+				if entry.choice.Value == "Upload" || entry.choice.Value == "Replace" {
 					mark = "[x]"
+					name := account
+					if entry.model != nil && strings.TrimSpace(entry.model.Value) != "" {
+						name = profileNameWithModel(entry.application.Value, entry.path.Value, entry.model.Value)
+					}
+					if entry.choice.Value == "Replace" || savedIndex(entry.application.Value, name) >= 0 {
+						mark = "[↻]"
+					}
 				}
 				if entry.saved {
 					mark = "[✓]"
@@ -58,9 +87,14 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				return fmt.Sprintf("%s %-8s %-*s %s", mark, entry.application.Value, accountWidth, tuiLabel(account, accountWidth), strings.TrimPrefix(label, "Local: "))
 			}
 			fields = append(fields, entry.choice)
+			if entry.target != nil {
+				fields = append(fields, entry.target)
+			}
 			if p.app == "claude" || p.app == "codex" {
 				entry.model = &formField{Label: p.app + " model (optional)", Value: detectedProfileModel(p.app, path)}
-				entry.model.When = func() bool { return entry.choice.Value == "Upload" && !entry.saved }
+				entry.model.When = func() bool {
+					return (entry.choice.Value == "Upload" || entry.choice.Value == "Replace") && !entry.saved
+				}
 				fields = append(fields, entry.model)
 			}
 		}
@@ -110,10 +144,10 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 			entry.verifiedInput = ""
 		}
 	}()
-	savedCount := 0
-	err = a.runFormButton(ctx, "Upload profiles · select entries; names use account identity", "Upload", fields, func(progress func(string)) error {
+	savedCount, replacedCount := 0, 0
+	err = a.runFormButton(ctx, "Upload profiles · choose Replace for a saved name", "Upload", fields, func(progress func(string)) error {
 		for _, entry := range entries {
-			if entry.saved || entry.choice.Value != "Upload" {
+			if entry.saved || (entry.choice.Value != "Upload" && entry.choice.Value != "Replace") {
 				continue
 			}
 			app, path := entry.application.Value, entry.path.Value
@@ -131,25 +165,31 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				base = profileNameWithModel(app, path, model)
 			}
 			name := base
-			for i := 2; ; i++ {
-				used := false
-				for _, p := range saved {
-					if p.Application == app && p.Name == name {
-						used = true
-						break
-					}
+			if entry.choice.Value == "Replace" {
+				if entry.target == nil || entry.target.Value == "" {
+					return fmt.Errorf("choose a saved %s profile to replace", app)
 				}
-				if !used {
-					break
-				}
-				name = fmt.Sprintf("%s-%d", base, i)
+				name = entry.target.Value
 			}
-			progress("Uploading " + app + " / " + name + "…")
-			profile, err := a.saveLocalLoginProfileWithModel(ctx, c, token, app, name, path, model)
+			index := savedIndex(app, name)
+			if entry.choice.Value == "Replace" && index < 0 {
+				return fmt.Errorf("saved %s profile %s is no longer available", app, name)
+			}
+			verb := "Uploading "
+			if index >= 0 {
+				verb = "Replacing "
+			}
+			progress(verb + app + " / " + name + "…")
+			profile, err := a.saveLocalLoginProfileWithModel(ctx, c, token, app, name, path, model, index >= 0)
 			if err != nil {
 				return err
 			}
-			saved = append(saved, profile)
+			if index >= 0 {
+				saved[index] = profile
+				replacedCount++
+			} else {
+				saved = append(saved, profile)
+			}
 			entry.saved = true
 			entry.choice.Value = "Saved"
 			entry.choice.Choices = []string{"Saved"}
@@ -179,25 +219,22 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 				base = "opencode-" + provider.ID
 			}
 			name := base
-			for i := 2; ; i++ {
-				used := false
-				for _, profile := range saved {
-					if profile.Application == "opencode" && profile.Name == name {
-						used = true
-						break
-					}
-				}
-				if !used {
-					break
-				}
-				name = fmt.Sprintf("%s-%d", base, i)
+			index := savedIndex("opencode", name)
+			verb := "Uploading "
+			if index >= 0 {
+				verb = "Replacing "
 			}
-			progress("Uploading opencode / " + name + "…")
-			profile, err := a.saveOpenCodeAPIKeyProfile(ctx, c, token, name, provider, key, entry.model.Value)
+			progress(verb + "opencode / " + name + "…")
+			profile, err := a.saveOpenCodeAPIKeyProfile(ctx, c, token, name, provider, key, entry.model.Value, index >= 0)
 			if err != nil {
 				return err
 			}
-			saved = append(saved, profile)
+			if index >= 0 {
+				saved[index] = profile
+				replacedCount++
+			} else {
+				saved = append(saved, profile)
+			}
 			entry.saved = true
 			entry.key.Value = ""
 			entry.verifiedInput = ""
@@ -219,6 +256,6 @@ func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "Uploaded %d login profile(s). No box created.\n", savedCount)
+	fmt.Fprintf(a.Out, "Uploaded %d login profile(s), replacing %d saved copy/copies. No box created or refreshed.\n", savedCount, replacedCount)
 	return nil
 }

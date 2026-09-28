@@ -179,7 +179,7 @@ func containsString(values []string, want string) bool {
 	return false
 }
 
-func (a *App) saveOpenCodeAPIKeyProfile(ctx context.Context, c config.Context, token, name string, provider openCodeAPIProvider, key, model string) (v1.LoginProfile, error) {
+func (a *App) saveOpenCodeAPIKeyProfile(ctx context.Context, c config.Context, token, name string, provider openCodeAPIProvider, key, model string, replaceExisting ...bool) (v1.LoginProfile, error) {
 	var result v1.LoginProfile
 	modelPrefix := provider.ID + "/"
 	if !strings.HasPrefix(model, modelPrefix) || strings.TrimPrefix(model, modelPrefix) == "" {
@@ -204,6 +204,9 @@ func (a *App) saveOpenCodeAPIKeyProfile(ctx context.Context, c config.Context, t
 	defer clear(auth)
 	defer clear(configuration)
 	request := v1.SaveLoginProfileRequest{Files: map[string][]byte{"auth.json": auth, "opencode.json": configuration}}
+	if len(replaceExisting) > 0 {
+		request.ReplaceExisting = replaceExisting[0]
+	}
 	_, err = a.request(ctx, c, token, http.MethodPut, "/v1/login-profiles/opencode/"+url.PathEscape(name), request, &result, nil)
 	return result, err
 }

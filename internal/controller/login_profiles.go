@@ -52,6 +52,10 @@ func profileEncryptionScope(account, application, name string) string {
 
 func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, name string, req v1.SaveLoginProfileRequest) (v1.LoginProfile, error) {
 	value := v1.LoginProfile{Application: application, Name: name, Model: loginprofile.Model(application, req.Files)}
+	replaceExisting := req.ReplaceExisting
+	// The upload mode is a request instruction, never part of saved credentials
+	// or their duplicate fingerprint.
+	req.ReplaceExisting = false
 	if err := validateLoginProfile(application, name, req); err != nil {
 		return value, err
 	}
@@ -93,7 +97,7 @@ func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, 
 		}
 		duplicate := subtle.ConstantTimeCompare(existing, plain) == 1
 		clear(existing)
-		if duplicate {
+		if duplicate && !(replaceExisting && existingName == name) {
 			rows.Close()
 			return value, fmt.Errorf("%w: identical %s credentials and configuration are already saved as %q", errDuplicateLoginProfile, application, existingName)
 		}
@@ -108,9 +112,21 @@ func (s *Store) SaveLoginProfile(ctx context.Context, p Principal, application, 
 	if err != nil {
 		return value, fmt.Errorf("could not encrypt profile")
 	}
-	err = tx.QueryRowContext(ctx, `INSERT INTO login_profiles(account_id,application,name,encrypted_value) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING created_at`, p.AccountID, application, name, sealed).Scan(&value.CreatedAt)
+	if replaceExisting {
+		err = tx.QueryRowContext(ctx, `UPDATE login_profiles SET encrypted_value=$4 WHERE account_id=$1 AND application=$2 AND name=$3 RETURNING created_at`, p.AccountID, application, name, sealed).Scan(&value.CreatedAt)
+		if errors.Is(err, sql.ErrNoRows) {
+			return value, fmt.Errorf("saved profile %s/%s no longer exists", application, name)
+		}
+	} else {
+		err = tx.QueryRowContext(ctx, `INSERT INTO login_profiles(account_id,application,name,encrypted_value) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING RETURNING created_at`, p.AccountID, application, name, sealed).Scan(&value.CreatedAt)
+	}
 	if err != nil {
 		return value, err
+	}
+	if replaceExisting {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM profile_usage_snapshots WHERE account_id=$1 AND application=$2 AND profile_name=$3`, p.AccountID, application, name); err != nil {
+			return value, fmt.Errorf("could not invalidate saved profile usage")
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return value, fmt.Errorf("could not commit profile save")
@@ -237,8 +253,12 @@ func (s *Server) saveLoginProfile(w http.ResponseWriter, r *http.Request, p Prin
 			writeError(w, 409, err)
 			return
 		}
-		writeError(w, 409, fmt.Errorf("could not save profile; choose a new name if it already exists, or check controller storage/encryption"))
+		writeError(w, 409, fmt.Errorf("could not save profile; check its name and controller storage/encryption"))
 		return
 	}
-	writeJSON(w, 201, value)
+	status := http.StatusCreated
+	if req.ReplaceExisting {
+		status = http.StatusOK
+	}
+	writeJSON(w, status, value)
 }
