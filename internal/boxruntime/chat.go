@@ -406,195 +406,27 @@ func DeliverCodexChat(ctx context.Context, root, home, session string, inbound C
 	if err := RecoverCodexMCPStartup(ctx, session); err != nil {
 		return err
 	}
-	if data, err := os.ReadFile(codexResetPendingFile(root, session)); err == nil && strings.TrimSpace(string(data)) == "visible-tui" {
-		marker, err := os.Stat(codexResetPendingFile(root, session))
-		if err != nil {
-			return err
-		}
-		id, err := codexRecentRolloutThread(ctx, session, WorkloadHome(), marker.ModTime())
-		if err != nil {
-			return err
-		}
-		_, usedErr := os.Stat(codexFreshUsedFile(root, session))
-		if usedErr != nil && !os.IsNotExist(usedErr) {
-			return usedErr
-		}
-		if id == "" && len(event.Paths) > 0 && usedErr == nil {
-			for attempt := 0; attempt < 30 && id == ""; attempt++ {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(agentReadyPollInterval):
-				}
-				id, err = codexRecentRolloutThread(ctx, session, WorkloadHome(), marker.ModTime())
-				if err != nil {
-					return err
-				}
-			}
-		}
-		if id != "" {
-			if err := writeTextAtomic(codexResetPendingFile(root, session), id+"\n", 0600); err != nil {
-				return err
-			}
-			if err := CodexQueueMessage(ctx, session, root, WorkspaceDirectory(), event.ID, event.Text, event.Paths); err != nil {
-				return err
-			}
-			if err := os.Remove(path); err != nil {
-				return err
-			}
-			return removeCodexFreshMarker(root, session)
-		}
-		if len(event.Paths) == 0 {
-			if err := writeTextAtomic(codexFreshUsedFile(root, session), event.ID+"\n", 0600); err != nil {
-				return err
-			}
-			if err := deliverCodexThroughTUI(ctx, root, session, event.Text, path); err != nil {
-				return err
-			}
-			return nil
-		}
-		if usedErr == nil {
-			return fmt.Errorf("visible Codex thread has not persisted its first turn yet; retry this image after the terminal finishes starting")
-		}
-		if err := deliverFirstCodexImageAfterWake(ctx, root, session, event, path); err != nil {
-			return err
-		}
-		return nil
-	} else if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	// The app-server queue delivers structured text and images to the thread
-	// attached to the visible TUI. Unlike turn/start from a second client, its
-	// submissions are dispatched by that thread and shown in both tmux views.
+	// The app-server queue accepts the visible TUI's zero-turn thread too. Keep
+	// the envelope until its exact native user item is observed; typing into the
+	// terminal can leave a partial draft while falsely reporting delivery.
 	if err := CodexQueueMessage(ctx, session, root, WorkspaceDirectory(), event.ID, event.Text, event.Paths); err != nil {
 		return err
 	}
 	return os.Remove(path)
 }
 
-func removeCodexFreshMarker(root, session string) error {
-	err := os.Remove(codexResetPendingFile(root, session))
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	err = os.Remove(codexFreshUsedFile(root, session))
-	if os.IsNotExist(err) {
-		return nil
-	}
-	return err
-}
-
-// A wake leaves a new, still idle TUI beside older saved rollouts. The idle
-// thread is not necessarily persisted or in thread/list, so queueing an image
-// by list recency can silently target an old conversation. If the owner has
-// already used the TUI since wake, queue into its persisted recent thread.
-// Otherwise start this first image prompt in the same tmux pane using Codex's
-// native -i argument, which materializes the visible thread with image input.
-func deliverFirstCodexImageAfterWake(ctx context.Context, root, session string, event chatInboundFile, eventPath string) error {
-	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
-		return err
-	}
-	if err := ensureCodexEmptyComposer(ctx, session); err != nil {
-		return err
-	}
-	argv, err := persistentAgentArgv(session, "codex")
-	if err != nil {
-		return err
-	}
-	for _, image := range event.Paths {
-		argv = append(argv, "-i", image)
-	}
-	longPrompt := len(event.Text) > tmuxLiteralChunkBytes
-	if !longPrompt {
-		argv = append(argv, event.Text)
-	}
-	directory := filepath.Join(root, "messages")
-	if err := os.MkdirAll(directory, 0700); err != nil {
-		return err
-	}
-	pending := filepath.Join(directory, "codex-first-"+event.ID+".pending")
-	file, err := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if errors.Is(err, os.ErrExist) {
-		return ErrAmbiguousMessage
-	}
-	if err != nil {
-		return err
-	}
-	if err := file.Close(); err != nil {
-		return err
-	}
-	if err := writeTextAtomic(codexFreshUsedFile(root, session), event.ID+"\n", 0600); err != nil {
-		return err
-	}
-	if _, err := tmuxCommand(ctx, "", "respawn-pane", "-k", "-t", "="+session+":0.0", "-c", WorkspaceDirectory(), shellJoin(argv)); err != nil {
-		return ErrAmbiguousMessage
-	}
-	if longPrompt {
-		if err := waitForAgentReady(ctx, session, "codex"); err != nil {
-			return ErrAmbiguousMessage
-		}
-		if err := deliverCodexThroughTUI(ctx, root, session, event.Text, eventPath); err != nil {
-			return ErrAmbiguousMessage
-		}
-	} else if err := os.Remove(eventPath); err != nil {
-		return ErrAmbiguousMessage
-	}
-	return os.Rename(pending, strings.TrimSuffix(pending, ".pending")+".delivered")
-}
-
-// StartCodexChat starts a new interactive Codex session with the first Agent
-// chat message in Codex's supported process arguments. A prompt too large for
-// one tmux command is typed into the ready TUI in bounded chunks instead.
+// StartCodexChat starts a bare remote TUI, then delivers the first message
+// through the same structured app-server queue used for later messages.
 func StartCodexChat(ctx context.Context, root, home, session string, inbound ChatInbound) error {
-	if err := StoreChatInbound(home, session, inbound); err != nil {
-		return err
-	}
-	eventPath := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, inbound.ID+".json")
-	data, err := os.ReadFile(eventPath)
-	if err != nil {
-		return err
-	}
-	var event chatInboundFile
-	if json.Unmarshal(data, &event) != nil {
-		return fmt.Errorf("invalid inbound chat event")
-	}
 	argv, err := persistentAgentArgv(session, "codex")
 	if err != nil {
 		return err
 	}
-	longPrompt := len(event.Text) > tmuxLiteralChunkBytes
-	for _, path := range event.Paths {
-		argv = append(argv, "-i", path)
-	}
-	if !longPrompt {
-		argv = append(argv, event.Text)
-	}
-	// The initial message is already in argv. Removing its inbox envelope before
-	// launch prevents any native message consumer from seeing it a second time.
-	if !longPrompt {
-		if err := os.Remove(eventPath); err != nil {
-			return err
-		}
-	}
-	created, err := startTmuxTaskSession(ctx, root, session, "codex", argv)
+	_, err = startTmuxTaskSession(ctx, root, session, "codex", argv)
 	if err != nil {
 		return err
 	}
-	if !created {
-		// The session is already running Codex, so queue into it rather than
-		// refusing and leaving the message undelivered.
-		return DeliverCodexChat(ctx, root, home, session, inbound)
-	}
-	if longPrompt {
-		if err := waitForAgentReady(ctx, session, "codex"); err != nil {
-			return err
-		}
-		if err := settleAgentReadiness(ctx, session, "codex"); err != nil {
-			return err
-		}
-		return deliverCodexThroughTUI(ctx, root, session, event.Text, eventPath)
-	}
-	return nil
+	return DeliverCodexChat(ctx, root, home, session, inbound)
 }
 
 // StartOpenCodeChat starts OpenCode without a CLI prompt, then submits the
@@ -605,29 +437,6 @@ func StartOpenCodeChat(ctx context.Context, root, home, session string, inbound 
 		return err
 	}
 	return DeliverOpenCodeChat(ctx, home, session, inbound)
-}
-
-func deliverCodexThroughTUI(ctx context.Context, root, session, prompt, eventPath string) error {
-	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
-		return err
-	}
-	if err := ensureCodexEmptyComposer(ctx, session); err != nil {
-		return err
-	}
-	// Codex 0.155 ignores tmux bracketed paste, which DeliverTmuxInput uses and
-	// Claude accepts, so the text is sent as literal keys instead. Chunking is
-	// required because tmux rejects an individual command around 16 KiB.
-	eventID := strings.TrimSuffix(filepath.Base(eventPath), filepath.Ext(eventPath))
-	if err := deliverTmuxLiteral(ctx, root, session, "codex-chat-"+eventID, prompt); err != nil {
-		return err
-	}
-	if err := tmuxSubmitPause(ctx); err != nil {
-		return err
-	}
-	if err := DeliverTmuxKeys(ctx, root, session, "codex-chat-submit-"+eventID, []string{"Enter"}); err != nil {
-		return err
-	}
-	return os.Remove(eventPath)
 }
 
 func ensureCodexEmptyComposer(ctx context.Context, session string) error {

@@ -123,10 +123,9 @@ saved chat history remains visible, while the managed agent starts a fresh live
 conversation after wake.
 
 The web workspace's **Agent chat** starts the selected managed agent when no
-reusable session exists. OpenCode starts a bare visible TUI, then receives its
-first message through the same native loopback bridge as later messages,
-including structured image attachments. Later messages enter the running client
-through the visible Codex TUI, Claude channel, or OpenCode's loopback API. OpenCode
+reusable session exists. Codex and OpenCode start bare visible TUIs, then receive
+their first and later messages through their native structured APIs, including
+image attachments. Claude receives messages through its channel. OpenCode
 sessions auto-approve permission asks by default unless their configuration
 explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.

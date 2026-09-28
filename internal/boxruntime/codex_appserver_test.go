@@ -112,40 +112,28 @@ func TestCodexCurrentThreadRejectsUnmaterializedTUI(t *testing.T) {
 	if err := markFreshCodexTUI(root, "codex-wake"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := CodexCurrentThread(context.Background(), nil, root, "codex-wake", "/workspace"); err == nil || !strings.Contains(err.Error(), "visible pane") {
+	if _, err := CodexCurrentThread(context.Background(), nil, root, "codex-wake", "/workspace"); err == nil || !strings.Contains(err.Error(), "has not selected a thread") {
 		t.Fatalf("unmaterialized TUI selected an old thread: %v", err)
 	}
 }
 
-func TestFreshCodexTUIWaitsForItsOwnRolloutButAllowsResume(t *testing.T) {
-	home := t.TempDir()
-	since := time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)
+func TestWaitForCodexVisibleThreadUsesProxyBinding(t *testing.T) {
+	root := t.TempDir()
 	originalState := codexVisibleThreadState
 	t.Cleanup(func() { codexVisibleThreadState = originalState })
-	active := "01a0d9be-6f3d-7021-b836-ca708ceb50b2"
-	codexVisibleThreadState = func(context.Context, string) (bool, string, error) { return true, active, nil }
-	id, err := codexRecentRolloutThread(context.Background(), "codex-test", home, since)
-	if err != nil || id != "" {
-		t.Fatalf("empty new thread=%q err=%v", id, err)
+	calls := 0
+	codexVisibleThreadState = func(context.Context, string) (bool, string, error) {
+		calls++
+		if calls == 1 {
+			return true, "", nil
+		}
+		return true, "fresh-visible-thread", nil
 	}
-	path := filepath.Join(home, ".codex", "sessions", "2026", "09", "25", "rollout-test-"+active+".jsonl")
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(path, []byte("materialized"), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(path, since.Add(time.Minute), since.Add(time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	id, err = codexRecentRolloutThread(context.Background(), "codex-test", home, since)
-	if err != nil || id != active {
-		t.Fatalf("materialized thread=%q err=%v", id, err)
-	}
-	active = "0199d9be-6f3d-7021-b836-ca708ceb50b2"
-	id, err = codexRecentRolloutThread(context.Background(), "codex-test", home, since)
-	if err != nil || id != active {
-		t.Fatalf("resumed older thread=%q err=%v", id, err)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	thread, err := waitForCodexVisibleThread(ctx, nil, root, "codex-wake", "/workspace")
+	if err != nil || thread != "fresh-visible-thread" || calls != 2 {
+		t.Fatalf("thread=%q calls=%d err=%v", thread, calls, err)
 	}
 }
 
