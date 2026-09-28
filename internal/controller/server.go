@@ -116,6 +116,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ai-helper.css", uiHandler("ai-helper.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /idle-policy.js", uiHandler("idle-policy.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /run-budget-policy.js", uiHandler("run-budget-policy.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /box-create-limit.js", uiHandler("box-create-limit.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /idle-policy.css", uiHandler("idle-policy.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /boxes/{id}", uiHandler("workspace.html", "text/html; charset=utf-8", false))
 	mux.HandleFunc("GET /workspace.js", uiHandler("workspace.js", "text/javascript; charset=utf-8", false))

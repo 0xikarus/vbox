@@ -235,6 +235,7 @@ function renderBoxDetail(){
  root.append(intro,facts,node('h3','Manage box'),actions);
  if(ownerTools&&window.VMBoxIdlePolicy){const idle=node('div');root.append(idle);window.VMBoxIdlePolicy.mount(idle,{boxId:box.id,boxName:box.name,request:seconds=>api(bp(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
  if(ownerTools&&window.VMBoxRunBudgetPolicy){const budget=node('div');root.append(budget);window.VMBoxRunBudgetPolicy.mount(budget,{boxId:box.id,request:seconds=>api(bp(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
+ if(ownerTools&&window.VMBoxCreateLimit){const limit=node('div');root.append(limit);window.VMBoxCreateLimit.mount(limit,{boxId:box.id,request:body=>api(bp(box.id)+'/agent-policy',body?'PUT':'GET',body)})}
 }
 function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailInstructions=null;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus();void loadBoxDetailInstructions(box.id)}
 $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;
