@@ -155,6 +155,22 @@ func CodexCurrentThread(ctx context.Context, client *codexClient, root, session,
 	return id, nil
 }
 
+// CodexCompactVisibleThread targets the thread selected by the actual TUI.
+// App-server acknowledges the request before the compaction turn finishes.
+func CodexCompactVisibleThread(ctx context.Context, root, session string) error {
+	client, err := dialCodexAppServer(ctx, session)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	thread, err := CodexCurrentThread(ctx, client, root, session, WorkspaceDirectory())
+	if err != nil {
+		return err
+	}
+	_, err = client.call(ctx, "thread/compact/start", map[string]any{"threadId": thread})
+	return err
+}
+
 func rememberCodexThread(root, session, id string) error {
 	return writeTextAtomic(codexThreadFile(root, session), id+"\n", 0600)
 }

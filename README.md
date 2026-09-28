@@ -873,6 +873,12 @@ An admin box with `restart_agent_box` permission also gets
 This starts a fresh context in another running Codex, Claude, or OpenCode box
 while retaining its chat history and workspace. The target must have an active
 chat session and must not be protected.
+The same permission also grants
+`compact_agent_box_context {"box":"researcher","confirmation":"researcher","idempotencyKey":"compact-researcher-1"}`.
+It requests `/compact` in that box's current conversation without starting a
+new thread. The target must be idle and unprotected. A successful tool response
+means the harness accepted the request; summarization may still be running.
+Reuse the same idempotency key on retry.
 
 ## Optional tools
 

@@ -101,3 +101,30 @@ func TestValidateAgentBoxContextClearRequiresRunningOtherUnprotectedBoxAndExactN
 		})
 	}
 }
+
+func TestValidateAgentBoxCompactRequiresRunningOtherUnprotectedBoxAndExactName(t *testing.T) {
+	box := v1.LogicalBox{ID: "box-b", Name: "builder", State: v1.LogicalBoxRunning}
+	if err := validateAgentBoxCompact("box-a", box, false, "builder"); err != nil {
+		t.Fatal(err)
+	}
+	for name, test := range map[string]struct {
+		actor        string
+		protected    bool
+		confirmation string
+		state        v1.LogicalBoxState
+		want         string
+	}{
+		"self":      {actor: "box-b", confirmation: "builder", state: v1.LogicalBoxRunning, want: "cannot compact its own context"},
+		"protected": {actor: "box-a", protected: true, confirmation: "builder", state: v1.LogicalBoxRunning, want: "protected"},
+		"name":      {actor: "box-a", confirmation: "Builder", state: v1.LogicalBoxRunning, want: "exactly match"},
+		"state":     {actor: "box-a", confirmation: "builder", state: v1.LogicalBoxHibernated, want: "only a running box"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := box
+			candidate.State = test.state
+			if err := validateAgentBoxCompact(test.actor, candidate, test.protected, test.confirmation); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error=%v, want %q", err, test.want)
+			}
+		})
+	}
+}

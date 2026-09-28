@@ -16,6 +16,10 @@ func desktopAgentAPI(ctx context.Context, assignment, method, path string, input
 }
 
 func desktopAgentAPIWithKey(ctx context.Context, assignment, method, path, idempotencyKey string, input, output any) error {
+	return desktopAgentAPIWithTimeout(ctx, assignment, method, path, idempotencyKey, input, output, 20*time.Second)
+}
+
+func desktopAgentAPIWithTimeout(ctx context.Context, assignment, method, path, idempotencyKey string, input, output any, timeout time.Duration) error {
 	config, err := readDesktopAgentConfig(assignment)
 	if err != nil {
 		return err
@@ -41,7 +45,7 @@ func desktopAgentAPIWithKey(ctx context.Context, assignment, method, path, idemp
 	}
 	transport := &http.Transport{Proxy: nil}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: transport, Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("controller request failed")

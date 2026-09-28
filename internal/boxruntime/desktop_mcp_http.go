@@ -263,7 +263,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 			writeDesktopMCPError(writer, status, err.Error())
 			return
 		}
-		ctx, cancel := context.WithTimeout(request.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(request.Context(), desktopToolTimeout(name))
 		defer cancel()
 		_, allowed, err := allowedDesktopMCPTools(ctx, assignment, resolve)
 		if err != nil {

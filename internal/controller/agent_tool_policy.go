@@ -31,6 +31,7 @@ func (s *Store) EffectiveAgentToolNames(ctx context.Context, accountID, boxID st
 	// grant. Give current admin policies the companion tool automatically.
 	if selected["restart_agent_box"] {
 		selected["clear_agent_box_context"] = true
+		selected["compact_agent_box_context"] = true
 	}
 	allowed := append([]string(nil), v1.BasicAgentMCPTools...)
 	for _, name := range v1.OptionalAgentMCPTools {
@@ -51,7 +52,7 @@ func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bo
 		return capabilities.ManageAgentBoxes.Inspect
 	case "set_agent_box_tags":
 		return capabilities.ManageAgentBoxes.Tag
-	case "restart_agent_box", "clear_agent_box_context":
+	case "restart_agent_box", "clear_agent_box_context", "compact_agent_box_context":
 		return capabilities.ManageAgentBoxes.Restart
 	case "delete_agent_box":
 		return capabilities.ManageAgentBoxes.Delete
