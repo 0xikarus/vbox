@@ -18,20 +18,27 @@ func normalizedRunBudget(value time.Duration) time.Duration {
 	return value
 }
 
+const maxAgentRunBudgetSeconds = 30 * 24 * 60 * 60
+
 func (s *Store) syncAgentRunBudget(ctx context.Context, accountID, boxID string, defaultBudget time.Duration) (v1.AgentRunBudget, error) {
 	var result v1.AgentRunBudget
 	var state string
 	var generation int64
-	err := s.DB.QueryRowContext(ctx, `SELECT state,assignment_generation FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state<>'deleting'`, accountID, boxID).Scan(&state, &generation)
+	defaultSeconds := max(int64(1), int64(normalizedRunBudget(defaultBudget)/time.Second))
+	var seconds int64
+	err := s.DB.QueryRowContext(ctx, `SELECT state,assignment_generation,
+		COALESCE(CASE WHEN (metadata->>'runBudgetSeconds') ~ '^[0-9]{1,7}$'
+			THEN CASE WHEN (metadata->>'runBudgetSeconds')::bigint<=$4
+				THEN (metadata->>'runBudgetSeconds')::bigint END END,$3)
+		FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state<>'deleting'`, accountID, boxID, defaultSeconds, maxAgentRunBudgetSeconds).Scan(&state, &generation, &seconds)
 	if errors.Is(err, sql.ErrNoRows) {
 		return result, fmt.Errorf("box unavailable")
 	}
 	if err != nil {
 		return result, err
 	}
-	seconds := int64(normalizedRunBudget(defaultBudget) / time.Second)
 	deadline := any(nil)
-	if state == string(v1.LogicalBoxRunning) {
+	if state == string(v1.LogicalBoxRunning) && seconds > 0 {
 		deadline = time.Now().UTC().Add(time.Duration(seconds) * time.Second)
 	}
 	_, err = s.DB.ExecContext(ctx, `INSERT INTO agent_run_budgets(account_id,box_id,assignment_generation,remaining_seconds,deadline_at)
@@ -42,7 +49,7 @@ func (s *Store) syncAgentRunBudget(ctx context.Context, accountID, boxID string,
 		return result, err
 	}
 	if state == string(v1.LogicalBoxRunning) {
-		_, err = s.DB.ExecContext(ctx, `UPDATE agent_run_budgets SET deadline_at=now()+remaining_seconds*interval '1 second',updated_at=now() WHERE account_id=$1 AND box_id=$2 AND deadline_at IS NULL`, accountID, boxID)
+		_, err = s.DB.ExecContext(ctx, `UPDATE agent_run_budgets SET deadline_at=now()+remaining_seconds*interval '1 second',updated_at=now() WHERE account_id=$1 AND box_id=$2 AND deadline_at IS NULL AND remaining_seconds>0`, accountID, boxID)
 	} else {
 		_, err = s.DB.ExecContext(ctx, `UPDATE agent_run_budgets SET remaining_seconds=GREATEST(0,EXTRACT(EPOCH FROM deadline_at-now())::bigint),deadline_at=NULL,updated_at=now() WHERE account_id=$1 AND box_id=$2 AND deadline_at IS NOT NULL`, accountID, boxID)
 	}
@@ -60,7 +67,7 @@ func (s *Store) syncAgentRunBudget(ctx context.Context, accountID, boxID string,
 		result.DeadlineAt = &value
 		result.RemainingSeconds = max(int64(0), int64(time.Until(value).Seconds()))
 	}
-	result.BoxID, result.State, result.ExtensionUsedMinutes = boxID, state, int(extensionSeconds/60)
+	result.BoxID, result.State, result.BudgetSeconds, result.ExtensionUsedMinutes = boxID, state, seconds, int(extensionSeconds/60)
 	return result, nil
 }
 
@@ -73,7 +80,7 @@ func (s *Store) AgentRunBudget(ctx context.Context, accountID, boxID string, def
 	if err != nil {
 		return result, err
 	}
-	result.CanRequestMoreTime = capabilities.RequestMoreTime.Enabled
+	result.CanRequestMoreTime = capabilities.RequestMoreTime.Enabled && result.BudgetSeconds > 0
 	result.MaxExtensionMinutes = capabilities.RequestMoreTime.MaxExtensionMinutes
 	result.MaxTotalMinutes = capabilities.RequestMoreTime.MaxTotalMinutes
 	return result, nil
@@ -94,8 +101,12 @@ func (s *Store) ExtendAgentRunBudget(ctx context.Context, accountID, boxID, key 
 	if key == "" || len(key) > 128 {
 		return v1.AgentRunBudget{}, fmt.Errorf("Idempotency-Key is required")
 	}
-	if _, err := s.syncAgentRunBudget(ctx, accountID, boxID, defaultBudget); err != nil {
+	budget, err := s.syncAgentRunBudget(ctx, accountID, boxID, defaultBudget)
+	if err != nil {
 		return v1.AgentRunBudget{}, err
+	}
+	if budget.BudgetSeconds == 0 {
+		return v1.AgentRunBudget{}, fmt.Errorf("run-time limit is disabled")
 	}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {

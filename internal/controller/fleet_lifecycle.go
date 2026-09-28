@@ -3,6 +3,7 @@ package controller
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -258,6 +259,16 @@ func (s *Server) ReconcileLogicalBoxHibernatesNow(ctx context.Context) error {
 }
 
 func (s *Server) resumeLogicalBoxHibernate(ctx context.Context, p Principal, id string) error {
+	if p.Subject == "controller:run-budget" {
+		ctx = context.WithValue(ctx, idleReleaseCheckKey{}, idleReleaseCheck(func(ctx context.Context, tx *sql.Tx, a fleetAssignment) error {
+			var eligible bool
+			err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM agent_run_budgets WHERE account_id=$1 AND box_id=$2 AND assignment_generation=$3 AND deadline_at<=now())`, p.AccountID, a.Box.ID, a.Box.AssignmentGeneration).Scan(&eligible)
+			if err != nil || !eligible {
+				return fmt.Errorf("run-time limit changed or has not expired")
+			}
+			return nil
+		}))
+	}
 	assignment, err := s.Store.BeginLogicalBoxRelease(ctx, p, id, v1.LogicalBoxHibernating)
 	if err != nil {
 		return err

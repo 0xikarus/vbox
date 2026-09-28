@@ -79,6 +79,11 @@ Each box has an **Automatic hibernation** switch in chat details, box details,
 and its workspace. Turning it off prevents inactivity hibernation; turning it
 back on restores the box's last chosen idle interval. The hours field changes
 the interval while the switch is on. Manual hibernation remains available.
+Each box also has a separate **Run-time limit** in Chat details, box details,
+and its workspace. It defaults to eight hours of allocated time per run and
+hibernates the box when that countdown expires, even if the desktop is active.
+Set it to `0` to turn this limit off. Saving a new value starts a fresh
+countdown for a running box; it does not change the automatic idle timer.
 
 ### 4. Save logins (optional)
 

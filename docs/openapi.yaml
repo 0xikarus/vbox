@@ -48,6 +48,26 @@ paths:
                     ordinal: {type: integer}
                     region: {type: string}
         '403': {description: Creator lacks create_agent_box permission}
+  /v1/logical-boxes/{id}/run-budget-policy:
+    get:
+      summary: Owner view of a box's allocated-time limit and current countdown
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Configured seconds, remaining seconds, deadline, and state}
+    put:
+      summary: Set a box's allocated-time limit and restart its current countdown
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seconds]
+              properties:
+                seconds: {type: integer, minimum: 0, maximum: 2592000, description: Zero disables the limit; positive values must be at least 60 seconds}
+      responses:
+        '200': {description: Updated limit and restarted countdown}
   /v1/agent-desktop/box-configs/{application}/{name}/models:
     get:
       security: [{desktopAgentAuth: []}]
