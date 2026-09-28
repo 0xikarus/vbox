@@ -1237,13 +1237,21 @@
  async function loadPreviews(force){
   await Promise.allSettled([...boxes.keys()].map(async id=>{
    if(id===selected)return;// open conversation refreshes itself
-   if(!force&&Date.now()-(previewFetched.get(id)||0)<30000)return;
+   const previousFetch=previewFetched.get(id)||0;
+   if(!force&&Date.now()-previousFetch<30000)return;
    const history=await chatHistory(boxPath(id)+'/messages?limit=20');
    const box=boxes.get(id);
-   // The box may have been opened (or fully loaded) while the preview was in
-   // flight; never let a 20-message preview overwrite an open conversation.
-   if(!box||id===selected||box.historyLoaded)return;
-   applyBusyState(box,history);box.messages=history.messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now());
+   // The box may have been opened while the preview was in flight. Keep its
+   // full transcript, but refresh the newest messages so previously opened
+   // chats still get unread badges after the user switches away.
+   if(!box||id===selected||(previewFetched.get(id)||0)!==previousFetch)return;
+   applyBusyState(box,history);
+   if(box.historyLoaded){
+    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
+    for(const message of history.messages||[])merged.set(message.id,message);
+    box.messages=[...merged.values()].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)||a.id.localeCompare(b.id));
+   }else{box.messages=history.messages||[];box.hasOlder=false}
+   previewFetched.set(id,Date.now());
    summarize(id);
   }));
  }
