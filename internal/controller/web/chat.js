@@ -1856,6 +1856,8 @@
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
   if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  const limitRoot=$('#inspect-create-limit');limitRoot.hidden=!owner;
+  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
   maybeLoadInspectProfiles(box);
   if(inspectInstructionsFor!==box.id)void loadInspectInstructions(box);
   maybeLoadInspectContacts(box);
@@ -1886,7 +1888,7 @@
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox}
  $('#inspect-close').onclick=closeInspect;
  $('#inspect-backdrop').onclick=closeInspect;
  // Collapsible details sections, remembered per browser.
@@ -2779,7 +2781,7 @@
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,boxID=form.elements.id.value,status=$('#role-editor-status');if(!boxID)return;
   status.textContent='Saving permissions…';
-  try{const body=directPolicyBody(form),policy=await api(boxPath(boxID)+'/agent-policy','PUT',{},body);policySummaryEpoch++;policySummaries.set(boxID,policy?.capabilities?policy:body);if(!$('#roles-modal').hidden){renderPermissionBoxes();void loadPermissionSummaries()}status.textContent='Saved. Running MCP clients refresh their tools automatically.';$('#role-editor-modal').hidden=true;toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';renderInspect()}}
+  try{const body=directPolicyBody(form),policy=await api(boxPath(boxID)+'/agent-policy','PUT',{},body);policySummaryEpoch++;policySummaries.set(boxID,policy?.capabilities?policy:body);if(!$('#roles-modal').hidden){renderPermissionBoxes();void loadPermissionSummaries()}status.textContent='Saved. Running MCP clients refresh their tools automatically.';$('#role-editor-modal').hidden=true;toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;renderInspect()}}
   catch(e){status.textContent=e.message}
  };
  async function presetBody(name){

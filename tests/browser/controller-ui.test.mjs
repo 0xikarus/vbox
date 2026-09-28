@@ -15,7 +15,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/workspace-nav.js','/workspace-nav.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -100,6 +100,8 @@ test('management views expose box placement and keep details easy to close',asyn
  assert.match(await page.$eval('#box-detail-body',body=>body.textContent),/railway-worker-01/);
  await page.waitForFunction(()=>document.querySelector('#box-detail-body')?.textContent.includes('2026'));
  assert.match(await page.$eval('#box-detail-body',body=>body.textContent),/Last instructions sync.*2026/);
+ await page.waitForFunction(()=>document.querySelector('#box-detail-body .box-create-limit .idle-policy-badge')?.textContent==='Off');
+ assert.equal(await page.$eval('#box-detail-body .box-create-limit input',input=>input.disabled),true);
  await page.keyboard.press('Escape');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),true);
  await page.click('.workspace-links a[href="#providers"]');
