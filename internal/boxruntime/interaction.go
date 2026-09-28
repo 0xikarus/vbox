@@ -800,9 +800,15 @@ func agentInputReady(agent, content string) bool {
 				visible = append(visible, line)
 			}
 		}
-		for i := len(visible) - 1; i >= 0 && i >= len(visible)-2; i-- {
+		// Codex now renders both a model/workspace line and a shortcuts line
+		// below the composer. Only those footer lines may follow the prompt;
+		// active tool output below an old composer is not input readiness.
+		for i := len(visible) - 1; i >= 0 && i >= len(visible)-3; i-- {
 			if strings.HasPrefix(visible[i], "› ") {
 				return true
+			}
+			if !strings.Contains(visible[i], "for shortcuts") && !strings.Contains(visible[i], " · /") {
+				break
 			}
 		}
 		return false
