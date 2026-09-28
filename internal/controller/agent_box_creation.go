@@ -107,7 +107,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	roleIDsJSON, _ := json.Marshal(request.RoleIDs)
 	profileJSON, _ := json.Marshal(request.LoginProfiles)
 	toolsJSON, _ := json.Marshal(request.Tools)
-	var existingBoxID, requestedName, requestedAgent, requestedInstructions, requestedSlotID, providerName, credential, region string
+	var existingBoxID, requestedName, requestedAgent, requestedInstructions, requestedSlotID, providerName, credential string
 	var requestedDisk int64
 	var requestedRoleIDs, requestedProfiles, requestedTools []byte
 	tx, err := s.Store.DB.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelReadCommitted})
@@ -119,7 +119,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	// Serialize every quota decision for this creator on the creator row. The
 	// reservation is inserted before this lock is released, so concurrent
 	// requests cannot all observe the same remaining capacity.
-	err = tx.QueryRowContext(r.Context(), `SELECT provider,provider_credential,COALESCE(metadata->>'region','') FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='running' FOR UPDATE`, p.AccountID, creatorID).Scan(&providerName, &credential, &region)
+	err = tx.QueryRowContext(r.Context(), `SELECT provider,provider_credential FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state='running' FOR UPDATE`, p.AccountID, creatorID).Scan(&providerName, &credential)
 	if errors.Is(err, sql.ErrNoRows) {
 		writeError(w, 409, fmt.Errorf("creator box is unavailable"))
 		return
@@ -222,11 +222,16 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	owner := Principal{AccountID: p.AccountID, UserID: p.UserID, Role: "owner", Subject: p.Subject}
-	if request.SlotID != "" {
-		// The chosen slot determines the new volume's region.
-		region = ""
+	workers, err := s.Store.agentBoxPlacementCandidates(r.Context(), p.AccountID, providerName, credential, request.SlotID)
+	if err != nil {
+		_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2 AND created_box_id IS NULL`, p.AccountID, reservationID)
+		status := http.StatusInternalServerError
+		if errors.Is(err, errNoCreationSlot) || errors.Is(err, errSelectedAgentBoxWorkerUnavailable) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err)
+		return
 	}
-	create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: providerName, ProviderCredential: credential, Region: region, SlotID: request.SlotID, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, LoginProfiles: request.LoginProfiles, RoleIDs: request.RoleIDs, Tools: request.Tools, AllocationRequestKey: "agent-box:" + reservationID}
 	var instructionSelection *v1.InstructionSelection
 	if strings.TrimSpace(request.Instructions) != "" {
 		instructionSelection = &v1.InstructionSelection{Markdown: request.Instructions}
@@ -241,7 +246,17 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 400, fmt.Errorf("selected instructions and tool guidance: %w", err))
 		return
 	}
-	creation, err := s.Store.BeginLogicalBoxCreation(r.Context(), owner, create, creatorID)
+	var creation logicalBoxCreation
+	for _, worker := range workers {
+		// An explicit slot fixes both the pool and volume region. Automatic
+		// placement lets the creation transaction reserve any free slot in
+		// this pool, then tries another pool if it filled concurrently.
+		create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: worker.Provider, ProviderCredential: worker.ProviderCredential, SlotID: request.SlotID, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, LoginProfiles: request.LoginProfiles, RoleIDs: request.RoleIDs, Tools: request.Tools, AllocationRequestKey: "agent-box:" + reservationID}
+		creation, err = s.Store.BeginLogicalBoxCreation(r.Context(), owner, create, creatorID)
+		if err == nil || request.SlotID != "" || !errors.Is(err, errNoCreationSlot) {
+			break
+		}
+	}
 	if err != nil {
 		_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2 AND created_box_id IS NULL`, p.AccountID, reservationID)
 		status := http.StatusConflict

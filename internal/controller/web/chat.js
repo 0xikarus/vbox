@@ -1834,6 +1834,8 @@
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
+  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   maybeLoadInspectProfiles(box);
   maybeLoadInspectContacts(box);
  }

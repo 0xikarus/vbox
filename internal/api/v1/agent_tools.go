@@ -5,6 +5,7 @@ import "time"
 type AgentRunBudget struct {
 	BoxID                string     `json:"boxId"`
 	State                string     `json:"state"`
+	BudgetSeconds        int64      `json:"budgetSeconds"`
 	RemainingSeconds     int64      `json:"remainingSeconds"`
 	DeadlineAt           *time.Time `json:"deadlineAt,omitempty"`
 	ExtensionUsedMinutes int        `json:"extensionUsedMinutes"`

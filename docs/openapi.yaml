@@ -30,7 +30,7 @@ paths:
   /v1/agent-desktop/available-workers:
     get:
       security: [{desktopAgentAuth: []}]
-      summary: Healthy free worker slots in the creator box's provider pool
+      summary: Healthy free worker slots across the account's configured pools
       responses:
         '200':
           description: Worker slots eligible for explicit new-box placement at the time of the request
@@ -42,10 +42,32 @@ paths:
                   type: object
                   properties:
                     slotId: {type: string, format: uuid}
+                    provider: {type: string}
+                    providerCredential: {type: string}
                     serviceName: {type: string}
                     ordinal: {type: integer}
                     region: {type: string}
         '403': {description: Creator lacks create_agent_box permission}
+  /v1/logical-boxes/{id}/run-budget-policy:
+    get:
+      summary: Owner view of a box's allocated-time limit and current countdown
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      responses:
+        '200': {description: Configured seconds, remaining seconds, deadline, and state}
+    put:
+      summary: Set a box's allocated-time limit and restart its current countdown
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seconds]
+              properties:
+                seconds: {type: integer, minimum: 0, maximum: 2592000, description: Zero disables the limit; positive values must be at least 60 seconds}
+      responses:
+        '200': {description: Updated limit and restarted countdown}
   /v1/agent-desktop/box-configs/{application}/{name}/models:
     get:
       security: [{desktopAgentAuth: []}]
@@ -74,7 +96,7 @@ paths:
                 agent: {enum: [codex, claude, opencode]}
                 diskGiB: {type: integer, default: 10}
                 tools: {type: array, uniqueItems: true, maxItems: 3, items: {enum: [foundry, blender, desktop]}}
-                slotId: {type: string, format: uuid, description: Exact available worker slot; omission uses automatic placement}
+                slotId: {type: string, format: uuid, description: Exact available worker slot and pool; omission prefers the creator's pool then tries other pools}
                 instructions: {type: string, maxLength: 65536}
                 loginProfiles: {type: array, maxItems: 2, items: {$ref: '#/components/schemas/LoginProfileRef'}}
                 roleIds: {type: array, maxItems: 8, items: {type: string, format: uuid}}
