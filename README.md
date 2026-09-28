@@ -133,8 +133,9 @@ same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
 
 In Chat, account owners can save prompts under **Commands** and insert them by
 typing `/` in a box conversation. The `/command` stays in the draft and expands
-to its saved prompt when sent or improved with the AI writing wand. Typing `@`
-opens a box picker. Sending an `@box-name` mention adds direct
+to its saved prompt when sent or improved with the AI writing wand. With a
+slash suggestion open, Tab completes it and focuses Send; Enter sends it.
+Typing `@` opens a box picker. Sending an `@box-name` mention adds direct
 contacts in both directions so those boxes can message each other. A draft does
 not change contacts. Chat sending becomes available when the selected box is
 running.

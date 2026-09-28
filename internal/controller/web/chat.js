@@ -1533,6 +1533,11 @@
   if(!composerPicker.hidden){
    if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();pickerIndex=(pickerIndex+(event.key==='ArrowDown'?1:-1)+pickerItems.length)%pickerItems.length;[...composerPicker.children].forEach((button,index)=>button.setAttribute('aria-selected',String(index===pickerIndex)));return}
    if(event.key==='Escape'){event.preventDefault();hideComposerPicker();return}
+   if(event.key==='Tab'&&!event.shiftKey&&pickerRange?.kind==='/'){
+    event.preventDefault();chooseComposerSuggestion(pickerIndex);
+    if(!$('#send').disabled){hideComposerPicker();$('#send').focus()}
+    return;
+   }
    if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chooseComposerSuggestion(pickerIndex);return}
   }
   if(event.key!=='Enter'||event.shiftKey)return;
