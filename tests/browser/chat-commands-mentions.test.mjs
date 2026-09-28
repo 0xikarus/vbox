@@ -16,7 +16,7 @@ test('saved slash commands stay in drafts until send, mentions send IDs, and sto
   if(!path.startsWith('/v1/'))return res.end('');
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
-  if(path==='/v1/grid-boxes')return res.end(JSON.stringify(boxes));
+  if(path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
   if(path==='/v1/chat-commands'&&req.method==='GET')return res.end(JSON.stringify([...commands].map(([name,prompt])=>({name,prompt}))));
   if(path.startsWith('/v1/chat-commands/')&&req.method==='PUT'){
    let body='';for await(const chunk of req)body+=chunk;
@@ -69,8 +69,22 @@ test('saved slash commands stay in drafts until send, mentions send IDs, and sto
   await page.$eval('#chat-input',el=>{el.value='';el.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.type('#chat-input','/rev');
   await page.waitForFunction(()=>!document.querySelector('#composer-picker').hidden);
+  await page.keyboard.press('Tab');
+  assert.equal(await page.$eval('#chat-input',el=>el.value),'/review','Tab completes the highlighted slash command');
+  assert.equal(await page.evaluate(()=>document.activeElement?.id),'send','Tab focuses Send after completing a slash command');
+  assert.equal(await page.$eval('#composer-picker',el=>el.hidden),true,'Tab hides the slash suggestions');
+  assert.equal(posts.length,0,'Tab must not send the command');
+  await page.$eval('#chat-input',el=>{el.value='';el.dispatchEvent(new Event('input',{bubbles:true}))});
+  await page.type('#chat-input','/rev');
+  await page.waitForFunction(()=>!document.querySelector('#composer-picker').hidden);
+  await page.click('#composer-picker button');
+  assert.equal(await page.$eval('#composer-picker',el=>el.hidden),true,'clicking a slash suggestion hides the picker');
+  await page.$eval('#chat-input',el=>{el.value='';el.dispatchEvent(new Event('input',{bubbles:true}))});
+  await page.type('#chat-input','/rev');
+  await page.waitForFunction(()=>!document.querySelector('#composer-picker').hidden);
   await page.keyboard.press('Enter');
   assert.equal(await page.$eval('#chat-input',el=>el.value),'/review');
+  assert.equal(await page.$eval('#composer-picker',el=>el.hidden),true,'Enter hides the slash suggestions');
   assert.equal(posts.length,0,'selecting a slash command must not send it');
   await page.waitForFunction(()=>JSON.parse(localStorage.getItem('vmboxChatInputDrafts')||'{}').builder==='/review');
   await page.reload();

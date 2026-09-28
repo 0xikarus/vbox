@@ -1451,7 +1451,7 @@
  const maxComposerHeight=()=>Math.min(150,Math.max(96,innerHeight*0.35));
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
  const composerPicker=$('#composer-picker'),mentionCache=new Map();
- let pickerItems=[],pickerIndex=0,pickerRange=null,pickerRequest=0;
+ let pickerItems=[],pickerIndex=0,pickerRange=null,pickerRequest=0,acceptingComposerSuggestion=false;
  function expandChatCommands(text){
   const commands=new Map(chatCommands.map(command=>[command.name,command.prompt]));
   // Expand each draft token once; saved prompt text remains literal.
@@ -1499,6 +1499,7 @@
   const insertion=item.kind==='/'?'/'+item.name:'@'+item.name+' ';
   inputEl.value=inputEl.value.slice(0,range.start)+insertion+inputEl.value.slice(range.end);
   const caret=range.start+insertion.length;hideComposerPicker();inputEl.focus();inputEl.setSelectionRange(caret,caret);
+  acceptingComposerSuggestion=true;
   inputEl.dispatchEvent(new Event('input',{bubbles:true}));
  }
  function mentionedBoxIDs(text){
@@ -1517,7 +1518,7 @@
   send.setAttribute('aria-label',label);
   send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved '+agentLabel(box)+' session first.':box?.resumeCheckPending?'Checking for a saved conversation…':'Wait for this box to be running before sending';
  }
- inputEl.addEventListener('input',()=>{grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ inputEl.addEventListener('input',()=>{grow();updateSendState();if(acceptingComposerSuggestion)acceptingComposerSuggestion=false;else void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
  inputEl.addEventListener('focus',()=>{
   if(composerHintShown)return;composerHintShown=true;
@@ -1533,6 +1534,11 @@
   if(!composerPicker.hidden){
    if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();pickerIndex=(pickerIndex+(event.key==='ArrowDown'?1:-1)+pickerItems.length)%pickerItems.length;[...composerPicker.children].forEach((button,index)=>button.setAttribute('aria-selected',String(index===pickerIndex)));return}
    if(event.key==='Escape'){event.preventDefault();hideComposerPicker();return}
+   if(event.key==='Tab'&&!event.shiftKey&&pickerRange?.kind==='/'){
+    event.preventDefault();chooseComposerSuggestion(pickerIndex);
+    if(!$('#send').disabled){hideComposerPicker();$('#send').focus()}
+    return;
+   }
    if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chooseComposerSuggestion(pickerIndex);return}
   }
   if(event.key!=='Enter'||event.shiftKey)return;
