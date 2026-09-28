@@ -56,6 +56,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("set_agent_box_tags", "Replace an agent box's plain metadata tags. Tags are labels only and never grant contact or tool access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 32}}}, "box", "tags"),
 		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("clear_agent_box_context", "Start a fresh agent conversation in another running, unprotected box while keeping its chat history and workspace. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
+		makeTool("compact_agent_box_context", "Request /compact in another running, unprotected agent box's existing conversation. The target must be idle; this preserves its thread and workspace. The response confirms that compaction was requested, not that summarization has finished. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
 		makeTool("chat_message", "Send a message to the vmbox Agent chat. For the account owner, pass text and optionally replyTo; OMIT contact entirely. replyTo is the chat message reference, never a box contact. Call this once for each completed response, including any image files the user should receive. To send to another box, pass contact as a compact id or exact box name returned by get_contacts. To reply to an incoming contact message, pass its From-Box-ID as contact and omit replyTo. Image files are supported for both owner and contact messages.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
@@ -252,7 +253,7 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 				response["error"] = map[string]any{"code": -32602, "message": "Invalid tool parameters"}
 				break
 			}
-			callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			callCtx, cancel := context.WithTimeout(ctx, desktopToolTimeout(params.Name))
 			_, allowed, policyErr := allowedDesktopMCPTools(callCtx, assignment, resolve)
 			var result map[string]any
 			var err error
@@ -276,6 +277,13 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		}
 	}
 	return scanner.Err()
+}
+
+func desktopToolTimeout(name string) time.Duration {
+	if name == "compact_agent_box_context" {
+		return 50 * time.Second
+	}
+	return 30 * time.Second
 }
 
 func desktopToolPolicySignature(ctx context.Context, assignment string, resolve desktopToolPolicyResolver) (string, error) {
@@ -636,6 +644,21 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		var result map[string]any
 		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/clear-context", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "compact_agent_box_context" {
+		var request struct {
+			Box            string `json:"box"`
+			Confirmation   string `json:"confirmation"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("box, confirmation, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithTimeout(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/compact", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result, 45*time.Second); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)

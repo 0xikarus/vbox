@@ -57,18 +57,23 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 }
 
 func TestClearAgentBoxContextToolRequiresTargetConfirmationAndRetryKey(t *testing.T) {
-	for _, tool := range desktopMCPTools() {
-		if tool["name"] != "clear_agent_box_context" {
-			continue
+	for _, name := range []string{"clear_agent_box_context", "compact_agent_box_context"} {
+		found := false
+		for _, tool := range desktopMCPTools() {
+			if tool["name"] != name {
+				continue
+			}
+			found = true
+			schema := tool["inputSchema"].(map[string]any)
+			required := schema["required"].([]string)
+			if !slices.Equal(required, []string{"box", "confirmation", "idempotencyKey"}) {
+				t.Fatalf("%s required fields=%v", name, required)
+			}
 		}
-		schema := tool["inputSchema"].(map[string]any)
-		required := schema["required"].([]string)
-		if !slices.Equal(required, []string{"box", "confirmation", "idempotencyKey"}) {
-			t.Fatalf("required fields=%v", required)
+		if !found {
+			t.Fatalf("%s tool is missing", name)
 		}
-		return
 	}
-	t.Fatal("clear_agent_box_context tool is missing")
 }
 
 func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
