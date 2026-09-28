@@ -101,7 +101,7 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.waitForFunction(()=>document.querySelector('#box-detail-body')?.textContent.includes('2026'));
  assert.match(await page.$eval('#box-detail-body',body=>body.textContent),/Last instructions sync.*2026/);
  await page.waitForFunction(()=>document.querySelector('#box-detail-body .box-create-limit .idle-policy-badge')?.textContent==='Off');
- assert.equal(await page.$eval('#box-detail-body .box-create-limit input',input=>input.disabled),true);
+ assert.equal(await page.$eval('#box-detail-body .box-create-limit',card=>card.parentElement.hidden),true);
  await page.keyboard.press('Escape');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),true);
  await page.click('.workspace-links a[href="#providers"]');

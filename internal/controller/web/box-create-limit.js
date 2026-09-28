@@ -4,7 +4,7 @@ window.VMBoxCreateLimit = (() => {
  const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
  function mount(root,{boxId,request,onSaved}){
   if(!root||root.dataset.createLimitBox===boxId)return;
-  root.dataset.createLimitBox=boxId;root.replaceChildren();
+  root.dataset.createLimitBox=boxId;root.hidden=true;root.replaceChildren();
   const card=text('section','');card.className='idle-policy box-create-limit';
   const top=text('div','');top.className='idle-policy-top';
   const name=text('strong','Created-box limit');
@@ -23,6 +23,7 @@ window.VMBoxCreateLimit = (() => {
   function render(policy){
    const cap=policy.capabilities||{},grant=cap.createAgentBox||{};
    const allowed=!!grant.enabled&&!!cap.mcpTools?.enabled&&(cap.mcpTools.allowedTools||[]).includes('create_agent_box');
+   root.hidden=!allowed;
    count.value=String(grant.maxBoxes||1);count.disabled=!allowed;save.disabled=!allowed;
    badge.textContent=allowed?String(grant.maxBoxes)+' total':'Off';badge.dataset.enabled=String(allowed);
    status.textContent=allowed?'This box may create up to '+grant.maxBoxes+' boxes total.':'Box creation is off. Enable it in Permissions to edit this limit.';
@@ -30,7 +31,7 @@ window.VMBoxCreateLimit = (() => {
   async function load(){
    retry.hidden=true;status.textContent='Loading creation limit…';
    try{const policy=await request();if(current())render(policy)}
-   catch(error){if(current()){badge.textContent='Unavailable';status.textContent=error.message;retry.hidden=false}}
+   catch(error){if(current()){root.hidden=false;badge.textContent='Unavailable';status.textContent=error.message;retry.hidden=false}}
   }
   save.addEventListener('click',async()=>{
    if(!count.reportValidity())return;

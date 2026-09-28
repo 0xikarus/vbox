@@ -9,8 +9,9 @@ const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.c
 test('chat details edits one box creation limit without changing its other permissions',async()=>{
  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude'};
  const other={id:'reviewer',name:'Reviewer',state:'running',defaultAgent:'codex'};
+ const withoutCreate={id:'reader',name:'Reader',state:'running',defaultAgent:'claude'};
  const capabilities={allContacts:{enabled:true},createAgentBox:{enabled:true,maxBoxes:2,maxDiskGiB:50,allowedAgents:['claude']},mcpTools:{enabled:true,allowedTools:['create_agent_box','take_screenshot']}};
- const policies=new Map([[box.id,{boxId:box.id,capabilities}],[other.id,{boxId:other.id,capabilities:{...capabilities,createAgentBox:{...capabilities.createAgentBox,maxBoxes:4}}}]]);
+ const policies=new Map([[box.id,{boxId:box.id,capabilities}],[other.id,{boxId:other.id,capabilities:{...capabilities,createAgentBox:{...capabilities.createAgentBox,maxBoxes:4}}}],[withoutCreate.id,{boxId:withoutCreate.id,capabilities:{...capabilities,createAgentBox:{...capabilities.createAgentBox,enabled:false}}}]]);
  const updates=[];
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];
@@ -19,7 +20,7 @@ test('chat details edits one box creation limit without changing its other permi
   if(!path.startsWith('/v1/'))return res.end('');
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify([box,other]));
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify([box,other,withoutCreate]));
   if(path.endsWith('/agent-policy')){
    const id=path.split('/')[3];
    if(req.method==='PUT'){
@@ -46,6 +47,9 @@ test('chat details edits one box creation limit without changing its other permi
   assert.deepEqual(updates[0].capabilities,{...capabilities,createAgentBox:{...capabilities.createAgentBox,maxBoxes:5}});
   await page.$eval('[data-box-id="reviewer"]',row=>row.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='4 total');
+  await page.$eval('[data-box-id="reader"]',row=>row.click());
+  await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='Off');
+  assert.equal(await page.$eval('#inspect-create-limit',root=>root.hidden),true);
   await page.$eval('[data-box-id="builder"]',row=>row.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='5 total');
   await page.close();
