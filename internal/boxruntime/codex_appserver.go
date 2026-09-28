@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -40,10 +39,6 @@ func codexThreadFile(root, session string) string {
 
 func codexResetPendingFile(root, session string) string {
 	return filepath.Join(root, "chat", "codex-reset-pending", session)
-}
-
-func codexFreshUsedFile(root, session string) string {
-	return filepath.Join(root, "chat", "codex-fresh-used", session)
 }
 
 // codexClient is one connection to a session's app server.
@@ -155,7 +150,7 @@ func CodexCurrentThread(ctx context.Context, client *codexClient, root, session,
 		return "", fmt.Errorf("Codex TUI is disconnected; reopen it before sending chat")
 	}
 	if id == "" {
-		return "", fmt.Errorf("fresh Codex TUI needs its first message through the visible pane")
+		return "", fmt.Errorf("Codex TUI has not selected a thread yet")
 	}
 	return id, nil
 }
@@ -165,52 +160,15 @@ func rememberCodexThread(root, session, id string) error {
 }
 
 // A new remote TUI owns a zero-turn thread that Codex may not have persisted
-// yet. Record its birth rather than starting an app-server thread from a second
-// client: a second client's zero-turn ID can disappear before the TUI attaches.
+// yet. Record its birth so an older saved thread cannot be used by mistake.
 func markFreshCodexTUI(root, session string) error {
 	if err := writeTextAtomic(codexResetPendingFile(root, session), "visible-tui\n", 0600); err != nil {
-		return err
-	}
-	if err := os.Remove(codexFreshUsedFile(root, session)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	if err := os.Remove(codexThreadFile(root, session)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
-}
-
-// A new, empty TUI may own a zero-turn ID that older Codex releases cannot
-// queue into. Resume an older selected thread immediately, or queue after the
-// selected thread has materialized a rollout since this TUI started.
-var codexRecentRolloutThread = func(ctx context.Context, session, home string, since time.Time) (string, error) {
-	connected, id, err := codexVisibleThreadState(ctx, session)
-	if err != nil {
-		return "", err
-	}
-	if !connected {
-		return "", fmt.Errorf("Codex TUI is disconnected")
-	}
-	if id == "" {
-		return "", nil
-	}
-	compact := strings.ReplaceAll(id, "-", "")
-	if len(compact) >= 12 {
-		if millis, err := strconv.ParseInt(compact[:12], 16, 64); err == nil && time.UnixMilli(millis).Before(since) {
-			return id, nil
-		}
-	}
-	paths, err := filepath.Glob(filepath.Join(home, ".codex", "sessions", "*", "*", "*", "rollout-*-"+id+".jsonl"))
-	if err != nil {
-		return "", err
-	}
-	for _, path := range paths {
-		info, err := os.Stat(path)
-		if err == nil && info.ModTime().After(since) {
-			return id, nil
-		}
-	}
-	return "", nil
 }
 
 // CodexStartTurn sends one message to the thread the terminal is showing and
@@ -262,9 +220,6 @@ var CodexStartTurn = func(ctx context.Context, session, root, workspace, text st
 // for its loaded visible thread. Queueing is shared with the remote TUI, unlike
 // starting a turn from an independent app-server client.
 var CodexQueueMessage = func(ctx context.Context, session, root, workspace, messageID, text string, images []string) error {
-	if err := waitForAgentReady(ctx, session, "codex"); err != nil {
-		return err
-	}
 	if err := EnsureCodexTUIProxy(ctx, root, session); err != nil {
 		return err
 	}
@@ -273,7 +228,7 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 		return err
 	}
 	defer client.Close()
-	thread, err := CodexCurrentThread(ctx, client, root, session, workspace)
+	thread, err := waitForCodexVisibleThread(ctx, client, root, session, workspace)
 	if err != nil {
 		return err
 	}
@@ -290,6 +245,26 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	}
 	_ = os.Remove(codexResetPendingFile(root, session))
 	return nil
+}
+
+// The remote TUI binds its own new thread after it connects. Wait for that
+// binding through the proxy instead of parsing the rendered terminal screen.
+func waitForCodexVisibleThread(ctx context.Context, client *codexClient, root, session, workspace string) (string, error) {
+	deadline := time.NewTimer(agentReadyTimeout)
+	defer deadline.Stop()
+	for {
+		thread, err := CodexCurrentThread(ctx, client, root, session, workspace)
+		if err == nil {
+			return thread, nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-deadline.C:
+			return "", fmt.Errorf("Codex TUI did not select a thread: %w", err)
+		case <-time.After(agentReadyPollInterval):
+		}
+	}
 }
 
 // codexStartQueuedIfIdle starts the oldest native submission, including one

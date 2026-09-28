@@ -307,124 +307,45 @@ func TestDeliverCodexChatQueuesEmbeddedImagesForVisibleThread(t *testing.T) {
 	}
 }
 
-func TestFirstImageAfterWakeStartsInVisibleCodexPane(t *testing.T) {
+func TestFirstMessagesAfterWakeUseStructuredQueue(t *testing.T) {
 	stubCodexDeliveryHealth(t)
-	originalRecent, originalQueue, originalTmux := codexRecentRolloutThread, CodexQueueMessage, tmuxCommand
-	t.Cleanup(func() {
-		codexRecentRolloutThread, CodexQueueMessage, tmuxCommand = originalRecent, originalQueue, originalTmux
-	})
-	codexRecentRolloutThread = func(context.Context, string, string, time.Time) (string, error) { return "", nil }
-	CodexQueueMessage = func(context.Context, string, string, string, string, string, []string) error {
-		t.Fatal("first image was queued to an older thread")
-		return nil
-	}
-	var command string
-	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		if args[0] == "capture-pane" {
-			return []byte("OpenAI Codex\n› Ask Codex to do anything"), nil
-		}
-		if args[0] == "respawn-pane" {
-			command = strings.Join(args, " ")
-		}
-		return nil, nil
-	}
+	originalQueue, originalTmux := CodexQueueMessage, tmuxCommand
+	t.Cleanup(func() { CodexQueueMessage, tmuxCommand = originalQueue, originalTmux })
 	root, home := t.TempDir(), t.TempDir()
 	if err := markFreshCodexTUI(root, "codex-wake"); err != nil {
 		t.Fatal(err)
+	}
+	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		t.Fatalf("first message touched terminal: %v", args)
+		return nil, nil
 	}
 	var imageBytes bytes.Buffer
 	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatal(err)
 	}
-	inbound := ChatInbound{ID: "image-after-wake", Text: "Inspect this image", Images: []ChatEventImage{{Name: "scene.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(imageBytes.Bytes())}}}
-	if err := DeliverCodexChat(context.Background(), root, home, "codex-wake", inbound); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(command, "respawn-pane -k -t =codex-wake:0.0") || !strings.Contains(command, "'-i'") || !strings.Contains(command, "Inspect this image") {
-		t.Fatalf("image prompt did not start in the visible pane: %q", command)
-	}
-	if _, err := os.Stat(codexFreshUsedFile(root, "codex-wake")); err != nil {
-		t.Fatalf("first image was not marked as submitted: %v", err)
-	}
-}
-
-func TestImageAfterManualTUITurnQueuesWithoutReplacingPane(t *testing.T) {
-	stubCodexDeliveryHealth(t)
-	originalRecent, originalQueue, originalTmux := codexRecentRolloutThread, CodexQueueMessage, tmuxCommand
-	t.Cleanup(func() {
-		codexRecentRolloutThread, CodexQueueMessage, tmuxCommand = originalRecent, originalQueue, originalTmux
-	})
-	codexRecentRolloutThread = func(context.Context, string, string, time.Time) (string, error) { return "active-visible", nil }
 	queued := 0
-	CodexQueueMessage = func(_ context.Context, _, root, _, _, _ string, paths []string) error {
+	CodexQueueMessage = func(_ context.Context, session, _, _, id, text string, paths []string) error {
 		queued++
-		data, err := os.ReadFile(codexResetPendingFile(root, "codex-wake"))
-		if err != nil || strings.TrimSpace(string(data)) != "active-visible" || len(paths) != 1 {
-			t.Fatalf("image was not pinned to the existing visible turn: %q, %v", data, err)
+		if session != "codex-wake" || text == "" || id == "" || (queued == 1 && len(paths) != 1) || (queued == 2 && len(paths) != 0) {
+			t.Fatalf("incorrect queued message: session=%q id=%q text=%q paths=%v", session, id, text, paths)
 		}
 		return nil
 	}
-	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		t.Fatalf("existing TUI was replaced: %v", args)
-		return nil, nil
-	}
-	root, home := t.TempDir(), t.TempDir()
-	if err := markFreshCodexTUI(root, "codex-wake"); err != nil {
+	image := ChatInbound{ID: "image-after-wake", Text: "Inspect this image", Images: []ChatEventImage{{Name: "scene.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(imageBytes.Bytes())}}}
+	if err := DeliverCodexChat(context.Background(), root, home, "codex-wake", image); err != nil {
 		t.Fatal(err)
 	}
-	var imageBytes bytes.Buffer
-	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
+	text := ChatInbound{ID: "text-after-wake", Text: strings.Repeat("SYNC_AFTER_WAKE", 500)}
+	if err := DeliverCodexChat(context.Background(), root, home, "codex-wake", text); err != nil {
 		t.Fatal(err)
 	}
-	inbound := ChatInbound{ID: "image-after-manual", Text: "Inspect", Images: []ChatEventImage{{Name: "scene.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(imageBytes.Bytes())}}}
-	if err := DeliverCodexChat(context.Background(), root, home, "codex-wake", inbound); err != nil {
-		t.Fatal(err)
+	if queued != 2 {
+		t.Fatalf("queued %d messages, want 2", queued)
 	}
-	if queued != 1 {
-		t.Fatalf("image queued %d times", queued)
-	}
-}
-
-func TestFirstTextAfterWakeTypesIntoVisibleCodexPane(t *testing.T) {
-	stubCodexDeliveryHealth(t)
-	originalRecent, originalQueue, originalTmux, originalPause := codexRecentRolloutThread, CodexQueueMessage, tmuxCommand, tmuxSubmitPause
-	t.Cleanup(func() {
-		codexRecentRolloutThread, CodexQueueMessage, tmuxCommand, tmuxSubmitPause = originalRecent, originalQueue, originalTmux, originalPause
-	})
-	codexRecentRolloutThread = func(context.Context, string, string, time.Time) (string, error) { return "", nil }
-	CodexQueueMessage = func(context.Context, string, string, string, string, string, []string) error {
-		t.Fatal("first text was queued to an older thread")
-		return nil
-	}
-	tmuxSubmitPause = func(context.Context) error { return nil }
-	typed := 0
-	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		if args[0] == "capture-pane" {
-			return []byte("OpenAI Codex\n› Ask Codex to do anything"), nil
+	for _, id := range []string{image.ID, text.ID} {
+		if _, err := os.Stat(filepath.Join(home, ".local/share/vmbox/chat/inbox/codex-wake", id+".json")); !os.IsNotExist(err) {
+			t.Fatalf("delivered envelope %q remains: %v", id, err)
 		}
-		if args[0] == "send-keys" && strings.Contains(strings.Join(args, " "), "SYNC_AFTER_WAKE") {
-			typed++
-		}
-		return nil, nil
-	}
-	root, home := t.TempDir(), t.TempDir()
-	if err := markFreshCodexTUI(root, "codex-wake"); err != nil {
-		t.Fatal(err)
-	}
-	if err := DeliverCodexChat(context.Background(), root, home, "codex-wake", ChatInbound{ID: "text-after-wake", Text: "SYNC_AFTER_WAKE"}); err != nil {
-		t.Fatal(err)
-	}
-	if typed != 1 {
-		t.Fatalf("first text entered the visible TUI %d times", typed)
-	}
-	if err := DeliverCodexChat(context.Background(), root, home, "codex-wake", ChatInbound{ID: "text-after-wake", Text: "SYNC_AFTER_WAKE"}); err != nil {
-		t.Fatal(err)
-	}
-	if typed != 1 {
-		t.Fatalf("retry replayed first text %d times", typed)
-	}
-	if _, err := os.Stat(codexFreshUsedFile(root, "codex-wake")); err != nil {
-		t.Fatalf("first text was not marked as submitted: %v", err)
 	}
 }
 
@@ -462,103 +383,55 @@ func TestDeliverCodexChatLeavesUnsentTUIDraftUntouched(t *testing.T) {
 	}
 }
 
-func TestStartCodexChatPassesInitialMessageAndImagesAsArguments(t *testing.T) {
+func TestStartCodexChatQueuesInitialLongTextAndImage(t *testing.T) {
 	stubRegisteredAgent(t, "codex")
-	stubCodexBackend(t)
-	home := t.TempDir()
-	var encoded bytes.Buffer
-	canvas := image.NewRGBA(image.Rect(0, 0, 2, 2))
-	canvas.Set(0, 0, color.RGBA{R: 80, G: 20, B: 180, A: 255})
-	if err := png.Encode(&encoded, canvas); err != nil {
-		t.Fatal(err)
-	}
-	original := tmuxCommand
-	t.Cleanup(func() { tmuxCommand = original })
-	var calls [][]string
-	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
-		if stdin != "" || len(args) > 0 && (args[0] == "load-buffer" || args[0] == "paste-buffer" || args[0] == "capture-pane") {
-			t.Fatal("Codex startup used terminal text delivery")
-		}
-		calls = append(calls, append([]string(nil), args...))
-		if len(args) > 0 && args[0] == "has-session" {
-			return nil, errors.New("missing")
-		}
-		return nil, nil
-	}
-	inbound := ChatInbound{ID: "message-1", Text: "Inspect this purple image", Images: []ChatEventImage{{Name: "purple.png", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
-	if err := StartCodexChat(context.Background(), t.TempDir(), home, "codex-chat", inbound); err != nil {
-		t.Fatal(err)
-	}
-	joined := ""
-	for _, call := range calls {
-		joined += strings.Join(call, "\n") + "\n"
-	}
-	if !strings.Contains(joined, "new-session\n-d\n-s\ncodex-chat") || !strings.Contains(joined, "\n-i\n") || !strings.Contains(joined, "Inspect this purple image") || !strings.Contains(joined, "image-1.png") {
-		t.Fatalf("initial Codex arguments were incomplete: %q", joined)
-	}
-	if _, err := os.Stat(filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "codex-chat", "message-1.json")); !os.IsNotExist(err) {
-		t.Fatalf("initial inbox envelope was retained: %v", err)
-	}
-}
-
-func TestStartCodexChatChunksLongInitialMessageAfterStartup(t *testing.T) {
-	stubRegisteredAgent(t, "codex")
-	stubCodexBackend(t)
+	stubCodexDeliveryHealth(t)
 	home, root := t.TempDir(), t.TempDir()
-	originalCommand, originalSettle, originalSubmit := tmuxCommand, agentReadySettlePause, tmuxSubmitPause
-	t.Cleanup(func() {
-		tmuxCommand, agentReadySettlePause, tmuxSubmitPause = originalCommand, originalSettle, originalSubmit
-	})
-	agentReadySettlePause = func(context.Context) error { return nil }
-	tmuxSubmitPause = func(context.Context) error { return nil }
-	message := strings.Repeat("long🙂", 12_000)
 	var encoded bytes.Buffer
 	if err := png.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatal(err)
 	}
-	var chunks []string
-	newSessionIncludedPrompt := false
-	newSessionIncludedImage := false
-	tmuxCommand = func(_ context.Context, _ string, args ...string) ([]byte, error) {
-		if len(args) == 0 {
-			return nil, nil
+	message := strings.Repeat("long🙂", 12_000)
+	inbound := ChatInbound{ID: "first-message", Text: message, Images: []ChatEventImage{{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
+	originalTmux, originalQueue := tmuxCommand, CodexQueueMessage
+	t.Cleanup(func() { tmuxCommand, CodexQueueMessage = originalTmux, originalQueue })
+	var started bool
+	tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+		if stdin != "" || len(args) == 0 {
+			t.Fatalf("unexpected terminal call: %q %v", stdin, args)
 		}
-		switch args[0] {
-		case "has-session":
+		if args[0] == "has-session" {
 			return nil, errors.New("missing")
-		case "capture-pane":
-			return []byte("OpenAI Codex (v0.155.1)\n› Ask Codex to do anything"), nil
-		case "new-session":
+		}
+		if args[0] == "new-session" {
+			started = true
 			for _, arg := range args {
-				if arg == message {
-					newSessionIncludedPrompt = true
-				}
-				if strings.Contains(arg, "image-1.png") {
-					newSessionIncludedImage = true
+				if arg == message || strings.Contains(arg, "image-1.png") {
+					t.Fatal("initial message or image passed in terminal arguments")
 				}
 			}
-		case "send-keys":
-			if len(args) >= 5 && args[3] == "-l" {
-				chunks = append(chunks, args[4])
-			}
+		}
+		if args[0] == "send-keys" || args[0] == "capture-pane" || args[0] == "respawn-pane" {
+			t.Fatalf("first message used TUI: %v", args)
 		}
 		return nil, nil
 	}
-	inbound := ChatInbound{ID: "message-long-start", Text: message, Images: []ChatEventImage{{MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(encoded.Bytes())}}}
-	if err := StartCodexChat(context.Background(), root, home, "codex-long-start", inbound); err != nil {
+	queued := false
+	CodexQueueMessage = func(_ context.Context, session, _, _, id, text string, paths []string) error {
+		queued = true
+		if session != "codex-chat" || id != inbound.ID || text != message || len(paths) != 1 || !strings.HasSuffix(paths[0], "image-1.png") {
+			t.Fatalf("initial queue changed message: session=%q id=%q bytes=%d paths=%v", session, id, len(text), paths)
+		}
+		return nil
+	}
+	if err := StartCodexChat(context.Background(), root, home, "codex-chat", inbound); err != nil {
 		t.Fatal(err)
 	}
-	if newSessionIncludedPrompt {
-		t.Fatal("long initial prompt was passed through tmux new-session")
+	if !started || !queued {
+		t.Fatalf("started=%t queued=%t", started, queued)
 	}
-	if !newSessionIncludedImage {
-		t.Fatal("long initial prompt did not attach its image to Codex startup")
-	}
-	if got := strings.Join(chunks, ""); got != message || len(chunks) < 2 {
-		t.Fatalf("chunked initial prompt has %d bytes in %d chunks, want %d bytes", len(got), len(chunks), len(message))
-	}
-	if _, err := os.Stat(filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", "codex-long-start", "message-long-start.json")); !os.IsNotExist(err) {
-		t.Fatalf("delivered initial envelope remained: %v", err)
+	if _, err := os.Stat(filepath.Join(home, ".local/share/vmbox/chat/inbox/codex-chat", inbound.ID+".json")); !os.IsNotExist(err) {
+		t.Fatalf("confirmed initial envelope remains: %v", err)
 	}
 }
 
