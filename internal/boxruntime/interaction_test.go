@@ -336,6 +336,17 @@ func TestCodexLongConversationRemainsInputReadyWithoutStartupHeader(t *testing.T
 	// before typing any Chat text into that user's unsent input.
 }
 
+func TestCodexReadyWithTwoLineFooter(t *testing.T) {
+	content := "• Finished the task\n\n› Ask Codex to do anything\n\n  GPT-6-Sol low · /data/workspace · Greet user\n  ? for shortcuts               \n"
+	if !agentInputReady("codex", content) {
+		t.Fatal("Codex composer above the two-line footer was not ready")
+	}
+	content = "› Ask Codex to do anything\n  GPT-6-Sol low · /data/workspace · Greet user\n  ? for shortcuts\n• Running a tool\n"
+	if agentInputReady("codex", content) {
+		t.Fatal("stale composer above active output was treated as ready")
+	}
+}
+
 func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 	stubRegisteredAgent(t, "claude")
 	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
