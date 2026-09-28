@@ -342,7 +342,11 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 	defer os.Remove(ready)
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
-	sent := map[string]time.Time{}
+	// A successful write to this live Claude channel can remain queued in the
+	// client until its current turn finishes. Its transcript receipt may therefore
+	// appear much later. Emit each inbox event once per MCP connection; a new
+	// connection after a TUI restart gets a fresh map and can retry it.
+	sent := map[string]bool{}
 	missingPane := 0
 	for {
 		if !claudeChannelCurrent(ctx, session) {
@@ -370,17 +374,8 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 				if receiptErr == nil && accepted {
 					_ = ackClaudeNativeReceipt(home, session, event.ID, path)
 					delete(sent, event.ID)
-				} else if receiptErr == nil && !emitted && time.Since(sent[event.ID]) >= 30*time.Second {
-					meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
-					if len(event.Paths) > 0 {
-						meta["image_path"] = event.Paths[0]
-						paths, _ := json.Marshal(event.Paths)
-						meta["image_paths"] = string(paths)
-					}
-					if encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": event.Text, "meta": meta}}) == nil {
-						sent[event.ID] = time.Now()
-						emitted = true
-					}
+				} else if receiptErr == nil && !emitted {
+					emitted = emitClaudeChannelEvent(session, event, sent, encode)
 				}
 			}
 		}
@@ -390,6 +385,23 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 		case <-ticker.C:
 		}
 	}
+}
+
+func emitClaudeChannelEvent(session string, event chatInboundFile, sent map[string]bool, encode func(any) error) bool {
+	if sent[event.ID] {
+		return false
+	}
+	meta := map[string]string{"chat_id": session, "message_id": event.ID, "user": "vmbox-user", "ts": time.Now().UTC().Format(time.RFC3339Nano)}
+	if len(event.Paths) > 0 {
+		meta["image_path"] = event.Paths[0]
+		paths, _ := json.Marshal(event.Paths)
+		meta["image_paths"] = string(paths)
+	}
+	if err := encode(map[string]any{"jsonrpc": "2.0", "method": "notifications/claude/channel", "params": map[string]any{"content": event.Text, "meta": meta}}); err != nil {
+		return false
+	}
+	sent[event.ID] = true
+	return true
 }
 
 func claudeChannelReadyDir(home string) string {
