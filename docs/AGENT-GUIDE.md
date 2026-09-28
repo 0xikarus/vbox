@@ -259,9 +259,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   canonical `~/.config/vmbox/instructions.md` and links it into exactly the
   verified global slots (`~/.codex/AGENTS.md`, `~/.claude/CLAUDE.md`,
   `~/.config/opencode/AGENTS.md`), tracking ownership in a ledger. Pre-existing
-  user files are conflicts left untouched. The controller prepends a concise
-  response-style rule and appends the required Chat MCP conventions even when
-  the box has no user-selected instructions. Repository instruction files are
+  user files are conflicts left untouched, repository instruction files are
   never written, and re-application on every attach (`sync-instructions` before
   `restore-tools`, plus `RestoreManagedInstructions` inside restore) is
   idempotent. `vmbox-runtime sync-instructions` verifies its payload digest like
@@ -270,6 +268,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   when syncing to the box; editing the snapshot preserves the references.
   Existing rows default to empty guidance and are not backfilled. The generated
   section is bounded by the runtime's 64 KiB instruction limit before creation.
+  The controller and Chat UIs offer an optional concise-response template; it
+  becomes editable custom Markdown only for the box where it is selected.
 
 ## Verification and honest evidence
 

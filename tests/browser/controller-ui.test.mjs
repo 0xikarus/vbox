@@ -724,9 +724,15 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  assert.match(await page.$eval('#instruction-list',element=>element.textContent),/default/);
  // The creation form offers automatic, none, every preset, and a custom copy.
  await page.evaluate(()=>{document.querySelector('#create-instructions-editor').open=true});
- assert.deepEqual(await page.$$eval('#create-instructions option',nodes=>nodes.map(node=>node.value)),['auto','none','general','custom']);
+ assert.deepEqual(await page.$$eval('#create-instructions option',nodes=>nodes.map(node=>node.value)),['auto','none','__concise__','general','custom']);
+ await page.select('#create-instructions','__concise__');
+ await page.waitForFunction(()=>document.querySelector('#create-instructions-custom').value.includes('few tokens as needed'));
+ assert.equal(await page.$eval('#create-instructions-custom',area=>area.readOnly),false,'concise instructions remain editable');
  await page.select('#create-instructions','general');
  await page.waitForFunction(()=>document.querySelector('#create-instructions-preview').textContent.includes('House rules'));
+ await page.select('#create-instructions','__concise__');
+ assert.match(await page.$eval('#create-instructions-custom',area=>area.value),/House rules[\s\S]*few tokens as needed/,'the concise option adds to existing instructions');
+ await page.select('#create-instructions','general');
  // Embedded markup in user Markdown is rendered as text, never as live nodes.
  assert.equal(await page.$eval('#create-instructions-preview',element=>element.querySelectorAll('img,script').length),0);
  assert.equal(await page.evaluate(()=>window.pwned),undefined);
@@ -737,10 +743,18 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
  await page.click('#create button[type=submit]');await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.instructions,{preset:'general',markdown:'# House rules\nAlways answer briefly.\nextra'});
+ await page.type('#create input[name=name]','concise-fixture');
+ await page.select('#create-instructions','__concise__');
+ const conciseCreated=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
+ await page.click('#create button[type=submit]');await conciseCreated;
+ assert.match(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.instructions.markdown,/few tokens as needed/);
  // Explicit Apply instructions action for an existing box.
  await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Instructions')).click()});
  await page.waitForFunction(()=>!document.querySelector('#box-instructions-modal').hidden);
  assert.match(await page.$eval('#box-instructions-effective',element=>element.textContent),/vmbox chat delivery.*Message-ID/s);
+ await page.$eval('#box-instructions-markdown',area=>{area.value='# Existing rules\n';area.dispatchEvent(new Event('input',{bubbles:true}))});
+ await page.select('#box-instructions-preset','__concise__');
+ assert.match(await page.$eval('#box-instructions-markdown',area=>area.value),/Existing rules[\s\S]*few tokens as needed/);
  await page.evaluate(()=>{const area=document.querySelector('#box-instructions-markdown');area.value='# Applied\nDo this.';area.dispatchEvent(new Event('input',{bubbles:true}))});
  await page.select('#box-instructions-preset','custom');
  await page.click('#box-instructions-apply');

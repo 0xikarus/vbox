@@ -423,6 +423,8 @@ $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity
 $('#notification').addEventListener('submit',action(async e=>{const f=e.target.elements,split=s=>s.split(',').map(v=>v.trim()).filter(Boolean);await api('/v1/notifications/'+encodeURIComponent(f.kind.value)+'/'+encodeURIComponent(f.name.value),'PUT',{config:JSON.parse(f.config.value),secret:JSON.parse(f.secret.value),allowedUsers:split(f.users.value),allowedChats:split(f.chats.value)});e.target.reset();await refresh()}));
 
 /* ---------- instruction presets, box instructions, imported profiles ---------- */
+const conciseInstructions='## Concise responses\n\nDo the requested work fully. In messages, use as few tokens as needed for a complete, correct answer. Write short, direct sentences. Omit filler, repetition, and unrequested background.\n';
+function addConciseInstructions(markdown){if(markdown.includes(conciseInstructions))return markdown;const separator=!markdown||markdown.endsWith('\n\n')?'':markdown.endsWith('\n')?'\n':'\n\n';return markdown+separator+conciseInstructions}
 function modalEl(id){return document.getElementById(id)}
 function renderMarkdownPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):node('pre',text||''))}
 async function presetBody(name){
@@ -498,6 +500,7 @@ function renderCreateInstructionChoice(){
  const select=$('#create-instructions'),previous=select.value;select.replaceChildren();
  const auto=node('option',instructionPresets.defaultName?'Default · '+instructionPresets.defaultName:'Default / none');auto.value='auto';select.append(auto);
  const none=node('option','None');none.value='none';select.append(none);
+ const concise=node('option','Concise responses');concise.value='__concise__';select.append(concise);
  for(const preset of instructionPresets.presets){const option=node('option',preset.name+(preset.default?' · default':''));option.value=preset.name;select.append(option)}
  const custom=node('option','Custom Markdown');custom.value='custom';select.append(custom);
  if([...select.options].some(option=>option.value===previous))select.value=previous;
@@ -512,9 +515,9 @@ async function syncCreateInstructionText(){
   editor.hidden=true;editor.open=false;
   renderMarkdownPreview(preview,'');preview.hidden=true;return;
  }
- if(value==='custom'){
+ if(value==='custom'||value==='__concise__'){
   textarea.readOnly=false;
-  if(createInstructionSource!=='custom'){textarea.value='';createInstructionSource='custom';editor.open=true}
+  if(createInstructionSource!==value){textarea.value=value==='__concise__'?addConciseInstructions(textarea.value):'';createInstructionSource=value;editor.open=true}
   editor.hidden=false;
   renderMarkdownPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();return;
  }
@@ -530,7 +533,7 @@ async function createInstructionSelection(){
  const value=$('#create-instructions').value,markdown=$('#create-instructions-custom').value;
  if(value==='auto')return null;
  if(value==='none')return {none:true};
- if(value==='custom'){if(!markdown.trim())throw Error('Enter the custom instruction Markdown or choose another source.');return {markdown}}
+ if(value==='custom'||value==='__concise__'){if(!markdown.trim())throw Error('Enter the custom instruction Markdown or choose another source.');return {markdown}}
  const body=await presetBody(value);
  return markdown.trim()&&markdown!==body?{preset:value,markdown}:{preset:value};
 }
@@ -550,9 +553,10 @@ async function openBoxInstructions(box){
  try{
   const state=await api(bp(box.id)+'/instructions'),current=state.instructions||{source:'none',markdown:''};
   const none=node('option','No custom instructions (chat conventions only)');none.value='';select.append(none);
+  const concise=node('option','Concise responses');concise.value='__concise__';select.append(concise);
   for(const preset of instructionPresets.presets){const option=node('option',preset.name+' · r'+preset.revision);option.value=preset.name;select.append(option)}
   const custom=node('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
-  select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?'custom':'');
+  select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?(current.markdown===conciseInstructions?'__concise__':'custom'):'');
   $('#box-instructions-markdown').value=current.markdown||'';
   renderMarkdownPreview($('#box-instructions-preview'),current.markdown||'');
   $('#box-instructions-effective').textContent=state.effectiveMarkdown||'';
@@ -564,6 +568,7 @@ async function openBoxInstructions(box){
 $('#box-instructions-preset').addEventListener('change',action(async()=>{
  const select=$('#box-instructions-preset'),textarea=$('#box-instructions-markdown'),preview=$('#box-instructions-preview');
  if(select.value===''){textarea.value='';renderMarkdownPreview(preview,'');return}
+ if(select.value==='__concise__'){textarea.value=addConciseInstructions(textarea.value);renderMarkdownPreview(preview,textarea.value);return}
  if(select.value==='custom'){renderMarkdownPreview(preview,textarea.value);return}
  try{textarea.value=await presetBody(select.value)}catch(e){$('#box-instructions-status').textContent=e.message;return}
  renderMarkdownPreview(preview,textarea.value);
@@ -574,7 +579,7 @@ $('#box-instructions-apply').addEventListener('click',action(async()=>{
  const status=$('#box-instructions-status'),select=$('#box-instructions-preset'),markdown=$('#box-instructions-markdown').value;
  let body;
  if(select.value==='')body={none:true};
- else if(select.value==='custom'){if(!markdown.trim())throw Error('Enter the custom Markdown or choose another source.');body={markdown}}
+ else if(select.value==='custom'||select.value==='__concise__'){if(!markdown.trim())throw Error('Enter the custom Markdown or choose another source.');body={markdown}}
  else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
  status.textContent='Applying…';
  const result=await api(bp(boxInstructionTarget.id)+'/instructions','PUT',body);
