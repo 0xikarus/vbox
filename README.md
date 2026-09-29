@@ -61,6 +61,23 @@ You can upload local Claude, Codex, OpenCode, or GitHub logins with `vmbox profi
 
 The controller's web UI has box workspaces with Desktop and TMUX views, Agent chat, and Grid for viewing several running boxes. Agent chat supports image attachments and direct contacts between boxes. Optional Blender and Foundry presets are selected when creating a box. See the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md) for tools, browser state, and secrets, and the [local prompt API](docs/LOCAL-AGENT-PROMPT.md) for sending a message from an app inside a box.
 
+## How it compares
+
+| Feature | vmbox | Grok Bot | Muse |
+| --- | --- | --- | --- |
+| Bring your own agent harness | Codex, Claude Code, or OpenCode | Cursor-managed bot; other harnesses not documented | Muse's built-in agent; other harnesses not documented |
+| Bring your own model key | OpenCode profiles support OpenRouter or Venice API keys | Cursor manages model selection; own key not documented | Own model key not documented |
+| Bring your own connected apps | Browser logins and apps in the box | Connectors, plugins, and browser sites | Connected apps and browser sites |
+| Install your own software | Linux packages and trusted setup scripts | Yes; manual installs are lost on computer recreation | Installation in its secure VM not documented |
+| Choose where it runs | Self-host the controller and Linux workers | Cursor-hosted only | Meta-hosted |
+| Persistent workspace | Separate volume per box | One computer shared by a user's bots | One secure VM per person |
+| Browser and shell | Both | Both | Browser; shell not documented |
+| Agent-to-agent coordination | Direct contacts with role-based permissions | Bots message each other and share group chats | Not documented |
+| Scheduled routines | Not built in | Yes | Proactive goal work; a schedule feature is not documented |
+| Hibernate while retaining files | Yes | Yes, with a durable disk | Not documented |
+
+Comparison checked 29 September 2026 against the [Grok Bot overview](https://docs.x.ai/grok-bot/overview), [computer management](https://docs.x.ai/grok-bot/computers), [teams and hosting](https://docs.x.ai/grok-bot/teams-and-enterprises), [security FAQ](https://docs.x.ai/grok-bot/security-faq), and [Meta's Muse announcement](https://about.fb.com/news/2026/09/introducing-muse-personal-ai-agent/). "Not documented" means the linked material does not confirm the feature; it does not establish that the feature is impossible.
+
 ## Security and operation
 
 Treat boxes as trusted workloads: agents can execute commands inside their containers, and the default image grants the box user passwordless sudo. Keep the controller behind HTTPS, protect its token and encryption key, and choose worker isolation appropriate to your host. See [controller operations](docs/CONTROLLER.md) and [shared worker isolation](docs/SHARED-WORKERS.md) before exposing an installation to other users.
