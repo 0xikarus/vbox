@@ -286,7 +286,7 @@
    case 5:body='<path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/>';break;
    default:body='<circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/>';
   }
-  const eyes='<g fill="none" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round"><path d="M35 41 C38 35 45 35 48 41"/><path d="M58 41 C61 35 68 35 71 41"/></g>';
+  const eyes='<g fill="none" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g>';
   return '<svg class="mx-mini" viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
  }
  const MACHINE={
@@ -3075,6 +3075,8 @@
  $('#chat-menu').onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  const mobileMenuButton=document.getElementById('mobile-menu');
  if(mobileMenuButton)mobileMenuButton.onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
+ const chatUserButton=document.getElementById('chat-user');
+ if(chatUserButton)chatUserButton.onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
  applyVariant();
 

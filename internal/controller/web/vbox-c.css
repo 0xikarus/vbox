@@ -39,6 +39,7 @@
   --vb-warn:#d97706;    --vb-warn-text:#b45309; --vb-warn-soft:#fdf4e5;
   --vb-danger:#dc2626;  --vb-danger-text:#b91c1c; --vb-danger-soft:#fdecec;
   --vb-pop:#7c5cff;
+  --vb-code:#16171a;
 
   --vb-bubble-out:#111114;
   --vb-bubble-out-ink:#ffffff;
@@ -82,6 +83,7 @@
     --vb-warn:#fbbf24;    --vb-warn-text:#fcd34d; --vb-warn-soft:#3a2f16;
     --vb-danger:#f87171;  --vb-danger-text:#fca5a5; --vb-danger-soft:#3a1e1e;
     --vb-pop:#a78bfa;
+    --vb-code:#26262b;
 
     --vb-bubble-out:#f3f3f5;
     --vb-bubble-out-ink:#111114;
@@ -483,4 +485,148 @@ form#login button:hover{background:#000;border-color:#000}
   .msg{max-width:88%}
   #chat-composer{width:calc(100% - 1.2rem);margin-bottom:3.5rem}
   #chat-top{background:var(--vb-bg)}
+}
+
+/* ============================================================================
+   Studio review pass: reference-alignment fixes
+   ========================================================================== */
+
+/* 1 · type: the chat shell sets its own system stack; point it at Inter */
+#chat-shell{font-family:var(--vb-font)}
+
+/* 3/4 · composer ends at the chat column and has a single black action */
+#chat-composer{
+  align-items:center;gap:.3rem;
+  margin:.3rem .9rem 1.1rem;width:auto;max-width:none;
+  padding:.4rem .5rem
+}
+#chat-composer button{background:transparent;border:0;color:var(--vb-ink-soft)}
+#chat-composer button:hover{background:var(--vb-surface-2);color:var(--vb-ink)}
+#chat-composer button#send{background:var(--vb-ink);color:var(--vb-bg);border-radius:50%}
+#chat-composer button#send:hover{background:var(--vb-ink)}
+#chat-composer button#send:disabled{background:var(--vb-surface-2);color:var(--vb-ink-faint)}
+#chat-composer button#chat-interrupt{
+  background:transparent;border:0;color:var(--vb-danger-text);border-radius:50%
+}
+#chat-composer .ai-wand{background:transparent;border:1px solid transparent;color:var(--vb-ink-soft);border-radius:50%}
+#chat-composer .ai-wand:hover{background:var(--vb-surface-2);color:var(--vb-ink)}
+#chat-composer{position:relative}
+
+/* 5 · quieter sidebar rows */
+.row-state{display:none}
+.agent-badge{background:none;border:0;padding:0;color:var(--vb-ink-faint);font-weight:500;font-size:.72rem}
+#chat-entries .unread-note{display:none}
+#chat-entries .unread{font-size:0;min-width:0;width:.62rem;height:.62rem;padding:0;border-radius:50%;background:var(--vb-accent)}
+#chat-entries .unread[hidden]{display:none}
+.chat-meta time{color:var(--vb-ink-faint);font-weight:500}
+.chat-meta time.recent{color:var(--vb-ink);font-weight:650}
+
+/* 6 · user row at the foot of the sidebar */
+.chat-user{display:flex;align-items:center;gap:.6rem;flex:none;margin-top:auto;padding:.65rem .7rem;border-top:1px solid var(--vb-line);background:var(--vb-bg-soft)}
+.chat-user[hidden]{display:none}
+.chat-user-avatar{display:grid;place-items:center;width:2rem;height:2rem;flex:none;border-radius:50%;background:var(--vb-surface-2);color:var(--vb-ink);font-weight:650;font-size:.78rem}
+.chat-user-name{flex:1;min-width:0;font-weight:600;font-size:.85rem;color:var(--vb-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-user-menu{color:var(--vb-ink-faint);font-size:1rem}
+
+/* 7 · one quiet header action style */
+#chat-header button,#chat-header #chat-workspace{
+  border:1px solid var(--vb-line);background:transparent;color:var(--vb-ink-soft);
+  border-radius:999px;font-weight:560;font-size:.74rem;padding:.42rem .8rem;text-decoration:none
+}
+#chat-header button:hover,#chat-header #chat-workspace:hover{background:var(--vb-surface-2);color:var(--vb-ink);border-color:var(--vb-ink-faint)}
+#chat-header #chat-info[aria-expanded="true"]{background:var(--vb-surface-2);border-color:var(--vb-line-strong);color:var(--vb-ink)}
+#chat-header #chat-control{min-width:2.35rem;padding:0;display:inline-flex;align-items:center;justify-content:center}
+
+/* 8 · persistent rail: no duplicated header */
+@media (min-width:1100px){#inspect-header{display:none}}
+
+/* 9 · manage: list rows instead of a bordered table */
+#box-list{border:0}
+#box-list .table-wrap{border:0;border-radius:0;background:transparent;overflow:visible}
+#box-list table.markets{border-collapse:separate;border-spacing:0;width:100%;min-width:0;table-layout:auto}
+#box-list thead{display:none}
+#box-list tbody{display:flex;flex-direction:column}
+#box-list tr.row{display:flex;align-items:center;gap:1rem;padding:.9rem .2rem;border-bottom:1px solid var(--vb-line);background:none}
+#box-list tr.row:last-child{border-bottom:0}
+#box-list tr.row:hover{background:var(--vb-bg-soft)}
+#box-list td{display:block;border:0!important;padding:0!important;min-width:0;overflow-wrap:anywhere}
+#box-list td:nth-child(1){flex:0 0 10rem;font-weight:650;color:var(--vb-ink)}
+#box-list td:nth-child(2){flex:0 0 5rem;color:var(--vb-ink-soft);font-size:.8rem}
+#box-list td:nth-child(2)::before{content:'';display:inline-block;width:.5rem;height:.5rem;margin-right:.4rem;border-radius:50%;background:var(--vb-ok);vertical-align:middle}
+#box-list td:nth-child(3){flex:1 1 8rem;color:var(--vb-ink-soft);font-size:.8rem}
+#box-list td:nth-child(4){flex:0 0 7rem}
+#box-list td:nth-child(5){flex:0 0 6rem}
+#box-list td:nth-child(6){display:none}
+#box-list td:nth-child(7){flex:0 0 auto;margin-left:auto;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.3rem}
+#box-list td:nth-child(1) .table-text,#box-list a{color:var(--vb-ink)}
+#box-list td select{width:auto;min-width:6.5rem;background:transparent;border-color:transparent;padding:.25rem .15rem;color:var(--vb-ink)}
+#box-list td select:hover{border-color:var(--vb-line-strong)}
+#box-list .linkbtn{margin:0;padding:.3rem .62rem;background:transparent;border:1px solid var(--vb-line);border-radius:999px;font-weight:560;font-size:.72rem;color:var(--vb-ink-soft)}
+#box-list .linkbtn:hover{background:var(--vb-surface-2);color:var(--vb-ink);border-color:var(--vb-ink-faint)}
+#box-list .box-details-action{background:transparent!important;border:1px solid var(--vb-ink)!important;color:var(--vb-ink)!important;border-radius:999px!important}
+#box-list .box-details-action:hover{background:var(--vb-ink)!important;color:var(--vb-bg)!important}
+#box-list .restart-action{border:1px solid var(--vb-line);border-radius:999px;width:1.7rem;height:1.7rem;display:inline-grid;place-items:center;color:var(--vb-ink-soft)}
+
+/* 11 · grid: rounded cards */
+#grid-app{display:block;padding:0}
+.grid-heading{padding:1.1rem 1.25rem .35rem}
+#layout{display:inline-flex;align-self:flex-start;align-items:center;gap:.5rem;flex-wrap:wrap;width:auto;margin:0 1.25rem .9rem;padding:.35rem .55rem;border:1px solid var(--vb-line);border-radius:999px;background:var(--vb-surface);box-shadow:none}
+#layout label{display:inline-flex;align-items:center;gap:.3rem;font-size:.72rem}
+#layout select{border-color:transparent;background:var(--vb-surface-2)}
+#tiles{display:grid;grid-template-columns:repeat(var(--columns,2),minmax(0,1fr));gap:1rem;padding:0 1.25rem 1.5rem;border-top:0;background:transparent;align-content:start}
+.tile{border:1px solid var(--vb-line);border-radius:var(--vb-radius-lg);overflow:hidden;background:var(--vb-surface);box-shadow:var(--vb-shadow)}
+.tile-controls{border-bottom:1px solid var(--vb-line-faint);background:var(--vb-surface);padding:.3rem .6rem}
+.tile-controls details{border:0;background:none;box-shadow:none;padding:.1rem .3rem;color:var(--vb-ink-soft)}
+.tile-controls details summary{font-size:0;display:grid;place-items:center;width:1.8rem;height:1.8rem;border:1px solid var(--vb-line);border-radius:999px}
+.tile-controls details summary::before{content:'⌨';font-size:.9rem;line-height:1}
+.tile-controls details[open]{flex:1 1 100%;padding:.35rem .5rem}
+.tile-controls details[open] summary{width:auto;height:auto;grid-auto-flow:column;gap:.4rem;padding:0 .6rem;font-size:.72rem}
+.tile-controls details[open] summary::before{content:'⌨'}
+.tile header{padding:.6rem .75rem .2rem}
+.tile .screen,.tile .desktop-screen{background:#0b0b0d}
+.viewer-overlay{background:#0b0b0d;color:#8a8a92}
+.viewer-panel{border-top:1px solid var(--vb-line)}
+
+/* 12 · mobile header: logo only, centred blurred pill */
+@media (max-width:899px){
+  #chat-top .brand .brand-suffix{display:none}
+  #chat-header{justify-content:center;min-height:3.5rem;padding:.35rem 3rem}
+  #chat-header-text{
+    flex:0 1 auto;max-width:100%;flex-direction:row;align-items:center;gap:.5rem;
+    background:color-mix(in srgb,var(--vb-bg) 70%,transparent);
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+    border:1px solid var(--vb-line);border-radius:999px;padding:.25rem .85rem;box-shadow:var(--vb-shadow-md)
+  }
+  #chat-header-text strong{font-size:.9rem}
+  #chat-header-state{display:none}
+  #chat-header-avatar{order:-1}
+  #chat-back{position:absolute;left:.55rem}
+  #chat-header #chat-control,#chat-header #chat-usage,#chat-header #chat-wake,#chat-header #chat-clear-context,#chat-header #chat-info,#chat-header #chat-workspace{display:none}
+  #chat-header #chat-more{position:absolute;right:.55rem;display:block}
+  #chat-composer{width:auto}
+}
+
+/* dark-theme affordances surfaced in review */
+.msg.user .meta{color:var(--vb-bubble-out-ink);opacity:.5}
+.msg.agent .meta{color:var(--vb-ink-soft);opacity:.7}
+.msg .text pre{background:var(--vb-code);color:#e6e6ea;border-radius:10px}
+.msg .text pre code{color:inherit}
+
+/* 9b · list-row mascot dot (no data on this page; deterministic palette) */
+#box-list tr.row td:nth-child(1){display:flex;align-items:center;gap:.6rem}
+#box-list tr.row td:nth-child(1)::before{content:'';flex:none;width:1.9rem;height:1.9rem;border-radius:50%;background:#7c5cff}
+#box-list tr.row:nth-child(4n+2) td:nth-child(1)::before{background:#3b82f6}
+#box-list tr.row:nth-child(4n+3) td:nth-child(1)::before{background:#22c55e}
+#box-list tr.row:nth-child(4n) td:nth-child(1)::before{background:#f59e0b}
+
+/* 9c · the header row is a bare table tr, not a thead */
+#box-list tr:not(.row){display:none}
+/* 4b · stop is a thin red outline icon, not a filled square */
+#chat-composer button#chat-interrupt{font-size:0}
+#chat-composer button#chat-interrupt::before{content:'';width:.72rem;height:.72rem;border:1.5px solid currentColor;border-radius:3px}
+
+/* 12b · keep the composer clear of the bottom tab bar */
+@media (max-width:899px){
+  #chat-app{padding-bottom:4.6rem}
+  #chat-composer{margin-bottom:4rem}
 }
