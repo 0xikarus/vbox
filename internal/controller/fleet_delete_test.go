@@ -258,7 +258,7 @@ func TestDurableDeletionPostgres(t *testing.T) {
 			t.Fatalf("last attachment reference was not released: count=%d err=%v", count, err)
 		}
 	})
-	t.Run("expired unattached uploads are pruned but chat media remains", func(t *testing.T) {
+	t.Run("stale unattached uploads are pruned but chat media remains", func(t *testing.T) {
 		box, _ := makeBox(t, "media-expiry", false)
 		task, message := uuid(), uuid()
 		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_tasks(id,account_id,logical_box_id,user_id,requested_role,agent,session_name,prompt,state,idempotency_key) VALUES($1,$2,$3,$4,'owner','codex','test','test','active',$5)`, task, owner.AccountID, box, owner.UserID, "task-"+task); err != nil {
@@ -267,22 +267,25 @@ func TestDurableDeletionPostgres(t *testing.T) {
 		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,state,idempotency_key) VALUES($1,$2,$3,$4,'user','test','delivered',$5)`, message, owner.AccountID, task, owner.UserID, "message-"+message); err != nil {
 			t.Fatal(err)
 		}
-		expiredUnused, freshUnused, expiredAttached := uuid(), uuid(), uuid()
-		for _, entry := range []struct{ id, expiry string }{{expiredUnused, "-1 day"}, {freshUnused, "+1 day"}, {expiredAttached, "-1 day"}} {
-			if _, err := store.DB.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,'image/png',$3,'test-token',now()+$4::interval)`, entry.id, owner.AccountID, []byte("image"), entry.expiry); err != nil {
+		expiredUnused, agedUnused, freshUnused, expiredAttached, agedAttached := uuid(), uuid(), uuid(), uuid(), uuid()
+		for _, entry := range []struct{ id, expiry, age string }{{expiredUnused, "-1 day", "0 hours"}, {agedUnused, "+1 day", "-2 days"}, {freshUnused, "+1 day", "0 hours"}, {expiredAttached, "-1 day", "0 hours"}, {agedAttached, "+1 day", "-2 days"}} {
+			if _, err := store.DB.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at,created_at) VALUES($1,$2,'image/png',$3,'test-token',now()+$4::interval,now()+$5::interval)`, entry.id, owner.AccountID, []byte("image"), entry.expiry, entry.age); err != nil {
 				t.Fatal(err)
 			}
 		}
-		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,1)`, message, owner.AccountID, expiredAttached); err != nil {
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, message, owner.AccountID, expiredAttached, 1); err != nil {
 			t.Fatal(err)
 		}
-		if err := store.pruneExpiredUnusedAttachments(ctx, owner.AccountID); err != nil {
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, message, owner.AccountID, agedAttached, 2); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.pruneStaleUnusedAttachments(ctx, owner.AccountID); err != nil {
 			t.Fatal(err)
 		}
 		for _, entry := range []struct {
 			id   string
 			want int
-		}{{expiredUnused, 0}, {freshUnused, 1}, {expiredAttached, 1}} {
+		}{{expiredUnused, 0}, {agedUnused, 0}, {freshUnused, 1}, {expiredAttached, 1}, {agedAttached, 1}} {
 			var count int
 			if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM run_once_images WHERE id=$1`, entry.id).Scan(&count); err != nil || count != entry.want {
 				t.Fatalf("attachment %s count=%d want=%d err=%v", entry.id, count, entry.want, err)

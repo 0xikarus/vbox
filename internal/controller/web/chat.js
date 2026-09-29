@@ -1859,6 +1859,7 @@
    fillRows($('#inspect-attachment-rows'),usage?.error?[['Storage',usage.error,'alert']]:[
     ['This box',usage?storageSize(usage.boxBytes)+' · '+usage.boxCount+' files':'Loading…'],
     ['Account',usage?storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes):'Loading…'],
+    ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files; cleaned on the next upload after 24 hours':'Loading…'],
    ]);
    $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
   }

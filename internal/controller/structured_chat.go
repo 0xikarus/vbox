@@ -76,7 +76,7 @@ func (s *Store) attachAgentChatImages(ctx context.Context, accountID, messageID 
 	if len(images) > 8 {
 		return fmt.Errorf("agent attached too many images")
 	}
-	if err := s.pruneExpiredUnusedAttachments(ctx, accountID); err != nil {
+	if err := s.pruneStaleUnusedAttachments(ctx, accountID); err != nil {
 		return err
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
@@ -133,7 +133,7 @@ func (s *Store) saveContactImages(ctx context.Context, accountID string, images 
 	if len(images) == 0 {
 		return nil, nil
 	}
-	if err := s.pruneExpiredUnusedAttachments(ctx, accountID); err != nil {
+	if err := s.pruneStaleUnusedAttachments(ctx, accountID); err != nil {
 		return nil, err
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
