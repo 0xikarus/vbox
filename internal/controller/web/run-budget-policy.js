@@ -2,7 +2,7 @@
 // A box's allocated-time limit is separate from its desktop idle policy.
 window.VMBoxRunBudgetPolicy = (() => {
  const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
- function mount(root,{boxId,request,state='',assignmentGeneration=''}){
+  function mount(root,{boxId,request,state='',assignmentGeneration='',onPolicy}={}){
   if(!root)return;
   const key=boxId+'|'+state+'|'+assignmentGeneration;
   if(root.dataset.budgetKey===key)return;
@@ -37,6 +37,7 @@ window.VMBoxRunBudgetPolicy = (() => {
    elapsedTimer=setTimeout(()=>showElapsed(policy),1000);
   }
   function render(policy){
+   try{onPolicy&&onPolicy(policy)}catch{}
    const seconds=Number(policy.seconds)||0;
    showElapsed(policy);
    hours.value=String(seconds/3600);hours.disabled=false;save.disabled=false;

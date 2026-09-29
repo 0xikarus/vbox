@@ -994,3 +994,64 @@ details>summary::before{
   transform:rotate(-90deg);transition:transform var(--vb-t) var(--vb-ease)
 }
 details[open]>summary::before{transform:rotate(0)}
+
+/* ============================================================================
+   Personality pass: mascot in the thread, one-window chrome, human details,
+   quieter meta, coral warmth, gentle motion.
+   ========================================================================== */
+
+/* sidebar: starts with search + a new-chat button, no admin header */
+#chat-filter-row{display:flex;align-items:center;gap:.5rem;padding:.6rem .85rem .7rem}
+#chat-filter-row #chat-filter{flex:1;min-width:0}
+#chat-filter-row #new-box{margin-left:0;flex:none}
+#chat-list-head{display:none!important}
+
+/* agent message groups show the mascot avatar in the left gutter */
+#chat-messages .msg.agent:not(.note){margin-left:2.15rem}
+#chat-messages .msg.agent.group-start{position:relative}
+.msg-avatar{
+  position:absolute;left:-2.15rem;top:.1rem;
+  width:1.75rem;height:1.75rem;display:block;line-height:0;
+}
+.msg-avatar svg{width:100%;height:100%;display:block}
+
+/* processing row: the mascot's "• • •" in the box's own colour */
+.msg.processing .typing-dots span{background:var(--mascot,var(--vb-ink-soft))}
+.msg.processing .processing-mascot{width:1.75rem;height:1.75rem}
+
+/* quieter meta: time / ticks / menu appear on hover or focus, always on touch */
+#chat-messages .msg .meta{opacity:0;transition:opacity .15s var(--vb-ease)}
+#chat-messages .msg:hover .meta,#chat-messages .msg:focus-within .meta{opacity:1}
+@media (pointer:coarse){#chat-messages .msg .meta{opacity:1}}
+
+/* tighter groups, clearer breaks between them */
+#chat-messages{gap:.9rem}
+#chat-messages .msg.agent:not(.note) + .msg.agent:not(.note){margin-top:-.32rem}
+#chat-messages .msg.user + .msg.user{margin-top:-.32rem}
+#chat-messages .day-sep{margin:.55rem 0 .05rem}
+
+/* selected conversation: soft coral tint + 3px coral bar */
+#chat-entries li.active{background:var(--vb-accent-soft);box-shadow:inset 3px 0 0 var(--vb-accent)}
+
+/* warmth: coral only on the send button's hover */
+#chat-composer button#send:not(:disabled):hover{background:var(--vb-accent);color:#fff}
+
+/* gentle motion */
+@keyframes vb-rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+#chat-messages .msg-enter{animation:vb-rise .18s var(--vb-ease) both}
+#chat-entries li{transition:background .15s var(--vb-ease),box-shadow .15s var(--vb-ease)}
+
+/* details rail: titled screen, friendly facts, then technical detail */
+#inspect-screen{padding-bottom:.35rem}
+.inspect-screen-title{display:block;margin:.55rem .1rem 0;font-size:.72rem;font-weight:600;color:var(--vb-ink-soft);text-align:center}
+.inspect-facts{grid-column:1 / -1;display:flex;flex-direction:column;gap:.4rem;margin:.95rem 0 .4rem}
+#inspect-summary #inspect-hero{grid-column:1 / -1}
+.inspect-fact{display:flex;align-items:baseline;justify-content:space-between;gap:.75rem;min-width:0;padding:.55rem .7rem;border-radius:var(--vb-radius);background:var(--vb-bg-soft)}
+.inspect-fact-label{flex:none;font-size:.68rem;font-weight:650;color:var(--vb-ink-faint)}
+.inspect-fact-value{font-size:.86rem;font-weight:650;color:var(--vb-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.inspect-technical-inner{padding-top:.35rem}
+
+@media (max-width:640px){
+  #chat-messages .msg.agent:not(.note){margin-left:1.95rem}
+  .msg-avatar{left:-1.95rem}
+}

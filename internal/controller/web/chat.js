@@ -289,6 +289,15 @@
   const eyes='<g fill="none" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g>';
   return '<svg class="mx-mini" viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
  }
+ // The same deterministic palette as mascotMiniSVG, exposed for CSS accents
+ // (typing dots) that cannot read the SVG fill.
+ function mascotColor(seedStr){
+  const str=String(seedStr);let h=2166136261>>>0;
+  for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
+  const pick=(n,shift)=>{let x=(h>>>((shift*7)%24))^Math.imul(h+shift+1,2246822519);x^=x>>>13;return Math.abs(x)%n};
+  const palette=['#7c5cff','#3b82f6','#22c55e','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444','#0ea5e9','#d946ef','#84cc16','#f97316'];
+  return palette[pick(palette.length,3)];
+ }
  const MACHINE={
   idle:{on:{WORK:'working',SEND:'waiting',PRAISE:'happy',JOKE:'laughing',ERROR:'angry'}},
   working:{on:{SEND:'waiting',DONE:'happy',ERROR:'angry',JOKE:'laughing',STOP:'idle'}},
@@ -1165,12 +1174,22 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   messagesEl.replaceChildren();
   messagesEl.dataset.box=box.id;
   if(box.hasOlder){const older=document.createElement('button');older.type='button';older.className='load-older';older.textContent=box.historyLoading?'Loading older messages…':'Load older messages';older.disabled=!!box.historyLoading;older.onclick=()=>void loadOlderMessages(box.id);messagesEl.append(older)}
-  let day='';
+  let day='',prevAgent=false;
+  const firstRender=!box.renderedIds;
   for(const message of box.messages||[]){
    const label=dayLabel(message.createdAt);
-   if(label!==day){day=label;const sep=document.createElement('div');sep.className='day-sep';sep.textContent=day;messagesEl.append(sep)}
-   messagesEl.append(bubble(box,message));
+   if(label!==day){day=label;prevAgent=false;const sep=document.createElement('div');sep.className='day-sep';sep.textContent=day;messagesEl.append(sep)}
+   const node=bubble(box,message);
+   const isAgent=message.direction!=='user'&&message.direction!=='system';
+   if(isAgent&&!prevAgent){
+    node.classList.add('group-start');
+    const avatar=document.createElement('span');avatar.className='msg-avatar';avatar.setAttribute('aria-hidden','true');avatar.innerHTML=mascotMiniSVG(box.id);node.prepend(avatar);
+   }
+   prevAgent=isAgent;
+   if(!firstRender&&!box.renderedIds.has(message.id))node.classList.add('msg-enter');
+   messagesEl.append(node);
   }
+  box.renderedIds=new Set((box.messages||[]).map(message=>message.id));
   const pending=pendingSends.get(box.id);
   if(pending&&!(box.messages||[]).slice(pending.messageCount).some(m=>m.direction==='user'&&m.text===pending.text)){
    const row=bubble(box,{id:'pending',direction:'user',state:'delivering',text:pending.text||'📷 Image',createdAt:pending.at,images:[]});
@@ -1190,6 +1209,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   }
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
+   t.style.setProperty('--mascot',mascotColor(box.id));
    const mini=document.createElement('span');mini.className='processing-mascot';mini.innerHTML=mascotMiniSVG(box.id);
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
@@ -1841,6 +1861,22 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   renderInspect();
  }
  const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
+ const fmtSpan=value=>{const s=Math.max(0,Math.floor((Date.now()-new Date(value).getTime())/1000));const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return [d?d+'d':'',h?h+'h':'',m?m+'m':'',s<60?'just now':''].filter(Boolean).join(' ')||'<1m'};
+ function renderInspectFacts(box){
+  const root=$('#inspect-facts');if(!root)return;
+  const agent=box.defaultAgent||'shell';
+  const since=box.state==='running'?(box.runBudgetPolicy?.runningSince||''):'';
+  const running=box.state==='running'?(since?fmtSpan(since):'running'):box.state;
+  const lastAgent=lastMessage(box.messages||[],'agent');
+  const last=box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—';
+  root.replaceChildren();
+  for(const [label,value] of [['Agent',agent],['Running for',running],['Last active',last]]){
+   const fact=document.createElement('div');fact.className='inspect-fact';
+   fact.append(Object.assign(document.createElement('span'),{className:'inspect-fact-label',textContent:label}));
+   fact.append(Object.assign(document.createElement('strong'),{className:'inspect-fact-value',textContent:value}));
+   root.append(fact);
+  }
+ }
  function instructionSyncLabel(state){
   if(!state)return 'Loading…';
   if(state.error)return 'Unavailable';
@@ -1884,9 +1920,11 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    let img=frame.querySelector('img');
    if(hasShot){if(!img){img=document.createElement('img');img.alt='';frame.prepend(img)}if(img.src!==cached.url)img.src=cached.url}
    else img?.remove();
+   const screenTitle=$('#inspect-screen-title');if(screenTitle)screenTitle.textContent=box.name+"'s screen";
   }
   $('#inspect-name').textContent=box.name;
   $('#inspect-subtitle').textContent=stateText;
+  renderInspectFacts(box);
   const badges=$('#inspect-badges');badges.replaceChildren();
   const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
   badge(box.state,stateClass(box.state));
@@ -1942,7 +1980,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
-  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,onPolicy:policy=>{box.runBudgetPolicy=policy;if(inspectOpen&&selected===box.id)renderInspectFacts(box)},request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const limitRoot=$('#inspect-create-limit');
   if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
   else limitRoot.hidden=true;

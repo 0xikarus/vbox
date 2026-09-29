@@ -21,9 +21,7 @@
 <header id="chat-top" class="workspace-top">
  <button id="chat-menu" class="workspace-nav-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></button>
  <strong class="brand"><img class="brand-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="brand-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""><span class="brand-suffix">/ chats</span></strong>
- <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a><a href="/#profiles" data-owner-nav>Profiles</a></nav>
  <span class="spacer"></span>
- <button id="usage-toggle" class="workspace-nav-usage" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
  <button id="refresh" class="workspace-nav-refresh" type="button" title="Refresh chats" aria-label="Refresh chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
 </header>
 
@@ -43,15 +41,8 @@
 
 <div id="chat-app" hidden>
  <aside id="chat-list">
-  <div id="chat-list-head">
-   <div>
-    <h1>Conversations</h1>
-    <p id="chat-list-sub">Agent and box conversations</p>
-   </div>
-   <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
-  </div>
+  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"><button id="new-box" type="button" title="New box" aria-label="New box">+</button></div>
   <div id="chat-pins" class="chat-pins" hidden></div>
-  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"></div>
   <ul id="chat-entries"></ul>
   <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
   <button id="chat-user" class="chat-user" type="button" aria-label="Account and settings"><span class="chat-user-avatar" aria-hidden="true">T</span><span class="chat-user-name">Team</span><span class="chat-user-menu" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span></button>
@@ -94,40 +85,47 @@
      <span class="spacer"></span>
      <button id="inspect-close" type="button" aria-label="Close details">× <span>Close</span></button>
     </header>
-    <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
-     <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span>Desktop off</span></div>
-    </div>
-    <div id="inspect-body">
-     <section id="inspect-summary" aria-label="Box overview">
-      <div id="inspect-avatar"></div>
-      <div id="inspect-hero">
-       <h2 id="inspect-name">—</h2>
-       <p id="inspect-subtitle">—</p>
-       <div id="inspect-badges" class="inspect-badges"></div>
-       <div id="inspect-quick-actions" class="inspect-quick"></div>
-      </div>
-      <details class="inspect-block inspect-fold" data-fold="runtime" open>
-       <summary><h3>Runtime</h3></summary>
-       <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
-      </details>
-      <details class="inspect-block inspect-fold" data-fold="activity" open>
-       <summary><h3>Activity</h3></summary>
-       <dl id="inspect-activity-rows" class="inspect-rows"></dl>
-      </details>
-      <details id="inspect-attachment-storage" class="inspect-block inspect-fold" data-fold="attachments" open hidden>
-       <summary><h3>Chat attachments</h3></summary>
-       <dl id="inspect-attachment-rows" class="inspect-rows"></dl>
-       <div class="inspect-actions"><button id="inspect-clear-attachments" type="button">Clear this box's attachments…</button></div>
-       <p id="inspect-attachment-status" role="status"></p>
-      </details>
-      <details class="inspect-block inspect-fold" data-fold="config" open>
-       <summary><h3>Config</h3></summary>
-       <div id="inspect-config-actions" class="inspect-actions"></div>
-       <div id="inspect-idle-policy"></div>
-       <div id="inspect-run-budget-policy"></div>
-       <div id="inspect-create-limit"></div>
-      </details>
-     </section>
+     <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
+      <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span>Desktop off</span></div>
+      <span id="inspect-screen-title" class="inspect-screen-title">Screen</span>
+     </div>
+     <div id="inspect-body">
+      <section id="inspect-summary" aria-label="Box overview">
+       <div id="inspect-avatar"></div>
+       <div id="inspect-hero">
+        <h2 id="inspect-name">—</h2>
+        <p id="inspect-subtitle">—</p>
+        <div id="inspect-badges" class="inspect-badges"></div>
+        <div id="inspect-quick-actions" class="inspect-quick"></div>
+       </div>
+       <div id="inspect-facts" class="inspect-facts"></div>
+       <details class="inspect-block inspect-fold inspect-technical" data-fold="technical">
+        <summary><h3>Technical details</h3></summary>
+        <div class="inspect-technical-inner">
+        <details class="inspect-block inspect-fold" data-fold="runtime" open>
+         <summary><h3>Runtime</h3></summary>
+         <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
+        </details>
+        <details class="inspect-block inspect-fold" data-fold="activity" open>
+         <summary><h3>Activity</h3></summary>
+         <dl id="inspect-activity-rows" class="inspect-rows"></dl>
+        </details>
+        <details id="inspect-attachment-storage" class="inspect-block inspect-fold" data-fold="attachments" open hidden>
+         <summary><h3>Chat attachments</h3></summary>
+         <dl id="inspect-attachment-rows" class="inspect-rows"></dl>
+         <div class="inspect-actions"><button id="inspect-clear-attachments" type="button">Clear this box's attachments…</button></div>
+         <p id="inspect-attachment-status" role="status"></p>
+        </details>
+        <details class="inspect-block inspect-fold" data-fold="config" open>
+         <summary><h3>Config</h3></summary>
+         <div id="inspect-config-actions" class="inspect-actions"></div>
+         <div id="inspect-idle-policy"></div>
+         <div id="inspect-run-budget-policy"></div>
+         <div id="inspect-create-limit"></div>
+        </details>
+        </div>
+       </details>
+      </section>
      <section id="inspect-contacts" hidden>
      <header class="inspect-block-head"><h3>Contacts</h3></header>
       <div class="inspect-block">
@@ -376,8 +374,10 @@
   <header><strong>vbox chats</strong><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
   <div class="menu-links">
    <a href="/#boxes">Boxes</a>
-   <a href="/#providers" data-owner-nav>Providers</a>
    <a href="/grid" data-owner-nav>Grid</a>
+   <a href="/#providers" data-owner-nav>Providers</a>
+   <a href="/#profiles" data-owner-nav>Profiles</a>
+   <button id="usage-toggle" class="menu-usage" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>
