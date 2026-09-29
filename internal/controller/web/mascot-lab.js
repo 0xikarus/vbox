@@ -38,6 +38,7 @@ fuzzButton.onclick=async()=>{
  const fire=setInterval(()=>{hero.send(events[Math.floor(random()*events.length)]);eventsFired++},120);
  const capture=now=>{
   const body=box(hero.shapePath),left=box(hero.eyes[0]),right=box(hero.eyes[1]);
+  const leftModel=hero.eyeDimensions(0),rightModel=hero.eyeDimensions(1);
   const bodyScale=scale(hero.body),motionScale=scale(hero.motion);
   const rgb=(getComputedStyle(hero.shapePath).fill.match(/\d+(?:\.\d+)?/g)||[0,0,0]).map(Number);
   const fillOpacity=Number(getComputedStyle(hero.shapePath).fillOpacity);
@@ -56,9 +57,11 @@ fuzzButton.onclick=async()=>{
    bodyScaleX:bodyScale.x,bodyScaleY:bodyScale.y,
    motionScaleX:motionScale.x,motionScaleY:motionScale.y,
    eyeLeftX:left.x,eyeLeftY:left.y,eyeLeftW:left.w,eyeLeftH:left.h,
+   eyeLeftModelW:leftModel.w,eyeLeftModelH:leftModel.h,
    eyeLeftOpacity:opacity(hero.eyes[0]),eyeLeftTilt:tilt(hero.tiltGroups[0]),
    eyeLeftLidOpacity:opacity(hero.lids[0]),
    eyeRightX:right.x,eyeRightY:right.y,eyeRightW:right.w,eyeRightH:right.h,
+   eyeRightModelW:rightModel.w,eyeRightModelH:rightModel.h,
    eyeRightOpacity:opacity(hero.eyes[1]),eyeRightTilt:tilt(hero.tiltGroups[1]),
    eyeRightLidOpacity:opacity(hero.lids[1]),eyesOpacity:opacity(hero.eyesGroup),
    dotsLeftR:radius(hero.dotLeft),dotsRightR:radius(hero.dotRight),
