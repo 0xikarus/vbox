@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"image/png"
 	"io"
 	"net/http"
 	"strings"
@@ -71,6 +72,50 @@ func desktopAgentAPIWithTimeout(ctx context.Context, assignment, method, path, i
 		}
 	}
 	return nil
+}
+
+// desktopAgentScreenshot reads a bounded image through the assignment-scoped
+// agent credential. It does not persist the target image in either box.
+func desktopAgentScreenshot(ctx context.Context, assignment, path string) ([]byte, error) {
+	config, err := readDesktopAgentConfig(assignment)
+	if err != nil {
+		return nil, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(config.Controller, "/")+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("controller request unavailable")
+	}
+	request.Header.Set("Authorization", "DesktopAgent "+config.Token)
+	transport := &http.Transport{Proxy: nil}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 20 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("controller request failed")
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		var problem struct {
+			Error string `json:"error"`
+		}
+		_ = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&problem)
+		if problem.Error != "" {
+			return nil, fmt.Errorf("%s", problem.Error)
+		}
+		return nil, fmt.Errorf("controller rejected screenshot request")
+	}
+	if !strings.HasPrefix(response.Header.Get("Content-Type"), "image/png") {
+		return nil, fmt.Errorf("controller screenshot response invalid")
+	}
+	const maxScreenshotBytes = 16 << 20
+	data, err := io.ReadAll(io.LimitReader(response.Body, maxScreenshotBytes+1))
+	if err != nil || len(data) == 0 || len(data) > maxScreenshotBytes {
+		return nil, fmt.Errorf("controller screenshot response invalid")
+	}
+	if _, err := png.DecodeConfig(bytes.NewReader(data)); err != nil {
+		return nil, fmt.Errorf("controller screenshot response invalid")
+	}
+	return data, nil
 }
 
 func desktopToolJSON(value any) (map[string]any, error) {

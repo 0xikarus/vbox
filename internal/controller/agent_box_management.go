@@ -181,6 +181,44 @@ func (s *Server) agentBoxHandler(w http.ResponseWriter, r *http.Request, p Princ
 	writeJSON(w, http.StatusOK, safeAgentManagedBox(box, tags))
 }
 
+// agentBoxScreenshotHandler grants a current image, never a desktop connection
+// or control channel. The owner screenshot path keeps its worker and assignment
+// fences, and does not wake or start the target desktop.
+func (s *Server) agentBoxScreenshotHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	actorID := agentBoxID(p)
+	capabilities, err := s.Store.EffectiveAgentCapabilities(r.Context(), p.AccountID, actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	allowed := capabilities.ManageAgentBoxes.Inspect && capabilities.MCPTools.Enabled && slices.Contains(capabilities.MCPTools.AllowedTools, "get_agent_box_screenshot")
+	if err := requireCapability(allowed, "get_agent_box_screenshot"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	owner := ownerPrincipal(p)
+	box, err := s.Store.LogicalBox(r.Context(), owner, r.PathValue("box"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Errorf("box unavailable"))
+		return
+	}
+	if box.ID == actorID {
+		writeError(w, http.StatusForbidden, fmt.Errorf("use take_screenshot for this box's own desktop"))
+		return
+	}
+	protected, err := s.Store.BoxProtection(r.Context(), owner, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if protected {
+		writeError(w, http.StatusForbidden, fmt.Errorf("protected boxes cannot be inspected by an agent"))
+		return
+	}
+	r.SetPathValue("id", box.ID)
+	s.desktopScreenshot(w, r, owner)
+}
+
 func (s *Server) agentBoxRestartHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	actorID := agentBoxID(p)
 	capabilities, err := s.Store.EffectiveAgentCapabilities(r.Context(), p.AccountID, actorID)

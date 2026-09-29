@@ -175,6 +175,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agent-desktop/box-configs/{application}/{name}/models", s.desktopAgentAuth(s.agentBoxConfigsHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/boxes", s.desktopAgentAuth(s.agentBoxesHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/boxes/{box}", s.desktopAgentAuth(s.agentBoxHandler))
+	mux.HandleFunc("GET /v1/agent-desktop/boxes/{box}/screenshot", s.desktopAgentAuth(s.agentBoxScreenshotHandler))
 	mux.HandleFunc("PUT /v1/agent-desktop/boxes/{box}/tags", s.desktopAgentAuth(s.agentBoxTagsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/boxes/{box}/restart", s.desktopAgentAuth(s.agentBoxRestartHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/boxes/{box}/wake", s.desktopAgentAuth(s.agentBoxWakeHandler))

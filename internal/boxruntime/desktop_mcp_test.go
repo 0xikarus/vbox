@@ -4,10 +4,16 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -73,6 +79,73 @@ func TestAgentBoxLifecycleToolRequiresTargetConfirmationAndRetryKey(t *testing.T
 		if !found {
 			t.Fatalf("%s tool is missing", name)
 		}
+	}
+}
+
+func TestAgentBoxScreenshotToolReturnsAnImageSchema(t *testing.T) {
+	for _, tool := range desktopMCPTools() {
+		if tool["name"] != "get_agent_box_screenshot" {
+			continue
+		}
+		schema := tool["inputSchema"].(map[string]any)
+		if !slices.Equal(schema["required"].([]string), []string{"box"}) {
+			t.Fatalf("required screenshot fields=%v", schema["required"])
+		}
+		properties := schema["properties"].(map[string]any)
+		if properties["thumbnail"].(map[string]any)["type"] != "boolean" {
+			t.Fatalf("thumbnail field=%v", properties["thumbnail"])
+		}
+		if _, err := callDesktopTool(context.Background(), "assignment", "get_agent_box_screenshot", json.RawMessage(`{}`)); err == nil || !strings.Contains(err.Error(), "missing required argument") {
+			t.Fatalf("missing box error=%v", err)
+		}
+		return
+	}
+	t.Fatal("get_agent_box_screenshot tool is missing")
+}
+
+func TestAgentBoxScreenshotToolReturnsControllerPNG(t *testing.T) {
+	var imageBytes bytes.Buffer
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	if err := png.Encode(&imageBytes, img); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/agent-desktop/boxes/target/screenshot" || r.URL.Query().Get("thumbnail") != "true" || r.Header.Get("Authorization") != "DesktopAgent "+strings.Repeat("a", 64) {
+			t.Errorf("unexpected screenshot request: %s", r.URL.String())
+			http.Error(w, "unexpected request", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Write(imageBytes.Bytes())
+	}))
+	defer server.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	certFile := filepath.Join(home, "test-ca.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", certFile)
+	configPath := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, _ := json.Marshal(DesktopAgentConfig{Controller: server.URL, Assignment: "assignment", Token: strings.Repeat("a", 64)})
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := callDesktopTool(context.Background(), "assignment", "get_agent_box_screenshot", json.RawMessage(`{"box":"target","thumbnail":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := result["content"].([]map[string]any)
+	if len(content) != 1 || content[0]["type"] != "image" || content[0]["mimeType"] != "image/png" {
+		t.Fatalf("screenshot content=%v", content)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(content[0]["data"].(string))
+	if err != nil || !bytes.Equal(decoded, imageBytes.Bytes()) {
+		t.Fatalf("screenshot image invalid: %v", err)
 	}
 }
 

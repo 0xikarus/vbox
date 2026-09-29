@@ -49,7 +49,7 @@ func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bo
 		return capabilities.CreateAgentBox.Enabled
 	case "list_agent_boxes":
 		return capabilities.ManageAgentBoxes.List
-	case "get_agent_box":
+	case "get_agent_box", "get_agent_box_screenshot":
 		return capabilities.ManageAgentBoxes.Inspect
 	case "set_agent_box_tags":
 		return capabilities.ManageAgentBoxes.Tag
