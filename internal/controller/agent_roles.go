@@ -325,7 +325,7 @@ func teamRolePresetRequests(normalID string) (v1.PutAgentRoleRequest, v1.PutAgen
 	if err != nil {
 		return v1.PutAgentRoleRequest{}, v1.PutAgentRoleRequest{}, err
 	}
-	managerTools := []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "delete_agent_box"}
+	managerTools := []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "wake_agent_box", "delete_agent_box"}
 	manager, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{
 		Name: "Manager", Description: "Team manager: can see every contact, label boxes, and manage agent-box lifecycles.",
 		Capabilities: v1.AgentRoleCapabilities{

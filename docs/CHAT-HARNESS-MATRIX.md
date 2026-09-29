@@ -95,7 +95,7 @@ always includes the six basic tools:
 | Group | Tool names |
 | --- | --- |
 | Basic chat/history/budget (6) | `get_contacts`, `get_run_budget`, `get_thread_history`, `set_busy`, `chat_message`, `chat_ask` |
-| Box management (9) | `list_agent_boxes`, `get_agent_box`, `create_agent_box`, `get_agent_box_configs`, `get_available_workers`, `set_agent_box_tags`, `restart_agent_box`, `clear_agent_box_context`, `delete_agent_box` |
+| Box management (11) | `list_agent_boxes`, `get_agent_box`, `create_agent_box`, `get_agent_box_configs`, `get_available_workers`, `set_agent_box_tags`, `restart_agent_box`, `wake_agent_box`, `clear_agent_box_context`, `compact_agent_box_context`, `delete_agent_box` |
 | Secrets (3) | `secret_request`, `generate_password`, `type_secret` |
 | Computer (8) | `take_screenshot`, `capture_window`, `move_mouse`, `click_mouse`, `drag_mouse`, `scroll_mouse`, `type_text`, `press_keys` |
 
@@ -117,7 +117,7 @@ flow. A late reply cannot clear a newer message's busy state.
 | Shared chats | Agent-authenticated controller HTTP endpoints manage discovery, membership, subscriptions, and messages. A queued group delivery routes a box message through the target's normal native conversation path. These coordination operations are not advertised MCP tools. |
 | Delayed follow-ups | Agent-authenticated HTTP request stores a due message bound to one active non-shell task. Reconciliation creates a normal queued box message, which then uses that task's native harness path. This is distinct from Claude's native busy `queued_command`. |
 | Run-time extension and email | Agent-authenticated HTTP endpoints implement role-gated time extension and email creation. `get_run_budget` is MCP, but `request_more_time`, `queue_followup`, shared-chat administration, and `create_email_address` are retired MCP tool names. |
-| Agent-initiated box management | MCP box tools call authorized controller routes. `create_agent_box` chooses Codex, Claude, or OpenCode, profile/model/effort, roles, instructions, and optional tool presets; `clear_agent_box_context` uses the target's normal context-clear path. |
+| Agent-initiated box management | MCP box tools call authorized controller routes. `create_agent_box` chooses Codex, Claude, or OpenCode, profile/model/effort, roles, instructions, and optional tool presets; `wake_agent_box` uses the existing allocation path for hibernated boxes; `clear_agent_box_context` uses the target's normal context-clear path. |
 | Chat UI and attachments | The PWA stores and displays messages, attached images, choices, and busy state independently of the client. Its composer and writing helper prepare text before submission; the helper is not a fourth managed harness. |
 | Desktop and secrets | The managed session remains visible through tmux and, when available, a desktop terminal. MCP screenshot/input/secret tools act on the box desktop through shared code and policy; opening a viewer does not submit a prompt. |
 | Optional tooling | The Blender preset registers its separate MCP bridge with the clients where configured. Foundry/custom setup runs inside the worker before tasks and is restored as applicable; neither changes the native chat transport. |

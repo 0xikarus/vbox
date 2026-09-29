@@ -99,7 +99,7 @@ func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 	if !manage.List || !manage.Inspect || !manage.Tag || !manage.Restart || !manage.Delete {
 		t.Fatalf("manager lifecycle grant=%+v", manage)
 	}
-	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "delete_agent_box"} {
+	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "wake_agent_box", "delete_agent_box"} {
 		if !slices.Contains(manager.Capabilities.MCPTools.AllowedTools, tool) {
 			t.Fatalf("manager preset lacks %s: %+v", tool, manager)
 		}
@@ -168,7 +168,7 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	if slices.Contains(tools, "delete_agent_box") {
 		t.Fatalf("allowlist bypassed typed delete permission: %v", tools)
 	}
-	if slices.Contains(tools, "restart_agent_box") || slices.Contains(tools, "clear_agent_box_context") || slices.Contains(tools, "compact_agent_box_context") {
+	if slices.Contains(tools, "restart_agent_box") || slices.Contains(tools, "wake_agent_box") || slices.Contains(tools, "clear_agent_box_context") || slices.Contains(tools, "compact_agent_box_context") {
 		t.Fatalf("allowlist bypassed typed restart permission: %v", tools)
 	}
 	if slices.Contains(tools, "type_text") {
@@ -185,7 +185,7 @@ func TestEffectiveAgentToolNamesAddsContextClearToRestartGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"restart_agent_box", "clear_agent_box_context", "compact_agent_box_context"} {
+	for _, name := range []string{"restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context"} {
 		if !slices.Contains(tools, name) {
 			t.Fatalf("expected %s in %v", name, tools)
 		}
