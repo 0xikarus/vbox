@@ -40,12 +40,19 @@ fuzzButton.onclick=async()=>{
   const body=box(hero.shapePath),left=box(hero.eyes[0]),right=box(hero.eyes[1]);
   const bodyScale=scale(hero.body),motionScale=scale(hero.motion);
   const rgb=(getComputedStyle(hero.shapePath).fill.match(/\d+(?:\.\d+)?/g)||[0,0,0]).map(Number);
+  const fillOpacity=Number(getComputedStyle(hero.shapePath).fillOpacity);
+  const particleNodes=[...hero.particles.children];
+  const particleOpacity=opacity(hero.particles);
+  const particleAlphas=particleNodes.map(node=>particleOpacity*opacity(node));
   samples.push({
    t:now-start,state:hero.signal,phase:hero.phase,
    bodySegment:hero.motionSegments.body,eyeSegment:hero.motionSegments.eyes,
    gazeSegment:hero.motionSegments.gaze,dotsSegment:hero.motionSegments.dots,
    symbolSegment:hero.motionSegments.symbol,colorSegment:hero.motionSegments.color,
    bodyX:body.x,bodyY:body.y,bodyW:body.w,bodyH:body.h,
+   bodyOpacity:opacity(hero.body),shapeOpacity:opacity(hero.shapePath),
+   bodyFillOpacity:fillOpacity*opacity(hero.body)*opacity(hero.shapePath),
+   bodyFillR:rgb[0],bodyFillG:rgb[1],bodyFillB:rgb[2],
    bodyScaleX:bodyScale.x,bodyScaleY:bodyScale.y,
    motionScaleX:motionScale.x,motionScaleY:motionScale.y,
    eyeLeftX:left.x,eyeLeftY:left.y,eyeLeftW:left.w,eyeLeftH:left.h,
@@ -58,13 +65,18 @@ fuzzButton.onclick=async()=>{
    dotsOpacity:opacity(hero.dots),dotsLeftOpacity:opacity(hero.dotLeft),dotsRightOpacity:opacity(hero.dotRight),
    stemH:box(hero.bangStem).h,noticeScale:hero.noticeScale,
    noticeOpacity:opacity(hero.notice),particlesOpacity:opacity(hero.particles),
+   particleCount:particleNodes.length,
+   particleEffectiveCount:particleAlphas.reduce((sum,value)=>sum+value,0),
+   particle0Opacity:particleAlphas[0]||0,particle1Opacity:particleAlphas[1]||0,
+   particle2Opacity:particleAlphas[2]||0,particle3Opacity:particleAlphas[3]||0,
    colorR:rgb[0],colorG:rgb[1],colorB:rgb[2],dim:opacity(hero.shapePath)
   });
   if(now-start<60000){requestAnimationFrame(capture);return}
   clearInterval(fire);
   const keys=Object.keys(samples[0]).filter(key=>typeof samples[0][key]==='number'&&key!=='t'&&!key.endsWith('Segment'));
   const flags=[];
-  const region=key=>key.startsWith('body')||key.startsWith('motion')?'bodySegment':
+  const region=key=>key.startsWith('bodyFillR')||key.startsWith('bodyFillG')||key.startsWith('bodyFillB')?'colorSegment':
+   key.startsWith('body')||key.startsWith('motion')?'bodySegment':
    key.startsWith('eye')?key.endsWith('X')||key.endsWith('Y')?'gazeSegment':'eyeSegment':
    key.startsWith('dots')?'dotsSegment':key.startsWith('color')?'colorSegment':'symbolSegment';
   for(const key of keys){
