@@ -200,10 +200,10 @@
    default:return '';
   }
  }
- function makeTraits(seedStr){return window.VBoxMascot.traits(seedStr)}
+ function makeTraits(seedStr){return {...window.VBoxMascot.traits(seedStr),seed:String(seedStr)}}
  function mascotSVGString(t){return window.VBoxMascot.svg(t.seed||'vbox')}
- function mascotMiniSVG(seedStr,mood){return window.VBoxMascot.miniSVG(seedStr,mood)}
- const MACHINE=window.VBoxMascot.moods;
+ function mascotMiniSVG(seedStr,mood,expression){return window.VBoxMascot.miniSVG(seedStr,mood,expression)}
+ const MACHINE=window.VBoxMascot.MACHINE;
  class Mascot extends window.VBoxMascot.Mascot{}
  const accountMascots=[];
  function refreshAccountMascots(){
@@ -427,7 +427,7 @@
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
   wrap.dataset.avatar=box.id;wrap.dataset.state=box.state;
-  const base=document.createElement('span');base.className='avatar-mascot';base.innerHTML=mascotMiniSVG(box.id,box.state==='hibernated'?'sleeping':box.processing?'working':box.unread?'happy':box.state==='running'?'idle':'waking');
+  const base=document.createElement('span');base.className='avatar-mascot';const mood=box.state==='hibernated'?'sleeping':box.state==='failed'?'angry':box.processing?'working':box.unread?'happy':box.state==='running'?'idle':'waking';base.innerHTML=mascotMiniSVG(box.id,mood,box.state==='failed'?'sad':undefined);
   wrap.append(base);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
