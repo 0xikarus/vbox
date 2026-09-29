@@ -930,7 +930,7 @@ details>summary::before{display:inline-block}
 #box-list td:nth-child(1)::before{display:none}
 #box-list .row-avatar{width:3.5rem;height:2.25rem;border-radius:.6rem;flex:none;background:linear-gradient(135deg,#26303f 0%,#0d1119 100%);border-color:rgba(255,255,255,.09)}
 #box-list .row-avatar .avatar-mascot{width:50%}
-#box-list td:nth-child(1){display:flex;align-items:center;gap:1.5rem}
+#box-list tr.row td:nth-child(1){display:flex;align-items:center;gap:1.6rem}
 
 /* 6 · state dot colour by state (gray default/amber transitional) */
 #box-list td:nth-child(2)::before{background:var(--vb-ink-faint)}
