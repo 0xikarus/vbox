@@ -195,7 +195,9 @@ function applyBoxState(b){
  $('#workspace-idle-policy').hidden=!owner;
  if(owner)window.VMBoxIdlePolicy?.mount($('#workspace-idle-policy'),{boxId:b.id,boxName:b.name,request:seconds=>api(bp+'/idle-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})});
  $('#workspace-run-budget-policy').hidden=!owner;
- if(owner)window.VMBoxRunBudgetPolicy?.mount($('#workspace-run-budget-policy'),{boxId:b.id,request:seconds=>api(bp+'/run-budget-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})});
+ if(owner)window.VMBoxRunBudgetPolicy?.mount($('#workspace-run-budget-policy'),{boxId:b.id,
+  request:seconds=>api(bp+'/run-budget-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds}),
+  adjust:(action,seconds,expectedDeadlineAt)=>api(bp+'/run-budget-policy/adjust','POST',{action,seconds,expectedDeadlineAt})});
  $('#delete-box').hidden=!owner||!(phase==='running'||phase==='stopped'||phase==='failed');
  $('#delete-box').disabled=deletePending||phase==='deleting';
  $('#lifecycle-note').textContent={

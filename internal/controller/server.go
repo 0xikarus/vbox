@@ -247,6 +247,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/idle-policy", s.owner(s.desktopIdlePolicy))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/run-budget-policy", s.owner(s.boxRunBudgetPolicy))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/run-budget-policy", s.owner(s.boxRunBudgetPolicy))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/run-budget-policy/adjust", s.owner(s.boxRunBudgetPolicy))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/sessions/primary", s.owner(s.primarySessionHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/codex-resume", s.owner(s.codexResumeHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/codex-resume", s.owner(s.codexResumeHandler))

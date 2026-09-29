@@ -93,8 +93,47 @@ func TestBoxRunBudgetPolicyPostgres(t *testing.T) {
 	if err != nil || budget.BudgetSeconds != 4*3600 || budget.DeadlineAt == nil || budget.RemainingSeconds < 4*3600-10 {
 		t.Fatalf("four-hour budget=%+v error=%v", budget, err)
 	}
+	adjust := func(action string, seconds int64, deadline time.Time) (*httptest.ResponseRecorder, boxRunBudgetPolicyResponse) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"action": action, "seconds": seconds, "expectedDeadlineAt": deadline})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequest(http.MethodPost, "/v1/logical-boxes/"+boxID+"/run-budget-policy/adjust", strings.NewReader(string(body)))
+		request.SetPathValue("id", boxID)
+		response := httptest.NewRecorder()
+		(&Server{Store: store}).boxRunBudgetPolicy(response, request, owner)
+		var policy boxRunBudgetPolicyResponse
+		if response.Code == http.StatusOK {
+			if err := json.Unmarshal(response.Body.Bytes(), &policy); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return response, policy
+	}
+	initialDeadline := *budget.DeadlineAt
+	response, view = adjust("add", 8*3600, initialDeadline)
+	if response.Code != http.StatusOK || view.Seconds != 4*3600 || view.RemainingSeconds < 12*3600-10 || view.DeadlineAt == nil || view.RunningSince == nil || view.RunningSince.Sub(started) > time.Second || started.Sub(*view.RunningSince) > time.Second {
+		t.Fatalf("add eight hours: status=%d policy=%+v body=%s", response.Code, view, response.Body.String())
+	}
+	stale, _ := adjust("add", 8*3600, initialDeadline)
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale adjustment accepted: status=%d body=%s", stale.Code, stale.Body.String())
+	}
+	invalidAdjust, _ := adjust("add", 3600, *view.DeadlineAt)
+	if invalidAdjust.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported adjustment accepted: status=%d", invalidAdjust.Code)
+	}
+	response, view = adjust("reset", 0, *view.DeadlineAt)
+	if response.Code != http.StatusOK || view.Seconds != 4*3600 || view.RemainingSeconds < 4*3600-10 || view.RemainingSeconds > 4*3600 || view.RunningSince == nil || view.RunningSince.Sub(started) > time.Second || started.Sub(*view.RunningSince) > time.Second {
+		t.Fatalf("reset countdown: status=%d policy=%+v body=%s", response.Code, view, response.Body.String())
+	}
 	if err := store.SetBoxRunBudget(ctx, owner.AccountID, boxID, 0); err != nil {
 		t.Fatal(err)
+	}
+	off, _ := adjust("add", 4*3600, *view.DeadlineAt)
+	if off.Code != http.StatusConflict {
+		t.Fatalf("disabled countdown extended: status=%d body=%s", off.Code, off.Body.String())
 	}
 	budget, err = store.syncAgentRunBudget(ctx, owner.AccountID, boxID, 8*time.Hour)
 	if err != nil || budget.BudgetSeconds != 0 || budget.DeadlineAt != nil || budget.RemainingSeconds != 0 {

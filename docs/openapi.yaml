@@ -91,6 +91,25 @@ paths:
                 seconds: {type: integer, minimum: 0, maximum: 2592000, description: Zero disables the limit; positive values must be at least 60 seconds}
       responses:
         '200': {description: Updated limit and restarted countdown}
+  /v1/logical-boxes/{id}/run-budget-policy/adjust:
+    post:
+      summary: Reset or add time to a running box's current countdown without changing its saved limit
+      parameters: [{in: path, name: id, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action, expectedDeadlineAt]
+              properties:
+                action: {type: string, enum: [reset, add]}
+                seconds: {type: integer, enum: [14400, 28800, 86400], description: Required for add; omit for reset}
+                expectedDeadlineAt: {type: string, format: date-time, description: Deadline returned by the latest policy read; stale adjustments are rejected}
+      responses:
+        '200': {description: Updated countdown; the saved limit and elapsed current-run time are unchanged}
+        '400': {description: Invalid action or duration}
+        '409': {description: Box is not running, limit is off, cap reached, or deadline changed}
   /v1/agent-desktop/box-configs/{application}/{name}/models:
     get:
       security: [{desktopAgentAuth: []}]
