@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#ffffff">
 <link rel="icon" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
-<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap">
+<link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/xterm.css">
 <link rel="stylesheet" href="/chat.css">
@@ -19,12 +19,12 @@
 <div id="chat-shell">
 
 <header id="chat-top" class="workspace-top">
- <button id="chat-menu" class="workspace-nav-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
+ <button id="chat-menu" class="workspace-nav-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></button>
  <strong class="brand"><img class="brand-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="brand-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""><span class="brand-suffix">/ chats</span></strong>
  <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a><a href="/#profiles" data-owner-nav>Profiles</a></nav>
  <span class="spacer"></span>
  <button id="usage-toggle" class="workspace-nav-usage" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
- <button id="refresh" class="workspace-nav-refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
+ <button id="refresh" class="workspace-nav-refresh" type="button" title="Refresh chats" aria-label="Refresh chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
 </header>
 
 <form id="login" hidden aria-labelledby="login-title">
@@ -54,7 +54,7 @@
   <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"></div>
   <ul id="chat-entries"></ul>
   <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
-  <button id="chat-user" class="chat-user" type="button" aria-label="Account and settings"><span class="chat-user-avatar" aria-hidden="true">T</span><span class="chat-user-name">Team</span><span class="chat-user-menu" aria-hidden="true">≡</span></button>
+  <button id="chat-user" class="chat-user" type="button" aria-label="Account and settings"><span class="chat-user-avatar" aria-hidden="true">T</span><span class="chat-user-name">Team</span><span class="chat-user-menu" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span></button>
  </aside>
  <div id="chat-resizer" role="separator" aria-label="Resize Conversations sidebar" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="640" tabindex="0" title="Drag or use arrow keys to resize Conversations"></div>
  <main id="chat-main">
@@ -78,7 +78,7 @@
     <button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session">Clear context</button>
     <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false">Details</button>
     <a id="chat-workspace" href="#">Workspace</a>
-    <button id="chat-more" type="button" aria-label="More chat actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
+    <button id="chat-more" type="button" aria-label="More chat actions" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></button>
     <div id="chat-more-menu" role="menu" hidden>
      <button type="button" data-action="details" role="menuitem">Box details</button>
      <button type="button" data-action="control" role="menuitem">Desktop / TMUX</button>
@@ -171,7 +171,7 @@
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
     <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
-    <button id="send" type="submit" title="Send" aria-label="Send" disabled>➤</button>
+    <button id="send" type="submit" title="Send" aria-label="Send" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
    </form>
    <p id="chat-status" role="status"></p>
   </section>
@@ -416,14 +416,6 @@
   <a id="media-viewer-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open original in a new tab</a>
  </section>
 </div>
-
-<nav id="mobile-tabs" class="mobile-tabs" aria-label="Workspace">
- <a href="/chat" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Chats</span></a>
- <a href="/grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Grid</span></a>
- <a href="/#boxes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8l9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg><span>Boxes</span></a>
- <a href="/#profiles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Profiles</span></a>
- <button id="mobile-menu" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><span>Menu</span></button>
-</nav>
 
 </div>
 <script src="/markdown.js" defer></script>

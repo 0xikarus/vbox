@@ -62,6 +62,7 @@ function tableNote(text){const n=tableText(text);n.className='table-text state-n
 function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 const RESTART_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.4 7"/><path d="M3 4v7h7"/></svg>';
+const ICON_MORE='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
 function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  root._modelPicker?.destroy();
@@ -294,12 +295,25 @@ function renderBoxes(boxes){
    finally{deletingBoxes.delete(b.id);try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch{if(version===epoch)remove.disabled=false}}
   });remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.prepend(remove);
   const details=button('Details',event=>openBoxDetail(b,event.currentTarget));details.classList.add('box-details-action');details.setAttribute('aria-label','Details for box '+b.name);actions.prepend(details);
+  {
+   const others=[...actions.children].filter(el=>el!==details);
+   if(others.length){
+    const overflow=node('div');overflow.className='row-overflow';
+    const trigger=button('',()=>{const open=overflow.classList.toggle('open');trigger.setAttribute('aria-expanded',String(open))});
+    trigger.className='row-overflow-trigger';trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-label','More actions for '+b.name);trigger.title='More actions';trigger.innerHTML=ICON_MORE;
+    const menu=node('div');menu.className='row-overflow-menu';menu.setAttribute('role','menu');
+    for(const el of others)menu.append(el);
+    menu.addEventListener('click',()=>overflow.classList.remove('open'));
+    overflow.append(trigger,menu);actions.replaceChildren(details,overflow);
+   }
+  }
   const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vbox '+JSON.stringify(b.name)));const permissions=node('td');permissions.append(button('Manage…',()=>openBoxPolicyEditor(b)));row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(selectedManagedBoxID)renderBoxDetail();
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
 }
 $('#box-search').addEventListener('input',()=>renderBoxes(listedBoxes));
+document.addEventListener('click',event=>{if(event.target.closest('.row-overflow'))return;document.querySelectorAll('.row-overflow.open').forEach(el=>el.classList.remove('open'))});
 function renderPermissionBoxes(boxes){
  roleBoxes=boxes||[];const root=$('#role-assignments'),query=$('#role-box-search').value.trim().toLowerCase(),visible=roleBoxes.filter(box=>!query||box.name.toLowerCase().includes(query));root.replaceChildren();
  if(!visible.length){root.append(node('p',query?'No boxes match this search.':'Create a box to configure agent permissions.'));return}

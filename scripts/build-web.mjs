@@ -32,6 +32,11 @@ for(const [source,target] of [
  ['@xterm/xterm/LICENSE','xterm-LICENSE.txt'],
  ['@xterm/addon-fit/lib/addon-fit.js','xterm-fit.js'],
  ['@xterm/addon-fit/LICENSE','xterm-fit-LICENSE.txt'],
+ ['@fontsource-variable/inter/files/inter-latin-wght-normal.woff2','inter-latin-wght-normal.woff2'],
+ ['@fontsource-variable/inter/LICENSE','inter-LICENSE.txt'],
 ])await copyFile('node_modules/'+source,'internal/controller/web/'+target);
+await writeFile('internal/controller/web/fonts.css',
+ "@font-face{font-family:'Inter';font-style:normal;font-display:swap;font-weight:100 900;"+
+ "src:url('/inter-latin-wght-normal.woff2') format('woff2')}\n");
 const authors='internal/controller/web/novnc-AUTHORS.txt';
 await writeFile(authors,(await readFile(authors,'utf8')).replace(/[ \t]+$/gm,''));

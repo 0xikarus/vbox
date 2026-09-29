@@ -606,8 +606,8 @@
    wrap.classList.add('preview-trigger');wrap.tabIndex=0;wrap.setAttribute('role','button');
    wrap.title='Hover to preview; click for Desktop/TMUX control';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open Desktop or TMUX control');
    const currentBox=()=>boxes.get(box.id)||box;
-   wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=scheduleHideTvPreview;
-   wrap.onfocus=()=>{if(!coarsePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
+   wrap.onmouseenter=()=>{if(finePointer())showTvPreview(wrap,currentBox())};wrap.onmouseleave=scheduleHideTvPreview;
+   wrap.onfocus=()=>{if(finePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(finePointer())scheduleHideTvPreview()};
    wrap.onclick=event=>{event.stopPropagation();const box=currentBox();if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(wrap,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
   }
@@ -784,6 +784,7 @@
   element.addEventListener('touchcancel',cancel,{passive:true});
  }
  const coarsePointer=()=>matchMedia('(hover:none) and (pointer:coarse)').matches;
+const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
 
  /* ---------- chat list ---------- */
  const fmtTime=value=>{const d=new Date(value),now=new Date(),sameDay=d.toDateString()===now.toDateString();if(sameDay)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(d.toDateString()===yesterday.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'2-digit',month:'2-digit',year:'numeric'})};
@@ -804,12 +805,25 @@
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=ms.filter(m=>m.direction!=='user'&&new Date(m.createdAt).getTime()>marker).length;
  }
+ const stripMarkdown=text=>String(text)
+  .replace(/```[\s\S]*?```/g,' ')
+  .replace(/`([^`]+)`/g,'$1')
+  .replace(/!\[[^\]]*\]\([^)]*\)/g,' ')
+  .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1')
+  .replace(/^#{1,6}\s+/gm,'')
+  .replace(/(\*\*|__)(.*?)\1/g,'$2')
+  .replace(/(\*|_)(.*?)\1/g,'$2')
+  .replace(/~~(.*?)~~/g,'$1')
+  .replace(/^\s*[-*+]\s+/gm,'')
+  .replace(/\s+/g,' ')
+  .trim();
  function previewText(m){
   if(!m)return 'No messages yet';
   if(m.direction==='system')return m.text;
   const who=m.direction==='user'?'You: ':'';
   let text=m.question?m.question.text:m.text;
-  if(m.images?.length)text=(text?text+' ':'')+'📷'.repeat(Math.min(3,m.images.length));
+  text=stripMarkdown(text||'');
+  if(m.images?.length)text=(text?text+' ':'')+(m.images.length+' photo'+(m.images.length===1?'':'s'));
   return who+text;
  }
  const pairKey=pair=>pair.boxAId+'/'+pair.boxBId;
@@ -1182,10 +1196,10 @@
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
    const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover or tap to preview; open it for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
    tv.append(tvIcon());
-   tv.onmouseenter=()=>{if(!coarsePointer())showTvPreview(tv,box)};
+   tv.onmouseenter=()=>{if(finePointer())showTvPreview(tv,box)};
    tv.onmouseleave=scheduleHideTvPreview;
-   tv.onfocus=()=>{if(!coarsePointer())showTvPreview(tv,box)};
-   tv.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
+   tv.onfocus=()=>{if(finePointer())showTvPreview(tv,box)};
+   tv.onblur=()=>{if(finePointer())scheduleHideTvPreview()};
    tv.onclick=()=>{if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(tv,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    t.append(mini,dots,label,tv);messagesEl.append(t);
   }
@@ -1860,8 +1874,19 @@
   $('#inspect-header-state').textContent=stateText;
   $('#inspect-header-state').className=stateClass(box.state);
   $('#inspect-avatar').replaceChildren(avatarNode(box,false));
+  // Mirror the cached desktop thumbnail into the rail's large screen frame.
+  const screen=$('#inspect-screen');
+  if(screen){
+   if(!avatarFresh(avatarCache.get(box.id),box.state))avatarRefresh(box);
+   const cached=avatarCache.get(box.id),frame=screen.querySelector('.inspect-screen-frame');
+   const hasShot=!!(cached?.state===box.state&&cached.url);
+   frame.classList.toggle('has-shot',hasShot);
+   let img=frame.querySelector('img');
+   if(hasShot){if(!img){img=document.createElement('img');img.alt='';frame.prepend(img)}if(img.src!==cached.url)img.src=cached.url}
+   else img?.remove();
+  }
   $('#inspect-name').textContent=box.name;
-  $('#inspect-subtitle').textContent='';
+  $('#inspect-subtitle').textContent=stateText;
   const badges=$('#inspect-badges');badges.replaceChildren();
   const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
   badge(box.state,stateClass(box.state));
