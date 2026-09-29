@@ -928,9 +928,9 @@ details>summary::before{display:inline-block}
 #box-list tr.row{grid-template-columns:minmax(9rem,1fr) auto minmax(9rem,1.2fr) auto auto;gap:1.25rem}
 #box-list td:nth-child(5),#box-list td:nth-child(6){display:none}
 #box-list td:nth-child(1)::before{display:none}
-#box-list .row-avatar{width:3.5rem;height:2.25rem;border-radius:.6rem;flex:none}
+#box-list .row-avatar{width:3.5rem;height:2.25rem;border-radius:.6rem;flex:none;background:linear-gradient(135deg,#26303f 0%,#0d1119 100%);border-color:rgba(255,255,255,.09)}
 #box-list .row-avatar .avatar-mascot{width:50%}
-#box-list td:nth-child(1){display:flex;align-items:center;gap:.7rem}
+#box-list td:nth-child(1){display:flex;align-items:center;gap:1.5rem}
 
 /* 6 · state dot colour by state (gray default/amber transitional) */
 #box-list td:nth-child(2)::before{background:var(--vb-ink-faint)}
@@ -983,3 +983,14 @@ details>summary::before{display:inline-block}
 #chat-status{color:var(--vb-ink-soft)}
 #chat-toasts .toast{background:var(--vb-ink);color:var(--vb-bg);border-radius:999px;padding:.5rem .9rem;box-shadow:var(--vb-shadow-lg)}
 .tv-preview{border:1px solid var(--vb-line);border-radius:var(--vb-radius);background:var(--vb-elevated);box-shadow:var(--vb-shadow-lg)}
+
+/* disclosure chevron: same 16px glyph as the selects, centred and on the right */
+details>summary{display:flex;align-items:center;gap:.5rem}
+details>summary::before{
+  content:'';order:1;flex:none;margin-left:auto;width:1rem;height:1rem;
+  background:currentColor;opacity:.55;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;
+  transform:rotate(-90deg);transition:transform var(--vb-t) var(--vb-ease)
+}
+details[open]>summary::before{transform:rotate(0)}
