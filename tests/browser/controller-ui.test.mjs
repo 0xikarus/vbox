@@ -197,7 +197,8 @@ test('secondary management sections and box workspaces use the same page navbar'
  }
  await page.goto(base+'/boxes/box-1');
  assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / workspace');
- assert.deepEqual(await page.$$eval('.workspace-top .workspace-links a',links=>links.map(link=>link.textContent)),['Chats','Grid','Boxes','Providers','Profiles']);
+ assert.equal(await page.$$eval('.workspace-top .workspace-links a',links=>links.length),0,'workspace uses the shared shell without the legacy top nav');
+ assert.equal(await page.$eval('.workspace-top #logout',button=>getComputedStyle(button).display!=='none'),true,'workspace keeps a log-out action');
  await page.setViewport({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.close();
@@ -717,7 +718,7 @@ test('fleet locations load on demand and preserve occupied fleets on rejection',
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#capacity table');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#capacity .slot-grid');
  assert.equal(await page.$eval('#location-form',e=>e.hidden),true);
  await page.click('#fleet-location summary');await page.click('#load-locations');await page.waitForSelector('#location-form:not([hidden])');
  assert.equal(await page.$eval('#location-form select',e=>e.value),'eu');

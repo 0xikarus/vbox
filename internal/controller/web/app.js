@@ -175,7 +175,18 @@ function renderWorkerCapacity(){
   root.append(node('h3',poolLabel(fleet.provider,fleet.providerCredential)));
   if(fleet.error){root.append(node('p','Capacity unavailable: '+fleet.error));continue}
   root.append(kpi([['Desired:',fleet.desiredSlots],['Free:',fleet.freeSlots],['Occupied:',fleet.occupiedSlots],['Unhealthy:',fleet.unhealthySlots]]));
-  root.append(dataTable(['Worker','Slot','State','Health','Location','Box'],(fleet.slots||[]).map(slot=>[fleet.provider==='shared-worker'?fleet.providerCredential:(slot.serviceName||slot.serviceId||slot.id||'—'),slot.ordinal,slot.state,slot.health,slot.region,slot.logicalBoxName||'—'])));
+  const slotGrid=node('div');slotGrid.className='slot-grid';
+  for(const slot of fleet.slots||[]){
+   const card=node('article');card.className='slot-card';card.dataset.state=slot.state;
+   const dot=node('span');dot.className='slot-dot';dot.setAttribute('aria-hidden','true');
+   const title=node('strong','Slot '+slot.ordinal);
+   const worker=node('small',fleet.provider==='shared-worker'?(fleet.providerCredential||'shared worker'):(slot.serviceName||slot.serviceId||slot.id||'—'));
+   const occupant=node('span',slot.logicalBoxName||(slot.state==='free'?'Available':'—'));occupant.className='slot-box';
+   const meta=node('em',[slot.state,slot.health,slot.region].filter(Boolean).join(' · '));
+   card.append(dot,title,worker,occupant,meta);slotGrid.append(card);
+  }
+  if(!(fleet.slots||[]).length)slotGrid.append(node('p','No slots reported for this pool.'));
+  root.append(slotGrid);
   const detached=fleet.detachedLogicalBoxes||[];if(detached.length)root.append(node('h3','Detached workspaces'),dataTable(['Box','State'],detached.map(box=>[box.name,box.state])));
  }
  const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;
@@ -184,7 +195,18 @@ function renderWorkerCapacity(){
  root.append(rawDetails(fleetSnapshots));
 }
 $('#capacity-pool').addEventListener('change',renderWorkerCapacity);
-function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){root.append(node('p','No notification destinations configured. Notifications are optional.'));return}root.append(dataTable(['Name','Type','Status','Allowed users','Allowed chats'],values.map(n=>[n.name,n.kind,n.enabled?'Enabled':'Disabled',(n.allowedUsers||[]).join(', ')||'Not specified',(n.allowedChats||[]).join(', ')||'Not specified'])),rawDetails(values))}
+function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){root.append(node('p','No notification destinations configured. Notifications are optional.'));return}
+ const list=node('div');list.className='notice-list';
+ for(const n of values){
+  const row=node('article');row.className='notice-row';row.dataset.enabled=String(!!n.enabled);
+  const dot=node('span');dot.className='slot-dot';dot.setAttribute('aria-hidden','true');
+  const text=node('div');text.className='notice-text';
+  const title=node('strong',n.name);const meta=node('small',(n.kind||'webhook')+' · '+((n.allowedUsers||[]).join(', ')||'everyone')+' · '+((n.allowedChats||[]).join(', ')||'all chats'));
+  text.append(title,meta);
+  const badge=node('span',n.enabled?'Enabled':'Disabled');badge.className='notice-badge';
+  row.append(dot,text,badge);list.append(row);
+ }
+ root.append(list,rawDetails(values))}
 function renderProviders(providers){
  const root=$('#provider-list');root.replaceChildren();
  if(!providers.length){root.append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));return}
@@ -263,6 +285,7 @@ function manageView(){
  });
 }
 addEventListener('hashchange',manageView);manageView();
+$('#manage-account')?.addEventListener('click',()=>$('#manage-menu')?.click());
 function renderBoxes(boxes){
  listedBoxes=boxes;
  clearTimeout(boxRefreshTimer);
@@ -364,7 +387,9 @@ function paintProfileLibrary(){
   if(query&&!entries.length)continue;
   shown+=entries.length;
   const card=node('article');card.className='profile-app';card.dataset.application=app;
-  const head=node('header');head.className='profile-app-head';const mark=node('span',label.slice(0,1));mark.className='profile-app-mark';mark.setAttribute('aria-hidden','true');
+  const head=node('header');head.className='profile-app-head';const mark=node('span');mark.className='profile-app-mark';mark.setAttribute('aria-hidden','true');
+  const harnessIcons={claude:'/harness-claude.svg',codex:'/harness-codex.svg',opencode:'/harness-opencode-light.svg'};
+  if(harnessIcons[app]){const icon=document.createElement('img');icon.src=harnessIcons[app];icon.alt='';mark.append(icon)}else mark.textContent=label.slice(0,1);
   const heading=node('div'),title=node('h3',label),description=node('p',app==='github'?'Git credentials for cloning and pushing.':'Agent login snapshots for new boxes.');heading.append(title,description);
   const count=node('span',String(query?entries.length:all.length));count.className='profile-app-count';count.setAttribute('aria-label',(query?entries.length:all.length)+' '+label+' profiles');head.append(mark,heading,count);card.append(head);
   const list=node('div');list.className='profile-list';
