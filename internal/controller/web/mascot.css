@@ -1,13 +1,13 @@
 .vbox-mascot{display:block;width:100%;height:100%;overflow:visible;contain:paint;touch-action:manipulation}
-.vbox-mascot-eye{fill:none;stroke:#fff;stroke-width:6.5;stroke-linecap:round;stroke-linejoin:round;transition:stroke-width .36s ease}
+.vbox-mascot-eye{fill:none;stroke:#fff;stroke-width:9;stroke-linecap:round;stroke-linejoin:round;transition:stroke-width .36s ease}
 .vbox-mascot[data-mood="happy"] .vbox-mascot-eye,.vbox-mascot[data-mood="sleeping"] .vbox-mascot-eye{stroke-width:4}
-.vbox-mascot[data-mood="laughing"] .vbox-mascot-eye,.vbox-mascot[data-mood="working"] .vbox-mascot-eye{stroke-width:5.5}
+.vbox-mascot[data-mood="laughing"] .vbox-mascot-eye{stroke-width:6}
 .vbox-mascot-eyes-C .vbox-mascot-eye{stroke-width:7.5}
 .vbox-mascot-glint{display:none;fill:#d2f4ff;opacity:.75}
 .vbox-mascot-eyes-B .vbox-mascot-glint{display:block}
 .vbox-mascot-z{font:italic 700 16px system-ui;fill:#9fb0cc;opacity:0}
 .vbox-mascot-blush{fill:#FF7A9A}
-.vbox-mascot-mini .vbox-mascot-eye{stroke-width:7.7}
+.vbox-mascot-mini .vbox-mascot-eye{stroke-width:9.5}
 @media (prefers-reduced-motion:reduce){.vbox-mascot *{animation:none!important;transition:none!important}}
 
 .vbox-mascot-motion{transform-origin:0 0}
