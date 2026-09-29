@@ -126,14 +126,16 @@
  const THEME_ADJ=['mossy','sunny','plucky','sleepy','brisk','cosy','fizzy','tiny','bold','minty','wobbly','glossy'];
  const THEME_NOUN=['pebble','mochi','bramble','biscuit','comet','dumpling','clover','pixel','marble','sprout','pudding','ember'];
  const titleCase=w=>w.charAt(0).toUpperCase()+w.slice(1);
- const WORKSPACE_THEME={bg:'#111923',bg2:'#18212d',surface:'#1a2230',surface2:'#202e3d',
-  ink:'#eaf0f8','ink-soft':'#91a0b3',line:'#2b3848',
-  accent:'#8fb8f5','accent-text':'#aaceff','accent-ink':'#102136','accent-soft':'#263749',
-  pop:'#b691e6','bubble-out':'#294b65','bubble-in':'#1b2938','bubble-in-ink':'#eaf0f8',
-  danger:'#ec727c','danger-text':'#ffadb5',warn:'#e3b66d','warn-text':'#f2cf8e',ok:'#69d3a4','ok-text':'#8ee5ba'};
+ // Token table only: values point at the CSS custom properties so the variant
+ // stylesheet (and its prefers-color-scheme switch) decides the actual colours.
+ const WORKSPACE_THEME={bg:'var(--vb-bg)',bg2:'var(--vb-bg-soft)',surface:'var(--vb-surface)',surface2:'var(--vb-surface-2)',
+  ink:'var(--vb-ink)','ink-soft':'var(--vb-ink-soft)',line:'var(--vb-line)',
+  accent:'var(--vb-accent)','accent-text':'var(--vb-accent-text)','accent-ink':'var(--vb-accent-ink)','accent-soft':'var(--vb-accent-soft)',
+  pop:'var(--vb-pop)','bubble-out':'var(--vb-bubble-out)','bubble-in':'var(--vb-bubble-in)','bubble-in-ink':'var(--vb-ink)',
+  danger:'var(--vb-danger)','danger-text':'var(--vb-danger-text)',warn:'var(--vb-warn)','warn-text':'var(--vb-warn-text)',ok:'var(--vb-ok)','ok-text':'var(--vb-ok-text)'};
  function deriveTheme(seed){
-  const t=Object.assign({},WORKSPACE_THEME,{radius:'6px','radius-sm':'4px','radius-lg':'9px',shadow:'0 5px 18px #08121d44','shadow-pop':'0 22px 70px #06101bbb',wall:'none'});
-  return {name:String(seed),font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:6,tokens:t};
+  const t=Object.assign({},WORKSPACE_THEME,{radius:'var(--vb-radius)','radius-sm':'var(--vb-radius-sm)','radius-lg':'var(--vb-radius-lg)',shadow:'var(--vb-shadow)','shadow-pop':'var(--vb-shadow-lg)',wall:'none'});
+  return {name:String(seed),font:'var(--vb-font)',radius:6,tokens:t};
  }
  function applyVariant(){
   document.documentElement.dataset.variant='A';
@@ -266,16 +268,26 @@
    '</g></g></g></g></g></g></g></svg>';
  }
  function mascotMiniSVG(seedStr){
-  const t=makeTraits(seedStr),[h,s,l]=moodPalette(t).idle;
-  const x=120-t.W/2,y=190-t.H,cxL=120-t.eyeGap/2,cxR=120+t.eyeGap/2;
-  const er=(Math.min(t.eyeW,t.eyeH)/2*t.round).toFixed(1),topY=y+8,tipY=topY-t.antLen,d=mxBodyPath(t),cid='mxm'+(++mxUid);
-  const eye=cx=>'<rect x="'+(cx-t.eyeW/2)+'" y="'+(t.eyeY-t.eyeH/2)+'" width="'+t.eyeW+'" height="'+t.eyeH+'" rx="'+er+'" fill="#fff"/>';
-  return '<svg class="mx-mini" viewBox="30 10 180 190" aria-hidden="true">'+
-   '<defs><clipPath id="'+cid+'"><path d="'+d+'"/></clipPath></defs>'+
-   (t.antenna==='none'?'':'<path d="M120 '+topY+' L120 '+tipY+'" stroke="'+hsl(h,s+8,l-15)+'" stroke-width="5" stroke-linecap="round"/><circle cx="120" cy="'+(tipY-5)+'" r="7" fill="'+hsl(h,s+8,l-15)+'"/>')+
-   '<path d="'+d+'" fill="'+hsl(h,s,l)+'"/>'+
-   '<g clip-path="url(#'+cid+')" style="--skin-dk:'+hsl(h,s+8,l-15)+';--mx-dark:'+hsl(h,s+8,l-15)+'">'+mxPattern(t)+'</g>'+
-   eye(cxL)+eye(cxR)+'<path d="M107 '+(t.eyeY+41)+' Q120 '+(t.eyeY+54)+' 133 '+(t.eyeY+41)+'" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round"/></svg>';
+  // Blob mascots: a saturated shape with two little white eye strokes. The
+  // shape and colour are derived deterministically from the box id/seed.
+  const str=String(seedStr);let h=2166136261>>>0;
+  for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
+  const pick=(n,shift)=>{let x=(h>>>((shift*7)%24))^Math.imul(h+shift+1,2246822519);x^=x>>>13;return Math.abs(x)%n};
+  const palette=['#7c5cff','#3b82f6','#22c55e','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444','#0ea5e9','#d946ef','#84cc16','#f97316'];
+  const color=palette[pick(palette.length,3)];
+  const shape=pick(7,5);
+  let body='';
+  switch(shape){
+   case 0:body='<circle cx="50" cy="52" r="38"/>';break;
+   case 1:body='<path d="M50 10 C71 30 89 47 89 64 A39 39 0 1 1 11 64 C11 47 29 30 50 10 Z"/>';break;
+   case 2:body='<rect x="13" y="15" width="74" height="74" rx="26"/>';break;
+   case 3:body='<path d="M50 11 L87 32 L87 74 L50 95 L13 74 L13 32 Z"/>';break;
+   case 4:body='<path d="M34 12 L66 12 C72 12 77 17 77 23 L77 30 C84 34 88 42 88 52 C88 62 84 70 77 74 L77 81 C77 87 72 92 66 92 L34 92 C28 92 23 87 23 81 L23 74 C16 70 12 62 12 52 C12 42 16 34 23 30 L23 23 C23 17 28 12 34 12 Z"/>';break;
+   case 5:body='<path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/>';break;
+   default:body='<circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/>';
+  }
+  const eyes='<g fill="none" stroke="#ffffff" stroke-width="7.5" stroke-linecap="round"><path d="M35 41 C38 35 45 35 48 41"/><path d="M58 41 C61 35 68 35 71 41"/></g>';
+  return '<svg class="mx-mini" viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
  }
  const MACHINE={
   idle:{on:{WORK:'working',SEND:'waiting',PRAISE:'happy',JOKE:'laughing',ERROR:'angry'}},
@@ -885,6 +897,25 @@
   if(otherPairs.length)desired.push(pairGroup,...otherPairs);
   $('#chat-list-empty').hidden=list.length+pairList.length>0;
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
+  renderPins();
+ }
+
+ // Mobile: a big pinned-avatar row above the list, mirroring the reference.
+ function renderPins(){
+  const host=document.getElementById('chat-pins');if(!host)return;
+  const running=[...boxes.values()].filter(b=>b.state==='running').slice(0,8);
+  if(!running.length){host.hidden=true;host.dataset.signature='';return}
+  host.hidden=false;
+  const signature=running.map(b=>b.id).join(',');
+  if(host.dataset.signature===signature)return;
+  host.dataset.signature=signature;host.replaceChildren();
+  for(const box of running){
+   const button=document.createElement('button');button.type='button';button.className='chat-pin';button.title=box.name;
+   const label=document.createElement('span');label.className='chat-pin-name';label.textContent=box.name;
+   button.append(avatarNode(box,true),label);
+   button.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
+   host.append(button);
+  }
  }
 
  /* ---------- messages ---------- */
@@ -1441,6 +1472,9 @@
   closeForwardMenu();
   closeTakeover();
   renderInspect();
+  // Wide screens show the details rail as a persistent third pane, matching the
+  // conversation | chat | details layout. Narrow screens keep the drawer.
+  if(!inspectOpen&&matchMedia('(min-width:1100px)').matches)openInspect();
   if(!(boxes.get(id).messages||[]).length)doodle('Loading messages…');
   try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{doodle('')}
   if(epoch===viewEpoch&&selected===id)requestAnimationFrame(()=>{
@@ -1910,12 +1944,17 @@
   }
   renderInspect();
  }
- $('#chat-info').onclick=()=>{
-  if(inspectOpen){closeInspect();return}
+ function openInspect(){
+  if(inspectOpen)return;
   inspectOpen=true;inspect.hidden=false;$('#inspect-backdrop').hidden=false;
   inspect.classList.toggle('with-contacts',owner);
-  $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
+  $('#chat-info').setAttribute('aria-expanded','true');
   controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
+  renderInspect();
+ }
+ $('#chat-info').onclick=()=>{
+  if(inspectOpen){closeInspect();return}
+  openInspect();
  };
  function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#inspect-close').onclick=closeInspect;
@@ -3034,6 +3073,8 @@
  $('#variant-dice').onclick=()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new mascot seed.')};
  $('#variant-seed').addEventListener('change',event=>{theme.seed=event.target.value.trim()||DEFAULT_SEED;saveTheme();applyVariant()});
  $('#chat-menu').onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
+ const mobileMenuButton=document.getElementById('mobile-menu');
+ if(mobileMenuButton)mobileMenuButton.onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
  applyVariant();
 

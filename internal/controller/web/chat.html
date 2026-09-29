@@ -3,23 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-<title>vmbox / chats</title>
-<meta name="theme-color" content="#313338">
+<title>vbox / chats</title>
+<meta name="theme-color" content="#ffffff">
 <link rel="icon" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/xterm.css">
 <link rel="stylesheet" href="/chat.css">
 <link rel="stylesheet" href="/ai-helper.css">
 <link rel="stylesheet" href="/idle-policy.css">
-<link rel="stylesheet" href="/workspace-nav.css"><link rel="stylesheet" href="/login.css">
+<link rel="stylesheet" href="/workspace-nav.css"><link rel="stylesheet" href="/login.css"><link rel="stylesheet" href="/vbox-c.css">
 </head>
 <body>
 <div id="chat-shell">
 
 <header id="chat-top" class="workspace-top">
  <button id="chat-menu" class="workspace-nav-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
- <strong class="brand">vmbox <span>/ chats</span></strong>
+ <strong class="brand"><img class="brand-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="brand-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""><span class="brand-suffix">/ chats</span></strong>
  <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a><a href="/#profiles" data-owner-nav>Profiles</a></nav>
  <span class="spacer"></span>
  <button id="usage-toggle" class="workspace-nav-usage" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
@@ -27,8 +28,9 @@
 </header>
 
 <form id="login" hidden aria-labelledby="login-title">
+ <div class="login-decor" aria-hidden="true"><svg class="b1" viewBox="0 0 100 104"><g fill="#7c5cff"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M35 41 C38 35 45 35 48 41"/><path d="M58 41 C61 35 68 35 71 41"/></g></svg><svg class="b2" viewBox="0 0 100 104"><g fill="#f59e0b"><path d="M50 10 C71 30 89 47 89 64 A39 39 0 1 1 11 64 C11 47 29 30 50 10 Z"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M35 41 C38 35 45 35 48 41"/><path d="M58 41 C61 35 68 35 71 41"/></g></svg><svg class="b3" viewBox="0 0 100 104"><g fill="#22c55e"><circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M35 41 C38 35 45 35 48 41"/><path d="M58 41 C61 35 68 35 71 41"/></g></svg><svg class="b4" viewBox="0 0 100 104"><g fill="#ec4899"><path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M40 57 C42 52 47 52 49 56"/><path d="M56 56 C58 52 63 52 65 57"/></g></svg><svg class="b5" viewBox="0 0 100 104"><g fill="#3b82f6"><rect x="13" y="15" width="74" height="74" rx="26"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M35 41 C38 35 45 35 48 41"/><path d="M58 41 C61 35 68 35 71 41"/></g></svg></div>
  <div class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
-  <div class="login-brand"><span class="login-mark" aria-hidden="true">v</span>vmbox</div>
+  <div class="login-brand"><img class="login-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="login-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""></div>
   <h1 id="login-title" class="login-title">Log in</h1>
   <p class="login-copy">Enter your controller token to access your workspace.</p>
   <label for="login-token">Controller token</label>
@@ -48,6 +50,7 @@
    </div>
    <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
+  <div id="chat-pins" class="chat-pins" hidden></div>
   <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"></div>
   <ul id="chat-entries"></ul>
   <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
@@ -57,7 +60,7 @@
   <section id="chat-empty">
    <div id="chat-empty-mascot" class="mascot-host" aria-hidden="true"></div>
    <div class="empty-copy">
-    <h2>vmbox agent chats</h2>
+    <h2>vbox agent chats</h2>
     <p>Pick an agent chat or a direct conversation between boxes.</p>
     <p class="hint">Avatars show a live desktop preview while a box is running.</p>
    </div>
@@ -90,6 +93,9 @@
      <span class="spacer"></span>
      <button id="inspect-close" type="button" aria-label="Close details">× <span>Close</span></button>
     </header>
+    <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
+     <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span>Desktop off</span></div>
+    </div>
     <div id="inspect-body">
      <section id="inspect-summary" aria-label="Box overview">
       <div id="inspect-avatar"></div>
@@ -366,7 +372,7 @@
 <div id="chat-menu-sheet" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="chat-menu-sheet"></div>
  <section class="sheet-card menu-card" role="dialog" aria-modal="true">
-  <header><strong>vmbox chats</strong><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
+  <header><strong>vbox chats</strong><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
   <div class="menu-links">
    <a href="/#boxes">Boxes</a>
    <a href="/#providers" data-owner-nav>Providers</a>
@@ -409,6 +415,14 @@
   <a id="media-viewer-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open original in a new tab</a>
  </section>
 </div>
+
+<nav id="mobile-tabs" class="mobile-tabs" aria-label="Workspace">
+ <a href="/chat" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg><span>Chats</span></a>
+ <a href="/grid"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Grid</span></a>
+ <a href="/#boxes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 8 12 3 3 8l9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg><span>Boxes</span></a>
+ <a href="/#profiles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Profiles</span></a>
+ <button id="mobile-menu" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg><span>Menu</span></button>
+</nav>
 
 </div>
 <script src="/markdown.js" defer></script>
