@@ -241,6 +241,78 @@ func TestCodexQueueReceiptWaitsForMatchingNativeUserItem(t *testing.T) {
 	}
 }
 
+func TestCodexQueueReceiptRestartsAfterActiveTurnIsInterrupted(t *testing.T) {
+	originalPoll, originalRetry := codexUserItemPollInterval, codexQueueRetryInterval
+	t.Cleanup(func() { codexUserItemPollInterval, codexQueueRetryInterval = originalPoll, originalRetry })
+	codexUserItemPollInterval, codexQueueRetryInterval = 10*time.Millisecond, 20*time.Millisecond
+	var checks, starts, turnChecks atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			var result map[string]any
+			switch request.Method {
+			case "thread/items/list":
+				checks.Add(1)
+				result = map[string]any{"data": []any{}}
+				if starts.Load() > 0 {
+					result["data"] = []any{map[string]any{"item": map[string]any{"type": "userMessage", "clientId": "message-1"}}}
+				}
+			case "thread/turns/list":
+				turnChecks.Add(1)
+				status := "inProgress"
+				if turnChecks.Load() > 1 {
+					status = "interrupted"
+				}
+				result = map[string]any{"data": []any{map[string]any{"status": status}}}
+			case "thread/queue/list":
+				result = map[string]any{"data": []any{map[string]any{"id": "queued-1"}}}
+			case "thread/queue/start":
+				starts.Add(1)
+				result = map[string]any{"turn": map[string]any{"status": "inProgress"}}
+			default:
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			response, _ := json.Marshal(map[string]any{"id": request.ID, "result": result})
+			if err := conn.Write(r.Context(), websocket.MessageText, response); err != nil {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := waitForCodexUserItem(ctx, client, "visible-thread", "message-1"); err != nil {
+		t.Fatal(err)
+	}
+	if checks.Load() < 3 || turnChecks.Load() < 2 || starts.Load() != 1 {
+		t.Fatalf("checks=%d turnChecks=%d starts=%d", checks.Load(), turnChecks.Load(), starts.Load())
+	}
+}
+
 func TestCodexIdleInterruptedQueueStartsOldestSubmission(t *testing.T) {
 	var methodsMu sync.Mutex
 	var methods []string
