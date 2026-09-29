@@ -208,28 +208,29 @@
  <div id="new-box-backdrop"></div>
  <section id="new-box-card" role="dialog" aria-modal="true">
   <header><strong>New box</strong><span class="spacer"></span><button id="new-box-close" type="button" aria-label="Close">×</button></header>
-  <form id="create-box">
-   <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
-   <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
-   <label>Disk GiB <input name="disk" type="number" min="1" max="1024" value="10"></label>
-   <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
-   <p id="create-pool-status" class="hint" hidden></p>
-   <div id="profile-choices" class="profiles"></div>
-   <fieldset id="create-tools" class="tools"><legend>Optional tools</legend></fieldset>
-   <details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label>
-   <p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details>
-   <label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label>
-   <details id="create-instructions-editor" hidden><summary>Customize Markdown</summary>
-   <label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label>
-   <div id="create-instructions-preview" class="md-preview" hidden></div></details>
-   <button id="create-box-submit">Create and start box</button>
-  </form>
-  <aside class="preview-rail" id="create-preview" aria-label="Launch preview">
-   <h3>Launch preview</h3>
-   <div class="preview-card" id="create-preview-card"></div>
-   <p class="preview-note" id="create-preview-note">Prices come from the provider catalog; pool status refreshes live.</p>
-  </aside>
-  <p id="new-box-status" role="status"></p>
+  <div class="new-box-body">
+   <form id="create-box">
+    <fieldset class="nb-step"><legend>1 · Box</legend>
+     <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
+     <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
+     <label>Disk GiB <input name="disk" type="number" min="1" max="1024" value="10"></label>
+     <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
+     <p id="create-pool-status" class="hint" hidden></p>
+    </fieldset>
+    <fieldset class="nb-step"><legend>2 · Logins</legend><div id="profile-choices" class="profiles"></div></fieldset>
+    <fieldset class="nb-step"><legend>3 · Tools</legend><fieldset id="create-tools" class="tools"></fieldset><details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details></fieldset>
+    <fieldset class="nb-step"><legend>4 · Instructions</legend><label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label><details id="create-instructions-editor" hidden><summary>Customize Markdown</summary><label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label><div id="create-instructions-preview" class="md-preview" hidden></div></details></fieldset>
+   </form>
+   <aside id="create-preview" aria-label="Launch preview">
+    <div class="preview-card">
+     <span class="preview-avatar" aria-hidden="true"><span class="preview-screen"></span><span class="preview-mascot"><svg viewBox="0 0 100 104"><g fill="#ff6f59"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg></span></span>
+     <strong id="create-preview-name" class="preview-name">my-agent-box</strong>
+     <div id="create-preview-card"></div>
+    </div>
+    <p class="preview-note" id="create-preview-note">Prices come from the provider catalog; pool status refreshes live.</p>
+   </aside>
+  </div>
+  <footer class="new-box-footer"><p id="new-box-status" role="status"></p><button type="button" id="new-box-cancel" class="vb-ghost">Cancel</button><button id="create-box-submit" type="submit" form="create-box">Create and start box</button></footer>
  </section>
 </div>
 

@@ -1768,24 +1768,37 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
  /* ---------- takeover popup: VNC/TMUX control ---------- */
  const takeover=$('#takeover'),takeoverScreen=$('#takeover-screen'),takeoverControls=$('#takeover-controls'),takeoverStatus=$('#takeover-status');
  const boxViewerMetrics=new Map();
- let takeoverDispose=null,takeoverKind='';
+ let takeoverDispose=null,takeoverKind='',takeoverBoxId='';
+ function takeoverFailed(msg){return /failed|could not|couldn't|error|unavailable|refused|timed out|disconnected/i.test(String(msg||''))}
+ function showTakeoverError(detail){
+  const label=takeoverKind==='terminal'?'terminal':'desktop';
+  let note=takeoverScreen.querySelector('.viewer-error');
+  if(!note){note=document.createElement('div');note.className='viewer-error';takeoverScreen.append(note)}
+  note.replaceChildren();
+  const icon=document.createElement('span');icon.className='viewer-error-icon';icon.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>';
+  const title=document.createElement('strong');title.textContent='Couldn\'t connect to the '+label;
+  const sub=document.createElement('span');sub.className='viewer-error-detail';sub.textContent=detail||'Try again, or check the box runtime.';
+  const retry=document.createElement('button');retry.type='button';retry.textContent='Retry';retry.onclick=()=>{note.remove();void openTakeover(takeoverKind,takeoverBoxId)};
+  note.append(icon,title,sub,retry);
+ }
+ function setTakeoverStatus(msg){takeoverStatus.textContent=msg;const bad=takeoverFailed(msg);takeoverStatus.classList.toggle('is-error',bad);if(bad)showTakeoverError(msg.slice(0,160));else{const n=takeoverScreen.querySelector('.viewer-error');if(n)n.remove()}}
  async function openTakeover(kind,boxID=selected){
   const box=boxes.get(boxID);if(!box)return;
   if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it from the workspace first.';return}
   takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
-  takeover.hidden=false;takeoverKind=kind;
+  takeover.hidden=false;takeoverKind=kind;takeoverBoxId=boxID;
   $('#takeover-title').textContent=box.name+' · '+(kind==='desktop'?'Desktop':'TMUX');
-  takeoverStatus.textContent=kind==='desktop'?'Starting desktop…':'Opening session…';
+  setTakeoverStatus(kind==='desktop'?'Starting desktop…':'Opening session…');
   takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.kind===kind));
   try{
    if(kind==='desktop'){
     await ensureDesktopRunning(box);
-    takeoverDispose=openWorkspaceDesktop(box.id,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,controls:takeoverControls,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
+    takeoverDispose=openWorkspaceDesktop(box.id,msg=>{setTakeoverStatus(msg)},{root:takeoverScreen,controls:takeoverControls,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
    }else{
     const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{},{agent:box.defaultAgent||'shell',reuseExisting:true});
-    takeoverDispose=openWorkspaceTerminal(box.id,s.session,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,keys:takeoverControls,autoFocus:true,onDisconnect:()=>{takeoverStatus.textContent+=' · disconnected'}});
+    takeoverDispose=openWorkspaceTerminal(box.id,s.session,msg=>{setTakeoverStatus(msg)},{root:takeoverScreen,keys:takeoverControls,autoFocus:true,onDisconnect:()=>{setTakeoverStatus(takeoverStatus.textContent+' · disconnected')}});
    }
-  }catch(e){takeoverStatus.textContent=e.message}
+  }catch(e){setTakeoverStatus(e.message)}
  }
  async function openBoxControl(box,kind){
   hideTvPreview();
@@ -2160,6 +2173,7 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
   }
   function renderPreview(){
    if(!previewCard)return;
+   const previewName=$('#create-preview-name');if(previewName)previewName.textContent=(createForm.elements.name?.value||'').trim()||'my-agent-box';
    previewCard.replaceChildren();
    for(const [key,value] of previewRows()){
     const row=document.createElement('div');row.className='preview-row';
@@ -2294,10 +2308,12 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
   }
  $('#new-box').onclick=openNewBoxModal;
  $('#new-box-close').onclick=()=>{newBoxModal.hidden=true};
+ $('#new-box-cancel')?.addEventListener('click',()=>{newBoxModal.hidden=true});
  $('#new-box-backdrop').onclick=()=>{newBoxModal.hidden=true};
  newBoxModal.addEventListener('transitionend',renderPreview);
  document.addEventListener('change',event=>{if(event.target?.name==='agentReasoningEffort'&&!newBoxModal.hidden)renderPreview()});
  createForm.addEventListener('change',event=>{if(event.target?.name==='disk'&&!newBoxModal.hidden)renderPreview()});
+ createForm.addEventListener('input',event=>{if(event.target?.name==='name'&&!newBoxModal.hidden)renderPreview()});
  createForm.onsubmit=async event=>{
   event.preventDefault();
   const f=createForm.elements,submit=$('#create-box-submit');submit.disabled=true;$('#new-box-status').textContent='Creating…';
@@ -2650,6 +2666,7 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
  /* ---------- imported profile usage ---------- */
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
  function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
+function usageAgo(value){if(!value)return 'unknown';const d=new Date(value);if(Number.isNaN(d.getTime()))return 'unknown';const s=Math.max(0,Math.round((Date.now()-d.getTime())/1000));if(s<60)return 'just now';const m=Math.round(s/60);if(m<60)return m+' min ago';const h=Math.round(m/60);if(h<24)return h+'h ago';return d.toLocaleDateString()}
  function remainingPercent(used){return typeof used==='number'&&Number.isFinite(used)?Math.max(0,Math.min(100,100-used)):null}
  function lowestRemaining(profile){
   const remaining=(profile?.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent)).filter(value=>value!==null);
@@ -2693,7 +2710,7 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
    const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
    const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
    const source=profile.snapshot?.source?' · Source: '+profile.snapshot.source:'';
-   card.append(mk('p',boxes+source+' · '+(profile.observedAt?'Observed '+usageDate(profile.observedAt):'Waiting for first check')));
+   card.append(mk('p',boxes+source+' · '+(profile.observedAt?'Checked '+usageAgo(profile.observedAt):'Waiting for first check')));
    const snapshot=profile.snapshot;
    for(const window of snapshot?.windows||[]){
     const row=mk('div');row.className='usage-window';
