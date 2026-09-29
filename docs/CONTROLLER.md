@@ -21,6 +21,14 @@ back to the controller. The controller image must contain a matching
 account tokens out of images, logs, and worker environments. Account bootstrap
 prints the owner token once; store it securely.
 
+The repository Dockerfile includes the controller and matching runtime. Its
+default entrypoint starts a worker, so override the entrypoint with
+`/usr/local/bin/vmbox-controller` for a controller deployment. Point it at a
+PostgreSQL database; migrations run at startup. Before signing in, run the same
+binary once with the `bootstrap` argument and the same `DATABASE_URL` to create
+the first owner. Capture the token privately. A reverse proxy should terminate
+HTTPS at the public `VMBOX_CONTROLLER_URL`.
+
 Choose a worker path before allocating boxes:
 
 | Worker path | Setup |

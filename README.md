@@ -7,13 +7,35 @@
 
 # vmbox
 
-vmbox gives each agent a persistent remote Linux box with a shell, desktop, and files. A controller manages accounts, worker capacity, and box storage. Use the CLI or browser to work with Codex, Claude Code, or OpenCode in the same box.
+<p align="center"><strong>Supported Harnesses and Subscriptions</strong></p>
 
-Boxes keep their files when hibernated. Running processes stop and start fresh when a box wakes. Closing a terminal or browser viewer leaves a running box alone.
+<p align="center">
+  <a href="https://openai.com/codex"><img src="docs/assets/harness-codex.svg" alt="Codex logo" width="36" height="36"></a>&nbsp;&nbsp;
+  <a href="https://claude.com/product/claude-code"><img src="docs/assets/harness-claude.svg" alt="Claude Code logo" width="36" height="36"></a>&nbsp;&nbsp;
+  <a href="https://opencode.ai"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/harness-opencode-dark.svg"><img src="docs/assets/harness-opencode-light.svg" alt="OpenCode logo" width="36" height="36"></picture></a>
+</p>
 
-## Get started
+<p align="center">Codex (ChatGPT) · Claude Code (Claude) · OpenCode (model API keys)</p>
 
-The CLI runs on Linux or macOS. On Windows, use a Linux environment such as WSL. Install Git, OpenSSH, and Go 1.26 or Docker, then:
+Grok Bot inspired this project. I wanted to bring my own agent harness and host the boxes myself, so I built vmbox.
+
+**Disclaimer:** It's slop, but works!
+
+vmbox is a web workspace for persistent remote Linux boxes. Create a box in the browser, then use its desktop, tmux terminal, and agent chat. Run Codex, Claude Code, or OpenCode in the same box. A controller manages accounts, workers, and storage; you choose where to host them.
+
+Boxes keep their files when hibernated. Running processes stop and start fresh when a box wakes. Closing a browser tab leaves a running box alone.
+
+## Server and worker setup
+
+1. Deploy the controller with PostgreSQL, HTTPS, and a matching `vmbox-runtime` binary. Set `DATABASE_URL`, `VMBOX_CONTROLLER_URL`, and `VMBOX_ENCRYPTION_KEY`, then bootstrap an owner account. See [controller operations](docs/CONTROLLER.md).
+2. Add worker capacity. For a self-hosted Linux server, build or pull the worker image, run the supervisor, register its endpoint and token as a `shared-worker` pool, and set its slot count in the web UI. Follow the [Linux VPS guide](docs/LINUX-VPS-SETUP.md); [other worker providers](docs/PROVIDERS.md) are also available.
+3. Open the controller URL in a browser, sign in with the owner token, and create a box. Its workspace has **Desktop**, **TMUX**, and **Chat** views; **Grid** shows several running boxes. Each running box needs a free worker slot. Hibernation frees compute while retaining its files.
+
+Provisioning capacity can incur hosting charges. See the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md) for tools, browser state, and secrets, and the [local prompt API](docs/LOCAL-AGENT-PROMPT.md) for sending messages from apps inside a box.
+
+## Optional CLI and local access
+
+The CLI adds local tmux and VNC access, box management, and credential upload. It runs on Linux or macOS; on Windows, use a Linux environment such as WSL. Install Git, OpenSSH, and Go 1.26 or Docker, then:
 
 ```bash
 git clone https://github.com/0xikarus/vmbox-service.git
@@ -21,35 +43,23 @@ cd vmbox-service
 ./install.sh
 ```
 
-The installer places `vmbox` in `~/.local/bin`. Open a new terminal if it is not on your `PATH`.
-
-Connect to a controller and enter the token supplied by its administrator at the hidden prompt:
+The installer places `vmbox` in `~/.local/bin`. Open a new terminal if it is not on your `PATH`. Connect using the token supplied by the controller owner at the hidden prompt:
 
 ```bash
 vmbox connect https://YOUR-CONTROLLER
 vmbox whoami
 ```
 
-To host your own controller, follow [controller operations](docs/CONTROLLER.md). Choose a [worker provider](docs/PROVIDERS.md); for self-hosted Linux workers, follow the [Linux VPS guide](docs/LINUX-VPS-SETUP.md). A controller owner must configure a worker pool and free capacity before boxes can start:
+Upload local Codex, Claude, OpenCode, or GitHub credentials with `vmbox profiles upload`. The controller encrypts saved profiles; select one when creating a box in the web UI or CLI. Existing boxes keep their imported copy until you reapply a profile.
 
 ```bash
-vmbox pools create
-vmbox pools default
-vmbox fleet location
-vmbox fleet slots set 1
-vmbox fleet status
+vmbox profiles upload
+vmbox new work       # or create a box in the browser
+vmbox work           # open or resume its tmux shell
+vmbox desktop work   # open its desktop in a local VNC viewer
 ```
 
-Provisioning capacity can incur provider charges. Each running box needs a free compute slot. Hibernation frees compute while retaining the box's volume.
-
-Create a box and connect:
-
-```bash
-vmbox new work
-vmbox work
-```
-
-The creation form lets you choose a worker pool, location, agent, saved login, and optional tools. Leave the startup command blank for a shell; run `codex`, `claude`, `opencode`, or another program inside it. Disconnect from tmux with **Ctrl-a, then d** and choose **Leave unchanged** to keep it running.
+`vmbox desktop` needs a local VNC viewer such as TigerVNC. The browser's Desktop and TMUX views work without one. The CLI creation form lets you choose a pool, agent, saved login, and optional tools. Detach from tmux with **Ctrl-a, then d** and choose **Leave unchanged** to keep it running.
 
 ## Everyday use
 
@@ -64,21 +74,10 @@ vmbox help                    # command reference
 
 `vmbox delete` asks you to confirm the exact box name. Hibernation preserves files, but it cannot preserve live processes or an agent's current conversation. The web Chat keeps previous messages visible after a box wakes.
 
-You can upload local Claude, Codex, OpenCode, or GitHub logins with `vmbox profiles upload` and select a saved profile when creating a box. Profiles are encrypted on the controller. Existing boxes keep their imported copy until you explicitly reapply a profile. Use `vmbox logout` to remove the CLI's saved controller login.
+Use `vmbox logout` to remove the CLI's saved controller login. Agent chat supports image attachments and direct contacts between boxes. Optional Blender and Foundry presets are selected when creating a box.
 
-The controller's web UI has box workspaces with Desktop and TMUX views, Agent chat, and Grid for viewing several running boxes. Agent chat supports image attachments and direct contacts between boxes. Optional Blender and Foundry presets are selected when creating a box. See the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md) for tools, browser state, and secrets, and the [local prompt API](docs/LOCAL-AGENT-PROMPT.md) for sending a message from an app inside a box.
-
-**Concise responses** is an optional instruction choice when creating or editing
-a box. It adds editable guidance only to the selected box.
-
-Saved chat attachments share a 1 GiB account limit. Large still images are
-resized and re-encoded when that makes them smaller; animated GIFs and videos
-keep their uploaded format. In Chat → Box details, owners can see per-box and
-account usage and confirm **Clear this box's attachments**. Clearing removes
-media from delivered messages while preserving their text, in-flight media,
-and attachments still used by another box. The account total separately shows
-uploads with no chat message reference. Deleting a box releases its unshared
-chat media; unused uploads are reclaimed after 24 hours on the next upload.
+Saved chat attachments share a 1 GiB account limit. Owners can review usage and
+clear a box's attachments in **Chat → Box details**; message text remains.
 
 ## How it compares
 
