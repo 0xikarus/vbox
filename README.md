@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/vbox-logo-dark.png">
+    <img src="docs/assets/vbox-logo.png" alt="vbox" width="420">
+  </picture>
+</p>
+
 # vmbox
 
 vmbox gives each agent a persistent remote Linux box with a shell, desktop, and files. A controller manages accounts, worker capacity, and box storage. Use the CLI or browser to work with Codex, Claude Code, or OpenCode in the same box.
