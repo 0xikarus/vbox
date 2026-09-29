@@ -34,6 +34,31 @@ func (s *Server) fleetStatus(w http.ResponseWriter, r *http.Request, p Principal
 	writeJSON(w, http.StatusOK, status)
 }
 
+func (s *Server) fleetHostResources(w http.ResponseWriter, r *http.Request, p Principal) {
+	w.Header().Set("Cache-Control", "no-store")
+	providerName, credential, err := fleetTarget(r)
+	if err != nil {
+		writeError(w, 400, err)
+		return
+	}
+	prov, err := s.provider(r.Context(), p.AccountID, providerName, credential)
+	if err != nil {
+		writeError(w, 502, err)
+		return
+	}
+	reader, ok := prov.(provider.HostResourcesProvider)
+	if !ok {
+		writeError(w, 409, fmt.Errorf("host resource usage is unavailable for this provider"))
+		return
+	}
+	resources, err := reader.HostResources(r.Context())
+	if err != nil {
+		writeError(w, 502, err)
+		return
+	}
+	writeJSON(w, 200, resources)
+}
+
 func (s *Server) fleetCosts(w http.ResponseWriter, r *http.Request, p Principal) {
 	w.Header().Set("Cache-Control", "no-store")
 	providerName, credential, err := fleetTarget(r)

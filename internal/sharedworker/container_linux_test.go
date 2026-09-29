@@ -29,6 +29,23 @@ func TestContainerCreateBoundary(t *testing.T) {
 	}
 }
 
+func TestContainerMemoryLimitsRespectSavedWorkspace(t *testing.T) {
+	r := &ContainerRuntime{Root: "/srv/disposable", Image: "example@sha256:abc", Prefix: "vmbox-12345678"}
+	swap := int64(0)
+	w := Workspace{ID: "0123456789abcdef0123456789abcdef", UID: 30000, Display: 1000, MemoryGiB: 4, SwapGiB: &swap}
+	if args := strings.Join(r.createArgs(w), " "); !strings.Contains(args, "--memory 4g --memory-swap 4g") {
+		t.Fatalf("explicit no-swap limits missing: %s", args)
+	}
+	swap = 2
+	if args := strings.Join(r.createArgs(w), " "); !strings.Contains(args, "--memory 4g --memory-swap 6g") {
+		t.Fatalf("saved swap limit missing: %s", args)
+	}
+	w.MemoryGiB = 9
+	if _, _, err := containerMemoryLimits(w); err == nil {
+		t.Fatal("oversized memory limit accepted")
+	}
+}
+
 func TestDisposableContainerBoundary(t *testing.T) {
 	image := os.Getenv("VMBOX_TEST_CONTAINER_IMAGE")
 	if image == "" {

@@ -846,6 +846,8 @@ CREATE TABLE IF NOT EXISTS agent_box_creations (
   requested_name text NOT NULL,
   requested_agent text NOT NULL,
   requested_disk_gib bigint NOT NULL,
+  requested_memory_gib bigint NOT NULL DEFAULT 0,
+  requested_swap_gib bigint,
   requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
   requested_login_profiles jsonb NOT NULL DEFAULT '[]'::jsonb,
   requested_tools jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -857,6 +859,8 @@ CREATE TABLE IF NOT EXISTS agent_box_creations (
 );
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_agent text NOT NULL DEFAULT 'codex';
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_disk_gib bigint NOT NULL DEFAULT 10;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_memory_gib bigint NOT NULL DEFAULT 0;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_swap_gib bigint;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_login_profiles jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_tools jsonb NOT NULL DEFAULT '[]'::jsonb;

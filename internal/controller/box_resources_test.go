@@ -45,7 +45,7 @@ func TestBoxResourceUpdatePinsAssignment(t *testing.T) {
 			mock.ExpectQuery("FROM logical_boxes.*FOR UPDATE").WithArgs("account-a", "box-1").WillReturnRows(logicalBoxRowWithSlot(state, "shell", "slot-1"))
 			if valid {
 				mock.ExpectQuery("FROM compute_slots.*FOR UPDATE OF s").WithArgs("account-a", "slot-1").WillReturnRows(occupiedSlotRow(time.Now()))
-				mock.ExpectExec("INSERT INTO audit_log").WithArgs("account-a", "user-a", "slot-1", float64(4), int64(12288)).WillReturnResult(sqlmock.NewResult(0, 1))
+				mock.ExpectExec("INSERT INTO audit_log").WithArgs("account-a", "user-a", "slot-1", float64(4), int64(12288), int64(0)).WillReturnResult(sqlmock.NewResult(0, 1))
 				mock.ExpectCommit()
 			} else {
 				mock.ExpectRollback()

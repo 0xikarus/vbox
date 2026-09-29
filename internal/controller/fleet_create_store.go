@@ -49,6 +49,13 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	if request.DiskGiB < 1 || request.DiskGiB > 1000 {
 		return creation, fmt.Errorf("diskGiB must be between 1 and 1000")
 	}
+	if request.Provider == "shared-worker" {
+		if request.MemoryGiB != 0 && (request.MemoryGiB < 1 || request.MemoryGiB > 8 || request.SwapGiB == nil || *request.SwapGiB < 0 || *request.SwapGiB > 4) {
+			return creation, fmt.Errorf("shared-worker memoryGiB must be 1–8 and swapGiB 0–4")
+		}
+	} else if request.MemoryGiB != 0 || request.SwapGiB != nil {
+		return creation, fmt.Errorf("per-box memory and swap limits require a container-isolated shared-worker pool")
+	}
 	if !validAgent(request.DefaultAgent) {
 		return creation, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
 	}
@@ -135,7 +142,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 	fence := boxruntime.ID("create_fence_")
 	leaseOwner := "create:" + id
 	expires := time.Now().UTC().Add(10 * time.Minute)
-	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "region": request.Region, "creationSlotId": request.SlotID, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript, "agentCliVersion": creation.AgentCLIVersion})
+	metadata, err := json.Marshal(map[string]any{"diskGiB": request.DiskGiB, "memoryGiB": request.MemoryGiB, "swapGiB": request.SwapGiB, "region": request.Region, "creationSlotId": request.SlotID, "allocateWhenReady": request.ShouldAllocateWhenReady(), "allocationIdempotencyKey": request.AllocationRequestKey, "loginProfiles": request.LoginProfiles, "tools": request.Tools, "setupScript": request.SetupScript, "agentCliVersion": creation.AgentCLIVersion})
 	if err != nil {
 		return creation, err
 	}
@@ -283,7 +290,7 @@ func (s *Store) RecoverableLogicalBoxCreations(ctx context.Context) ([]logicalBo
 			return nil, err
 		}
 		allocate := value.allocate
-		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, SlotID: value.slotID, DiskGiB: value.disk, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, AgentCLIVersion: stored.AgentCLIVersion, Assignment: assignment})
+		result = append(result, logicalBoxCreation{AccountID: value.accountID, UserID: value.userID, Request: v1.CreateLogicalBoxRequest{Name: assignment.Box.Name, Provider: assignment.Box.Provider, ProviderCredential: assignment.Box.ProviderCredential, DefaultAgent: assignment.Box.DefaultAgent, Region: value.region, SlotID: value.slotID, DiskGiB: value.disk, MemoryGiB: stored.MemoryGiB, SwapGiB: stored.SwapGiB, AllocateWhenReady: &allocate, AllocationRequestKey: value.allocationKey}, AgentCLIVersion: stored.AgentCLIVersion, Assignment: assignment})
 		result[len(result)-1].Request.LoginProfiles = stored.LoginProfiles
 		result[len(result)-1].Request.Tools = stored.Tools
 		result[len(result)-1].Request.SetupScript = stored.SetupScript

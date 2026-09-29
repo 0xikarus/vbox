@@ -389,6 +389,7 @@ test('worker placement distinguishes shared hosts and creation targets the selec
     const shared=url.searchParams.get('provider')==='shared-worker',alias=url.searchParams.get('providerCredential');
     return new Response(JSON.stringify({desiredSlots:2,actualSlots:2,freeSlots:1,occupiedSlots:1,unhealthySlots:0,slots:[{id:shared?'shared-slot':'dedicated-slot',ordinal:1,state:'occupied',health:'healthy',serviceName:shared?'logical-slot-1':'railway-worker-01',logicalBoxName:shared?(alias==='shared-01'?'shared-a':'shared-b'):'dedicated-box'},{id:'free-slot',ordinal:2,state:'free',health:'healthy',serviceName:shared?'logical-slot-2':'railway-worker-02'}]}));
    }
+   if(method==='GET'&&url.pathname==='/v1/fleet/host-resources')return new Response(JSON.stringify({memoryTotalBytes:8*1024**3,memoryAvailableBytes:3*1024**3,swapTotalBytes:4*1024**3,swapFreeBytes:2*1024**3,observedAt:new Date().toISOString()}));
    if(method==='POST'&&url.pathname==='/v1/logical-boxes'){window.poolCreates.push(JSON.parse(options.body));return new Response(JSON.stringify({id:'created'}))}
    if(method==='PUT'&&url.pathname==='/v1/fleet/slots'){window.poolCapacity.push(JSON.parse(options.body));return new Response(options.body)}
    return original(path,options);
@@ -399,11 +400,17 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  assert.match(await page.$eval('[data-box-id="dedicated"] .box-placement',e=>e.textContent),/Dedicated · railway-worker-01 · slot 1/);
  assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · shared-01 · slot 1/);
  assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · shared-02 · slot 1/);
+ assert.match(await page.$eval('#provider-list',e=>e.textContent),/Host RAM used5\.0 GiB \/ 8\.0 GiB/);
  const selected=JSON.stringify({provider:'shared-worker',providerCredential:'shared-02'});
  await page.click('#create details summary');
- await page.select('#create-pool',selected);await page.type('#create input[name=name]','comparison-box');await page.click('#create button[type=submit]');
+ await page.select('#create-pool',selected);
+ assert.equal(await page.$eval('#create-memory-settings',e=>e.hidden),false);
+ await page.$eval('#create input[name=memoryGiB]',e=>e.value='4');
+ await page.$eval('#create input[name=swapGiB]',e=>e.value='2');
+ await page.type('#create input[name=name]','comparison-box');await page.click('#create button[type=submit]');
  await page.waitForFunction(()=>window.poolCreates.length===1);
  const created=await page.evaluate(()=>window.poolCreates[0]);assert.equal(created.provider,'shared-worker');assert.equal(created.providerCredential,'shared-02');
+ assert.equal(created.memoryGiB,4);assert.equal(created.swapGiB,2);
  await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('4 workers · 6 compute slots'));
  assert.equal(await page.$eval('#create-pool',e=>e.value),selected);
  await page.select('#capacity-pool',JSON.stringify({provider:'shared-worker',providerCredential:'shared-01'}));await page.click('#slots button');

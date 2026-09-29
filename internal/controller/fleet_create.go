@@ -15,6 +15,17 @@ import (
 
 func pendingVolume(id string) bool { return strings.HasPrefix(id, "pending:") }
 
+func creationStorageResources(request v1.CreateLogicalBoxRequest) provider.Resources {
+	resources := provider.Resources{DiskGiB: request.DiskGiB}
+	if request.Provider == "shared-worker" {
+		resources.MemoryMiB = request.MemoryGiB * 1024
+		if request.SwapGiB != nil {
+			resources.SwapMiB = *request.SwapGiB * 1024
+		}
+	}
+	return resources
+}
+
 const stagedRuntimePath = "/data/home/bin/.vmbox-runtime-staged"
 const workspaceRuntimePath = "/data/home/bin/vmbox-runtime"
 
@@ -209,9 +220,9 @@ func (s *Server) finishLogicalBoxCreationActive(ctx context.Context, creation lo
 			}
 			creation.Assignment.Box.RestorationState = "creation-volume-requested"
 			if owned, ok := prov.(provider.WorkspaceStorageProvider); ok {
-				storage, err = owned.CreateWorkspaceStorage(ctx, serviceID, provider.Owner{AccountID: creation.AccountID, BoxID: creation.Assignment.Box.Name}, provider.Resources{DiskGiB: creation.Request.DiskGiB})
+				storage, err = owned.CreateWorkspaceStorage(ctx, serviceID, provider.Owner{AccountID: creation.AccountID, BoxID: creation.Assignment.Box.Name}, creationStorageResources(creation.Request))
 			} else {
-				storage, err = prov.CreateStorage(ctx, serviceID, provider.Resources{DiskGiB: creation.Request.DiskGiB})
+				storage, err = prov.CreateStorage(ctx, serviceID, creationStorageResources(creation.Request))
 			}
 			if err != nil {
 				return fail(fmt.Errorf("create workspace volume: %w", err))

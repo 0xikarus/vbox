@@ -44,6 +44,7 @@ type boxResourceRequest struct {
 	AssignmentGeneration int64   `json:"assignmentGeneration"`
 	CPU                  float64 `json:"cpu"`
 	MemoryMiB            int64   `json:"memoryMiB"`
+	SwapMiB              *int64  `json:"swapMiB,omitempty"`
 }
 
 func (v boxResourceRequest) validate() error {
@@ -83,6 +84,15 @@ func (s *Server) setBoxResources(w http.ResponseWriter, r *http.Request, p Princ
 		writeError(w, 409, fmt.Errorf("compute slot unavailable"))
 		return
 	}
+	if box.Provider == "shared-worker" {
+		if request.CPU != 1 || request.MemoryMiB%1024 != 0 || request.MemoryMiB < 1024 || request.MemoryMiB > 8192 || request.SwapMiB == nil || *request.SwapMiB%1024 != 0 || *request.SwapMiB < 0 || *request.SwapMiB > 4096 {
+			writeError(w, 400, fmt.Errorf("shared-worker CPU is fixed at 1; memoryMiB must be 1024–8192 and swapMiB 0–4096, in 1024 MiB steps"))
+			return
+		}
+	} else if request.SwapMiB != nil {
+		writeError(w, 400, fmt.Errorf("per-box swap settings require a container-isolated shared worker"))
+		return
+	}
 	prov, err := s.provider(ctx, p.AccountID, box.Provider, box.ProviderCredential)
 	if err != nil {
 		writeError(w, 502, err)
@@ -94,11 +104,14 @@ func (s *Server) setBoxResources(w http.ResponseWriter, r *http.Request, p Princ
 		return
 	}
 	resources := provider.Resources{CPU: request.CPU, MemoryMiB: request.MemoryMiB}
+	if request.SwapMiB != nil {
+		resources.SwapMiB = *request.SwapMiB
+	}
 	if err = limits.SetResourceLimits(ctx, slot.ServiceID, resources); err != nil {
 		writeError(w, 502, fmt.Errorf("resource update could not be confirmed; reload before retrying: %w", err))
 		return
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'slot.resources.set','compute_slot',$3,jsonb_build_object('cpu',$4::float8,'memoryMiB',$5::bigint))`, p.AccountID, p.UserID, slot.ID, resources.CPU, resources.MemoryMiB)
+	_, err = tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'slot.resources.set','compute_slot',$3,jsonb_build_object('cpu',$4::float8,'memoryMiB',$5::bigint,'swapMiB',$6::bigint))`, p.AccountID, p.UserID, slot.ID, resources.CPU, resources.MemoryMiB, resources.SwapMiB)
 	if err == nil {
 		err = tx.Commit()
 	}
@@ -106,5 +119,9 @@ func (s *Server) setBoxResources(w http.ResponseWriter, r *http.Request, p Princ
 		writeError(w, 500, fmt.Errorf("provider accepted limits, but audit could not be saved; reload before retrying"))
 		return
 	}
-	writeJSON(w, 200, map[string]any{"resources": resources, "message": "Limits submitted for this compute slot. No restart was requested. Reload to check configured limits; the live container may require a later restart to adopt them. These settings stay with the slot, not the workspace volume."})
+	message := "Limits submitted for this compute slot. No restart was requested. Reload to check configured limits; the live container may require a later restart to adopt them. These settings stay with the slot, not the workspace volume."
+	if box.Provider == "shared-worker" {
+		message = "RAM and swap limits updated on the running container and saved with the workspace. No restart was requested."
+	}
+	writeJSON(w, 200, map[string]any{"resources": resources, "message": message})
 }
