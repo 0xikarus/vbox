@@ -78,7 +78,7 @@ func (a *App) controllerToken(ctx context.Context, c config.Context) (string, er
 		return saved, err
 	}
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return "", fmt.Errorf("controller authentication missing; run vmbox in a terminal to sign in, or set %s", c.TokenEnv)
+		return "", fmt.Errorf("controller authentication missing; run vbox in a terminal to sign in, or set %s", c.TokenEnv)
 	}
 	token, err := a.readSecret("Controller token")
 	if err != nil {

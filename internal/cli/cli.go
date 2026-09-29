@@ -93,9 +93,9 @@ func (a *App) Run(ctx context.Context, args []string) error {
 			a.Verbose = true
 			args = args[1:]
 		case "--standalone":
-			return fmt.Errorf("standalone mode has been removed; connect to a controller with vmbox connect URL")
+			return fmt.Errorf("standalone mode has been removed; connect to a controller with vbox connect URL")
 		case "--context":
-			return fmt.Errorf("--context has been removed; this CLI connects to one controller; use vmbox connect URL")
+			return fmt.Errorf("--context has been removed; this CLI connects to one controller; use vbox connect URL")
 		default:
 			goto parsed
 		}
@@ -117,7 +117,7 @@ parsed:
 		return err
 	}
 	if args[0] == "context" {
-		return fmt.Errorf("context commands have been removed; use vmbox connect URL")
+		return fmt.Errorf("context commands have been removed; use vbox connect URL")
 	}
 	if args[0] == "connect" {
 		if len(args) == 1 {
@@ -143,7 +143,7 @@ parsed:
 			return err
 		}
 		if fs.NArg() != 0 {
-			return fmt.Errorf("usage: vmbox connect URL [--token-env ENV]")
+			return fmt.Errorf("usage: vbox connect URL [--token-env ENV]")
 		}
 		connected, err := a.setControllerConnection(&file, args[1], tokenEnv)
 		if err != nil {
@@ -163,7 +163,7 @@ parsed:
 		return fmt.Errorf("controller bootstrap is operator-only; see docs/CONTROLLER-FIRST.md; no provider operation performed")
 	}
 	if active.Controller == "" {
-		return fmt.Errorf("controller is not configured; run vmbox connect URL")
+		return fmt.Errorf("controller is not configured; run vbox connect URL")
 	}
 	if err := validateControllerURL(active.Controller); err != nil {
 		return err
@@ -173,12 +173,12 @@ parsed:
 	}
 	if args[0] == "logout" {
 		if len(args) != 1 {
-			return fmt.Errorf("usage: vmbox logout")
+			return fmt.Errorf("usage: vbox logout")
 		}
 		return a.controllerLogout(active)
 	}
 	if a.Verbose {
-		fmt.Fprintf(a.Err, "vmbox: controller %s\n", active.Controller)
+		fmt.Fprintf(a.Err, "vbox: controller %s\n", active.Controller)
 	}
 	return a.controller(ctx, file, active, args)
 }
@@ -252,7 +252,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 	case "profiles":
 		return a.controllerLoginProfiles(ctx, c, token, args[1:])
 	case "coworkers":
-		return fmt.Errorf("coworker features have been removed; use vmbox BOX or vmbox task BOX")
+		return fmt.Errorf("coworker features have been removed; use vbox BOX or vbox task BOX")
 	case "allocate":
 		return a.controllerBoxes(ctx, c, token, append([]string{"allocate"}, args[1:]...))
 	case "hibernate":
@@ -291,7 +291,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 			}
 			setup, err = a.configureSetup(ctx, c, nil, opts.name, setup, previewArgv)
 			if errors.Is(err, errSetupCancelled) {
-				fmt.Fprintln(a.Err, "vmbox: setup cancelled; nothing was submitted")
+				fmt.Fprintln(a.Err, "vbox: setup cancelled; nothing was submitted")
 				return nil
 			}
 			if err != nil {
@@ -372,7 +372,7 @@ func (a *App) controller(ctx context.Context, file config.File, c config.Context
 		return json.NewEncoder(a.Out).Encode(box)
 	case "resume":
 		if len(args) != 1 {
-			return fmt.Errorf("bare 'vmbox resume' opens logical-box selection; use 'vmbox NAME' for a named box")
+			return fmt.Errorf("bare 'vbox resume' opens logical-box selection; use 'vbox NAME' for a named box")
 		}
 		name, err := a.selectControllerLogicalBox(ctx, c, token, "Select a logical box to resume")
 		if err != nil {
@@ -580,7 +580,7 @@ func (a *App) request(ctx context.Context, c config.Context, token, method, path
 		return status, err
 	}
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return status, fmt.Errorf("controller authentication rejected; set %s to a valid token or run vmbox in a terminal to sign in", c.TokenEnv)
+		return status, fmt.Errorf("controller authentication rejected; set %s to a valid token or run vbox in a terminal to sign in", c.TokenEnv)
 	}
 	if token == a.Environ[c.TokenEnv] && token != "" {
 		saved, readErr := a.savedControllerToken(c)
@@ -670,56 +670,56 @@ func (a *App) requestOnce(ctx context.Context, c config.Context, token, method, 
 	return resp.StatusCode, nil
 }
 func (a *App) usage() {
-	fmt.Fprint(a.Out, `vmbox — persistent remote boxes
+	fmt.Fprint(a.Out, `vbox — persistent remote boxes
 
-  vmbox                         Show controller and box states (read-only)
-  vmbox BOX                     Open its shell; wake it if needed
-  vmbox desktop BOX             Open its desktop in a local VNC viewer
-  vmbox new NAME                Configure, create and connect
-  vmbox ls                      List boxes
-  vmbox whoami                  Show controller account, user and role
-  vmbox logout                  Clear this context's saved controller token
-  vmbox profiles upload         Upload local logins without creating a box
-  vmbox status BOX              Show its current state
-  vmbox hibernate BOX           Release compute; keep the workspace
-  vmbox delete BOX              Permanently delete box and files (confirmation required)
+  vbox                         Show controller and box states (read-only)
+  vbox BOX                     Open its shell; wake it if needed
+  vbox desktop BOX             Open its desktop in a local VNC viewer
+  vbox new NAME                Configure, create and connect
+  vbox ls                      List boxes
+  vbox whoami                  Show controller account, user and role
+  vbox logout                  Clear this context's saved controller token
+  vbox profiles upload         Upload local logins without creating a box
+  vbox status BOX              Show its current state
+  vbox hibernate BOX           Release compute; keep the workspace
+  vbox delete BOX              Permanently delete box and files (confirmation required)
 
-  vmbox BOX --session           Choose another existing tmux session
-  vmbox BOX --start-cli 'claude' Start a command in a new persistent shell
-  vmbox task BOX                Choose Codex, Claude or a shell one-shot
-  vmbox task BOX codex --prompt 'YOUR TASK'
-  vmbox task-status BOX         Read task results and exit codes
+  vbox BOX --session           Choose another existing tmux session
+  vbox BOX --start-cli 'claude' Start a command in a new persistent shell
+  vbox task BOX                Choose Codex, Claude or a shell one-shot
+  vbox task BOX codex --prompt 'YOUR TASK'
+  vbox task-status BOX         Read task results and exit codes
 
 Inside a box, run claude, codex, or any shell command yourself.
 Detach: Ctrl-a, then d. Choose Leave unchanged to leave programs alive.
 Hibernation retains files, not live processes. One-shots hibernate when idle.
 
-Setup: vmbox connect URL | vmbox pools | vmbox profiles list
-Full reference: vmbox help --all    Diagnostics: vmbox --verbose COMMAND
+Setup: vbox connect URL | vbox pools | vbox profiles list
+Full reference: vbox help --all    Diagnostics: vbox --verbose COMMAND
 `)
 }
 
 func (a *App) usageFull() {
-	fmt.Fprint(a.Out, `vmbox — controller-managed persistent boxes
-  vmbox BOX [codex|claude|shell | --session [NAME] | --start-cli COMMAND]
-  vmbox ls [--json] | status BOX [--json] | sessions BOX [--json]
-  vmbox new BOX [--pool TYPE/ALIAS] [--disk GiB] [--region ID] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]
-  vmbox task [BOX] [codex|claude|shell] [--prompt TEXT]
-             [--session NAME] [--idempotency-key KEY] [--json]
-  vmbox task-status BOX [TASK_ID]
-  vmbox task-output BOX TASK_ID
-  vmbox updates [BOX] [--json]
-  vmbox updates ack BOX --session NAME --revision REV
-  vmbox boxes update BOX --default-agent AGENT
-  vmbox pools list|schema|show|create|update|validate|default
-  vmbox fleet status|slots|slots set COUNT [--pool TYPE/ALIAS]
-  vmbox allocate|hibernate|delete BOX
-  vmbox connect URL [--token-env ENV]
-  vmbox connect | logout | whoami
-  vmbox users list|add|remove
-  vmbox notifications list|setup|test|remove
-  vmbox auth BOX [authentication options]
-  vmbox run BOX [--pool TYPE/ALIAS] [job options] -- COMMAND [ARG...]
+	fmt.Fprint(a.Out, `vbox — controller-managed persistent boxes
+  vbox BOX [codex|claude|shell | --session [NAME] | --start-cli COMMAND]
+  vbox ls [--json] | status BOX [--json] | sessions BOX [--json]
+  vbox new BOX [--pool TYPE/ALIAS] [--disk GiB] [--region ID] [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]
+  vbox task [BOX] [codex|claude|shell] [--prompt TEXT]
+            [--session NAME] [--idempotency-key KEY] [--json]
+  vbox task-status BOX [TASK_ID]
+  vbox task-output BOX TASK_ID
+  vbox updates [BOX] [--json]
+  vbox updates ack BOX --session NAME --revision REV
+  vbox boxes update BOX --default-agent AGENT
+  vbox pools list|schema|show|create|update|validate|default
+  vbox fleet status|slots|slots set COUNT [--pool TYPE/ALIAS]
+  vbox allocate|hibernate|delete BOX
+  vbox connect URL [--token-env ENV]
+  vbox connect | logout | whoami
+  vbox users list|add|remove
+  vbox notifications list|setup|test|remove
+  vbox auth BOX [authentication options]
+  vbox run BOX [--pool TYPE/ALIAS] [job options] -- COMMAND [ARG...]
 
 Controller login does not provision SSH identity. Configure your SSH agent or
 VMBOX_SSH_IDENTITY_FILE; optionally VMBOX_SSH_KNOWN_HOSTS_FILE. Changed host keys

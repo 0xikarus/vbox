@@ -54,7 +54,7 @@ func (a *App) pickCreationProfiles(ctx context.Context, c config.Context, token 
 			}
 		}
 		if len(profiles) == 0 {
-			return nil, fmt.Errorf("no local %s profile found; use vmbox profiles save %s NAME --from PATH, then new BOX --profile %s=NAME", app, app, app)
+			return nil, fmt.Errorf("no local %s profile found; use vbox profiles save %s NAME --from PATH, then new BOX --profile %s=NAME", app, app, app)
 		}
 		i, err = a.selectTUI(ctx, "Local "+app+" profile to store encrypted on controller", labels, 0)
 		if err != nil {
@@ -100,7 +100,7 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 			return json.NewEncoder(a.Out).Encode(profiles)
 		}
 		if len(profiles) == 0 {
-			fmt.Fprintln(a.Out, "No saved login profiles. Use: vmbox profiles save claude|codex|opencode NAME --from PATH, or profiles save github NAME --from HOST:USER")
+			fmt.Fprintln(a.Out, "No saved login profiles. Use: vbox profiles save claude|codex|opencode NAME --from PATH, or profiles save github NAME --from HOST:USER")
 		}
 		for _, profile := range profiles {
 			fmt.Fprintf(a.Out, "%s · %s\n", tuiLabel(profile.Application, 30), tuiLabel(profile.Name, 64))
@@ -108,7 +108,7 @@ func (a *App) controllerLoginProfiles(ctx context.Context, c config.Context, tok
 		return nil
 	}
 	if len(args) != 5 || args[0] != "save" || args[3] != "--from" {
-		return fmt.Errorf("usage: vmbox profiles [list] [--json] | profiles save claude|codex|opencode NAME --from PATH | profiles save github NAME --from HOST:USER [--json]")
+		return fmt.Errorf("usage: vbox profiles [list] [--json] | profiles save claude|codex|opencode NAME --from PATH | profiles save github NAME --from HOST:USER [--json]")
 	}
 	profile, err := a.saveLocalLoginProfile(ctx, c, token, args[1], args[2], args[4])
 	if err != nil {

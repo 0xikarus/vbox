@@ -4,7 +4,7 @@ The controller can run wherever it has PostgreSQL, HTTPS, and the matching
 runtime binary. Worker hosting is a separate choice. A provider alias names a
 worker pool; changing its configuration does not move an existing box or volume.
 
-Use `vmbox providers schema|list|show|create|update|validate` to manage aliases.
+Use `vbox providers schema|list|show|create|update|validate` to manage aliases.
 Secrets are separate from non-secret config. Updates use the alias's revision;
 omitted secrets are preserved and replacement is explicit. Target fields are
 immutable after creation, so create a new alias for a new endpoint or project.

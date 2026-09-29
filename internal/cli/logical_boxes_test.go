@@ -78,7 +78,7 @@ func TestControllerHibernateReportsAcceptedBackgroundProgress(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := app.Err.(*bytes.Buffer).String()
-	for _, expected := range []string{"hibernate accepted", "research-data (volume-1) is retained", "continues after this CLI exits", "vmbox status research"} {
+	for _, expected := range []string{"hibernate accepted", "research-data (volume-1) is retained", "continues after this CLI exits", "vbox status research"} {
 		if !strings.Contains(output, expected) {
 			t.Fatalf("output missing %q: %s", expected, output)
 		}

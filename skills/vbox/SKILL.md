@@ -1,18 +1,18 @@
 ---
-name: vmbox
-description: Use the vmbox service to connect to controller-managed remote boxes, work in persistent tmux shells or graphical desktops, submit and inspect one-shot tasks, and import Claude, Codex, OpenCode, or GitHub login profiles.
+name: vbox
+description: Use the vbox service to connect to controller-managed remote boxes, work in persistent tmux shells or graphical desktops, submit and inspect one-shot tasks, and import Claude, Codex, OpenCode, or GitHub login profiles.
 ---
 
-# Using vmbox
+# Using vbox
 
-vmbox manages persistent remote Linux workspaces through a central controller.
+vbox manages persistent remote Linux workspaces through a central controller.
 The controller owns provider credentials, compute allocation, storage, and saved
 login profiles. Ordinary clients need controller authentication and a separate
 SSH identity for native connections—not a Railway token or provider SDK.
 
-Use the user's chosen controller and box. Start with `vmbox ls --json` and
-`vmbox whoami --json`; these do not wake compute. Bare `vmbox` prints boxes and
-a short helper. Check `vmbox help --all` for additional installed commands.
+Use the user's chosen controller and box. Start with `vbox ls --json` and
+`vbox whoami --json`; these do not wake compute. Bare `vbox` prints boxes and
+a short helper. Check `vbox help --all` for additional installed commands.
 Access does not imply permission to upload credentials, add paid capacity,
 hibernate sibling work, or delete data.
 
@@ -22,19 +22,19 @@ From a checkout of `https://github.com/0xikarus/vmbox-service`:
 
 ```bash
 ./install.sh
-vmbox context add team --controller https://YOUR-CONTROLLER
-vmbox context use team
-vmbox whoami
+vbox context add team --controller https://YOUR-CONTROLLER
+vbox context use team
+vbox whoami
 ```
 
-Installation needs Git, OpenSSH, and Go 1.26 or Docker. The binary installs to
-`~/.local/bin`. Windows uses Ubuntu in WSL, not a native PowerShell installer.
+Installation needs Git, OpenSSH, and Go 1.26 or Docker. The `vbox` binary installs
+to `~/.local/bin` (with a `vmbox` compatibility alias). Windows uses Ubuntu in WSL, not a native PowerShell installer.
 
 Ask the administrator for the controller URL and token through a secure channel.
 In a terminal, the CLI prompts for missing/rejected authentication with hidden
 input, verifies the token, and saves it locally for this context and URL.
-`vmbox logout` clears that local login, not the server token.
-`vmbox context list` shows configured contexts.
+`vbox logout` clears that local login, not the server token.
+`vbox context list` shows configured contexts.
 
 Scripts never prompt: configure context/authentication beforehand. A securely
 supplied `VMBOX_CONTROLLER_TOKEN` can be used. Accepted environment tokens take
@@ -48,7 +48,7 @@ Controller login does not provision SSH credentials.
 ## Create and configure a box
 
 ```bash
-vmbox new work
+vbox new work
 ```
 
 The form selects provider, location, disk size, optional saved/local logins, and
@@ -60,16 +60,16 @@ uploads a snapshot on Create. Skip imports nothing.
 For automation, explicitly choose the post-creation state:
 
 ```bash
-vmbox new batch --no-dialog --no-profiles --hibernate --json
-vmbox new work --no-dialog --no-profiles --detach --json
-vmbox new work-with-login --no-dialog --detach --profile codex=ACCOUNT_NAME --json
+vbox new batch --no-dialog --no-profiles --hibernate --json
+vbox new work --no-dialog --no-profiles --detach --json
+vbox new work-with-login --no-dialog --detach --profile codex=ACCOUNT_NAME --json
 ```
 
 Even creating a hibernated box temporarily needs a healthy free slot in a
-compatible region. Inspect `vmbox fleet status` if unavailable. Configure
-providers/capacity only when requested: `vmbox providers`, `vmbox providers create`,
-`vmbox providers default`, `vmbox fleet location`, and
-`vmbox fleet slots set COUNT`. Increasing slots incurs costs. Choosing a location
+compatible region. Inspect `vbox fleet status` if unavailable. Configure
+providers/capacity only when requested: `vbox providers`, `vbox providers create`,
+`vbox providers default`, `vbox fleet location`, and
+`vbox fleet slots set COUNT`. Increasing slots incurs costs. Choosing a location
 does not migrate existing boxes.
 
 ## Import login profiles without creating a box
@@ -77,8 +77,8 @@ does not migrate existing boxes.
 Log in locally with the relevant tool, then:
 
 ```bash
-vmbox profiles upload
-vmbox profiles list --json
+vbox profiles upload
+vbox profiles list --json
 ```
 
 The upload table discovers Claude, Codex, OpenCode, and GitHub accounts. Arrows move;
@@ -90,10 +90,10 @@ Discovery alone neither uploads credentials nor proves login validity.
 For non-interactive import, explicit save still requires a name:
 
 ```bash
-vmbox profiles save claude ACCOUNT_NAME --from /path/to/claude-profile
-vmbox profiles save codex ACCOUNT_NAME --from /path/to/codex-profile
-vmbox profiles save opencode ACCOUNT_NAME --from /path/to/opencode-profile
-vmbox profiles save github GITHUB_USER --from github.com:GITHUB_USER
+vbox profiles save claude ACCOUNT_NAME --from /path/to/claude-profile
+vbox profiles save codex ACCOUNT_NAME --from /path/to/codex-profile
+vbox profiles save opencode ACCOUNT_NAME --from /path/to/opencode-profile
+vbox profiles save github GITHUB_USER --from github.com:GITHUB_USER
 ```
 
 Upload only selected accounts. Saved profiles are encrypted, account-wide
@@ -105,16 +105,16 @@ uploading is unsupported. Confirm deletions: pending creations may reference the
 ## Persistent shell and tmux
 
 ```bash
-vmbox work                       # wake if needed; attach to remembered shell
-vmbox sessions work --json        # inspect existing sessions
-vmbox work --session              # existing-session picker
-vmbox work --session NAME         # select exact session and remember it
+vbox work                       # wake if needed; attach to remembered shell
+vbox sessions work --json        # inspect existing sessions
+vbox work --session              # existing-session picker
+vbox work --session NAME         # select exact session and remember it
 ```
 
 Run `claude`, `codex`, `opencode`, or ordinary commands inside the shell. Plain reconnect
 reuses the remembered session without restarting programs. Prefer it over
 creating extra sessions. When explicitly needed,
-`vmbox work --start-cli 'COMMAND'` creates a new persistent shell, runs the command
+`vbox work --start-cli 'COMMAND'` creates a new persistent shell, runs the command
 once, and leaves a shell afterward. Reconnect never replays that command.
 Interactive attachment needs a terminal/PTY; use one-shot tasks for unattended
 agent execution instead of scripting a full-screen TUI.
@@ -132,10 +132,10 @@ dropped connection, inspect/reconnect rather than replaying uncertain input.
 ## Graphical desktop and web access
 
 ```bash
-vmbox desktop work --enable       # explicitly install optional worker packages
-vmbox desktop work                # resume/reconnect graphical desktop
-vmbox desktop work --viewer /path/to/vncviewer
-vmbox desktop work --no-viewer    # print local address for another viewer
+vbox desktop work --enable       # explicitly install optional worker packages
+vbox desktop work                # resume/reconnect graphical desktop
+vbox desktop work --viewer /path/to/vncviewer
+vbox desktop work --no-viewer    # print local address for another viewer
 ```
 
 Use a local TigerVNC-compatible `vncviewer` and graphical display. On Ubuntu,
@@ -158,13 +158,13 @@ transport; do not assume equivalent GUI support for every provider.
 ## One-shot tasks and actual exit codes
 
 ```bash
-vmbox task work                   # interactive agent/prompt selector
-vmbox task work codex --prompt 'Fix the tests and verify the change' --idempotency-key UNIQUE_TASK_KEY --json
-vmbox task work claude --prompt 'Review the implementation and report findings' --json
-vmbox task work opencode --prompt 'Implement the change and run its checks' --json
-vmbox task work shell --prompt 'cd /data/workspace/PROJECT && make test' --json
-vmbox task-status work TASK_ID --json
-vmbox task-output work TASK_ID
+vbox task work                   # interactive agent/prompt selector
+vbox task work codex --prompt 'Fix the tests and verify the change' --idempotency-key UNIQUE_TASK_KEY --json
+vbox task work claude --prompt 'Review the implementation and report findings' --json
+vbox task work opencode --prompt 'Implement the change and run its checks' --json
+vbox task work shell --prompt 'cd /data/workspace/PROJECT && make test' --json
+vbox task-status work TASK_ID --json
+vbox task-output work TASK_ID
 ```
 
 The positional agent or `--agent codex|claude|opencode|shell` selects `codex exec`,
@@ -176,7 +176,7 @@ submission when retrying an ambiguous response; don't enqueue duplicate work
 with a fresh key just because a request timed out.
 
 Put desired work, progress tracking, and verification in the agent's prompt.
-vmbox tracks process execution: real exit code, signal, timestamps, and bounded
+vbox tracks process execution: real exit code, signal, timestamps, and bounded
 combined output. `exited` with code 0 means process success, not verified task
 correctness. Nonzero codes are preserved; signals have a separate field and null
 exit code. `unknown`/`launch_failed` are not successful completion. Inspect output
@@ -190,9 +190,9 @@ just because one task exited.
 ## Lifecycle and recovery
 
 ```bash
-vmbox status work --json
-vmbox hibernate work
-vmbox delete work
+vbox status work --json
+vbox hibernate work
+vbox delete work
 ```
 
 Disconnect preserves processes. Hibernate releases compute and retains files,

@@ -415,7 +415,7 @@ func PrepareHibernate(ctx context.Context, root string) (HibernateResult, error)
 			}
 		}
 	}
-	_, _ = tmuxOutput(ctx, "display-message", "-a", "vmbox is hibernating: terminal state will be saved; live processes will stop")
+	_, _ = tmuxOutput(ctx, "display-message", "-a", "vbox is hibernating: terminal state will be saved; live processes will stop")
 	snapshot, err := SaveTmuxState(ctx, root)
 	if err != nil {
 		return result, err

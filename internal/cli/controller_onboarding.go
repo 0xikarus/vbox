@@ -15,10 +15,10 @@ import (
 // promptControllerConnection makes a controller the safe first-run default.
 func (a *App) promptControllerConnection(file config.File) (config.File, config.Context, error) {
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return file, config.Context{}, fmt.Errorf("controller is not configured; run 'vmbox connect URL'")
+		return file, config.Context{}, fmt.Errorf("controller is not configured; run 'vbox connect URL'")
 	}
 	reader := bufio.NewReader(singleByteReader{a.In})
-	fmt.Fprintln(a.Err, "vmbox: no controller is configured; connect this CLI to one now.")
+	fmt.Fprintln(a.Err, "vbox: no controller is configured; connect this CLI to one now.")
 	controller, err := a.readControllerPrompt(reader, "Controller URL", "")
 	if err != nil {
 		return file, config.Context{}, err
@@ -27,7 +27,7 @@ func (a *App) promptControllerConnection(file config.File) (config.File, config.
 	if err != nil {
 		return file, config.Context{}, err
 	}
-	fmt.Fprintf(a.Err, "vmbox: connected to %s; authentication is read from %s and is never stored in the config\n", configured.Controller, configured.TokenEnv)
+	fmt.Fprintf(a.Err, "vbox: connected to %s; authentication is read from %s and is never stored in the config\n", configured.Controller, configured.TokenEnv)
 	return file, configured, nil
 }
 

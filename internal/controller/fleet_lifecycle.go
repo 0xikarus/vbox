@@ -194,7 +194,7 @@ func logicalBoxWelcome(assignment fleetAssignment, actual provider.Box) []byte {
 	if size > 0 {
 		disk = fmt.Sprintf("%d GiB disk", size)
 	}
-	return []byte(fmt.Sprintf("vmbox %s is ready\nProvider: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: /data/workspace  Volume: %s\nCompute slot: %s  State: running\nConnection: direct OpenSSH, resolved for this deployment\nCost: managed fleet slot; see provider billing\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vmbox %s | vmbox hibernate %s\n\n",
+	return []byte(fmt.Sprintf("vbox %s is ready\nProvider: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: /data/workspace  Volume: %s\nCompute slot: %s  State: running\nConnection: direct OpenSSH, resolved for this deployment\nCost: managed fleet slot; see provider billing\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vbox %s | vbox hibernate %s\n\n",
 		assignment.Box.Name, assignment.Box.Provider, region, cpu, memory, disk,
 		assignment.Box.VolumeName, assignment.Slot.ServiceName, assignment.Box.Name, assignment.Box.Name))
 }

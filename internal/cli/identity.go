@@ -12,7 +12,7 @@ import (
 
 func (a *App) controllerWhoami(ctx context.Context, c config.Context, token string, args []string) error {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") {
-		return fmt.Errorf("usage: vmbox whoami [--json]")
+		return fmt.Errorf("usage: vbox whoami [--json]")
 	}
 	var identity v1.Identity
 	status, err := a.request(ctx, c, token, http.MethodGet, "/v1/whoami", nil, &identity, nil)

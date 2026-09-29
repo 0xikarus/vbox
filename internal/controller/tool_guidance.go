@@ -20,7 +20,7 @@ func newBoxToolGuidance(tools []string) string {
 		lines = append(lines, "- Chromium: `chromium`; profile `~/.config/vmbox/chromium`; display `$VMBOX_DESKTOP_DISPLAY`.")
 	}
 	if selected["desktop"] {
-		lines = append(lines, "- vmbox MCP: exact tool schemas and examples in `~/.config/vmbox/mcp-tools.md`.")
+		lines = append(lines, "- vbox MCP: exact tool schemas and examples in `~/.config/vmbox/mcp-tools.md`.")
 	}
 	if selected["blender"] {
 		lines = append(lines, "- Blender: `~/bin/blender`; Blender MCP.")
@@ -49,7 +49,7 @@ func composeInstructionMarkdown(user, guidance string) (string, error) {
 	return combined, v1.ValidateEffectiveInstructionMarkdown(combined)
 }
 
-const managedChatConventions = `## vmbox chat
+const managedChatConventions = `## vbox chat
 
 Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP tool chat_message. A response in terminal output, the agent's final answer, or a file does not reach Chat. Call the named tool with the JSON arguments shown here:
 

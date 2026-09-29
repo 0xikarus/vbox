@@ -351,7 +351,7 @@ func run() error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(result)
 	case "tmux-help":
-		fmt.Print(`vmbox tmux help (German QWERTZ friendly)
+		fmt.Print(`vbox tmux help (German QWERTZ friendly)
 
 Write and scroll
   Ctrl-a s       Enter scroll/copy mode
@@ -377,14 +377,14 @@ Windows and panes
 
 Safe disconnect and lifecycle
   Ctrl-a d disconnects you, but the box and its tasks keep running.
-  Reconnect with: vmbox NAME
+  Reconnect with: vbox NAME
   Detach only disconnects the terminal; every live process keeps running.
   Hibernate saves restorable state, stops live processes, retains the volume,
   and frees its compute slot. Arbitrary processes do not survive hibernation.
   Delete box permanently deletes the logical box and workspace data; it
   requires a separate destructive confirmation and does not delete the slot.
 
-Keyboard input is passed through unchanged. vmbox never swaps Y and Z and
+Keyboard input is passed through unchanged. vbox never swaps Y and Z and
 never applies a remote QWERTY mapping.
 `)
 		return nil
@@ -399,7 +399,7 @@ never applies a remote QWERTY mapping.
 				fmt.Println()
 			}
 		} else {
-			fmt.Printf("vmbox %s is ready\nProvider: %s  Region: %s\nSpecs: %s CPU / %s MiB RAM / %s GiB disk\nWorkspace: %s\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\n\n",
+			fmt.Printf("vbox %s is ready\nProvider: %s  Region: %s\nSpecs: %s CPU / %s MiB RAM / %s GiB disk\nWorkspace: %s\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\n\n",
 				os.Getenv("VMBOX_NAME"), os.Getenv("VMBOX_PROVIDER"), os.Getenv("VMBOX_REGION"), os.Getenv("VMBOX_CPU"), os.Getenv("VMBOX_MEMORY_MIB"), os.Getenv("VMBOX_DISK_GIB"), os.Getenv("VMBOX_WORKSPACE"), os.Getenv("VMBOX_COST"))
 		}
 		shell := os.Getenv("SHELL")

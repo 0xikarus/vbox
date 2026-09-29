@@ -5,7 +5,7 @@
   </picture>
 </p>
 
-# vmbox
+# vbox
 
 <p align="center"><strong>Supported Harnesses and Subscriptions</strong></p>
 
@@ -17,11 +17,11 @@
 
 <p align="center">Codex (ChatGPT) · Claude Code (Claude) · OpenCode (model API keys)</p>
 
-Grok Bot inspired this project. I wanted to bring my own agent harness and host the boxes myself, so I built vmbox.
+Grok Bot inspired this project. I wanted to bring my own agent harness and host the boxes myself, so I built vbox.
 
 **Disclaimer:** It's slop, but works!
 
-vmbox is a web workspace for persistent remote Linux boxes. Create a box in the browser, then use its desktop, tmux terminal, and agent chat. Run Codex, Claude Code, or OpenCode in the same box. A controller manages accounts, workers, and storage; you choose where to host them.
+vbox is a web workspace for persistent remote Linux boxes. Create a box in the browser, then use its desktop, tmux terminal, and agent chat. Run Codex, Claude Code, or OpenCode in the same box. A controller manages accounts, workers, and storage; you choose where to host them.
 
 Boxes keep their files when hibernated. Running processes stop and start fresh when a box wakes. Closing a browser tab leaves a running box alone.
 
@@ -43,45 +43,45 @@ cd vmbox-service
 ./install.sh
 ```
 
-The installer places `vmbox` in `~/.local/bin`. Open a new terminal if it is not on your `PATH`. Connect using the token supplied by the controller owner at the hidden prompt:
+The installer places `vbox` in `~/.local/bin`, plus a `vmbox` symlink as a compatibility alias. Open a new terminal if it is not on your `PATH`. Connect using the token supplied by the controller owner at the hidden prompt:
 
 ```bash
-vmbox connect https://YOUR-CONTROLLER
-vmbox whoami
+vbox connect https://YOUR-CONTROLLER
+vbox whoami
 ```
 
-Upload local Codex, Claude, OpenCode, or GitHub credentials with `vmbox profiles upload`. The controller encrypts saved profiles; select one when creating a box in the web UI or CLI. Existing boxes keep their imported copy until you reapply a profile.
+Upload local Codex, Claude, OpenCode, or GitHub credentials with `vbox profiles upload`. The controller encrypts saved profiles; select one when creating a box in the web UI or CLI. Existing boxes keep their imported copy until you reapply a profile.
 
 ```bash
-vmbox profiles upload
-vmbox new work       # or create a box in the browser
-vmbox work           # open or resume its tmux shell
-vmbox desktop work   # open its desktop in a local VNC viewer
+vbox profiles upload
+vbox new work       # or create a box in the browser
+vbox work           # open or resume its tmux shell
+vbox desktop work   # open its desktop in a local VNC viewer
 ```
 
-`vmbox desktop` needs a local VNC viewer such as TigerVNC. The browser's Desktop and TMUX views work without one. The CLI creation form lets you choose a pool, agent, saved login, and optional tools. Detach from tmux with **Ctrl-a, then d** and choose **Leave unchanged** to keep it running.
+`vbox desktop` needs a local VNC viewer such as TigerVNC. The browser's Desktop and TMUX views work without one. The CLI creation form lets you choose a pool, agent, saved login, and optional tools. Detach from tmux with **Ctrl-a, then d** and choose **Leave unchanged** to keep it running.
 
 ## Everyday use
 
 ```bash
-vmbox                         # list boxes and their states
-vmbox whoami                  # show your account and role
-vmbox work                    # reconnect to a box
-vmbox hibernate work          # stop compute, retain files
-vmbox delete work             # permanently delete the box and its files
-vmbox help                    # command reference
+vbox                         # list boxes and their states
+vbox whoami                  # show your account and role
+vbox work                    # reconnect to a box
+vbox hibernate work          # stop compute, retain files
+vbox delete work             # permanently delete the box and its files
+vbox help                    # command reference
 ```
 
-`vmbox delete` asks you to confirm the exact box name. Hibernation preserves files, but it cannot preserve live processes or an agent's current conversation. The web Chat keeps previous messages visible after a box wakes.
+`vbox delete` asks you to confirm the exact box name. Hibernation preserves files, but it cannot preserve live processes or an agent's current conversation. The web Chat keeps previous messages visible after a box wakes.
 
-Use `vmbox logout` to remove the CLI's saved controller login. Agent chat supports image attachments and direct contacts between boxes. Optional Blender and Foundry presets are selected when creating a box.
+Use `vbox logout` to remove the CLI's saved controller login. Agent chat supports image attachments and direct contacts between boxes. Optional Blender and Foundry presets are selected when creating a box.
 
 Saved chat attachments share a 1 GiB account limit. Owners can review usage and
 clear a box's attachments in **Chat → Box details**; message text remains.
 
 ## How it compares
 
-| Feature | vmbox | Grok Bot | Muse |
+| Feature | vbox | Grok Bot | Muse |
 | --- | --- | --- | --- |
 | Bring your own agent harness | Codex, Claude Code, or OpenCode | Cursor-managed bot; other harnesses not documented | Muse's built-in agent; other harnesses not documented |
 | Bring your own model key | OpenCode profiles support OpenRouter or Venice API keys | Cursor manages model selection; own key not documented | Own model key not documented |

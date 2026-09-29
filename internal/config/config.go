@@ -91,7 +91,7 @@ func (f File) Connected() (Context, error) {
 	}
 	legacy, err := f.Active("")
 	if err != nil || legacy.Controller == "" {
-		return Context{}, fmt.Errorf("controller is not configured; run: vmbox connect URL")
+		return Context{}, fmt.Errorf("controller is not configured; run: vbox connect URL")
 	}
 	return Context{Name: legacy.Name, Controller: legacy.Controller, TokenEnv: legacy.TokenEnv, LocationPresets: legacy.LocationPresets}, nil
 }
@@ -170,7 +170,7 @@ func (f File) Active(name string) (Context, error) {
 		name = f.Current
 	}
 	if name == "" {
-		return Context{}, fmt.Errorf("no active context; use: vmbox context add NAME --provider PROVIDER")
+		return Context{}, fmt.Errorf("no active context; use: vbox context add NAME --provider PROVIDER")
 	}
 	ctx, ok := f.Contexts[name]
 	if !ok {

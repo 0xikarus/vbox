@@ -12,7 +12,7 @@ import (
 
 func (a *App) controllerFleetLocation(ctx context.Context, c config.Context, token string, args []string) error {
 	if len(args) != 0 && !(len(args) == 2 && args[0] == "set") {
-		return fmt.Errorf("usage: vmbox fleet location [set REGION] [--pool TYPE/ALIAS]")
+		return fmt.Errorf("usage: vbox fleet location [set REGION] [--pool TYPE/ALIAS]")
 	}
 	region := ""
 	if len(args) == 2 {
@@ -47,6 +47,6 @@ func (a *App) controllerFleetLocation(ctx context.Context, c config.Context, tok
 	if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/fleet/location", body, nil, nil); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.Out, "Fleet location: %s\nScale up with: vmbox fleet slots set COUNT\n", region)
+	fmt.Fprintf(a.Out, "Fleet location: %s\nScale up with: vbox fleet slots set COUNT\n", region)
 	return nil
 }

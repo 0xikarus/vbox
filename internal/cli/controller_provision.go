@@ -33,7 +33,7 @@ type railwayService struct {
 
 func (a *App) provisionController(ctx context.Context, file config.File, c config.Context, args []string) error {
 	if len(args) == 0 || (args[0] != "init" && args[0] != "ensure") {
-		return fmt.Errorf("usage: vmbox controller init|ensure [--endpoint HTTPS_URL] [--source PATH|--controller-image IMAGE@sha256:DIGEST] --box-image IMAGE@sha256:DIGEST [--yes]")
+		return fmt.Errorf("usage: vbox controller init|ensure [--endpoint HTTPS_URL] [--source PATH|--controller-image IMAGE@sha256:DIGEST] --box-image IMAGE@sha256:DIGEST [--yes]")
 	}
 	operation := args[0]
 	defaultSource := c.ControllerSource
@@ -155,7 +155,7 @@ func (a *App) provisionController(ctx context.Context, file config.File, c confi
 			return err
 		}
 	} else {
-		fmt.Fprintf(a.Err, "vmbox: reusing Railway service %s\n", controllerDatabaseName)
+		fmt.Fprintf(a.Err, "vbox: reusing Railway service %s\n", controllerDatabaseName)
 	}
 	if railwayServiceNamed(services, controllerServiceName).Name == "" {
 		finished := a.progress(ctx, "creating Railway controller service")
@@ -165,7 +165,7 @@ func (a *App) provisionController(ctx context.Context, file config.File, c confi
 			return err
 		}
 	} else {
-		fmt.Fprintf(a.Err, "vmbox: reusing Railway service %s\n", controllerServiceName)
+		fmt.Fprintf(a.Err, "vbox: reusing Railway service %s\n", controllerServiceName)
 	}
 	services, err = listRailwayServices(run)
 	if err != nil {

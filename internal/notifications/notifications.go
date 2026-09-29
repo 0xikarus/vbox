@@ -106,7 +106,7 @@ type Discord struct {
 
 func (Discord) Name() string { return "discord" }
 func (d Discord) Send(ctx context.Context, value Delivery) error {
-	body := map[string]any{"content": fmt.Sprintf("vmbox **%s** · **%s**\n%s", value.Box, value.State, value.Message), "allowed_mentions": map[string]any{"parse": []string{}}}
+	body := map[string]any{"content": fmt.Sprintf("vbox **%s** · **%s**\n%s", value.Box, value.State, value.Message), "allowed_mentions": map[string]any{"parse": []string{}}}
 	if value.QuestionID != "" {
 		body["components"] = []any{map[string]any{"type": 1, "components": []any{map[string]any{"type": 2, "style": 1, "label": "Answer", "custom_id": "answer:" + value.QuestionID}}}}
 	}
@@ -170,7 +170,7 @@ func (d Discord) HandleInteraction(ctx context.Context, signature, timestamp str
 			"type": 9,
 			"data": map[string]any{
 				"custom_id": interaction.Data.CustomID,
-				"title":     "Answer vmbox",
+				"title":     "Answer vbox",
 				"components": []any{
 					map[string]any{
 						"type": 1,

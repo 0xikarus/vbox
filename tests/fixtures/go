@@ -10,5 +10,5 @@ while (($#)); do
   shift
 done
 [[ -n "$output" ]]
-printf '#!/usr/bin/env bash\nprintf "Go vmbox test binary\\n"\n' >"$output"
+printf '#!/usr/bin/env bash\nprintf "Go vbox test binary\\n"\n' >"$output"
 chmod 755 "$output"
