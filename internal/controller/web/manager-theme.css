@@ -20,7 +20,7 @@ body :focus-visible{outline:2px solid #8fb8f5;outline-offset:2px}
 .manage-heading .sub{margin:.15rem 0 0;color:#91a0b3}
 #error.flash{background:#263749;border-color:#8fb8f5;color:#eaf0f8;border-radius:var(--r-control)}
 #error.flash.error{background:#3b2630;border-color:#ec727c;color:#ffadb5}
-#app>section{margin:1rem 0;padding:1.15rem;border:1px solid #2b3848;border-radius:var(--r-surface);background:#18212d;scroll-margin-top:7.5rem}
+#app>section,.manage-content>section{margin:1rem 0;padding:1.15rem;border:1px solid #2b3848;border-radius:var(--r-surface);background:#18212d;scroll-margin-top:7.5rem}
 #app>section>h2,.section-heading h2{margin:0;border:0;padding:0;font-size:1.16rem;letter-spacing:-.025em;text-transform:none}
 .section-heading{display:flex;align-items:end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
 .section-heading .hint{margin:.2rem 0 0}
@@ -46,7 +46,7 @@ table.markets th+th,table.markets td+td{border-left-color:#2b3848}
 table.markets tr.row:hover{background:#243243}
 #box-list table.markets{min-width:60rem}
 #box-list .box-details-action{background:#8fb8f5;border-color:#8fb8f5;color:#102136}
-body[data-manage-view="boxes"] #app>section:not(#boxes),body[data-manage-view="providers"] #app>section:not(#providers):not(#fleet),body[data-manage-view="profiles"] #app>section:not(#profiles){display:none}
+body[data-manage-view="boxes"] .manage-content>section:not(#boxes),body[data-manage-view="providers"] .manage-content>section:not(#providers),body[data-manage-view="profiles"] .manage-content>section:not(#profiles),body[data-manage-view="roles"] .manage-content>section:not(#roles),body[data-manage-view="instructions"] .manage-content>section:not(#instructions),body[data-manage-view="fleet"] .manage-content>section:not(#fleet),body[data-manage-view="notifications"] .manage-content>section:not(#notifications){display:none}
 #profile-summary{margin:.25rem 0 .85rem;color:#91a0b3;font-size:.78rem}
 #profile-search{width:100%}
 #profile-tree{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
@@ -112,7 +112,7 @@ body[data-manage-view="boxes"] #app>section:not(#boxes),body[data-manage-view="p
  .manage-top .workspace-links a{padding:.38rem .55rem}
  .manage-subnav{padding:.55rem 0 .1rem}
  body>h1,body>.sub,body>#error,body>#app,body>.manage-heading,body>.manage-subnav{width:calc(100% - 1rem)}
- #app>section{padding:.55rem}
+ #app>section,.manage-content>section{padding:.55rem}
  .section-heading .field{width:100%}
  .box-detail-actions{grid-template-columns:1fr 1fr}
  #profile-tree{grid-template-columns:minmax(0,1fr)}

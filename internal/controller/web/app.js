@@ -253,7 +253,7 @@ function manageView(){
  const section=location.hash.slice(1);
  const pageNames={boxes:'boxes',providers:'providers',profiles:'profiles',roles:'permissions',instructions:'instructions',fleet:'capacity',notifications:'notifications'};
  const page=pageNames[section]||'manage';
- const view=['boxes','providers','profiles'].includes(section)?section:'all';
+ const view=pageNames[section]?section:'all';
  document.body.dataset.manageView=view;
  $('#manage-page-label').textContent=page;
   document.title='vbox / '+page;

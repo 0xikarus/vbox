@@ -134,7 +134,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    assert.equal(await p.evaluate(()=>window.terminals),1);
    await p.evaluate(()=>desktopMetrics({state:'connected',ping:73}));
    assert.match(await p.$eval('#connection-stats',e=>e.textContent),/Desktop ping: 73 ms/);
-   assert.equal(await p.$eval('#connection-stats',e=>e.nextElementSibling.id),'workspace-tabs');
+   assert.equal(await p.$eval('#workspace-tabs',e=>!!e.closest('.workspace-head')),true,'workspace tabs live in the workspace header');
 
    assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});
    assert.deepEqual(requests.filter(r=>r.includes('/desktop')),['GET '+desktop,'POST '+desktop]);
