@@ -209,7 +209,7 @@
   if(box.state==='hibernated')return ['sleeping','sleeping','sleeping'];
   if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','error'];
   const lastQuestion=[...(box.messages||[])].reverse().find(message=>message.direction!=='user'&&message.question&&!questionAnswered(box,message));
-  if(lastQuestion)return ['waiting','waiting','question'];
+  if(lastQuestion)return ['waiting',null,'question'];
   if(box.processing)return ['working','focused','thinking'];
   if(box.unread)return ['happy','happy','plane'];
   return box.state==='running'?['idle',null,null]:['waking','surprised','coffee'];
@@ -1009,7 +1009,7 @@
   }
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
-   const mini=document.createElement('span');mini.className='processing-mascot';new Mascot(mini,box.id);mini.querySelector('svg').__vboxMascot.act('thinking');
+   const mini=document.createElement('span');mini.className='processing-mascot';new Mascot(mini,box.id);mini.querySelector('svg').__vboxMascot.jump('working','focused','thinking');
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
