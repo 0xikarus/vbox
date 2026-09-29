@@ -5,23 +5,19 @@
   </picture>
 </p>
 
-# vmbox
+# vbox
 
-<p align="center"><strong>Supported Harnesses and Subscriptions</strong></p>
+vbox provides a meta-harness and persistent environments for your agents. Create boxes in the browser and work with their desktop, tmux terminal, and agent chat. The controller manages accounts, workers, and storage; you choose where to host them.
 
-<p align="center">
-  <a href="https://openai.com/codex"><img src="docs/assets/harness-codex.svg" alt="Codex logo" width="36" height="36"></a>&nbsp;&nbsp;
-  <a href="https://claude.com/product/claude-code"><img src="docs/assets/harness-claude.svg" alt="Claude Code logo" width="36" height="36"></a>&nbsp;&nbsp;
-  <a href="https://opencode.ai"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/harness-opencode-dark.svg"><img src="docs/assets/harness-opencode-light.svg" alt="OpenCode logo" width="36" height="36"></picture></a>
+<p><strong>Supported harnesses and subscriptions:</strong>
+  <a href="https://openai.com/codex"><img src="docs/assets/harness-codex.svg" alt="" width="16" height="16"> Codex (ChatGPT)</a> ·
+  <a href="https://claude.com/product/claude-code"><img src="docs/assets/harness-claude.svg" alt="" width="16" height="16"> Claude Code (Claude)</a> ·
+  <a href="https://opencode.ai"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/harness-opencode-dark.svg"><img src="docs/assets/harness-opencode-light.svg" alt="" width="16" height="16"></picture> OpenCode (model API keys)</a>
 </p>
 
-<p align="center">Codex (ChatGPT) · Claude Code (Claude) · OpenCode (model API keys)</p>
-
-Grok Bot inspired this project. I wanted to bring my own agent harness and host the boxes myself, so I built vmbox.
+Grok Bot inspired this project. I wanted to bring my own agent harness and host the boxes myself, so I built vbox.
 
 **Disclaimer:** It's slop, but works!
-
-vmbox is a web workspace for persistent remote Linux boxes. Create a box in the browser, then use its desktop, tmux terminal, and agent chat. Run Codex, Claude Code, or OpenCode in the same box. A controller manages accounts, workers, and storage; you choose where to host them.
 
 Boxes keep their files when hibernated. Running processes stop and start fresh when a box wakes. Closing a browser tab leaves a running box alone.
 
@@ -81,7 +77,7 @@ clear a box's attachments in **Chat → Box details**; message text remains.
 
 ## How it compares
 
-| Feature | vmbox | Grok Bot | Muse |
+| Feature | vbox | Grok Bot | Muse |
 | --- | --- | --- | --- |
 | Bring your own agent harness | Codex, Claude Code, or OpenCode | Cursor-managed bot; other harnesses not documented | Muse's built-in agent; other harnesses not documented |
 | Bring your own model key | OpenCode profiles support OpenRouter or Venice API keys | Cursor manages model selection; own key not documented | Own model key not documented |
