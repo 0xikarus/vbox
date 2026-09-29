@@ -131,6 +131,24 @@ func TestChatReadyDirectEventConfirmsStoredReply(t *testing.T) {
 	}
 }
 
+func TestChatReadyContactReportsHibernatedRejectionToSender(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(restartTestBoxRow())
+	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").WithArgs("account-a", "box-1").WillReturnRows(restartTestTaskRow("task-1", "active"))
+	mock.ExpectQuery("FROM logical_boxes b").WithArgs("account-a", "mascot").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "default_agent", "state", "protected"}).AddRow("box-2", "mascot", "claude", "hibernated", false))
+	mock.ExpectExec("INSERT INTO box_messages").WithArgs(sqlmock.AnyArg(), "account-a", "task-1", "Contact message rejected: mascot is hibernated; only a running box can receive a message", "contact-reject:0123456789ab", sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
+	r := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/chat-ready", strings.NewReader(`{"session":"opencode-one","event":{"id":"0123456789ab","kind":"contact","contact":"mascot","text":"hello"}}`))
+	r.SetPathValue("id", "box-1")
+	w := httptest.NewRecorder()
+	chatTestServer(store).agentChatReadyHandler(w, r, Principal{AccountID: "account-a", UserID: "user-a", Role: "desktop-agent"})
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"delivered":false`) || !strings.Contains(w.Body.String(), `"reason":"mascot is hibernated`) {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // TestPullStructuredAgentReplyDrainsExpiredEventBeforeMatchingReply is the
 // head-of-line regression: an event whose reference no longer resolves to a
 // pending message must be stored on its own and acknowledged, so the reply

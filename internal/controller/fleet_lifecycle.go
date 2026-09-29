@@ -167,6 +167,9 @@ func (s *Server) activateAllocation(ctx context.Context, accountID string, alloc
 	}
 	_ = s.Store.UpdateAllocationProgress(ctx, accountID, allocation.RequestID, "ready", "", false)
 	s.Logger.Info("logical box allocation ready", "allocation", allocation.RequestID, "box", assignment.Box.Name, "slot", assignment.Slot.Ordinal, "elapsed", time.Since(started))
+	if strings.HasPrefix(allocation.IdempotencyKey, "agent-wake:") {
+		s.applyPendingWakeSessionChoice(ctx, accountID, allocation.RequestID)
+	}
 	return nil
 }
 
@@ -231,6 +234,7 @@ func (s *Server) ReconcileAllocationsNow(ctx context.Context) error {
 			}
 		}
 	}
+	s.reconcilePendingWakeSessionChoices(ctx)
 	return errors.Join(failures...)
 }
 

@@ -224,7 +224,8 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		// An inter-box message is never an answer to the sender's own chat. It is
 		// routed into the contact's conversation and acknowledged here; a rejection
 		// is recorded on the sender's task instead of blocking the outbox.
-		return s.routeContactMessage(ctx, accountID, task, event), false, nil
+		messageID, _ := s.routeContactMessage(ctx, accountID, task, event)
+		return messageID, false, nil
 	default:
 		return "", false, fmt.Errorf("unknown structured chat event")
 	}
@@ -367,11 +368,11 @@ func (s *Server) drainAgentChat(ctx context.Context, accountID string, task v1.B
 // undeliverable contact message is recorded on the sender's task and
 // acknowledged, so one bad recipient cannot head-of-line block the sender's
 // entire chat outbox.
-func (s *Server) routeContactMessage(ctx context.Context, accountID string, task v1.BoxTask, event boxruntime.ChatEvent) string {
+func (s *Server) routeContactMessage(ctx context.Context, accountID string, task v1.BoxTask, event boxruntime.ChatEvent) (string, string) {
 	text := strings.TrimSpace(event.Text)
-	reject := func(reason string) string {
+	reject := func(reason string) (string, string) {
 		_ = s.Store.AppendSystemBoxMessage(ctx, accountID, task.ID, "Contact message rejected: "+reason, "contact-reject:"+event.ID)
-		return ""
+		return "", reason
 	}
 	if text == "" || len(text) > 100_000 {
 		return reject("message must contain between 1 and 100000 bytes")
@@ -398,7 +399,7 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 	principal := Principal{AccountID: accountID, UserID: ownerID, Role: "owner", Subject: "box:" + task.LogicalBoxID}
 	key := "contact:" + event.ID
 	if _, existing, found, err := s.Store.DirectBoxMessageByKey(ctx, principal, targetID, key); err == nil && found {
-		return existing.ID
+		return existing.ID, ""
 	} else if err != nil {
 		return reject("delivery lookup failed")
 	}
@@ -419,7 +420,7 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 		senderName = "Agent box"
 	}
 	s.pushContactMessage(accountID, task.LogicalBoxID, senderName, targetID, targetName, text)
-	return result.Message.ID
+	return result.Message.ID, ""
 }
 
 // claimChatDrain rate limits outbox polling per task so that an open chat

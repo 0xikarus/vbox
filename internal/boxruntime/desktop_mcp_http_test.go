@@ -73,12 +73,12 @@ func TestDesktopMCPHTTPPromptKeepsUnacknowledgedClaudeInbox(t *testing.T) {
 		}
 	}
 	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
-	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"run the local check"}`)
+	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"run the local check","messageId":"heartbeat_1"}`)
 	if status != http.StatusConflict || !strings.Contains(response["error"].(string), ErrAmbiguousMessage.Error()) {
 		t.Fatalf("prompt returned %d %v", status, response)
 	}
 	inbound, _, found, err := nextChatInbound(home, "agent-session")
-	if err != nil || !found || inbound.Text != "run the local check" {
+	if err != nil || !found || inbound.Text != "run the local check" || inbound.ID != "heartbeat_1" {
 		t.Fatalf("inbound=%+v found=%v err=%v", inbound, found, err)
 	}
 }

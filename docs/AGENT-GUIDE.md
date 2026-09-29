@@ -167,6 +167,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   and `chat_ask` accept an optional `contact`, and the controller routes it into
   the target's existing native conversation (never a second session) with the
   sender recorded as `box_messages.sender_box_id` and direction `box`. Contact
+  sends check the target's current state before queueing. Text sends also wait
+  for the controller's delivery verdict and return a rejection to the caller;
+  an uncertain controller response leaves the event in the durable outbox and
+  is reported as unconfirmed rather than delivered. Contact images still use
+  the outbox fallback and report that confirmation is pending.
   messages and direct agent replies to them appear in the separate owner-only
   Box ↔ Box transcript, with image attachments supported. The owner
   edits roles through `/v1/agent-roles` and `/v1/agent-role-assignments`, and
@@ -182,6 +187,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `wake_agent_box` tool is available with the restart permission. It queues or
   allocates another hibernated, unprotected box without restarting a running
   one, and requires exact-name confirmation plus an idempotency key. The
+  optional `sessionChoice` (`restore` or `fresh`) is saved on the allocation
+  request and applied to the saved Codex, Claude, or OpenCode conversation
+  after the box is running. Pending choices survive queued allocation and
+  controller restart; the allocation reconciler retries them.
   `clear_agent_box_context` tool is available with the same permission and
   resets another running, unprotected box through the owner chat reset path;
   it requires an exact target name and idempotency key. The same permission
@@ -244,6 +253,14 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the [local prompt API guide](LOCAL-AGENT-PROMPT.md) covers its contract and
   retry limits. The generated `~/.config/vmbox/mcp-tools.md` includes the
   request format for agents working inside the box.
+- The optional Lifecycle MCP tools `start_heartbeat` and `stop_heartbeat`
+  manage a single box-local timer in `~/.local/share/vmbox/heartbeat.json`.
+  The box's local MCP HTTP façade watches the private state file and sends
+  due prompts through its own `/prompt` endpoint with a stable message ID.
+  Ticks are at least five minutes apart, count defaults to one, and multi-tick
+  prompts include the remaining count. The timer resumes from the volume
+  after a box wake and never wakes a hibernated box. The controller supplies
+  the ordinary MCP tool policy, but does not schedule or store heartbeat ticks.
 - A new OpenCode Agent chat starts a bare TUI, waits for the visible bridge, then
   submits its first message through the loopback API with structured image parts.
   Persistent OpenCode and OpenCode one-shot
