@@ -192,7 +192,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   running, idle, unprotected box's current conversation. Codex uses
   `thread/compact/start` on the visible thread; Claude and OpenCode submit their
   `/compact` command to the managed TUI. The tool reports request acceptance,
-  not summary completion. Entry points:
+  not summary completion. The separately granted
+  `get_agent_box_screenshot` tool returns an image of another running,
+  unprotected box's current desktop. It uses the existing fenced worker
+  capture path and never wakes the target or grants desktop control. Entry points:
   `internal/controller/agent_box_creation.go`,
   `internal/controller/fleet_create_store.go`,
   `internal/controller/agent_box_management.go`.

@@ -104,6 +104,19 @@ paths:
         '202': {description: Box creation accepted}
         '403': {description: Agent type, role, disk size, or creation count is outside the creator grant}
         '409': {description: Selected worker or profile unavailable, or creation conflicts}
+  /v1/agent-desktop/boxes/{box}/screenshot:
+    get:
+      security: [{desktopAgentAuth: []}]
+      summary: Capture another running, unprotected agent box's desktop as a PNG
+      description: Requires the screenshot MCP tool and box inspection permission. Does not wake the target or grant desktop control.
+      parameters:
+        - {in: path, name: box, required: true, schema: {type: string}, description: Exact box name or ID}
+        - {in: query, name: thumbnail, schema: {type: boolean, default: false}}
+      responses:
+        '200': {description: Current screenshot, content: {image/png: {schema: {type: string, format: binary}}}}
+        '403': {description: Permission denied, target is protected, or target is the calling box}
+        '404': {description: Box unavailable}
+        '409': {description: Target desktop is offline or its assignment changed}
   /v1/locations:
     get:
       summary: Available location presets from the controller-managed fleet

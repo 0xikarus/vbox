@@ -99,7 +99,7 @@ func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 	if !manage.List || !manage.Inspect || !manage.Tag || !manage.Restart || !manage.Delete {
 		t.Fatalf("manager lifecycle grant=%+v", manage)
 	}
-	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "wake_agent_box", "delete_agent_box"} {
+	for _, tool := range []string{"list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "create_agent_box", "set_agent_box_tags", "restart_agent_box", "wake_agent_box", "delete_agent_box"} {
 		if !slices.Contains(manager.Capabilities.MCPTools.AllowedTools, tool) {
 			t.Fatalf("manager preset lacks %s: %+v", tool, manager)
 		}
@@ -151,13 +151,13 @@ func TestEffectiveAgentToolNamesLayersAllowlistOverTypedCapabilities(t *testing.
 	store, mock := testStore(t)
 	boxes, _ := json.Marshal(v1.CreateAgentBoxGrant{Enabled: true, MaxBoxes: 1, MaxDiskGiB: 20, AllowedAgents: []string{"codex"}})
 	manage, _ := json.Marshal(v1.ManageAgentBoxesGrant{List: true, Inspect: true, Tag: true})
-	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "set_agent_box_tags", "restart_agent_box", "delete_agent_box", "create_agent_box", "request_more_time"}})
+	mcp, _ := json.Marshal(v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "set_agent_box_tags", "restart_agent_box", "delete_agent_box", "create_agent_box", "request_more_time"}})
 	mock.ExpectQuery("FROM box_role_assignments").WithArgs("account-a", "box-a").WillReturnRows(sqlmock.NewRows([]string{"permission", "config"}).AddRow(v1.RolePermissionCreateAgentBox, boxes).AddRow(v1.RolePermissionManageAgentBoxes, manage).AddRow(v1.RolePermissionMCPTools, mcp))
 	tools, err := store.EffectiveAgentToolNames(context.Background(), "account-a", "box-a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "set_agent_box_tags", "create_agent_box", "get_agent_box_configs", "get_available_workers"} {
+	for _, name := range []string{"chat_message", "get_thread_history", "click_mouse", "drag_mouse", "list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "set_agent_box_tags", "create_agent_box", "get_agent_box_configs", "get_available_workers"} {
 		if !slices.Contains(tools, name) {
 			t.Fatalf("expected %s in %v", name, tools)
 		}
