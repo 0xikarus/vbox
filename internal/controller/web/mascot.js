@@ -18,10 +18,11 @@
  * EYES any -> tall            unread/wake/idle moment      W 1.05x, H 1.35x, eye pop; .36s
  * EYES any -> wide            busy-to-idle/idle moment    W 1.6x, H .6x, soft ease; .4s
  * EYES any -> round/happy/sleepy/hidden mood or signal    shape/opacity morph; .3-.48s
- * GAZE any -> cursor         pointer move on large host   clamped shift + tilt; .22s
- * GAZE any -> lookAround     glance timer                 clamped shift + tilt; .16-.52s
- * GAZE any -> saccade        multi-stop glance           offset eyes; .42-.52s
- * GAZE any -> ahead          pointer leave/return         springlike ease; .3-.43s
+ * GAZE any -> cursor         shared pointer, nearby if small spring from live offset; expires after 2.5s
+ * GAZE any -> lookAround     1.5-4s idle timer            eased 0.6-2s hold, then centre
+ * GAZE any -> saccade        idle target                   .12-.16s eye spring, body follows
+ * GAZE any -> scan           occasional idle target       .9s left-to-right target tween
+ * GAZE any -> ahead          pointer leave/return         spring from live offset
  * Interrupt: jump/send retarget from the live pose; blink queues through eye morph.
  */
 (function(global){
@@ -37,7 +38,7 @@
   exit:{duration:.16,ease:[.55,0,.8,.3]},
   anticipation:{duration:.08,ease:[.55,0,1,1]},
   eye:{duration:.24,ease:[.2,.9,.1,1]},
-  gaze:{duration:.18,ease:[.2,.9,.1,1]},
+  gaze:{maxX:15.2,maxY:7.6,saccade:{stiffness:560,damping:34},cursor:{stiffness:205,damping:25},idle:{stiffness:190,damping:24},reduced:{stiffness:60,damping:16},body:{stiffness:75,damping:18},scanDuration:.9},
   split:{duration:.38,ease:[.2,.9,.1,1],stagger:.035},
   stem:{duration:.34,ease:[.2,.9,.1,1]},
   wake:{duration:.44,ease:[.2,.9,.1,1]},
@@ -78,7 +79,7 @@
   const h=mood==='curious'?8.2:mood==='sleeping'?4.3:mood==='happy'?4.5:mood==='wink'&&index===1?4.2:w+geo.length;
   return {w,h,bend:mood==='happy'?-2.5:mood==='sleeping'?.55:0}};
  const eyeOutlineFor=(mood,geo,index)=>{const p=eyeProfile(mood,geo,index);return eyeOutline(geo.cx,geo.cy,p.w,p.h,p.bend)};
- function svg(seed,mood='idle',mini=false,appearance={},expression=MOOD_GLYPH[mood]||null){const t=traits(seed);if(appearance.color)t.color=appearance.color;const p=pointsPath(circlePoints(39)),variant=appearance.eyes||t.eyes,eyeMood={happy:'happy',surprised:'curious',sleeping:'sleeping',focused:'working'}[expression]||mood,eye=eyesFor(eyeMood,variant,t),eyeGeo=eye.map(eyeGeometry),gid='vb-mascot-hi-'+hash(seed);if(eyeMood!==mood)expression=null;return `<svg class="vbox-mascot vbox-mascot-eyes-${variant}${mini?' vbox-mascot-mini':''}" viewBox="-6 -6 112 112" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" data-mood="${mood}" data-expression="${expression||''}" data-seed="${esc(seed)}" role="img" aria-label="${mood} mascot" ><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#fff" stop-opacity=".16"/><stop offset=".52" stop-color="#fff" stop-opacity=".03"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><linearGradient id="vb-comet"><stop stop-color="#FF6F59"/><stop offset=".35" stop-color="#F5BC29"/><stop offset=".7" stop-color="#24C77A"/><stop offset="1" stop-color="#378EF5"/></linearGradient></defs><g class="vbox-mascot-bang-rig"><g class="vbox-mascot-motion"><path class="vbox-mascot-comet" d="M8 65 Q30 61 48 53" fill="none" stroke="url(#vb-comet)" stroke-width="1" stroke-linecap="round" opacity="0"/><g class="vbox-mascot-speed-lines" opacity="0" fill="none" stroke="url(#vb-comet)" stroke-linecap="round"><path d="M9 48 Q23 48 34 46" stroke-width="1.3"/><path d="M3 54 Q18 54 30 52" stroke-width="1.7"/><path d="M10 61 Q24 60 35 57" stroke-width="1.1"/></g><g class="vbox-mascot-body" ><g class="vbox-mascot-dot-rig"><path class="vbox-mascot-shape" d="${p}" fill="${mood==='angry'?'#FF6F59':mood==='sleeping'?'#a9a8bf':t.color}"/><path class="vbox-mascot-highlight" d="${p}" fill="url(#${gid})" pointer-events="none"/></g><g class="vbox-mascot-blush" opacity="0"><ellipse cx="27" cy="66" rx="7" ry="3.2"/><ellipse cx="73" cy="66" rx="7" ry="3.2"/></g><g class="vbox-mascot-eyes" opacity="${expression?0:1}">${eyeGeo.map((g,i)=>`<g class="eye-blink" transform="translate(${g.cx} ${g.cy}) scale(1 ${eyeMood==='sleeping'?.45:1}) translate(${-g.cx} ${-g.cy})"><g class="eye-tilt" transform="rotate(0 ${g.cx} ${g.cy})"><g class="eye-shape" transform="translate(${g.cx} ${g.cy}) scale(1 1) translate(${-g.cx} ${-g.cy})"><path class="vbox-mascot-eye ${i?'right':'left'}" vector-effect="none" d="${eyeOutlineFor(eyeMood,g,i)}"/></g></g></g><path class="eye-lid" d="${eyeOutline(g.cx,g.cy,8.5,2.4,.9)}" opacity="0"/>`).join('')}<circle class="vbox-mascot-glint" cx="34" cy="53" r="1.3"/><circle class="vbox-mascot-glint" cx="62" cy="53" r="1.3"/></g><g class="vbox-mascot-glyph-host">${glyphMarkup(expression)}</g></g><path class="vbox-mascot-bang-stem" d="${stemPath(0)}" fill="${t.color}"/></g><g class="vbox-mascot-dots" opacity="0"><circle class="vbox-mascot-dot-left" cx="50" cy="52" r="0" fill="${t.color}"/><circle class="vbox-mascot-dot-right" cx="50" cy="52" r="0" fill="${t.color}"/></g><circle class="vbox-mascot-notice" cx="79" cy="22" r="5" fill="#378EF5" stroke="#fff" stroke-width="2" opacity="0"/><g class="vbox-mascot-particles" opacity="0"><circle cx="24" cy="34" r="2" fill="#FF6F59"/><circle cx="77" cy="36" r="2" fill="#F5BC29"/><circle cx="25" cy="77" r="2" fill="#24C77A"/><circle cx="77" cy="74" r="2" fill="#378EF5"/></g></g></svg>`}
+ function svg(seed,mood='idle',mini=false,appearance={},expression=MOOD_GLYPH[mood]||null){const t=traits(seed);if(appearance.color)t.color=appearance.color;const p=pointsPath(circlePoints(39)),variant=appearance.eyes||t.eyes,eyeMood={happy:'happy',surprised:'curious',sleeping:'sleeping',focused:'working'}[expression]||mood,eye=eyesFor(eyeMood,variant,t),eyeGeo=eye.map(eyeGeometry),gid='vb-mascot-hi-'+hash(seed);if(eyeMood!==mood)expression=null;return `<svg class="vbox-mascot vbox-mascot-eyes-${variant}${mini?' vbox-mascot-mini':''}" viewBox="-6 -6 112 112" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" data-mood="${mood}" data-expression="${expression||''}" data-seed="${esc(seed)}" role="img" aria-label="${mood} mascot" ><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#fff" stop-opacity=".16"/><stop offset=".52" stop-color="#fff" stop-opacity=".03"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient><linearGradient id="vb-comet"><stop stop-color="#FF6F59"/><stop offset=".35" stop-color="#F5BC29"/><stop offset=".7" stop-color="#24C77A"/><stop offset="1" stop-color="#378EF5"/></linearGradient></defs><g class="vbox-mascot-bang-rig"><g class="vbox-mascot-motion"><path class="vbox-mascot-comet" d="M8 65 Q30 61 48 53" fill="none" stroke="url(#vb-comet)" stroke-width="1" stroke-linecap="round" opacity="0"/><g class="vbox-mascot-speed-lines" opacity="0" fill="none" stroke="url(#vb-comet)" stroke-linecap="round"><path d="M9 48 Q23 48 34 46" stroke-width="1.3"/><path d="M3 54 Q18 54 30 52" stroke-width="1.7"/><path d="M10 61 Q24 60 35 57" stroke-width="1.1"/></g><g class="vbox-mascot-gaze-follow"><g class="vbox-mascot-body" ><g class="vbox-mascot-dot-rig"><path class="vbox-mascot-shape" d="${p}" fill="${mood==='angry'?'#FF6F59':mood==='sleeping'?'#a9a8bf':t.color}"/><path class="vbox-mascot-highlight" d="${p}" fill="url(#${gid})" pointer-events="none"/></g><g class="vbox-mascot-blush" opacity="0"><ellipse cx="27" cy="66" rx="7" ry="3.2"/><ellipse cx="73" cy="66" rx="7" ry="3.2"/></g><g class="vbox-mascot-eyes" opacity="${expression?0:1}">${eyeGeo.map((g,i)=>`<g class="eye-blink" transform="translate(${g.cx} ${g.cy}) scale(1 ${eyeMood==='sleeping'?.45:1}) translate(${-g.cx} ${-g.cy})"><g class="eye-tilt" transform="rotate(0 ${g.cx} ${g.cy})"><g class="eye-shape" transform="translate(${g.cx} ${g.cy}) scale(1 1) translate(${-g.cx} ${-g.cy})"><path class="vbox-mascot-eye ${i?'right':'left'}" vector-effect="none" d="${eyeOutlineFor(eyeMood,g,i)}"/></g></g></g><path class="eye-lid" d="${eyeOutline(g.cx,g.cy,8.5,2.4,.9)}" opacity="0"/>`).join('')}<circle class="vbox-mascot-glint" cx="34" cy="53" r="1.3"/><circle class="vbox-mascot-glint" cx="62" cy="53" r="1.3"/></g><g class="vbox-mascot-glyph-host">${glyphMarkup(expression)}</g></g><path class="vbox-mascot-bang-stem" d="${stemPath(0)}" fill="${t.color}"/></g></g><g class="vbox-mascot-dots" opacity="0"><circle class="vbox-mascot-dot-left" cx="50" cy="52" r="0" fill="${t.color}"/><circle class="vbox-mascot-dot-right" cx="50" cy="52" r="0" fill="${t.color}"/></g><circle class="vbox-mascot-notice" cx="79" cy="22" r="5" fill="#378EF5" stroke="#fff" stroke-width="2" opacity="0"/><g class="vbox-mascot-particles" opacity="0"><circle cx="24" cy="34" r="2" fill="#FF6F59"/><circle cx="77" cy="36" r="2" fill="#F5BC29"/><circle cx="25" cy="77" r="2" fill="#24C77A"/><circle cx="77" cy="74" r="2" fill="#378EF5"/></g></g></svg>`}
  const animate=global.Motion?.animate;
  const smooth=t=>t*t*(3-2*t);
  const smoother=t=>t*t*t*(t*(t*6-15)+10);
@@ -96,8 +97,17 @@
  });
  detachedObserver?.observe(document.documentElement,{childList:true,subtree:true});
  const quiet=()=>reduce.matches||forcedReduce||document.hidden;
+ let pointerFrame=0,pointerIdleTimer=0;
+ const pointer={x:0,y:0,type:'mouse',active:false};
+ function dispatchPointer(){pointerFrame=0;if(!pointer.active)return;for(const mascot of active)mascot.followPointer(pointer.x,pointer.y,pointer.type)}
+ function releasePointer(){pointer.active=false;clearTimeout(pointerIdleTimer);if(pointerFrame){cancelAnimationFrame(pointerFrame);pointerFrame=0}for(const mascot of active)mascot.releasePointer()}
+ function queuePointer(e){if(e.pointerType==='touch')return;pointer.x=e.clientX;pointer.y=e.clientY;pointer.type=e.pointerType||'mouse';pointer.active=true;if(!pointerFrame)pointerFrame=requestAnimationFrame(dispatchPointer);clearTimeout(pointerIdleTimer);pointerIdleTimer=setTimeout(releasePointer,2500)}
+ window.addEventListener('pointermove',queuePointer,{passive:true});
+ window.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;pointer.x=e.clientX;pointer.y=e.clientY;pointer.type='touch';pointer.active=true;if(!pointerFrame)pointerFrame=requestAnimationFrame(dispatchPointer);clearTimeout(pointerIdleTimer);pointerIdleTimer=setTimeout(releasePointer,850)},{passive:true});
+ window.addEventListener('mouseout',e=>{if(!e.relatedTarget)releasePointer()},{passive:true});
+ window.addEventListener('blur',releasePointer);
  let morphClock=0;
- function morphFrame(now){if(!active.size){morphClock=0;return}morphClock=requestAnimationFrame(morphFrame);if(quiet())return;for(const mascot of active)mascot.frame(now)}
+ function morphFrame(now){if(!active.size){morphClock=0;return}morphClock=requestAnimationFrame(morphFrame);if(document.hidden)return;for(const mascot of active)mascot.frame(now)}
  document.addEventListener('visibilitychange',()=>{for(const mascot of active)mascot.updateVisibility()});
  reduce.addEventListener?.('change',()=>{for(const mascot of active)mascot.updateVisibility()});
  class Mascot{
@@ -106,13 +116,11 @@
    this.state='idle';this.expression=null;this.signal='idle';this.visible=true;this.dead=false;this.token=0;this.phase='settled';this.controls=new Set();this.timers=[];this.sleepScale=1;this.busyMode=hash(this.seed)%2?'ball':'dots';this.busyInterval=8000+hash(this.seed+'busy')%4001;this.busyRemaining=this.busyInterval;
    host.innerHTML=svg(seed,'idle',false,{...appearance,animated:true});
    this.svg=host.querySelector('svg');if(host.classList.contains('avatar-mascot')||host.classList.contains('processing-mascot'))this.svg.classList.add('vbox-mascot-mini');this.svg.__vboxMascot=this;
-   this.motion=this.svg.querySelector('.vbox-mascot-motion');this.bangRig=this.svg.querySelector('.vbox-mascot-bang-rig');this.body=this.svg.querySelector('.vbox-mascot-body');this.dotRig=this.svg.querySelector('.vbox-mascot-dot-rig');this.shapePath=this.svg.querySelector('.vbox-mascot-shape');this.highlight=this.svg.querySelector('.vbox-mascot-highlight');this.eyesGroup=this.svg.querySelector('.vbox-mascot-eyes');this.eyes=[...this.svg.querySelectorAll('.vbox-mascot-eye')];this.blinkGroups=[...this.svg.querySelectorAll('.eye-blink')];this.tiltGroups=[...this.svg.querySelectorAll('.eye-tilt')];this.shapeGroups=[...this.svg.querySelectorAll('.eye-shape')];this.lids=[...this.svg.querySelectorAll('.eye-lid')];this.eyeCenters=eyesFor('idle',this.appearance.eyes||this.traits.eyes,this.traits).map(eyeGeometry);this.glyphHost=this.svg.querySelector('.vbox-mascot-glyph-host');this.blush=this.svg.querySelector('.vbox-mascot-blush');this.dots=this.svg.querySelector('.vbox-mascot-dots');this.dotLeft=this.svg.querySelector('.vbox-mascot-dot-left');this.dotRight=this.svg.querySelector('.vbox-mascot-dot-right');this.notice=this.svg.querySelector('.vbox-mascot-notice');this.noticeScale=0;this.setNoticeScale(0);this.bangStem=this.svg.querySelector('.vbox-mascot-bang-stem');this.particles=this.svg.querySelector('.vbox-mascot-particles');this.cometTrail=this.svg.querySelector('.vbox-mascot-comet');this.speedLines=this.svg.querySelector('.vbox-mascot-speed-lines');
+   this.motion=this.svg.querySelector('.vbox-mascot-motion');this.bangRig=this.svg.querySelector('.vbox-mascot-bang-rig');this.gazeFollow=this.svg.querySelector('.vbox-mascot-gaze-follow');this.body=this.svg.querySelector('.vbox-mascot-body');this.dotRig=this.svg.querySelector('.vbox-mascot-dot-rig');this.shapePath=this.svg.querySelector('.vbox-mascot-shape');this.highlight=this.svg.querySelector('.vbox-mascot-highlight');this.eyesGroup=this.svg.querySelector('.vbox-mascot-eyes');this.eyes=[...this.svg.querySelectorAll('.vbox-mascot-eye')];this.blinkGroups=[...this.svg.querySelectorAll('.eye-blink')];this.tiltGroups=[...this.svg.querySelectorAll('.eye-tilt')];this.shapeGroups=[...this.svg.querySelectorAll('.eye-shape')];this.lids=[...this.svg.querySelectorAll('.eye-lid')];this.eyeCenters=eyesFor('idle',this.appearance.eyes||this.traits.eyes,this.traits).map(eyeGeometry);this.glyphHost=this.svg.querySelector('.vbox-mascot-glyph-host');this.blush=this.svg.querySelector('.vbox-mascot-blush');this.dots=this.svg.querySelector('.vbox-mascot-dots');this.dotLeft=this.svg.querySelector('.vbox-mascot-dot-left');this.dotRight=this.svg.querySelector('.vbox-mascot-dot-right');this.notice=this.svg.querySelector('.vbox-mascot-notice');this.noticeScale=0;this.setNoticeScale(0);this.bangStem=this.svg.querySelector('.vbox-mascot-bang-stem');this.particles=this.svg.querySelector('.vbox-mascot-particles');this.cometTrail=this.svg.querySelector('.vbox-mascot-comet');this.speedLines=this.svg.querySelector('.vbox-mascot-speed-lines');
    this.paths={home:pointsPath(circlePoints(39)),bangDot:pointsPath(circlePoints(5,50,82)),dot:pointsPath(circlePoints(5))};this.glanceCount=0;this.blinkedYet=false;this.expressionCount=0;
    this.breathPhase=this.traits.phase;this.breathSpeed=2*Math.PI/3.6;this.breathAccel=0;this.formAngle=0;this.bangAngle=0;this.stemProgress=0;this.stemDetach=0;this.dotX=1;this.dotY=1;this.bangSignal=null;this.bangWiggleActive=false;this.faceScale=1;this.faceRadius=39;this.blinkScale=1;this.blinking=false;this.blinkGeneration=0;this.blinkQueued=false;this.eyeMorphUntil=0;this.gazeUntil=0;this.pendingLook=null;this.pendingEyes=null;this.dotCenterRadius=5;this.lastFrame=0;
-   this.chart={body:'idle',eyes:'default',gaze:'ahead'};this.motionSegments={body:0,eyes:0,gaze:0,dots:0,symbol:0,color:0,particles:0};this.scanBlend=0;this.idleDriftBlend=1;this.currentPath=this.paths.home;this.setPath(this.paths.home);this.look=[0,0];this.wasMounted=false;this.setEyes('idle',null,true);
-   this.pointerMove=e=>{if(quiet()||!this.visible||host.getBoundingClientRect().width<120||this.expression)return;const r=host.getBoundingClientRect();this.lookTo(((e.clientX-r.left)/r.width-.5)*14,((e.clientY-r.top)/r.height-.5)*6,.22,'cursor')};
-   this.pointerLeave=()=>this.lookTo(0,0,.3,'ahead');
-   host.addEventListener('pointermove',this.pointerMove);host.addEventListener('pointerleave',this.pointerLeave);observer?.observe(this.svg);active.add(this);if(!morphClock)morphClock=requestAnimationFrame(morphFrame);this.scheduleBlink();this.scheduleGlance();this.scheduleExpression();this.scheduleGesture();
+   this.chart={body:'idle',eyes:'default',gaze:'ahead'};this.motionSegments={body:0,eyes:0,gaze:0,dots:0,symbol:0,color:0,particles:0};this.scanBlend=0;this.idleDriftBlend=1;this.currentPath=this.paths.home;this.setPath(this.paths.home);this.look=[0,0];this.gazeTarget=[0,0];this.gazeVelocity=[0,0];this.rightLook=[0,0];this.rightLookVelocity=[0,0];this.cursorActive=false;this.bodyFollow=[0,0,0];this.bodyFollowVelocity=[0,0,0];this.wasMounted=false;this.setEyes('idle',null,true);
+   observer?.observe(this.svg);active.add(this);if(!morphClock)morphClock=requestAnimationFrame(morphFrame);this.scheduleBlink();this.scheduleGlance();this.scheduleExpression();this.scheduleGesture();
   }
   transition(region,to,event,guard=()=>true){if(!guard())return false;const from=this.chart[region];if(from!==to){this.chart[region]=to;this.lastTransition={region,from,to,event,at:performance.now()}}return true}
   track(control){this.controls.add(control);control.finished?.finally(()=>this.controls.delete(control)).catch(()=>{});return control}
@@ -122,7 +130,7 @@
   setPath(d){this.currentPath=d;this.shapePath.setAttribute('d',d);this.highlight.setAttribute('d',d)}
   eyeDimensions(index){const eye=this.eyes[index],m=this.shapeGroups[index].transform.baseVal.consolidate()?.matrix,blink=this.blinkGroups[index].transform.baseVal.consolidate()?.matrix,b=eye.getBBox();return {w:b.width*(m?Math.hypot(m.a,m.b):1),h:b.height*(m?Math.hypot(m.c,m.d):1)*(blink?Math.hypot(blink.c,blink.d):1)}}
   updateFaceTransform(radius=this.faceRadius){
-   const scale=this.faceScale,maxShift=Math.max(0,radius*.82-19.5*scale),scan=this.scanBlend*3.8*Math.sin(this.breathPhase*1.4);
+   const scale=this.faceScale,maxShift=Math.max(0,radius*.9-19.5*scale),scan=this.scanBlend*3.8*Math.sin(this.breathPhase*1.4);
    const drift=this.idleDriftBlend*.8*Math.sin(this.breathPhase*.8+this.traits.phase),driftY=this.idleDriftBlend*.45*Math.sin(this.breathPhase*.62+this.traits.phase);
    const x=Math.max(-maxShift,Math.min(maxShift,this.look[0]+scan+(this.blinking?this.blinkDriftX:drift)));
    const y=Math.max(-maxShift*.6,Math.min(maxShift*.6,this.look[1]+(this.blinking?this.blinkDriftY:driftY)));
@@ -137,6 +145,8 @@
    if(this.sparklePose){const p=this.sparklePose;this.particles.setAttribute('opacity',p.alpha.toFixed(3));for(let i=0;i<this.particles.children.length;i++){const node=this.particles.children[i],x=i%2?1:-1,y=i<2?-1:1;node.setAttribute('transform','translate('+(x*p.dist).toFixed(3)+' '+(y*p.dist).toFixed(3)+')')}}
    this.smearActive=!!(this.cometSmear||this.stemSmear);if(this.splitPose){const p=this.splitPose;for(const [dot,v,dir] of [[this.dotLeft,p.left,-1],[this.dotRight,p.right,1]]){const cx=50+dir*18*v,r=4*Math.max(0,v);dot.setAttribute('cx',cx.toFixed(3));dot.setAttribute('r',r.toFixed(3));const smear=v>.43&&v<.6;dot.setAttribute('transform',smear?'translate('+cx.toFixed(3)+' 52) scale(1.18 .8475) translate('+(-cx).toFixed(3)+' -52)':'');this.smearActive ||=smear}}
    const dt=this.lastFrame?Math.min(50,now-this.lastFrame)/1000:0;this.lastFrame=now;
+   this.updateGaze(dt,reduce.matches||forcedReduce);
+   if(reduce.matches||forcedReduce)return;
    const sleep=this.signal==='sleeping',busy=this.signal==='busy',dots=busy&&this.busyMode==='dots';
    const target=2*Math.PI/(sleep?6.5:busy?2.5:3.6);
    this.breathAccel+=(18*(target-this.breathSpeed)-8*this.breathAccel)*dt;
@@ -146,7 +156,7 @@
    const targetScale=base*(1+amplitude*(.5-.5*Math.cos(this.breathPhase))),motionMatrix=this.motion.transform.baseVal.consolidate()?.matrix,currentScale=motionMatrix?Math.hypot(motionMatrix.a,motionMatrix.b):1,scale=currentScale+(targetScale-currentScale)*Math.min(1,dt*8);
    this.motion.setAttribute('transform','translate(50 52) scale('+scale.toFixed(4)+') translate(-50 -52)');
    this.faceRadius=39;this.faceScale=1;this.formAngle=0;
-   this.updateFaceTransform();if(this.signal==='idle'){this.scheduleExpression();this.scheduleGesture()}
+   this.updateFaceTransform();if(this.signal==='idle'){this.scheduleGlance();this.scheduleExpression();this.scheduleGesture()}
   }
   setBangTransform(angle){this.bangRig.setAttribute('transform','rotate('+angle.toFixed(3)+' 50 82)')}
   setDotTransform(x,y){this.dotX=x;this.dotY=y;this.dotRig.setAttribute('transform','translate(50 82) scale('+x.toFixed(4)+' '+y.toFixed(4)+') translate(-50 -82)')}
@@ -154,12 +164,49 @@
   morphPath(to,duration=MOTION.stem.duration){const from=this.currentPath;if(from===to)return Promise.resolve();this.motionSegments.body++;const c=this.track(animate(from,to,{duration,ease:smooth,onUpdate:v=>this.setPath(v)}));this.morphControl=c;this.morphing=true;return c.finished.catch(()=>{}).finally(()=>{if(this.morphControl===c){this.morphing=false;this.motionSegments.body++}})}
   morph(name,duration=MOTION.stem.duration){return this.morphPath(this.paths[name],duration)}
   fade(node,to,duration=MOTION.exit.duration){const from=Number(node.getAttribute('opacity')||0);if(node===this.particles)this.motionSegments.particles++;const c=this.track(animate(from,to,{duration,ease:smoother,onUpdate:v=>node.setAttribute('opacity',v.toFixed(3))}));return c.finished.catch(()=>{})}
-  lookTo(x,y,duration,mode='lookAround'){
-   if(this.dead||quiet())return;
+  followPointer(x,y,type='mouse'){
+   if(this.dead||!this.visible||document.hidden||reduce.matches||forcedReduce)return;
+   const r=this.host.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+   if(Math.min(r.width,r.height)<40&&Math.hypot(x-cx,y-cy)>200){this.releasePointer();return}
+   if(!this.cursorActive){this.cursorActive=true;clearTimeout(this.glanceTimer);this.glanceTimer=null;this.gazeControl?.stop?.();this.transition('gaze',type==='touch'?'lookAround':'cursor',type==='touch'?'TAP':'POINTER');this.motionSegments.gaze++}
+   const dx=x-cx,dy=y-cy,maxX=MOTION.gaze.maxX,maxY=MOTION.gaze.maxY;
+   this.gazeTarget=[maxX*Math.tanh(dx/Math.max(22,r.width*.62)),maxY*Math.tanh(dy/Math.max(22,r.height*.62))];
+  }
+  releasePointer(){
+   if(!this.cursorActive)return;this.cursorActive=false;
+   clearTimeout(this.glanceTimer);this.glanceTimer=null;
+   if(this.signal==='idle'&&this.visible&&!document.hidden)this.scheduleGlance(180+hash(this.seed+'resume'+this.glanceCount)%280);
+  }
+  lookTo(x,y,duration=.15,mode='lookAround'){
+   if(this.dead||document.hidden||!this.visible)return;
    if(this.blinking){this.pendingLook=[x,y,duration,mode];return}
-   this.transition('gaze',mode,mode,()=>!this.dead);this.motionSegments.gaze++;this.gazeUntil=performance.now()+duration*1000+30;
-   this.gazeControl?.stop?.();const from=this.look.slice(),generation=(this.gazeGeneration||0)+1;this.gazeGeneration=generation;const lag=Math.min(.025,.012/duration);
-   const spring=t=>smoother(t)+.16*Math.sin(Math.PI*t)*t*t*t;const control=this.track(animate(0,1,{duration,ease:spring,onUpdate:t=>{if(generation!==this.gazeGeneration)return;this.look=[from[0]+(x-from[0])*t,from[1]+(y-from[1])*t];this.updateFaceTransform();const delayed=Math.max(0,(t-lag)/(1-lag));this.eyes[0].removeAttribute('transform');this.eyes[1].setAttribute('transform','translate('+((x-from[0])*(delayed-t)).toFixed(3)+' '+((y-from[1])*(delayed-t)).toFixed(3)+')');for(let i=0;i<2;i++){const {cx,cy}=this.eyeCenters[i],tilt=Math.max(-14,Math.min(14,this.look[0]*2))*(i?.97:1);this.tiltGroups[i].setAttribute('transform','rotate('+tilt.toFixed(3)+' '+cx.toFixed(3)+' '+cy.toFixed(3)+')')}}}));this.gazeControl=control;control.finished.then(()=>{if(generation===this.gazeGeneration)for(const eye of this.eyes)eye.removeAttribute('transform')}).catch(()=>{})
+   this.gazeControl?.stop?.();this.gazeControl=null;
+   this.gazeTarget=[Math.max(-MOTION.gaze.maxX,Math.min(MOTION.gaze.maxX,x)),Math.max(-MOTION.gaze.maxY,Math.min(MOTION.gaze.maxY,y))];
+   this.transition('gaze',mode,mode,()=>!this.dead);this.motionSegments.gaze++;
+   this.gazeUntil=performance.now()+duration*1000+30;
+  }
+  scanTo(x,y){
+   this.gazeControl?.stop?.();const from=this.gazeTarget.slice();
+   this.transition('gaze','lookAround','SCAN');this.motionSegments.gaze++;
+   this.gazeUntil=performance.now()+MOTION.gaze.scanDuration*1000+30;
+   this.gazeControl=this.track(animate(0,1,{duration:MOTION.gaze.scanDuration,ease:smoother,onUpdate:t=>{this.gazeTarget=[from[0]+(x-from[0])*t,from[1]+(y-from[1])*t]}}));
+  }
+  updateGaze(dt,reduced=false){
+   if(!dt)return;
+   const spring=reduced?MOTION.gaze.reduced:this.cursorActive?MOTION.gaze.cursor:this.chart.gaze==='saccade'?MOTION.gaze.saccade:MOTION.gaze.idle;
+   const {stiffness,damping}=spring;
+   for(let i=0;i<2;i++){
+    this.gazeVelocity[i]+=(stiffness*(this.gazeTarget[i]-this.look[i])-damping*this.gazeVelocity[i])*dt;
+    this.look[i]+=this.gazeVelocity[i]*dt;
+    this.rightLookVelocity[i]+=(stiffness*.83*(this.look[i]-this.rightLook[i])-damping*1.03*this.rightLookVelocity[i])*dt;
+    this.rightLook[i]+=this.rightLookVelocity[i]*dt;
+   }
+   const bodyTarget=this.signal==='idle'&&!reduced?[this.look[0]*.14,this.look[1]*.13,this.look[0]*.14]:[0,0,0];
+   for(let i=0;i<3;i++){this.bodyFollowVelocity[i]+=(MOTION.gaze.body.stiffness*(bodyTarget[i]-this.bodyFollow[i])-MOTION.gaze.body.damping*this.bodyFollowVelocity[i])*dt;this.bodyFollow[i]+=this.bodyFollowVelocity[i]*dt}
+   this.gazeFollow.setAttribute('transform','translate('+this.bodyFollow[0].toFixed(3)+' '+this.bodyFollow[1].toFixed(3)+') rotate('+this.bodyFollow[2].toFixed(3)+' 50 52)');
+   this.eyes[0].removeAttribute('transform');this.eyes[1].setAttribute('transform','translate('+(this.rightLook[0]-this.look[0]).toFixed(3)+' '+(this.rightLook[1]-this.look[1]).toFixed(3)+')');
+   for(let i=0;i<2;i++){const {cx,cy}=this.eyeCenters[i],offset=i?this.rightLook[0]:this.look[0],tilt=Math.max(-14,Math.min(14,offset*.91))*(i?.97:1);this.tiltGroups[i].setAttribute('transform','rotate('+tilt.toFixed(3)+' '+cx.toFixed(3)+' '+cy.toFixed(3)+')')}
+   this.updateFaceTransform();
   }
   setEyes(mood,expression,instant=false){
    if(this.blinking&&!instant){this.pendingEyes=[mood,expression];return}
@@ -386,7 +433,7 @@
   send(evt){const next=MACHINE[this.state]?.[evt];return next?this.jump(next,MOOD_GLYPH[next]||null,null,evt):false}
   showExpression(expression){return this.jump(this.state,expression,this.signal)}
   jump(mood,expression=MOOD_GLYPH[mood]||null,signal=null,event=null){if(this.dead||!MOODS.includes(mood))return false;const next=signal||({working:'busy',waiting:'asking',happy:'unread',angry:'failed',sleeping:'sleeping',waking:'starting'}[mood]||'idle');if(this.cometActive){this.pendingPose=[mood,expression,next,event];return true}if(this.state===mood&&this.signal===next&&this.phase==='settled')return false;const old=this.signal,flowing=!quiet()&&this.phase==='settled'&&((old==='idle'&&next==='busy'&&this.busyMode==='ball')||(old==='busy'&&this.busyMode==='ball'&&next==='idle'));this.wideOnArrival=old==='busy'&&next==='idle';this.state=mood;this.expression=expression;this.signal=next;this.transition('body',next==='busy'?(this.busyMode==='dots'?'busy.dots':'busy.scan'):next==='sleeping'?'hibernated':next==='starting'?'waking':next,event||signal||mood,()=>!this.dead);this.svg.dataset.mood=mood;this.svg.dataset.signal=next;this.svg.setAttribute('aria-label',mood+' mascot');this.busyRemaining=this.busyInterval;if(flowing){this.resetBlink();this.updateFaceTransform();clearTimeout(this.busyTimer);this.busyTimer=null;this.setColor(mood);this.setEyes(this.wideOnArrival?'wide':'idle',null);if(this.wideOnArrival){this.wideOnArrival=false;this.timer(()=>{if(!this.dead&&this.signal==='idle')this.setEyes('idle',null)},850)}if(next==='busy')this.scheduleBusy()}else void this.startSignal();if(!((old==='asking'||old==='failed')&&this.stemProgress>0&&next!==old))this.transitionMotion(next==='sleeping'?'sleeping':next==='starting'?'waking':next==='failed'?'failed':next==='asking'?'bang':'pop',!['asking','failed'].includes(old)&&!['asking','failed'].includes(next));this.onMood?.(mood,this);return true}
-  updateVisibility(){if(this.dead)return;if(quiet()||!this.visible){this.pauseBusy();for(const c of this.controls)c.pause?.();if(quiet()){this.needsResume=true;this.stopControls();this.resetBlink();this.clearTimers();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58);this.phase='settled'}}else{if(this.needsResume){void this.startSignal();return}for(const c of this.controls)c.play?.();if(this.signal==='busy'&&this.phase==='settled')this.scheduleBusy();this.scheduleBlink();this.scheduleGlance()}}
+  updateVisibility(){if(this.dead)return;if(quiet()||!this.visible){this.pauseBusy();for(const c of this.controls)c.pause?.();if(!this.visible){this.cursorActive=false;clearTimeout(this.glanceTimer);this.glanceTimer=null}if(quiet()){this.needsResume=true;this.stopControls();this.resetBlink();this.clearTimers();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58);this.phase='settled'}}else{if(this.needsResume){void this.startSignal();return}for(const c of this.controls)c.play?.();if(this.signal==='busy'&&this.phase==='settled')this.scheduleBusy();this.scheduleBlink();this.scheduleGlance();if(pointer.active)this.followPointer(pointer.x,pointer.y,pointer.type)}if((reduce.matches||forcedReduce)&&!document.hidden&&this.visible)this.scheduleGlance()}
   blink(allowDouble=true,wink=false,second=false){
    if(this.dead||quiet()||!this.visible||this.phase!=='settled'||this.signal!=='idle'&&!['tall','wide'].includes(this.chart.eyes))return false;
    if(this.blinking||this.eyeMomentActive&&!['tall','wide'].includes(this.chart.eyes)||performance.now()<this.eyeMorphUntil||performance.now()<this.gazeUntil){
@@ -404,7 +451,28 @@
    }).catch(()=>{});return true
   }
   scheduleBlink(){if(this.blinkTimer||this.dead)return;const delay=this.blinkedYet?2800+hash(this.seed+Date.now())%700:1400+hash(this.seed)%1300;this.blinkTimer=setTimeout(()=>{this.blinkTimer=null;if(!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){this.blinkedYet=true;this.blink()}this.scheduleBlink()},delay)}
-  scheduleGlance(){if(this.glanceTimer||this.dead)return;this.glanceTimer=setTimeout(()=>{this.glanceTimer=null;if(!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){const n=hash(this.seed+Date.now());if(++this.glanceCount%3===0){this.lookTo(-7,-1,.42,'saccade');this.timer(()=>this.lookTo(7,-1,.52,'saccade'),450);this.timer(()=>this.lookTo(0,0,.43,'ahead'),1100)}else{this.lookTo((n%5-2)*3.5,((n>>>4)%5-2)*1.15,.16);this.timer(()=>this.lookTo(0,0,.42,'ahead'),330)}}this.scheduleGlance()},800+hash(this.seed+Date.now())%1400)}
+  scheduleGlance(delay){
+   if(this.glanceTimer||this.dead||document.hidden||!this.visible||this.signal!=='idle'||this.cursorActive)return;
+   const n=hash(this.seed+'gaze'+this.glanceCount++),wait=delay??1500+n%2501;
+   this.glanceTimer=setTimeout(()=>{
+    this.glanceTimer=null;
+    if(this.dead||document.hidden||!this.visible||this.signal!=='idle')return;
+    if(this.cursorActive||this.phase!=='settled'){this.scheduleGlance(320);return}
+    const reduced=reduce.matches||forcedReduce,amp=(reduced?6.6:MOTION.gaze.maxX)*(.82+((n>>>9)%18)/100),up=reduced?-3:-5.8,down=reduced?3.1:7.4;
+    const choices=[[-amp,0],[amp,0],[-amp,up],[amp,up],[0,down],[0,0]];
+    const hold=600+(n>>>4)%1401,choice=choices[(n>>>15)%choices.length],scan=!reduced&&this.glanceCount%5===0;
+    if(scan){
+     this.lookTo(-amp,up*.3,.15,'saccade');
+     this.timer(()=>{if(!this.dead&&this.signal==='idle'&&!this.cursorActive)this.scanTo(amp,up*.3)},170);
+     this.timer(()=>{if(!this.dead&&this.signal==='idle'&&!this.cursorActive)this.lookTo(0,0,.3,'ahead')},1070+hold);
+     this.scheduleGlance(Math.min(4000,1700+hold));
+    }else{
+     this.lookTo(choice[0],choice[1],reduced?.45:.14,reduced?'lookAround':'saccade');
+     if(choice[0]||choice[1])this.timer(()=>{if(!this.dead&&this.signal==='idle'&&!this.cursorActive)this.lookTo(0,0,reduced?.6:.28,'ahead')},hold);
+     this.scheduleGlance(Math.min(4000,Math.max(1500,hold+650+(n>>>21)%900)));
+    }
+   },wait)
+  }
   scheduleExpression(){if(this.expressionTimer||this.dead||quiet()||!this.visible||this.signal!=='idle')return;const delay=6000+hash(this.seed+'expression'+this.expressionCount++)%6001;this.expressionTimer=setTimeout(()=>{this.expressionTimer=null;if(!this.dead&&!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){const choices=['happy','wink','curious','tall','wide'];const choice=choices[hash(this.seed+'moment'+this.expressionCount)%choices.length];this.eyeMomentActive=true;if(choice==='wink'){this.eyeMomentActive=false;this.blink(false,true);this.eyeMomentActive=true}else this.setEyes(choice,null);this.timer(()=>{if(!this.dead&&this.signal==='idle'){this.setEyes('idle',null);this.eyeMomentActive=false;this.scheduleExpression()}},850+hash(this.seed+'hold'+this.expressionCount)%450)}else this.scheduleExpression()},delay)}
   scheduleGesture(){
    if(this.gestureTimer||this.dead||quiet()||!this.visible||this.signal!=='idle')return;
@@ -419,7 +487,7 @@
    }this.scheduleGesture()},delay)
   }
   render(instant){if(instant){this.stopControls();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58)}}
-  destroy(){if(this.dead)return;this.dead=true;this.token++;this.stopControls();this.clearTimers();clearTimeout(this.blinkTimer);clearTimeout(this.glanceTimer);clearTimeout(this.expressionTimer);clearTimeout(this.gestureTimer);this.host.removeEventListener('pointermove',this.pointerMove);this.host.removeEventListener('pointerleave',this.pointerLeave);observer?.unobserve(this.svg);active.delete(this);this.svg.remove()}
+  destroy(){if(this.dead)return;this.dead=true;this.token++;this.stopControls();this.clearTimers();clearTimeout(this.blinkTimer);clearTimeout(this.glanceTimer);clearTimeout(this.expressionTimer);clearTimeout(this.gestureTimer);observer?.unobserve(this.svg);active.delete(this);this.svg.remove()}
  }
  global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;for(const mascot of active)mascot.updateVisibility()},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
 })(window);

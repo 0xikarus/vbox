@@ -49,7 +49,7 @@ fuzzButton.onclick=async()=>{
  const radius=node=>Number(node.getAttribute('r')||0);
  const scale=node=>{const m=node.transform.baseVal.consolidate()?.matrix;return {x:m?Math.hypot(m.a,m.b):1,y:m?Math.hypot(m.c,m.d):1}};
  const tilt=node=>{const m=node.transform.baseVal.consolidate()?.matrix;return Math.atan2(m?.b||0,m?.a||1)*180/Math.PI};
- const fire=setInterval(()=>{hero.send(events[Math.floor(random()*events.length)]);eventsFired++},120);
+ const fire=setInterval(()=>{hero.send(events[Math.floor(random()*events.length)]);eventsFired++;if(eventsFired%5===0){const r=hero.host.getBoundingClientRect();window.dispatchEvent(new PointerEvent('pointermove',{pointerType:'mouse',clientX:r.left+r.width*(random()*2-.5),clientY:r.top+r.height*(random()*2-.5),bubbles:true}))}},120);
  const capture=now=>{
   const body=box(hero.shapePath),left=box(hero.eyes[0]),right=box(hero.eyes[1]);
   const leftModel=hero.eyeDimensions(0),rightModel=hero.eyeDimensions(1);
@@ -71,6 +71,9 @@ fuzzButton.onclick=async()=>{
    bodyFillR:rgb[0],bodyFillG:rgb[1],bodyFillB:rgb[2],
    bodyScaleX:bodyScale.x,bodyScaleY:bodyScale.y,
    motionScaleX:motionScale.x,motionScaleY:motionScale.y,
+   gazeTargetX:hero.gazeTarget[0],gazeTargetY:hero.gazeTarget[1],
+   gazeOffsetX:hero.look[0],gazeOffsetY:hero.look[1],
+   bodyFollowX:hero.bodyFollow[0],bodyFollowY:hero.bodyFollow[1],bodyFollowAngle:hero.bodyFollow[2],
    eyeLeftX:left.x,eyeLeftY:left.y,eyeLeftW:left.w,eyeLeftH:left.h,
    eyeLeftModelW:leftModel.w,eyeLeftModelH:leftModel.h,
    eyeLeftStraight:eyeStraightFraction(hero.eyes[0]),
@@ -96,12 +99,14 @@ fuzzButton.onclick=async()=>{
   });
   if(now-start<60000){requestAnimationFrame(capture);return}
   clearInterval(fire);
-  const keys=Object.keys(samples[0]).filter(key=>typeof samples[0][key]==='number'&&key!=='t'&&key!=='smearActive'&&key!=='wiggleActive'&&!key.endsWith('Segment')&&!key.endsWith('Straight'));
+  // Gaze targets are input commands; the rendered gaze offsets and body follow must stay continuous.
+  const keys=Object.keys(samples[0]).filter(key=>typeof samples[0][key]==='number'&&key!=='t'&&key!=='smearActive'&&key!=='wiggleActive'&&!key.startsWith('gazeTarget')&&!key.endsWith('Segment')&&!key.endsWith('Straight'));
   const flags=[];
   for(const sample of samples)for(const key of ['eyeLeftStraight','eyeRightStraight','eyeLeftLidStraight','eyeRightLidStraight'])
    if(sample[key]>.1&&sample.eyesOpacity>.01&&(!key.includes('Lid')||sample[key.replace('Straight','Opacity')]>.01))
     flags.push(`${(sample.t/1000).toFixed(2)}s ${key}: ${(sample[key]*100).toFixed(1)}% nearly straight`);
   const region=key=>key.startsWith('bodyFillR')||key.startsWith('bodyFillG')||key.startsWith('bodyFillB')?'colorSegment':
+   key.startsWith('gaze')||key.startsWith('bodyFollow')?'gazeSegment':
    key.startsWith('body')||key.startsWith('motion')?'bodySegment':
    key.startsWith('eye')?key.endsWith('X')||key.endsWith('Y')?'gazeSegment':'eyeSegment':
    key.startsWith('dots')?'dotsSegment':key.startsWith('particle')?'particlesSegment':key.startsWith('color')?'colorSegment':'symbolSegment';
