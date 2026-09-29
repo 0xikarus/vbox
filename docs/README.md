@@ -16,3 +16,7 @@ Start with the [project README](../README.md) for installation and everyday comm
 - [Agent desktop and tools](AGENT-DESKTOP-IMPLEMENTATION.md)
 - [Local prompt API](LOCAL-AGENT-PROMPT.md)
 - [Managed agent chat and harness behavior](CHAT-HARNESS-MATRIX.md)
+
+## Background
+
+- [Comparison with Grok Bot and Muse](COMPARISON.md)
