@@ -564,13 +564,6 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
   font-weight:700;text-decoration:none;cursor:pointer}
 .menu-links a:hover,.menu-links button:hover{background:var(--accent-soft);border-color:var(--accent)}
 .menu-links .menu-status{margin:-.15rem .2rem .25rem;padding:0 .35rem;color:var(--ink-soft);font-size:.76rem;line-height:1.45}
-.menu-theme{border-top:1px solid var(--line);padding-top:.7rem}
-.seedrow{display:flex;gap:.35rem}
-.seedrow input{flex:1;min-width:0;font:inherit;font-size:.85rem;font-weight:700;color:var(--ink);
-  background:var(--bg);border:1px solid var(--line);border-radius:var(--radius-sm);padding:.5rem .6rem}
-.seedrow button{border:1px solid var(--line);background:var(--surface2);color:var(--ink);border-radius:var(--radius-sm);
-  padding:.4rem .6rem;cursor:pointer;font:inherit;font-weight:700}
-.seedrow button:hover{background:var(--accent-soft);border-color:var(--accent)}
 
 /* owner-defined roles in the chat app */
 .roles-card{width:min(62rem,100%)}

@@ -113,37 +113,24 @@
  }
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
- /* The chat palette, type and spacing stay consistent across sessions. The
-    optional seed changes the mascot only. */
- const DEFAULT_SEED='0xe57c2091';
- const theme=(()=>{let saved={};try{saved=JSON.parse(localStorage.getItem('vmboxChatTheme')||'{}')}catch{}
-  const qp=new URLSearchParams(location.search);
-  return {seed:String(saved.seed||qp.get('seed')||DEFAULT_SEED)};})();
- const saveTheme=()=>{try{localStorage.setItem('vmboxChatTheme',JSON.stringify(theme))}catch{}};
- function xmur3(str){let h=1779033703^str.length;for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=(h<<13)|(h>>>19);}return()=>{h=Math.imul(h^(h>>>16),2246822507);h=Math.imul(h^(h>>>13),3266489909);return(h^=h>>>16)>>>0;};}
- function mulberry32(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
- const hsl=(h,s,l)=>'hsl('+(((h%360)+360)%360)+' '+s+'% '+l+'%)';
- const THEME_ADJ=['mossy','sunny','plucky','sleepy','brisk','cosy','fizzy','tiny','bold','minty','wobbly','glossy'];
- const THEME_NOUN=['pebble','mochi','bramble','biscuit','comet','dumpling','clover','pixel','marble','sprout','pudding','ember'];
- const titleCase=w=>w.charAt(0).toUpperCase()+w.slice(1);
+ /* The chat palette, type, spacing and brand mascot are fixed for vbox. */
+ try{localStorage.removeItem('vmboxChatTheme')}catch{}
  const WORKSPACE_THEME={bg:'#111923',bg2:'#18212d',surface:'#1a2230',surface2:'#202e3d',
   ink:'#eaf0f8','ink-soft':'#91a0b3',line:'#2b3848',
   accent:'#8fb8f5','accent-text':'#aaceff','accent-ink':'#102136','accent-soft':'#263749',
   pop:'#b691e6','bubble-out':'#294b65','bubble-in':'#1b2938','bubble-in-ink':'#eaf0f8',
   danger:'#ec727c','danger-text':'#ffadb5',warn:'#e3b66d','warn-text':'#f2cf8e',ok:'#69d3a4','ok-text':'#8ee5ba'};
- function deriveTheme(seed){
+ function deriveTheme(){
   const t=Object.assign({},WORKSPACE_THEME,{radius:'6px','radius-sm':'4px','radius-lg':'9px',shadow:'0 5px 18px #08121d44','shadow-pop':'0 22px 70px #06101bbb',wall:'none'});
-  return {name:String(seed),font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:6,tokens:t};
+  return {font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:6,tokens:t};
  }
  function applyVariant(){
   document.documentElement.dataset.variant='A';
-  const derived=deriveTheme(theme.seed);
+  const derived=deriveTheme();
   const root=document.documentElement.style;
   for(const key in derived.tokens)root.setProperty('--'+key,derived.tokens[key]);
   root.setProperty('--font',derived.font);
   const themeColor=document.querySelector('meta[name="theme-color"]');if(themeColor)themeColor.setAttribute('content',derived.tokens.bg);
-  const seedInput=document.getElementById('variant-seed');
-  if(seedInput&&document.activeElement!==seedInput)seedInput.value=theme.seed;
   refreshAccountMascots();
  }
 
@@ -201,8 +188,6 @@
   }
  }
  function makeTraits(seedStr){return {...window.VBoxMascot.traits(seedStr),seed:String(seedStr)}}
- function mascotSVGString(t){return window.VBoxMascot.svg(t.seed||'vbox')}
- function mascotMiniSVG(seedStr,mood,expression){return window.VBoxMascot.miniSVG(seedStr,mood,expression)}
  const MACHINE=window.VBoxMascot.MACHINE;
  class Mascot extends window.VBoxMascot.Mascot{}
  function boxMascotPose(box){
@@ -225,11 +210,10 @@
  }
  const accountMascots=[];
  function refreshAccountMascots(){
-  const seed=theme.seed||'vmbox';
   accountMascots.splice(0).forEach(m=>m.destroy&&m.destroy());
   for(const id of ['chat-empty-mascot']){
    const host=document.getElementById(id);if(!host)continue;
-   accountMascots.push(new Mascot(host,seed));
+   accountMascots.push(new Mascot(host,'vbox-brand',{appearance:{color:'#FF6F59',eyes:'A'}}));
   }
  }
  /* ═══ message body: tiny Markdown via /markdown.js, bare URLs linkified ═══ */
@@ -2894,10 +2878,7 @@
   }catch(e){status.textContent=e.message}
  };
 
- /* ---------- generated-look controls ---------- */
- const randomSeed=()=>'0x'+Array.from({length:8},()=>'0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
- $('#variant-dice').onclick=()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new mascot seed.')};
- $('#variant-seed').addEventListener('change',event=>{theme.seed=event.target.value.trim()||DEFAULT_SEED;saveTheme();applyVariant()});
+ /* ---------- fixed vbox look ---------- */
  $('#chat-menu').onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
  applyVariant();
