@@ -366,11 +366,15 @@ func ConfirmCodexChat(ctx context.Context, root, home, session, messageID string
 	return true, nil
 }
 
+var codexUserItemPollInterval = 250 * time.Millisecond
+var codexQueueRetryInterval = 2 * time.Second
+
 // A queue receipt only confirms storage. The matching native user item proves
 // that this thread consumed the exact message before Chat shows it as delivered.
 func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, messageID string) error {
 	deadline := time.NewTimer(90 * time.Second)
 	defer deadline.Stop()
+	lastQueueStart := time.Now()
 	for {
 		accepted, err := codexUserItemPresent(ctx, client, thread, messageID, false)
 		if err != nil {
@@ -379,12 +383,22 @@ func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, mess
 		if accepted {
 			return nil
 		}
+		// An active turn can finish or be interrupted after the initial queue
+		// start check. The TUI does not always advance its native queue then.
+		// Keep starting only its oldest item when idle, so this delivery does
+		// not have to wait for the controller's later receipt reconciliation.
+		if time.Since(lastQueueStart) >= codexQueueRetryInterval {
+			if err := codexStartQueuedIfIdle(ctx, client, thread); err != nil {
+				return fmt.Errorf("%w: Codex message queued but pending queue could not restart: %v", ErrAmbiguousMessage, err)
+			}
+			lastQueueStart = time.Now()
+		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("%w: Codex queue accepted but native consumption was not confirmed: %v", ErrAmbiguousMessage, ctx.Err())
 		case <-deadline.C:
 			return fmt.Errorf("%w: Codex queue accepted but native consumption was not confirmed within 90 seconds", ErrAmbiguousMessage)
-		case <-time.After(250 * time.Millisecond):
+		case <-time.After(codexUserItemPollInterval):
 		}
 	}
 }
