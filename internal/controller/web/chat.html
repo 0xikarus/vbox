@@ -52,9 +52,9 @@
   <section id="chat-empty">
    <div id="chat-empty-mascot" class="mascot-host" aria-hidden="true"></div>
    <div class="empty-copy">
-    <h2>vbox agent chats</h2>
-    <p>Pick an agent chat or a direct conversation between boxes.</p>
-    <p class="hint">Avatars show a live desktop preview while a box is running.</p>
+    <h2>Pick up where you left off</h2>
+    <p class="hint">Choose a conversation, or start a new box to begin.</p>
+    <div class="empty-actions"><button type="button" id="empty-new-box">New box</button><button type="button" id="empty-search" class="vb-ghost">Search chats</button></div>
    </div>
   </section>
   <section id="chat-conversation" hidden>
@@ -107,7 +107,7 @@
      <div id="inspect-facts" class="inspect-facts"></div>
        <div id="inspect-usage" class="inspect-group"><button id="chat-usage" type="button" hidden aria-label="Usage for this chat">Usage</button></div>
        <details class="inspect-block inspect-fold inspect-technical" data-fold="technical">
-        <summary><h3>Technical details</h3></summary>
+        <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><h3>Technical details</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
         <div class="inspect-technical-inner">
         <details class="inspect-block inspect-fold" data-fold="runtime" open>
          <summary><h3>Runtime</h3></summary>
@@ -132,9 +132,8 @@
         </details>
         </div>
        </details>
-      </section>
      <details id="inspect-contacts" class="inspect-block inspect-fold" data-fold="contacts" hidden>
-      <summary><h3>Contacts</h3></summary>
+      <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 8h5"/><path d="M18.5 5.5v5"/></svg><h3>Contacts</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
       <div class="inspect-contact-body">
        <div class="inspect-contact-heading"><h3>Direct contacts</h3><button id="inspect-add-contact" type="button" aria-expanded="false" aria-controls="inspect-contact-picker">+ Add</button></div>
        <ul id="inspect-contact-list"></ul>
@@ -163,6 +162,7 @@
        <p id="inspect-contact-status" role="status"></p>
       </div>
      </details>
+      </section>
      <div class="inspect-footer"><button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Clear context</button></div>
     </div>
    </aside>

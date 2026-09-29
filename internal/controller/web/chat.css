@@ -290,6 +290,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #inspect-summary{display:grid;grid-template-columns:auto minmax(0,1fr);gap:.15rem 1rem;align-content:start;
   padding:1rem .9rem 1.2rem;min-width:0}
 #inspect:not(.with-contacts) #inspect-summary{max-width:52rem;margin:0 auto;width:100%}
+#inspect-summary>#inspect-facts,#inspect-summary>#inspect-actions,#inspect-summary>#inspect-contacts,#inspect-summary>.inspect-technical,#inspect-summary>#inspect-usage{grid-column:1 / -1}
 #inspect-avatar{grid-row:1 / span 2;display:flex;justify-content:center;padding-top:.15rem}
 #inspect-avatar .avatar{width:5.2rem;height:5.2rem}
 #inspect-avatar .avatar .initials{font-size:1.7rem}

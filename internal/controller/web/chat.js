@@ -1739,6 +1739,8 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
+document.getElementById('empty-new-box')?.addEventListener('click',()=>document.getElementById('new-box')?.click());
+document.getElementById('empty-search')?.addEventListener('click',()=>document.getElementById('chat-filter')?.focus());
 messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.target.closest('a,button,input,textarea,.msg-actions,.tv-button,.media-button,.choice'))return;const msg=event.target.closest('.msg');if(!msg)return;const on=!msg.classList.contains('show-meta');for(const node of messagesEl.querySelectorAll('.msg.show-meta'))node.classList.remove('show-meta');if(on)msg.classList.add('show-meta')});
  // Swipe in from the left edge on a phone to pull the chat list back out.
  let listSwipe=null;
