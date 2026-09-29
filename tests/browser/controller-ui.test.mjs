@@ -8,6 +8,7 @@ import puppeteer from 'puppeteer-core';
 const root=resolve('internal/controller/web'),requests=[];
 let server,browser,base;
 const revision='2026-09-05T12:00:00Z';
+const runStartedAt=new Date(Date.now()-65000).toISOString();
 let fixtureRoles=[],fixtureBoxRoleIds=[],fixturePolicy={capabilities:{requestMoreTime:{maxExtensionMinutes:0,maxTotalMinutes:0},queueFollowup:{maxPending:0},createAgentBox:{maxBoxes:0,maxDiskGiB:0},createEmailAddress:{maxAddresses:0}}};
 before(async()=>{
  server=http.createServer(async(req,res)=>{
@@ -15,7 +16,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -43,6 +44,7 @@ before(async()=>{
    '/v1/instruction-presets':{defaultName:'general',presets:[{name:'general',revision:2,sizeBytes:64,default:true,createdAt:revision,updatedAt:revision}]},
    '/v1/instruction-presets/general':{preset:{name:'general',revision:2,sizeBytes:64,default:true,markdown:'# House rules\nAlways answer briefly. <img src=x onerror="window.pwned=1">',createdAt:revision,updatedAt:revision}},
    '/v1/logical-boxes/box-1/instructions':{instructions:{source:'none',markdown:'',updatedAt:revision,appliedAt:revision},effectiveMarkdown:'## vmbox chat delivery\nUse chat_message with Message-ID.',pending:false},
+   '/v1/logical-boxes/box-1/run-budget-policy':{seconds:0,state:'running',runningSince:runStartedAt},
    '/v1/logical-boxes/box-1/imported-credentials':{profiles:[],pending:[],verified:true},
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
@@ -102,6 +104,7 @@ test('management views expose box placement and keep details easy to close',asyn
  assert.match(await page.$eval('#box-detail-body',body=>body.textContent),/Last instructions sync.*2026/);
  await page.waitForFunction(()=>document.querySelector('#box-detail-body .box-create-limit .idle-policy-badge')?.textContent==='Off');
  assert.equal(await page.$eval('#box-detail-body .box-create-limit',card=>card.parentElement.hidden),true);
+ await page.waitForFunction(()=>document.querySelector('#box-detail-body .run-budget-elapsed')?.textContent.startsWith('Current run: 1m '));
  await page.keyboard.press('Escape');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),true);
  await page.click('.workspace-links a[href="#providers"]');

@@ -15,6 +15,7 @@ type boxRunBudgetPolicyResponse struct {
 	Seconds          int64      `json:"seconds"`
 	RemainingSeconds int64      `json:"remainingSeconds"`
 	DeadlineAt       *time.Time `json:"deadlineAt,omitempty"`
+	RunningSince     *time.Time `json:"runningSince,omitempty"`
 	State            string     `json:"state"`
 }
 
@@ -43,9 +44,23 @@ func (s *Server) boxRunBudgetPolicy(w http.ResponseWriter, r *http.Request, p Pr
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("run-time limit unavailable"))
 		return
 	}
+	var runningSince *time.Time
+	if box.State == v1.LogicalBoxRunning {
+		var started sql.NullTime
+		err = s.Store.DB.QueryRowContext(r.Context(), `SELECT MAX(updated_at) FROM allocation_requests
+			WHERE account_id=$1 AND logical_box_id=$2 AND assignment_generation=$3 AND state='ready'`, p.AccountID, box.ID, box.AssignmentGeneration).Scan(&started)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Errorf("current run time unavailable"))
+			return
+		}
+		if started.Valid {
+			value := started.Time.UTC()
+			runningSince = &value
+		}
+	}
 	writeJSON(w, http.StatusOK, boxRunBudgetPolicyResponse{
 		Seconds: budget.BudgetSeconds, RemainingSeconds: budget.RemainingSeconds,
-		DeadlineAt: budget.DeadlineAt, State: budget.State,
+		DeadlineAt: budget.DeadlineAt, RunningSince: runningSince, State: budget.State,
 	})
 }
 
