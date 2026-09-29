@@ -56,8 +56,8 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 	t.Fatal("create_agent_box tool is missing")
 }
 
-func TestClearAgentBoxContextToolRequiresTargetConfirmationAndRetryKey(t *testing.T) {
-	for _, name := range []string{"clear_agent_box_context", "compact_agent_box_context"} {
+func TestAgentBoxLifecycleToolRequiresTargetConfirmationAndRetryKey(t *testing.T) {
+	for _, name := range []string{"wake_agent_box", "clear_agent_box_context", "compact_agent_box_context"} {
 		found := false
 		for _, tool := range desktopMCPTools() {
 			if tool["name"] != name {

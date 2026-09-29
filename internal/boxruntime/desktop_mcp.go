@@ -55,6 +55,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("get_available_workers", "List healthy free worker slots across this account's configured pools. Returns slotId, provider, providerCredential, serviceName, ordinal, and region. Pass a returned slotId to create_agent_box to choose that slot and pool. Availability is checked again when creating the box.", map[string]any{}),
 		makeTool("set_agent_box_tags", "Replace an agent box's plain metadata tags. Tags are labels only and never grant contact or tool access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 32}}}, "box", "tags"),
 		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
+		makeTool("wake_agent_box", "Wake another hibernated, unprotected agent box without restarting a running box. The request may queue until capacity is free; use get_agent_box to check progress if that tool is allowed. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("clear_agent_box_context", "Start a fresh agent conversation in another running, unprotected box while keeping its chat history and workspace. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("compact_agent_box_context", "Request /compact in another running, unprotected agent box's existing conversation. The target must be idle; this preserves its thread and workspace. The response confirms that compaction was requested, not that summarization has finished. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
@@ -629,6 +630,21 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		var result map[string]any
 		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/restart", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "wake_agent_box" {
+		var request struct {
+			Box            string `json:"box"`
+			Confirmation   string `json:"confirmation"`
+			IdempotencyKey string `json:"idempotencyKey"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.IdempotencyKey == "" {
+			return nil, fmt.Errorf("box, confirmation, and idempotencyKey are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/wake", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)

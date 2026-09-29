@@ -182,7 +182,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Agent-initiated `create_agent_box` inserts reciprocal direct-contact grants
   and contact events in the same transaction as the new logical box. An
   idempotent retry observes the existing grants. The delegated
-  `clear_agent_box_context` tool is available with the restart permission and
+  `wake_agent_box` tool is available with the restart permission. It queues or
+  allocates another hibernated, unprotected box without restarting a running
+  one, and requires exact-name confirmation plus an idempotency key. The
+  `clear_agent_box_context` tool is available with the same permission and
   resets another running, unprotected box through the owner chat reset path;
   it requires an exact target name and idempotency key. The same permission
   grants `compact_agent_box_context`, which requests compaction in another
