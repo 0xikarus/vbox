@@ -205,6 +205,22 @@
  function mascotMiniSVG(seedStr,mood,expression){return window.VBoxMascot.miniSVG(seedStr,mood,expression)}
  const MACHINE=window.VBoxMascot.MACHINE;
  class Mascot extends window.VBoxMascot.Mascot{}
+ function boxMascotPose(box){
+  if(box.state==='hibernated')return ['sleeping',null];
+  if(box.state==='failed')return ['angry','sad'];
+  if(box.processing)return ['working',null];
+  if(box.unread)return ['happy',null];
+  return [box.state==='running'?'idle':'waking',null];
+ }
+ function syncAvatarMascot(avatar,box){
+  if(!avatar)return;
+  const mascot=avatar.querySelector('.avatar-mascot svg')?.__vboxMascot;
+  if(!mascot)return;
+  const [mood,expression]=boxMascotPose(box);
+  if(mascot.state!==mood||mascot.expression!==expression)mascot.jump(mood,expression);
+  avatar.dataset.state=box.state;
+  avatar.querySelector('.dot')?.classList.toggle('running',box.state==='running');
+ }
  const accountMascots=[];
  function refreshAccountMascots(){
   const seed=theme.seed||'vmbox';
@@ -427,7 +443,7 @@
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
   wrap.dataset.avatar=box.id;wrap.dataset.state=box.state;
-  const base=document.createElement('span');base.className='avatar-mascot';const mood=box.state==='hibernated'?'sleeping':box.state==='failed'?'angry':box.processing?'working':box.unread?'happy':box.state==='running'?'idle':'waking';base.innerHTML=mascotMiniSVG(box.id,mood,box.state==='failed'?'sad':undefined);
+  const base=document.createElement('span');base.className='avatar-mascot';new Mascot(base,box.id);const [mood,expression]=boxMascotPose(box);if(mood!=='idle'||expression)base.querySelector('svg').__vboxMascot.jump(mood,expression);
   wrap.append(base);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
@@ -682,7 +698,8 @@
    if(row.dataset.state!==stateClass)row.dataset.state=stateClass;
    const stateEl=row.querySelector('.row-state');if(stateEl.textContent!==box.state)stateEl.textContent=box.state;
    const oldAvatar=row.querySelector('.avatar');
-   if(oldAvatar&&oldAvatar.dataset.state===box.state){
+   if(oldAvatar){
+    syncAvatarMascot(oldAvatar,box);
     // Keep the node (its hover wiring and live preview), but still retry a
     // thumbnail that is stale or failed while the desktop was starting.
     if(!avatarFresh(avatarCache.get(box.id),box.state))avatarRefresh(box);
@@ -990,7 +1007,7 @@
   }
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
-   const mini=document.createElement('span');mini.className='processing-mascot';mini.innerHTML=mascotMiniSVG(box.id);
+   const mini=document.createElement('span');mini.className='processing-mascot';new Mascot(mini,box.id);mini.querySelector('svg').__vboxMascot.jump('working');
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
@@ -1118,8 +1135,9 @@
   state.append(agent,document.createTextNode(box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')));
   $('#chat-header-state').replaceChildren(state);
   inputEl.placeholder='Message '+box.name+'…';
-  const key=box.id+'|'+box.state;
+  const key=box.id;
   if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
+  else syncAvatarMascot($('#chat-header-avatar .avatar'),box);
   $('#chat-wake').hidden=!canWakeBox(box);
   $('#chat-wake').disabled=wakingBoxes.has(box.id);
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';

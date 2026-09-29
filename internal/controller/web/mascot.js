@@ -64,6 +64,15 @@
  const active=new Set();let forcedReduce=false;
  const reduce=matchMedia('(prefers-reduced-motion: reduce)');
  const observer=typeof IntersectionObserver==='undefined'?null:new IntersectionObserver(entries=>{for(const entry of entries){const mascot=entry.target.__vboxMascot;if(mascot){mascot.visible=entry.isIntersecting;mascot.updateVisibility()}}});
+ // Chat re-renders temporary avatars. Release their timers and Motion controls
+ // once a previously mounted SVG leaves the document.
+ const detachedObserver=typeof MutationObserver==='undefined'?null:new MutationObserver(()=>{
+  for(const mascot of active){
+   if(mascot.svg.isConnected)mascot.wasMounted=true;
+   else if(mascot.wasMounted)mascot.destroy();
+  }
+ });
+ detachedObserver?.observe(document.documentElement,{childList:true,subtree:true});
  const quiet=()=>reduce.matches||forcedReduce||document.hidden;
  document.addEventListener('visibilitychange',()=>{for(const mascot of active)mascot.updateVisibility()});
  reduce.addEventListener?.('change',()=>{for(const mascot of active)mascot.updateVisibility()});
