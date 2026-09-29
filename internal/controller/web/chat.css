@@ -9,7 +9,7 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #chat-shell{display:flex;flex-direction:column;height:100dvh;height:100svh;
   background:var(--bg);color:var(--ink);text-transform:none;position:relative;overflow:hidden}
 #chat-shell button,#chat-shell input,#chat-shell select,#chat-shell textarea,#chat-shell label,#chat-shell a{text-transform:none}
-#chat-shell :focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:.4rem}
+#chat-shell :focus-visible{outline:3px solid var(--accent);outline-offset:2px;border-radius:var(--r-control)}
 
 /* Quiet workspace fallback tokens; chat.js applies the same fixed palette. */
 :root[data-variant="A"]{
@@ -66,7 +66,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .conversation-divider{display:flex!important;align-items:center;gap:.55rem;padding:.5rem .55rem .35rem!important;margin:.35rem 0 .15rem!important;border:0!important;background:none!important;color:var(--ink-soft);font-size:.68rem;font-weight:750;letter-spacing:.04em;cursor:default!important;white-space:nowrap}
 .conversation-divider::before,.conversation-divider::after{content:"";height:1px;flex:1;background:var(--line)}
 .conversation-divider:hover{background:none!important}
-.pair-avatar{flex:none;display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);font-size:1.45rem;font-weight:800}
+.pair-avatar{flex:none;display:grid;place-items:center;width:3.4rem;height:3.4rem;border-radius:var(--r-pill);background:var(--accent-soft);color:var(--accent-text);font-size:1.45rem;font-weight:800}
 #chat-entries li[data-pair-key] .chat-meta .name{font-size:.86rem}
 #chat-conversation.pair-view #chat-composer,#chat-conversation.pair-view #chat-image-drafts,#chat-conversation.pair-view #reply-preview,#chat-conversation.pair-view #chat-usage,#chat-conversation.pair-view #chat-wake,#chat-conversation.pair-view #chat-clear-context,#chat-conversation.pair-view #chat-control,#chat-conversation.pair-view #chat-info,#chat-conversation.pair-view #chat-workspace,#chat-conversation.pair-view #chat-more,#chat-conversation.pair-view #chat-more-menu{display:none!important}
 #chat-conversation.pair-view #chat-header>.spacer{display:none}
@@ -90,7 +90,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .avatar .mx-mini{position:absolute;inset:0;width:100%;height:100%;z-index:0}
 .avatar .initials{position:relative;z-index:0;font-weight:700;font-size:1.05rem;color:var(--accent-ink)}
 .avatar.small{width:2.6rem;height:2.6rem}
-.avatar .dot{position:absolute;right:0;bottom:0;width:1.05rem;height:1.05rem;border-radius:50%;
+.avatar .dot{position:absolute;right:0;bottom:0;width:1.05rem;height:1.05rem;border-radius:var(--r-pill);
   border:2px solid var(--surface);background:var(--ink-soft);z-index:3}
 .avatar .dot.running{background:var(--ok)}
 .avatar.preview-trigger{cursor:pointer}
@@ -196,7 +196,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .msg .choice{display:flex;align-items:center;gap:.5rem;width:100%;min-height:2.6rem;text-align:left;
   border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:var(--radius-sm);
   padding:.5rem .75rem;font:inherit;font-size:.9rem;cursor:pointer;margin:0;transition:all .12s}
-.msg .choice::before{content:'';flex:none;width:.9rem;height:.9rem;border:2px solid var(--accent);border-radius:50%;transition:all .12s}
+.msg .choice::before{content:'';flex:none;width:.9rem;height:.9rem;border:2px solid var(--accent);border-radius:var(--r-pill);transition:all .12s}
 .msg .choice:hover{background:var(--accent-soft)}
 .msg .choice.on{background:var(--accent-soft);border-color:var(--accent);font-weight:700}
 .msg .choice.on::before{background:var(--accent);box-shadow:inset 0 0 0 2px var(--surface)}
@@ -354,14 +354,14 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .msg.processing{display:flex;align-items:center;gap:.5rem;color:var(--ink-soft);font-size:.82rem;padding:.4rem .6rem}
 .processing-mascot{width:1.7rem;height:1.7rem;flex:none}
 .typing-dots{display:inline-flex;gap:.28rem}
-.typing-dots span{width:.42rem;height:.42rem;border-radius:50%;background:var(--ink-soft);animation:tdot 1.2s infinite}
+.typing-dots span{width:.42rem;height:.42rem;border-radius:var(--r-pill);background:var(--ink-soft);animation:tdot 1.2s infinite}
 .typing-dots span:nth-child(2){animation-delay:.18s}
 .typing-dots span:nth-child(3){animation-delay:.36s}
 @keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-.22rem);opacity:1}}
 
 /* ── TV preview (processing screenshot / live view / replay) ─────────── */
 .msg.processing .tv-button{display:inline-flex;align-items:center;justify-content:center;background:none;border:0;
-  padding:.15rem;margin-left:.1rem;color:var(--ink-soft);cursor:pointer;border-radius:.35rem}
+  padding:.15rem;margin-left:.1rem;color:var(--ink-soft);cursor:pointer;border-radius:var(--r-control)}
 .msg.processing .tv-button:hover{background:var(--accent-soft);color:var(--accent-text)}
 .msg.processing .tv-button svg{width:1rem;height:1rem}
 .tv-preview{position:fixed;z-index:40;padding:.35rem;background:var(--surface);border:1px solid var(--line);
@@ -529,7 +529,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .usage-window-head span{color:var(--ink-soft)}
 .usage-window-head strong{color:var(--ok-text);font-size:.95rem;white-space:nowrap}
 .usage-window small{display:block;margin-top:.25rem}
-.usage-track{height:.45rem;border-radius:1rem;background:var(--line);margin:.2rem 0;overflow:hidden}
+.usage-track{height:.45rem;border-radius:var(--r-pill);background:var(--line);margin:.2rem 0;overflow:hidden}
 .usage-track span{display:block;height:100%;background:var(--ok)}
 .usage-spend{padding:.5rem .65rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2)}
 .usage-spend strong{color:var(--ok-text)}
@@ -546,7 +546,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #preset-form .preset-actions .primary{display:inline-block;width:auto;min-height:0;padding:.4rem .85rem}
 .md-preview{margin:.4rem 0;padding:.55rem .7rem;border:1px solid var(--line);background:var(--bg);
   border-radius:var(--radius-sm);max-height:14rem;overflow:auto;font-size:.85rem}
-.md-preview .md-pre{background:var(--surface2);padding:.4rem .5rem;border-radius:.3rem;overflow:auto;font-size:.78rem}
+.md-preview .md-pre{background:var(--surface2);padding:.4rem .5rem;border-radius:var(--r-control);overflow:auto;font-size:.78rem}
 .md-preview .md-quote{border-left:3px solid var(--line);margin:.3rem 0;padding:.1rem .6rem;color:var(--ink-soft)}
 .md-preview .md-empty{color:var(--ink-soft);font-style:italic}
 .commands-card{width:min(36rem,100%)}
@@ -586,18 +586,18 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .role-catalog{display:grid;gap:.5rem;padding:.65rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);margin-bottom:.7rem}
 .role-catalog-head{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap}.role-catalog-head strong{color:var(--ink)}.role-catalog-head span{color:var(--ink-soft);font-size:.75rem}
 .role-catalog-items{display:flex;gap:.4rem;flex-wrap:wrap}
-.role-heading{border:1px solid var(--accent);border-radius:999px;background:var(--accent-soft);color:var(--accent-text);font:inherit;font-size:.78rem;font-weight:800;cursor:pointer;white-space:nowrap;padding:.3rem .65rem}
+.role-heading{border:1px solid var(--accent);border-radius:var(--r-control);background:var(--accent-soft);color:var(--accent-text);font:inherit;font-size:.78rem;font-weight:800;cursor:pointer;white-space:nowrap;padding:.3rem .65rem}
 .role-heading:hover{filter:brightness(1.08)}
 .role-assignment-heading{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin:.85rem .1rem .5rem}.role-assignment-heading strong{color:var(--ink);font-size:1rem}.role-assignment-heading span{color:var(--ink-soft);font-size:.78rem}
 .role-assignment-list{display:grid;grid-template-columns:minmax(0,1fr);gap:.55rem}
 .role-assignment-card{border:1px solid var(--line);border-left:3px solid color-mix(in srgb,var(--accent) 72%,var(--line));border-radius:var(--radius-sm);background:var(--surface2);box-shadow:0 2px 7px rgba(0,0,0,.12);overflow:hidden}
 .role-assignment-card.is-open{border-color:color-mix(in srgb,var(--accent) 75%,var(--line));border-left-color:var(--accent)}
 .role-assignment-summary{display:grid;grid-template-columns:auto minmax(8rem,.8fr) minmax(9rem,1fr) auto;align-items:center;gap:.7rem;padding:.75rem}
-.role-box-mark{display:grid;place-items:center;width:2.15rem;height:2.15rem;border:1px solid color-mix(in srgb,var(--accent) 65%,var(--line));border-radius:.55rem;background:var(--accent-soft);color:var(--accent-text);font-size:.88rem;font-weight:900}
+.role-box-mark{display:grid;place-items:center;width:2.15rem;height:2.15rem;border:1px solid color-mix(in srgb,var(--accent) 65%,var(--line));border-radius:var(--r-control);background:var(--accent-soft);color:var(--accent-text);font-size:.88rem;font-weight:900}
 .role-assignment-identity{display:grid;gap:.12rem;min-width:0}.role-assignment-identity>small,.role-current-label{color:var(--ink-soft);font-size:.62rem;font-weight:850;letter-spacing:.08em;text-transform:uppercase}.role-assignment-identity>strong{overflow:hidden;color:var(--ink);font-size:1rem;text-overflow:ellipsis;white-space:nowrap}
-.role-box-meta{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}.role-agent-badge,.role-state-badge{display:inline-flex;align-items:center;border-radius:999px;padding:.1rem .38rem;font-size:.66rem;font-weight:750}.role-agent-badge{background:var(--surface);color:var(--ink-soft)}.role-state-badge{color:var(--ink-soft)}.role-state-badge:before{content:'';width:.38rem;height:.38rem;margin-right:.28rem;border-radius:999px;background:#5cbf7b}.role-assignment-card[data-state="hibernated"] .role-state-badge:before,.role-assignment-card[data-state="stopped"] .role-state-badge:before{background:var(--ink-soft)}
+.role-box-meta{display:flex;align-items:center;gap:.35rem;flex-wrap:wrap}.role-agent-badge,.role-state-badge{display:inline-flex;align-items:center;border-radius:var(--r-pill);padding:.1rem .38rem;font-size:.66rem;font-weight:750}.role-agent-badge{background:var(--surface);color:var(--ink-soft)}.role-state-badge{color:var(--ink-soft)}.role-state-badge:before{content:'';width:.38rem;height:.38rem;margin-right:.28rem;border-radius:var(--r-pill);background:#5cbf7b}.role-assignment-card[data-state="hibernated"] .role-state-badge:before,.role-assignment-card[data-state="stopped"] .role-state-badge:before{background:var(--ink-soft)}
 .role-assignment-current{display:grid;gap:.25rem;min-width:0}.role-current-pills{display:flex;align-items:center;gap:.3rem;flex-wrap:wrap;min-width:0}
-.role-pill{display:inline-flex;align-items:center;max-width:100%;border:1px solid color-mix(in srgb,var(--accent) 60%,var(--line));border-radius:999px;background:var(--accent-soft);color:var(--accent-text);padding:.2rem .5rem;font-size:.72rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.role-pill{display:inline-flex;align-items:center;max-width:100%;border:1px solid color-mix(in srgb,var(--accent) 60%,var(--line));border-radius:var(--r-pill);background:var(--accent-soft);color:var(--accent-text);padding:.2rem .5rem;font-size:.72rem;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .role-pill.empty{border-color:var(--line);background:var(--surface);color:var(--ink-soft);font-weight:600}
 .role-assignment-toggle{border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent-text);font:inherit;font-size:.76rem;font-weight:850;padding:.42rem .65rem;cursor:pointer;white-space:nowrap}
 .role-assignment-toggle:hover{border-color:var(--accent);background:var(--accent-soft)}
@@ -647,7 +647,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .model-picker-search,.model-picker-sort{display:block;box-sizing:border-box;width:100%;padding:.5rem .55rem;margin-top:.25rem;
   border:1px solid var(--line);border-radius:var(--radius-sm);font:inherit;background:var(--bg);color:var(--ink)}
 .model-picker-caps{display:flex;gap:.35rem;flex-wrap:wrap;margin-top:.3rem}
-.model-picker-cap{border:1px solid var(--line);border-radius:99px;background:var(--bg);color:var(--ink);
+.model-picker-cap{border:1px solid var(--line);border-radius:var(--r-pill);background:var(--bg);color:var(--ink);
   padding:.28rem .65rem;font:inherit;font-size:.78rem;font-weight:700;cursor:pointer}
 .model-picker-cap:hover{border-color:var(--accent)}
 .model-picker-cap.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
@@ -669,7 +669,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .model-picker-option-ctx{font-size:.72rem}
 .model-picker-option-price b{color:var(--ink);font-size:.82rem}
 .model-picker-option-badge{border:1px solid #8a6d1f;color:var(--warn-text);font-size:.64rem;font-weight:700;
-  border-radius:99px;padding:.05rem .35rem}
+  border-radius:var(--r-pill);padding:.05rem .35rem}
 .model-picker-preview{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--bg);
   padding:.5rem .65rem;margin-top:.7rem;display:flex;flex-direction:column;gap:.3rem}
 .model-picker-preview:empty{display:none}
@@ -699,7 +699,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .msg .text blockquote{border-left:3px solid var(--accent);margin:.1rem 0;padding:.05rem .5rem;color:var(--ink-soft)}
 .msg .text pre{background:#1e1f22;color:#dbdee1;
   border-radius:var(--radius-sm);padding:.45rem .55rem;overflow:auto;font:12px/1.45 ui-monospace,monospace;margin:.1rem 0}
-.msg .text code{background:color-mix(in srgb,var(--ink) 12%,transparent);border-radius:.3rem;
+.msg .text code{background:color-mix(in srgb,var(--ink) 12%,transparent);border-radius:var(--r-control);
   padding:.05rem .3rem;font:12px/1.4 ui-monospace,monospace}
 .msg .text pre code{background:none;padding:0;color:inherit}
 .msg .text hr{border:0;border-top:1px solid var(--line);margin:.3rem 0}
@@ -810,7 +810,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
  #chat-app{gap:0}
  #chat-list{flex:0 0 var(--chat-sidebar-width,clamp(16rem,28vw,24rem));min-width:15rem;max-width:calc(100% - 29rem);border-right:1px solid var(--line)}
  #chat-resizer{display:block;position:relative;flex:0 0 .7rem;cursor:col-resize;touch-action:none;background:var(--surface)}
- #chat-resizer::before{content:"";position:absolute;top:50%;left:50%;width:2px;height:3rem;transform:translate(-50%,-50%);border-radius:2px;background:var(--line)}
+ #chat-resizer::before{content:"";position:absolute;top:50%;left:50%;width:2px;height:3rem;transform:translate(-50%,-50%);border-radius:var(--r-control);background:var(--line)}
  #chat-resizer:hover::before,#chat-resizer:focus-visible::before{background:var(--accent)}
  #chat-resizer:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
  #thread-resizer{display:block;position:absolute;inset:0 auto 0 -.38rem;width:.75rem;z-index:2;cursor:col-resize;touch-action:none}
@@ -862,7 +862,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 
 /* ── always-visible message actions (touch friendly) ─────────────────── */
 .msg-actions{position:relative;display:inline-flex;align-items:center;margin-left:.05rem}
-.msg-more{border:0;background:none;color:var(--ink-soft);cursor:pointer;padding:.15rem;border-radius:.3rem;
+.msg-more{border:0;background:none;color:var(--ink-soft);cursor:pointer;padding:.15rem;border-radius:var(--r-control);
   display:inline-flex;min-width:1.45rem;min-height:1.45rem;align-items:center;justify-content:center}
 .msg-more:hover,.msg-more[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent-text)}
 .msg-more svg{width:1rem;height:1rem}
@@ -924,7 +924,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 #chat-entries li{gap:.7rem;padding:.67rem .6rem;border:0;border-radius:var(--radius);margin-bottom:.16rem}
 #chat-entries li.active{background:var(--accent-soft);box-shadow:none}
 #chat-entries li:hover{background:#243243}
-#chat-entries .avatar{width:2.75rem;height:2.75rem;border-radius:.4rem}
+#chat-entries .avatar{width:2.75rem;height:2.75rem;border-radius:var(--r-control)}
 #chat-entries .avatar .dot{width:.7rem;height:.7rem;border-color:var(--surface)}
 .chat-meta .name{font-size:.87rem;font-weight:720}
 .chat-meta{display:block;border:0;background:none;text-align:left;padding:0;color:inherit;cursor:pointer;font:inherit}
@@ -933,11 +933,11 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .chat-meta .row2{gap:.25rem;margin-top:.15rem}
 #chat-entries .unread-note{display:block;margin-top:.18rem;color:var(--accent-text);font-size:.68rem;font-weight:750;letter-spacing:.01em}
 #chat-entries li.conversation-group:hover{background:none}
-.row-state,.agent-badge{font-size:.59rem;padding:.07rem .3rem;border-radius:.3rem}
-.unread{min-width:1.15rem;border-radius:.4rem;font-size:.65rem}
+.row-state,.agent-badge{font-size:.59rem;padding:.07rem .3rem;border-radius:var(--r-control)}
+.unread{min-width:1.15rem;border-radius:var(--r-pill);font-size:.65rem}
 #chat-main{background:var(--bg)}
 #chat-header{min-height:4.3rem;padding:.55rem 1.05rem;background:var(--bg);gap:.7rem;overflow:visible}
-#chat-header-avatar .avatar{width:2.6rem;height:2.6rem;border-radius:.4rem}
+#chat-header-avatar .avatar{width:2.6rem;height:2.6rem;border-radius:var(--r-control)}
 #chat-header-avatar .avatar .dot{width:.72rem;height:.72rem}
 #chat-header-text strong{font-size:.96rem;letter-spacing:-.02em}
 #chat-header-state{font-size:.72rem}
@@ -988,7 +988,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 #inspect-backdrop{display:none}
 #inspect-body,#inspect:not(.with-contacts) #inspect-body{display:block;overflow:auto}
 #inspect-summary,#inspect:not(.with-contacts) #inspect-summary{display:grid;grid-template-columns:auto minmax(0,1fr);max-width:none;padding:1rem}
-#inspect-avatar .avatar{width:3.1rem;height:3.1rem;border-radius:.4rem}
+#inspect-avatar .avatar{width:3.1rem;height:3.1rem;border-radius:var(--r-control)}
 #inspect-avatar .avatar .initials{font-size:1rem}
 #inspect-name{font-size:1.05rem}
 #inspect-contacts{display:block;grid-column:auto;grid-row:auto;border-left:0;border-top:1px solid var(--line);background:var(--bg2);padding:1rem}

@@ -3,23 +3,23 @@ form#login{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;o
   width:100%;min-height:100dvh;margin:0;padding:1.25rem;background:#111923;color:#eaf0f8;
   font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark}
 form#login .login-card{display:flex;flex-direction:column;gap:.85rem;width:min(100%,25rem);
-  margin:auto;padding:clamp(1.5rem,5vw,2rem);border:1px solid #3a4b5e;border-radius:1rem;
+  margin:auto;padding:clamp(1.5rem,5vw,2rem);border:1px solid #3a4b5e;border-radius:var(--r-surface);
   background:#1a2230;box-shadow:0 24px 70px #06101bcc;text-align:left}
 form#login .login-brand{display:flex;align-items:center;gap:.7rem;margin-bottom:.25rem;
   color:#eaf0f8;font-size:1rem;font-weight:750;letter-spacing:-.02em}
 form#login .login-mark{display:grid;place-items:center;width:2.25rem;height:2.25rem;
-  border-radius:.65rem;background:#8fb8f5;color:#102136;font-weight:850}
+  border-radius:var(--r-control);background:#8fb8f5;color:#102136;font-weight:850}
 form#login .login-title{margin:0;padding:0;border:0;color:#eaf0f8;
   font-size:1.6rem;font-weight:750;line-height:1.2;text-transform:none}
 form#login .login-copy{margin:0 0 .35rem;color:#aab8c9;font-size:.9rem}
 form#login label{display:block;margin:0;color:#eaf0f8;font-size:.85rem;font-weight:650;text-transform:none}
 form#login input{display:block;width:100%;min-height:2.9rem;margin:0;padding:.65rem .8rem;
-  border:1px solid #51647b;border-radius:.55rem;background:#111923;color:#eaf0f8;font:inherit}
+  border:1px solid #51647b;border-radius:var(--r-control);background:#111923;color:#eaf0f8;font:inherit}
 form#login input:focus-visible{outline:2px solid #8fb8f5;outline-offset:2px}
 form#login .login-error{margin:0;color:#ffadb5;font-size:.85rem}
 form#login .login-error:empty{display:none}
 form#login button{width:100%;min-height:2.9rem;margin:.2rem 0 0;padding:.6rem .8rem;
-  border:1px solid #8fb8f5;border-radius:.55rem;background:#8fb8f5;color:#102136;
+  border:1px solid #8fb8f5;border-radius:var(--r-control);background:#8fb8f5;color:#102136;
   font:700 .95rem system-ui,-apple-system,"Segoe UI",sans-serif;text-transform:none;cursor:pointer}
 form#login button:hover{background:#aaceff;border-color:#aaceff}
 form#login button:focus-visible{outline:2px solid #eaf0f8;outline-offset:2px}
