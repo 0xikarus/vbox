@@ -175,6 +175,9 @@ test('agent-to-agent messages identify their source box and preserve the thread'
 test('message actions open toward available space and stay inside the transcript',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:520});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user .msg-more');
+  const corners=await p.$eval('#chat-messages .msg.user',message=>({message:message.getBoundingClientRect().toJSON(),chevron:message.querySelector('.msg-more').getBoundingClientRect().toJSON()}));
+  assert.ok(corners.chevron.top-corners.message.top<8,'the chevron is at the top of the message');
+  assert.ok(corners.message.right-corners.chevron.right<8,'the chevron is at the right edge of the message');
   await p.evaluate(()=>{
    const messages=document.querySelector('#chat-messages');
    for(const edge of ['before','after']){
@@ -190,12 +193,21 @@ test('message actions open toward available space and stay inside the transcript
     return {placement:menu.dataset.placement,top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right,clipTop:clip.top,clipBottom:clip.bottom,clipLeft:clip.left,clipRight:clip.right};
    });
    assert.equal(result.placement,expected);
-   assert.ok(result.top>=result.clipTop-1&&result.bottom<=result.clipBottom+1,'menu must fit vertically inside the transcript');
-   assert.ok(result.left>=result.clipLeft-1&&result.right<=result.clipRight+1,'menu must fit horizontally inside the transcript');
+   assert.ok(result.top>=result.clipTop-1&&result.bottom<=result.clipBottom+1,'menu must fit vertically inside the transcript: '+JSON.stringify(result));
+   assert.ok(result.left>=result.clipLeft-1&&result.right<=result.clipRight+1,'menu must fit horizontally inside the transcript: '+JSON.stringify(result));
    await p.click('#chat-messages .msg.user .msg-more');
   }
   await check('end','up');
   await check('start','down');
+  await p.$eval('#chat-messages .msg.user',message=>message.scrollIntoView({block:'center'}));
+  const target=await p.$eval('#chat-messages .msg.user .text',text=>text.getBoundingClientRect().toJSON());
+  const click={x:Math.round(target.left+Math.min(65,target.width/2)),y:Math.round(target.top+target.height/2)};
+  await p.mouse.click(click.x,click.y,{button:'right'});
+  const context=await p.$eval('#chat-messages .msg.user .msg-actions-menu',menu=>({hidden:menu.hidden,placement:menu.dataset.placement,rect:menu.getBoundingClientRect().toJSON()}));
+  assert.equal(context.hidden,false,'right-click opens the message actions');
+  assert.ok(Math.abs(context.rect.left-click.x)<5,'the menu opens at the horizontal click position');
+  assert.ok(context.placement==='up'?Math.abs(context.rect.bottom-click.y)<5:Math.abs(context.rect.top-click.y)<5,'the menu opens beside the vertical click position');
+  await p.screenshot({path:'/tmp/vmbox-chat-message-context-menu.png'});
   await p.close();
  });
 });
