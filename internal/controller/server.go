@@ -141,7 +141,7 @@ func (s *Server) Handler() http.Handler {
 	for _, asset := range []string{"xterm.js", "xterm-fit.js", "workspace-terminal.js", "novnc.js", "workspace-desktop.js", "markdown.js"} {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/javascript; charset=utf-8", false))
 	}
-	for _, asset := range []string{"xterm.css", "workspace.css", "controller.css"} {
+	for _, asset := range []string{"xterm.css", "workspace.css", "controller.css", "login.css"} {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/css; charset=utf-8", false))
 	}
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal/stream", s.owner(s.webTerminal))

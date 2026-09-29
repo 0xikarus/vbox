@@ -43,20 +43,6 @@ body{max-width:none;margin:0;padding:0;height:100%;
 #chat-shell>#error:empty{display:none}
 #chat-shell>#error{margin:0;padding:.45rem .8rem;background:var(--warn);color:#fff;font-size:.85rem}
 
-/* ── login ───────────────────────────────────────────────────────────── */
-#login{position:fixed;inset:0;z-index:100;margin:0;display:flex;align-items:center;justify-content:center;
-  padding:1rem;background:hsl(0 0% 0% / 62%);backdrop-filter:blur(4px)}
-#login .login-card{width:min(24rem,100%);padding:1.5rem 1.3rem;background:var(--surface);
-  border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-pop);text-align:center}
-#login-mascot{width:6.5rem;height:6.5rem;margin:0 auto .3rem}
-#login h2{margin:.2rem 0;font-size:1.25rem;color:var(--ink)}
-#login p{margin:.35rem 0 1rem;color:var(--ink-soft);font-size:.85rem}
-#login label{display:block;font-size:.85rem;color:var(--ink-soft);text-align:left}
-#login input{display:block;width:100%;margin:.3rem 0 1rem;padding:.75rem .8rem;border:1px solid var(--line);
-  border-radius:var(--radius-sm);font:inherit;background:var(--bg);color:var(--ink)}
-#login button{width:100%;border:0;min-height:3rem;border-radius:var(--radius);padding:.7rem;
-  background:var(--accent);color:var(--accent-ink);font:inherit;font-weight:800;cursor:pointer}
-
 /* ── two screens, push navigation (mobile-first at every width) ──────── */
 #chat-app{flex:1;display:flex;min-height:0;position:relative;overflow:hidden}
 #chat-list{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;min-height:0;

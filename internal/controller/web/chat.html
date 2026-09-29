@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="/chat.css">
 <link rel="stylesheet" href="/ai-helper.css">
 <link rel="stylesheet" href="/idle-policy.css">
-<link rel="stylesheet" href="/workspace-nav.css">
+<link rel="stylesheet" href="/workspace-nav.css"><link rel="stylesheet" href="/login.css">
 </head>
 <body>
 <div id="chat-shell">
@@ -26,14 +26,16 @@
  <button id="refresh" class="workspace-nav-refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
 </header>
 
-<form id="login" hidden>
- <section class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
-  <div id="login-mascot" class="mascot-host" aria-hidden="true"></div>
-  <h2 id="login-title">Log in to vmbox</h2>
-  <p>Enter your controller token to continue.</p>
-  <label>Controller token <input name="token" type="password" autocomplete="current-password" required autofocus></label>
+<form id="login" hidden aria-labelledby="login-title">
+ <div class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
+  <div class="login-brand"><span class="login-mark" aria-hidden="true">v</span>vmbox</div>
+  <h1 id="login-title" class="login-title">Log in</h1>
+  <p class="login-copy">Enter your controller token to access your workspace.</p>
+  <label for="login-token">Controller token</label>
+  <input id="login-token" name="token" type="password" autocomplete="current-password" required autofocus>
+  <p id="login-error" class="login-error" role="alert"></p>
   <button type="submit">Log in</button>
- </section>
+ </div>
 </form>
 <p id="error" role="alert"></p>
 
