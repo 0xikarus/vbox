@@ -18,6 +18,20 @@ const fuzzReport=document.createElement('pre');
 fuzzReport.id='fuzz-report';
 fuzzReport.setAttribute('aria-live','polite');
 document.querySelector('#controls').after(fuzzReport);
+// Measure the longest almost straight arc, rather than just inspecting the SVG commands.
+// This also catches a flattened intermediate shape during a Motion path morph.
+function eyeStraightFraction(path){
+ const values=(path.getAttribute('d')||'').match(/-?\d+(?:\.\d+)?/g)?.map(Number);if(!values)return 0;
+ const count=(values.length-2)/6;
+ const points=Array.from({length:count},(_,i)=>({x:values[2+i*6+4],y:values[2+i*6+5]}));
+ const flat=points.map((p,i)=>{
+  const a=points[(i+count-1)%count],b=points[(i+1)%count];
+  const ax=p.x-a.x,ay=p.y-a.y,bx=b.x-p.x,by=b.y-p.y;
+  return Math.abs(Math.atan2(ax*by-ay*bx,ax*bx+ay*by))<.012;
+ });
+ let longest=0,run=0;for(let i=0;i<count*2;i++){run=flat[i%count]?Math.min(count,run+1):0;longest=Math.max(longest,run)}
+ return longest/count;
+}
 
 fuzzButton.onclick=async()=>{
  if(fuzzButton.disabled)return;
@@ -46,10 +60,11 @@ fuzzButton.onclick=async()=>{
   const particleOpacity=opacity(hero.particles);
   const particleAlphas=particleNodes.map(node=>particleOpacity*opacity(node));
   samples.push({
-   t:now-start,state:hero.signal,phase:hero.phase,
+   t:now-start,state:hero.signal,phase:hero.phase,smearActive:hero.smearActive||hero.stemSmear||hero.cometSmear?1:0,
    bodySegment:hero.motionSegments.body,eyeSegment:hero.motionSegments.eyes,
    gazeSegment:hero.motionSegments.gaze,dotsSegment:hero.motionSegments.dots,
    symbolSegment:hero.motionSegments.symbol,colorSegment:hero.motionSegments.color,
+   particlesSegment:hero.motionSegments.particles,
    bodyX:body.x,bodyY:body.y,bodyW:body.w,bodyH:body.h,
    bodyOpacity:opacity(hero.body),shapeOpacity:opacity(hero.shapePath),
    bodyFillOpacity:fillOpacity*opacity(hero.body)*opacity(hero.shapePath),
@@ -58,10 +73,14 @@ fuzzButton.onclick=async()=>{
    motionScaleX:motionScale.x,motionScaleY:motionScale.y,
    eyeLeftX:left.x,eyeLeftY:left.y,eyeLeftW:left.w,eyeLeftH:left.h,
    eyeLeftModelW:leftModel.w,eyeLeftModelH:leftModel.h,
+   eyeLeftStraight:eyeStraightFraction(hero.eyes[0]),
+   eyeLeftLidStraight:eyeStraightFraction(hero.lids[0]),
    eyeLeftOpacity:opacity(hero.eyes[0]),eyeLeftTilt:tilt(hero.tiltGroups[0]),
    eyeLeftLidOpacity:opacity(hero.lids[0]),
    eyeRightX:right.x,eyeRightY:right.y,eyeRightW:right.w,eyeRightH:right.h,
    eyeRightModelW:rightModel.w,eyeRightModelH:rightModel.h,
+   eyeRightStraight:eyeStraightFraction(hero.eyes[1]),
+   eyeRightLidStraight:eyeStraightFraction(hero.lids[1]),
    eyeRightOpacity:opacity(hero.eyes[1]),eyeRightTilt:tilt(hero.tiltGroups[1]),
    eyeRightLidOpacity:opacity(hero.lids[1]),eyesOpacity:opacity(hero.eyesGroup),
    dotsLeftR:radius(hero.dotLeft),dotsRightR:radius(hero.dotRight),
@@ -76,12 +95,15 @@ fuzzButton.onclick=async()=>{
   });
   if(now-start<60000){requestAnimationFrame(capture);return}
   clearInterval(fire);
-  const keys=Object.keys(samples[0]).filter(key=>typeof samples[0][key]==='number'&&key!=='t'&&!key.endsWith('Segment'));
+  const keys=Object.keys(samples[0]).filter(key=>typeof samples[0][key]==='number'&&key!=='t'&&key!=='smearActive'&&!key.endsWith('Segment')&&!key.endsWith('Straight'));
   const flags=[];
+  for(const sample of samples)for(const key of ['eyeLeftStraight','eyeRightStraight','eyeLeftLidStraight','eyeRightLidStraight'])
+   if(sample[key]>.1&&sample.eyesOpacity>.01&&(!key.includes('Lid')||sample[key.replace('Straight','Opacity')]>.01))
+    flags.push(`${(sample.t/1000).toFixed(2)}s ${key}: ${(sample[key]*100).toFixed(1)}% nearly straight`);
   const region=key=>key.startsWith('bodyFillR')||key.startsWith('bodyFillG')||key.startsWith('bodyFillB')?'colorSegment':
    key.startsWith('body')||key.startsWith('motion')?'bodySegment':
    key.startsWith('eye')?key.endsWith('X')||key.endsWith('Y')?'gazeSegment':'eyeSegment':
-   key.startsWith('dots')?'dotsSegment':key.startsWith('color')?'colorSegment':'symbolSegment';
+   key.startsWith('dots')?'dotsSegment':key.startsWith('particle')?'particlesSegment':key.startsWith('color')?'colorSegment':'symbolSegment';
   for(const key of keys){
    const delta=samples.slice(1).map((sample,i)=>Math.abs(sample[key]-samples[i][key])*
     Math.min(1,16.667/Math.max(1,sample.t-samples[i].t)));
@@ -92,13 +114,14 @@ fuzzButton.onclick=async()=>{
      flags.push(`${(samples[i+1].t/1000).toFixed(2)}s ${key}: ${old.toFixed(3)} → ${value.toFixed(3)}`);continue
     }
     if(key.startsWith('eye')&&!key.includes('Opacity')&&samples[i].eyesOpacity<.01&&samples[i+1].eyesOpacity<.01)continue;
-    if(samples[i][group]!==samples[i+1][group])continue;
+    if((key.startsWith('dots')||key.startsWith('body')||key==='stemH')&&(samples[i].smearActive||samples[i+1].smearActive))continue;
+    if(samples[i][group]!==samples[i+1][group]||samples[i].phase!==samples[i+1].phase)continue;
     const nearby=[];
-    for(let j=Math.max(0,i-3);j<Math.min(delta.length,i+4);j++)
-     if(j!==i&&delta[j]>1e-4&&samples[j][group]===samples[i][group]&&samples[j+1][group]===samples[i][group])nearby.push(delta[j]);
+    for(let j=Math.max(0,i-4);j<Math.min(delta.length,i+5);j++)
+     if(j!==i&&delta[j]>1e-4&&samples[j][group]===samples[i][group]&&samples[j+1][group]===samples[i][group]&&samples[j].phase===samples[i].phase)nearby.push(delta[j]);
     nearby.sort((a,b)=>a-b);
     const active=nearby.slice(Math.floor(nearby.length/2));
-    if(active.length<3)continue; // rapid interrupt: too few frames to establish a segment median
+    if(active.length<3)continue;
     const median=active[Math.floor(active.length/2)]||0;
     if(delta[i]>Math.max(3*median,pixelFloor))flags.push(`${(samples[i+1].t/1000).toFixed(2)}s ${key}: ${old.toFixed(3)} → ${value.toFixed(3)}`);
    }
