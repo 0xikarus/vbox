@@ -184,7 +184,7 @@ let deletePending=false;
 function statusLine(b){const phase=boxPhase(b.state);const hint=phase==='creating'?'being created; connect becomes available when it is running':phase==='transitioning'?'transitioning; this page updates automatically':phase==='deleting'?'being deleted':'';return [b.state,b.restorationState,b.failureReason,hint].filter(Boolean).join(' · ')}
 function applyBoxState(b){
  boxSummary=b;renderStats();
- $('#name').textContent=b.name;document.title='vmbox / workspace / '+b.name;
+ $('#name').textContent=b.name;document.title='vbox / workspace / '+b.name;
  const phase=boxPhase(b.state),owner=workspaceRole==='owner',connectable=phase==='running'||phase==='stopped'||phase==='failed';
  $('#status').textContent=statusLine(b);
  $('#connect').hidden=!connectable;

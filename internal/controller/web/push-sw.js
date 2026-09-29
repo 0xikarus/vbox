@@ -18,7 +18,7 @@ self.addEventListener('push', event => {
     const url=destination(data);
     const open = windows.find(client => client.visibilityState === 'visible' && client.url === url);
     if (open) { try { await open.focus(); } catch (e) { /* focus is best-effort */ } return; }
-    await self.registration.showNotification(data.title || 'vmbox agent', {
+    await self.registration.showNotification(data.title || 'vbox agent', {
       body: data.body || 'New reply',
       tag: 'vmbox-' + (data.box || data.url || 'chat'),
       renotify: true,
