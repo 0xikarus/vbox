@@ -48,7 +48,7 @@
    </div>
    <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
-  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"></div>
+  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"><button id="new-chat-group" type="button" title="New chat group">+ Group</button></div>
   <ul id="chat-entries"></ul>
   <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
  </aside>
@@ -246,12 +246,13 @@
  <div class="sheet-backdrop" data-close="box-instructions-modal"></div>
  <section class="sheet-card" role="dialog" aria-modal="true">
   <header><strong id="box-instructions-title">Instructions</strong><span class="spacer"></span><button type="button" data-close="box-instructions-modal" aria-label="Close">×</button></header>
+  <label>Box <select id="box-instructions-box"></select></label>
   <p id="box-instructions-current" class="hint"></p>
   <label>Preset <select id="box-instructions-preset"></select></label>
   <label>Markdown <textarea id="box-instructions-markdown" rows="6" maxlength="65536" spellcheck="false"></textarea></label>
   <div id="box-instructions-preview" class="md-preview"></div>
-  <details><summary>View effective AGENTS.md / CLAUDE.md</summary><pre id="box-instructions-effective" class="instruction-effective"></pre></details>
-  <button type="button" id="box-instructions-apply" class="primary">Apply instructions</button>
+  <details open><summary>Effective AGENTS.md / CLAUDE.md</summary><pre id="box-instructions-effective" class="instruction-effective"></pre></details>
+  <div class="instruction-actions"><button type="button" id="box-instructions-apply" class="primary">Apply instructions</button><button type="button" id="box-instructions-reset">Reset to vmbox defaults</button></div>
   <p id="box-instructions-status" role="status"></p>
  </section></div>
 
@@ -373,6 +374,7 @@
    <a href="/grid" data-owner-nav>Grid</a>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
+   <button id="agents-file-toggle" type="button">AGENTS.md</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>
    <button id="ai-settings-toggle" type="button" hidden>AI writing helper</button>
    <button id="install-app" type="button" hidden>Install Android app</button>
@@ -394,6 +396,15 @@
 
 <div id="menu-backdrop" hidden></div>
 <div id="row-menu" hidden role="menu"></div>
+<dialog id="chat-group-dialog" aria-labelledby="chat-group-dialog-title">
+ <form id="chat-group-form">
+  <h2 id="chat-group-dialog-title">New group</h2>
+  <p>Organize chats in your sidebar. Groups stay on this browser.</p>
+  <label for="chat-group-name">Group name</label>
+  <input id="chat-group-name" name="name" maxlength="48" required autocomplete="off">
+  <div class="chat-group-form-actions"><button id="chat-group-cancel" type="button">Cancel</button><button type="submit">Save group</button></div>
+ </form>
+</dialog>
 
 <div id="forward-menu" hidden role="menu"></div>
 <div id="chat-toasts" aria-live="polite"></div>

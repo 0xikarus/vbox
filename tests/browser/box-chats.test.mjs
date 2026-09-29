@@ -196,6 +196,81 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
  });
 });
 
+test('chat groups combine unread indicators, accept dragged chats, and persist collapse state',async()=>{
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:1200,height:800});
+  await page.goto(base+'/chat');
+  await page.waitForSelector('[data-pair-key]');
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.textContent==='1',{},a);
+  await page.click('[data-box-id="'+a+'"]',{button:'right'});
+  await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New group…').click());
+  await page.waitForSelector('#chat-group-dialog[open]');
+  await page.type('#chat-group-name','Projects');
+  await page.click('#chat-group-form button[type=submit]');
+  await page.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Projects');
+  assert.equal(await page.$eval('.chat-folder .unread',badge=>badge.textContent),'1');
+  await page.$eval('[data-pair-key]',row=>{
+   const transfer=new DataTransfer();
+   row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));
+   const target=document.querySelector('.chat-folder');
+   target.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+   target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+   row.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));
+  });
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='2');
+  assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'2');
+  await page.click('.chat-folder-toggle');
+  assert.equal(await page.$('[data-box-id="'+a+'"]'),null);
+  assert.equal(await page.$('[data-pair-key]'),null);
+  assert.equal(await page.$eval('.chat-folder .unread',badge=>badge.textContent),'2','collapsed groups keep their unread indicator');
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='2');
+  assert.equal(await page.$eval('.chat-folder-toggle',button=>button.getAttribute('aria-expanded')),'false');
+  await page.type('#chat-filter','Projects');
+  await page.waitForSelector('[data-pair-key]');
+  assert.ok(await page.$('[data-box-id="'+a+'"]'),'searching a group reveals its members');
+  await page.$eval('#chat-filter',input=>{input.value='';input.dispatchEvent(new Event('input',{bubbles:true}))});
+  await page.waitForFunction(()=>!document.querySelector('[data-pair-key]'));
+  await page.click('.chat-folder-toggle');
+  await page.click('[data-box-id="'+a+'"]',{button:'right'});
+  await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Pin chat').click());
+  assert.equal(await page.$eval('#chat-entries li:first-child',node=>node.textContent),'Pinned');
+  assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'1','pinning removes the chat from its group');
+  await page.click('.chat-folder-menu');
+  await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Rename group…').click());
+  await page.waitForSelector('#chat-group-dialog[open]');
+  await page.$eval('#chat-group-name',input=>{input.value='Reviewed';input.dispatchEvent(new Event('input',{bubbles:true}))});
+  await page.click('#chat-group-form button[type=submit]');
+  assert.equal(await page.$eval('.chat-folder-name',node=>node.textContent),'Reviewed');
+  page.once('dialog',dialog=>dialog.accept());
+  await page.click('.chat-folder-menu');
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Delete group…').click());
+  await page.waitForFunction(()=>!document.querySelector('.chat-folder'));
+  assert.ok(await page.$('[data-pair-key]'),'deleting a group returns its chats to the list');
+  await page.close();
+
+  const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
+  await mobile.goto(base+'/chat');
+  await mobile.waitForSelector('[data-pair-key]');
+  const point=await mobile.$eval('[data-pair-key]',row=>{const rect=row.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2}});
+  await mobile.touchscreen.touchStart(point.x,point.y);
+  await new Promise(resolve=>setTimeout(resolve,650));
+  await mobile.touchscreen.touchEnd();
+  await mobile.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  await mobile.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New group…').click());
+  await mobile.type('#chat-group-name','Mobile');
+  await mobile.click('#chat-group-form button[type=submit]');
+  await mobile.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Mobile');
+  await mobile.click('.chat-folder-toggle');
+  assert.equal(await mobile.$('[data-pair-key]'),null);
+  assert.equal(await mobile.$eval('.chat-folder .unread',badge=>badge.textContent),'1');
+  await mobile.close();
+ });
+});
+
 test('old box conversation links open the unified mobile chat',async()=>{
  await withChat(async(browser,base)=>{
   const page=await browser.newPage();await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});

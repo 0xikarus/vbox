@@ -52,14 +52,18 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-list-head{display:flex;align-items:center;gap:.6rem;padding:.7rem .8rem .1rem}
 #chat-list-head h1{margin:0;font-size:1.45rem;font-weight:800;letter-spacing:-.02em}
 #chat-list-head p{margin:.1rem 0 0;color:var(--ink-soft);font-size:.8rem}
-#chat-filter-row{padding:.45rem .7rem .5rem;flex:none}
-#chat-filter{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius-sm);
+#chat-filter-row{padding:.45rem .7rem .5rem;flex:none;display:flex;align-items:center;gap:.45rem}
+#chat-filter{flex:1;min-width:0;box-sizing:border-box;border:1px solid var(--line);border-radius:var(--radius-sm);
   background:var(--surface);color:var(--ink);padding:.6rem .9rem;font:inherit;font-size:.95rem}
 #chat-filter::placeholder{color:var(--ink-soft)}
+#new-chat-group{flex:none;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface2);color:var(--ink);padding:.55rem .65rem;min-height:2.5rem;font:inherit;font-size:.8rem;font-weight:700;cursor:pointer}
+#new-chat-group:hover{background:var(--accent-soft)}
 #chat-entries{list-style:none;margin:0;padding:.15rem .45rem 5.5rem;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
 #chat-entries li{display:flex;gap:.6rem;align-items:center;padding:.55rem .5rem;cursor:pointer;
   border-radius:var(--radius);border:1px solid transparent;position:relative;transition:background .14s,border-color .14s}
 #chat-entries li:hover{background:var(--surface2)}
+#chat-entries li.drop-target{background:var(--accent-soft);outline:2px dashed var(--accent)}
+#chat-entries li.dragging{opacity:.45}
 #chat-entries li.active{background:var(--surface);border-color:var(--accent);box-shadow:var(--shadow)}
 .conversation-group{padding:.9rem .7rem .35rem!important;cursor:default!important;border:0!important;color:var(--ink-soft);font-size:.68rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .conversation-group:hover{background:none!important}
@@ -901,6 +905,10 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 #chat-toasts .toast{pointer-events:none}
 #chat-toasts .toast .toast-action{pointer-events:auto}
 .instruction-effective{white-space:pre-wrap;overflow-wrap:anywhere;max-height:22rem;overflow:auto;padding:.75rem;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);font-size:.78rem;text-transform:none}
+.instruction-actions{display:flex;gap:.55rem;align-items:center;flex-wrap:wrap}
+.instruction-actions button{margin:0}
+#box-instructions-reset{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2);color:var(--ink);padding:.55rem .75rem;font:inherit;font-weight:700;cursor:pointer}
+#box-instructions-reset:hover{background:var(--accent-soft)}
 
 /* Quiet workspace: one visual language for chat, controls, and sheets. */
 #chat-shell{font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -924,6 +932,27 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 #chat-entries li{gap:.7rem;padding:.67rem .6rem;border:0;border-radius:var(--radius);margin-bottom:.16rem}
 #chat-entries li.active{background:var(--accent-soft);box-shadow:none}
 #chat-entries li:hover{background:#243243}
+#chat-entries li.chat-folder{gap:.25rem;padding:.24rem .35rem;margin:.5rem 0 .12rem;background:var(--surface2);border:1px solid var(--line);cursor:default}
+#chat-entries li.chat-folder:hover{background:var(--accent-soft)}
+#chat-entries li.chat-folder.drop-target{outline:2px dashed var(--accent)}
+.chat-folder-toggle,.chat-folder-menu{border:0;background:none;color:var(--ink);cursor:pointer;font:inherit}
+.chat-folder-toggle{display:flex;align-items:center;gap:.4rem;min-width:0;flex:1;padding:.37rem .25rem;text-align:left;font-size:.78rem;font-weight:750}
+.chat-folder-arrow{flex:none;color:var(--ink-soft);width:.8rem}
+.chat-folder-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-folder-count{color:var(--ink-soft);font-size:.69rem}
+.chat-folder-toggle .unread{margin-left:auto}
+.chat-folder-menu{flex:none;padding:.28rem .45rem;border-radius:var(--radius-sm);font-size:1.1rem;line-height:1}
+.chat-folder-menu:hover{background:var(--surface)}
+#chat-group-dialog{box-sizing:border-box;width:min(24rem,calc(100vw - 2rem));border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop);padding:1.2rem}
+#chat-group-dialog::backdrop{background:rgba(0,0,0,.65)}
+#chat-group-dialog form{display:flex;flex-direction:column;gap:.7rem}
+#chat-group-dialog h2{margin:0;font-size:1.1rem}
+#chat-group-dialog p{margin:0;color:var(--ink-soft);font-size:.8rem}
+#chat-group-dialog label{font-size:.8rem;font-weight:700}
+#chat-group-name{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:var(--radius-sm);padding:.6rem .7rem;background:var(--surface2);color:var(--ink);font:inherit}
+.chat-group-form-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.4rem}
+.chat-group-form-actions button{border:1px solid var(--line);border-radius:var(--radius-sm);padding:.55rem .75rem;background:var(--surface2);color:var(--ink);font:inherit;cursor:pointer}
+.chat-group-form-actions button[type=submit]{background:var(--accent);color:var(--accent-ink)}
 #chat-entries .avatar{width:2.75rem;height:2.75rem;border-radius:.4rem}
 #chat-entries .avatar .dot{width:.7rem;height:.7rem;border-color:var(--surface)}
 .chat-meta .name{font-size:.87rem;font-weight:720}
