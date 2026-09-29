@@ -9,18 +9,11 @@
  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const eyePath=p=>`M${p[0]} ${p[1]} C${p[2]} ${p[3]} ${p[4]} ${p[5]} ${p[6]} ${p[7]}`;
  const eyeLine=(cx,cy,length,angle)=>{const a=angle*Math.PI/180,dx=Math.cos(a)*length/2,dy=Math.sin(a)*length/2,x1=cx-dx,y1=cy-dy,x2=cx+dx,y2=cy+dy;return `M${x1.toFixed(3)} ${y1.toFixed(3)} C${(x1+(x2-x1)/3).toFixed(3)} ${(y1+(y2-y1)/3).toFixed(3)} ${(x1+2*(x2-x1)/3).toFixed(3)} ${(y1+2*(y2-y1)/3).toFixed(3)} ${x2.toFixed(3)} ${y2.toFixed(3)}`};
- const rawEyesFor=(mood,variant='A')=>{const spread=variant==='C'?1:0,L=39-spread,R=61+spread,lo=53;const line=(cx,side=1)=>[cx-2.5,lo-6*side,cx-5/6,lo-2*side,cx+5/6,lo+2*side,cx+2.5,lo+6*side];switch(mood){
-  case 'curious':return [[L-.35,lo,L-.15,lo+.2,L+.15,lo+.2,L+.35,lo],[R-.35,lo,R-.15,lo+.2,R+.15,lo+.2,R+.35,lo]];
-  case 'wink':return [line(L,1),[R-5,lo,R-2,lo,R+2,lo,R+5,lo]];
-  case 'excited':return [[L-3.2,lo-9,L-2,lo-4,L+2,lo+4,L+3.2,lo+9],[R-3.2,lo-9,R-2,lo-4,R+2,lo+4,R+3.2,lo+9]];
-  case 'working':return [[L-5,lo-1,L-2,lo-3,L+2,lo-2,L+5,lo],[R-5,lo,R-2,lo-2,R+2,lo-3,R+5,lo-1]];
-  case 'waiting':return [line(L+2,1).map((v,i)=>i%2?v-8:v),line(R+2,-1).map((v,i)=>i%2?v-8:v)];
-  case 'happy':return [[L-6,lo+3,L-3,lo-12,L+3,lo-12,L+6,lo+3],[R-6,lo+3,R-3,lo-12,R+3,lo-12,R+6,lo+3]];
-  case 'laughing':return [[L-6,lo-7,L+3,lo-2,L+3,lo+1,L-6,lo+7],[R+6,lo-7,R-3,lo-2,R-3,lo+1,R+6,lo+7]];
-  case 'angry':return [[L-6,lo-8,L-3,lo-5,L+3,lo+1,L+6,lo+4],[R-6,lo+4,R-3,lo+1,R+3,lo-5,R+6,lo-8]];
-  case 'sleeping':return [[L-6,lo+1,L-2,lo+1,L+2,lo+1,L+6,lo+1],[R-6,lo+1,R-2,lo+1,R+2,lo+1,R+6,lo+1]];
-  case 'waking':return [line(L,1),line(R,1)];
-  default:return variant==='C'?[[L,49,L-1,53,L+1,61,L,65],[R,49,R-1,53,R+1,61,R,65]]:[line(L,1),line(R,1)];}};
+ const rawEyesFor=(mood,variant='A')=>{const spread=variant==='C'?1:0,L=39-spread,R=61+spread,lo=53;
+  const line=(cx,length=1,dy=0)=>{const x=2.5*length,y=6*length;return [cx-x,lo+dy-y,cx-x/3,lo+dy-y/3,cx+x/3,lo+dy+y/3,cx+x,lo+dy+y]};
+  const poses={curious:[.045,.045],wink:[1,.28],excited:[1.45,1.45],working:[.9,.9],waiting:[.85,.85],happy:[.68,.68],laughing:[.52,.52],angry:[.8,.8],sleeping:[.28,.28],waking:[1,1]};
+  const lengths=poses[mood]||[1,1];return [line(L,lengths[0]),line(R,lengths[1])];
+ };
  const eyesFor=(mood,variant='A',t=null)=>rawEyesFor(mood,variant).map((p,j)=>p.map((v,i)=>i%2===0?(j?61:39)+(v-(j?61:39))*.8+(j?1:-1)*(t?.eyeSpread||0)+2.5:52.5+(v-57)*(variant==='C'?.72:.64)+(j?1:-1)*(t?.eyeTilt||0)*(v-(j?61:39))));
  const MOOD_GLYPH={angry:'error'};
  const EXTRA_EVENT={DONE:['happy','happy'],PRAISE:['happy','happy'],THANKS:['happy','happy'],APPROVAL:['waiting',null],NEEDS_ATTENTION:['waiting',null],CRASH:['angry','error'],FAILED:['angry','error'],RETRY:['waiting',null],RESTART:['waking','surprised'],CLEAR_CONTEXT:['waking','surprised'],NEW_CHAT:['waking','surprised'],USAGE:['idle',null]};
@@ -105,7 +98,8 @@
    if(this.dead||quiet())return;
    if(this.blinking){this.pendingLook=[x,y,duration];return}
    this.gazeUntil=performance.now()+duration*1000+30;
-   const from=this.look.slice();this.track(animate(0,1,{duration,ease:'easeInOut',onUpdate:t=>{this.look=[from[0]+(x-from[0])*t,from[1]+(y-from[1])*t];this.updateFaceTransform()}}))
+   const from=this.look.slice(),generation=(this.gazeGeneration||0)+1;this.gazeGeneration=generation;const lag=Math.min(.025,.012/duration);
+   const control=this.track(animate(0,1,{duration,ease:'easeInOut',onUpdate:t=>{if(generation!==this.gazeGeneration)return;this.look=[from[0]+(x-from[0])*t,from[1]+(y-from[1])*t];this.updateFaceTransform();const delayed=Math.max(0,(t-lag)/(1-lag));this.eyes[0].removeAttribute('transform');this.eyes[1].setAttribute('transform','translate('+((x-from[0])*(delayed-t)).toFixed(3)+' '+((y-from[1])*(delayed-t)).toFixed(3)+')')}}));control.finished.then(()=>{if(generation===this.gazeGeneration)for(const eye of this.eyes)eye.removeAttribute('transform')}).catch(()=>{})
   }
   setEyes(mood,expression,instant=false){
    if(this.blinking&&!instant){this.pendingEyes=[mood,expression];return}
@@ -113,23 +107,30 @@
    this.expression=expression;this.svg.dataset.expression=expression||'';
    for(const control of this.eyeControls||[])control.stop?.();this.eyeControls=[];
    const target=eyesFor(mood,this.appearance.eyes||this.traits.eyes,this.traits);
+   const widths={curious:9,wink:9,excited:8.5,working:9,waiting:9,happy:7.5,laughing:8,angry:9,sleeping:9,waking:9};const width=widths[mood]||9;
    if(!instant)this.eyeMorphUntil=performance.now()+330;
-   for(let i=0;i<2;i++){const eye=this.eyes[i],to=eyePath(target[i]);if(instant)eye.setAttribute('d',to);else this.eyeControls.push(this.track(animate(eye.getAttribute('d'),to,{duration:.3,ease:'easeInOut',onUpdate:v=>eye.setAttribute('d',v)})))}
+   for(let i=0;i<2;i++){const eye=this.eyes[i],to=eyePath(target[i]);if(instant){eye.setAttribute('d',to);eye.style.strokeWidth=width}else{this.eyeControls.push(this.track(animate(eye.getAttribute('d'),to,{duration:.3,ease:'easeInOut',onUpdate:v=>eye.setAttribute('d',v)})));this.eyeControls.push(this.track(animate(parseFloat(getComputedStyle(eye).strokeWidth)||9,width,{duration:.3,ease:'easeInOut',onUpdate:v=>eye.style.strokeWidth=v.toFixed(3)})))}}
    const newMarkup=glyphMarkup(expression);this.glyphHost.setAttribute('opacity','1');
    if(instant){this.glyphHost.innerHTML=newMarkup;this.eyesGroup.setAttribute('opacity',expression?'0':'1');return}
    const old=this.glyphHost.firstElementChild;if(newMarkup){const wrap=document.createElementNS('http://www.w3.org/2000/svg','g');wrap.innerHTML=newMarkup;wrap.setAttribute('opacity','0');this.glyphHost.append(wrap);this.fade(wrap,1,.22).then(()=>{if(!this.dead)old?.remove()})}else if(old)this.fade(old,0,.22).then(()=>old.remove());
    this.fade(this.eyesGroup,expression?0:1,.22)
   }
-  paintBlink(progress){
-   this.blinkScale=1-progress;
-   for(let i=0;i<2;i++){
-    const eye=this.eyes[i],p=this.blinkParams?.[i];if(!p)continue;
-    const length=p.length+(p.closedLength-p.length)*progress;
-    const thickness=p.thickness+(p.closedThickness-p.thickness)*progress;
-    const angle=p.angle*(1-progress);
-    eye.setAttribute('d',eyeLine(p.cx,p.cy,length,angle));
-    eye.style.setProperty('stroke-width',thickness.toFixed(3))
-   }
+  paintBlink(progress,index){
+   const eye=this.eyes[index],p=this.blinkParams?.[index];if(!p)return;
+   const length=p.length+(p.closedLength-p.length)*progress;
+   eye.setAttribute('d',eyeLine(p.cx,p.cy,length,p.angle));
+  }
+  blinkEye(index,generation,offset=0,hold=.04){
+   const p=this.blinkParams[index],variation=index===0?1:1.04;
+   return new Promise(resolve=>this.timer(()=>{
+    if(generation!==this.blinkGeneration||this.dead)return resolve();
+    const close=this.track(animate(0,1,{duration:.09*variation,ease:t=>t*t*t,onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v,index)}}));
+    close.finished.then(()=>this.timer(()=>{
+     if(generation!==this.blinkGeneration||this.dead)return resolve();
+     const open=this.track(animate(1,0,{duration:.15/variation,ease:t=>1-(1-t)*(1-t)*(1-t),onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v,index)}}));
+     open.finished.then(()=>{if(generation===this.blinkGeneration){this.paintBlink(0,index);this.eyes[index].setAttribute('d',p.original)}resolve()}).catch(resolve);
+    },hold*1000)).catch(resolve);
+   },offset*1000));
   }
   resetBlink(){this.blinkGeneration++;this.blinking=false;this.blinkQueued=false;this.blinkScale=1;if(this.blinkParams)for(let i=0;i<2;i++)this.eyes[i].setAttribute('d',this.blinkParams[i].original);this.blinkParams=null;for(const eye of this.eyes){eye.style.removeProperty('stroke-width');eye.style.removeProperty('transition')}this.pendingEyes=null;this.pendingLook=null}
   tint(mood){return mood==='sleeping'?'#9EA7BB':mood==='angry'?'#FF6F59':this.traits.color}
@@ -162,29 +163,25 @@
   showExpression(expression){return this.jump(this.state,expression,this.signal)}
   jump(mood,expression=MOOD_GLYPH[mood]||null,signal=null){if(this.dead||!MOODS.includes(mood))return false;const next=signal||({working:'busy',waiting:'asking',happy:'unread',angry:'failed',sleeping:'sleeping',waking:'starting'}[mood]||'idle');if(this.cometActive){this.pendingPose=[mood,expression,next];return true}if(this.state===mood&&this.signal===next&&this.phase==='settled')return false;const old=this.signal,flowing=this.phase==='settled'&&((old==='idle'&&next==='busy'&&this.busyMode==='ball')||(old==='busy'&&this.busyMode==='ball'&&next==='idle'));this.state=mood;this.expression=expression;this.signal=next;this.svg.dataset.mood=mood;this.svg.dataset.signal=next;this.svg.setAttribute('aria-label',mood+' mascot');this.busyRemaining=this.busyInterval;if(flowing){this.resetBlink();this.updateFaceTransform();clearTimeout(this.busyTimer);this.busyTimer=null;this.setColor(mood);this.setEyes('idle',null);if(next==='busy')this.scheduleBusy()}else void this.startSignal();this.onMood?.(mood,this);return true}
   updateVisibility(){if(this.dead)return;if(quiet()||!this.visible){this.pauseBusy();for(const c of this.controls)c.pause?.();if(quiet()){this.needsResume=true;this.stopControls();this.resetBlink();this.clearTimers();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58);this.phase='settled'}}else{if(this.needsResume){void this.startSignal();return}for(const c of this.controls)c.play?.();if(this.signal==='busy'&&this.phase==='settled')this.scheduleBusy();this.scheduleBlink();this.scheduleGlance()}}
-  blink(allowDouble=true){
+  blink(allowDouble=true,wink=false){
    if(this.dead||quiet()||!this.visible||this.signal!=='idle'||this.phase!=='settled')return false;
    if(this.blinking||this.eyeMomentActive||performance.now()<this.eyeMorphUntil||performance.now()<this.gazeUntil){
-    if(!this.blinkQueued){this.blinkQueued=true;this.timer(()=>{this.blinkQueued=false;this.blink(allowDouble)},180)}return false
+    if(!this.blinkQueued){this.blinkQueued=true;this.timer(()=>{this.blinkQueued=false;this.blink(allowDouble,wink)},180)}return false
    }
    this.blinking=true;const generation=++this.blinkGeneration;
    this.blinkDriftX=.8*Math.sin(this.breathPhase*.8+this.traits.phase);
    this.blinkDriftY=.45*Math.sin(this.breathPhase*.62+this.traits.phase);
-   this.blinkParams=this.eyes.map(eye=>{const total=eye.getTotalLength(),a=eye.getPointAtLength(0),b=eye.getPointAtLength(total),thickness=parseFloat(getComputedStyle(eye).strokeWidth)||9,length=Math.hypot(b.x-a.x,b.y-a.y);return {original:eye.getAttribute('d'),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,length,thickness,angle:Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI,closedLength:.7*thickness+.35*length,closedThickness:.55*thickness}});
+   this.blinkParams=this.eyes.map((eye,i)=>{const total=eye.getTotalLength(),a=eye.getPointAtLength(0),b=eye.getPointAtLength(total),length=Math.hypot(b.x-a.x,b.y-a.y);return {original:eye.getAttribute('d'),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,length,angle:Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI,closedLength:length*(i===0?.28:.29)}});
    for(const eye of this.eyes)eye.style.setProperty('transition','none');
-   const close=this.track(animate(0,1,{duration:.1,ease:t=>t*t*t,onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v)}}));
-   close.finished.then(()=>{if(generation!==this.blinkGeneration||this.dead)return;this.timer(()=>{
-    if(generation!==this.blinkGeneration||this.dead)return;
-    const open=this.track(animate(1,0,{duration:.16,ease:t=>1-(1-t)*(1-t),onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v)}}));
-    open.finished.then(()=>{if(generation!==this.blinkGeneration||this.dead)return;this.blinking=false;this.paintBlink(0);for(let i=0;i<2;i++){this.eyes[i].setAttribute('d',this.blinkParams[i].original);this.eyes[i].style.removeProperty('stroke-width');this.eyes[i].style.removeProperty('transition')}this.blinkParams=null;
-     const eyes=this.pendingEyes,look=this.pendingLook;this.pendingEyes=null;this.pendingLook=null;if(eyes)this.setEyes(...eyes);if(look)this.lookTo(...look);
-     if(allowDouble&&hash(this.seed+Date.now())%5===0)this.timer(()=>this.blink(false),250)
-    }).catch(()=>{})
-   },50)}).catch(()=>{});return true
+   const jobs=wink?[this.blinkEye(1,generation,0,.25)]:[this.blinkEye(0,generation),this.blinkEye(1,generation,.025,.043)];
+   Promise.all(jobs).then(()=>{if(generation!==this.blinkGeneration||this.dead)return;this.blinking=false;for(let i=0;i<2;i++){this.eyes[i].setAttribute('d',this.blinkParams[i].original);this.eyes[i].style.removeProperty('transition')}this.blinkParams=null;
+    const eyes=this.pendingEyes,look=this.pendingLook;this.pendingEyes=null;this.pendingLook=null;if(eyes)this.setEyes(...eyes);if(look)this.lookTo(...look);
+    if(allowDouble&&!wink&&hash(this.seed+Date.now())%5===0)this.timer(()=>this.blink(false),250)
+   }).catch(()=>{});return true
   }
   scheduleBlink(){if(this.blinkTimer||this.dead)return;const delay=this.blinkedYet?2800+hash(this.seed+Date.now())%700:1400+hash(this.seed)%1300;this.blinkTimer=setTimeout(()=>{this.blinkTimer=null;if(!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){this.blinkedYet=true;this.blink()}this.scheduleBlink()},delay)}
   scheduleGlance(){if(this.glanceTimer||this.dead)return;this.glanceTimer=setTimeout(()=>{this.glanceTimer=null;if(!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){const n=hash(this.seed+Date.now());if(++this.glanceCount%3===0){this.lookTo(-7,-1,.42);this.timer(()=>this.lookTo(7,-1,.52),450);this.timer(()=>this.lookTo(0,0,.43),1100)}else{this.lookTo((n%5-2)*3.5,((n>>>4)%5-2)*1.15,.16);this.timer(()=>this.lookTo(0,0,.42),330)}}this.scheduleGlance()},800+hash(this.seed+Date.now())%1400)}
-  scheduleExpression(){if(this.expressionTimer||this.dead||quiet()||!this.visible||this.signal!=='idle')return;const delay=6000+hash(this.seed+'expression'+this.expressionCount++)%6001;this.expressionTimer=setTimeout(()=>{this.expressionTimer=null;if(!this.dead&&!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){const choices=['happy','wink','curious','excited'];const choice=choices[hash(this.seed+'moment'+this.expressionCount)%choices.length];this.eyeMomentActive=true;this.setEyes(choice,null);this.timer(()=>{if(!this.dead&&this.signal==='idle'){this.setEyes('idle',null);this.eyeMomentActive=false;this.scheduleExpression()}},850+hash(this.seed+'hold'+this.expressionCount)%450)}else this.scheduleExpression()},delay)}
+  scheduleExpression(){if(this.expressionTimer||this.dead||quiet()||!this.visible||this.signal!=='idle')return;const delay=6000+hash(this.seed+'expression'+this.expressionCount++)%6001;this.expressionTimer=setTimeout(()=>{this.expressionTimer=null;if(!this.dead&&!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){const choices=['happy','wink','curious','excited'];const choice=choices[hash(this.seed+'moment'+this.expressionCount)%choices.length];this.eyeMomentActive=true;if(choice==='wink'){this.eyeMomentActive=false;this.blink(false,true);this.eyeMomentActive=true}else this.setEyes(choice,null);this.timer(()=>{if(!this.dead&&this.signal==='idle'){this.setEyes('idle',null);this.eyeMomentActive=false;this.scheduleExpression()}},850+hash(this.seed+'hold'+this.expressionCount)%450)}else this.scheduleExpression()},delay)}
   render(instant){if(instant){this.stopControls();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58)}}
   destroy(){if(this.dead)return;this.dead=true;this.token++;this.stopControls();this.clearTimers();clearTimeout(this.blinkTimer);clearTimeout(this.glanceTimer);clearTimeout(this.expressionTimer);this.host.removeEventListener('pointermove',this.pointerMove);this.host.removeEventListener('pointerleave',this.pointerLeave);observer?.unobserve(this.svg);active.delete(this);this.svg.remove()}
  }
