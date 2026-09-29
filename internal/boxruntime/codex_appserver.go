@@ -268,7 +268,7 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 // Other failures are ambiguous and must be reconciled by exact message ID.
 func codexSubmitVisibleInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {
 	result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
-	if codexQueueMethodUnavailable(err, "thread/turns/list") {
+	if codexQueueMethodUnavailable(err, "thread/turns/list") || codexUnmaterializedThread(err) {
 		return codexQueueInput(ctx, client, thread, messageID, text, images)
 	}
 	if err != nil {
@@ -352,6 +352,12 @@ func codexStartQueuedIfIdle(ctx context.Context, client *codexClient, thread str
 	if codexQueueMethodUnavailable(err, "thread/turns/list") {
 		return nil
 	}
+	if codexUnmaterializedThread(err) {
+		// The visible TUI's fresh zero-turn thread is not persisted yet.
+		// Its first queued input must start before turns can be listed.
+		err = nil
+		busy = false
+	}
 	if err != nil || busy {
 		return err
 	}
@@ -386,6 +392,10 @@ func codexStartQueuedIfIdle(ctx context.Context, client *codexClient, thread str
 
 func codexQueueMethodUnavailable(err error, method string) bool {
 	return err != nil && strings.Contains(err.Error(), "unknown variant `"+method+"`")
+}
+
+func codexUnmaterializedThread(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "thread/turns/list is unavailable before first user message")
 }
 
 // ConfirmCodexChat probes an earlier ambiguous handoff without submitting it
