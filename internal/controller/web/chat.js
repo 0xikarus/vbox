@@ -206,18 +206,20 @@
  const MACHINE=window.VBoxMascot.MACHINE;
  class Mascot extends window.VBoxMascot.Mascot{}
  function boxMascotPose(box){
-  if(box.state==='hibernated')return ['sleeping',null];
-  if(box.state==='failed')return ['angry','sad'];
-  if(box.processing)return ['working',null];
-  if(box.unread)return ['happy',null];
-  return [box.state==='running'?'idle':'waking',null];
+  if(box.state==='hibernated')return ['sleeping','sleeping','sleeping'];
+  if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','error'];
+  const lastQuestion=[...(box.messages||[])].reverse().find(message=>message.direction!=='user'&&message.question&&!questionAnswered(box,message));
+  if(lastQuestion)return ['waiting','waiting','question'];
+  if(box.processing)return ['working','focused','thinking'];
+  if(box.unread)return ['happy','happy','plane'];
+  return box.state==='running'?['idle',null,null]:['waking','surprised','coffee'];
  }
  function syncAvatarMascot(avatar,box){
   if(!avatar)return;
   const mascot=avatar.querySelector('.avatar-mascot svg')?.__vboxMascot;
   if(!mascot)return;
-  const [mood,expression]=boxMascotPose(box);
-  if(mascot.state!==mood||mascot.expression!==expression)mascot.jump(mood,expression);
+  const [mood,expression,prop]=boxMascotPose(box);
+  if(mascot.state!==mood||mascot.expression!==expression||mascot.prop!==prop)mascot.jump(mood,expression,prop);
   avatar.dataset.state=box.state;
   avatar.querySelector('.dot')?.classList.toggle('running',box.state==='running');
  }
@@ -443,7 +445,7 @@
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
   wrap.dataset.avatar=box.id;wrap.dataset.state=box.state;
-  const base=document.createElement('span');base.className='avatar-mascot';new Mascot(base,box.id);const [mood,expression]=boxMascotPose(box);if(mood!=='idle'||expression)base.querySelector('svg').__vboxMascot.jump(mood,expression);
+  const base=document.createElement('span');base.className='avatar-mascot';new Mascot(base,box.id);const [mood,expression,prop]=boxMascotPose(box);if(mood!=='idle'||expression||prop)base.querySelector('svg').__vboxMascot.jump(mood,expression,prop);
   wrap.append(base);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
@@ -1007,7 +1009,7 @@
   }
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
-   const mini=document.createElement('span');mini.className='processing-mascot';new Mascot(mini,box.id);mini.querySelector('svg').__vboxMascot.jump('working');
+   const mini=document.createElement('span');mini.className='processing-mascot';new Mascot(mini,box.id);mini.querySelector('svg').__vboxMascot.act('thinking');
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
