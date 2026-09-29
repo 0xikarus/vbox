@@ -30,7 +30,7 @@ vmbox connect https://YOUR-CONTROLLER
 vmbox whoami
 ```
 
-To host your own controller, follow [controller operations](docs/CONTROLLER.md). To add workers on a Linux server, follow the [Linux VPS guide](docs/LINUX-VPS-SETUP.md). A controller owner must configure a worker pool and free capacity before boxes can start:
+To host your own controller, follow [controller operations](docs/CONTROLLER.md). Choose a [worker provider](docs/PROVIDERS.md); for self-hosted Linux workers, follow the [Linux VPS guide](docs/LINUX-VPS-SETUP.md). A controller owner must configure a worker pool and free capacity before boxes can start:
 
 ```bash
 vmbox pools create

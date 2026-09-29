@@ -6,13 +6,15 @@ The UID and bubblewrap modes documented below remain available separately.
 
 `shared-worker` is an opt-in provider for trusted boxes belonging to one account.
 One Linux worker hosts N logical compute slots, each running at most one box.
-Existing Railway and Docker providers are unchanged. This is process hosting,
-not Docker-in-Docker, Railway Sandboxes, or a security sandbox.
+The UID and namespace modes start processes in one worker environment; the
+container mode described in the Linux VPS guide gives each box its own Docker
+container. Choose the isolation tier for the workloads sharing that host.
 
 ## Deployment
 
-Run `/usr/local/bin/vmbox-shared-worker` as root using the normal desktop image.
-Attach one permanent volume at `/data`. Configure:
+For the UID and namespace modes, run `/usr/local/bin/vmbox-shared-worker` as
+root using the normal desktop image. Attach one permanent volume at `/data`.
+Configure:
 
 - `VMBOX_WORKER_MODE=shared`: select the supervisor at container startup.
 - `VMBOX_SHARED_ACCOUNT_ID`: the controller account UUID.
@@ -25,7 +27,8 @@ Register a controller provider credential with provider `shared-worker`, a uniqu
 alias for this physical worker, config `{"endpoint":"https://WORKER_HOST"}`, and
 secret `{"token":"WORKER_TOKEN"}`. Set the alias's fleet desired slot count to N,
 not exceeding the worker capacity. Do not register the same host under multiple
-aliases. The worker must not receive the controller database or Railway token.
+aliases. The worker must not receive the controller database or another
+provider's management credentials.
 
 On startup, retained workspace identities are validated and their Unix accounts
 and directories are prepared before the worker serves health or execution requests.
@@ -37,7 +40,7 @@ sessions are not duplicated. Files survive restarts; terminated processes are no
 resurrected, and a fresh managed agent can be started when reconnecting.
 
 The controller manages logical slot and directory IDs through this provider;
-these IDs are never passed to Railway as service or volume IDs. Deleting a box
+they are separate from another provider's service or volume IDs. Deleting a box
 deletes only its directory, not the worker or permanent volume. Creating boxes,
 hibernating, resuming and changing desired slots within configured capacity do
 not redeploy the physical worker. Additional physical workers currently require
@@ -128,47 +131,23 @@ sibling, and shared CPU/memory/network remain shared. A `uid` box must never be
 described as isolated, even when its private directories are DAC-protected.
 Neither tier is a security sandbox against hostile tenants.
 
-### What the namespace tier needs, and what Railway allows
+### Namespace tier host requirements
 
-The `namespace` tier is implemented and its sandbox is verified, but it **cannot
-activate on Railway**. Probed on a live production shared worker, every namespace
-primitive is refused, including as root:
+The `namespace` tier needs user, mount and PID namespaces, plus `bwrap`.
+Installing `bwrap` alone is not enough: a host's container policy may block
+namespace creation. Startup probes the actual primitives and records why `auto`
+falls back to `uid`. Never claim namespace isolation from an image setting or
+an untested host capability.
 
-```
-Seccomp:  2
-CapEff:   00000000800405fb      # no CAP_SYS_ADMIN (bit 21)
-
-bwrap --unshare-user --unshare-pid ...   Creating new namespace failed: Permission denied
-unshare --user                           Permission denied
-unshare --pid / --mount / --ipc / --uts  Operation not permitted
-```
-
-The kernel permits namespaces (`max_user_namespaces` is large,
-`unprivileged_userns_clone=1`) and `bwrap` is installed; the container runtime's
-seccomp filter and the missing `CAP_SYS_ADMIN` are what block it. So on Railway
-`ProbeCapabilities` reports every primitive unavailable and `SelectIsolation`
-degrades every box to `uid` with a recorded reason. That is the intended,
-honest behavior — but it means **shared workers on Railway provide soft isolation
-only**, and the namespace tier stays inert until the host permits nested
-namespaces (a privileged container, sysbox, or a VM-backed runner).
-
-The sandbox itself is verified, on a host where namespaces are permitted, using
-the argv this code actually generates:
-
-```
-own_tmp=BOX1PRIVATE                                     # the box's own tmp, not a shared one
-visible_pids=5                                          # its own PID namespace
-sibling_secret=/data/workspaces/box2/secret.txt: No such file or directory
-sibling_dir=ls: cannot access '/data/workspaces': No such file or directory
-```
-
-Before enabling the tier on any host, run `tests/shared-worker/probe.sh` and
-`tests/shared-worker/isolation.sh` there; both must pass on that host first.
+Before enabling the tier on a host, run `tests/shared-worker/probe.sh` and
+`tests/shared-worker/isolation.sh` there. Both must pass on that host. If the
+host forbids namespaces, use the container-per-box path in the
+[Linux VPS guide](LINUX-VPS-SETUP.md) when stronger separation is needed.
 
 ### Soft isolation: what `uid` actually gives you
 
-This is what a box on a Railway shared worker gets today. Measured on a live
-worker as one box's user against a sibling box:
+The `uid` tier relies on filesystem permissions. A typical worker has these
+boundaries; verify them on the host you use:
 
 | | |
 | --- | --- |
@@ -190,18 +169,8 @@ Run `bash tests/shared-worker/run.sh` with Docker and Go available. Optionally s
 uses and removes explicitly disposable worker and PostgreSQL containers. It checks
 two simultaneous desktops/screenshots, distinct users/files/tmux state, controller
 creation and runtime staging, authenticated CLI relay, hibernate/resume and deletion
-without disrupting the sibling box. It does not contact production or Railway.
+without disrupting the sibling box. It does not contact a production provider.
 Set `VMBOX_TEST_SHARED_BLENDER=1` with the bundled image to additionally install
 and restore the preset in both workspaces, run two real Blender GUI instances,
 query their distinct scenes through MCP, and recheck the sibling after stopping
 the first workspace.
-
-The broader physical-worker inventory, autoscaling, quotas and recovery roadmap
-remains in [the shared-slot proposal](SHARED-WORKER-SLOTS-PLAN.md). The provider
-described here is the implemented first step, not completion of that entire plan.
-
-Production verification on 2026-09-16: Railway service `vmbox-shared-01`, controller
-alias `shared-worker/shared-01`, has two healthy logical slots. Two explicitly
-disposable boxes simultaneously ran separate desktops and returned real PNG
-screenshots; reconnecting each reused its existing shell session. Both test boxes
-were queued for deletion afterwards. Existing dedicated workers were not restarted.
