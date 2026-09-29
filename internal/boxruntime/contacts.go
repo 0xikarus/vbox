@@ -14,6 +14,7 @@ import (
 type ContactSummary struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Group      string `json:"group,omitempty"`
 	Agent      string `json:"agent,omitempty"`
 	State      string `json:"state,omitempty"`
 	CanMessage bool   `json:"canMessage"`

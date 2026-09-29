@@ -33,3 +33,14 @@ func TestResolveContactAcceptsCompactIDNameOrIncomingFullID(t *testing.T) {
 		t.Fatal("the full ID bypassed a blocked contact")
 	}
 }
+
+func TestDesktopContactLineShowsGroupWithoutBreakingRows(t *testing.T) {
+	line := desktopContactLine(ContactSummary{ID: "a1b2c3d4", Name: "CodeChecker", Group: "Review\nTeam", Agent: "codex", State: "running", CanMessage: true})
+	if line != `- id a1b2c3d4 | name CodeChecker | group "Review\nTeam" | agent codex | running | message true` {
+		t.Fatalf("contact line=%q", line)
+	}
+	line = desktopContactLine(ContactSummary{ID: "deadbeef", Name: "Builder", CanMessage: true})
+	if line != "- id deadbeef | name Builder | group none | agent  | unknown | message true" {
+		t.Fatalf("ungrouped contact line=%q", line)
+	}
+}

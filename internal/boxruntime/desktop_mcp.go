@@ -45,7 +45,7 @@ func desktopMCPTools() []map[string]any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	return []map[string]any{
-		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns a compact id, exact box name, agent, state and whether messaging is allowed. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns a compact id, exact box name, chat group, agent, state and whether messaging is allowed. Groups are owner-organized labels and do not grant access. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
 		makeTool("get_run_budget", "Get this box's durable run-time budget. The countdown advances only while the box is allocated and is separate from desktop inactivity.", map[string]any{}),
 		makeTool("get_thread_history", "Read a paginated direct or shared-chat thread this box already has access to. Pass chatId for a shared-chat thread. A thread reference alone never grants access.", map[string]any{"threadId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "before": map[string]any{"type": "string"}, "beforeId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "threadId"),
 		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
@@ -75,6 +75,18 @@ func desktopMCPTools() []map[string]any {
 		makeTool("type_text", "Type ordinary literal text in the focused application. Use the secret service for credentials.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
 		makeTool("press_keys", "Press a shortcut: keys contains modifiers and a key, e.g. [ctrl,l] or [Return].", map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
 	}
+}
+
+func desktopContactLine(contact ContactSummary) string {
+	state := contact.State
+	if state == "" {
+		state = "unknown"
+	}
+	group := "none"
+	if contact.Group != "" {
+		group = strconv.Quote(contact.Group)
+	}
+	return fmt.Sprintf("- id %s | name %s | group %s | agent %s | %s | message %t", contact.ID, contact.Name, group, contact.Agent, state, contact.CanMessage)
 }
 
 type desktopToolPolicyResolver func(context.Context, string) (map[string]bool, error)
@@ -490,11 +502,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		var lines []string
 		for _, contact := range contacts {
-			state := contact.State
-			if state == "" {
-				state = "unknown"
-			}
-			lines = append(lines, fmt.Sprintf("- id %s | name %s | agent %s | %s | message %t", contact.ID, contact.Name, contact.Agent, state, contact.CanMessage))
+			lines = append(lines, desktopContactLine(contact))
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
 	}

@@ -291,14 +291,56 @@ func (s *Store) ContactEntries(ctx context.Context, accountID, boxID string) ([]
 		return nil, err
 	}
 	values := []v1.ContactEntry{}
+	contactIDs := []string{}
 	shortIDs := shortContactIDs(views)
 	for _, view := range views {
 		if !view.CanMessage {
 			continue
 		}
 		values = append(values, v1.ContactEntry{ID: shortIDs[view.ContactBoxID], Name: view.ContactName, Roles: view.ContactRoles, Agent: view.ContactAgent, State: view.ContactState, CanMessage: true, Reason: view.Reason})
+		contactIDs = append(contactIDs, view.ContactBoxID)
+	}
+	if len(values) == 0 {
+		return values, nil
+	}
+	groups, err := s.contactGroupNames(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	for index := range values {
+		values[index].Group = groups[contactIDs[index]]
 	}
 	return values, nil
+}
+
+func (s *Store) contactGroupNames(ctx context.Context, accountID string) (map[string]string, error) {
+	var groupsJSON, membersJSON []byte
+	err := s.DB.QueryRowContext(ctx, `SELECT groups_json,members_json FROM chat_sidebar_layouts WHERE account_id=$1`, accountID).Scan(&groupsJSON, &membersJSON)
+	if errors.Is(err, sql.ErrNoRows) {
+		return map[string]string{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var groups []chatSidebarGroup
+	var members map[string]string
+	if err := json.Unmarshal(groupsJSON, &groups); err != nil {
+		return nil, fmt.Errorf("invalid saved chat groups: %w", err)
+	}
+	if err := json.Unmarshal(membersJSON, &members); err != nil {
+		return nil, fmt.Errorf("invalid saved chat group members: %w", err)
+	}
+	names := make(map[string]string, len(groups))
+	for _, group := range groups {
+		names[group.ID] = group.Name
+	}
+	result := map[string]string{}
+	for key, groupID := range members {
+		if strings.HasPrefix(key, "box:") && names[groupID] != "" {
+			result[strings.TrimPrefix(key, "box:")] = names[groupID]
+		}
+	}
+	return result, nil
 }
 
 // shortContactIDs keeps internal UUIDs out of agent context. Eight hexadecimal

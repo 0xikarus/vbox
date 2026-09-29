@@ -33,6 +33,7 @@ type PutBoxContactRequest struct {
 type ContactEntry struct {
 	ID         string             `json:"id"`
 	Name       string             `json:"name"`
+	Group      string             `json:"group,omitempty"`
 	Roles      []AgentRoleSummary `json:"roles"`
 	Agent      string             `json:"agent,omitempty"`
 	State      string             `json:"state,omitempty"`
