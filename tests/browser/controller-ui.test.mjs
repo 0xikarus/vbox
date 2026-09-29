@@ -731,9 +731,9 @@ test('fleet locations load on demand and preserve occupied fleets on rejection',
 test('instruction presets preview safely, bound size, and apply explicitly to boxes',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#instruction-list table');
+ await page.waitForSelector('#instruction-list .preset-list');
  assert.match(await page.$eval('#instruction-list',element=>element.textContent),/general/);
- assert.match(await page.$eval('#instruction-list',element=>element.textContent),/default/);
+ assert.match(await page.$eval('#instruction-list',element=>element.textContent),/Default/);
  // The creation form offers automatic, none, every preset, and a custom copy.
  await page.evaluate(()=>{document.querySelector('#create-instructions-editor').open=true});
  assert.deepEqual(await page.$$eval('#create-instructions option',nodes=>nodes.map(node=>node.value)),['auto','none','__concise__','general','custom']);

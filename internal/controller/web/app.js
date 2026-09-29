@@ -355,10 +355,10 @@ function renderPermissionBoxes(boxes){
  for(const box of visible){
   const card=node('article');card.className='role-assignment-card';card.dataset.state=box.state;card.dataset.roleBoxId=box.id;
   const summary=node('div');summary.className='role-assignment-summary';
-  const mark=node('span',(box.name||'?').slice(0,1).toUpperCase());mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');
-  const identity=node('div');identity.className='role-assignment-identity';identity.append(node('small','BOX / AGENT'),node('strong',box.name));const meta=node('div');meta.className='role-box-meta';const agent=node('span',box.defaultAgent||'agent');agent.className='role-agent-badge';const state=node('span',box.state);state.className='role-state-badge';meta.append(agent,state);identity.append(meta);
+  const mark=node('span');mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');mark.innerHTML='<span class="role-box-screen"></span><span class="role-box-mascot">'+blobSVG(box.id)+'</span>';
+  const identity=node('div');identity.className='role-assignment-identity';identity.append(node('strong',box.name));const meta=node('div');meta.className='role-box-meta';const agent=node('span',box.defaultAgent||'agent');agent.className='role-agent-badge';const state=node('span',box.state);state.className='role-state-badge';meta.append(agent,state);identity.append(meta);
   const current=node('div');current.className='role-assignment-current';current.append(node('span','Direct MCP permissions and contacts'));
-  const actions=node('div');actions.className='role-assignment-actions';const manage=button('Edit permissions',()=>openBoxPolicyEditor(box));manage.classList.add('role-assignment-toggle');const contacts=node('a','Manage contacts');contacts.className='role-assignment-toggle';contacts.href='/chat#box='+encodeURIComponent(box.id);actions.append(manage,contacts);
+  const actions=node('div');actions.className='role-assignment-actions';const manage=button('Edit permissions',()=>openBoxPolicyEditor(box));manage.classList.add('role-assignment-toggle','vb-secondary');const more=node('details');more.className='role-box-more';const moreSummary=node('summary');moreSummary.setAttribute('aria-label','More for '+box.name);moreSummary.innerHTML=ICON_MORE;const contacts=node('a','Manage contacts');contacts.href='/chat#box='+encodeURIComponent(box.id);more.append(moreSummary,contacts);actions.append(manage,more);
   summary.append(mark,identity,current,actions);card.append(summary);list.append(card);
  }
  root.append(list);
@@ -451,7 +451,7 @@ async function loadAgentCLIVersionChoices(version){
   renderAgentCLIVersionChoice(agent,selected,result.status==='fulfilled'?result.value:null);
   if(result.status==='rejected')failed.push(agent);
  }
- if(failed.length)$('#agent-cli-versions-status').textContent='Could not load published versions for '+failed.join(', ')+'. Use Refresh to retry; saved choices remain available.';
+ if(failed.length){const status=$('#agent-cli-versions-status');status.replaceChildren();const icon=node('span','⚠');icon.className='notice-icon';const msg=node('span','Could not load published versions for '+failed.join(', ')+'. Saved choices remain available. ');const retry=button('Retry',()=>$('#refresh')?.click());retry.classList.add('notice-retry');status.append(icon,msg,retry);}
 }
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
@@ -508,19 +508,26 @@ function applyInstructionPresets(list){
 }
 function renderInstructionList(){
  const root=$('#instruction-list');root.replaceChildren();
- if(!instructionPresets.presets.length){root.append(node('p','No instruction presets yet. Create one below to reuse Markdown guidance across boxes.'));return}
- const wrap=node('div');wrap.className='table-wrap';const table=document.createElement('table');table.className='markets';
- const head=node('tr');['Name','Revision','Size','Default','Updated','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
+ if(!instructionPresets.presets.length){root.append(node('p','No instruction presets yet. Create one to reuse Markdown guidance across boxes.'));return}
+ const friendly=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return '—';const now=new Date(),same=d.toDateString()===now.toDateString();const time=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return same?'Today, '+time:d.toLocaleDateString([],{day:'numeric',month:'short'})+', '+time};
+ const list=node('div');list.className='preset-list';
  for(const preset of instructionPresets.presets){
-  const row=node('tr');row.className='row';
-  row.append(node('td',preset.name),node('td','r'+preset.revision),node('td',preset.sizeBytes+' B'),node('td',preset.default?'yes':'no'),node('td',new Date(preset.updatedAt).toLocaleString()));
-  const actions=node('td');
-  if(ownerTools)actions.append(button('Edit',()=>void editInstructionPreset(preset.name)),button(preset.default?'Clear default':'Set default',()=>setInstructionDefault(preset.default?'':preset.name)),trashButton('Delete instruction preset '+preset.name,()=>deleteInstructionPreset(preset)));
-  else actions.append(node('span','—'));
-  row.append(actions);table.append(row);
+  const row=node('article');row.className='preset-row';row.dataset.presetName=preset.name;
+  const main=node('div');main.className='preset-main';
+  const title=node('div');title.className='preset-title';title.append(node('strong',preset.name));
+  if(preset.default){const pill=node('span','Default');pill.className='pill';title.append(pill)}
+  const meta=node('small',['r'+preset.revision,preset.sizeBytes+' B','updated '+friendly(preset.updatedAt)].join(' · '));meta.className='preset-meta';
+  main.append(title,meta);
+  const actions=node('div');actions.className='preset-actions';
+  if(ownerTools){
+   actions.append(button('Edit',()=>void editInstructionPreset(preset.name)));
+   const more=node('details');more.className='row-overflow';const summary=node('summary');summary.setAttribute('aria-label','More for '+preset.name);summary.innerHTML=ICON_MORE;const menu=node('div');menu.className='row-overflow-menu';menu.append(button(preset.default?'Clear default':'Set default',()=>setInstructionDefault(preset.default?'':preset.name)),trashButton('Delete instruction preset '+preset.name,()=>deleteInstructionPreset(preset)));more.append(summary,menu);actions.append(more);
+  } else actions.append(node('span','—'));
+  row.append(main,actions);list.append(row);
  }
- wrap.append(table);root.append(wrap);
+ root.append(list);
 }
+document.getElementById('instruction-new')?.addEventListener('click',()=>{const editor=$('#instruction-editor');if(!editor)return;editor.open=true;editor.scrollIntoView({behavior:'smooth',block:'nearest'});const field=editor.querySelector('input[name=name]');if(field)field.focus()});
 async function editInstructionPreset(name){
  const form=$('#instruction-form'),status=$('#instruction-status');
  try{const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;$('#instruction-editor').open=true;renderInstructionPreview();status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.'}
