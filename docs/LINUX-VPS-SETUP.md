@@ -85,7 +85,7 @@ not a replacement for the VPS's general ingress firewall.
 
 On your **workstation**, `vmbox whoami --json` supplies your controller account ID.
 Only that ID belongs on the worker—not your controller login token, database
-credentials or Railway credentials.
+credentials or another provider's management credentials.
 
 On the VPS, enter the account ID, desired capacity and selected worker image
 when this script prompts. The script refuses to overwrite an existing config.

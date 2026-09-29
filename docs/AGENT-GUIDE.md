@@ -66,16 +66,13 @@ The controller polls about every 30 minutes; owners can request an immediate
 refresh through the POST endpoint. The cached owner view never wakes a box and
 identifies the result source.
 
-The [direct-worker rollout](RAILWAY-DIRECT-WORKERS.md) keeps worker hosting on
-Railway. Each enrolled box has an authenticated worker agent; the controller sends
-terminal, desktop, file and runtime traffic through that agent. Railway APIs and
-SSH remain infrastructure/bootstrap paths, including initial installation and
-compute replacement. An enrolled worker that is offline does not fall back to
-Railway SSH for ordinary box traffic. The controller validates assignment,
-connection epoch and tmux server incarnation on the direct path. The
-[acceptance audit](DIRECT-WORKER-ACCEPTANCE.md) separates local coverage from
-unfinished live verification. [Railway independence](RAILWAY-INDEPENDENCE.md) is
-a separate external-host proposal, not a dependency of this rollout.
+Dedicated Railway workers can use an authenticated worker agent for terminal,
+desktop, file and runtime traffic. Railway APIs and SSH remain infrastructure
+and bootstrap paths. An enrolled worker that is offline does not fall back to
+SSH for ordinary box traffic. The controller validates assignment, connection
+epoch and tmux server incarnation on the direct path. Self-hosted shared workers
+use their own supervisor transport. See [worker providers](PROVIDERS.md) for the
+supported hosting paths.
 
 ## Grid implementation and invariants
 
@@ -312,7 +309,7 @@ response rejection, mobile stacking, and absence of lifecycle API writes.
 
 The grid test requires native `tmux`, `script`, and Chromium (default
 `/snap/bin/chromium`, override `VMBOX_CHROMIUM`). Its metadata/API and SSH bridge
-are local test plumbing, not a four-worker Railway end-to-end test. Desktop
+are local test plumbing, not a real-provider end-to-end test. Desktop
 emulation is not proof of a real mobile keyboard or clipboard. Keep these limits
 explicit when reporting results. A desktop screenshot is written to
 `/tmp/vmbox-grid-desktop.png` for visual inspection.

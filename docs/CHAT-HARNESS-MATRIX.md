@@ -159,12 +159,3 @@ Start/Deliver/Confirm/Reset/Restore while keeping the transport files separate.
   supported client versions using isolated disposable boxes.
 - Verify native handling of multiple Claude image paths. Codex and OpenCode
   submit each image as a native image or file part.
-
-See [CHAT-DELIVERY-RESILIENCE-TODO.md](CHAT-DELIVERY-RESILIENCE-TODO.md) for
-failure-recovery evidence and older verification history.
-
-## OpenCode repeat audit, 2026-09-27
-
-Two further disposable production boxes used the saved OpenRouter profile with GLM 5.3 Flash. Both answered the same first-message prompt through a linked `chat_message` MCP call. Box A also sent a linked follow-up, restored its saved conversation after hibernation, and answered again after its TUI process was closed and reopened on that session. Box B switched its visible TUI to a new conversation and back; native OpenCode records show completed MCP tool parts for `READY` and `BACK` in the original session and `NEW_THREAD` in the new session. Both boxes were deleted after the checks.
-
-The earlier text-only MCP syntax response was not reproduced in these checks. Its cause remains unconfirmed; a text part containing tool syntax does not count as a tool call or a Chat reply.
