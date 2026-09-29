@@ -7,7 +7,7 @@
  * BODY any -> asking         SEND, signal=asking          .32s dot, .28s stem shot, dot-pivot spring; bob every 2.5s
  * BODY any -> unread         DONE/PRAISE, unread          .08s anticipate, .34s morph, notice pop
  * BODY any -> failed         ERROR, signal=failed         .32s dot, .35s stem shot, heavier dot-pivot spring
- * BODY asking/failed -> any  next signal, stem visible     .08s stretch, .2s collapse, .34s ball return
+ * BODY asking/failed -> any  next signal, stem visible     .08s stretch, .06s gap close, .2s collapse, .34s ball return
  * BODY any -> hibernated     SLEEP, signal=sleeping       .34s soft sink and eye close
  * BODY hibernated -> waking  WAKE/WORK, signal=starting   .15s inhale, .44s grow, .3s spring settle
  * BODY any -> idle           STOP/CALM/READY/SETTLE      .34s return morph, pop, settle
@@ -70,7 +70,7 @@
  const glyphMarkup=kind=>kind?`<g class="vbox-mascot-glyphs" stroke="#fff" stroke-width="4.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><g transform="translate(36 57)">${glyphOne(kind,0)}</g><g transform="translate(64 57)">${glyphOne(kind,1)}</g></g>`:'';
  const POINTS=64;
  const circlePoints=(radius=36,cx=50,cy=52)=>Array.from({length:POINTS},(_,i)=>{const a=-Math.PI/2+i*2*Math.PI/POINTS;return [cx+radius*Math.cos(a),cy+radius*Math.sin(a)]});
- const stemPath=t=>{const bottom=78,top=bottom-59*t,w=5*t,b=2.4*t,r=4*t;return `M${(50-w).toFixed(2)} ${(top+r).toFixed(2)} Q${(50-w).toFixed(2)} ${top.toFixed(2)} 50 ${top.toFixed(2)} Q${(50+w).toFixed(2)} ${top.toFixed(2)} ${(50+w).toFixed(2)} ${(top+r).toFixed(2)} L${(50+b).toFixed(2)} ${bottom.toFixed(2)} Q50 ${(bottom+3*t).toFixed(2)} ${(50-b).toFixed(2)} ${bottom.toFixed(2)} Z`};
+ const stemPath=(t,detach=0)=>{const bottom=82-15*detach,top=bottom-48*t,w=5*t,b=3.125*t,r=4*t,cap=6*detach;return `M${(50-w).toFixed(2)} ${(top+r).toFixed(2)} Q${(50-w).toFixed(2)} ${top.toFixed(2)} 50 ${top.toFixed(2)} Q${(50+w).toFixed(2)} ${top.toFixed(2)} ${(50+w).toFixed(2)} ${(top+r).toFixed(2)} L${(50+b).toFixed(2)} ${bottom.toFixed(2)} Q50 ${(bottom+cap).toFixed(2)} ${(50-b).toFixed(2)} ${bottom.toFixed(2)} Z`};
  const pointsPath=pts=>{let d=`M${pts[0][0].toFixed(2)} ${pts[0][1].toFixed(2)}`;for(let i=0;i<pts.length;i++){const p0=pts[(i-1+pts.length)%pts.length],p1=pts[i],p2=pts[(i+1)%pts.length],p3=pts[(i+2)%pts.length];d+=` C${(p1[0]+(p2[0]-p0[0])/6).toFixed(2)} ${(p1[1]+(p2[1]-p0[1])/6).toFixed(2)} ${(p2[0]-(p3[0]-p1[0])/6).toFixed(2)} ${(p2[1]-(p3[1]-p1[1])/6).toFixed(2)} ${p2[0].toFixed(2)} ${p2[1].toFixed(2)}`}return d+' Z'};
  // Every eye outline has the same 64 curved segments, including morphs and lids.
  const eyeOutline=(cx,cy,w,h,bend=0)=>pointsPath(Array.from({length:POINTS},(_,i)=>{const a=i*2*Math.PI/POINTS,x=Math.cos(a)*w/2,y=Math.sin(a)*h/2;return [cx+x,cy+y+bend*(1-(2*x/w)**2)]}));
@@ -107,8 +107,8 @@
    host.innerHTML=svg(seed,'idle',false,{...appearance,animated:true});
    this.svg=host.querySelector('svg');if(host.classList.contains('avatar-mascot')||host.classList.contains('processing-mascot'))this.svg.classList.add('vbox-mascot-mini');this.svg.__vboxMascot=this;
    this.motion=this.svg.querySelector('.vbox-mascot-motion');this.bangRig=this.svg.querySelector('.vbox-mascot-bang-rig');this.body=this.svg.querySelector('.vbox-mascot-body');this.dotRig=this.svg.querySelector('.vbox-mascot-dot-rig');this.shapePath=this.svg.querySelector('.vbox-mascot-shape');this.highlight=this.svg.querySelector('.vbox-mascot-highlight');this.eyesGroup=this.svg.querySelector('.vbox-mascot-eyes');this.eyes=[...this.svg.querySelectorAll('.vbox-mascot-eye')];this.blinkGroups=[...this.svg.querySelectorAll('.eye-blink')];this.tiltGroups=[...this.svg.querySelectorAll('.eye-tilt')];this.shapeGroups=[...this.svg.querySelectorAll('.eye-shape')];this.lids=[...this.svg.querySelectorAll('.eye-lid')];this.eyeCenters=eyesFor('idle',this.appearance.eyes||this.traits.eyes,this.traits).map(eyeGeometry);this.glyphHost=this.svg.querySelector('.vbox-mascot-glyph-host');this.blush=this.svg.querySelector('.vbox-mascot-blush');this.dots=this.svg.querySelector('.vbox-mascot-dots');this.dotLeft=this.svg.querySelector('.vbox-mascot-dot-left');this.dotRight=this.svg.querySelector('.vbox-mascot-dot-right');this.notice=this.svg.querySelector('.vbox-mascot-notice');this.noticeScale=0;this.setNoticeScale(0);this.bangStem=this.svg.querySelector('.vbox-mascot-bang-stem');this.particles=this.svg.querySelector('.vbox-mascot-particles');this.cometTrail=this.svg.querySelector('.vbox-mascot-comet');this.speedLines=this.svg.querySelector('.vbox-mascot-speed-lines');
-   this.paths={home:pointsPath(circlePoints(39)),bangDot:pointsPath(circlePoints(4,50,82)),dot:pointsPath(circlePoints(5))};this.glanceCount=0;this.blinkedYet=false;this.expressionCount=0;
-   this.breathPhase=this.traits.phase;this.breathSpeed=2*Math.PI/3.6;this.breathAccel=0;this.formAngle=0;this.bangAngle=0;this.stemProgress=0;this.dotX=1;this.dotY=1;this.bangSignal=null;this.bangWiggleActive=false;this.faceScale=1;this.faceRadius=39;this.blinkScale=1;this.blinking=false;this.blinkGeneration=0;this.blinkQueued=false;this.eyeMorphUntil=0;this.gazeUntil=0;this.pendingLook=null;this.pendingEyes=null;this.dotCenterRadius=5;this.lastFrame=0;
+   this.paths={home:pointsPath(circlePoints(39)),bangDot:pointsPath(circlePoints(5,50,82)),dot:pointsPath(circlePoints(5))};this.glanceCount=0;this.blinkedYet=false;this.expressionCount=0;
+   this.breathPhase=this.traits.phase;this.breathSpeed=2*Math.PI/3.6;this.breathAccel=0;this.formAngle=0;this.bangAngle=0;this.stemProgress=0;this.stemDetach=0;this.dotX=1;this.dotY=1;this.bangSignal=null;this.bangWiggleActive=false;this.faceScale=1;this.faceRadius=39;this.blinkScale=1;this.blinking=false;this.blinkGeneration=0;this.blinkQueued=false;this.eyeMorphUntil=0;this.gazeUntil=0;this.pendingLook=null;this.pendingEyes=null;this.dotCenterRadius=5;this.lastFrame=0;
    this.chart={body:'idle',eyes:'default',gaze:'ahead'};this.motionSegments={body:0,eyes:0,gaze:0,dots:0,symbol:0,color:0,particles:0};this.scanBlend=0;this.idleDriftBlend=1;this.currentPath=this.paths.home;this.setPath(this.paths.home);this.look=[0,0];this.wasMounted=false;this.setEyes('idle',null,true);
    this.pointerMove=e=>{if(quiet()||!this.visible||host.getBoundingClientRect().width<120||this.expression)return;const r=host.getBoundingClientRect();this.lookTo(((e.clientX-r.left)/r.width-.5)*14,((e.clientY-r.top)/r.height-.5)*6,.22,'cursor')};
    this.pointerLeave=()=>this.lookTo(0,0,.3,'ahead');
@@ -256,8 +256,8 @@
   tint(mood){return mood==='sleeping'?'#9EA7BB':mood==='angry'?'#FF6F59':this.traits.color}
   setColor(mood,instant=false){this.motionSegments.color++;const to=this.tint(mood),from=this.shapePath.getAttribute('fill'),apply=v=>{this.shapePath.setAttribute('fill',v);this.dotLeft.setAttribute('fill',v);this.dotRight.setAttribute('fill',v);this.bangStem.setAttribute('fill',v)};if(instant)apply(to);else this.track(animate(from,to,{duration:MOTION.eye.duration,ease:smoother,onUpdate:apply}))}
   setNoticeScale(value){this.noticeScale=value;this.notice.setAttribute('transform','translate(79 22) scale('+value.toFixed(4)+') translate(-79 -22)')}
-  setStem(value){this.stemProgress=value;this.bangStem.setAttribute('d',stemPath(value));this.stemSmear=!!(this.stemAnimating&&value>.52&&value<.68);this.bangStem.setAttribute('transform',this.stemSmear?'translate(50 76) scale(.85 1.1765) translate(-50 -76)':'')}
-  paintSymbolPose(pose){if(pose.d!==this.currentPath)this.setPath(pose.d);if(pose.stem!==this.stemProgress)this.setStem(pose.stem);if(pose.angle!==this.bangAngle){this.bangAngle=pose.angle;this.setBangTransform(pose.angle)}if(pose.dotX!==this.dotX||pose.dotY!==this.dotY)this.setDotTransform(pose.dotX,pose.dotY)}
+  setStem(value,detach){this.stemProgress=value;if(detach===undefined){const u=Math.min(1,Math.max(0,value/.4));detach=u*u*(3-2*u)}this.stemDetach=Math.min(1,Math.max(0,detach));this.bangStem.setAttribute('d',stemPath(value,this.stemDetach));this.stemSmear=!!(this.stemAnimating&&value>.52&&value<.68);this.bangStem.setAttribute('transform',this.stemSmear?'translate(50 82) scale(.85 1.1765) translate(-50 -82)':'')}
+  paintSymbolPose(pose){if(pose.d!==this.currentPath)this.setPath(pose.d);if(pose.stem!==this.stemProgress||pose.detach!==this.stemDetach)this.setStem(pose.stem,pose.detach);if(pose.angle!==this.bangAngle){this.bangAngle=pose.angle;this.setBangTransform(pose.angle)}if(pose.dotX!==this.dotX||pose.dotY!==this.dotY)this.setDotTransform(pose.dotX,pose.dotY)}
   paintCometPose(pose){
    if(pose.d!==this.currentPath)this.setPath(pose.d);
    const t=Math.max(0,Math.min(1,pose.travel)),arc=Math.sin(Math.PI*t),x=74*arc,y=-11*arc-2*Math.sin(2*Math.PI*t);
@@ -269,11 +269,12 @@
   animateStem(to,duration=MOTION.stem.duration){this.motionSegments.symbol++;const from=this.stemProgress;const control=this.track(animate(from,to,{duration,ease:smooth,onUpdate:v=>this.setStem(v)}));this.stemControl=control;this.stemAnimating=true;return control.finished.catch(()=>{}).finally(()=>{if(this.stemControl===control){this.stemAnimating=false;this.motionSegments.symbol++}})}
   async buildBang(token,signal){
    const failed=signal==='failed',rest=failed?-8:0,impact=failed?-18:12,spring=failed?MOTION.bang.heavy:MOTION.bang.spring;
-   const pose=this.symbolPose={d:this.currentPath,stem:this.stemProgress,angle:this.bangAngle,dotX:this.dotX,dotY:this.dotY};
+   const pose=this.symbolPose={d:this.currentPath,stem:this.stemProgress,detach:this.stemDetach,angle:this.bangAngle,dotX:this.dotX,dotY:this.dotY};
    this.stemAnimating=true;this.motionSegments.body++;this.motionSegments.symbol++;
    const build=this.track(animate([
     [pose,{d:this.paths.bangDot},{duration:.32,ease:smooth}],
     [pose,{stem:[pose.stem,failed?1.12:1.15]},{at:.2,duration:failed?.35:.28,ease:MOTION.snap.ease}],
+    [pose,{detach:[pose.detach,1]},{at:.2,duration:failed?.14:.112,ease:smooth}],
     [pose,{stem:[failed?1.12:1.15,1]},{at:failed?.55:.48,...spring}],
     [pose,{angle:[pose.angle,impact]},{at:failed?.5:.42,duration:.07,ease:smooth}],
     [pose,{angle:[impact,rest]},{at:failed?.57:.49,...spring}],
@@ -291,7 +292,7 @@
   }
   async bobBang(token,signal){
    const rest=signal==='failed'?-8:0,spring=signal==='failed'?MOTION.bang.heavy:MOTION.bang.spring;
-   const pose=this.symbolPose={d:this.currentPath,stem:this.stemProgress,angle:this.bangAngle,dotX:this.dotX,dotY:this.dotY};
+   const pose=this.symbolPose={d:this.currentPath,stem:this.stemProgress,detach:this.stemDetach,angle:this.bangAngle,dotX:this.dotX,dotY:this.dotY};
    this.bangWiggleActive=true;this.motionSegments.symbol++;
    const bob=this.track(animate([
     [pose,{stem:[pose.stem,1.045]},{duration:.1,ease:smooth}],
@@ -306,21 +307,22 @@
    this.bangBobCount=(this.bangBobCount||0)+1;this.scheduleBangBob(token,signal)
   }
   async retractBang(token,nextSignal){
-   const pose=this.symbolPose={d:this.currentPath,stem:this.stemProgress,angle:this.bangAngle,dotX:this.dotX,dotY:this.dotY};
+   const pose=this.symbolPose={d:this.currentPath,stem:this.stemProgress,detach:this.stemDetach,angle:this.bangAngle,dotX:this.dotX,dotY:this.dotY};
    this.bangWiggleActive=true;this.stemAnimating=false;this.motionSegments.body++;this.motionSegments.symbol++;
    const retract=this.track(animate([
     [pose,{stem:[pose.stem,Math.max(this.stemProgress,1)*1.05]},{duration:.08,ease:[.55,0,1,1]}],
-    [pose,{stem:[Math.max(this.stemProgress,1)*1.05,0],angle:[pose.angle,0]},{at:.08,duration:.2,ease:MOTION.exit.ease}],
-    [pose,{dotX:[pose.dotX,1.15],dotY:[pose.dotY,.85]},{at:.26,duration:.06,ease:smooth}],
-    [pose,{dotX:[1.15,1],dotY:[.85,1]},{at:.32,...MOTION.bang.spring}],
-    [pose,{d:this.paths.home},{at:.28,duration:MOTION.stem.duration,ease:smooth}]
+    [pose,{detach:[pose.detach,0]},{at:.08,duration:.06,ease:smooth}],
+    [pose,{stem:[Math.max(this.stemProgress,1)*1.05,0],angle:[pose.angle,0]},{at:.14,duration:.2,ease:MOTION.exit.ease}],
+    [pose,{dotX:[pose.dotX,1.15],dotY:[pose.dotY,.85]},{at:.32,duration:.06,ease:smooth}],
+    [pose,{dotX:[1.15,1],dotY:[.85,1]},{at:.38,...MOTION.bang.spring}],
+    [pose,{d:this.paths.home},{at:.34,duration:MOTION.stem.duration,ease:smooth}]
    ]));
-   this.timer(()=>{if(token===this.token)this.transitionMotion(nextSignal==='sleeping'?'sleeping':nextSignal==='starting'?'waking':nextSignal==='failed'?'failed':nextSignal==='asking'?'bang':'pop')},280);
+   this.timer(()=>{if(token===this.token)this.transitionMotion(nextSignal==='sleeping'?'sleeping':nextSignal==='starting'?'waking':nextSignal==='failed'?'failed':nextSignal==='asking'?'bang':'pop')},340);
    await retract.finished.catch(()=>{});if(this.dead||token!==this.token)return false;
    this.paintSymbolPose(pose);this.symbolPose=null;this.bangWiggleActive=false;
    this.motionSegments.body++;this.motionSegments.symbol++;return true
   }
-  resetDecor(){this.splitPose=null;this.sparklePose=null;this.smearActive=false;this.dotLeft.removeAttribute('transform');this.dotRight.removeAttribute('transform');this.dots.setAttribute('opacity','0');this.dotLeft.setAttribute('cx','50');this.dotRight.setAttribute('cx','50');this.dotLeft.setAttribute('r','0');this.dotRight.setAttribute('r','0');this.setStem(0);this.setBangTransform(0);this.setDotTransform(1,1);this.bangSignal=null;this.bangWiggleActive=false;if(quiet())this.particles.setAttribute('opacity','0');else if(Number(this.particles.getAttribute('opacity'))>0)this.fade(this.particles,0,.2).then(()=>{for(const node of this.particles.children)node.removeAttribute('transform')});this.notice.setAttribute('opacity','0');this.setNoticeScale(0);this.sleepScale=1;this.formAngle=0;this.bangAngle=0;this.stemProgress=0;this.faceScale=1;if(quiet())this.motion.removeAttribute('transform')}
+  resetDecor(){this.splitPose=null;this.sparklePose=null;this.smearActive=false;this.dotLeft.removeAttribute('transform');this.dotRight.removeAttribute('transform');this.dots.setAttribute('opacity','0');this.dotLeft.setAttribute('cx','50');this.dotRight.setAttribute('cx','50');this.dotLeft.setAttribute('r','0');this.dotRight.setAttribute('r','0');this.setStem(0);this.setBangTransform(0);this.setDotTransform(1,1);this.bangSignal=null;this.bangWiggleActive=false;if(quiet())this.particles.setAttribute('opacity','0');else if(Number(this.particles.getAttribute('opacity'))>0)this.fade(this.particles,0,.2).then(()=>{for(const node of this.particles.children)node.removeAttribute('transform')});this.notice.setAttribute('opacity','0');this.setNoticeScale(0);this.sleepScale=1;this.formAngle=0;this.bangAngle=0;this.stemProgress=0;this.stemDetach=0;this.faceScale=1;if(quiet())this.motion.removeAttribute('transform')}
   async leaveDecor(token){this.motionSegments.dots++;this.motionSegments.symbol++;const tasks=[];if(Number(this.dots.getAttribute('opacity'))>0){const centerFrom=this.shapePath.getBBox().width/2;this.dotCenterRadius=centerFrom;tasks.push(this.track(animate(0,1,{duration:.3,ease:smooth,onUpdate:t=>{this.dotCenterRadius=centerFrom+(5-centerFrom)*t+.55*Math.sin(Math.PI*t);this.setPath(pointsPath(circlePoints(this.dotCenterRadius)));this.dotLeft.setAttribute('cx',(50-18*(1-t)).toFixed(2));this.dotRight.setAttribute('cx',(50+18*(1-t)).toFixed(2));this.dotLeft.setAttribute('r',(4*(1-t)).toFixed(2));this.dotRight.setAttribute('r',(4*(1-t)).toFixed(2))}})).finished.catch(()=>{}));tasks.push(this.fade(this.dots,0,.3))}if(Math.abs(this.bangAngle)>.01)tasks.push(this.track(animate(this.bangAngle,0,{duration:.38,ease:'easeInOut',onUpdate:v=>{this.bangAngle=v;this.setBangTransform(v)}})).finished.catch(()=>{}));if(this.stemProgress>0)tasks.push(this.animateStem(0,.38));if(Number(this.notice.getAttribute('opacity'))>0){tasks.push(this.fade(this.notice,0,.2));tasks.push(this.track(animate(this.noticeScale,0,{duration:.2,ease:'easeInOut',onUpdate:v=>this.setNoticeScale(v)})).finished.catch(()=>{}))}if(Number(this.particles.getAttribute('opacity'))>0)tasks.push(this.fade(this.particles,0,.2));await Promise.all(tasks);if(this.dead||token!==this.token)return false;this.resetDecor();this.lookTo(0,0,.3);return true}
   async toHome(token){await this.morphPath(this.paths.home,.5);if(this.dead||token!==this.token)return false;return true}
   async dotsMode(token){

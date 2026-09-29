@@ -86,7 +86,7 @@ fuzzButton.onclick=async()=>{
    dotsLeftR:radius(hero.dotLeft),dotsRightR:radius(hero.dotRight),
    dotsOpacity:opacity(hero.dots),dotsLeftOpacity:opacity(hero.dotLeft),dotsRightOpacity:opacity(hero.dotRight),
    stemH:box(hero.bangStem).h,noticeScale:hero.noticeScale,
-   stemProgress:hero.stemProgress,bangAngle:hero.bangAngle,dotScaleX:hero.dotX,dotScaleY:hero.dotY,
+   stemProgress:hero.stemProgress,stemDetach:hero.stemDetach,bangAngle:hero.bangAngle,dotScaleX:hero.dotX,dotScaleY:hero.dotY,
    noticeOpacity:opacity(hero.notice),particlesOpacity:opacity(hero.particles),
    particleCount:particleNodes.length,
    particleEffectiveCount:particleAlphas.reduce((sum,value)=>sum+value,0),
@@ -116,7 +116,7 @@ fuzzButton.onclick=async()=>{
     }
     if(key.startsWith('eye')&&!key.includes('Opacity')&&samples[i].eyesOpacity<.01&&samples[i+1].eyesOpacity<.01)continue;
     if((key.startsWith('dots')||key.startsWith('body')||key==='stemH')&&(samples[i].smearActive||samples[i+1].smearActive))continue;
-    if((key==='bangAngle'||key==='dotScaleX'||key==='dotScaleY'||key==='stemH'||key==='stemProgress'||key==='bodyW'||key==='bodyH')&&(samples[i].wiggleActive||samples[i+1].wiggleActive))continue;
+    if((key==='bangAngle'||key==='dotScaleX'||key==='dotScaleY'||key==='stemH'||key==='stemProgress'||key==='stemDetach'||key==='bodyW'||key==='bodyH')&&(samples[i].wiggleActive||samples[i+1].wiggleActive))continue;
     if(samples[i][group]!==samples[i+1][group]||samples[i].phase!==samples[i+1].phase)continue;
     const nearby=[];
     for(let j=Math.max(0,i-4);j<Math.min(delta.length,i+5);j++)
