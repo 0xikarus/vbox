@@ -23,8 +23,8 @@ body{
 .is-hover{border-color:var(--vb-ink-faint)!important}
 button.is-hover,.vb-icon.is-hover,.vb-secondary.is-hover,.vb-ghost.is-hover{background:var(--vb-surface-2)!important}
 .vb-danger.is-hover{background:var(--vb-danger)!important;color:#fff!important}
-.is-focus{border-color:var(--vb-accent)!important;outline:none!important;box-shadow:var(--vb-ring)!important}
-.vb-switch.is-focus,input[type=checkbox].is-focus,input[type=radio].is-focus{box-shadow:var(--vb-ring)!important}
+.is-focus{border-color:var(--vb-focus-border)!important;outline:none!important;box-shadow:var(--vb-ring)!important}
+.vb-switch.is-focus,input[type=checkbox].is-focus,input[type=radio].is-focus{border-color:var(--vb-focus-border)!important;box-shadow:var(--vb-ring)!important}
 .is-disabled{opacity:.5;pointer-events:none}
 .kit-tag{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--vb-ink-faint)}
 
@@ -41,6 +41,6 @@ button.is-hover,.vb-icon.is-hover,.vb-secondary.is-hover,.vb-ghost.is-hover{back
 .kit-row button.kit-sm{padding:.32rem .72rem;font-size:.78rem;min-height:2rem}
 
 /* menu / toast spacing in the kitchen */
-.workspace-nav-panel{display:grid}
-.workspace-nav-panel a,.workspace-nav-panel button{display:block;width:100%}
+.workspace-nav-panel{display:flex;flex-direction:column;gap:.15rem}
+.workspace-nav-panel a,.workspace-nav-panel button{display:flex;width:100%}
 .toast{display:inline-flex;align-items:center;max-width:18rem;padding:.45rem .9rem;white-space:normal}

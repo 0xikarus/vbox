@@ -75,7 +75,7 @@ function trashButton(label,fn){const b=node('button');b.type='button';b.classNam
 function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  root._modelPicker?.destroy();
  root.replaceChildren();
- const profileLabel=node('label','login profile ');profileLabel.className='field';
+ const profileLabel=node('label','Login profile ');profileLabel.className='field';
  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
  const modelLabel=node('label','model ');modelLabel.className='field';
  const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);root._modelPicker=modelPicker;
@@ -305,6 +305,7 @@ function renderBoxes(boxes){
    finally{deletingBoxes.delete(b.id);try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch{if(version===epoch)remove.disabled=false}}
   });remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.prepend(remove);
   const details=button('Details',event=>openBoxDetail(b,event.currentTarget));details.classList.add('box-details-action');details.setAttribute('aria-label','Details for box '+b.name);actions.prepend(details);
+  const manage=button('Manage…',()=>openBoxPolicyEditor(b));manage.setAttribute('aria-label','Manage permissions for box '+b.name);actions.append(manage);
   {
    const others=[...actions.children].filter(el=>el!==details);
    if(others.length){
@@ -317,7 +318,7 @@ function renderBoxes(boxes){
     overflow.append(trigger,menu);actions.replaceChildren(details,overflow);
    }
   }
-  const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vbox '+JSON.stringify(b.name)));const permissions=node('td');actions.append(button('Manage…',()=>openBoxPolicyEditor(b)));row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
+  const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vbox '+JSON.stringify(b.name)));const permissions=node('td');row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(selectedManagedBoxID)renderBoxDetail();
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
@@ -641,7 +642,7 @@ async function openBoxCredentials(box){
   const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
   const current=(state.profiles||[])[0];
   const wrap=$('#box-credentials-form');wrap.replaceChildren();
-  const label=node('label','login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
+  const label=node('label','Login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
   for(const application of ['claude','codex','opencode']){const names=(byApplication[application]||[]).slice().sort();if(!names.length)continue;const group=document.createElement('optgroup');group.label=application;for(const name of names){const option=node('option',name);option.value=JSON.stringify({application,name});group.append(option)}select.append(group)}
   const currentValue=current&&JSON.stringify({application:current.application,name:current.name});if(currentValue&&[...select.options].some(option=>option.value===currentValue))select.value=currentValue;label.append(select);wrap.append(label);
   const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];
