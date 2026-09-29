@@ -248,11 +248,11 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	if err != nil {
 		return err
 	}
-	if err := codexQueueInput(ctx, client, thread, messageID, text, images); err != nil {
+	if err := codexSubmitVisibleInput(ctx, client, thread, messageID, text, images); err != nil {
 		return err
 	}
-	// Queueing only stores the submission. After an interrupted turn Codex can
-	// leave that queue idle until another client explicitly starts its head.
+	// A steer enters the active turn. The queue fallback stores a submission;
+	// after an interrupted turn Codex can leave its head idle until started.
 	if err := codexStartQueuedIfIdle(ctx, client, thread); err != nil {
 		return fmt.Errorf("%w: Codex message queued but pending queue could not start: %v", ErrAmbiguousMessage, err)
 	}
@@ -261,6 +261,55 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	}
 	_ = os.Remove(codexResetPendingFile(root, session))
 	return nil
+}
+
+// Steer a running visible turn so chat reaches Codex while it is working.
+// Only a definitive pre-acceptance error falls back to the native queue.
+// Other failures are ambiguous and must be reconciled by exact message ID.
+func codexSubmitVisibleInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {
+	result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
+	if codexQueueMethodUnavailable(err, "thread/turns/list") {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	if err != nil {
+		return err
+	}
+	turns, _ := result["data"].([]any)
+	if len(turns) == 0 {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	latest, _ := turns[0].(map[string]any)
+	if latest["status"] != "inProgress" {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	turnID, _ := latest["id"].(string)
+	if turnID == "" {
+		return fmt.Errorf("Codex active turn has no ID")
+	}
+	err = codexStartTurnWithFallback(text, images, func(input []map[string]any) error {
+		_, err := client.call(ctx, "turn/steer", map[string]any{
+			"threadId": thread, "expectedTurnId": turnID,
+			"clientUserMessageId": messageID, "input": input,
+		})
+		return err
+	})
+	if err == nil {
+		return nil
+	}
+	if codexQueueMethodUnavailable(err, "turn/steer") || codexSteerPreconditionFailed(err) {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	return fmt.Errorf("%w: Codex turn steer outcome uncertain: %v", ErrAmbiguousMessage, err)
+}
+
+func codexSteerPreconditionFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no active turn to steer") ||
+		strings.Contains(message, "expected active turn id") ||
+		strings.Contains(message, "active turn is not steerable")
 }
 
 // The remote TUI binds its own new thread after it connects. Wait for that
