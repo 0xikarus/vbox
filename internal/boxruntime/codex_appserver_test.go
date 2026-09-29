@@ -315,6 +315,70 @@ func TestCodexSteerTurnEndRaceFallsBackToQueue(t *testing.T) {
 	}
 }
 
+func TestCodexFreshThreadQueuesAndStartsFirstMessage(t *testing.T) {
+	var methodsMu sync.Mutex
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			methodsMu.Lock()
+			methods = append(methods, request.Method)
+			methodsMu.Unlock()
+			response := map[string]any{"id": request.ID}
+			switch request.Method {
+			case "thread/turns/list":
+				response["error"] = map[string]any{"message": "thread fresh-id is not materialized yet; thread/turns/list is unavailable before first user message"}
+			case "thread/queue/add":
+				response["result"] = map[string]any{"queuedSubmission": map[string]any{"id": "queued-1"}}
+			case "thread/queue/list":
+				response["result"] = map[string]any{"data": []any{map[string]any{"id": "queued-1"}}}
+			case "thread/queue/start":
+				response["result"] = map[string]any{"turn": map[string]any{"id": "turn-1", "status": "inProgress"}}
+			default:
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			data, _ := json.Marshal(response)
+			_ = conn.Write(r.Context(), websocket.MessageText, data)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexSubmitVisibleInput(context.Background(), client, "fresh-id", "message-1", "hello", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := codexStartQueuedIfIdle(context.Background(), client, "fresh-id"); err != nil {
+		t.Fatal(err)
+	}
+	methodsMu.Lock()
+	defer methodsMu.Unlock()
+	if !reflect.DeepEqual(methods, []string{"thread/turns/list", "thread/queue/add", "thread/turns/list", "thread/queue/list", "thread/queue/start"}) {
+		t.Fatalf("methods=%v", methods)
+	}
+}
+
 func TestCodexQueueReceiptWaitsForMatchingNativeUserItem(t *testing.T) {
 	var reads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
