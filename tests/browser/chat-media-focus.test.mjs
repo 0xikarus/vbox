@@ -82,12 +82,23 @@ test('chat media is clickable and keyboard focusable',async()=>{
   await p.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth>=640,{timeout:3000});
   await p.waitForFunction(()=>!document.querySelector('#media-viewer-body .media-viewer-status'),{timeout:3000});
   assert.equal(imageRequests.full.length,1,'opening the viewer downloads one original');
+  assert.equal(await p.$eval('#media-viewer-zoom',element=>element.hidden),false,'images have viewer-local zoom controls');
+  const beforeZoom=await p.evaluate(()=>({image:document.querySelector('#media-viewer-body img').getBoundingClientRect().width,page:document.documentElement.clientWidth}));
+  await p.click('#media-viewer-zoom-in');
+  await p.waitForFunction(()=>document.querySelector('#media-viewer-zoom-level')?.textContent==='150%');
+  const afterZoom=await p.evaluate(()=>({image:document.querySelector('#media-viewer-body img').getBoundingClientRect().width,page:document.documentElement.clientWidth}));
+  assert.ok(afterZoom.image>beforeZoom.image*1.4,'only the image grew');
+  assert.equal(afterZoom.page,beforeZoom.page,'the page itself did not zoom');
+  await p.click('#media-viewer-zoom-reset');
+  assert.equal(await p.$eval('#media-viewer-zoom-level',element=>element.textContent),'100%');
+  await p.click('#media-viewer-zoom-in');
 
   // Arrows, keyboard, and swipe navigate only the selected message's media.
   assert.equal(await p.$eval('#media-viewer-count',element=>element.textContent),'1 / 2');
   assert.equal(await p.$eval('#media-viewer-prev',element=>element.disabled),true,'first image cannot go back');
   await p.keyboard.press('ArrowRight');
   await p.waitForFunction(()=>document.querySelector('#media-viewer-count')?.textContent==='2 / 2',{timeout:3000});
+  assert.equal(await p.$eval('#media-viewer-zoom-level',element=>element.textContent),'100%','gallery navigation resets image zoom');
   assert.equal(await p.$eval('#media-viewer-next',element=>element.disabled),true,'last image cannot go forward');
   await p.click('#media-viewer-prev');
   await p.waitForFunction(()=>document.querySelector('#media-viewer-count')?.textContent==='1 / 2',{timeout:3000});
@@ -124,10 +135,27 @@ test('chat media is clickable and keyboard focusable',async()=>{
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await mobile.goto('http://127.0.0.1:'+server.address().port+'/chat#box=gallery');
   await mobile.waitForSelector('#chat-messages .msg .media-button');
-  await (await (await mobile.$$('#chat-messages .msg'))[0].$('.media-button')).click();
+  await mobile.$eval('#chat-messages .msg .media-button',button=>button.click());
   await mobile.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
   await mobile.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth>=640,{timeout:8000});
   assert.equal(await mobile.$eval('#media-viewer-count',element=>element.textContent),'1 / 2');
+  await mobile.click('#media-viewer-zoom-in');
+  assert.equal(await mobile.$eval('#media-viewer-zoom-level',element=>element.textContent),'150%');
+  assert.equal(await mobile.$eval('#media-viewer-body',element=>element.scrollWidth>element.clientWidth),true,'mobile zoom stays inside a pannable viewer');
+  await mobile.click('#media-viewer-zoom-reset');
+  const center=await mobile.$eval('#media-viewer-body',element=>{const rect=element.getBoundingClientRect();return{x:rect.left+rect.width/2,y:rect.top+rect.height/2}});
+  const touch=await mobile.createCDPSession();
+  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:center.x-25,y:center.y,id:1},{x:center.x+25,y:center.y,id:2}]});
+  await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:center.x-60,y:center.y,id:1},{x:center.x+60,y:center.y,id:2}]});
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  await mobile.waitForFunction(()=>parseInt(document.querySelector('#media-viewer-zoom-level')?.textContent||'0',10)>100,{timeout:3000});
+  assert.equal(await mobile.evaluate(()=>visualViewport.scale),1,'pinching the image does not zoom the page');
+  const scrollBefore=await mobile.$eval('#media-viewer-body',element=>element.scrollLeft);
+  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:center.x,y:center.y,id:3}]});
+  await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:center.x-45,y:center.y,id:3}]});
+  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  assert.ok(await mobile.$eval('#media-viewer-body',element=>element.scrollLeft)>scrollBefore,'a zoomed image pans inside the viewer');
+  assert.equal(await mobile.$eval('#media-viewer-count',element=>element.textContent),'1 / 2','panning does not change the selected attachment');
   await mobile.screenshot({path:'/tmp/vmbox-message-gallery-normal-mobile.png'});
   await mobile.close();
  }finally{await browser.close();await new Promise(r=>server.close(r))}

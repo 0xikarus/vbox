@@ -61,9 +61,11 @@ test('video attachments play inline and can be uploaded',async()=>{
   await p.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
   const src=await p.$eval('#media-viewer-body video',el=>el.getAttribute('src'));
   assert.match(src,/^\/v1\/messages\/m1\/images\/v1$/,'video must stream from the authenticated endpoint, not a blob');
+  assert.equal(await p.$eval('#media-viewer-zoom',el=>el.hidden),true,'image zoom controls stay hidden for video');
   assert.equal(await p.$eval('#media-viewer-count',el=>el.textContent),'1 / 2');
   await p.click('#media-viewer-next');
   await p.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth===320);
+  assert.equal(await p.$eval('#media-viewer-zoom',el=>el.hidden),false);
   assert.equal(await p.$eval('#media-viewer-count',el=>el.textContent),'2 / 2');
   await p.click('#media-viewer-prev');
   assert.equal(await p.$eval('#media-viewer-body video',el=>el.getAttribute('src')),src);

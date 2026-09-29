@@ -476,26 +476,63 @@
  const mediaEndpoint=(messageID,imageID)=>'/v1/messages/'+encodeURIComponent(messageID)+'/images/'+encodeURIComponent(imageID);
  const mediaGlyph=kind=>kind==='video'?'▶':kind==='audio'?'♪':'▣';
  const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaOpen=$('#media-viewer-open'),
-  mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count'),mediaAnnotate=$('#media-annotate');
- let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null,mediaRequest=0;
+  mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count'),mediaAnnotate=$('#media-annotate'),
+  mediaZoomControls=$('#media-viewer-zoom'),mediaZoomOut=$('#media-viewer-zoom-out'),mediaZoomIn=$('#media-viewer-zoom-in'),mediaZoomReset=$('#media-viewer-zoom-reset'),mediaZoomLevel=$('#media-viewer-zoom-level');
+ let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null,mediaRequest=0,mediaZoom=1,mediaBaseSize=null;
+ const maxMediaZoom=5;
+ const mediaImage=()=>mediaBody.querySelector('.media-viewer-frame img');
+ function updateMediaZoomControls(){
+  const image=mediaImage(),ready=!!image?.naturalWidth;
+  mediaBody.classList.toggle('zoomed',mediaZoom>1&&!mediaZoomControls.hidden);
+  mediaZoomLevel.textContent=Math.round(mediaZoom*100)+'%';
+  mediaZoomOut.disabled=!ready||mediaZoom<=1;
+  mediaZoomIn.disabled=!ready||mediaZoom>=maxMediaZoom;
+  mediaZoomReset.disabled=!ready||mediaZoom===1;
+ }
+ function applyMediaZoom(focalX,focalY){
+  const image=mediaImage();if(!image?.naturalWidth)return;
+  const frame=image.parentElement,rect=mediaBody.getBoundingClientRect();
+  if(!mediaBaseSize||mediaBaseSize.image!==image){
+   const fit=Math.min(1,Math.max(1,mediaBody.clientWidth)/image.naturalWidth,Math.max(1,Math.min(mediaBody.clientHeight||innerHeight*.8,innerHeight*.82))/image.naturalHeight);
+   mediaBaseSize={image,width:image.naturalWidth*fit,height:image.naturalHeight*fit};
+  }
+  const oldWidth=Number.parseFloat(frame.style.width)||mediaBaseSize.width,oldHeight=Number.parseFloat(frame.style.height)||mediaBaseSize.height;
+  const x=focalX==null?rect.width/2:focalX-rect.left,y=focalY==null?rect.height/2:focalY-rect.top;
+  const contentX=mediaBody.scrollLeft+x,contentY=mediaBody.scrollTop+y;
+  const width=mediaBaseSize.width*mediaZoom,height=mediaBaseSize.height*mediaZoom;
+  frame.classList.add('ready');frame.style.width=width+'px';frame.style.height=height+'px';
+  image.style.width=width+'px';image.style.height=height+'px';
+  mediaBody.scrollLeft=contentX*width/oldWidth-x;
+  mediaBody.scrollTop=contentY*height/oldHeight-y;
+  updateMediaZoomControls();
+ }
+ function setMediaZoom(next,focalX,focalY){
+  if(mediaZoomControls.hidden)return;
+  mediaZoom=Math.max(1,Math.min(maxMediaZoom,Math.round(next*4)/4));
+  applyMediaZoom(focalX,focalY);
+ }
  function renderMediaItem(url,{kind='image',alt='',loading=false,status=''}={}){
   const playing=mediaBody.querySelector('video,audio');
   if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
-  mediaBody.replaceChildren();
+  mediaBody.replaceChildren();mediaBaseSize=null;
   if(!url&&!loading){const miss=document.createElement('div');miss.className='media-missing';miss.textContent=status||'Attachment unavailable';mediaBody.append(miss);return}
   if(kind==='video'||kind==='audio'){
    const el=document.createElement(kind);el.src=url;el.controls=true;el.playsInline=true;if(kind==='video')el.autoplay=true;
    el.setAttribute('aria-label',alt||('Embedded '+mediaKindLabel(kind)));mediaBody.append(el);
   }else{
    const frame=document.createElement('div');frame.className='media-viewer-frame';
-   if(url){const img=document.createElement('img');img.src=url;img.alt=alt||'Attachment';frame.append(img)}
+   if(url){const img=document.createElement('img');img.alt=alt||'Attachment';img.draggable=false;img.onload=()=>{if(mediaBody.contains(img))applyMediaZoom()};img.src=url;frame.append(img)}
    if(loading||status){const note=document.createElement('span');note.className='media-viewer-status';note.textContent=status||'Loading full image…';frame.append(note)}
    mediaBody.append(frame);
   }
+  updateMediaZoomControls();
  }
  async function showMediaAt(index){
   const item=mediaGallery[index];if(!item)return;
   mediaIndex=index;const request=++mediaRequest;
+  mediaZoom=1;mediaBaseSize=null;mediaBody.scrollLeft=0;mediaBody.scrollTop=0;
+  mediaTouchPoints.clear();mediaTouchStart=null;mediaPinchStart=null;mediaPinched=false;mediaMousePan=null;
+  mediaZoomControls.hidden=item.kind!=='image';mediaBody.classList.toggle('zoomable',item.kind==='image');updateMediaZoomControls();
   const many=mediaGallery.length>1;
   mediaPrev.hidden=!many;mediaNext.hidden=!many;
   mediaPrev.disabled=mediaIndex<=0;mediaNext.disabled=mediaIndex>=mediaGallery.length-1;
@@ -541,6 +578,8 @@
   const playing=mediaBody.querySelector('video,audio');
   if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
   mediaBody.replaceChildren();mediaViewer.hidden=true;mediaGallery=[];mediaIndex=0;mediaAnnotate.hidden=true;
+  mediaZoom=1;mediaBaseSize=null;mediaZoomControls.hidden=true;mediaBody.classList.remove('zoomable');
+  mediaTouchPoints.clear();mediaTouchStart=null;mediaPinchStart=null;mediaPinched=false;mediaMousePan=null;updateMediaZoomControls();
   if(mediaReturnFocus&&document.contains(mediaReturnFocus))mediaReturnFocus.focus();
   mediaReturnFocus=null;
  }
@@ -580,9 +619,66 @@
  $('#media-viewer-backdrop').onclick=closeMediaViewer;
  mediaPrev.onclick=()=>{if(mediaIndex>0)void showMediaAt(mediaIndex-1)};
  mediaNext.onclick=()=>{if(mediaIndex<mediaGallery.length-1)void showMediaAt(mediaIndex+1)};
+ mediaZoomOut.onclick=()=>setMediaZoom(mediaZoom-.5);
+ mediaZoomIn.onclick=()=>setMediaZoom(mediaZoom+.5);
+ mediaZoomReset.onclick=()=>setMediaZoom(1);
+ addEventListener('resize',()=>{if(!mediaViewer.hidden&&!mediaZoomControls.hidden){mediaBaseSize=null;applyMediaZoom()}});
+ mediaBody.addEventListener('dblclick',event=>{if(mediaZoomControls.hidden)return;event.preventDefault();setMediaZoom(mediaZoom>1?1:2,event.clientX,event.clientY)});
+ mediaViewer.addEventListener('wheel',event=>{
+  if(mediaZoomControls.hidden||!(event.ctrlKey||event.metaKey))return;
+  event.preventDefault();setMediaZoom(mediaZoom+(event.deltaY<0?.25:-.25),event.clientX,event.clientY);
+ },{passive:false});
+ const mediaTouchPoints=new Map();let mediaTouchStart=null,mediaPinchStart=null,mediaPinched=false,mediaMousePan=null;
+ const touchDistance=()=>{const [a,b]=[...mediaTouchPoints.values()];return a&&b?Math.hypot(a.x-b.x,a.y-b.y):0};
+ mediaBody.addEventListener('pointerdown',event=>{
+  if(!mediaBody.classList.contains('zoomable'))return;
+  if(event.pointerType==='touch'){
+   mediaTouchPoints.set(event.pointerId,{x:event.clientX,y:event.clientY});
+   try{mediaBody.setPointerCapture(event.pointerId)}catch{}
+   if(mediaTouchPoints.size===1){mediaTouchStart={x:event.clientX,y:event.clientY,left:mediaBody.scrollLeft,top:mediaBody.scrollTop};mediaPinched=false}
+   else if(mediaTouchPoints.size===2){mediaPinchStart={distance:touchDistance(),zoom:mediaZoom};mediaPinched=true}
+  }else if(event.button===0&&mediaZoom>1){
+   event.preventDefault();
+   mediaMousePan={x:event.clientX,y:event.clientY,left:mediaBody.scrollLeft,top:mediaBody.scrollTop};
+   try{mediaBody.setPointerCapture(event.pointerId)}catch{}
+  }
+ });
+ mediaBody.addEventListener('pointermove',event=>{
+  if(event.pointerType==='touch'&&mediaTouchPoints.has(event.pointerId)){
+   mediaTouchPoints.set(event.pointerId,{x:event.clientX,y:event.clientY});
+   if(mediaTouchPoints.size>=2&&mediaPinchStart?.distance){
+    const [a,b]=[...mediaTouchPoints.values()];
+    setMediaZoom(mediaPinchStart.zoom*touchDistance()/mediaPinchStart.distance,(a.x+b.x)/2,(a.y+b.y)/2);
+   }else if(mediaZoom>1&&mediaTouchStart){
+    mediaBody.scrollLeft=mediaTouchStart.left-(event.clientX-mediaTouchStart.x);
+    mediaBody.scrollTop=mediaTouchStart.top-(event.clientY-mediaTouchStart.y);
+   }
+  }else if(mediaMousePan){
+   mediaBody.scrollLeft=mediaMousePan.left-(event.clientX-mediaMousePan.x);
+   mediaBody.scrollTop=mediaMousePan.top-(event.clientY-mediaMousePan.y);
+  }
+ });
+ function finishMediaPointer(event,cancelled){
+  if(event.pointerType==='touch'&&mediaTouchPoints.has(event.pointerId)){
+   if(!cancelled&&!mediaPinched&&mediaZoom===1&&mediaTouchPoints.size===1&&mediaTouchStart){
+    const dx=event.clientX-mediaTouchStart.x,dy=event.clientY-mediaTouchStart.y;
+    if(Math.abs(dx)>48&&Math.abs(dx)>Math.abs(dy)){
+     if(dx<0&&mediaIndex<mediaGallery.length-1)void showMediaAt(mediaIndex+1);
+     else if(dx>0&&mediaIndex>0)void showMediaAt(mediaIndex-1);
+    }
+   }
+   mediaTouchPoints.delete(event.pointerId);
+   if(mediaTouchPoints.size===1){const point=[...mediaTouchPoints.values()][0];mediaTouchStart={...point,left:mediaBody.scrollLeft,top:mediaBody.scrollTop};mediaPinchStart=null}
+   else if(mediaTouchPoints.size===0){mediaTouchStart=null;mediaPinchStart=null;mediaPinched=false}
+  }
+  if(event.pointerType!=='touch')mediaMousePan=null;
+ }
+ mediaBody.addEventListener('pointerup',event=>finishMediaPointer(event,false));
+ mediaBody.addEventListener('pointercancel',event=>finishMediaPointer(event,true));
  let swipeX=0,swipeY=0;
- mediaBody.addEventListener('touchstart',event=>{const t=event.changedTouches[0];swipeX=t.clientX;swipeY=t.clientY},{passive:true});
+ mediaBody.addEventListener('touchstart',event=>{if(mediaBody.classList.contains('zoomable'))return;const t=event.changedTouches[0];swipeX=t.clientX;swipeY=t.clientY},{passive:true});
  mediaBody.addEventListener('touchend',event=>{
+  if(mediaBody.classList.contains('zoomable'))return;
   const t=event.changedTouches[0],dx=t.clientX-swipeX,dy=t.clientY-swipeY;
   if(Math.abs(dx)<=48||Math.abs(dx)<=Math.abs(dy))return;
   if(dx<0&&mediaIndex<mediaGallery.length-1)void showMediaAt(mediaIndex+1);
@@ -593,6 +689,9 @@
   if(event.key==='Escape'){event.preventDefault();closeMediaViewer();return}
   if(event.key==='ArrowLeft'){event.preventDefault();if(mediaIndex>0)void showMediaAt(mediaIndex-1);return}
   if(event.key==='ArrowRight'){event.preventDefault();if(mediaIndex<mediaGallery.length-1)void showMediaAt(mediaIndex+1);return}
+  if(!mediaZoomControls.hidden&&['+','=','-','0'].includes(event.key)){
+   event.preventDefault();setMediaZoom(event.key==='0'?1:mediaZoom+(event.key==='-'?-.5:.5));return;
+  }
   if(event.key==='Tab'){
    const focusable=[...mediaViewer.querySelectorAll('button,a[href],video,audio')].filter(el=>!el.hidden);
    if(!focusable.length)return;
