@@ -207,19 +207,19 @@
  class Mascot extends window.VBoxMascot.Mascot{}
  function boxMascotPose(box){
   if(box.state==='hibernated')return ['sleeping','sleeping','sleeping'];
-  if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','error'];
+  if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','failed'];
   const lastQuestion=[...(box.messages||[])].reverse().find(message=>message.direction!=='user'&&message.question&&!questionAnswered(box,message));
-  if(lastQuestion)return ['waiting',null,'question'];
-  if(box.processing)return ['working','focused','thinking'];
-  if(box.unread)return ['happy','happy','plane'];
-  return box.state==='running'?['idle',null,null]:['waking','surprised','coffee'];
+  if(lastQuestion)return ['waiting','surprised','asking'];
+  if(box.processing)return ['working','focused','busy'];
+  if(box.unread)return ['happy','surprised','unread'];
+  return box.state==='running'?['idle',null,'idle']:['waking','surprised','starting'];
  }
  function syncAvatarMascot(avatar,box){
   if(!avatar)return;
   const mascot=avatar.querySelector('.avatar-mascot svg')?.__vboxMascot;
   if(!mascot)return;
-  const [mood,expression,prop]=boxMascotPose(box);
-  if(mascot.state!==mood||mascot.expression!==expression||mascot.prop!==prop)mascot.jump(mood,expression,prop);
+  const [mood,expression,signal]=boxMascotPose(box);
+  if(mascot.state!==mood||mascot.expression!==expression||mascot.signal!==signal)mascot.jump(mood,expression,signal);
   avatar.dataset.state=box.state;
   avatar.querySelector('.dot')?.classList.toggle('running',box.state==='running');
  }
@@ -445,7 +445,7 @@
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
   wrap.dataset.avatar=box.id;wrap.dataset.state=box.state;
-  const base=document.createElement('span');base.className='avatar-mascot';new Mascot(base,box.id);const [mood,expression,prop]=boxMascotPose(box);if(mood!=='idle'||expression||prop)base.querySelector('svg').__vboxMascot.jump(mood,expression,prop);
+  const base=document.createElement('span');base.className='avatar-mascot';new Mascot(base,box.id);const [mood,expression,signal]=boxMascotPose(box),mascot=base.querySelector('svg').__vboxMascot;if(mood!=='idle'||expression)mascot.jump(mood,expression,signal);
   wrap.append(base);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
@@ -1009,7 +1009,7 @@
   }
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
-   const mini=document.createElement('span');mini.className='processing-mascot';new Mascot(mini,box.id);mini.querySelector('svg').__vboxMascot.jump('working','focused','thinking');
+   const mini=document.createElement('span');mini.className='processing-mascot';new Mascot(mini,box.id);mini.querySelector('svg').__vboxMascot.jump('working','focused','busy');
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
@@ -1501,7 +1501,7 @@
   stickToBottom=true;scrollMemory.delete(boxID);followMemory.set(boxID,true);newMessagesBtn.hidden=true;
   // Delivery can finish after a fast MCP reply, so show the outgoing message
   // and existing processing state while the synchronous POST is in flight.
-  if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
+  if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box);document.querySelectorAll('[data-avatar="'+CSS.escape(boxID)+'"] svg.vbox-mascot').forEach(svg=>void svg.__vboxMascot?.comet())}
   let settled=false;
   try{
    const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images,parentMessageId:replyTarget?.id||'',mentionedBoxIds});
