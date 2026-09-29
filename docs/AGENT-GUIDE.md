@@ -281,6 +281,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   when syncing to the box; editing the snapshot preserves the references.
   Existing rows default to empty guidance and are not backfilled. The generated
   section is bounded by the runtime's 64 KiB instruction limit before creation.
+  The controller and Chat UIs offer an optional concise-response template; it
+  becomes editable custom Markdown only for the box where it is selected.
 
 ## Verification and honest evidence
 

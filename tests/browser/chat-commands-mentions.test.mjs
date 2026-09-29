@@ -17,6 +17,8 @@ test('saved slash commands stay in drafts until send, mentions send IDs, and sto
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
   if(path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
+  if(path==='/v1/controller-defaults')return res.end(JSON.stringify({provider:'railway',providerCredential:'primary'}));
+  if(path==='/v1/provider-credentials')return res.end('[]');
   if(path==='/v1/chat-commands'&&req.method==='GET')return res.end(JSON.stringify([...commands].map(([name,prompt])=>({name,prompt}))));
   if(path.startsWith('/v1/chat-commands/')&&req.method==='PUT'){
    let body='';for await(const chunk of req)body+=chunk;
@@ -48,6 +50,17 @@ test('saved slash commands stay in drafts until send, mentions send IDs, and sto
   const page=await browser.newPage();await page.setViewport({width:1100,height:800});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await page.$eval('#new-box',button=>button.click());
+  await page.waitForFunction(()=>!!document.querySelector('#create-instructions option[value="__concise__"]'));
+  await page.select('#create-instructions','__concise__');
+  assert.match(await page.$eval('#create-instructions-custom',area=>area.value),/few tokens as needed/);
+  await page.click('#new-box-close');
+  await page.$eval('#new-box',button=>button.click());
+  await page.select('#create-instructions','custom');
+  await page.type('#create-instructions-custom','# Existing rules');
+  await page.select('#create-instructions','__concise__');
+  assert.match(await page.$eval('#create-instructions-custom',area=>area.value),/Existing rules[\s\S]*few tokens as needed/,'the option adds guidance to existing instructions');
+  await page.click('#new-box-close');
   await page.focus('[data-box-id=reviewer] .chat-meta');
   await page.keyboard.press('Enter');
   await page.waitForFunction(()=>document.querySelector('[data-box-id=reviewer]').classList.contains('active'));

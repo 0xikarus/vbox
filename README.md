@@ -61,6 +61,9 @@ You can upload local Claude, Codex, OpenCode, or GitHub logins with `vmbox profi
 
 The controller's web UI has box workspaces with Desktop and TMUX views, Agent chat, and Grid for viewing several running boxes. Agent chat supports image attachments and direct contacts between boxes. Optional Blender and Foundry presets are selected when creating a box. See the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md) for tools, browser state, and secrets, and the [local prompt API](docs/LOCAL-AGENT-PROMPT.md) for sending a message from an app inside a box.
 
+**Concise responses** is an optional instruction choice when creating or editing
+a box. It adds editable guidance only to the selected box.
+
 Saved chat attachments share a 1 GiB account limit. Large still images are
 resized and re-encoded when that makes them smaller; animated GIFs and videos
 keep their uploaded format. In Chat → Box details, owners can see per-box and

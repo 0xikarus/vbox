@@ -2173,7 +2173,7 @@
   }catch(e){$('#new-box-status').textContent=e.message}
  }
   function openNewBoxModal(){
-   createForm.reset();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
+   createForm.reset();createInstructionSource='';void syncCreateInstructionText();createForm.elements.defaultAgent.onchange?.();$('#new-box-status').textContent='';newBoxModal.hidden=false;
    void primeBoxExtras();
    if(owner)void refreshUsage();
    createForm.elements.name.focus();
@@ -2202,9 +2202,9 @@
   if(loginProfiles.length)body.loginProfiles=loginProfiles;
   if(tools.length)body.tools=tools;
   if(setupScript)body.setupScript=setupScript;
-  const instructions=await createInstructionSelection();
-  if(instructions)body.instructions=instructions;
   try{
+   const instructions=await createInstructionSelection();
+   if(instructions)body.instructions=instructions;
    const created=await api('/v1/logical-boxes','POST',{'Idempotency-Key':crypto.randomUUID()},body);
    newBoxModal.hidden=true;toast('Box '+created.name+' requested — it appears in the list as it starts.');
    await loadBoxes();
@@ -2660,6 +2660,8 @@
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshUsage()});
 
  /* ---------- instruction presets, box instructions, imported profiles ---------- */
+ const conciseInstructions='## Concise responses\n\nDo the requested work fully. In messages, use as few tokens as needed for a complete, correct answer. Write short, direct sentences. Omit filler, repetition, and unrequested background.\n';
+ function addConciseInstructions(markdown){if(markdown.includes(conciseInstructions))return markdown;const separator=!markdown||markdown.endsWith('\n\n')?'':markdown.endsWith('\n')?'\n':'\n\n';return markdown+separator+conciseInstructions}
  function mk(tag,text){const el=document.createElement(tag);if(text!==undefined)el.textContent=text;return el}
  function mdPreview(root,text){root.replaceChildren();root.append(typeof window.markdownToNodes==='function'?window.markdownToNodes(text||''):mk('pre',text||''))}
  document.querySelectorAll('[data-close]').forEach(el=>el.addEventListener('click',()=>{const sheet=el.closest('.sheet');if(sheet)sheet.hidden=true}));
@@ -2904,6 +2906,7 @@
   const select=$('#create-instructions'),previous=select.value;select.replaceChildren();
   const auto=mk('option',instructionPresets.defaultName?'Default · '+instructionPresets.defaultName:'Default / none');auto.value='auto';select.append(auto);
   const none=mk('option','None');none.value='none';select.append(none);
+  const concise=mk('option','Concise responses');concise.value='__concise__';select.append(concise);
   for(const preset of instructionPresets.presets){const option=mk('option',preset.name+(preset.default?' · default':''));option.value=preset.name;select.append(option)}
   const custom=mk('option','Custom Markdown');custom.value='custom';select.append(custom);
   if([...select.options].some(option=>option.value===previous))select.value=previous;
@@ -2917,9 +2920,9 @@
    editor.hidden=true;editor.open=false;
    mdPreview(preview,'');preview.hidden=true;return;
   }
-  if(value==='custom'){
+  if(value==='custom'||value==='__concise__'){
    textarea.readOnly=false;
-   if(createInstructionSource!=='custom'){textarea.value='';createInstructionSource='custom';editor.open=true}
+   if(createInstructionSource!==value){textarea.value=value==='__concise__'?addConciseInstructions(textarea.value):'';createInstructionSource=value;editor.open=true}
    editor.hidden=false;
    mdPreview(preview,textarea.value);preview.hidden=!textarea.value.trim();return;
   }
@@ -2935,7 +2938,7 @@
   const value=$('#create-instructions').value,markdown=$('#create-instructions-custom').value;
   if(value==='auto')return null;
   if(value==='none')return {none:true};
-  if(value==='custom'){if(!markdown.trim())throw Error('Enter the custom instruction Markdown or choose another source.');return {markdown}}
+  if(value==='custom'||value==='__concise__'){if(!markdown.trim())throw Error('Enter the custom instruction Markdown or choose another source.');return {markdown}}
   const body=await presetBody(value);
   return markdown.trim()&&markdown!==body?{preset:value,markdown}:{preset:value};
  }
@@ -2956,9 +2959,10 @@
   try{
    const state=await api(boxPath(box.id)+'/instructions'),current=state.instructions||{source:'none',markdown:''};
    const none=mk('option','No custom instructions (chat conventions only)');none.value='';select.append(none);
+   const concise=mk('option','Concise responses');concise.value='__concise__';select.append(concise);
    for(const preset of instructionPresets.presets){const option=mk('option',preset.name+' · r'+preset.revision);option.value=preset.name;select.append(option)}
    const custom=mk('option','Custom Markdown for this box');custom.value='custom';select.append(custom);
-   select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?'custom':'');
+   select.value=current.source==='preset'&&instructionPresets.presets.some(p=>p.name===current.preset)?current.preset:(current.source==='custom'?(current.markdown===conciseInstructions?'__concise__':'custom'):'');
    $('#box-instructions-markdown').value=current.markdown||'';
    mdPreview($('#box-instructions-preview'),current.markdown||'');
    $('#box-instructions-effective').textContent=state.effectiveMarkdown||'';
@@ -2969,6 +2973,7 @@
  $('#box-instructions-preset').addEventListener('change',async()=>{
   const select=$('#box-instructions-preset'),textarea=$('#box-instructions-markdown'),preview=$('#box-instructions-preview');
   if(select.value===''){textarea.value='';mdPreview(preview,'');return}
+  if(select.value==='__concise__'){textarea.value=addConciseInstructions(textarea.value);mdPreview(preview,textarea.value);return}
   if(select.value==='custom'){mdPreview(preview,textarea.value);return}
   try{textarea.value=await presetBody(select.value)}catch(e){$('#box-instructions-status').textContent=e.message;return}
   mdPreview(preview,textarea.value);
@@ -2980,7 +2985,7 @@
   try{
    let body;
    if(select.value==='')body={none:true};
-   else if(select.value==='custom'){if(!markdown.trim())throw Error('Enter the custom Markdown or choose another source.');body={markdown}}
+   else if(select.value==='custom'||select.value==='__concise__'){if(!markdown.trim())throw Error('Enter the custom Markdown or choose another source.');body={markdown}}
    else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
    status.textContent='Applying…';
    const result=await api(boxPath(boxInstructionTarget.id)+'/instructions','PUT',body);
