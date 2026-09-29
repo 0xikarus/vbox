@@ -195,6 +195,126 @@ func TestCodexQueueInputSendsImageAsStructuredPart(t *testing.T) {
 	}
 }
 
+func TestCodexBusyTurnSteersChatWithExactMessageID(t *testing.T) {
+	var methodsMu sync.Mutex
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64          `json:"id"`
+				Method string         `json:"method"`
+				Params map[string]any `json:"params"`
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			methodsMu.Lock()
+			methods = append(methods, request.Method)
+			methodsMu.Unlock()
+			var result map[string]any
+			switch request.Method {
+			case "thread/turns/list":
+				result = map[string]any{"data": []any{map[string]any{"id": "turn-1", "status": "inProgress"}}}
+			case "turn/steer":
+				if request.Params["threadId"] != "visible-thread" || request.Params["expectedTurnId"] != "turn-1" || request.Params["clientUserMessageId"] != "message-1" || !reflect.DeepEqual(request.Params["input"], []any{map[string]any{"type": "text", "text": "check this"}, map[string]any{"type": "localImage", "path": "/tmp/image.png"}}) {
+					t.Errorf("incorrect steer request: %+v", request.Params)
+				}
+				result = map[string]any{"turnId": "turn-1"}
+			default:
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			response, _ := json.Marshal(map[string]any{"id": request.ID, "result": result})
+			_ = conn.Write(r.Context(), websocket.MessageText, response)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexSubmitVisibleInput(context.Background(), client, "visible-thread", "message-1", "check this", []string{"/tmp/image.png"}); err != nil {
+		t.Fatal(err)
+	}
+	methodsMu.Lock()
+	defer methodsMu.Unlock()
+	if !reflect.DeepEqual(methods, []string{"thread/turns/list", "turn/steer"}) {
+		t.Fatalf("methods=%v", methods)
+	}
+}
+
+func TestCodexSteerTurnEndRaceFallsBackToQueue(t *testing.T) {
+	var methodsMu sync.Mutex
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			methodsMu.Lock()
+			methods = append(methods, request.Method)
+			methodsMu.Unlock()
+			response := map[string]any{"id": request.ID}
+			switch request.Method {
+			case "thread/turns/list":
+				response["result"] = map[string]any{"data": []any{map[string]any{"id": "turn-1", "status": "inProgress"}}}
+			case "turn/steer":
+				response["error"] = map[string]any{"message": "no active turn to steer"}
+			case "thread/queue/add":
+				response["result"] = map[string]any{"queuedSubmission": map[string]any{"id": "queued-1"}}
+			default:
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			data, _ := json.Marshal(response)
+			_ = conn.Write(r.Context(), websocket.MessageText, data)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexSubmitVisibleInput(context.Background(), client, "visible-thread", "message-1", "check this", nil); err != nil {
+		t.Fatal(err)
+	}
+	methodsMu.Lock()
+	defer methodsMu.Unlock()
+	if !reflect.DeepEqual(methods, []string{"thread/turns/list", "turn/steer", "thread/queue/add"}) {
+		t.Fatalf("methods=%v", methods)
+	}
+}
+
 func TestCodexQueueReceiptWaitsForMatchingNativeUserItem(t *testing.T) {
 	var reads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
