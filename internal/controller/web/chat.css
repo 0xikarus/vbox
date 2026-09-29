@@ -58,11 +58,6 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-filter::placeholder{color:var(--ink-soft)}
 #new-chat-group{flex:none;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface2);color:var(--ink);padding:.55rem .65rem;min-height:2.5rem;font:inherit;font-size:.8rem;font-weight:700;cursor:pointer}
 #new-chat-group:hover{background:var(--accent-soft)}
-#chat-type-tabs{display:flex;gap:.25rem;padding:0 .85rem .5rem;flex:none;overflow-x:auto}
-#chat-type-tabs button{flex:none;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2);color:var(--ink-soft);padding:.35rem .55rem;font:inherit;font-size:.74rem;font-weight:700;cursor:pointer;white-space:nowrap}
-#chat-type-tabs button:hover{color:var(--ink);background:var(--accent-soft)}
-#chat-type-tabs button[aria-pressed=true]{background:var(--accent-soft);color:var(--accent-text);border-color:var(--accent)}
-.chat-type-unread{display:inline-block;margin-left:.2rem;padding:.05rem .35rem;border-radius:99px;background:var(--accent);color:var(--accent-ink);font-size:.66rem;font-weight:800}
 #chat-entries{list-style:none;margin:0;padding:.15rem .45rem 5.5rem;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch}
 #chat-entries li{display:flex;gap:.6rem;align-items:center;padding:.55rem .5rem;cursor:pointer;
   border-radius:var(--radius);border:1px solid transparent;position:relative;transition:background .14s,border-color .14s}

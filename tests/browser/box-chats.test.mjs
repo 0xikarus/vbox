@@ -51,8 +51,7 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   const page=await browser.newPage();await page.setViewport({width:1100,height:760});
   await page.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
   await page.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===2);
-  assert.equal(await page.$eval('#chat-type-tabs [data-chat-type="pair"]',button=>button.getAttribute('aria-pressed')),'true');
-  await page.click('#chat-type-tabs [data-chat-type="all"]');
+  assert.equal(await page.$('#chat-type-tabs'),null,'the sidebar has no conversation filter tabs');
   assert.equal(await page.$$eval('#chat-entries [data-box-id]',rows=>rows.length),2);
   assert.equal(await page.$$eval('#chat-entries [data-pair-key]',rows=>rows.length),1);
   assert.equal(await page.$eval('#chat-header-name',element=>element.textContent),'Builder ↔ Reviewer');
@@ -121,7 +120,6 @@ test('box conversations open at the latest message on desktop and mobile',async(
   const desktop=await browser.newPage();await desktop.setViewport({width:1100,height:760});
   await desktop.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
   await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
-  await desktop.click('#chat-type-tabs [data-chat-type="all"]');
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'a direct link starts at the newest box message');
   await desktop.screenshot({path:'/tmp/vmbox-pair-latest-desktop.png'});
@@ -160,7 +158,6 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
  await withChat(async(browser,base)=>{
   const desktop=await browser.newPage();await desktop.setViewport({width:1200,height:800});
   await desktop.goto(base+'/chat#box='+a);
-  await desktop.click('#chat-type-tabs [data-chat-type="all"]');
   await desktop.waitForSelector('[data-pair-key]');
   assert.equal(await desktop.$('.chat-pin'),null,'rows do not show a permanent pin control');
   await desktop.click('[data-box-id="'+b+'"]',{button:'right'});
@@ -188,7 +185,6 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
 
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat');
-  await mobile.click('#chat-type-tabs [data-chat-type="all"]');
   await mobile.waitForSelector('[data-pair-key]');
   await mobile.waitForSelector('#chat-entries .conversation-divider');
   await mobile.screenshot({path:'/tmp/vmbox-chat-pins-mobile.png'});
@@ -215,14 +211,9 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   const page=await browser.newPage();await page.setViewport({width:1200,height:800});
   await page.goto(base+'/chat');
   await page.waitForSelector('[data-box-id]');
-  assert.equal(await page.$('[data-pair-key]'),null,'box conversations stay in their own filter by default');
-  assert.equal(await page.$eval('#chat-type-tabs [data-chat-type="pair"] .chat-type-unread',badge=>badge.textContent),'1','hidden box conversation activity stays visible on its filter');
-  await page.screenshot({path:'/tmp/vmbox-chat-type-tabs-desktop.png'});
-  await page.click('#chat-type-tabs [data-chat-type="pair"]');
   await page.waitForSelector('[data-pair-key]');
-  assert.equal(await page.$('[data-box-id]'),null,'the box conversation filter shows only direct box chats');
-  await page.click('#chat-type-tabs [data-chat-type="all"]');
-  await page.waitForSelector('[data-pair-key]');
+  assert.ok(await page.$('[data-box-id]'),'agent chats and box conversations share the list');
+  await page.screenshot({path:'/tmp/vmbox-chat-unified-list-desktop.png'});
   await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.textContent==='1',{},a);
   await page.click('[data-box-id="'+a+'"]',{button:'right'});
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
@@ -250,13 +241,7 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   await page.click('#row-menu .row-submenu-toggle');
   await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='Projects').click());
   assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'3');
-  await page.click('#chat-type-tabs [data-chat-type="pair"]');
-  assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'1');
-  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'1');
-  await page.click('#chat-type-tabs [data-chat-type="box"]');
-  assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'2');
-  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'1');
-  await page.click('#chat-type-tabs [data-chat-type="all"]');
+  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'2');
   await page.click('.chat-folder-toggle');
   assert.equal(await page.$('[data-box-id="'+a+'"]'),null);
   assert.equal(await page.$('[data-pair-key]'),null);
@@ -292,8 +277,7 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat');
   await mobile.waitForSelector('[data-box-id]');
-  await mobile.screenshot({path:'/tmp/vmbox-chat-type-tabs-mobile.png'});
-  await mobile.click('#chat-type-tabs [data-chat-type="all"]');
+  await mobile.screenshot({path:'/tmp/vmbox-chat-unified-list-mobile.png'});
   await mobile.waitForSelector('[data-pair-key]');
   const point=await mobile.$eval('[data-pair-key]',row=>{const rect=row.getBoundingClientRect();return {x:rect.left+rect.width/2,y:rect.top+rect.height/2}});
   await mobile.touchscreen.touchStart(point.x,point.y);
@@ -389,7 +373,6 @@ test('a late box conversation response cannot overwrite the selected owner chat'
  await withChat(async(browser,base)=>{
   const page=await browser.newPage();await page.setViewport({width:1100,height:760});
   await page.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
-  await page.click('#chat-type-tabs [data-chat-type="all"]');
   await page.waitForFunction(()=>document.querySelector('#chat-conversation').classList.contains('pair-view'));
   await page.click('[data-box-id="'+a+'"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('Owner chat is here'));
