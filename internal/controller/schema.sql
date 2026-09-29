@@ -3,6 +3,12 @@ CREATE TABLE IF NOT EXISTS accounts (
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS chat_sidebar_layouts (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  groups_json jsonb NOT NULL DEFAULT '[]'::jsonb,
+  members_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),

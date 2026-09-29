@@ -24,16 +24,44 @@
  let groupStorageKey='';
  const chatGroups=[];
  const chatGroupMembers=new Map();
- function loadChatGroups(accountId){
-  groupStorageKey='vmboxChatSidebarGroups:'+accountId;
-  let saved={};try{saved=JSON.parse(localStorage.getItem(groupStorageKey)||'{}')||{}}catch{}
+ let groupSaveQueue=Promise.resolve();
+ const groupLayout=()=>({groups:chatGroups,members:Object.fromEntries(chatGroupMembers)});
+ function applyChatGroups(saved){
   chatGroups.splice(0,chatGroups.length,...(Array.isArray(saved.groups)?saved.groups.filter(group=>group&&typeof group.id==='string'&&typeof group.name==='string').map(group=>({id:group.id,name:group.name.slice(0,48),collapsed:!!group.collapsed})):[]));
   chatGroupMembers.clear();
   for(const [key,id] of Object.entries(saved.members&&typeof saved.members==='object'?saved.members:{}))if(typeof id==='string'&&chatGroups.some(group=>group.id===id))chatGroupMembers.set(key,id);
+  let pinsChanged=false;
+  for(const key of chatGroupMembers.keys())if(pins.delete(key))pinsChanged=true;
+  if(pinsChanged)savePins();
   groupNodes.clear();
  }
+ async function loadChatGroups(accountId){
+  groupStorageKey='vmboxChatSidebarGroups:'+accountId;
+  let local={};try{local=JSON.parse(localStorage.getItem(groupStorageKey)||'{}')||{}}catch{}
+  let saved=local;
+  try{
+   const remote=await api('/v1/chat-sidebar-layout');
+   if(local.dirty||(!remote.exists&&(local.groups?.length||Object.keys(local.members||{}).length))){
+    const migrated=await api('/v1/chat-sidebar-layout','PUT',{}, {groups:local.groups||[],members:local.members||{}});
+    saved=migrated;
+   }else saved=remote;
+   try{localStorage.setItem(groupStorageKey,JSON.stringify({...saved,dirty:false}))}catch{}
+  }catch(e){if(local.dirty||local.groups?.length)toast('Chat groups could not be synced. They are saved in this browser.');else console.warn('Could not load chat groups:',e)}
+  applyChatGroups(saved);
+ }
  const groupForChat=key=>chatGroups.find(group=>group.id===chatGroupMembers.get(key));
- function saveChatGroups(){try{localStorage.setItem(groupStorageKey,JSON.stringify({groups:chatGroups,members:Object.fromEntries(chatGroupMembers)}))}catch{}}
+ function saveChatGroups(){
+  const key=groupStorageKey,layout=JSON.parse(JSON.stringify(groupLayout()));
+  try{localStorage.setItem(key,JSON.stringify({...layout,dirty:true}))}catch{}
+  groupSaveQueue=groupSaveQueue.catch(()=>{}).then(async()=>{
+   if(key!==groupStorageKey)return;
+   try{
+    await api('/v1/chat-sidebar-layout','PUT',{},layout);
+    const current=localStorage.getItem(key);
+    if(current){const backup=JSON.parse(current);if(JSON.stringify({groups:backup.groups,members:backup.members})===JSON.stringify(layout))localStorage.setItem(key,JSON.stringify({...layout,dirty:false}))}
+   }catch{toast('Chat groups could not be synced. They are saved in this browser.')}
+  });
+ }
  function savePins(){try{localStorage.setItem('vmboxChatPins',JSON.stringify([...pins]))}catch{}}
  function togglePin(key){
   if(pins.has(key))pins.delete(key);else{pins.add(key);if(chatGroupMembers.delete(key))saveChatGroups()}
@@ -1053,8 +1081,8 @@
   }
   for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
   const ungrouped=key=>!pins.has(key)&&!groupForChat(key);
-  const pinnedBoxes=list.filter(box=>pins.has(pinKey('box',box.id))).map(box=>rows.get(box.id));
-  const pinnedPairs=pairList.filter(pair=>pins.has(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
+  const pinnedBoxes=list.filter(box=>pins.has(pinKey('box',box.id))&&!groupForChat(pinKey('box',box.id))).map(box=>rows.get(box.id));
+  const pinnedPairs=pairList.filter(pair=>pins.has(pinKey('pair',pairKey(pair)))&&!groupForChat(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const otherBoxes=list.filter(box=>ungrouped(pinKey('box',box.id))).map(box=>rows.get(box.id));
   const otherPairs=pairList.filter(pair=>ungrouped(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const desired=[];
@@ -2741,6 +2769,7 @@
   try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){showLogin(e.message)}
  };
  $('#logout').onclick=async()=>{
+  groupStorageKey='';
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   await disablePushSubscription();
   $('#usage-modal').hidden=true;
@@ -2762,7 +2791,7 @@
  };
  async function enter(initial=false){
   try{
-   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';loadChatGroups(who.accountId||'default');
+   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');
    $('#chat-type-tabs [data-chat-type="pair"]').hidden=!owner;$('#chat-type-tabs [data-chat-type="all"]').hidden=!owner;
    if(!owner&&chatType!=='box')setChatType('box');
    else setChatType(chatType);

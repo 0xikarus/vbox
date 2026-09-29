@@ -9,13 +9,21 @@ const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222
 const illustration=id=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#142433"/><rect x="24" y="24" width="592" height="352" rx="16" fill="${id==='image-3'?'#294b48':'#244060'}" stroke="#8cb8df"/><text x="50" y="85" fill="#f3f8ff" font-family="sans-serif" font-size="28" font-weight="bold">${id==='image-1'?'Build output · 1':id==='image-2'?'Build output · 2':'Review result'}</text><path d="M90 205h460" stroke="#9bc8ec" stroke-width="7"/><g fill="#eaf3ff" font-family="sans-serif" font-size="23"><text x="68" y="175">Source</text><text x="274" y="175">Build</text><text x="472" y="175">Review</text></g><circle cx="95" cy="205" r="19" fill="#94c5ee"/><circle cx="320" cy="205" r="19" fill="#94c5ee"/><circle cx="545" cy="205" r="19" fill="#94c5ee"/></svg>`);
 
 async function withChat(fn,{pairDelay=0,pairMessages=null}={}){
+ let sidebarLayout=null;
  const server=http.createServer(async(request,response)=>{
   const path=request.url.split('?')[0];
   if(path==='/chat'||path==='/box-chats'){response.setHeader('Content-Type','text/html');if(path==='/box-chats')response.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'self'");return response.end(files[path==='/chat'?'chat.html':'box-chats.html'])}
   if(files[path.slice(1)]){response.setHeader('Content-Type',path.endsWith('.css')?'text/css':'text/javascript');return response.end(files[path.slice(1)])}
   if(path.startsWith('/v1/messages/')){response.setHeader('Content-Type','image/svg+xml');return response.end(illustration(path.split('/').at(-1)))}
   response.setHeader('Content-Type','application/json');
-  if(path==='/v1/whoami')return response.end(JSON.stringify({role:'owner'}));
+  if(path==='/v1/whoami')return response.end(JSON.stringify({role:'owner',accountId:'account-a'}));
+  if(path==='/v1/chat-sidebar-layout'){
+   if(request.method==='PUT'){
+    let body='';for await(const chunk of request)body+=chunk;
+    sidebarLayout={...JSON.parse(body),exists:true};
+   }
+   return response.end(JSON.stringify(sidebarLayout||{exists:false,groups:[],members:{}}));
+  }
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return response.end(JSON.stringify([{id:a,name:'Builder',state:'running',defaultAgent:'claude',provider:'railway'},{id:b,name:'Reviewer',state:'running',defaultAgent:'codex',provider:'railway'}]));
   if(path==='/v1/box-conversations')return response.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:pairMessages?.at(-1)?.createdAt||now,lastText:pairMessages?.at(-1)?.text||'The review is ready'}]));
   if(path==='/v1/box-conversations/'+a+'/'+b+'/messages'){
@@ -34,7 +42,7 @@ async function withChat(fn,{pairDelay=0,pairMessages=null}={}){
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage']});
- try{await fn(browser,'http://127.0.0.1:'+server.address().port)}
+ try{await fn(browser,'http://127.0.0.1:'+server.address().port,()=>sidebarLayout)}
  finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 }
 
@@ -301,6 +309,66 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   assert.equal(await mobile.$('[data-pair-key]'),null);
   assert.equal(await mobile.$eval('.chat-folder .unread',badge=>badge.textContent),'1');
   await mobile.close();
+ });
+});
+
+test('chat groups sync across browser profiles',async()=>{
+ await withChat(async(browser,base,savedLayout)=>{
+  const first=await browser.createBrowserContext();
+  const page=await first.newPage();
+  await page.goto(base+'/chat');
+  await page.waitForSelector('[data-box-id]');
+  await page.click('#new-chat-group');
+  await page.type('#chat-group-name','Shared projects');
+  await page.click('#chat-group-form button[type=submit]');
+  await page.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Shared projects');
+  await page.waitForFunction(async()=>{
+   const response=await fetch('/v1/chat-sidebar-layout');
+   return (await response.json()).groups.some(group=>group.name==='Shared projects');
+  });
+  const second=await browser.createBrowserContext();
+  const other=await second.newPage();
+  await other.goto(base+'/chat');
+  await other.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Shared projects');
+  await other.click('[data-box-id="'+a+'"]',{button:'right'});
+  await other.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  await other.click('#row-menu .row-submenu-toggle');
+  await other.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='Shared projects').click());
+  await other.waitForFunction(()=>document.querySelector('.chat-folder-count')?.textContent==='1');
+  await other.waitForFunction(async()=>{
+   const response=await fetch('/v1/chat-sidebar-layout');
+   return !!(await response.json()).members['box:11111111-1111-4111-8111-111111111111'];
+  });
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('.chat-folder-count')?.textContent==='1');
+  assert.equal(savedLayout().members['box:'+a],savedLayout().groups[0].id);
+  other.once('dialog',dialog=>dialog.accept());
+  await other.click('.chat-folder-menu');
+  await other.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Delete group…').click());
+  await other.waitForFunction(async()=>{
+   const response=await fetch('/v1/chat-sidebar-layout');
+   const layout=await response.json();
+   return layout.exists&&layout.groups.length===0;
+  });
+  await page.reload();
+  await page.waitForSelector('[data-box-id]');
+  assert.equal(await page.$('.chat-folder'),null,'an empty saved layout replaces stale browser groups');
+  await first.close();await second.close();
+ });
+});
+
+test('chat groups migrate from browser storage when the account has no saved layout',async()=>{
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();
+  await page.goto(base+'/chat');
+  await page.waitForSelector('[data-box-id]');
+  await page.evaluate(id=>localStorage.setItem('vmboxChatSidebarGroups:account-a',JSON.stringify({groups:[{id:'legacy-group',name:'Existing work',collapsed:true}],members:{['box:'+id]:'legacy-group'}})),a);
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Existing work');
+  assert.equal(await page.$eval('.chat-folder-toggle',button=>button.getAttribute('aria-expanded')),'false');
+  assert.equal(savedLayout().members['box:'+a],'legacy-group');
+  assert.equal(savedLayout().groups[0].name,'Existing work');
+  await page.close();
  });
 });
 
