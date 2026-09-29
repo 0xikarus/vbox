@@ -100,13 +100,13 @@
 
  async function api(path,method='GET',headers={},body,timeout=60000){
   let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
-  if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
+  if(r.status===401){showLogin('Please log in to the controller.');throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   return r.status===204?null:r.json();
  }
  async function chatHistory(path){
   let r;try{r=await fetch(path,{credentials:'same-origin',signal:AbortSignal.timeout(60000)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
-  if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
+  if(r.status===401){showLogin('Please log in to the controller.');throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   const rawBusy=r.headers.get('X-Vmbox-Agent-Busy');
   return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||''};
@@ -338,8 +338,6 @@
  function refreshAccountMascots(){
   const seed=theme.seed||'vmbox';
   accountMascots.splice(0).forEach(m=>m.destroy&&m.destroy());
-  const login=document.getElementById('login-mascot');
-  if(login)login.innerHTML=mascotMiniSVG(seed);
   for(const id of ['chat-empty-mascot']){
    const host=document.getElementById(id);if(!host)continue;
    accountMascots.push(new Mascot(host,seed));
@@ -2486,9 +2484,11 @@
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
  /* ---------- auth ---------- */
+ function showLogin(message=''){$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
  $('#login').onsubmit=async event=>{
   event.preventDefault();
-  try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){$('#error').textContent=e.message}
+  $('#login-error').textContent='';
+  try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){showLogin(e.message)}
  };
  $('#logout').onclick=async()=>{
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
@@ -2508,9 +2508,9 @@
   boxes.clear();rows.clear();pairs.clear();pairRows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;delete messagesEl.dataset.pair;
   owner=false;extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
   selected='';selectedPair='';restoringTranscript=false;newMessagesBtn.hidden=true;scrollMemory.clear();followMemory.clear();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').classList.remove('pair-view');
-  $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
+  $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;showLogin();
  };
- async function enter(){
+ async function enter(initial=false){
   try{
    const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
@@ -2519,7 +2519,7 @@
    $('#commands-toggle').hidden=!owner;
    $('#ai-settings-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
-   $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
+   $('#login').hidden=true;$('#login-error').textContent='';$('#error').textContent='';$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
    doodle('Loading chats…');
    try{await loadBoxes()}finally{doodle('')}
    const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box'),pair=params.get('pair');
@@ -2528,7 +2528,7 @@
    if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
    if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
    schedule();renderInstallState();renderPushState();void checkPushState({repair:true});
-  }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
+  }catch(e){showLogin(initial&&e.message==='Please log in to the controller.'?'':e.message)}
  }
  addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
 
@@ -3032,5 +3032,5 @@
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
  applyVariant();
 
- void enter();
+ void enter(true);
 })();

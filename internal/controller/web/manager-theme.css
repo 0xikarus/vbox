@@ -1,7 +1,7 @@
 /* Quiet workspace management surfaces. */
 html{scroll-behavior:smooth}
 body{max-width:none;min-height:100vh;padding:0 0 3rem;background:#111923;color:#eaf0f8;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color-scheme:dark}
-body>h1,body>.sub,body>#error,body>#login,body>#app,body>.manage-heading,body>.manage-subnav{width:min(90rem,calc(100% - 2rem));margin-left:auto;margin-right:auto}
+body>h1,body>.sub,body>#error,body>#app,body>.manage-heading,body>.manage-subnav{width:min(90rem,calc(100% - 2rem));margin-left:auto;margin-right:auto}
 body a{color:#aaceff}
 body a:hover{color:#eaf0f8}
 body :focus-visible{outline:2px solid #8fb8f5;outline-offset:2px}
@@ -111,7 +111,7 @@ body[data-manage-view="boxes"] #app>section:not(#boxes),body[data-manage-view="p
  .manage-top .workspace-links{order:2;flex:0 0 100%;overflow-x:auto}
  .manage-top .workspace-links a{padding:.38rem .55rem}
  .manage-subnav{padding:.55rem 0 .1rem}
- body>h1,body>.sub,body>#error,body>#login,body>#app,body>.manage-heading,body>.manage-subnav{width:calc(100% - 1rem)}
+ body>h1,body>.sub,body>#error,body>#app,body>.manage-heading,body>.manage-subnav{width:calc(100% - 1rem)}
  #app>section{padding:.55rem}
  .section-heading .field{width:100%}
  .box-detail-actions{grid-template-columns:1fr 1fr}

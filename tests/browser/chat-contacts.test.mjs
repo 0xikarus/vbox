@@ -8,6 +8,7 @@ const html=await readFile('internal/controller/web/chat.html','utf8');
 const js=await readFile('internal/controller/web/chat.js','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
+const loginCSS=await readFile('internal/controller/web/login.css','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 
@@ -35,6 +36,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/chat.css'){res.setHeader('Content-Type','text/css');return res.end(css)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
+  if(path==='/login.css'){res.setHeader('Content-Type','text/css');return res.end(loginCSS)}
   if(!path.startsWith('/v1/'))return res.end();
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
@@ -118,7 +120,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.click('#usage-modal button[data-close]');
   await p.evaluate(()=>{document.querySelector('#login').hidden=false});
   const loginLayout=await p.evaluate(()=>{const form=document.querySelector('#login'),card=form.querySelector('.login-card'),style=getComputedStyle(form);return {position:style.position,z:Number(style.zIndex),card:!!card,modal:card?.getAttribute('aria-modal')}});
-  assert.deepEqual(loginLayout,{position:'fixed',z:100,card:true,modal:'true'});
+  assert.deepEqual(loginLayout,{position:'fixed',z:1000,card:true,modal:'true'});
   await p.evaluate(()=>{document.querySelector('#login').hidden=true});
   await p.evaluate(()=>document.activeElement?.blur());
   const now=new Date().toISOString();

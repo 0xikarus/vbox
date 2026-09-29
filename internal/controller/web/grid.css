@@ -16,11 +16,9 @@ a{color:#aaceff}
 .grid-heading h1{margin:0;font-size:1.5rem;letter-spacing:-.04em}
 .grid-heading p{margin:.15rem 0 0;color:#91a0b3;font-size:.8rem}
 #grid-count{padding:.28rem .55rem;border:1px solid #2b3848;border-radius:.5rem;color:#8ee5ba;font-size:.72rem;font-weight:700;white-space:nowrap}
-#login{display:flex;gap:.5rem;align-items:end;flex-wrap:wrap;padding:1rem clamp(.75rem,3vw,2rem)}
-#login label{display:grid;gap:.2rem;color:#91a0b3}
-#login input,#layout select,.tile select{min-height:2.1rem;padding:.35rem .55rem;border:1px solid #51647b;border-radius:.5rem;background:#202e3d;color:#eaf0f8}
-#login button,#layout button,.tile button{min-height:2.1rem;padding:.35rem .65rem;border:1px solid #3a4b5e;border-radius:.5rem;background:#202e3d;color:#eaf0f8;font-weight:650}
-#login button:hover,#layout button:hover,.tile button:hover{background:#263749;border-color:#8fb8f5}
+#layout select,.tile select{min-height:2.1rem;padding:.35rem .55rem;border:1px solid #51647b;border-radius:.5rem;background:#202e3d;color:#eaf0f8}
+#layout button,.tile button{min-height:2.1rem;padding:.35rem .65rem;border:1px solid #3a4b5e;border-radius:.5rem;background:#202e3d;color:#eaf0f8;font-weight:650}
+#layout button:hover,.tile button:hover{background:#263749;border-color:#8fb8f5}
 #error{margin:0;padding:0 clamp(.75rem,3vw,2rem);color:#ffadb5;font-size:.78rem}
 #grid-app{display:flex;flex:1;flex-direction:column;padding:0 0 1.2rem}
 #layout{display:flex;align-items:end;gap:.65rem;flex-wrap:wrap;margin:.5rem clamp(.75rem,3vw,2rem) .85rem;padding:.65rem .75rem;border:1px solid #2b3848;border-radius:.7rem;background:#18212d}
