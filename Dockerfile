@@ -116,7 +116,8 @@ RUN set -eux; \
     rm -rf /root/.cache /root/.config /root/.foundry /root/.ssh /tmp/* /var/tmp/*
 
 COPY tmux.conf /etc/vmbox/tmux.conf
-COPY entrypoint.sh /usr/local/bin/vmbox-entrypoint
+COPY scripts/worker-entrypoint.sh /usr/local/bin/vmbox-entrypoint
+COPY scripts/worker-agent-trust.sh /usr/local/bin/worker-agent-trust.sh
 COPY --from=build /out/vmbox-runtime /usr/local/bin/vmbox-runtime
 COPY --from=build /out/vmbox-controller /usr/local/bin/vmbox-controller
 COPY --from=build /out/vmbox-worker-agent /usr/local/bin/vmbox-worker-agent
@@ -132,7 +133,7 @@ RUN set -eux; \
       blender --version | sed -n '1p'; \
       npm --version; python --version; python3 --version; python3 -m pip --version; pipx --version; uv --version; uvx --version; \
       bun --version; codex --version; claude --version; opencode --version; forge --version | sed -n '1p'; \
-      sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-worker-agent /usr/local/bin/vmbox-entrypoint /etc/vmbox/tmux.conf; \
+      sha256sum /usr/local/bin/vmbox-runtime /usr/local/bin/vmbox-worker-agent /usr/local/bin/vmbox-entrypoint /usr/local/bin/worker-agent-trust.sh /etc/vmbox/tmux.conf; \
     } >/usr/local/lib/vmbox-image-manifest; \
     sha256sum /usr/local/lib/vmbox-image-manifest | sed 's/[[:space:]].*$//' >/usr/local/lib/vmbox-component-fingerprint; \
     mkdir -p /etc/vmbox; \

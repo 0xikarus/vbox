@@ -18,9 +18,11 @@
 .idle-policy-controls button{padding:.38rem .6rem;border:1px solid var(--idle-border);border-radius:.3rem;background:#2c4058;color:var(--idle-ink);font:650 .72rem system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
 .idle-policy-controls button:disabled,.idle-policy-controls input:disabled{opacity:.55;cursor:default}
 .idle-policy-note,.idle-policy-status{margin:0;color:var(--idle-muted);font-size:.72rem;line-height:1.4}
+.run-budget-elapsed{margin:0;color:var(--idle-ink);font-size:.85rem;font-weight:700}
 .idle-policy-status{min-height:1rem}
 .idle-policy-retry{justify-self:start;padding:.3rem .6rem;border:1px solid var(--idle-border);border-radius:.3rem;background:transparent;color:var(--idle-ink);font:650 .72rem system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
 #inspect-idle-policy{margin-top:.65rem}
+#inspect-run-budget-policy,#workspace-run-budget-policy{margin-top:.65rem}
 #box-detail-body .idle-policy{margin-top:1rem}
 body:has(.workspace-body) .idle-policy{--idle-bg:#f3f6fa;--idle-border:#bdc9d7;--idle-ink:#1c2c40;--idle-muted:#53647b}
 body:has(.workspace-body) .idle-policy-controls input{background:#fff}

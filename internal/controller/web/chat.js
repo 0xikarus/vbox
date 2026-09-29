@@ -100,13 +100,13 @@
 
  async function api(path,method='GET',headers={},body,timeout=60000){
   let r;try{r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(timeout)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
-  if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
+  if(r.status===401){showLogin('Please log in to the controller.');throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   return r.status===204?null:r.json();
  }
  async function chatHistory(path){
   let r;try{r=await fetch(path,{credentials:'same-origin',signal:AbortSignal.timeout(60000)})}catch{throw Error('Controller connection interrupted. The operation may still be running.')}
-  if(r.status===401){$('#login').hidden=false;$('#login input[name="token"]').focus();throw Error('Please log in to the controller.')}
+  if(r.status===401){showLogin('Please log in to the controller.');throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   const rawBusy=r.headers.get('X-Vmbox-Agent-Busy');
   return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||''};
@@ -338,8 +338,6 @@
  function refreshAccountMascots(){
   const seed=theme.seed||'vmbox';
   accountMascots.splice(0).forEach(m=>m.destroy&&m.destroy());
-  const login=document.getElementById('login-mascot');
-  if(login)login.innerHTML=mascotMiniSVG(seed);
   for(const id of ['chat-empty-mascot']){
    const host=document.getElementById(id);if(!host)continue;
    accountMascots.push(new Mascot(host,seed));
@@ -1237,13 +1235,21 @@
  async function loadPreviews(force){
   await Promise.allSettled([...boxes.keys()].map(async id=>{
    if(id===selected)return;// open conversation refreshes itself
-   if(!force&&Date.now()-(previewFetched.get(id)||0)<30000)return;
+   const previousFetch=previewFetched.get(id)||0;
+   if(!force&&Date.now()-previousFetch<30000)return;
    const history=await chatHistory(boxPath(id)+'/messages?limit=20');
    const box=boxes.get(id);
-   // The box may have been opened (or fully loaded) while the preview was in
-   // flight; never let a 20-message preview overwrite an open conversation.
-   if(!box||id===selected||box.historyLoaded)return;
-   applyBusyState(box,history);box.messages=history.messages||[];box.historyLoaded=false;box.hasOlder=false;previewFetched.set(id,Date.now());
+   // The box may have been opened while the preview was in flight. Keep its
+   // full transcript, but refresh the newest messages so previously opened
+   // chats still get unread badges after the user switches away.
+   if(!box||id===selected||(previewFetched.get(id)||0)!==previousFetch)return;
+   applyBusyState(box,history);
+   if(box.historyLoaded){
+    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
+    for(const message of history.messages||[])merged.set(message.id,message);
+    box.messages=[...merged.values()].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)||a.id.localeCompare(b.id));
+   }else{box.messages=history.messages||[];box.hasOlder=false}
+   previewFetched.set(id,Date.now());
    summarize(id);
   }));
  }
@@ -1319,6 +1325,7 @@
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
   if(hasNewReply&&!stickToBottom)newMessagesBtn.hidden=false;
   renderRows();renderInspect();
+  if(owner&&inspectOpen&&(force||hasNewReply))void loadInspectAttachmentStorage(box);
   if(owner&&box.state==='running'&&['codex','claude','opencode'].includes(box.defaultAgent))void refreshAgentResume(box,!!force);
  }
  function renderPairMessages(pair){
@@ -1451,7 +1458,7 @@
  const maxComposerHeight=()=>Math.min(150,Math.max(96,innerHeight*0.35));
  function grow(){inputEl.style.height='auto';inputEl.style.height=Math.min(inputEl.scrollHeight,maxComposerHeight())+'px'}
  const composerPicker=$('#composer-picker'),mentionCache=new Map();
- let pickerItems=[],pickerIndex=0,pickerRange=null,pickerRequest=0;
+ let pickerItems=[],pickerIndex=0,pickerRange=null,pickerRequest=0,acceptingComposerSuggestion=false;
  function expandChatCommands(text){
   const commands=new Map(chatCommands.map(command=>[command.name,command.prompt]));
   // Expand each draft token once; saved prompt text remains literal.
@@ -1499,6 +1506,7 @@
   const insertion=item.kind==='/'?'/'+item.name:'@'+item.name+' ';
   inputEl.value=inputEl.value.slice(0,range.start)+insertion+inputEl.value.slice(range.end);
   const caret=range.start+insertion.length;hideComposerPicker();inputEl.focus();inputEl.setSelectionRange(caret,caret);
+  acceptingComposerSuggestion=true;
   inputEl.dispatchEvent(new Event('input',{bubbles:true}));
  }
  function mentionedBoxIDs(text){
@@ -1517,7 +1525,7 @@
   send.setAttribute('aria-label',label);
   send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved '+agentLabel(box)+' session first.':box?.resumeCheckPending?'Checking for a saved conversation…':'Wait for this box to be running before sending';
  }
- inputEl.addEventListener('input',()=>{grow();updateSendState();void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
+ inputEl.addEventListener('input',()=>{grow();updateSendState();if(acceptingComposerSuggestion)acceptingComposerSuggestion=false;else void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
  inputEl.addEventListener('focus',()=>{
   if(composerHintShown)return;composerHintShown=true;
@@ -1533,6 +1541,11 @@
   if(!composerPicker.hidden){
    if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();pickerIndex=(pickerIndex+(event.key==='ArrowDown'?1:-1)+pickerItems.length)%pickerItems.length;[...composerPicker.children].forEach((button,index)=>button.setAttribute('aria-selected',String(index===pickerIndex)));return}
    if(event.key==='Escape'){event.preventDefault();hideComposerPicker();return}
+   if(event.key==='Tab'&&!event.shiftKey&&pickerRange?.kind==='/'){
+    event.preventDefault();chooseComposerSuggestion(pickerIndex);
+    if(!$('#send').disabled){hideComposerPicker();$('#send').focus()}
+    return;
+   }
    if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chooseComposerSuggestion(pickerIndex);return}
   }
   if(event.key!=='Enter'||event.shiftKey)return;
@@ -1581,6 +1594,7 @@
     drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type});
     attachmentDrafts.set(boxID,drafts);
     if(selected===boxID)renderDrafts();
+    if(owner&&inspectOpen&&selected===boxID)void loadInspectAttachmentStorage(boxes.get(boxID));
    }catch(e){statusEl.textContent=e.message}
   }
   fileInput.value='';
@@ -1744,6 +1758,26 @@
  let inspectOpen=false,inspectTimer,controllerPing=null;
  let inspectProfilesFor='',inspectProfileCache=null;
  let inspectWorkerKey='',inspectWorker=null;
+ let inspectInstructionsFor='',inspectInstructions=null,inspectInstructionsRequest=0;
+ let inspectAttachmentFor='',inspectAttachmentCache=null,inspectAttachmentRequest=0;
+ const storageSize=bytes=>bytes>=1024*1024*1024?(bytes/1073741824).toFixed(2)+' GiB':bytes>=1024*1024?(bytes/1048576).toFixed(1)+' MiB':bytes>=1024?(bytes/1024).toFixed(1)+' KiB':bytes+' B';
+ async function loadInspectAttachmentStorage(box){
+  const request=++inspectAttachmentRequest;inspectAttachmentFor=box.id;inspectAttachmentCache=null;
+  try{
+   const value=await api(boxPath(box.id)+'/attachment-storage');
+   if(inspectOpen&&selected===box.id&&inspectAttachmentFor===box.id&&request===inspectAttachmentRequest){inspectAttachmentCache=value;renderInspect()}
+  }catch(e){if(inspectOpen&&selected===box.id&&inspectAttachmentFor===box.id&&request===inspectAttachmentRequest){inspectAttachmentCache={error:e.message};renderInspect()}}
+ }
+ async function loadInspectInstructions(box){
+  const id=box.id,request=++inspectInstructionsRequest;
+  inspectInstructionsFor=id;inspectInstructions=null;
+  try{
+   const state=await api(boxPath(id)+'/instructions');
+   if(inspectOpen&&selected===id&&inspectInstructionsFor===id&&inspectInstructionsRequest===request){inspectInstructions=state;renderInspect()}
+  }catch{
+   if(inspectOpen&&selected===id&&inspectInstructionsFor===id&&inspectInstructionsRequest===request){inspectInstructions={error:true};renderInspect()}
+  }
+ }
  async function loadInspectWorker(box,key){
   if(!box.slotId){inspectWorker={name:'Unassigned',serviceId:'',slot:'—'};renderInspect();return}
   try{
@@ -1759,6 +1793,14 @@
   renderInspect();
  }
  const fmtAgo=value=>{const s=Math.max(0,(Date.now()-new Date(value).getTime())/1000);if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+' min ago';if(s<86400)return Math.round(s/3600)+' h ago';return Math.round(s/86400)+' d ago'};
+ function instructionSyncLabel(state){
+  if(!state)return 'Loading…';
+  if(state.error)return 'Unavailable';
+  const appliedAt=state.instructions?.appliedAt;
+  const date=appliedAt?new Date(appliedAt):null;
+  const last=date&&!Number.isNaN(date.getTime())?date.toLocaleString():'Never';
+  return last+(state.pending?' · changes pending':'');
+ }
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
  const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
  const importedProfileLabel=ref=>[ref.application,ref.name,ref.model,ref.reasoningEffort].filter(Boolean).join(' · ');
@@ -1805,8 +1847,20 @@
    ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
    ['Box ping (live VNC)',livePing!=null?livePing+' ms':'opens with the desktop popup'],
    ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
+   ['Last instructions sync',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null)],
    ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
   ]);
+  const attachmentRoot=$('#inspect-attachment-storage');attachmentRoot.hidden=!owner;
+  if(owner){
+   if(inspectAttachmentFor!==box.id)void loadInspectAttachmentStorage(box);
+   const usage=inspectAttachmentCache;
+   fillRows($('#inspect-attachment-rows'),usage?.error?[['Storage',usage.error,'alert']]:[
+    ['This box',usage?storageSize(usage.boxBytes)+' · '+usage.boxCount+' files':'Loading…'],
+    ['Account',usage?storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes):'Loading…'],
+    ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files; cleaned on the next upload after 24 hours':'Loading…'],
+   ]);
+   $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
+  }
   const quick=$('#inspect-quick-actions');quick.replaceChildren();
   const link=document.createElement('a');
   link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
@@ -1828,7 +1882,13 @@
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
+  if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
+  const limitRoot=$('#inspect-create-limit');
+  if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
+  else limitRoot.hidden=true;
   maybeLoadInspectProfiles(box);
+  if(inspectInstructionsFor!==box.id)void loadInspectInstructions(box);
   maybeLoadInspectContacts(box);
  }
  function maybeLoadInspectProfiles(box){
@@ -1857,9 +1917,20 @@
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectWorkerKey='';inspectWorker=null}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#inspect-close').onclick=closeInspect;
  $('#inspect-backdrop').onclick=closeInspect;
+ $('#inspect-clear-attachments').onclick=async()=>{
+  const box=boxes.get(selected);if(!box)return;
+  if(!confirm('Permanently remove attachments from delivered chat messages in "'+box.name+'"? Message text stays available. Attachments still used by another box remain there.'))return;
+  const button=$('#inspect-clear-attachments'),storageStatus=$('#inspect-attachment-status');button.disabled=true;storageStatus.textContent='Clearing attachments…';
+  try{
+   const result=await api(boxPath(box.id)+'/attachment-storage','DELETE',{}, {confirmation:box.name});
+   for(const message of box.messages||[])if(message.state==='delivered')message.images=[];
+   if(selected===box.id)await refreshMessages(true);
+   if(inspectOpen&&selected===box.id){await loadInspectAttachmentStorage(box);storageStatus.textContent='Removed '+result.removedReferences+' attachment references; freed '+storageSize(result.freedBytes)+'.'}
+  }catch(e){storageStatus.textContent=e.message;button.disabled=false}
+ };
  // Collapsible details sections, remembered per browser.
  const foldKey='vmbox.inspectFold';
  let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
@@ -2191,6 +2262,7 @@
   try{
    const result=await api(boxPath(box.id)+'/instructions/resync','POST',{'Idempotency-Key':crypto.randomUUID()},{},120000);
    toast(result?.note||'Config re-synced to '+box.name+'.');
+   if(inspectOpen&&selected===box.id){inspectInstructionsRequest++;inspectInstructionsFor=box.id;inspectInstructions=result;renderInspect()}
    if(!result?.pending)closeInspect();
    await loadBoxes();
   }catch(e){toast(e.message)}
@@ -2412,9 +2484,11 @@
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
  /* ---------- auth ---------- */
+ function showLogin(message=''){$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
  $('#login').onsubmit=async event=>{
   event.preventDefault();
-  try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){$('#error').textContent=e.message}
+  $('#login-error').textContent='';
+  try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){showLogin(e.message)}
  };
  $('#logout').onclick=async()=>{
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
@@ -2434,9 +2508,9 @@
   boxes.clear();rows.clear();pairs.clear();pairRows.clear();listEl.replaceChildren();messagesEl.replaceChildren();delete messagesEl.dataset.box;delete messagesEl.dataset.pair;
   owner=false;extrasLoaded=false;chatCommands=[];mentionCache.clear();hideComposerPicker();closeSheets();
   selected='';selectedPair='';restoringTranscript=false;newMessagesBtn.hidden=true;scrollMemory.clear();followMemory.clear();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').classList.remove('pair-view');
-  $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;$('#login').hidden=false;
+  $('#chat-app').hidden=true;$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;$('#logout').hidden=true;showLogin();
  };
- async function enter(){
+ async function enter(initial=false){
   try{
    const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
@@ -2445,7 +2519,7 @@
    $('#commands-toggle').hidden=!owner;
    $('#ai-settings-toggle').hidden=!owner;
    $('#roles-toggle').hidden=!owner;
-   $('#login').hidden=true;$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
+   $('#login').hidden=true;$('#login-error').textContent='';$('#error').textContent='';$('#logout').hidden=false;appEl.hidden=false;applySidebarWidth();applyThreadWidth();
    doodle('Loading chats…');
    try{await loadBoxes()}finally{doodle('')}
    const params=new URLSearchParams(location.hash.slice(1)),id=params.get('box'),pair=params.get('pair');
@@ -2454,7 +2528,7 @@
    if(owner)void loadChatCommands().catch(e=>{if(selected)statusEl.textContent=e.message});
    if(owner){clearInterval(usageTimer);void refreshUsage();usageTimer=setInterval(()=>void refreshUsage(),60000)}
    schedule();renderInstallState();renderPushState();void checkPushState({repair:true});
-  }catch(e){$('#error').textContent=e.message;$('#login').hidden=false;$('#login input[name="token"]').focus()}
+  }catch(e){showLogin(initial&&e.message==='Please log in to the controller.'?'':e.message)}
  }
  addEventListener('pagehide',()=>{clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)});
 
@@ -2751,7 +2825,7 @@
  $('#role-editor-form').onsubmit=async event=>{
   event.preventDefault();const form=event.currentTarget,boxID=form.elements.id.value,status=$('#role-editor-status');if(!boxID)return;
   status.textContent='Saving permissions…';
-  try{const body=directPolicyBody(form),policy=await api(boxPath(boxID)+'/agent-policy','PUT',{},body);policySummaryEpoch++;policySummaries.set(boxID,policy?.capabilities?policy:body);if(!$('#roles-modal').hidden){renderPermissionBoxes();void loadPermissionSummaries()}status.textContent='Saved. Running MCP clients refresh their tools automatically.';$('#role-editor-modal').hidden=true;toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';renderInspect()}}
+  try{const body=directPolicyBody(form),policy=await api(boxPath(boxID)+'/agent-policy','PUT',{},body);policySummaryEpoch++;policySummaries.set(boxID,policy?.capabilities?policy:body);if(!$('#roles-modal').hidden){renderPermissionBoxes();void loadPermissionSummaries()}status.textContent='Saved. Running MCP clients refresh their tools automatically.';$('#role-editor-modal').hidden=true;toast('Permissions saved and synced.');if(selected===boxID){inspectContactsFor='';const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;renderInspect()}}
   catch(e){status.textContent=e.message}
  };
  async function presetBody(name){
@@ -2915,6 +2989,7 @@
    else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
    status.textContent='Applying…';
    const result=await api(boxPath(boxInstructionTarget.id)+'/instructions','PUT',body);
+   if(inspectOpen&&selected===boxInstructionTarget.id){inspectInstructionsRequest++;inspectInstructionsFor=boxInstructionTarget.id;inspectInstructions=result;renderInspect()}
    status.textContent=result.note||describeBoxInstructions(result);
    if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
    $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';
@@ -2962,5 +3037,5 @@
  $('#logout').addEventListener('click',()=>{$('#chat-menu-sheet').hidden=true},{capture:true});
  applyVariant();
 
- void enter();
+ void enter(true);
 })();

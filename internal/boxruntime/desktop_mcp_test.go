@@ -56,19 +56,24 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 	t.Fatal("create_agent_box tool is missing")
 }
 
-func TestClearAgentBoxContextToolRequiresTargetConfirmationAndRetryKey(t *testing.T) {
-	for _, tool := range desktopMCPTools() {
-		if tool["name"] != "clear_agent_box_context" {
-			continue
+func TestAgentBoxLifecycleToolRequiresTargetConfirmationAndRetryKey(t *testing.T) {
+	for _, name := range []string{"wake_agent_box", "clear_agent_box_context", "compact_agent_box_context"} {
+		found := false
+		for _, tool := range desktopMCPTools() {
+			if tool["name"] != name {
+				continue
+			}
+			found = true
+			schema := tool["inputSchema"].(map[string]any)
+			required := schema["required"].([]string)
+			if !slices.Equal(required, []string{"box", "confirmation", "idempotencyKey"}) {
+				t.Fatalf("%s required fields=%v", name, required)
+			}
 		}
-		schema := tool["inputSchema"].(map[string]any)
-		required := schema["required"].([]string)
-		if !slices.Equal(required, []string{"box", "confirmation", "idempotencyKey"}) {
-			t.Fatalf("required fields=%v", required)
+		if !found {
+			t.Fatalf("%s tool is missing", name)
 		}
-		return
 	}
-	t.Fatal("clear_agent_box_context tool is missing")
 }
 
 func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
@@ -352,6 +357,36 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 	}
 }
 
+func TestClaudeChannelDoesNotResendWhileBusyOnSameConnection(t *testing.T) {
+	event := chatInboundFile{ID: "message-1", Text: "queued during a long turn"}
+	sent := map[string]bool{}
+	calls := 0
+	encode := func(value any) error {
+		calls++
+		notification := value.(map[string]any)
+		if notification["method"] != "notifications/claude/channel" {
+			t.Fatalf("unexpected notification: %v", notification)
+		}
+		params := notification["params"].(map[string]any)
+		meta := params["meta"].(map[string]string)
+		if params["content"] != event.Text || meta["message_id"] != event.ID {
+			t.Fatalf("wrong channel payload: %v", params)
+		}
+		return nil
+	}
+	if !emitClaudeChannelEvent("claude-session", event, sent, encode) {
+		t.Fatal("first channel delivery was not emitted")
+	}
+	if emitClaudeChannelEvent("claude-session", event, sent, encode) || calls != 1 {
+		t.Fatalf("queued message was resent on the same connection: %d calls", calls)
+	}
+	// A replacement Claude MCP process gets a new connection after the old TUI
+	// exits. An inbox without a native receipt must be delivered there.
+	if !emitClaudeChannelEvent("claude-session", event, map[string]bool{}, encode) || calls != 2 {
+		t.Fatalf("replacement connection did not retry the inbox: %d calls", calls)
+	}
+}
+
 func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -577,7 +612,7 @@ func TestDesktopMCPGuideMatchesAdvertisedTools(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## Contacting other boxes", "get_contacts {}", `chat_message {"contact":"reviewer"`, `chat_message {"contact":"a1b2c3d4"`, `chat_message {"contact":"a1b2c3d4-1234-4000-8000-000000000000"`, "exact box `name`", "## chat_message", "## type_secret", "## take_screenshot", `Schema: `} {
+	for _, fragment := range []string{"# vmbox-desktop MCP tools", "## Contacting other boxes", "get_contacts {}", `chat_message {"contact":"reviewer"`, `chat_message {"contact":"a1b2c3d4"`, `chat_message {"contact":"a1b2c3d4-1234-4000-8000-000000000000"`, "exact box `name`", "## Send a prompt from a box-local app", "mcp-http.json", "promptUrl", `{"text":"Check the latest build result"}`, "Authorization: Bearer", "## chat_message", "## type_secret", "## take_screenshot", `Schema: `} {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("guide missing %q: %s", fragment, text)
 		}

@@ -4,8 +4,34 @@ import (
 	"bytes"
 	"image"
 	"image/png"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+
+	"github.com/DATA-DOG/go-sqlmock"
 )
+
+func TestRejectedUploadCommitsExpiredMediaCleanup(t *testing.T) {
+	store, mock := testStore(t)
+	var data bytes.Buffer
+	if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	mock.ExpectExec(`DELETE FROM run_once_images i`).WithArgs("account").WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectBegin()
+	mock.ExpectQuery(`SELECT id::text FROM accounts WHERE id=\$1 FOR UPDATE`).WithArgs("account").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("account"))
+	mock.ExpectQuery(`SELECT COALESCE\(sum\(octet_length\(data\)\),0\) FROM run_once_images`).WithArgs("account").WillReturnRows(sqlmock.NewRows([]string{"used"}).AddRow(maxAccountAttachmentBytes))
+	mock.ExpectRollback()
+	request := httptest.NewRequest(http.MethodPost, "/v1/run-once-images", bytes.NewReader(data.Bytes()))
+	response := httptest.NewRecorder()
+	NewServer(store, nil).uploadRunOnceImage(response, request, Principal{AccountID: "account"})
+	if response.Code != http.StatusConflict {
+		t.Fatalf("upload returned %d: %s", response.Code, response.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestValidateRunOnceImage(t *testing.T) {
 	var data bytes.Buffer

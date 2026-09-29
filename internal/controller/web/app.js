@@ -49,9 +49,9 @@ const deletingBoxes=new Set();
 const startingBoxes=new Set();
 async function api(path,method='GET',body,headers={}){
  const r=await fetch(path,{method,credentials:'same-origin',headers:{...(token?{Authorization:'Bearer '+token}:{}),'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
- if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
+ if(!r.ok){let e;try{e=await r.json()}catch{}if(r.status===401&&$('#login').hidden){$('#app').hidden=true;$('#login').hidden=false;$('#login-error').textContent='Session expired. Log in again.';$('#login-token').focus();throw Error('Session expired. Log in again.')}throw Error(e?.error||'Request failed: '+r.status)}return r.status===204?null:r.json();
 }
-function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';try{await fn(e)}catch(err){$('#error').className='flash error';$('#error').textContent=err.message}}}
+function action(fn){return async e=>{e?.preventDefault();$('#error').textContent='';if(!$('#login').hidden)$('#login-error').textContent='';try{await fn(e)}catch(err){if(!$('#login').hidden){$('#login-error').textContent=err.message;$('#login-token').focus()}else{$('#error').className='flash error';$('#error').textContent=err.message}}}}
 // The banner is shared with errors, so success has to put the styling back.
 function notice(message){const el=$('#error');el.className='flash';el.textContent=message}
 function node(tag,text){const n=document.createElement(tag);n.textContent=text;return n}
@@ -197,8 +197,25 @@ function renderProviders(providers){
  }
 }
 const bp=id=>'/v1/logical-boxes/'+encodeURIComponent(id),pp=(p,n)=>'/v1/provider-credentials/'+encodeURIComponent(p)+'/'+encodeURIComponent(n);
-let listedBoxes=[],selectedManagedBoxID='',boxDetailTrigger=null;
-function closeBoxDetail(){selectedManagedBoxID='';$('#box-detail').hidden=true;$('#box-detail-backdrop').hidden=true;boxDetailTrigger?.focus();boxDetailTrigger=null}
+let listedBoxes=[],selectedManagedBoxID='',boxDetailTrigger=null,boxDetailInstructions=null,boxDetailInstructionsRequest=0;
+function closeBoxDetail(){selectedManagedBoxID='';boxDetailInstructions=null;boxDetailInstructionsRequest++;$('#box-detail').hidden=true;$('#box-detail-backdrop').hidden=true;boxDetailTrigger?.focus();boxDetailTrigger=null}
+async function loadBoxDetailInstructions(id){
+ const request=++boxDetailInstructionsRequest;
+ try{
+  const state=await api(bp(id)+'/instructions');
+  if(selectedManagedBoxID===id&&boxDetailInstructionsRequest===request){boxDetailInstructions=state;renderBoxDetail()}
+ }catch{
+  if(selectedManagedBoxID===id&&boxDetailInstructionsRequest===request){boxDetailInstructions={error:true};renderBoxDetail()}
+ }
+}
+function boxDetailSyncLabel(){
+ if(!boxDetailInstructions)return 'Loading…';
+ if(boxDetailInstructions.error)return 'Unavailable';
+ const appliedAt=boxDetailInstructions.instructions?.appliedAt;
+ const date=appliedAt?new Date(appliedAt):null;
+ const last=date&&!Number.isNaN(date.getTime())?date.toLocaleString():'Never';
+ return last+(boxDetailInstructions.pending?' · changes pending':'');
+}
 function renderBoxDetail(){
  const box=listedBoxes.find(item=>item.id===selectedManagedBoxID);if(!box){closeBoxDetail();return}
  $('#box-detail-title').textContent=box.name;
@@ -206,7 +223,7 @@ function renderBoxDetail(){
  const state=node('span',box.state);state.className='box-detail-state';state.dataset.state=box.state;
  const intro=node('div');intro.className='box-detail-intro';intro.append(state,node('span',box.defaultAgent||'shell'));
  const facts=node('dl');facts.className='box-detail-facts';
- for(const [label,value] of [['Worker / slot',boxPlacement(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
+ for(const [label,value] of [['Worker / slot',boxPlacement(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Last instructions sync',boxDetailSyncLabel()],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
  if(box.failureReason){const error=node('p',box.failureReason);error.className='box-detail-error';root.append(error)}
  const actions=node('div');actions.className='box-detail-actions';
  const workspace=node('a','Open workspace');workspace.href='/boxes/'+encodeURIComponent(box.id);
@@ -217,8 +234,10 @@ function renderBoxDetail(){
  if(['stopped','failed'].includes(boxPhase(box.state)))actions.append(button('Resume',()=>{const row=document.querySelector('#box-list [data-box-id="'+CSS.escape(box.id)+'"]');row?.querySelector('[aria-label^="Resume box "]')?.click()}));
  root.append(intro,facts,node('h3','Manage box'),actions);
  if(ownerTools&&window.VMBoxIdlePolicy){const idle=node('div');root.append(idle);window.VMBoxIdlePolicy.mount(idle,{boxId:box.id,boxName:box.name,request:seconds=>api(bp(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
+ if(ownerTools&&window.VMBoxRunBudgetPolicy){const budget=node('div');root.append(budget);window.VMBoxRunBudgetPolicy.mount(budget,{boxId:box.id,request:seconds=>api(bp(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',seconds===undefined?undefined:{seconds})})}
+ if(ownerTools&&window.VMBoxCreateLimit){const limit=node('div');root.append(limit);window.VMBoxCreateLimit.mount(limit,{boxId:box.id,request:body=>api(bp(box.id)+'/agent-policy',body?'PUT':'GET',body)})}
 }
-function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus()}
+function openBoxDetail(box,trigger){selectedManagedBoxID=box.id;boxDetailInstructions=null;boxDetailTrigger=trigger;renderBoxDetail();$('#box-detail').hidden=false;$('#box-detail-backdrop').hidden=false;$('#box-detail-close').focus();void loadBoxDetailInstructions(box.id)}
 $('#box-detail-close').onclick=closeBoxDetail;$('#box-detail-backdrop').onclick=closeBoxDetail;
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!$('#box-detail').hidden&&!document.querySelector('.modal:not([hidden])'))closeBoxDetail()});
 function manageView(){
@@ -406,8 +425,8 @@ async function refresh(){
  $('#schema').textContent=JSON.stringify(schema,null,2);renderNotifications(notifications);defaults=null;
  try{const d=await api('/v1/controller-defaults');if(version!==epoch)return;$('#provider-default').textContent='Default: '+d.provider+' / '+d.providerCredential;if(locationTarget&&(locationTarget.provider!==d.provider||locationTarget.providerCredential!==d.providerCredential))resetLocation();defaults=d;renderWorkerCapacity();renderProviders(providers)}catch(err){if(version===epoch){renderWorkerCapacity();$('#provider-default').textContent='Check the default provider and capacity configuration.'}}
 }
-$('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#app').hidden=false}));
-$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#error').textContent=''}));
+$('#login').addEventListener('submit',action(async e=>{token=e.target.elements.token.value;try{await api('/v1/browser-session','POST',{})}finally{token='';e.target.reset()}await refresh();$('#login').hidden=true;$('#login-error').textContent='';$('#app').hidden=false}));
+$('#logout').addEventListener('click',action(async()=>{workspaceNav?.closeMenu();await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);epoch++;resetLocation();clearTimeout(boxRefreshTimer);startingBoxes.clear();token='';defaults=null;fleetSnapshots=[];ownerTools=false;roleBoxes=[];listedProfiles=[];profileAccountName='';instructionPresets={defaultName:'',presets:[]};presetBodyCache.clear();boxInstructionTarget=null;boxCredentialTarget=null;renderPoolChoices([]);$('#capacity').replaceChildren();$('#box-list').replaceChildren();$('#role-assignments').replaceChildren();$('#instruction-list').replaceChildren();$('#box-credentials-form').replaceChildren();modalEl('box-instructions-modal').hidden=true;modalEl('box-credentials-modal').hidden=true;modalEl('role-editor-modal').hidden=true;$('#app').hidden=true;$('#login').hidden=false;document.querySelectorAll('form').forEach(f=>f.reset());$('#profile-search').value='';$('#profile-summary').textContent='';$('#profile-tree').replaceChildren();$('#profile-choices').replaceChildren();$('#login-error').textContent='';$('#error').textContent='';$('#login-token').focus()}));
 $('#refresh').addEventListener('click',action(refresh));
 function resetCreationForm(form){
  const pool=form.elements.pool.value;
@@ -583,6 +602,7 @@ $('#box-instructions-apply').addEventListener('click',action(async()=>{
  else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
  status.textContent='Applying…';
  const result=await api(bp(boxInstructionTarget.id)+'/instructions','PUT',body);
+ if(selectedManagedBoxID===boxInstructionTarget.id){boxDetailInstructionsRequest++;boxDetailInstructions=result;renderBoxDetail()}
  status.textContent=result.note||describeBoxInstructions(result);
  if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
  $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';

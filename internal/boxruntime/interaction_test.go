@@ -336,6 +336,17 @@ func TestCodexLongConversationRemainsInputReadyWithoutStartupHeader(t *testing.T
 	// before typing any Chat text into that user's unsent input.
 }
 
+func TestCodexReadyWithTwoLineFooter(t *testing.T) {
+	content := "• Finished the task\n\n› Ask Codex to do anything\n\n  GPT-6-Sol low · /data/workspace · Greet user\n  ? for shortcuts               \n"
+	if !agentInputReady("codex", content) {
+		t.Fatal("Codex composer above the two-line footer was not ready")
+	}
+	content = "› Ask Codex to do anything\n  GPT-6-Sol low · /data/workspace · Greet user\n  ? for shortcuts\n• Running a tool\n"
+	if agentInputReady("codex", content) {
+		t.Fatal("stale composer above active output was treated as ready")
+	}
+}
+
 func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 	stubRegisteredAgent(t, "claude")
 	originalCommand, originalInterval, originalTimeout, originalSettle, originalConfirm := tmuxCommand, agentReadyPollInterval, agentReadyTimeout, agentReadySettlePause, tmuxSubmitConfirmPause
@@ -622,6 +633,71 @@ func TestResetAgentContextUsesHarnessCommandInExistingTUI(t *testing.T) {
 	}
 	if err := ResetAgentContext(context.Background(), t.TempDir(), "shell-session", "shell", "reset-message"); err == nil {
 		t.Fatal("shell context reset accepted")
+	}
+}
+
+func TestCompactAgentContextTargetsExistingConversationOnce(t *testing.T) {
+	originalCommand, originalOpenCodeProbe, originalCompact := tmuxCommand, openCodeReadyProbe, codexCompactVisibleThread
+	originalPause, originalSettle := tmuxSubmitPause, agentReadySettlePause
+	t.Cleanup(func() {
+		tmuxCommand, openCodeReadyProbe, codexCompactVisibleThread = originalCommand, originalOpenCodeProbe, originalCompact
+		tmuxSubmitPause, agentReadySettlePause = originalPause, originalSettle
+	})
+	openCodeReadyProbe = func(context.Context, string) (bool, error) { return true, nil }
+	tmuxSubmitPause = func(context.Context) error { return nil }
+	agentReadySettlePause = func(context.Context) error { return nil }
+	for _, agent := range []string{"claude", "opencode", "codex"} {
+		t.Run(agent, func(t *testing.T) {
+			var inputs []string
+			codexCompactVisibleThread = func(_ context.Context, _, session string) error {
+				if session != agent+"-session" {
+					t.Fatalf("wrong Codex session %q", session)
+				}
+				inputs = append(inputs, "native compact")
+				return nil
+			}
+			tmuxCommand = func(_ context.Context, stdin string, args ...string) ([]byte, error) {
+				if args[0] == "capture-pane" {
+					return []byte("Claude Code v2.1.276\n❯ Try \"fix a bug\""), nil
+				}
+				if args[0] == "load-buffer" {
+					inputs = append(inputs, stdin)
+				}
+				return nil, nil
+			}
+			root := t.TempDir()
+			for attempt := 0; attempt < 2; attempt++ {
+				if err := CompactAgentContext(context.Background(), root, agent+"-session", agent, "compact-once"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := []string{"/compact", "\r"}
+			if agent == "codex" {
+				want = []string{"native compact"}
+			}
+			if !reflect.DeepEqual(inputs, want) {
+				t.Fatalf("compaction inputs = %q, want %q", inputs, want)
+			}
+		})
+	}
+}
+
+func TestCompactAgentContextDoesNotReplayAmbiguousCodexRequest(t *testing.T) {
+	original := codexCompactVisibleThread
+	t.Cleanup(func() { codexCompactVisibleThread = original })
+	calls := 0
+	codexCompactVisibleThread = func(context.Context, string, string) error {
+		calls++
+		return errors.New("connection closed after request")
+	}
+	root := t.TempDir()
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := CompactAgentContext(context.Background(), root, "codex-session", "codex", "compact-ambiguous"); !errors.Is(err, ErrAmbiguousMessage) {
+			t.Fatalf("attempt %d: error = %v", attempt, err)
+		}
+	}
+	if calls != 1 {
+		t.Fatalf("ambiguous compaction was replayed %d times", calls)
 	}
 }
 

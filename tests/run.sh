@@ -13,7 +13,7 @@ pass() {
   printf 'ok %d - %s\n' "$pass_count" "$1"
 }
 
-bash -n "$repo/install.sh" "$repo/entrypoint.sh" \
+bash -n "$repo/install.sh" "$repo/scripts/worker-entrypoint.sh" "$repo/scripts/worker-agent-trust.sh" \
   "$repo/scripts/rollout-monitor.sh" "$repo/scripts/test-installed-bundle.sh" \
   "$repo/tests/controller-e2e.sh" "$fixtures/go" "$repo/tests/run.sh"
 pass 'all maintained Bash files parse'
@@ -21,7 +21,7 @@ pass 'all maintained Bash files parse'
 trust_home="$test_root/trust-home"
 trust_workspace="$test_root/workspace"
 mkdir -p "$trust_home" "$trust_workspace"
-HOME="$trust_home" "$repo/entrypoint.sh" --configure-agent-trust "$trust_workspace"
+HOME="$trust_home" "$repo/scripts/worker-entrypoint.sh" --configure-agent-trust "$trust_workspace"
 jq -e --arg workspace "$trust_workspace" \
   '.projects[$workspace].hasTrustDialogAccepted == true' "$trust_home/.claude.json" >/dev/null
 test "$(stat -c '%a' "$trust_home/.claude.json")" = 600

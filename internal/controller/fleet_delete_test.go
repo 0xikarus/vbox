@@ -215,6 +215,83 @@ func TestDurableDeletionPostgres(t *testing.T) {
 			t.Fatal("sibling message lost")
 		}
 	})
+	t.Run("deleted box releases only its unshared chat attachments", func(t *testing.T) {
+		deletedBox, _ := makeBox(t, "media-delete", false)
+		sibling, _ := makeBox(t, "media-sibling", false)
+		privateImage, sharedImage := uuid(), uuid()
+		for _, imageID := range []string{privateImage, sharedImage} {
+			if _, err := store.DB.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,'image/png',$3,'test-token',now()+interval '1 day')`, imageID, owner.AccountID, []byte("image")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, box := range []string{deletedBox, sibling} {
+			task, message := uuid(), uuid()
+			if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_tasks(id,account_id,logical_box_id,user_id,requested_role,agent,session_name,prompt,state,idempotency_key) VALUES($1,$2,$3,$4,'owner','codex','test','test','active',$5)`, task, owner.AccountID, box, owner.UserID, "task-"+task); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,state,idempotency_key) VALUES($1,$2,$3,$4,'user','test','delivered',$5)`, message, owner.AccountID, task, owner.UserID, "message-"+message); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,1)`, message, owner.AccountID, sharedImage); err != nil {
+				t.Fatal(err)
+			}
+			if box == deletedBox {
+				if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,2)`, message, owner.AccountID, privateImage); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		if err := serverFor(&deletionProvider{}).resumeLogicalBoxDelete(ctx, owner, deletedBox); err != nil {
+			t.Fatal(err)
+		}
+		var count int
+		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM run_once_images WHERE id=$1`, privateImage).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("private attachment survived deletion: count=%d err=%v", count, err)
+		}
+		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM run_once_images WHERE id=$1`, sharedImage).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("shared attachment was lost: count=%d err=%v", count, err)
+		}
+		if err := serverFor(&deletionProvider{}).resumeLogicalBoxDelete(ctx, owner, sibling); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM run_once_images WHERE id=$1`, sharedImage).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("last attachment reference was not released: count=%d err=%v", count, err)
+		}
+	})
+	t.Run("stale unattached uploads are pruned but chat media remains", func(t *testing.T) {
+		box, _ := makeBox(t, "media-expiry", false)
+		task, message := uuid(), uuid()
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_tasks(id,account_id,logical_box_id,user_id,requested_role,agent,session_name,prompt,state,idempotency_key) VALUES($1,$2,$3,$4,'owner','codex','test','test','active',$5)`, task, owner.AccountID, box, owner.UserID, "task-"+task); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_messages(id,account_id,task_id,user_id,direction,body,state,idempotency_key) VALUES($1,$2,$3,$4,'user','test','delivered',$5)`, message, owner.AccountID, task, owner.UserID, "message-"+message); err != nil {
+			t.Fatal(err)
+		}
+		expiredUnused, agedUnused, freshUnused, expiredAttached, agedAttached := uuid(), uuid(), uuid(), uuid(), uuid()
+		for _, entry := range []struct{ id, expiry, age string }{{expiredUnused, "-1 day", "0 hours"}, {agedUnused, "+1 day", "-2 days"}, {freshUnused, "+1 day", "0 hours"}, {expiredAttached, "-1 day", "0 hours"}, {agedAttached, "+1 day", "-2 days"}} {
+			if _, err := store.DB.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at,created_at) VALUES($1,$2,'image/png',$3,'test-token',now()+$4::interval,now()+$5::interval)`, entry.id, owner.AccountID, []byte("image"), entry.expiry, entry.age); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, message, owner.AccountID, expiredAttached, 1); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.DB.ExecContext(ctx, `INSERT INTO box_message_images(message_id,account_id,image_id,ordinal) VALUES($1,$2,$3,$4)`, message, owner.AccountID, agedAttached, 2); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.pruneStaleUnusedAttachments(ctx, owner.AccountID); err != nil {
+			t.Fatal(err)
+		}
+		for _, entry := range []struct {
+			id   string
+			want int
+		}{{expiredUnused, 0}, {agedUnused, 0}, {freshUnused, 1}, {expiredAttached, 1}, {agedAttached, 1}} {
+			var count int
+			if err := store.DB.QueryRowContext(ctx, `SELECT count(*) FROM run_once_images WHERE id=$1`, entry.id).Scan(&count); err != nil || count != entry.want {
+				t.Fatalf("attachment %s count=%d want=%d err=%v", entry.id, count, entry.want, err)
+			}
+		}
+	})
 	t.Run("failure survives cancellation and no second worker", func(t *testing.T) {
 		id, _ := makeBox(t, "cancelled", false)
 		p := &deletionProvider{started: make(chan struct{}), release: make(chan struct{})}

@@ -2,7 +2,9 @@ package controller
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -13,12 +15,25 @@ import (
 	"time"
 )
 
+// pruneStaleUnusedAttachments releases uploads left outside chat messages for
+// more than a day. This leaves time to submit an open composer draft. Keep
+// referenced media even after its capability URL expires: chat history serves
+// those attachments through the authenticated message endpoint.
+func (s *Store) pruneStaleUnusedAttachments(ctx context.Context, accountID string) error {
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM run_once_images i
+		WHERE i.account_id=$1 AND (i.expires_at<=now() OR i.created_at<=now()-interval '24 hours')
+		AND NOT EXISTS (SELECT 1 FROM box_message_images j WHERE j.image_id=i.id)`, accountID)
+	return err
+}
+
 const (
 	maxImageUpload = 25 << 20
 	maxVideoUpload = 100 << 20
 	// maxAccountAttachmentBytes bounds all attachments kept for one account.
 	maxAccountAttachmentBytes = 1 << 30
 )
+
+var errAccountAttachmentQuota = errors.New("saved attachments reached the 1 GiB account limit; open Chat > Box details > Chat attachments to clear older media")
 
 // mp4Brands are the `ftyp` brands the chat plays as MP4. Stills share the ISO
 // base-media container — HEIC is `heic`, AVIF is `avif` — so the brand has to
@@ -79,6 +94,17 @@ func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Pr
 		writeError(w, 400, err)
 		return
 	}
+	data, media, err = optimizeStoredImage(r.Context(), data, media)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
+	// Commit cleanup separately so even a rejected over-quota upload frees old
+	// unreferenced media for the next attempt.
+	if err := s.Store.pruneStaleUnusedAttachments(r.Context(), p.AccountID); err != nil {
+		writeError(w, 500, err)
+		return
+	}
 	tx, err := s.Store.DB.BeginTx(r.Context(), nil)
 	if err != nil {
 		writeError(w, 500, err)
@@ -98,7 +124,7 @@ func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Pr
 		return
 	}
 	if used+int64(len(data)) > maxAccountAttachmentBytes {
-		writeError(w, 409, fmt.Errorf("saved attachments reached the 1 GiB account storage limit"))
+		writeError(w, 409, errAccountAttachmentQuota)
 		return
 	}
 	id := uuid()

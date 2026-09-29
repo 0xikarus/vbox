@@ -1,6 +1,7 @@
 # vmbox: guide for future agents
 
-Current architecture and behavior, checked against the source on 2026-09-14.
+Architecture, lifecycle rules, and implementation entry points. Check the source
+for current behavior.
 Start with the [setup guide](../README.md). The [desktop MVP guide](AGENT-DESKTOP-IMPLEMENTATION.md) records the newer desktop/secret/idle implementation and verification. This document explains where to work
 and the distinctions that must survive future changes.
 
@@ -181,9 +182,17 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
 - Agent-initiated `create_agent_box` inserts reciprocal direct-contact grants
   and contact events in the same transaction as the new logical box. An
   idempotent retry observes the existing grants. The delegated
-  `clear_agent_box_context` tool is available with the restart permission and
+  `wake_agent_box` tool is available with the restart permission. It queues or
+  allocates another hibernated, unprotected box without restarting a running
+  one, and requires exact-name confirmation plus an idempotency key. The
+  `clear_agent_box_context` tool is available with the same permission and
   resets another running, unprotected box through the owner chat reset path;
-  it requires an exact target name and idempotency key. Entry points:
+  it requires an exact target name and idempotency key. The same permission
+  grants `compact_agent_box_context`, which requests compaction in another
+  running, idle, unprotected box's current conversation. Codex uses
+  `thread/compact/start` on the visible thread; Claude and OpenCode submit their
+  `/compact` command to the managed TUI. The tool reports request acceptance,
+  not summary completion. Entry points:
   `internal/controller/agent_box_creation.go`,
   `internal/controller/fleet_create_store.go`,
   `internal/controller/agent_box_management.go`.
@@ -201,8 +210,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   played from the authenticated same-origin endpoint rather than a blob. Unsent
   composer text is kept per box in local storage, and the transcript remembers its
   scroll position per box. The seeded mascot is used for box avatars (with a
-  `NO SIGNAL` fallback) and the processing bubble. Screenshots live in
-  `docs/chat-ui/screenshots/mobile-first/`.
+  `NO SIGNAL` fallback) and the processing bubble.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Codex follow-ups use the visible thread's
   app-server queue with structured image inputs. After a fresh Codex TUI starts
@@ -231,6 +239,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   remains a compatibility fallback for clients that do not call the tool. The
   same MCP exposes the desktop tools (`take_screenshot`, `click_mouse`,
   `type_text`, `press_keys`), so an agent can operate the box's computer.
+  Local scripts can send text into a running managed conversation with the
+  authenticated box-side `POST /prompt` endpoint. It does not wake an agent;
+  the [local prompt API guide](LOCAL-AGENT-PROMPT.md) covers its contract and
+  retry limits. The generated `~/.config/vmbox/mcp-tools.md` includes the
+  request format for agents working inside the box.
 - A new OpenCode Agent chat starts a bare TUI, waits for the visible bridge, then
   submits its first message through the loopback API with structured image parts.
   Persistent OpenCode and OpenCode one-shot

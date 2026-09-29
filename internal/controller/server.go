@@ -115,6 +115,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /ai-helper.js", uiHandler("ai-helper.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /ai-helper.css", uiHandler("ai-helper.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /idle-policy.js", uiHandler("idle-policy.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /run-budget-policy.js", uiHandler("run-budget-policy.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /box-create-limit.js", uiHandler("box-create-limit.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /idle-policy.css", uiHandler("idle-policy.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /boxes/{id}", uiHandler("workspace.html", "text/html; charset=utf-8", false))
 	mux.HandleFunc("GET /workspace.js", uiHandler("workspace.js", "text/javascript; charset=utf-8", false))
@@ -139,7 +141,7 @@ func (s *Server) Handler() http.Handler {
 	for _, asset := range []string{"xterm.js", "xterm-fit.js", "workspace-terminal.js", "novnc.js", "workspace-desktop.js", "markdown.js"} {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/javascript; charset=utf-8", false))
 	}
-	for _, asset := range []string{"xterm.css", "workspace.css", "controller.css"} {
+	for _, asset := range []string{"xterm.css", "workspace.css", "controller.css", "login.css"} {
 		mux.HandleFunc("GET /"+asset, uiHandler(asset, "text/css; charset=utf-8", false))
 	}
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/terminal/stream", s.owner(s.webTerminal))
@@ -175,7 +177,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agent-desktop/boxes/{box}", s.desktopAgentAuth(s.agentBoxHandler))
 	mux.HandleFunc("PUT /v1/agent-desktop/boxes/{box}/tags", s.desktopAgentAuth(s.agentBoxTagsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/boxes/{box}/restart", s.desktopAgentAuth(s.agentBoxRestartHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/boxes/{box}/wake", s.desktopAgentAuth(s.agentBoxWakeHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/boxes/{box}/clear-context", s.desktopAgentAuth(s.agentBoxClearContextHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/boxes/{box}/compact", s.desktopAgentAuth(s.agentBoxCompactHandler))
 	mux.HandleFunc("DELETE /v1/agent-desktop/boxes/{box}", s.desktopAgentAuth(s.agentBoxDeleteHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/type", s.desktopAgentAuth(s.typeDesktopSecret))
 	mux.HandleFunc("POST /v1/agent-desktop/secrets/{key}/ensure", s.desktopAgentAuth(s.ensureAgentDesktopSecret))
@@ -238,6 +242,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/sessions", s.auth(s.sessionsHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/idle-policy", s.owner(s.desktopIdlePolicy))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/idle-policy", s.owner(s.desktopIdlePolicy))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/run-budget-policy", s.owner(s.boxRunBudgetPolicy))
+	mux.HandleFunc("PUT /v1/logical-boxes/{id}/run-budget-policy", s.owner(s.boxRunBudgetPolicy))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/sessions/primary", s.owner(s.primarySessionHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/codex-resume", s.owner(s.codexResumeHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/codex-resume", s.owner(s.codexResumeHandler))
@@ -271,7 +277,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/terminal/input", s.auth(s.terminalInputHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages", s.auth(s.directBoxMessageHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages/clear-context", s.auth(s.clearBoxContextHandler))
+	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages/compact", s.auth(s.compactBoxContextHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/messages", s.auth(s.boxMessageHistory))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/attachment-storage", s.owner(s.boxAttachmentStorageHandler))
+	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/attachment-storage", s.owner(s.boxAttachmentStorageHandler))
 	mux.HandleFunc("GET /v1/box-conversations", s.owner(s.contactConversationsHandler))
 	mux.HandleFunc("GET /v1/box-conversations/{a}/{b}/messages", s.owner(s.contactConversationMessagesHandler))
 	mux.HandleFunc("GET /v1/messages/{message}/images/{image}", s.auth(s.downloadBoxMessageImage))
