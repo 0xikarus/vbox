@@ -129,6 +129,10 @@ image attachments. Claude receives messages through its channel. OpenCode
 sessions auto-approve permission asks by default unless their configuration
 explicitly denies them. Chat messages accept pasted,
 dropped, or selected PNG/JPEG/GIF images; agent replies can include images too.
+Saved chat attachments share a 1 GiB account limit. Deleting a box releases
+attachments used only by its chat; media still referenced by another box stays.
+Uploads never attached to a message expire after seven days and are removed
+before the next attachment upload.
 Agent choice requests render as radio buttons or checkboxes. The managed
 `vmbox-desktop` MCP supplies the structured `chat_message`, `chat_ask`, and
 `set_busy` tools; `chat_message` works with or without a reply reference. The

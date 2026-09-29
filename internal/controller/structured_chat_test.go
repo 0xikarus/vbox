@@ -23,6 +23,7 @@ func TestSaveContactImagesCreatesBoundedAttachmentReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mock.ExpectExec(`DELETE FROM run_once_images i`).WithArgs("account").WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT id::text FROM accounts WHERE id=\$1 FOR UPDATE`).WithArgs("account").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("account"))
 	mock.ExpectQuery(`SELECT COALESCE\(sum\(octet_length\(data\)\),0\) FROM run_once_images`).WithArgs("account").WillReturnRows(sqlmock.NewRows([]string{"used"}).AddRow(0))
