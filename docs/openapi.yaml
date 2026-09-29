@@ -8,6 +8,29 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/chat-sidebar-layout:
+    get:
+      summary: Read the account's saved chat sidebar groups and conversation assignments
+      responses:
+        '200':
+          description: Saved layout, or an empty layout with exists false before its first save
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatSidebarLayout'}
+    put:
+      summary: Replace the account's saved chat sidebar layout
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ChatSidebarLayout'}
+      responses:
+        '200':
+          description: Saved layout
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ChatSidebarLayout'}
+        '400': {description: Invalid groups or conversation assignments}
   /v1/agent-desktop/box-configs:
     get:
       security: [{desktopAgentAuth: []}]
@@ -856,6 +879,25 @@ components:
     ProviderQuery: {name: provider, in: query, required: true, schema: {type: string}}
     ProviderCredentialQuery: {name: providerCredential, in: query, schema: {type: string}}
   schemas:
+    ChatSidebarLayout:
+      type: object
+      required: [groups, members]
+      properties:
+        exists: {type: boolean, readOnly: true, description: Whether a layout has been saved for this account}
+        groups:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            required: [id, name, collapsed]
+            properties:
+              id: {type: string, maxLength: 64}
+              name: {type: string, minLength: 1, maxLength: 48}
+              collapsed: {type: boolean}
+        members:
+          type: object
+          description: Maps box or pair conversation keys to a group ID
+          additionalProperties: {type: string}
     LoginProfileRef:
       type: object
       required: [application, name]

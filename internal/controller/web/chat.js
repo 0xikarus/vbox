@@ -24,16 +24,44 @@
  let groupStorageKey='';
  const chatGroups=[];
  const chatGroupMembers=new Map();
- function loadChatGroups(accountId){
-  groupStorageKey='vmboxChatSidebarGroups:'+accountId;
-  let saved={};try{saved=JSON.parse(localStorage.getItem(groupStorageKey)||'{}')||{}}catch{}
+ let groupSaveQueue=Promise.resolve();
+ const groupLayout=()=>({groups:chatGroups,members:Object.fromEntries(chatGroupMembers)});
+ function applyChatGroups(saved){
   chatGroups.splice(0,chatGroups.length,...(Array.isArray(saved.groups)?saved.groups.filter(group=>group&&typeof group.id==='string'&&typeof group.name==='string').map(group=>({id:group.id,name:group.name.slice(0,48),collapsed:!!group.collapsed})):[]));
   chatGroupMembers.clear();
   for(const [key,id] of Object.entries(saved.members&&typeof saved.members==='object'?saved.members:{}))if(typeof id==='string'&&chatGroups.some(group=>group.id===id))chatGroupMembers.set(key,id);
+  let pinsChanged=false;
+  for(const key of chatGroupMembers.keys())if(pins.delete(key))pinsChanged=true;
+  if(pinsChanged)savePins();
   groupNodes.clear();
  }
+ async function loadChatGroups(accountId){
+  groupStorageKey='vmboxChatSidebarGroups:'+accountId;
+  let local={};try{local=JSON.parse(localStorage.getItem(groupStorageKey)||'{}')||{}}catch{}
+  let saved=local;
+  try{
+   const remote=await api('/v1/chat-sidebar-layout');
+   if(local.dirty||(!remote.exists&&(local.groups?.length||Object.keys(local.members||{}).length))){
+    const migrated=await api('/v1/chat-sidebar-layout','PUT',{}, {groups:local.groups||[],members:local.members||{}});
+    saved=migrated;
+   }else saved=remote;
+   try{localStorage.setItem(groupStorageKey,JSON.stringify({...saved,dirty:false}))}catch{}
+  }catch(e){if(local.dirty||local.groups?.length)toast('Chat groups could not be synced. They are saved in this browser.');else console.warn('Could not load chat groups:',e)}
+  applyChatGroups(saved);
+ }
  const groupForChat=key=>chatGroups.find(group=>group.id===chatGroupMembers.get(key));
- function saveChatGroups(){try{localStorage.setItem(groupStorageKey,JSON.stringify({groups:chatGroups,members:Object.fromEntries(chatGroupMembers)}))}catch{}}
+ function saveChatGroups(){
+  const key=groupStorageKey,layout=JSON.parse(JSON.stringify(groupLayout()));
+  try{localStorage.setItem(key,JSON.stringify({...layout,dirty:true}))}catch{}
+  groupSaveQueue=groupSaveQueue.catch(()=>{}).then(async()=>{
+   if(key!==groupStorageKey)return;
+   try{
+    await api('/v1/chat-sidebar-layout','PUT',{},layout);
+    const current=localStorage.getItem(key);
+    if(current){const backup=JSON.parse(current);if(JSON.stringify({groups:backup.groups,members:backup.members})===JSON.stringify(layout))localStorage.setItem(key,JSON.stringify({...layout,dirty:false}))}
+   }catch{toast('Chat groups could not be synced. They are saved in this browser.')}
+  });
+ }
  function savePins(){try{localStorage.setItem('vmboxChatPins',JSON.stringify([...pins]))}catch{}}
  function togglePin(key){
   if(pins.has(key))pins.delete(key);else{pins.add(key);if(chatGroupMembers.delete(key))saveChatGroups()}
@@ -448,7 +476,7 @@
  const mediaEndpoint=(messageID,imageID)=>'/v1/messages/'+encodeURIComponent(messageID)+'/images/'+encodeURIComponent(imageID);
  const mediaGlyph=kind=>kind==='video'?'▶':kind==='audio'?'♪':'▣';
  const mediaViewer=$('#media-viewer'),mediaBody=$('#media-viewer-body'),mediaOpen=$('#media-viewer-open'),
-  mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count');
+  mediaPrev=$('#media-viewer-prev'),mediaNext=$('#media-viewer-next'),mediaCount=$('#media-viewer-count'),mediaAnnotate=$('#media-annotate');
  let mediaGallery=[],mediaIndex=0,mediaReturnFocus=null,mediaRequest=0;
  function renderMediaItem(url,{kind='image',alt='',loading=false,status=''}={}){
   const playing=mediaBody.querySelector('video,audio');
@@ -472,6 +500,7 @@
   mediaPrev.hidden=!many;mediaNext.hidden=!many;
   mediaPrev.disabled=mediaIndex<=0;mediaNext.disabled=mediaIndex>=mediaGallery.length-1;
   mediaCount.hidden=!many;mediaCount.textContent=(mediaIndex+1)+' / '+mediaGallery.length;
+  mediaAnnotate.hidden=true;
   let url=item.url;
   if(!url&&item.messageId){
    if(item.kind==='video'||item.kind==='audio'){
@@ -493,6 +522,10 @@
   }
   if(item.kind!=='image'||!item.messageId||item.url)renderMediaItem(url,item);
   if(/^https?:/i.test(url||'')){mediaOpen.hidden=false;mediaOpen.href=url}else{mediaOpen.hidden=true;mediaOpen.removeAttribute('href')}
+  if(url&&item.kind==='image'&&item.replyMessage&&item.boxId===selected&&!selectedPair){
+   mediaAnnotate.hidden=false;
+   mediaAnnotate.onclick=()=>void openImageAnnotation(item,url);
+  }
  }
  function openMediaViewer(gallery,index=0){
   mediaReturnFocus=document.activeElement;
@@ -507,12 +540,12 @@
   mediaRequest++;
   const playing=mediaBody.querySelector('video,audio');
   if(playing){try{playing.pause()}catch{}playing.removeAttribute('src');try{playing.load()}catch{}}
-  mediaBody.replaceChildren();mediaViewer.hidden=true;mediaGallery=[];mediaIndex=0;
+  mediaBody.replaceChildren();mediaViewer.hidden=true;mediaGallery=[];mediaIndex=0;mediaAnnotate.hidden=true;
   if(mediaReturnFocus&&document.contains(mediaReturnFocus))mediaReturnFocus.focus();
   mediaReturnFocus=null;
  }
  function messageMediaGallery(message){
-  return (message.images||[]).map(image=>({messageId:message.id,imageId:image.id,kind:mediaKind(image.mediaType,''),alt:'Attachment '+image.number+' from '+message.direction,label:'Attachment '+image.number}));
+  return (message.images||[]).map(image=>({messageId:message.id,imageId:image.id,kind:mediaKind(image.mediaType,''),alt:'Attachment '+image.number+' from '+message.direction,label:'Attachment '+image.number,replyMessage:message,boxId:selected}));
  }
  function mediaButton(url,{kind='image',alt='',label='',gallery=null,index=0}={}){
   const btn=document.createElement('button');btn.type='button';btn.className='media-button';
@@ -568,6 +601,95 @@
    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus()}
   }
  },true);
+
+ /* ---------- annotate a received image, then attach it to a reply ---------- */
+ const annotationDialog=$('#image-annotation'),annotationCanvas=$('#image-annotation-canvas'),annotationContext=annotationCanvas.getContext('2d');
+ const annotationStatus=$('#image-annotation-status');
+ let annotationImage=null,annotationTarget=null,annotationStrokes=[],activeAnnotationStroke=null,activeAnnotationPointer=null,annotationColor='#f44336',annotationBusy=false;
+ function annotationPoint(event){
+  const rect=annotationCanvas.getBoundingClientRect();
+  return {x:Math.max(0,Math.min(annotationCanvas.width,(event.clientX-rect.left)*annotationCanvas.width/rect.width)),y:Math.max(0,Math.min(annotationCanvas.height,(event.clientY-rect.top)*annotationCanvas.height/rect.height))};
+ }
+ function drawAnnotationStroke(stroke){
+  if(!stroke.points.length)return;
+  const ctx=annotationContext;ctx.strokeStyle=stroke.color;ctx.fillStyle=stroke.color;ctx.lineWidth=stroke.width;ctx.lineCap='round';ctx.lineJoin='round';
+  if(stroke.points.length===1){const point=stroke.points[0];ctx.beginPath();ctx.arc(point.x,point.y,stroke.width/2,0,Math.PI*2);ctx.fill();return}
+  ctx.beginPath();ctx.moveTo(stroke.points[0].x,stroke.points[0].y);
+  for(const point of stroke.points.slice(1))ctx.lineTo(point.x,point.y);
+  ctx.stroke();
+ }
+ function redrawAnnotation(){
+  if(!annotationImage)return;
+  annotationContext.clearRect(0,0,annotationCanvas.width,annotationCanvas.height);
+  annotationContext.drawImage(annotationImage,0,0,annotationCanvas.width,annotationCanvas.height);
+  for(const stroke of annotationStrokes)drawAnnotationStroke(stroke);
+ }
+ function updateAnnotationTools(){
+  const enabled=annotationStrokes.length>0&&!annotationBusy;
+  $('#image-annotation-undo').disabled=!enabled;$('#image-annotation-clear').disabled=!enabled;
+ }
+ async function openImageAnnotation(item,url){
+  const target={boxId:item.boxId,message:item.replyMessage,imageId:item.imageId};
+  closeMediaViewer();annotationTarget=target;annotationImage=null;annotationStrokes=[];activeAnnotationStroke=null;activeAnnotationPointer=null;annotationBusy=false;
+  $('#image-annotation-text').value='';annotationStatus.textContent='Loading image…';updateAnnotationTools();
+  annotationDialog.showModal();
+  try{
+   const image=new Image();image.src=url;await image.decode();
+   if(annotationTarget!==target||!annotationDialog.open)return;
+   const scale=Math.min(1,4096/image.naturalWidth,4096/image.naturalHeight,Math.sqrt(8000000/(image.naturalWidth*image.naturalHeight)));
+   annotationCanvas.width=Math.max(1,Math.round(image.naturalWidth*scale));annotationCanvas.height=Math.max(1,Math.round(image.naturalHeight*scale));
+   annotationImage=image;redrawAnnotation();annotationStatus.textContent='Draw on the image, then add it to your reply.';
+  }catch{if(annotationTarget===target)annotationStatus.textContent='Could not open the full image for annotation.'}
+ }
+ annotationCanvas.addEventListener('pointerdown',event=>{
+  if(!annotationImage||annotationBusy||activeAnnotationStroke||(event.button!==0&&event.pointerType!=='touch'))return;
+  event.preventDefault();annotationCanvas.setPointerCapture(event.pointerId);
+  activeAnnotationPointer=event.pointerId;
+  activeAnnotationStroke={color:annotationColor,width:Math.max(3,annotationCanvas.width/260)*Number($('#image-annotation-size').value),points:[annotationPoint(event)]};
+  annotationStrokes.push(activeAnnotationStroke);drawAnnotationStroke(activeAnnotationStroke);updateAnnotationTools();
+ });
+ annotationCanvas.addEventListener('pointermove',event=>{
+  if(!activeAnnotationStroke||activeAnnotationPointer!==event.pointerId||!annotationCanvas.hasPointerCapture(event.pointerId))return;
+  event.preventDefault();const stroke=activeAnnotationStroke,previous=stroke.points.at(-1),point=annotationPoint(event);
+  stroke.points.push(point);annotationContext.strokeStyle=stroke.color;annotationContext.lineWidth=stroke.width;annotationContext.lineCap='round';annotationContext.beginPath();annotationContext.moveTo(previous.x,previous.y);annotationContext.lineTo(point.x,point.y);annotationContext.stroke();
+ });
+ const finishAnnotationStroke=event=>{if(activeAnnotationPointer===event.pointerId){activeAnnotationStroke=null;activeAnnotationPointer=null}};
+ annotationCanvas.addEventListener('pointerup',finishAnnotationStroke);annotationCanvas.addEventListener('pointercancel',finishAnnotationStroke);
+ annotationDialog.querySelectorAll('[data-annotation-color]').forEach(button=>button.onclick=()=>{
+  annotationColor=button.dataset.annotationColor;
+  annotationDialog.querySelectorAll('[data-annotation-color]').forEach(choice=>choice.setAttribute('aria-pressed',String(choice===button)));
+ });
+ $('#image-annotation-undo').onclick=()=>{annotationStrokes.pop();redrawAnnotation();updateAnnotationTools()};
+ $('#image-annotation-clear').onclick=()=>{annotationStrokes=[];redrawAnnotation();updateAnnotationTools()};
+ $('#image-annotation-close').onclick=()=>{if(!annotationBusy)annotationDialog.close()};
+ annotationDialog.addEventListener('cancel',event=>{if(annotationBusy)event.preventDefault()});
+ annotationDialog.addEventListener('close',()=>{annotationTarget=null;annotationImage=null;annotationStrokes=[];activeAnnotationStroke=null;activeAnnotationPointer=null;annotationCanvas.width=0;annotationCanvas.height=0});
+ $('#image-annotation-add').onclick=async()=>{
+  const target=annotationTarget;if(!target||annotationBusy||!annotationImage)return;
+  if(selected!==target.boxId){annotationStatus.textContent='Return to the original chat before adding this image.';return}
+  annotationBusy=true;$('#image-annotation-add').disabled=true;$('#image-annotation-close').disabled=true;updateAnnotationTools();
+  try{
+   annotationStatus.textContent='Preparing image…';
+   let blob=await new Promise(resolve=>annotationCanvas.toBlob(resolve,'image/png'));
+   if(!blob)throw Error('Could not export the annotated image.');
+   let extension='png';
+   if(blob.size>25*1024*1024){
+    const flattened=document.createElement('canvas');flattened.width=annotationCanvas.width;flattened.height=annotationCanvas.height;
+    const ctx=flattened.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,flattened.width,flattened.height);ctx.drawImage(annotationCanvas,0,0);
+    blob=await new Promise(resolve=>flattened.toBlob(resolve,'image/jpeg',.85));extension='jpg';
+    flattened.width=0;flattened.height=0;
+    if(!blob)throw Error('Could not export the annotated image.');
+   }
+   const file=new File([blob],'annotated-'+target.imageId+'.'+extension,{type:blob.type});
+   annotationStatus.textContent='Uploading image…';
+   if(await uploadImages([file],{boxID:target.boxId,statusTarget:annotationStatus})!==1)return;
+   setReply(target.message);
+   const note=$('#image-annotation-text').value.trim();
+   if(note){inputEl.value=inputEl.value.trim()?inputEl.value.trimEnd()+'\n'+note:note;inputEl.dispatchEvent(new Event('input',{bubbles:true}))}
+   annotationDialog.close();toast('Annotated image added to your reply.');inputEl.focus();
+  }catch(error){annotationStatus.textContent=error.message||'Could not add the annotated image.'}
+  finally{annotationBusy=false;$('#image-annotation-add').disabled=false;$('#image-annotation-close').disabled=false;updateAnnotationTools()}
+ };
 
  /* ---------- avatars: desktop preview thumbnails, blob-cached for 60s ---- */
  const avatarCache=new Map(),avatarPending=new Set();
@@ -831,6 +953,15 @@
   if(last&&new Date(last).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0)){seenPairs[pairKey(pair)]=last;saveSeenPairs()}
  }
  const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
+ let chatType=(()=>{try{const saved=sessionStorage.getItem('vmboxChatType');return ['box','pair','all'].includes(saved)?saved:'box'}catch{return 'box'}})();
+ function setChatType(type){
+  if(!['box','pair','all'].includes(type))return;
+  chatType=type;
+  try{sessionStorage.setItem('vmboxChatType',type)}catch{}
+  $('#chat-type-tabs').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.chatType===type)));
+  renderRows();
+ }
+ $('#chat-type-tabs').querySelectorAll('button').forEach(button=>button.onclick=()=>setChatType(button.dataset.chatType));
  const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
  const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Other chats'));
  const groupNodes=new Map();
@@ -879,8 +1010,14 @@
  }
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
+  const boxUnread=[...boxes.values()].reduce((sum,box)=>sum+(box.unread||0),0);
+  const pairUnread=owner?[...pairs.values()].filter(pairHasUnread).length:0;
+  for(const button of $('#chat-type-tabs').querySelectorAll('button')){
+   const count=button.dataset.chatType==='box'?boxUnread:button.dataset.chatType==='pair'?pairUnread:boxUnread+pairUnread;
+   const badge=button.querySelector('.chat-type-unread');badge.hidden=!count;badge.textContent=count>99?'99+':String(count);
+  }
   const matchesGroup=key=>groupForChat(key)?.name.toLowerCase().includes(filter);
-  const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter)||matchesGroup(pinKey('box',b.id)));
+  const list=chatType==='pair'?[]:[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter)||matchesGroup(pinKey('box',b.id)));
   // Keep the list stable: activity must not reshuffle rows under the pointer.
   list.sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
   for(const box of list){
@@ -918,7 +1055,7 @@
    const note=row.querySelector('.unread-note');note.hidden=!box.unread;note.textContent=box.unread===1?'New message':'New messages';
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
-  const pairList=owner?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)||matchesGroup(pinKey('pair',pairKey(pair)))):[];
+  const pairList=owner&&chatType!=='box'?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)||matchesGroup(pinKey('pair',pairKey(pair)))):[];
   pairList.sort((a,b)=>a.boxAName.localeCompare(b.boxAName)||a.boxBName.localeCompare(b.boxBName));
   for(const pair of pairList){
    const key=pairKey(pair);let row=pairRows.get(key);
@@ -944,8 +1081,8 @@
   }
   for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
   const ungrouped=key=>!pins.has(key)&&!groupForChat(key);
-  const pinnedBoxes=list.filter(box=>pins.has(pinKey('box',box.id))).map(box=>rows.get(box.id));
-  const pinnedPairs=pairList.filter(pair=>pins.has(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
+  const pinnedBoxes=list.filter(box=>pins.has(pinKey('box',box.id))&&!groupForChat(pinKey('box',box.id))).map(box=>rows.get(box.id));
+  const pinnedPairs=pairList.filter(pair=>pins.has(pinKey('pair',pairKey(pair)))&&!groupForChat(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const otherBoxes=list.filter(box=>ungrouped(pinKey('box',box.id))).map(box=>rows.get(box.id));
   const otherPairs=pairList.filter(pair=>ungrouped(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const desired=[];
@@ -956,14 +1093,17 @@
    if(filter&&!members.length&&!memberPairs.length&&!group.name.toLowerCase().includes(filter))continue;
    const groupBoxes=[...boxes.values()].filter(box=>chatGroupMembers.get(pinKey('box',box.id))===group.id);
    const groupPairs=owner?[...pairs.values()].filter(pair=>chatGroupMembers.get(pinKey('pair',pairKey(pair)))===group.id):[];
-   const unread=groupBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+groupPairs.filter(pairHasUnread).length;
-   desired.push(groupHeader(group,groupBoxes.length+groupPairs.length,unread));
+   if(chatType!=='all'&&(chatType==='box'?groupBoxes:groupPairs).length===0&&groupBoxes.length+groupPairs.length>0)continue;
+   const visibleBoxes=chatType==='pair'?[]:groupBoxes,visiblePairs=chatType==='box'?[]:groupPairs;
+   const unread=visibleBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+visiblePairs.filter(pairHasUnread).length;
+   desired.push(groupHeader(group,visibleBoxes.length+visiblePairs.length,unread));
    if(!group.collapsed||filter)desired.push(...members,...memberPairs);
   }
   if((pinnedBoxes.length||pinnedPairs.length||chatGroups.length)&&(otherBoxes.length||otherPairs.length))desired.push(unpinnedDivider);
   desired.push(...otherBoxes);
-  if(otherPairs.length)desired.push(pairGroup,...otherPairs);
-  $('#chat-list-empty').hidden=desired.length>0;
+  if(otherPairs.length){if(chatType==='all')desired.push(pairGroup);desired.push(...otherPairs)}
+  const empty=$('#chat-list-empty');empty.hidden=desired.length>0;
+  empty.textContent=filter?'No matching conversations.':chatType==='pair'?'No box conversations yet.':'No conversations yet. Create a box with the + button above.';
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
  }
 
@@ -1125,7 +1265,7 @@
   return row;
  }
  function messageAuthor(message){return message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent'}
- function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=messageAuthor(message)+': '+(message.question?.text||message.text);inputEl.focus()}
+ function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=messageAuthor(message)+': '+(message.question?.text||message.text||(message.images?.length?'Image':'Message'));inputEl.focus()}
  function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent=''}
  $('#reply-cancel').onclick=cancelReply;
  let openThreadID='';
@@ -1440,7 +1580,7 @@
  async function openPair(key){
   const pair=pairs.get(key);if(!pair)return;
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
-  selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
+  selected='';selectedPair=key;if(chatType==='box')setChatType('pair');selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   // Box-to-box chats are read-only activity logs: opening one starts at its
@@ -1505,7 +1645,7 @@
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
-  if(selected!==id)cancelReply();selected=id;lastSignature='';hideComposerPicker();
+  if(selected!==id)cancelReply();selected=id;if(chatType==='pair')setChatType('box');lastSignature='';hideComposerPicker();
   selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
@@ -1653,16 +1793,16 @@
   }
   updateSendState();
  }
- async function uploadImages(files){
-  const boxID=selected;
-  if(!boxID)return;
+ async function uploadImages(files,{boxID=selected,statusTarget=statusEl}={}){
+  if(!boxID)return 0;
+  let uploaded=0;
   for(const file of files){
-   if((attachmentDrafts.get(boxID)||[]).length>=8){statusEl.textContent='Attach at most 8 files.';break}
+   if((attachmentDrafts.get(boxID)||[]).length>=8){statusTarget.textContent='Attach at most 8 files.';break}
    const isVideo=file.type==='video/mp4'||file.type==='video/webm';
    const isImage=['image/png','image/jpeg','image/gif'].includes(file.type);
-   if(!isVideo&&!isImage){statusEl.textContent='Choose PNG, JPEG, GIF, MP4 or WebM.';continue}
+   if(!isVideo&&!isImage){statusTarget.textContent='Choose PNG, JPEG, GIF, MP4 or WebM.';continue}
    const limitMiB=isVideo?100:25;
-   if(file.size>limitMiB*1024*1024){statusEl.textContent=(isVideo?'Videos':'Images')+' must be at most '+limitMiB+' MiB.';continue}
+   if(file.size>limitMiB*1024*1024){statusTarget.textContent=(isVideo?'Videos':'Images')+' must be at most '+limitMiB+' MiB.';continue}
    try{
     const response=await fetch('/v1/run-once-images',{method:'POST',credentials:'same-origin',body:file,signal:AbortSignal.timeout(120000)});
     let result;try{result=await response.json()}catch{}
@@ -1670,14 +1810,16 @@
     // Re-read after the await: another picker/paste may have completed for the
     // same chat while this upload was in flight.
     const drafts=attachmentDrafts.get(boxID)||[];
-    if(drafts.length>=8){statusEl.textContent='Attach at most 8 files.';continue}
+    if(drafts.length>=8){statusTarget.textContent='Attach at most 8 files.';continue}
     drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type});
+    uploaded++;
     attachmentDrafts.set(boxID,drafts);
     if(selected===boxID)renderDrafts();
     if(owner&&inspectOpen&&selected===boxID)void loadInspectAttachmentStorage(boxes.get(boxID));
-   }catch(e){statusEl.textContent=e.message}
+   }catch(e){statusTarget.textContent=e.message}
   }
   fileInput.value='';
+  return uploaded;
  }
  attachBtn.onclick=()=>fileInput.click();
  fileInput.onchange=()=>void uploadImages([...fileInput.files]);
@@ -2325,14 +2467,7 @@
  const wakingBoxes=new Set();
  const canWakeBox=box=>box&&['hibernated','detached','failed'].includes(box.state);
  function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('touch-mode');menuBackdrop.hidden=true}
- function showActionMenu(items,point){
-  rowMenu.replaceChildren();
-  for(const item of items){const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
-  const touch=coarsePointer();
-  rowMenu.classList.toggle('touch-mode',touch);
-  rowMenu.hidden=false;
-  menuBackdrop.hidden=!touch;
-  if(touch)try{navigator.vibrate?.(10)}catch{}
+ function positionRowMenu(point){
   const viewport=window.visualViewport,pad=8;
   const minX=(viewport?.offsetLeft||0)+pad,maxX=(viewport?.offsetLeft||0)+(viewport?.width||innerWidth)-pad;
   const minY=(viewport?.offsetTop||0)+pad,maxY=(viewport?.offsetTop||0)+(viewport?.height||innerHeight)-pad;
@@ -2342,15 +2477,38 @@
   const top=y+height<=maxY?Math.max(minY,y):y-height>=minY?y-height:Math.max(minY,maxY-height);
   rowMenu.style.left=left+'px';rowMenu.style.top=top+'px';
  }
+ function showActionMenu(items,point){
+  rowMenu.replaceChildren();
+  for(const item of items){
+   const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.textContent=item[0];
+   if(item[2])b.className='danger';
+   if(item[3]){
+    b.classList.add('row-submenu-toggle');b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls','row-group-options');
+    const arrow=mk('span','›');arrow.className='row-submenu-arrow';arrow.setAttribute('aria-hidden','true');b.append(arrow);
+    const submenu=document.createElement('div');submenu.id='row-group-options';submenu.className='row-submenu';submenu.setAttribute('role','menu');submenu.hidden=true;
+    for(const [label,action] of item[3]){const option=document.createElement('button');option.type='button';option.setAttribute('role','menuitem');option.textContent=label;option.onclick=()=>{closeRowMenu();action()};submenu.append(option)}
+    b.onclick=()=>{submenu.hidden=!submenu.hidden;b.setAttribute('aria-expanded',String(!submenu.hidden));positionRowMenu(point)};
+    rowMenu.append(b,submenu);
+   }else{b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
+  }
+  const touch=coarsePointer();
+  rowMenu.classList.toggle('touch-mode',touch);
+  rowMenu.hidden=false;
+  menuBackdrop.hidden=!touch;
+  if(touch)try{navigator.vibrate?.(10)}catch{}
+  positionRowMenu(point);
+ }
  function openRowMenu({box,pair},point){
   const key=box?pinKey('box',box.id):pinKey('pair',pairKey(pair));
   const items=[
    [pins.has(key)?'Unpin chat':'Pin chat',()=>togglePin(key)],
   ];
   const current=groupForChat(key);
-  if(current)items.push(['Remove from '+current.name,()=>removeChatFromGroup(key)]);
-  items.push(['New group…',()=>openGroupDialog(null,key)]);
-  for(const group of chatGroups)if(group.id!==current?.id)items.push(['Move to '+group.name,()=>moveChatToGroup(key,group.id)]);
+  const groups=[];
+  if(current)groups.push(['Remove from group',()=>removeChatFromGroup(key)]);
+  for(const group of chatGroups)groups.push([(current?.id===group.id?'✓ ':'')+group.name,()=>moveChatToGroup(key,group.id)]);
+  groups.push(['New group…',()=>openGroupDialog(null,key)]);
+  items.push(['Add to Group',null,null,groups]);
   if(box){
    items.push(['Show details',()=>{if(!inspectOpen)$('#chat-info').click()}]);
    if(canWakeBox(box))items.push(['Wake box',()=>void wakeBox(box)]);
@@ -2611,6 +2769,7 @@
   try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+event.target.elements.token.value});event.target.reset();await enter()}catch(e){showLogin(e.message)}
  };
  $('#logout').onclick=async()=>{
+  groupStorageKey='';
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   await disablePushSubscription();
   $('#usage-modal').hidden=true;
@@ -2632,7 +2791,10 @@
  };
  async function enter(initial=false){
   try{
-   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';loadChatGroups(who.accountId||'default');
+   const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');
+   $('#chat-type-tabs [data-chat-type="pair"]').hidden=!owner;$('#chat-type-tabs [data-chat-type="all"]').hidden=!owner;
+   if(!owner&&chatType!=='box')setChatType('box');
+   else setChatType(chatType);
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
@@ -3070,29 +3232,14 @@
   parts.push(state.pending?'pending apply':'applied');
   return parts.join(' · ');
  }
- let boxInstructionsRequest=0;
- $('#agents-file-toggle').onclick=()=>{
-  const box=boxes.get(selected)||[...boxes.values()].sort((a,b)=>a.name.localeCompare(b.name))[0];
-  if(!box){toast('Create a box to view its AGENTS.md / CLAUDE.md.');return}
-  void openBoxInstructions(box);
- };
- $('#box-instructions-box').onchange=event=>{const box=boxes.get(event.target.value);if(box)void openBoxInstructions(box)};
  async function openBoxInstructions(box){
-  const request=++boxInstructionsRequest;
   closeSheets();
   boxInstructionTarget=box;
   const status=$('#box-instructions-status');status.textContent='Loading…';
-  $('#box-instructions-title').textContent='AGENTS.md / CLAUDE.md';
-  const picker=$('#box-instructions-box');picker.replaceChildren();
-  for(const available of [...boxes.values()].sort((a,b)=>a.name.localeCompare(b.name))){const option=mk('option',available.name);option.value=available.id;picker.append(option)}
-  picker.value=box.id;
-  $('#box-instructions-modal').hidden=false;
+  $('#box-instructions-title').textContent='Instructions · '+box.name;
   const select=$('#box-instructions-preset');select.replaceChildren();
   try{
-   const [state,presets]=await Promise.all([api(boxPath(box.id)+'/instructions'),owner?api('/v1/instruction-presets').catch(()=>null):Promise.resolve(null)]);
-   if(request!==boxInstructionsRequest)return;
-   if(presets)applyInstructionPresets(presets);
-   const current=state.instructions||{source:'none',markdown:''};
+   const state=await api(boxPath(box.id)+'/instructions'),current=state.instructions||{source:'none',markdown:''};
    const none=mk('option','No custom instructions (chat conventions only)');none.value='';select.append(none);
    const concise=mk('option','Concise responses');concise.value='__concise__';select.append(concise);
    for(const preset of instructionPresets.presets){const option=mk('option',preset.name+' · r'+preset.revision);option.value=preset.name;select.append(option)}
@@ -3102,8 +3249,8 @@
    mdPreview($('#box-instructions-preview'),current.markdown||'');
    $('#box-instructions-effective').textContent=state.effectiveMarkdown||'';
    $('#box-instructions-current').textContent=describeBoxInstructions(state);
-   status.textContent='';
-  }catch(e){if(request===boxInstructionsRequest)status.textContent=e.message}
+   status.textContent='';$('#box-instructions-modal').hidden=false;
+  }catch(e){status.textContent=e.message}
  }
  $('#box-instructions-preset').addEventListener('change',async()=>{
   const select=$('#box-instructions-preset'),textarea=$('#box-instructions-markdown'),preview=$('#box-instructions-preview');
@@ -3114,37 +3261,22 @@
   mdPreview(preview,textarea.value);
  });
  $('#box-instructions-markdown').addEventListener('input',()=>mdPreview($('#box-instructions-preview'),$('#box-instructions-markdown').value));
- async function saveBoxInstructions(box,body){
-  const status=$('#box-instructions-status'),apply=$('#box-instructions-apply'),reset=$('#box-instructions-reset');
-  apply.disabled=true;reset.disabled=true;status.textContent='Applying…';
-  try{
-   const result=await api(boxPath(box.id)+'/instructions','PUT',{},body);
-   if(inspectOpen&&selected===box.id){inspectInstructionsRequest++;inspectInstructionsFor=box.id;inspectInstructions=result;renderInspect()}
-   if(boxInstructionTarget?.id===box.id){
-    status.textContent=result.note||describeBoxInstructions(result);
-    if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
-    $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';
-    if(body.none){$('#box-instructions-preset').value='';$('#box-instructions-markdown').value='';mdPreview($('#box-instructions-preview'),'')}
-   }
-   toast('Instructions applied to '+box.name+'.');
-  }catch(e){status.textContent=e.message}
-  finally{apply.disabled=false;reset.disabled=false}
- }
  $('#box-instructions-apply').onclick=async()=>{
-  const box=boxInstructionTarget;if(!box)return;
+  if(!boxInstructionTarget)return;
   const status=$('#box-instructions-status'),select=$('#box-instructions-preset'),markdown=$('#box-instructions-markdown').value;
   try{
    let body;
    if(select.value==='')body={none:true};
    else if(select.value==='custom'||select.value==='__concise__'){if(!markdown.trim())throw Error('Enter the custom Markdown or choose another source.');body={markdown}}
    else{const preset=await presetBody(select.value);body=markdown.trim()&&markdown!==preset?{preset:select.value,markdown}:{preset:select.value}}
-   await saveBoxInstructions(box,body);
+   status.textContent='Applying…';
+   const result=await api(boxPath(boxInstructionTarget.id)+'/instructions','PUT',{},body);
+   if(inspectOpen&&selected===boxInstructionTarget.id){inspectInstructionsRequest++;inspectInstructionsFor=boxInstructionTarget.id;inspectInstructions=result;renderInspect()}
+   status.textContent=result.note||describeBoxInstructions(result);
+   if(result.instructions)$('#box-instructions-current').textContent=describeBoxInstructions(result);
+   $('#box-instructions-effective').textContent=result.effectiveMarkdown||'';
+   toast('Instructions applied to '+boxInstructionTarget.name+'.');
   }catch(e){status.textContent=e.message}
- };
- $('#box-instructions-reset').onclick=()=>{
-  const box=boxInstructionTarget;if(!box)return;
-  if(!confirm('Reset '+box.name+' to the vmbox instructions? This removes its custom Markdown and keeps the managed chat and tool guidance.'))return;
-  void saveBoxInstructions(box,{none:true});
  };
  async function openBoxCredentials(box){
   closeSheets();
