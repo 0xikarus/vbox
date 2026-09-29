@@ -126,36 +126,36 @@
         </div>
        </details>
       </section>
-     <section id="inspect-contacts" hidden>
-     <header class="inspect-block-head"><h3>Contacts</h3></header>
-      <div class="inspect-block">
+     <details id="inspect-contacts" class="inspect-block inspect-fold" data-fold="contacts" hidden>
+      <summary><h3>Contacts</h3></summary>
+      <div class="inspect-contact-body">
        <div class="inspect-contact-heading"><h3>Direct contacts</h3><button id="inspect-add-contact" type="button" aria-expanded="false" aria-controls="inspect-contact-picker">+ Add</button></div>
        <ul id="inspect-contact-list"></ul>
        <div id="inspect-contact-picker" hidden>
         <input id="inspect-contact-search" type="search" placeholder="Search boxes…" aria-label="Search boxes to add as contacts">
         <ul id="inspect-contact-options"></ul>
        </div>
+       <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> in its MCP permissions makes every eligible box available instead.</p>
+       <div class="contact-policy">
+        <div class="contact-policy-card">
+         <span class="policy-label">MCP access</span>
+         <strong id="inspect-contact-role">Configured per box</strong>
+        <button id="inspect-edit-roles" type="button">Edit permissions</button>
+        </div>
+        <div class="contact-policy-card">
+         <span class="policy-label">Labels</span>
+         <strong id="inspect-tags">None</strong>
+         <button id="inspect-edit-tags" type="button">Edit labels</button>
+        </div>
+        <div class="contact-policy-card">
+         <span class="policy-label">Visibility</span>
+         <span id="inspect-protection-label">Protection unknown</span>
+         <button id="inspect-toggle-protection" type="button">Protect box</button>
+        </div>
+       </div>
+       <p id="inspect-contact-status" role="status"></p>
       </div>
-      <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> in its MCP permissions makes every eligible box available instead.</p>
-      <div class="contact-policy">
-       <div class="contact-policy-card">
-        <span class="policy-label">MCP access</span>
-        <strong id="inspect-contact-role">Configured per box</strong>
-       <button id="inspect-edit-roles" type="button">Edit permissions</button>
-       </div>
-       <div class="contact-policy-card">
-        <span class="policy-label">Labels</span>
-        <strong id="inspect-tags">None</strong>
-        <button id="inspect-edit-tags" type="button">Edit labels</button>
-       </div>
-       <div class="contact-policy-card">
-        <span class="policy-label">Visibility</span>
-        <span id="inspect-protection-label">Protection unknown</span>
-        <button id="inspect-toggle-protection" type="button">Protect box</button>
-       </div>
-      </div>
-      <p id="inspect-contact-status" role="status"></p>
-     </section>
+     </details>
     </div>
    </aside>
    <div id="chat-loading" hidden aria-hidden="true"><img src="/loading-doodle.svg" alt=""><p id="chat-loading-text">Loading…</p></div>

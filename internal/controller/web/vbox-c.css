@@ -1019,10 +1019,14 @@ details[open]>summary::before{transform:rotate(0)}
 .msg.processing .typing-dots span{background:var(--mascot,var(--vb-ink-soft))}
 .msg.processing .processing-mascot{width:1.75rem;height:1.75rem}
 
-/* quieter meta: time / ticks / menu appear on hover or focus, always on touch */
-#chat-messages .msg .meta{opacity:0;transition:opacity .15s var(--vb-ease)}
-#chat-messages .msg:hover .meta,#chat-messages .msg:focus-within .meta{opacity:1}
-@media (pointer:coarse){#chat-messages .msg .meta{opacity:1}}
+/* quieter meta: absolute on pointer devices so a hidden meta never reserves
+   height (bubbles hug their text); inline and always visible on touch */
+#chat-messages .msg{position:relative}
+#chat-messages .msg .meta{position:absolute;right:.85rem;bottom:.26rem;margin:0;opacity:0;pointer-events:none;transition:opacity .15s var(--vb-ease)}
+#chat-messages .msg:hover .meta,#chat-messages .msg:focus-within .meta{opacity:1;pointer-events:auto}
+@media (pointer:coarse){
+  #chat-messages .msg .meta{position:static;opacity:1;pointer-events:auto;margin-top:.32rem}
+}
 
 /* tighter groups, clearer breaks between them */
 #chat-messages{gap:.9rem}
@@ -1055,3 +1059,14 @@ details[open]>summary::before{transform:rotate(0)}
   #chat-messages .msg.agent:not(.note){margin-left:1.95rem}
   .msg-avatar{left:-1.95rem}
 }
+
+/* contacts: same disclosure system as the rest of the rail */
+#inspect-contacts{background:transparent;border-left:0}
+#inspect-contacts>summary{cursor:pointer}
+#inspect-contacts>summary h3{margin:0}
+.inspect-contact-body{padding-top:.55rem}
+.contact-access{background:transparent;border:1px solid var(--vb-line);color:var(--vb-ink-soft);border-radius:999px;font-weight:600;font-size:.72rem;padding:.3rem .62rem}
+#inspect-contact-list li .contact-access,#inspect-contact-options li .contact-access{background:transparent;border:1px solid var(--vb-line);color:var(--vb-ink-soft);border-radius:999px;font-weight:600;font-size:.72rem;padding:.3rem .62rem}
+#inspect-contact-list li .contact-access:hover,#inspect-contact-options li .contact-access:hover{background:var(--vb-surface-2);color:var(--vb-ink);border-color:var(--vb-line-strong)}
+#inspect-contact-list li .contact-access[data-action="remove"]:hover{color:var(--vb-danger-text);border-color:var(--vb-danger);background:var(--vb-danger-soft)}
+#inspect-contact-list li .contact-access[data-action="add"]:hover,#inspect-contact-options li .contact-access[data-action="add"]:hover{color:var(--vb-brand-ink,var(--vb-bg));border-color:var(--vb-brand,var(--vb-ink));background:var(--vb-brand,var(--vb-ink))}

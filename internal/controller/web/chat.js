@@ -2062,7 +2062,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    const name=document.createElement('span');name.className='contact-name';name.textContent=view.name;
    const detail=document.createElement('span');detail.className='contact-meta';detail.textContent=(view.defaultAgent||'agent')+' · '+view.state+(contact.override==='block'?' · blocked':'');
    meta.append(name,detail);item.append(meta);
-   const access=document.createElement('button');access.type='button';access.className='contact-access';access.textContent=added?'Remove':'Add';
+   const access=document.createElement('button');access.type='button';access.className='contact-access';access.dataset.action=added?'remove':'add';access.textContent=added?'Remove':'Add';
    access.setAttribute('aria-label',(added?'Remove ':'Add ')+view.name+(added?' from ':' to ')+box.name+' contacts');
    access.onclick=async()=>{access.disabled=true;try{await api(boxPath(box.id)+'/contacts','PUT',{}, {contact:contact.contactBoxId,state:added?'inherit':'allow'});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message;access.disabled=false}};
    item.append(access);return item;
