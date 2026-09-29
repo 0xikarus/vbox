@@ -208,6 +208,9 @@ func TestAgentBoxWakeRetryUsesExistingAllocationForSameTarget(t *testing.T) {
 			mock.ExpectQuery("FROM logical_boxes WHERE account_id=").WithArgs("account-a", "box-b").WillReturnRows(boxRows())
 			mock.ExpectQuery("SELECT EXISTS\\(SELECT 1 FROM box_protection").WithArgs("account-a", "box-b").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 			mock.ExpectQuery("FROM allocation_requests r JOIN logical_boxes b").WithArgs("account-a", "agent-wake:box-a:wake-one").WillReturnRows(sqlmock.NewRows([]string{"id", "idempotency_key", "state", "logical_box_id", "name", "slot_id", "service_id", "assignment_generation", "fencing_token", "lease_owner", "lease_expires_at", "phase", "retry_count", "failure_reason", "created_at", "updated_at"}).AddRow("request-one", "agent-wake:box-a:wake-one", "ready", test.allocated, "builder", "slot-b", "service-b", 1, "", "", nil, "", 0, "", time.Now(), time.Now()))
+			if test.allocated == "box-b" {
+				mock.ExpectQuery("SELECT COALESCE\\(session_choice,''\\) FROM allocation_requests").WithArgs("account-a", "request-one").WillReturnRows(sqlmock.NewRows([]string{"session_choice"}).AddRow(""))
+			}
 			request := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/boxes/builder/wake", strings.NewReader(`{"confirmation":"builder"}`))
 			request.SetPathValue("box", "builder")
 			request.Header.Set("Idempotency-Key", "wake-one")

@@ -239,6 +239,9 @@ CREATE TABLE IF NOT EXISTS allocation_requests (
 );
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS phase text;
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice text;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice_applied boolean NOT NULL DEFAULT false;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice_attempted_at timestamptz;
 CREATE INDEX IF NOT EXISTS allocation_requests_queue_idx
   ON allocation_requests(account_id, state, created_at, id);
 CREATE INDEX IF NOT EXISTS logical_boxes_detached_idx

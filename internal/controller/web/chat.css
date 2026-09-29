@@ -1214,10 +1214,16 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .role-assignment-toggle:hover{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
 #inspect-memory-settings{margin:.7rem 0;padding:.7rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface2)}
 #inspect-memory-settings h4{margin:0 0 .45rem;font-size:.85rem}
+#inspect-memory-settings .memory-availability{margin:0 0 .65rem;padding:.55rem .65rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink-soft);font-size:.74rem;line-height:1.45}
 #inspect-memory-settings form{display:flex;align-items:end;gap:.45rem;flex-wrap:wrap}
 #inspect-memory-settings form[hidden]{display:none}
-#inspect-memory-settings label{flex:1 1 5rem;font-size:.74rem}
-#inspect-memory-settings input{display:block;width:100%;min-width:0}
+#inspect-memory-settings label{flex:1 1 5rem;min-width:0;font-size:.74rem;font-weight:600;color:var(--ink)}
+#inspect-memory-settings label span{font-weight:400;color:var(--ink-soft)}
+#inspect-memory-settings input{display:block;box-sizing:border-box;width:100%;min-width:0;margin-top:.3rem;padding:.48rem .55rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);color:var(--ink);font:inherit;font-size:.85rem;color-scheme:dark}
+#inspect-memory-settings input:focus{border-color:var(--accent);outline:2px solid var(--accent-soft)}
+#inspect-memory-settings button{padding:.5rem .7rem;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);color:var(--accent-ink);font:inherit;font-size:.76rem;font-weight:700;cursor:pointer}
+#inspect-memory-settings button:hover{filter:brightness(1.08)}
+#inspect-memory-settings button:disabled{opacity:.55;cursor:wait}
 #inspect-memory-settings p{margin:.45rem 0 0;font-size:.75rem;color:var(--ink-soft)}
 #role-status{font-size:.73rem}
 @media(max-width:760px){

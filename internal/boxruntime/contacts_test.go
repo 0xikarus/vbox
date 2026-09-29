@@ -1,6 +1,9 @@
 package boxruntime
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateContactRefAcceptsBoxIdentities(t *testing.T) {
 	for _, value := range []string{"builder", "box-1", "team.box_2", "00000000-0000-4000-8000-000000000000"} {
@@ -31,6 +34,14 @@ func TestResolveContactAcceptsCompactIDNameOrIncomingFullID(t *testing.T) {
 	blocked := []ContactSummary{{ID: "a1b2c3d4", Name: "CodeChecker", CanMessage: false}}
 	if _, err := resolveContactFromList(blocked, "a1b2c3d4-1234-4000-8000-000000000000"); err == nil {
 		t.Fatal("the full ID bypassed a blocked contact")
+	}
+}
+
+func TestResolveContactRejectsHibernatedBoxBeforeQueueing(t *testing.T) {
+	contacts := []ContactSummary{{ID: "a1b2c3d4", Name: "mascot", State: "hibernated", CanMessage: true}}
+	_, err := resolveContactFromList(contacts, "mascot")
+	if err == nil || !strings.Contains(err.Error(), "wake it and retry") {
+		t.Fatalf("hibernated contact error=%v", err)
 	}
 }
 

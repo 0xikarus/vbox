@@ -172,6 +172,11 @@ func (s *Server) agentChatReadyHandler(w http.ResponseWriter, r *http.Request, p
 				writeError(w, http.StatusBadRequest, fmt.Errorf("invalid chat-ready event"))
 				return
 			}
+			if request.Event.Kind == "contact" {
+				messageID, reason := s.routeContactMessage(r.Context(), p.AccountID, task, *request.Event)
+				writeJSON(w, http.StatusOK, map[string]any{"stored": true, "delivered": reason == "", "messageId": messageID, "reason": reason})
+				return
+			}
 			if _, _, err := s.applyChatEvent(r.Context(), nil, "", p.AccountID, task, *request.Event); err != nil {
 				writeError(w, http.StatusServiceUnavailable, fmt.Errorf("chat event could not be stored"))
 				return

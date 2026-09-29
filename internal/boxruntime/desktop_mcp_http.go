@@ -87,6 +87,7 @@ func ServeDesktopMCPHTTP(ctx context.Context, assignment, home string) error {
 		_ = listener.Close()
 		return err
 	}
+	go runLocalHeartbeats(ctx, assignment, home, token)
 	server := &http.Server{Handler: desktopMCPHTTPHandler(assignment, token), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -173,8 +174,9 @@ func localAgentPromptHandler() http.HandlerFunc {
 			return
 		}
 		var input struct {
-			Text    string `json:"text"`
-			Session string `json:"session,omitempty"`
+			Text      string `json:"text"`
+			Session   string `json:"session,omitempty"`
+			MessageID string `json:"messageId,omitempty"`
 		}
 		decoder := json.NewDecoder(io.LimitReader(request.Body, 1<<20))
 		decoder.DisallowUnknownFields()
@@ -218,7 +220,14 @@ func localAgentPromptHandler() http.HandlerFunc {
 			writeDesktopMCPError(writer, http.StatusInternalServerError, "box home is unavailable")
 			return
 		}
-		inbound := ChatInbound{ID: ID("local_"), Text: input.Text}
+		messageID := input.MessageID
+		if messageID == "" {
+			messageID = ID("local_")
+		} else if err := validateTmuxToken("messageId", messageID); err != nil {
+			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		inbound := ChatInbound{ID: messageID, Text: input.Text}
 		switch agent {
 		case "codex":
 			err = DeliverCodexChat(ctx, New("").Root, home, session, inbound)
@@ -299,7 +308,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 // facade serves the whole box from one process, so it has to say which
 // conversation rather than letting the writer infer it from its own tmux
 // session, which is the facade's own.
-var desktopMCPChatTools = map[string]bool{"set_busy": true, "chat_message": true, "chat_ask": true}
+var desktopMCPChatTools = map[string]bool{"set_busy": true, "chat_message": true, "chat_ask": true, "start_heartbeat": true}
 
 // soleAgentConversation names the box's agent conversation when there is
 // exactly one. With several, the caller has to choose: guessing would post a

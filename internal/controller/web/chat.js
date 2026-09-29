@@ -2121,8 +2121,15 @@
   root.hidden=false;
   if(root.dataset.boxId===box.id&&root.dataset.generation===String(box.assignmentGeneration))return;
   root.dataset.boxId=box.id;root.dataset.generation=String(box.assignmentGeneration);
-  root.innerHTML='<h4>RAM and swap</h4><form><label>RAM GiB <input name="memory" type="number" min="1" max="8" required></label><label>Swap GiB <input name="swap" type="number" min="0" max="4" required></label><button type="submit">Apply live</button></form><p role="status">Loading limits…</p>';
-  const form=root.querySelector('form'),status=root.querySelector('[role="status"]');form.hidden=true;
+  root.innerHTML='<h4>RAM and swap</h4><div class="memory-availability" aria-live="polite">Checking worker availability…</div><form><label>RAM <span>GiB</span><input name="memory" type="number" min="1" max="8" required></label><label>Swap <span>GiB</span><input name="swap" type="number" min="0" max="4" required></label><button type="submit">Apply live</button></form><p role="status">Loading limits…</p>';
+  const form=root.querySelector('form'),status=root.querySelector('[role="status"]'),availability=root.querySelector('.memory-availability');form.hidden=true;
+  const hostQuery=new URLSearchParams({provider:box.provider,providerCredential:box.providerCredential||''});
+  void api('/v1/fleet/host-resources?'+hostQuery).then(host=>{
+   if(root.dataset.boxId!==box.id||root.dataset.generation!==String(box.assignmentGeneration))return;
+   const fmt=bytes=>(bytes/(1024**3)).toFixed(1)+' GiB';
+   availability.textContent='Worker available now · RAM '+fmt(host.memoryAvailableBytes)+' / '+fmt(host.memoryTotalBytes)+' · swap '+fmt(host.swapFreeBytes)+' / '+fmt(host.swapTotalBytes);
+   if(host.observedAt)availability.title='Measured '+new Date(host.observedAt).toLocaleString();
+  }).catch(()=>{if(root.dataset.boxId===box.id)availability.textContent='Worker availability unavailable.'});
   const load=async()=>{
    try{
     const current=await api(boxPath(box.id)+'/resources');
