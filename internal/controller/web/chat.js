@@ -2512,6 +2512,7 @@
    }
    toolsSet.hidden=!toolsSet.children.length;
    extrasLoaded=true;
+   renderPreview();
   }catch(e){$('#new-box-status').textContent=e.message}
  }
   function openNewBoxModal(){
