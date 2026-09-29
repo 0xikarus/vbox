@@ -134,6 +134,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-header button:hover{background:var(--accent-soft);border-color:var(--accent)}
 #chat-header #chat-usage{white-space:nowrap;color:var(--ok-text);border-color:var(--ok);background:var(--surface2)}
 #chat-header #chat-usage.usage-low{color:var(--warn-text);border-color:var(--warn)}
+#chat-header #chat-control{display:inline-flex;align-items:center;justify-content:center;min-width:2.2rem;padding:0}
+#chat-control svg{width:1.1rem;height:1.1rem;flex:none}
 #chat-workspace{font-size:.82rem;white-space:nowrap;color:var(--accent-text);font-weight:700}
 
 #chat-messages{flex:1;overflow-y:auto;overflow-x:hidden;padding:.7rem clamp(.4rem,2.4vw,1.3rem) .5rem;
@@ -826,7 +828,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 }
 @media (max-width:640px){
  /* on a phone the header keeps Clear and Details next to the conversation. */
- #chat-header #chat-control,#chat-header #chat-workspace{display:none}
+ #chat-header #chat-workspace{display:none}
  #chat-header-avatar .avatar{width:2.6rem;height:2.6rem}
  #chat-header-text strong{font-size:.95rem}
  #chat-info,#chat-clear-context{font-size:.72rem;padding:.3rem .6rem}
@@ -1039,7 +1041,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
  #chat-header-state .chat-header-agent{display:none}
  #chat-usage .chat-usage-label{display:none}
  #chat-header #chat-usage{font-size:.68rem;padding:.35rem .5rem}
- #chat-header #chat-clear-context,#chat-header #chat-info,#chat-header #chat-control,#chat-header #chat-workspace{display:none}
+ #chat-header #chat-clear-context,#chat-header #chat-info,#chat-header #chat-workspace{display:none}
  #chat-header #chat-wake:not([hidden]){display:block;font-size:.7rem}
  #chat-more{display:block}
  #chat-messages{padding:.75rem .55rem;gap:.55rem}
