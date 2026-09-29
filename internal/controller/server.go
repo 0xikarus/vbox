@@ -278,6 +278,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages/clear-context", s.auth(s.clearBoxContextHandler))
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/messages/compact", s.auth(s.compactBoxContextHandler))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/messages", s.auth(s.boxMessageHistory))
+	mux.HandleFunc("GET /v1/logical-boxes/{id}/attachment-storage", s.owner(s.boxAttachmentStorageHandler))
+	mux.HandleFunc("DELETE /v1/logical-boxes/{id}/attachment-storage", s.owner(s.boxAttachmentStorageHandler))
 	mux.HandleFunc("GET /v1/box-conversations", s.owner(s.contactConversationsHandler))
 	mux.HandleFunc("GET /v1/box-conversations/{a}/{b}/messages", s.owner(s.contactConversationMessagesHandler))
 	mux.HandleFunc("GET /v1/messages/{message}/images/{image}", s.auth(s.downloadBoxMessageImage))

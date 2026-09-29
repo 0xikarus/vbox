@@ -61,6 +61,14 @@ You can upload local Claude, Codex, OpenCode, or GitHub logins with `vmbox profi
 
 The controller's web UI has box workspaces with Desktop and TMUX views, Agent chat, and Grid for viewing several running boxes. Agent chat supports image attachments and direct contacts between boxes. Optional Blender and Foundry presets are selected when creating a box. See the [agent desktop guide](docs/AGENT-DESKTOP-IMPLEMENTATION.md) for tools, browser state, and secrets, and the [local prompt API](docs/LOCAL-AGENT-PROMPT.md) for sending a message from an app inside a box.
 
+Saved chat attachments share a 1 GiB account limit. Large still images are
+resized and re-encoded when that makes them smaller; animated GIFs and videos
+keep their uploaded format. In Chat → Box details, owners can see per-box and
+account usage and confirm **Clear this box's attachments**. Clearing removes
+media from delivered messages while preserving their text, in-flight media,
+and attachments still used by another box. Deleting a box also releases its
+unshared chat media; unused uploads expire after seven days.
+
 ## How it compares
 
 | Feature | vmbox | Grok Bot | Muse |

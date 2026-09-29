@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -30,6 +31,8 @@ const (
 	// maxAccountAttachmentBytes bounds all attachments kept for one account.
 	maxAccountAttachmentBytes = 1 << 30
 )
+
+var errAccountAttachmentQuota = errors.New("saved attachments reached the 1 GiB account limit; open Chat > Box details > Chat attachments to clear older media")
 
 // mp4Brands are the `ftyp` brands the chat plays as MP4. Stills share the ISO
 // base-media container — HEIC is `heic`, AVIF is `avif` — so the brand has to
@@ -90,6 +93,11 @@ func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Pr
 		writeError(w, 400, err)
 		return
 	}
+	data, media, err = optimizeStoredImage(r.Context(), data, media)
+	if err != nil {
+		writeError(w, 500, err)
+		return
+	}
 	// Commit cleanup separately so even a rejected over-quota upload frees old
 	// unreferenced media for the next attempt.
 	if err := s.Store.pruneExpiredUnusedAttachments(r.Context(), p.AccountID); err != nil {
@@ -115,7 +123,7 @@ func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Pr
 		return
 	}
 	if used+int64(len(data)) > maxAccountAttachmentBytes {
-		writeError(w, 409, fmt.Errorf("saved attachments reached the 1 GiB account storage limit"))
+		writeError(w, 409, errAccountAttachmentQuota)
 		return
 	}
 	id := uuid()
