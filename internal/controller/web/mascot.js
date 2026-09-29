@@ -8,7 +8,8 @@
  const traits=seed=>{const h=hash(seed);return {shape:'circle',color:h%37===0?COLORS[11]:COLORS[Math.floor(h/8)%11],eyeSpread:((h>>>12)%7-3)*.35,eyeTilt:((h>>>17)%7-3)*.12,phase:(h%1000)/1000*6.283,blink:2.3+(h%190)/100,eyes:'A'}};
  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const eyePath=p=>`M${p[0]} ${p[1]} C${p[2]} ${p[3]} ${p[4]} ${p[5]} ${p[6]} ${p[7]}`;
- const rawEyesFor=(mood,variant='A')=>{const spread=variant==='C'?1:0,L=39-spread,R=61+spread,lo=53;const line=(cx,side=1)=>[cx-2.5,lo-6*side,cx-1.2,lo-3*side,cx+1.2,lo+3*side,cx+2.5,lo+6*side];switch(mood){
+ const eyeLine=(cx,cy,length,angle)=>{const a=angle*Math.PI/180,dx=Math.cos(a)*length/2,dy=Math.sin(a)*length/2,x1=cx-dx,y1=cy-dy,x2=cx+dx,y2=cy+dy;return `M${x1.toFixed(3)} ${y1.toFixed(3)} C${(x1+(x2-x1)/3).toFixed(3)} ${(y1+(y2-y1)/3).toFixed(3)} ${(x1+2*(x2-x1)/3).toFixed(3)} ${(y1+2*(y2-y1)/3).toFixed(3)} ${x2.toFixed(3)} ${y2.toFixed(3)}`};
+ const rawEyesFor=(mood,variant='A')=>{const spread=variant==='C'?1:0,L=39-spread,R=61+spread,lo=53;const line=(cx,side=1)=>[cx-2.5,lo-6*side,cx-5/6,lo-2*side,cx+5/6,lo+2*side,cx+2.5,lo+6*side];switch(mood){
   case 'curious':return [[L-.35,lo,L-.15,lo+.2,L+.15,lo+.2,L+.35,lo],[R-.35,lo,R-.15,lo+.2,R+.15,lo+.2,R+.35,lo]];
   case 'wink':return [line(L,1),[R-5,lo,R-2,lo,R+2,lo,R+5,lo]];
   case 'excited':return [[L-3.2,lo-9,L-2,lo-4,L+2,lo+4,L+3.2,lo+9],[R-3.2,lo-9,R-2,lo-4,R+2,lo+4,R+3.2,lo+9]];
@@ -119,14 +120,18 @@
    const old=this.glyphHost.firstElementChild;if(newMarkup){const wrap=document.createElementNS('http://www.w3.org/2000/svg','g');wrap.innerHTML=newMarkup;wrap.setAttribute('opacity','0');this.glyphHost.append(wrap);this.fade(wrap,1,.22).then(()=>{if(!this.dead)old?.remove()})}else if(old)this.fade(old,0,.22).then(()=>old.remove());
    this.fade(this.eyesGroup,expression?0:1,.22)
   }
-  paintBlink(value){
-   this.blinkScale=value;
-   // A stroked eye's width is its local minor axis; its path, centre and angle stay fixed.
-   const base=this.svg.classList.contains('vbox-mascot-mini')?9.5:9;
-   const width=4.5+(base-4.5)*(value-.2)/.8;
-   for(const eye of this.eyes)eye.style.setProperty('stroke-width',width.toFixed(2))
+  paintBlink(progress){
+   this.blinkScale=1-progress;
+   for(let i=0;i<2;i++){
+    const eye=this.eyes[i],p=this.blinkParams?.[i];if(!p)continue;
+    const length=p.length+(p.closedLength-p.length)*progress;
+    const thickness=p.thickness+(p.closedThickness-p.thickness)*progress;
+    const angle=p.angle*(1-progress);
+    eye.setAttribute('d',eyeLine(p.cx,p.cy,length,angle));
+    eye.style.setProperty('stroke-width',thickness.toFixed(3))
+   }
   }
-  resetBlink(){this.blinkGeneration++;this.blinking=false;this.blinkQueued=false;this.blinkScale=1;for(const eye of this.eyes){eye.style.removeProperty('stroke-width');eye.style.removeProperty('transition')}this.pendingEyes=null;this.pendingLook=null}
+  resetBlink(){this.blinkGeneration++;this.blinking=false;this.blinkQueued=false;this.blinkScale=1;if(this.blinkParams)for(let i=0;i<2;i++)this.eyes[i].setAttribute('d',this.blinkParams[i].original);this.blinkParams=null;for(const eye of this.eyes){eye.style.removeProperty('stroke-width');eye.style.removeProperty('transition')}this.pendingEyes=null;this.pendingLook=null}
   tint(mood){return mood==='sleeping'?'#9EA7BB':mood==='angry'?'#FF6F59':this.traits.color}
   setColor(mood,instant=false){const to=this.tint(mood),from=this.shapePath.getAttribute('fill');if(instant)this.shapePath.setAttribute('fill',to);else this.track(animate(from,to,{duration:.3,onUpdate:v=>this.shapePath.setAttribute('fill',v)}));this.dotLeft.setAttribute('fill',to);this.dotRight.setAttribute('fill',to);this.bangStem.setAttribute('fill',to)}
   setStem(value){this.stemProgress=value;this.bangStem.setAttribute('d',stemPath(value))}
@@ -165,12 +170,13 @@
    this.blinking=true;const generation=++this.blinkGeneration;
    this.blinkDriftX=.8*Math.sin(this.breathPhase*.8+this.traits.phase);
    this.blinkDriftY=.45*Math.sin(this.breathPhase*.62+this.traits.phase);
+   this.blinkParams=this.eyes.map(eye=>{const total=eye.getTotalLength(),a=eye.getPointAtLength(0),b=eye.getPointAtLength(total),thickness=parseFloat(getComputedStyle(eye).strokeWidth)||9,length=Math.hypot(b.x-a.x,b.y-a.y);return {original:eye.getAttribute('d'),cx:(a.x+b.x)/2,cy:(a.y+b.y)/2,length,thickness,angle:Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI,closedLength:.7*thickness+.35*length,closedThickness:.55*thickness}});
    for(const eye of this.eyes)eye.style.setProperty('transition','none');
-   const close=this.track(animate(1,.32,{duration:.1,ease:t=>t*t*t,onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v)}}));
+   const close=this.track(animate(0,1,{duration:.1,ease:t=>t*t*t,onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v)}}));
    close.finished.then(()=>{if(generation!==this.blinkGeneration||this.dead)return;this.timer(()=>{
     if(generation!==this.blinkGeneration||this.dead)return;
-    const open=this.track(animate(.32,1,{duration:.16,ease:t=>t*t*(3-2*t),onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v)}}));
-    open.finished.then(()=>{if(generation!==this.blinkGeneration||this.dead)return;this.blinking=false;this.paintBlink(1);for(const eye of this.eyes){eye.style.removeProperty('stroke-width');eye.style.removeProperty('transition')}
+    const open=this.track(animate(1,0,{duration:.16,ease:t=>1-(1-t)*(1-t),onUpdate:v=>{if(generation===this.blinkGeneration)this.paintBlink(v)}}));
+    open.finished.then(()=>{if(generation!==this.blinkGeneration||this.dead)return;this.blinking=false;this.paintBlink(0);for(let i=0;i<2;i++){this.eyes[i].setAttribute('d',this.blinkParams[i].original);this.eyes[i].style.removeProperty('stroke-width');this.eyes[i].style.removeProperty('transition')}this.blinkParams=null;
      const eyes=this.pendingEyes,look=this.pendingLook;this.pendingEyes=null;this.pendingLook=null;if(eyes)this.setEyes(...eyes);if(look)this.lookTo(...look);
      if(allowDouble&&hash(this.seed+Date.now())%5===0)this.timer(()=>this.blink(false),250)
     }).catch(()=>{})
