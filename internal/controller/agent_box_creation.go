@@ -24,6 +24,8 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		Name          string               `json:"name"`
 		Agent         string               `json:"agent"`
 		DiskGiB       int64                `json:"diskGiB"`
+		MemoryGiB     int64                `json:"memoryGiB"`
+		SwapGiB       *int64               `json:"swapGiB"`
 		SlotID        string               `json:"slotId"`
 		Tools         []string             `json:"tools"`
 		Instructions  string               `json:"instructions"`
@@ -51,6 +53,20 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	if request.DiskGiB == 0 {
 		request.DiskGiB = 10
+	}
+	customMemory := request.MemoryGiB != 0 || request.SwapGiB != nil
+	if customMemory {
+		if request.MemoryGiB == 0 {
+			request.MemoryGiB = 2
+		}
+		if request.SwapGiB == nil {
+			defaultSwap := int64(1)
+			request.SwapGiB = &defaultSwap
+		}
+		if request.MemoryGiB < 1 || request.MemoryGiB > 8 || *request.SwapGiB < 0 || *request.SwapGiB > 4 {
+			writeError(w, 400, fmt.Errorf("memoryGiB must be 1–8 and swapGiB 0–4"))
+			return
+		}
 	}
 	if err := validateAgentBoxProfiles(request.Agent, request.LoginProfiles); err != nil {
 		writeError(w, 400, err)
@@ -108,7 +124,8 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	profileJSON, _ := json.Marshal(request.LoginProfiles)
 	toolsJSON, _ := json.Marshal(request.Tools)
 	var existingBoxID, requestedName, requestedAgent, requestedInstructions, requestedSlotID, providerName, credential string
-	var requestedDisk int64
+	var requestedDisk, requestedMemory int64
+	var requestedSwap sql.NullInt64
 	var requestedRoleIDs, requestedProfiles, requestedTools []byte
 	tx, err := s.Store.DB.BeginTx(r.Context(), &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -128,9 +145,9 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 500, err)
 		return
 	}
-	err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_login_profiles,requested_tools,requested_instructions,requested_slot_id,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &requestedProfiles, &requestedTools, &requestedInstructions, &requestedSlotID, &existingBoxID)
+	err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_memory_gib,requested_swap_gib,requested_role_ids,requested_login_profiles,requested_tools,requested_instructions,requested_slot_id,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedMemory, &requestedSwap, &requestedRoleIDs, &requestedProfiles, &requestedTools, &requestedInstructions, &requestedSlotID, &existingBoxID)
 	if err == nil {
-		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.RoleIDs, request.LoginProfiles, request.Tools, request.Instructions, request.SlotID, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedProfiles, requestedTools, requestedInstructions, requestedSlotID) {
+		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.MemoryGiB, request.SwapGiB, request.RoleIDs, request.LoginProfiles, request.Tools, request.Instructions, request.SlotID, requestedName, requestedAgent, requestedDisk, requestedMemory, requestedSwap, requestedRoleIDs, requestedProfiles, requestedTools, requestedInstructions, requestedSlotID) {
 			writeError(w, 409, fmt.Errorf("idempotency key was already used with different box parameters"))
 			return
 		}
@@ -172,14 +189,14 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, 403, fmt.Errorf("created-box limit reached"))
 		return
 	}
-	err = tx.QueryRowContext(r.Context(), `INSERT INTO agent_box_creations(id,account_id,creator_box_id,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_login_profiles,requested_tools,requested_instructions,requested_slot_id,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10,$11,$12) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,requested_name`, reservationID, p.AccountID, creatorID, request.Name, request.Agent, request.DiskGiB, string(roleIDsJSON), string(profileJSON), string(toolsJSON), request.Instructions, request.SlotID, key).Scan(&reservationID, &requestedName)
+	err = tx.QueryRowContext(r.Context(), `INSERT INTO agent_box_creations(id,account_id,creator_box_id,requested_name,requested_agent,requested_disk_gib,requested_memory_gib,requested_swap_gib,requested_role_ids,requested_login_profiles,requested_tools,requested_instructions,requested_slot_id,idempotency_key) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11::jsonb,$12,$13,$14) ON CONFLICT(account_id,creator_box_id,idempotency_key) DO NOTHING RETURNING id::text,requested_name`, reservationID, p.AccountID, creatorID, request.Name, request.Agent, request.DiskGiB, request.MemoryGiB, request.SwapGiB, string(roleIDsJSON), string(profileJSON), string(toolsJSON), request.Instructions, request.SlotID, key).Scan(&reservationID, &requestedName)
 	if errors.Is(err, sql.ErrNoRows) {
-		err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_role_ids,requested_login_profiles,requested_tools,requested_instructions,requested_slot_id,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedRoleIDs, &requestedProfiles, &requestedTools, &requestedInstructions, &requestedSlotID, &existingBoxID)
+		err = tx.QueryRowContext(r.Context(), `SELECT id::text,requested_name,requested_agent,requested_disk_gib,requested_memory_gib,requested_swap_gib,requested_role_ids,requested_login_profiles,requested_tools,requested_instructions,requested_slot_id,COALESCE(created_box_id::text,'') FROM agent_box_creations WHERE account_id=$1 AND creator_box_id=$2 AND idempotency_key=$3`, p.AccountID, creatorID, key).Scan(&reservationID, &requestedName, &requestedAgent, &requestedDisk, &requestedMemory, &requestedSwap, &requestedRoleIDs, &requestedProfiles, &requestedTools, &requestedInstructions, &requestedSlotID, &existingBoxID)
 		if err != nil {
 			writeError(w, 409, err)
 			return
 		}
-		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.RoleIDs, request.LoginProfiles, request.Tools, request.Instructions, request.SlotID, requestedName, requestedAgent, requestedDisk, requestedRoleIDs, requestedProfiles, requestedTools, requestedInstructions, requestedSlotID) {
+		if !sameAgentBoxRequest(request.Name, request.Agent, request.DiskGiB, request.MemoryGiB, request.SwapGiB, request.RoleIDs, request.LoginProfiles, request.Tools, request.Instructions, request.SlotID, requestedName, requestedAgent, requestedDisk, requestedMemory, requestedSwap, requestedRoleIDs, requestedProfiles, requestedTools, requestedInstructions, requestedSlotID) {
 			writeError(w, 409, fmt.Errorf("idempotency key was already used with different box parameters"))
 			return
 		}
@@ -232,6 +249,16 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		writeError(w, status, err)
 		return
 	}
+	if customMemory {
+		workers = slices.DeleteFunc(workers, func(worker agentBoxWorker) bool {
+			return s.verifyBoxMemoryPool(r.Context(), p.AccountID, worker.Provider, worker.ProviderCredential) != nil
+		})
+		if len(workers) == 0 {
+			_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2 AND created_box_id IS NULL`, p.AccountID, reservationID)
+			writeError(w, 409, fmt.Errorf("memoryGiB and swapGiB require an available container-isolated shared-worker slot"))
+			return
+		}
+	}
 	var instructionSelection *v1.InstructionSelection
 	if strings.TrimSpace(request.Instructions) != "" {
 		instructionSelection = &v1.InstructionSelection{Markdown: request.Instructions}
@@ -251,7 +278,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 		// An explicit slot fixes both the pool and volume region. Automatic
 		// placement lets the creation transaction reserve any free slot in
 		// this pool, then tries another pool if it filled concurrently.
-		create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: worker.Provider, ProviderCredential: worker.ProviderCredential, SlotID: request.SlotID, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, LoginProfiles: request.LoginProfiles, RoleIDs: request.RoleIDs, Tools: request.Tools, AllocationRequestKey: "agent-box:" + reservationID}
+		create := v1.CreateLogicalBoxRequest{Name: request.Name, Provider: worker.Provider, ProviderCredential: worker.ProviderCredential, SlotID: request.SlotID, DefaultAgent: request.Agent, DiskGiB: request.DiskGiB, MemoryGiB: request.MemoryGiB, SwapGiB: request.SwapGiB, LoginProfiles: request.LoginProfiles, RoleIDs: request.RoleIDs, Tools: request.Tools, AllocationRequestKey: "agent-box:" + reservationID}
 		creation, err = s.Store.BeginLogicalBoxCreation(r.Context(), owner, create, creatorID)
 		if err == nil || request.SlotID != "" || !errors.Is(err, errNoCreationSlot) {
 			break
@@ -282,7 +309,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}()
 }
 
-func sameAgentBoxRequest(name, agent string, disk int64, roleIDs []string, profiles []v1.LoginProfileRef, tools []string, instructions, slotID, storedName, storedAgent string, storedDisk int64, storedRoleJSON, storedProfilesJSON, storedToolsJSON []byte, storedInstructions, storedSlotID string) bool {
+func sameAgentBoxRequest(name, agent string, disk, memory int64, swap *int64, roleIDs []string, profiles []v1.LoginProfileRef, tools []string, instructions, slotID, storedName, storedAgent string, storedDisk, storedMemory int64, storedSwap sql.NullInt64, storedRoleJSON, storedProfilesJSON, storedToolsJSON []byte, storedInstructions, storedSlotID string) bool {
 	var storedRoleIDs []string
 	var storedProfiles []v1.LoginProfileRef
 	var storedTools []string
@@ -291,7 +318,7 @@ func sameAgentBoxRequest(name, agent string, disk int64, roleIDs []string, profi
 	}
 	slices.Sort(storedRoleIDs)
 	slices.Sort(storedTools)
-	return name == storedName && agent == storedAgent && disk == storedDisk && slices.Equal(roleIDs, storedRoleIDs) && slices.Equal(profiles, storedProfiles) && slices.Equal(tools, storedTools) && instructions == storedInstructions && slotID == storedSlotID
+	return name == storedName && agent == storedAgent && disk == storedDisk && memory == storedMemory && (swap == nil) == !storedSwap.Valid && (swap == nil || *swap == storedSwap.Int64) && slices.Equal(roleIDs, storedRoleIDs) && slices.Equal(profiles, storedProfiles) && slices.Equal(tools, storedTools) && instructions == storedInstructions && slotID == storedSlotID
 }
 
 func validateAgentBoxProfiles(agent string, profiles []v1.LoginProfileRef) error {

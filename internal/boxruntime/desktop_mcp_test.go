@@ -57,6 +57,12 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 		if properties["loginProfiles"] == nil || properties["roleIds"] == nil || properties["slotId"] == nil {
 			t.Fatalf("creation config missing from schema: %#v", properties)
 		}
+		for name, bounds := range map[string][2]int{"memoryGiB": {1, 8}, "swapGiB": {0, 4}} {
+			limit, ok := properties[name].(map[string]any)
+			if !ok || limit["type"] != "integer" || limit["minimum"] != bounds[0] || limit["maximum"] != bounds[1] {
+				t.Fatalf("%s schema=%#v", name, properties[name])
+			}
+		}
 		return
 	}
 	t.Fatal("create_agent_box tool is missing")

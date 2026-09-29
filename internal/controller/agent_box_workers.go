@@ -19,6 +19,7 @@ type agentBoxWorker struct {
 	ServiceName        string `json:"serviceName,omitempty"`
 	Ordinal            int    `json:"ordinal"`
 	Region             string `json:"region,omitempty"`
+	MemoryConfigurable bool   `json:"memoryConfigurable,omitempty"`
 }
 
 func (s *Store) availableAgentBoxWorkers(ctx context.Context, accountID, preferredProvider, preferredCredential string) ([]agentBoxWorker, error) {
@@ -100,6 +101,19 @@ func (s *Server) agentBoxWorkersHandler(w http.ResponseWriter, r *http.Request, 
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("worker options unavailable"))
 		return
+	}
+	memoryPools := map[string]bool{}
+	for i := range workers {
+		worker := &workers[i]
+		if worker.Provider != "shared-worker" {
+			continue
+		}
+		if configurable, ok := memoryPools[worker.ProviderCredential]; ok {
+			worker.MemoryConfigurable = configurable
+			continue
+		}
+		worker.MemoryConfigurable = s.verifyBoxMemoryPool(r.Context(), p.AccountID, worker.Provider, worker.ProviderCredential) == nil
+		memoryPools[worker.ProviderCredential] = worker.MemoryConfigurable
 	}
 	writeJSON(w, 200, workers)
 }

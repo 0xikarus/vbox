@@ -33,7 +33,13 @@ function renderPoolChoices(providers){
   for(const provider of providers){const option=node('option',poolLabel(provider.provider,provider.name));option.value=poolKey(provider.provider,provider.name);select.append(option)}
   if([...select.options].some(option=>option.value===previous))select.value=previous;
  }
+ syncCreateMemorySettings();
 }
+function syncCreateMemorySettings(){
+ let pool=null;try{pool=$('#create-pool').value?JSON.parse($('#create-pool').value):null}catch{}
+ $('#create-memory-settings').hidden=pool?.provider!=='shared-worker';
+}
+$('#create-pool').addEventListener('change',syncCreateMemorySettings);
 async function chooseCreationPool(tools){
  const fallback=await api('/v1/controller-defaults');
  const providers=await api('/v1/provider-credentials');
@@ -189,8 +195,20 @@ function renderProviders(providers){
   const capacity=node('div');capacity.className='provider-capacity';
   if(fleet?.error)capacity.append(node('span','Capacity unavailable: '+fleet.error));
   else for(const [label,value] of [['Workers',provider.provider==='shared-worker'?(fleet?.slots?.length?1:0):(fleet?.slots?.length??'—')],['Slots',fleet?.actualSlots??'—'],['Occupied',fleet?.occupiedSlots??'—'],['Free',fleet?.freeSlots??'—']]){const stat=node('span');stat.append(node('small',label),node('strong',String(value)));capacity.append(stat)}
+  if(provider.provider==='shared-worker'){
+   const host=fleet?.hostResources,fmt=bytes=>(bytes/(1024**3)).toFixed(1)+' GiB';
+   if(host?.memoryTotalBytes){
+    for(const [label,used,total] of [['Host RAM',host.memoryTotalBytes-host.memoryAvailableBytes,host.memoryTotalBytes],['Host swap',host.swapTotalBytes-host.swapFreeBytes,host.swapTotalBytes]]){
+     const stat=node('span');stat.append(node('small',label+' used'),node('strong',total?fmt(used)+' / '+fmt(total):'No swap configured'));
+     if(host.observedAt)stat.title='Observed '+new Date(host.observedAt).toLocaleString();
+     if(total&&used/total>=.85){stat.title='Host memory pressure is high';stat.classList.add('alert')}
+     capacity.append(stat);
+    }
+   }else if(fleet?.hostError)capacity.append(node('span','Host usage unavailable: '+fleet.hostError));
+  }
   const actions=node('div');actions.className='provider-actions';
   actions.append(button('Edit',()=>{const form=$('#provider').elements;form.provider.value=provider.provider;form.alias.value=provider.name;form.config.value=JSON.stringify(provider.config||{},null,2);form.secret.value='';form.revision.value=provider.updatedAt;$('#provider-editor').open=true;$('#provider-editor').scrollIntoView({block:'start'});form.config.focus()}),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
+  if(provider.provider==='shared-worker')actions.append(button('Refresh usage',async()=>{const target={provider:provider.provider,providerCredential:provider.name||''};const usage=await api('/v1/fleet/host-resources?'+new URLSearchParams(target));const snapshot=fleetSnapshots.find(item=>item.provider===target.provider&&item.providerCredential===target.providerCredential);if(snapshot){snapshot.hostResources=usage;snapshot.hostError='';renderProviders(providers)}}));
   if(!isDefault)actions.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
   const details=node('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(provider.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));
   card.append(heading,capacity,actions,details);root.append(card);
@@ -417,7 +435,7 @@ async function refresh(){
  workspaceNav?.setOwner(identity.role==='owner');
  renderPermissionBoxes(boxes);
  renderPoolChoices(providers);
- const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{return {...await api('/v1/fleet/status?'+new URLSearchParams(target)),...target}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
+ const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{const fleet=await api('/v1/fleet/status?'+new URLSearchParams(target));let hostResources=null,hostError='';if(provider.provider==='shared-worker')try{hostResources=await api('/v1/fleet/host-resources?'+new URLSearchParams(target))}catch(err){hostError=err.message}return {...fleet,...target,hostResources,hostError}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){if(preset.id==='desktop')continue;const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
  renderProfiles(identity,profiles);
@@ -437,7 +455,7 @@ function resetCreationForm(form){
  form.querySelectorAll('details').forEach(details=>details.open=false);
  void syncCreateInstructionText();
 }
-$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=f.loginProfile?.value,profileRef=profile?JSON.parse(profile):null,loginProfiles=profileRef?[{...profileRef,model:f.agentModel.value.trim(),...(f.agentReasoningEffort.value?{reasoningEffort:f.agentReasoningEffort.value}:{})}]:[],github=f.githubProfile?.value,tools=['desktop',...[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value)],setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();if(profileRef&&!loginProfiles[0].model)throw Error('Choose a model');if(github)loginProfiles.push(JSON.parse(github));const createdName=f.name.value.trim(),created=await api('/v1/logical-boxes','POST',{name:createdName,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,tools,...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);resetCreationForm(e.target);try{await refresh();notice('Box '+createdName+' is starting.')}finally{document.activeElement?.blur();window.scrollTo(0,0)}}));
+$('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=f.loginProfile?.value,profileRef=profile?JSON.parse(profile):null,loginProfiles=profileRef?[{...profileRef,model:f.agentModel.value.trim(),...(f.agentReasoningEffort.value?{reasoningEffort:f.agentReasoningEffort.value}:{})}]:[],github=f.githubProfile?.value,tools=['desktop',...[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value)],setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();if(profileRef&&!loginProfiles[0].model)throw Error('Choose a model');if(github)loginProfiles.push(JSON.parse(github));const createdName=f.name.value.trim(),created=await api('/v1/logical-boxes','POST',{name:createdName,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,tools,...(d.provider==='shared-worker'?{memoryGiB:Number(f.memoryGiB.value),swapGiB:Number(f.swapGiB.value)}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);resetCreationForm(e.target);try{await refresh();notice('Box '+createdName+' is starting.')}finally{document.activeElement?.blur();window.scrollTo(0,0)}}));
 $('#agent-cli-versions').addEventListener('submit',action(async e=>{const fields=e.target.elements,values={};for(const agent of ['claude','codex','opencode'])values[agent]=fields[agent].value.trim();await api('/v1/agent-cli-versions','PUT',values);$('#agent-cli-versions-status').textContent='Saved. New boxes will use these versions.'}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
 $('#slots').addEventListener('submit',action(async e=>{const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;if(!target)throw Error('Choose a worker pool first');await api('/v1/fleet/slots','PUT',{...target,compute_box_slots:Number(e.target.elements.count.value)});await refresh()}));

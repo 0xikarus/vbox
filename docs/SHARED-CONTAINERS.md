@@ -31,16 +31,20 @@ through authenticated supervisor exec, so VNC and MCP operate on the correct
 private localhost. IPv4 internet/DNS is available; host services, sibling
 networks, private/metadata addresses and IPv6 egress are denied.
 
-Initial fixed limits per container are 2 GiB RAM plus up to 1 GiB swap when
-the host has swap available, 1 CPU, 512 processes, and 256 MiB shared memory.
+New boxes default to 2 GiB RAM and 1 GiB swap allowance when the host has
+swap available. Owners can choose 1–8 GiB RAM and 0–4 GiB swap during creation
+in the Chat or Manage UI; `create_agent_box` accepts `memoryGiB` and `swapGiB`
+with the same ranges. These options require a container-isolated shared-worker
+pool. The Details sidebar can change both limits on a running box without a
+restart. The settings are saved with the workspace and reapplied on restore.
+The CPU limit remains 1 core, with 512 processes and 256 MiB shared memory.
 The swap allowance gives memory-heavy desktop and agent sessions room for short
 peaks; sustained swapping is slower and workloads can still exhaust the limit.
-The RAM, CPU, process, and shared-memory limits are reported in connection
-metadata and enforced over all descendants by Docker/cgroup v2. They are not
-yet configurable per box or exposed in a dedicated UI. Disk space is shared
+The RAM, swap, CPU, process, and shared-memory limits are reported in connection
+metadata and enforced over all descendants by Docker/cgroup v2. Disk space is shared
 without quotas. Reserve host/supervisor capacity when choosing slot counts.
-Supervisor preparation updates the swap limit of existing containers in place,
-without restarting their agent sessions.
+Supervisor preparation upgrades the previous no-swap policy in place without
+restarting agent sessions. The provider view reports host RAM and swap usage.
 
 Stop removes the container and private network, retaining workspace files.
 System packages and changes outside `/data` are deliberately discarded on

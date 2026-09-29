@@ -32,6 +32,7 @@ const (
 type Resources struct {
 	CPU       float64 `json:"cpu"`
 	MemoryMiB int64   `json:"memoryMiB"`
+	SwapMiB   int64   `json:"swapMiB,omitempty"`
 	DiskGiB   int64   `json:"diskGiB"`
 	PIDs      int64   `json:"pids,omitempty"`
 }
@@ -41,6 +42,18 @@ type Resources struct {
 type ResourceLimitsProvider interface {
 	ResourceLimits(context.Context, string) (Resources, error)
 	SetResourceLimits(context.Context, string, Resources) error
+}
+
+type HostResources struct {
+	MemoryTotalBytes     int64     `json:"memoryTotalBytes"`
+	MemoryAvailableBytes int64     `json:"memoryAvailableBytes"`
+	SwapTotalBytes       int64     `json:"swapTotalBytes"`
+	SwapFreeBytes        int64     `json:"swapFreeBytes"`
+	ObservedAt           time.Time `json:"observedAt"`
+}
+
+type HostResourcesProvider interface {
+	HostResources(context.Context) (HostResources, error)
 }
 
 type Owner struct {

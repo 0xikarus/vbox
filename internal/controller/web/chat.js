@@ -2115,6 +2115,37 @@
    t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);target.append(row);
   }
  };
+ function mountInspectMemory(box){
+  const root=$('#inspect-memory-settings');
+  if(!owner||box.provider!=='shared-worker'||box.state!=='running'){root.hidden=true;root.dataset.boxId='';root.replaceChildren();return}
+  root.hidden=false;
+  if(root.dataset.boxId===box.id&&root.dataset.generation===String(box.assignmentGeneration))return;
+  root.dataset.boxId=box.id;root.dataset.generation=String(box.assignmentGeneration);
+  root.innerHTML='<h4>RAM and swap</h4><form><label>RAM GiB <input name="memory" type="number" min="1" max="8" required></label><label>Swap GiB <input name="swap" type="number" min="0" max="4" required></label><button type="submit">Apply live</button></form><p role="status">Loading limits…</p>';
+  const form=root.querySelector('form'),status=root.querySelector('[role="status"]');form.hidden=true;
+  const load=async()=>{
+   try{
+    const current=await api(boxPath(box.id)+'/resources');
+    if(root.dataset.boxId!==box.id||root.dataset.generation!==String(box.assignmentGeneration))return null;
+    form.elements.memory.value=String(current.resources.memoryMiB/1024);
+    form.elements.swap.value=String((current.resources.swapMiB||0)/1024);
+    form.hidden=false;status.textContent='Limits apply to this box and survive hibernation.';
+    return current;
+   }catch(e){if(root.dataset.boxId===box.id)status.textContent=e.message;return null}
+  };
+  let current=null;void load().then(value=>{current=value});
+  form.onsubmit=async event=>{
+   event.preventDefault();if(!current)return;
+   const memory=Number(form.elements.memory.value),swap=Number(form.elements.swap.value);
+   if(!Number.isInteger(memory)||memory<1||memory>8||!Number.isInteger(swap)||swap<0||swap>4){status.textContent='Choose 1–8 GiB RAM and 0–4 GiB swap.';return}
+   form.querySelector('button').disabled=true;status.textContent='Applying limits…';
+   try{
+    await api(boxPath(box.id)+'/resources','PUT',{}, {slotId:current.slotId,assignmentGeneration:current.assignmentGeneration,cpu:1,memoryMiB:memory*1024,swapMiB:swap*1024});
+    current=await load();if(current)status.textContent='Live limits saved.';
+   }catch(e){status.textContent=e.message}
+   finally{form.querySelector('button').disabled=false}
+  };
+ }
  function renderInspect(){
   if(!inspectOpen||!selected)return;
   const box=boxes.get(selected);if(!box)return;
@@ -2184,6 +2215,7 @@
   if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
   if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
+  mountInspectMemory(box);
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
@@ -2347,11 +2379,15 @@
      const poolIndex=f.pool?.value??'',pool=poolChoices[Number(poolIndex)]||poolChoices[Number(createForm.dataset.autoPool)];
      if(pool)rows.push(['Pool',pool.label]);
     }
+    if(!$('#create-memory-settings').hidden)rows.push(['RAM / swap',(f.memoryGiB?.value||'2')+' / '+(f.swapGiB?.value||'1')+' GiB']);
     return rows;
    }
    return [];
   }
   function renderPreview(){
+   const selectedPool=createForm.elements.pool?.value||createForm.dataset.autoPool||'';
+   const pool=selectedPool!==''?JSON.parse(createForm.dataset.pools||'[]')[Number(selectedPool)]:null;
+   $('#create-memory-settings').hidden=pool?.provider!=='shared-worker';
    if(!previewCard)return;
    previewCard.replaceChildren();
    for(const [key,value] of previewRows()){
@@ -2505,6 +2541,7 @@
   const body={name:f.name.value.trim(),defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value)||10,provider:createForm.dataset.provider||'',providerCredential:createForm.dataset.providerCredential||'',allocateWhenReady:true};
   const poolIndex=(f.pool.value||createForm.dataset.autoPool||'');
   if(poolIndex!==''){const pool=JSON.parse(createForm.dataset.pools||'[]')[Number(poolIndex)];if(pool){body.provider=pool.provider;body.providerCredential=pool.providerCredential||''}}
+  if(body.provider==='shared-worker'){body.memoryGiB=Number(f.memoryGiB.value);body.swapGiB=Number(f.swapGiB.value)}
   if(loginProfiles.length)body.loginProfiles=loginProfiles;
   if(tools.length)body.tools=tools;
   if(setupScript)body.setupScript=setupScript;

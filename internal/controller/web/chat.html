@@ -116,6 +116,7 @@
       <details class="inspect-block inspect-fold" data-fold="config" open>
        <summary><h3>Config</h3></summary>
        <div id="inspect-config-actions" class="inspect-actions"></div>
+       <div id="inspect-memory-settings" hidden></div>
        <div id="inspect-idle-policy"></div>
        <div id="inspect-run-budget-policy"></div>
        <div id="inspect-create-limit"></div>
@@ -199,6 +200,7 @@
    <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
    <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
    <label>Disk GiB <input name="disk" type="number" min="1" max="1024" value="10"></label>
+   <div id="create-memory-settings" hidden><label>RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label>Swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label><p class="hint">Container-isolated shared-worker boxes only. Defaults: 2 GiB RAM, 1 GiB swap.</p></div>
    <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
    <p id="create-pool-status" class="hint" hidden></p>
    <div id="profile-choices" class="profiles"></div>

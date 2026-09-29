@@ -35,6 +35,10 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	if request.VolumeID != "" || request.VolumeName != "" {
+		if customBoxMemory(request) {
+			writeError(w, 400, fmt.Errorf("memory and swap limits cannot be set while importing a volume"))
+			return
+		}
 		if len(request.LoginProfiles) > 0 {
 			writeError(w, 400, fmt.Errorf("saved profiles may only be provisioned when creating a new workspace"))
 			return
@@ -68,6 +72,12 @@ func (s *Server) createLogicalBoxHandler(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	request.DefaultAgent = selectedProfileAgent(request.DefaultAgent, request.LoginProfiles)
+	if customBoxMemory(request) {
+		if err := s.verifyBoxMemoryPool(r.Context(), p.AccountID, request.Provider, request.ProviderCredential); err != nil {
+			writeError(w, 400, err)
+			return
+		}
+	}
 	// Resolve the instruction selection against account presets and default
 	// before the box exists: the snapshot is stored with the box so later
 	// preset edits or deletion cannot change what this box received.

@@ -22,8 +22,12 @@ type CreateLogicalBoxRequest struct {
 	Region       string                `json:"region,omitempty"`
 	SlotID       string                `json:"slotId,omitempty"`
 	DiskGiB      int64                 `json:"diskGiB,omitempty"`
-	VolumeID     string                `json:"volumeId,omitempty"`
-	VolumeName   string                `json:"volumeName,omitempty"`
+	// Per-box limits are supported by container-isolated shared workers only.
+	// SwapGiB is a pointer so an explicit zero disables swap.
+	MemoryGiB  int64  `json:"memoryGiB,omitempty"`
+	SwapGiB    *int64 `json:"swapGiB,omitempty"`
+	VolumeID   string `json:"volumeId,omitempty"`
+	VolumeName string `json:"volumeName,omitempty"`
 	// Omitted means start after creation. Explicit false retains the volume
 	// without occupying compute (for example, CLI --hibernate).
 	AllocateWhenReady    *bool  `json:"allocateWhenReady,omitempty"`
@@ -41,6 +45,15 @@ func (r *CreateLogicalBoxRequest) Normalize() {
 	}
 	if r.DiskGiB <= 0 {
 		r.DiskGiB = 10
+	}
+	if r.MemoryGiB != 0 || r.SwapGiB != nil {
+		if r.MemoryGiB == 0 {
+			r.MemoryGiB = 2
+		}
+		if r.SwapGiB == nil {
+			defaultSwap := int64(1)
+			r.SwapGiB = &defaultSwap
+		}
 	}
 }
 

@@ -19,11 +19,13 @@ import (
 )
 
 type Workspace struct {
-	ID      string         `json:"id"`
-	Owner   provider.Owner `json:"owner"`
-	UID     int            `json:"uid"`
-	Display int            `json:"display"`
-	SizeGiB int64          `json:"sizeGiB"`
+	ID        string         `json:"id"`
+	Owner     provider.Owner `json:"owner"`
+	UID       int            `json:"uid"`
+	Display   int            `json:"display"`
+	SizeGiB   int64          `json:"sizeGiB"`
+	MemoryGiB int64          `json:"memoryGiB,omitempty"`
+	SwapGiB   *int64         `json:"swapGiB,omitempty"`
 }
 
 type Slot struct {
@@ -235,6 +237,11 @@ func (s *Store) connection(slot Slot) provider.Connection {
 	for key, value := range s.isolationStatus().Metadata() {
 		metadata[key] = value
 	}
+	if s.isolationStatus().Tier == IsolationTierContainer && slot.WorkspaceID != "" {
+		memoryGiB, swapGiB, _ := containerMemoryLimits(workspace)
+		metadata["resource.memoryBytes"] = fmt.Sprintf("%d", memoryGiB<<30)
+		metadata["resource.swapBytes"] = fmt.Sprintf("%d", swapGiB<<30)
+	}
 	return provider.Connection{Transport: "shared-worker", Endpoint: slot.Name, Metadata: metadata}
 }
 
@@ -251,6 +258,65 @@ func (s *Store) box(slot Slot) provider.Box {
 
 func storageFor(workspace Workspace) provider.Storage {
 	return provider.Storage{ID: workspace.ID, Name: workspace.ID, MountPath: "/data", SizeGiB: workspace.SizeGiB}
+}
+
+func (s *Store) ResourceLimits(ctx context.Context, id string) (provider.Resources, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	linux, ok := s.Runtime.(*LinuxRuntime)
+	if !ok || linux.Container == nil {
+		return provider.Resources{}, provider.ErrUnsupported
+	}
+	slot, exists := s.state.Slots[id]
+	if !exists || slot.WorkspaceID == "" {
+		return provider.Resources{}, provider.ErrNotFound
+	}
+	w := s.state.Workspaces[slot.WorkspaceID]
+	memoryGiB, swapGiB, err := containerMemoryLimits(w)
+	if err != nil {
+		return provider.Resources{}, err
+	}
+	resources := provider.Resources{CPU: 1, MemoryMiB: memoryGiB * 1024, SwapMiB: swapGiB * 1024, DiskGiB: w.SizeGiB}
+	current, err := linux.Container.inspect(ctx, w)
+	if err != nil {
+		return provider.Resources{}, err
+	}
+	if current == nil || !current.State.Running || current.HostConfig.Memory <= 0 || current.HostConfig.MemorySwap < current.HostConfig.Memory {
+		return provider.Resources{}, errors.New("live container resource limits unavailable")
+	}
+	resources.MemoryMiB = current.HostConfig.Memory >> 20
+	resources.SwapMiB = (current.HostConfig.MemorySwap - current.HostConfig.Memory) >> 20
+	return resources, nil
+}
+
+func (s *Store) SetResourceLimits(ctx context.Context, id string, resources provider.Resources) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	linux, ok := s.Runtime.(*LinuxRuntime)
+	if !ok || linux.Container == nil {
+		return provider.ErrUnsupported
+	}
+	if resources.CPU != 1 || resources.MemoryMiB%1024 != 0 || resources.MemoryMiB < 1024 || resources.MemoryMiB > 8192 || resources.SwapMiB%1024 != 0 || resources.SwapMiB < 0 || resources.SwapMiB > 4096 {
+		return errors.New("container CPU is fixed at 1; memory must be 1–8 GiB and swap 0–4 GiB")
+	}
+	slot, exists := s.state.Slots[id]
+	if !exists || slot.WorkspaceID == "" || slot.State != provider.StateRunning {
+		return provider.ErrNotFound
+	}
+	w := s.state.Workspaces[slot.WorkspaceID]
+	old := w
+	w.MemoryGiB = resources.MemoryMiB / 1024
+	swap := resources.SwapMiB / 1024
+	w.SwapGiB = &swap
+	if err := linux.Container.UpdateMemory(ctx, w); err != nil {
+		return err
+	}
+	s.state.Workspaces[w.ID] = w
+	if err := s.save(); err != nil {
+		s.state.Workspaces[w.ID] = old
+		return fmt.Errorf("live limits changed but could not be saved; retry after checking: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) Create(req provider.CreateRequest) (provider.Box, error) {
@@ -347,6 +413,18 @@ func (s *Store) CreateStorage(ctx context.Context, id string, owner provider.Own
 		return provider.Storage{}, errors.New("shared workspace identity capacity reached")
 	}
 	workspace := Workspace{ID: NewID(), Owner: owner, UID: s.state.NextUID, Display: s.state.NextUID - 29000, SizeGiB: resources.DiskGiB}
+	if resources.MemoryMiB != 0 || resources.SwapMiB != 0 {
+		linux, ok := s.Runtime.(*LinuxRuntime)
+		if !ok || linux.Container == nil {
+			return provider.Storage{}, errors.New("per-box memory and swap limits require container isolation")
+		}
+		if resources.MemoryMiB%1024 != 0 || resources.MemoryMiB < 1024 || resources.MemoryMiB > 8192 || resources.SwapMiB%1024 != 0 || resources.SwapMiB < 0 || resources.SwapMiB > 4096 {
+			return provider.Storage{}, errors.New("memory must be 1–8 GiB and swap 0–4 GiB")
+		}
+		workspace.MemoryGiB = resources.MemoryMiB / 1024
+		swap := resources.SwapMiB / 1024
+		workspace.SwapGiB = &swap
+	}
 	s.state.NextUID++
 	s.state.Workspaces[workspace.ID] = workspace
 	slot.WorkspaceID, slot.Revision, slot.State = workspace.ID, slot.Revision+1, provider.StateRunning

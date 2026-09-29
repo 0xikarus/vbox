@@ -25,12 +25,14 @@ type Request struct {
 }
 
 type Response struct {
-	Box      provider.Box      `json:"box,omitempty"`
-	Boxes    []provider.Box    `json:"boxes,omitempty"`
-	Storage  *provider.Storage `json:"storage,omitempty"`
-	Capacity int               `json:"capacity,omitempty"`
-	Error    string            `json:"error,omitempty"`
-	NotFound bool              `json:"notFound,omitempty"`
+	Box           provider.Box            `json:"box,omitempty"`
+	Boxes         []provider.Box          `json:"boxes,omitempty"`
+	Storage       *provider.Storage       `json:"storage,omitempty"`
+	Resources     *provider.Resources     `json:"resources,omitempty"`
+	HostResources *provider.HostResources `json:"hostResources,omitempty"`
+	Capacity      int                     `json:"capacity,omitempty"`
+	Error         string                  `json:"error,omitempty"`
+	NotFound      bool                    `json:"notFound,omitempty"`
 }
 
 type Server struct {
@@ -88,6 +90,12 @@ func (s *Server) dispatch(ctx context.Context, request Request) (response Respon
 	case "validate":
 		response.Capacity = s.Store.Capacity
 		err = s.Store.Health()
+	case "host-resources":
+		var resources provider.HostResources
+		resources, err = HostResources()
+		if err == nil {
+			response.HostResources = &resources
+		}
 	case "create":
 		response.Box, err = s.Store.Create(request.Create)
 	case "inspect":
@@ -121,6 +129,14 @@ func (s *Server) dispatch(ctx context.Context, request Request) (response Respon
 		if err == nil && box.Storage != nil {
 			err = errors.New("slot still contains a workspace")
 		}
+	case "resource-limits":
+		var resources provider.Resources
+		resources, err = s.Store.ResourceLimits(ctx, request.ID)
+		if err == nil {
+			response.Resources = &resources
+		}
+	case "set-resource-limits":
+		err = s.Store.SetResourceLimits(ctx, request.ID, request.Resources)
 	default:
 		err = errors.New("unsupported shared worker operation")
 	}

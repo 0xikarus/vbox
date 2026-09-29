@@ -70,6 +70,7 @@ body[data-manage-view="boxes"] #app>section:not(#boxes),body[data-manage-view="p
 .provider-default-badge{padding:.2rem .4rem;border:1px solid #34624d;border-radius:.4rem;color:#8ee5ba;font-size:.68rem;white-space:nowrap}
 .provider-capacity{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem;margin:.9rem 0;padding:.65rem;border:1px solid #2b3848;border-radius:.55rem;background:#202e3d}
 .provider-capacity span{display:grid;gap:.1rem;min-width:0}.provider-capacity small{color:#91a0b3;font-size:.62rem}.provider-capacity strong{font-size:.9rem}
+.provider-capacity span.alert strong{color:#f5c46d}
 .provider-actions{display:flex;flex-wrap:wrap;gap:.35rem}
 .provider-card details{margin-top:.85rem;padding-top:.6rem;border-top:1px solid #2b3848}
 .provider-card summary{color:#aaceff;font-size:.75rem;font-weight:650;text-transform:none}

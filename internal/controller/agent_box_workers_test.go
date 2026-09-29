@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
@@ -24,7 +25,7 @@ func TestAvailableAgentBoxWorkersIncludeOtherAccountPools(t *testing.T) {
 			AddRow("slot-3", "shared-worker", "other", "worker-three", 1, "us"))
 	r := httptest.NewRequest(http.MethodGet, "/v1/agent-desktop/available-workers", nil)
 	w := httptest.NewRecorder()
-	(&Server{Store: store}).agentBoxWorkersHandler(w, r, Principal{AccountID: "account-a", Subject: "desktop-box:box-a"})
+	NewServer(store, provider.NewRegistry()).agentBoxWorkersHandler(w, r, Principal{AccountID: "account-a", Subject: "desktop-box:box-a"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
 	}
