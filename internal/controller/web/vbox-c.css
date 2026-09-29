@@ -1773,3 +1773,99 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 }
 
 .flash,.flash.error{border-left:0!important;border-radius:var(--r-control)}
+
+/* ══ surfaces: new-box modal, takeover, thread, popovers, states, usage ══ */
+#new-box-card{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(15rem,.85fr);gap:0;max-width:58rem;width:calc(100% - 2rem);padding:0;overflow:hidden}
+#new-box-card>header{grid-column:1/-1;padding:1rem 1.2rem;border-bottom:1px solid var(--vb-line)}
+#create-box{display:grid;gap:.75rem;align-content:start;padding:1.1rem 1.2rem 1.4rem}
+#create-box>label,#create-box .field{display:grid;gap:.3rem;font-weight:600;color:var(--vb-ink-soft);font-size:.78rem}
+#create-box input,#create-box select,#create-box textarea{width:100%;padding:.55rem .7rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-bg-soft);color:var(--vb-ink);font:inherit}
+#create-box .tools{border:0;padding:0;margin:0}
+#create-box-submit{justify-self:start;margin-top:.3rem;padding:.6rem 1.1rem;border:1px solid var(--vb-ink);border-radius:var(--r-control);background:var(--vb-ink);color:var(--vb-bg);font-weight:650;cursor:pointer}
+#create-preview{border-left:1px solid var(--vb-line);background:var(--vb-bg-soft);padding:1.1rem}
+#create-preview h3{margin:0 0 .6rem;font-size:.7rem;font-weight:750;letter-spacing:.09em;text-transform:uppercase;color:var(--vb-ink-faint)}
+#create-preview .preview-card{border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-surface);padding:.9rem}
+.preview-note{color:var(--vb-ink-soft);font-size:.74rem}
+#new-box-status{margin:.4rem 1.2rem .9rem;font-size:.78rem;color:var(--vb-ink-soft)}
+
+#takeover-card{background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);overflow:hidden;box-shadow:var(--vb-shadow-lg)}
+#takeover-header{display:flex;align-items:center;gap:.7rem;padding:.7rem .9rem;border-bottom:1px solid var(--vb-line)}
+#takeover-title{font-weight:680}
+#takeover-tabs{display:inline-flex;gap:.2rem;padding:.2rem;background:var(--vb-bg-soft);border-radius:var(--r-pill)}
+#takeover-tabs button{border:0;border-radius:var(--r-pill);padding:.38rem 1rem;background:transparent;color:var(--vb-ink-soft);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer}
+#takeover-tabs button.on{background:var(--vb-ink);color:var(--vb-bg)}
+#takeover-status{color:var(--vb-ok-text);font-size:.76rem;font-weight:600}
+#takeover-controls{display:inline-flex;flex-wrap:wrap;gap:2px;margin:.7rem .9rem 0;padding:3px;background:var(--vb-bg-soft);border:1px solid var(--vb-line);border-radius:var(--r-control)}
+#takeover-controls button{border:0;border-radius:calc(var(--r-control) - 3px);background:transparent;color:var(--vb-ink-soft);padding:.4rem .6rem;font-size:.74rem;font-weight:600;cursor:pointer}
+#takeover-controls button:hover{background:var(--vb-surface);color:var(--vb-ink)}
+#takeover-screen{margin:.7rem .9rem .9rem;border:1px solid var(--vb-line);border-radius:var(--r-surface);overflow:hidden;background:#0b0b0d;box-shadow:inset 0 22px 45px rgba(0,0,0,.4)}
+#takeover-close{border:1px solid var(--vb-line);background:var(--vb-surface);border-radius:var(--r-pill);width:2.1rem;height:2.1rem;display:grid;place-items:center;color:var(--vb-ink);cursor:pointer}
+
+#thread-panel{background:var(--vb-bg-soft);border-left:1px solid var(--vb-line)}
+#thread-panel header{background:transparent;border-bottom:1px solid var(--vb-line)}
+#thread-composer{background:var(--vb-surface);border-top:1px solid var(--vb-line)}
+#forward-menu{background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg);padding:.3rem}
+#chat-loading{color:var(--vb-ink-soft)}
+#chat-loading p{font-size:.8rem}
+#chat-wake{border:1px solid var(--vb-line-strong);background:var(--vb-surface);color:var(--vb-ink);border-radius:var(--r-pill);padding:.4rem .9rem;font-weight:600;cursor:pointer}
+
+/* usage cards */
+#usage-list{display:grid;gap:.7rem}
+.usage-profile{background:var(--vb-bg-soft);border:1px solid var(--vb-line);border-radius:var(--r-surface);padding:1rem 1.05rem}
+.usage-profile h3{margin:0 0 .15rem;font-size:.95rem}
+.usage-profile>p{margin:0 0 .7rem;color:var(--vb-ink-faint);font-size:.74rem}
+.usage-window{margin-top:.7rem}
+.usage-window-head{display:flex;align-items:baseline;justify-content:space-between;gap:1rem}
+.usage-window-head span{color:var(--vb-ink-soft);font-size:.78rem}
+.usage-window-head strong{color:var(--vb-ink);font-size:.86rem}
+.usage-window small{display:block;margin-top:.25rem;color:var(--vb-ink-faint);font-size:.72rem}
+.usage-track{height:.5rem;margin:.3rem 0 0;border-radius:var(--r-pill);background:var(--vb-line);overflow:hidden}
+.usage-track span{display:block;height:100%;border-radius:var(--r-pill);background:var(--vb-ok)}
+
+@media(max-width:760px){
+ #new-box-card{grid-template-columns:minmax(0,1fr)}
+ #create-preview{border-left:0;border-top:1px solid var(--vb-line)}
+}
+
+/* ══ desktop/mobile regression fixes ════════════════════════════════════ */
+/* 1. inline meta reserves its own space; never overlaps text */
+#chat-messages .msg{position:relative}
+#chat-messages .msg .meta{position:absolute;right:11px;bottom:5px;float:none;margin:0;display:inline-flex;align-items:center;gap:.28rem}
+#chat-messages .msg.tail .text::after{content:'';display:inline-block;width:4.7rem;height:1px;vertical-align:baseline}
+#chat-messages .msg,.msg::after{clear:none}
+
+/* 2. header identity borderless on every width, with a real gap */
+#chat-header-text{background:none!important;border:0!important;box-shadow:none!important;padding:0!important;align-items:flex-start!important}
+.chat-header-identity{gap:1rem!important}
+.chat-header-identity #chat-header-avatar{margin-right:.15rem}
+
+/* 3. stalled pill: real clock icon, solid background, in flow */
+#chat-banner:not([hidden]){position:static!important;background:var(--vb-bg)!important;border:0!important;margin:6px 12px!important;padding:.3rem .7rem!important;justify-content:center}
+#chat-banner:not([hidden])::before{content:''!important;width:.85rem;height:.85rem;flex:none;background:currentColor;opacity:.6;-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7v5l3 2'/%3E%3C/svg%3E") center/contain no-repeat}
+
+/* 4. rail action row: 4 equal columns, no label collisions */
+.inspect-actions{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:.2rem!important;padding:.9rem .5rem .4rem!important}
+.chat-action{min-width:0;font-size:.62rem;letter-spacing:.01em;padding:.3rem .1rem;overflow-wrap:anywhere}
+.chat-action-icon{width:3.1rem;height:3.1rem}
+.chat-action-icon svg{width:1.25rem;height:1.25rem}
+.chat-action-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* 5. one grouped card for technical + contacts, same inset */
+.inspect-technical{border-radius:var(--r-surface) var(--r-surface) 0 0!important;border-bottom:0!important;margin:0!important}
+#inspect-contacts{border-radius:0 0 var(--r-surface) var(--r-surface)!important;border-top:0!important;margin:0!important}
+
+/* regression fixes v2 */
+#chat-header-avatar .avatar{width:2.6rem!important;height:2.6rem!important;border-radius:var(--r-control)!important}
+#chat-messages .msg .meta{position:static;float:none;display:flex!important;justify-content:flex-end;width:100%;margin:.18rem 0 0!important;gap:.28rem}
+#chat-messages .msg.tail .text::after{content:none!important}
+.inspect-actions .chat-action-label{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.15;text-align:center}
+.inspect-actions .chat-action{font-size:.63rem}
+#inspect-summary{gap:0}
+#inspect-summary>*{margin-top:.85rem}
+#inspect-summary>#inspect-avatar{margin-top:0}
+#inspect-summary>#inspect-hero{margin-top:.2rem}
+#inspect-summary>.inspect-technical{margin-top:.9rem!important}
+#inspect-summary>#inspect-contacts{margin-top:0!important}
+
+.inspect-actions .chat-action-label{overflow-wrap:normal;word-break:keep-all;hyphens:none;font-size:.6rem}
+.inspect-actions .chat-action-icon{width:2.9rem;height:2.9rem}
