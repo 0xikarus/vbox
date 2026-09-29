@@ -12,7 +12,7 @@
  const eyeLine=(cx,cy,length,angle)=>{const a=angle*Math.PI/180,dx=Math.cos(a)*length/2,dy=Math.sin(a)*length/2,x1=cx-dx,y1=cy-dy,x2=cx+dx,y2=cy+dy;return `M${x1.toFixed(3)} ${y1.toFixed(3)} C${(x1+(x2-x1)/3).toFixed(3)} ${(y1+(y2-y1)/3).toFixed(3)} ${(x1+2*(x2-x1)/3).toFixed(3)} ${(y1+2*(y2-y1)/3).toFixed(3)} ${x2.toFixed(3)} ${y2.toFixed(3)}`};
  const rawEyesFor=(mood,variant='A')=>{const spread=variant==='C'?1:0,L=39-spread,R=61+spread,lo=53;
   const line=(cx,length=1,dy=0)=>{const x=4.1*length,y=9.5*length;return [cx-x,lo+dy-y,cx-x/3,lo+dy-y/3,cx+x/3,lo+dy+y/3,cx+x,lo+dy+y]};
-  const poses={curious:[.045,.045],wink:[1,.28],excited:[1.45,1.45],working:[.9,.9],waiting:[.85,.85],happy:[.68,.68],laughing:[.52,.52],angry:[.8,.8],sleeping:[1,1],waking:[1,1]};
+  const poses={curious:[.045,.045],wink:[1,.28],excited:[1.45,1.45],working:[.9,.9],waiting:[.85,.85],happy:[.68,.68],laughing:[.52,.52],angry:[.8,.8],sleeping:[.55,.55],waking:[1,1]};
   const lengths=poses[mood]||[1,1];return [line(L,lengths[0]),line(R,lengths[1])];
  };
  const eyesFor=(mood,variant='A',t=null)=>rawEyesFor(mood,variant).map((p,j)=>p.map((v,i)=>i%2===0?(j?61:39)+(v-(j?61:39))*.8+(j?1:-1)*(t?.eyeSpread||0)+2.5:52.5+(v-57)*(variant==='C'?.72:.64)+(j?1:-1)*(t?.eyeTilt||0)*(v-(j?61:39))));
@@ -108,7 +108,7 @@
    this.expression=expression;this.svg.dataset.expression=expression||'';
    for(const control of this.eyeControls||[])control.stop?.();this.eyeControls=[];
    const target=eyesFor(mood,this.appearance.eyes||this.traits.eyes,this.traits);
-   const widths={curious:9,wink:9,excited:8.5,working:9,waiting:9,happy:7.5,laughing:8,angry:9,sleeping:9,waking:9};const width=(widths[mood]||9)*(Math.min(this.svg.getBoundingClientRect().width,this.svg.getBoundingClientRect().height)||112)/112;
+   const widths={curious:9,wink:9,excited:8.5,working:9,waiting:9,happy:7.5,laughing:8,angry:9,sleeping:4.8,waking:9};const width=(widths[mood]||9)*(Math.min(this.svg.getBoundingClientRect().width,this.svg.getBoundingClientRect().height)||112)/112;
    if(!instant)this.eyeMorphUntil=performance.now()+330;
    for(let i=0;i<2;i++){const eye=this.eyes[i],geo=eyeGeometry(target[i]),to=eyeLine(geo.cx,geo.cy,geo.length,0);this.tiltGroups[i].setAttribute('transform','rotate('+geo.angle.toFixed(3)+' '+geo.cx.toFixed(3)+' '+geo.cy.toFixed(3)+')');const blinkGroup=this.blinkGroups[i],targetScale=mood==='sleeping'?.15:1,fromScale=blinkGroup.transform.baseVal.consolidate()?.matrix.d||1,applyScale=v=>blinkGroup.setAttribute('transform','translate('+geo.cx.toFixed(3)+' '+geo.cy.toFixed(3)+') scale(1 '+v.toFixed(4)+') translate('+(-geo.cx).toFixed(3)+' '+(-geo.cy).toFixed(3)+')');if(instant)applyScale(targetScale);else this.eyeControls.push(this.track(animate(fromScale,targetScale,{duration:mood==='sleeping'?.48:.3,ease:'easeInOut',onUpdate:applyScale})));if(instant){eye.setAttribute('d',to);eye.style.strokeWidth=width}else{this.eyeControls.push(this.track(animate(eye.getAttribute('d'),to,{duration:.3,ease:'easeInOut',onUpdate:v=>eye.setAttribute('d',v)})));const fromWidth=parseFloat(getComputedStyle(eye).strokeWidth)||9;this.eyeControls.push(this.track(animate(0,1,{duration:.3,ease:'easeInOut',onUpdate:t=>eye.style.strokeWidth=(fromWidth+(width-fromWidth)*t+.04*width*Math.sin(Math.PI*t)).toFixed(3)})))}}
    const newMarkup=glyphMarkup(expression);this.glyphHost.setAttribute('opacity','1');
