@@ -6,7 +6,7 @@
  const MOODS=['idle','working','waiting','happy','laughing','angry','sleeping','waking'];
  const MACHINE={idle:{WORK:'working',SEND:'waiting',PRAISE:'happy',JOKE:'laughing',ERROR:'angry',SLEEP:'sleeping',WAKE:'waking'},working:{SEND:'waiting',DONE:'happy',ERROR:'angry',JOKE:'laughing',STOP:'idle',SLEEP:'sleeping'},waiting:{REPLY:'happy',TIMEOUT:'angry',WORK:'working',JOKE:'laughing',STOP:'idle',SLEEP:'sleeping'},happy:{JOKE:'laughing',WORK:'working',SEND:'waiting',ERROR:'angry',SETTLE:'idle',SLEEP:'sleeping'},laughing:{SETTLE:'happy',WORK:'working',ERROR:'angry',SLEEP:'sleeping'},angry:{CALM:'idle',PRAISE:'happy',WORK:'working',SLEEP:'sleeping'},sleeping:{WAKE:'waking',WORK:'waking'},waking:{READY:'idle',WORK:'working',SLEEP:'sleeping'}};
  const hash=s=>{let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0};
- const traits=seed=>{const h=hash(seed);return {shape:SHAPES[h%SHAPES.length],color:h%37===0?COLORS[11]:COLORS[Math.floor(h/8)%11],wide:1.02+((h>>>12)%9)/100,tall:.91+((h>>>17)%9)/100,tilt:((h>>>22)%9-4)*.35,phase:(h%1000)/1000*6.283,blink:2.3+(h%190)/100,eyes:['A','B','C'][Math.floor(h/64)%3]}};
+ const traits=seed=>{const h=hash(seed);return {shape:SHAPES[h%SHAPES.length],color:h%37===0?COLORS[11]:COLORS[Math.floor(h/8)%11],wide:1.02+((h>>>12)%9)/100,tall:.91+((h>>>17)%9)/100,tilt:((h>>>22)%9-4)*.35,phase:(h%1000)/1000*6.283,blink:2.3+(h%190)/100,eyes:'A'}};
  const PATHS={
  circle:'M50 11 C71 10 87 26 88 48 C90 72 76 89 50 90 C24 89 10 72 12 48 C13 26 29 10 50 11 Z',
  drop:'M45 14 Q50 7 55 14 C69 29 83 46 85 62 C87 79 73 90 50 91 C27 90 13 79 15 62 C17 46 31 29 45 14 Z',

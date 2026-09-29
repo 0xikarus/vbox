@@ -6,7 +6,7 @@
 .vbox-mascot-glint{display:none;fill:#d2f4ff;opacity:.75}
 .vbox-mascot-eyes-B .vbox-mascot-glint{display:block}
 .vbox-mascot-z{font:italic 700 16px system-ui;fill:#9fb0cc;opacity:0}
-.vbox-mascot-blush{fill:#ffb1bd}
+.vbox-mascot-blush{fill:#FF7A9A}
 .vbox-mascot-mini .vbox-mascot-eye{stroke-width:7.7}
 @media (prefers-reduced-motion:reduce){.vbox-mascot *{animation:none!important;transition:none!important}}
 
