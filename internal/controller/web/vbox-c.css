@@ -2020,3 +2020,12 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 /* meta drops to its own line when it cannot share the last line: never overlaps */
 .meta-spacer{display:none!important}
 #chat-messages .msg .meta{position:static!important;display:flex!important;justify-content:flex-end!important;width:100%!important;margin:.18rem 0 0!important;float:none!important;right:auto!important;bottom:auto!important}
+
+/* outgoing tail: user group-start already handled; typing dots muted; gaps */
+#chat-messages .msg.processing .typing-dots span{background:var(--vb-ink-faint)!important;opacity:.85}
+#chat-messages .msg.agent:not(.note)+.msg.agent:not(.note),
+#chat-messages .msg.user+.msg.user{margin-top:0!important}
+#chat-messages{gap:4px!important}
+#chat-messages .msg.group-start{margin-top:12px!important}
+#chat-messages .msg.group-start.agent::before{left:-8px;right:auto;transform:none}
+#chat-messages .msg.group-start.user::before{right:-8px;left:auto;transform:scaleX(-1)}

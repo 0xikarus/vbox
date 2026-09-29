@@ -1177,15 +1177,16 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   messagesEl.replaceChildren();
   messagesEl.dataset.box=box.id;
   if(box.hasOlder){const older=document.createElement('button');older.type='button';older.className='load-older';older.textContent=box.historyLoading?'Loading older messages…':'Load older messages';older.disabled=!!box.historyLoading;older.onclick=()=>void loadOlderMessages(box.id);messagesEl.append(older)}
-  let day='',prevAgent=false;
+  let day='',prevAgent=false,prevSender='';
   const firstRender=!box.renderedIds;
   for(const message of box.messages||[]){
    const label=dayLabel(message.createdAt);
    if(label!==day){day=label;prevAgent=false;const sep=document.createElement('div');sep.className='day-sep';sep.textContent=day;messagesEl.append(sep)}
    const node=bubble(box,message);
    const isAgent=message.direction!=='user'&&message.direction!=='system';
-   if(isAgent&&!prevAgent)node.classList.add('group-start');
-   prevAgent=isAgent;
+   const senderKey=isAgent?'agent':'user';
+   if(senderKey!==prevSender)node.classList.add('group-start');
+   prevSender=senderKey;prevAgent=isAgent;
    if(!firstRender&&!box.renderedIds.has(message.id))node.classList.add('msg-enter');
    messagesEl.append(node);
   }
@@ -1399,7 +1400,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
  function renderPairMessages(pair){
   const follow=stickToBottom;
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=pairKey(pair);
-  let day='';
+  let day='',prevPairSenderKey='';
   for(const message of pair.messages||[]){
    const label=dayLabel(message.createdAt);
    if(label!==day){day=label;const sep=mk('div',day);sep.className='day-sep';messagesEl.append(sep)}
@@ -1407,6 +1408,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    const node=bubble(pair,{...message,direction:fromB?'user':'agent',pairAuthor:fromB?pair.boxBName:pair.boxAName},true);
    const sender=boxes.get(message.senderBoxId);
    if(sender){const av=document.createElement('span');av.className='msg-avatar';av.setAttribute('aria-hidden','true');av.innerHTML=mascotMiniSVG(sender.id);node.classList.add('has-avatar');if(fromB)node.prepend(av);else node.append(av)}
+   if(prevPairSenderKey!==(fromB?'b':'a')){node.classList.add('group-start')}prevPairSenderKey=fromB?'b':'a';
    messagesEl.append(node);
   }
   if(!(pair.messages||[]).length){const empty=mk('p','No direct messages between these boxes yet.');empty.className='day-sep';messagesEl.append(empty)}
