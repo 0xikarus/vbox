@@ -200,140 +200,11 @@
    default:return '';
   }
  }
- function makeTraits(seedStr){
-  const rnd=mulberry32(xmur3(String(seedStr))());
-  const R=(lo,hi)=>lo+rnd()*(hi-lo),Ri=(lo,hi)=>Math.floor(R(lo,hi+1)),pick=arr=>arr[Ri(0,arr.length-1)];
-  const W=Math.round(R(138,158)),H=Math.round(R(134,154));
-  const t={name:titleCase(pick(THEME_ADJ))+' '+pick(THEME_NOUN),
-   hue:Math.round(R(118,292)),spin:rnd()<.5?-1:1,sat:Math.round(R(48,72)),light:Math.round(R(42,56)),
-   hAngry:Math.round(R(2,16)),hHappy:Math.round(R(126,152)),hLaugh:Math.round(R(38,50)),W,H,
-   shape:pick(MX_SHAPES),wobble:R(.05,.15),phase:R(0,6.28),
-   lumps:Array.from({length:Ri(7,10)},()=>rnd()),
-   pattern:pick(MX_PATTERNS),patTone:rnd()<.45?'#fff':'var(--mx-dark)',
-   patGap:Math.round(R(14,24)),patW:Math.round(R(4,8)),patAngle:pick([0,20,45,70,-25]),
-   waveAmp:R(3,7),waveLen:Math.round(R(18,32)),halfOff:R(-1,1),
-   spots:Array.from({length:Ri(10,18)},()=>[R(-.8,.8),R(-.8,.8),R(.7,1.8)]),
-   splotches:Array.from({length:Ri(3,6)},()=>({x:R(-.55,.55),y:R(-.55,.55),r:R(9,21),k:Array.from({length:6},()=>rnd())})),
-   eyeW:Math.round(R(14,22)),eyeH:Math.round(R(26,46)),eyeGap:Math.round(R(34,50)),eyeY:Math.round(R(100,112)),
-   round:R(.55,1),glint:rnd()<.75,antenna:pick(['ball','ball','star','heart','bolt','none']),antLen:Math.round(R(14,30)),
-   freckles:rnd()<.4,badge:[]};
-  for(let y=0;y<5;y++){const row=[];for(let x=0;x<3;x++)row[x]=rnd()<.5?1:0;t.badge.push([row[0],row[1],row[2],row[1],row[0]]);}
-  return t;
- }
- function moodPalette(t){return{
-  idle:[t.hue,t.sat,t.light],working:[t.hue+t.spin*20,t.sat+6,t.light+3],
-  waiting:[t.hue+t.spin*44,t.sat-4,t.light+8],angry:[t.hAngry,78,62],
-  happy:[t.hHappy,64,52],laughing:[t.hLaugh,92,62]};}
- let mxUid=0;
- function mascotSVGString(t){
-  const uid='mx'+(++mxUid);
-  const x=120-t.W/2,y=190-t.H,cxL=120-t.eyeGap/2,cxR=120+t.eyeGap/2,cy=t.eyeY;
-  const er=(Math.min(t.eyeW,t.eyeH)/2*t.round).toFixed(1);
-  const topY=y+8,tipY=topY-t.antLen,d=mxBodyPath(t);
-  const antenna=t.antenna==='none'?'':'<g class="mx-antenna"><path d="M120 '+topY+' L120 '+tipY+'" stroke="var(--mx-dark)" stroke-width="5" stroke-linecap="round" fill="none"/><g class="mx-tip">'+({
-   ball:'<circle class="mx-limb" cx="120" cy="'+(tipY-5)+'" r="8"/><circle cx="117" cy="'+(tipY-8)+'" r="2.6" fill="#fff" opacity=".6"/>',
-   star:'<path class="mx-limb" transform="translate(120 '+(tipY-6)+') scale(1.1)" d="M0,-9 C1,-3 3,-1 9,0 C3,1 1,3 0,9 C-1,3 -3,1 -9,0 C-3,-1 -1,-3 0,-9 Z"/>',
-   heart:'<path class="mx-limb" transform="translate(120 '+(tipY-4)+')" d="M0 6 C-9 0 -9 -8 -4.5 -8 C-1.8 -8 0 -5.6 0 -5.6 C0 -5.6 1.8 -8 4.5 -8 C9 -8 9 0 0 6 Z"/>',
-   bolt:'<path class="mx-limb" transform="translate(120 '+(tipY-5)+')" d="M1 -9 L-5 1 L-0.5 1 L-2 9 L5 -1 L0.5 -1 Z"/>'}[t.antenna]||'')+'</g></g>';
-  const cell=10,bx=120-cell*2.5,by=cy+8;
-  const badge=t.badge.flatMap((row,ry)=>row.map((on,rx)=>!on?'':'<circle cx="'+(bx+rx*cell+cell/2)+'" cy="'+(by+ry*cell+cell/2)+'" r="'+(cell*.42)+'" fill="var(--mx-dark)" opacity=".55"/>')).join('');
-  const chX=t.W/2-14,chY=cy+32;
-  const freckles=!t.freckles?'':[-1,1].flatMap(s=>[[0,0],[7,4],[-6,5]].map(([dx,dy])=>'<circle cx="'+(120+s*(chX+dx))+'" cy="'+(chY+dy-2)+'" r="1.7"/>')).join('');
-  const pat=mxPattern(t);
-  const mouthY=((cy-106)*.7+(t.H-146)*.4).toFixed(1);
-  const eye=(cx,side)=>'<g class="mx-eye mx-eye-'+side+'" style="transform-origin:'+cx+'px '+cy+'px"><g class="mx-blinker" style="transform-origin:'+cx+'px '+cy+'px"><rect x="'+(cx-t.eyeW/2)+'" y="'+(cy-t.eyeH/2)+'" width="'+t.eyeW+'" height="'+t.eyeH+'" rx="'+er+'" fill="#fff"/><circle cx="'+(cx-t.eyeW*.22)+'" cy="'+(cy-t.eyeH*.26)+'" r="'+(t.glint?Math.min(4,t.eyeW*.22):0)+'" fill="#dceef4"/></g></g>';
-  return '<svg class="mascot-svg" data-mood="idle" viewBox="0 0 240 240" role="img" aria-label="generated mascot">'+
-   '<defs><clipPath id="'+uid+'-body"><path d="'+d+'"/></clipPath>'+
-   '<clipPath id="'+uid+'-mouth"><path d="M101 141 A20 20 0 0 0 141 141 Z"/></clipPath>'+
-   '<clipPath id="'+uid+'-laugh"><path d="M93 135 A27 25 0 0 0 147 135 Z"/></clipPath></defs>'+
-   '<g class="mx-look"><g class="mx-float"><g class="mx-turn"><g class="mx-pop"><g class="mx-body-g">'+
-   antenna+
-   '<path class="mx-body" d="'+d+'"/>'+
-   '<g clip-path="url(#'+uid+'-body)"><g class="mx-back-view"><path d="'+d+'" fill="var(--mx-dark)" opacity=".18"/><g class="mx-back-pattern">'+pat+'</g>'+
-   '<rect x="'+(bx-9)+'" y="'+(by-9)+'" width="'+(cell*5+18)+'" height="'+(cell*5+18)+'" rx="'+((cell*5+18)/2)+'" fill="var(--mx-dark)" opacity=".34"/><g class="mx-badge">'+badge+'</g></g></g>'+
-   '<g clip-path="url(#'+uid+'-body)"><g class="mx-face"><g class="mx-pattern">'+pat+'</g><g class="mx-freckles" fill="var(--mx-dark)" opacity=".4">'+freckles+'</g>'+
-   '<g class="mx-feat on-angry mx-vein-g" transform="translate('+(x+t.W-26)+' '+(y+28)+')"><g class="mx-vein" stroke="#8c1d18" stroke-width="3.4" stroke-linecap="round" fill="none" opacity=".85"><path d="M-8 -1 L0 -7 L8 -1"/><path d="M-8 6 L0 0 L8 6"/></g></g>'+
-   '<g class="mx-feat on-angry mx-ink-s" stroke-width="7"><path d="M'+(cxL-16)+' '+(cy-25)+' L'+(cxL+10)+' '+(cy-15)+'"/><path d="M'+(cxR+16)+' '+(cy-25)+' L'+(cxR-10)+' '+(cy-15)+'"/></g>'+
-   '<g class="mx-eyes mx-feat on-idle on-working on-waiting on-angry on-happy">'+eye(cxL,'l')+eye(cxR,'r')+'</g>'+
-   '<g class="mx-feat on-laughing mx-ink-s" stroke-width="7"><path d="M'+(cxL-12)+' '+(cy+6)+' Q'+cxL+' '+(cy-12)+' '+(cxL+12)+' '+(cy+6)+'"/><path d="M'+(cxR-12)+' '+(cy+6)+' Q'+cxR+' '+(cy-12)+' '+(cxR+12)+' '+(cy+6)+'"/></g>'+
-   '<g class="mx-mouths" transform="translate(0 '+mouthY+')">'+
-   '<path class="mx-feat on-idle mx-ink-s" stroke-width="6" d="M107 147 Q120 160 133 147"/>'+
-   '<ellipse class="mx-feat on-working mx-ink" cx="120" cy="152" rx="8" ry="10"/>'+
-   '<g class="mx-feat on-waiting mx-ink"><circle class="mx-tick1" cx="106" cy="150" r="4.6"/><circle class="mx-tick2" cx="120" cy="150" r="4.6"/><circle class="mx-tick3" cx="134" cy="150" r="4.6"/></g>'+
-   '<path class="mx-feat on-angry mx-ink-s" stroke-width="6.5" d="M105 156 Q120 142 135 156"/>'+
-   '<g class="mx-feat on-happy"><path class="mx-ink" d="M101 141 A20 20 0 0 0 141 141 Z"/><circle cx="121" cy="163" r="11" fill="#ff8fa0" clip-path="url(#'+uid+'-mouth)"/></g>'+
-   '<g class="mx-feat on-laughing"><path class="mx-ink" d="M93 135 A27 25 0 0 0 147 135 Z"/><circle cx="120" cy="163" r="15" fill="#ff8fa0" clip-path="url(#'+uid+'-laugh)"/></g>'+
-   '</g></g></g></g></g></g></g></svg>';
- }
- function mascotMiniSVG(seedStr){
-  const t=makeTraits(seedStr),[h,s,l]=moodPalette(t).idle;
-  const x=120-t.W/2,y=190-t.H,cxL=120-t.eyeGap/2,cxR=120+t.eyeGap/2;
-  const er=(Math.min(t.eyeW,t.eyeH)/2*t.round).toFixed(1),topY=y+8,tipY=topY-t.antLen,d=mxBodyPath(t),cid='mxm'+(++mxUid);
-  const eye=cx=>'<rect x="'+(cx-t.eyeW/2)+'" y="'+(t.eyeY-t.eyeH/2)+'" width="'+t.eyeW+'" height="'+t.eyeH+'" rx="'+er+'" fill="#fff"/>';
-  return '<svg class="mx-mini" viewBox="30 10 180 190" aria-hidden="true">'+
-   '<defs><clipPath id="'+cid+'"><path d="'+d+'"/></clipPath></defs>'+
-   (t.antenna==='none'?'':'<path d="M120 '+topY+' L120 '+tipY+'" stroke="'+hsl(h,s+8,l-15)+'" stroke-width="5" stroke-linecap="round"/><circle cx="120" cy="'+(tipY-5)+'" r="7" fill="'+hsl(h,s+8,l-15)+'"/>')+
-   '<path d="'+d+'" fill="'+hsl(h,s,l)+'"/>'+
-   '<g clip-path="url(#'+cid+')" style="--skin-dk:'+hsl(h,s+8,l-15)+';--mx-dark:'+hsl(h,s+8,l-15)+'">'+mxPattern(t)+'</g>'+
-   eye(cxL)+eye(cxR)+'<path d="M107 '+(t.eyeY+41)+' Q120 '+(t.eyeY+54)+' 133 '+(t.eyeY+41)+'" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round"/></svg>';
- }
- const MACHINE={
-  idle:{on:{WORK:'working',SEND:'waiting',PRAISE:'happy',JOKE:'laughing',ERROR:'angry'}},
-  working:{on:{SEND:'waiting',DONE:'happy',ERROR:'angry',JOKE:'laughing',STOP:'idle'}},
-  waiting:{on:{REPLY:'happy',TIMEOUT:'angry',WORK:'working',JOKE:'laughing',STOP:'idle'}},
-  happy:{on:{JOKE:'laughing',WORK:'working',SEND:'waiting',ERROR:'angry',SETTLE:'idle'},after:{ms:5000,to:'idle',via:'calm down'}},
-  laughing:{on:{SETTLE:'happy',WORK:'working',ERROR:'angry'},after:{ms:3800,to:'happy',via:'catch breath'}},
-  angry:{on:{CALM:'idle',PRAISE:'happy',WORK:'working'},after:{ms:5600,to:'idle',via:'cool off'}}};
- const MX_TURN={total:1050,swap:570};
- class Mascot{
-  constructor(host,seed,{onMood}={}){
-   this.host=host;this.onMood=onMood||null;this.state='idle';this.phase='settled';this.pending=null;this.timers=[];this.seed=String(seed);
-   this.build();
-  }
-  build(){
-   if(!this.host)return;
-   this.traits=makeTraits(this.seed);
-   this.host.replaceChildren();
-   const template=document.createElement('template');template.innerHTML=mascotSVGString(this.traits).trim();
-   this.svg=template.content.firstChild;this.host.append(this.svg);
-   this.pop=this.svg.querySelector('.mx-pop');
-   this.applyMood(this.state,false);
-  }
-  applyMood(mood,animate){
-   this.state=mood;
-   if(!this.svg)return;
-   this.svg.dataset.mood=mood;
-   const [h,s,l]=moodPalette(this.traits)[mood]||[174,60,48];
-   this.svg.style.setProperty('--mx-skin',hsl(h,s,l));
-   this.svg.style.setProperty('--mx-dark',hsl(h,s+8,l-15));
-   this.svg.style.setProperty('--mx-face',mood==='laughing'?hsl(h,90,22):'#fff');
-   if(animate)this.bounce('mx-bounce');
-   if(this.onMood)this.onMood(mood,this);
-  }
-  bounce(cls){if(!this.pop)return;this.pop.classList.remove('mx-bounce','mx-nope');void this.pop.offsetWidth;this.pop.classList.add(cls);}
-  go(next,via){
-   if(!MACHINE[next]||next===this.state)return false;
-   if(this.phase==='turning'){this.pending={next,via};return false;}
-   this.phase='turning';this.clearTimer();
-   if(this.svg){this.svg.classList.remove('mx-turning');void this.svg.offsetWidth;this.svg.classList.add('mx-turning');}
-   this.timers.push(setTimeout(()=>{this.applyMood(next,false)},MX_TURN.swap));
-   this.timers.push(setTimeout(()=>{
-    if(this.svg)this.svg.classList.remove('mx-turning');
-    this.phase='settled';this.bounce('mx-bounce');this.startAuto();
-    if(this.pending){const p=this.pending;this.pending=null;this.go(p.next,p.via);}
-   },MX_TURN.total));
-   return true;
-  }
-  send(evt){
-   const next=MACHINE[this.state]&&MACHINE[this.state].on[evt];
-   if(!next){this.bounce('mx-nope');return false;}
-   return this.go(next,evt);
-  }
-  jump(mood){if(!MACHINE[mood])return false;if(this.phase==='turning'){this.pending={next:mood,via:'sync'};return false;}return this.go(mood,'sync');}
-  startAuto(){this.clearTimer();const after=MACHINE[this.state]&&MACHINE[this.state].after;if(after)this.timers.push(setTimeout(()=>this.go(after.to,after.via),after.ms));}
-  clearTimer(){for(const t of this.timers)clearTimeout(t);this.timers=[];}
-  destroy(){this.clearTimer();if(this.svg)this.svg.remove();this.svg=null;}
- }
+ function makeTraits(seedStr){return window.VBoxMascot.traits(seedStr)}
+ function mascotSVGString(t){return window.VBoxMascot.svg(t.seed||'vbox')}
+ function mascotMiniSVG(seedStr,mood){return window.VBoxMascot.miniSVG(seedStr,mood)}
+ const MACHINE=window.VBoxMascot.moods;
+ class Mascot extends window.VBoxMascot.Mascot{}
  const accountMascots=[];
  function refreshAccountMascots(){
   const seed=theme.seed||'vmbox';
@@ -343,32 +214,6 @@
    accountMascots.push(new Mascot(host,seed));
   }
  }
- const mxLook={x:0,y:0,tx:0,ty:0};
- const mxReduceMotion=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)');
- let mxDirty=false;
- addEventListener('pointermove',event=>{
-  mxLook.tx=Math.max(-1,Math.min(1,(event.clientX-innerWidth/2)/(innerWidth/2||1)));
-  mxLook.ty=Math.max(-1,Math.min(1,(event.clientY-innerHeight/2)/(innerHeight/2||1)));
-  mxDirty=true;
- },{passive:true});
- addEventListener('blur',()=>{mxLook.tx=0;mxLook.ty=0;mxDirty=true});
- // Eyes only track while the pointer is actually moving (and never under
- // reduced-motion), instead of doing DOM work every frame forever.
- (function mxFollow(){
-  if(mxReduceMotion&&mxReduceMotion.matches){requestAnimationFrame(mxFollow);return}
-  if(!mxDirty){requestAnimationFrame(mxFollow);return}
-  const dx=mxLook.tx-mxLook.x,dy=mxLook.ty-mxLook.y;
-  mxLook.x+=dx*.1;mxLook.y+=dy*.1;
-  document.querySelectorAll('.mascot-svg').forEach(svg=>{
-   svg.style.setProperty('--mx-look-x',(mxLook.x*7).toFixed(2)+'px');
-   svg.style.setProperty('--mx-look-y',(mxLook.y*5).toFixed(2)+'px');
-   svg.style.setProperty('--mx-head-x',(mxLook.x*3.5).toFixed(2)+'px');
-   svg.style.setProperty('--mx-head-y',(mxLook.y*2.5).toFixed(2)+'px');
-  });
-  if(Math.abs(dx)<.002&&Math.abs(dy)<.002)mxDirty=false;
-  requestAnimationFrame(mxFollow);
- })();
-
  /* ═══ message body: tiny Markdown via /markdown.js, bare URLs linkified ═══ */
  const markdownHint=/(^|\n)\s*(#{1,3}\s|[-*+]\s|\d+[.)]\s|>|```|~~~)|\*\*[^*\n]|`[^`\n]|\[[^\]\n]+\]\(/;
  function linkifyTextNodes(root){
@@ -582,7 +427,7 @@
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
   wrap.dataset.avatar=box.id;wrap.dataset.state=box.state;
-  const base=document.createElement('span');base.className='avatar-mascot';base.innerHTML=mascotMiniSVG(box.id);
+  const base=document.createElement('span');base.className='avatar-mascot';base.innerHTML=mascotMiniSVG(box.id,box.state==='hibernated'?'sleeping':box.processing?'working':box.unread?'happy':box.state==='running'?'idle':'waking');
   wrap.append(base);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
