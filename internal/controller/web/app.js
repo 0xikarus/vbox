@@ -63,6 +63,14 @@ function button(text,fn){const b=node('button',text);b.type='button';b.className
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 const RESTART_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.4 7"/><path d="M3 4v7h7"/></svg>';
 const ICON_MORE='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+function blobSVG(seed){
+ const str=String(seed||'box');let h=2166136261>>>0;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
+ const palette=['#7c5cff','#3b82f6','#22c55e','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444'];
+ const color=palette[Math.abs(h)%palette.length],shape=Math.abs(h>>>5)%7;let body='';
+ switch(shape){case 0:body='<circle cx="50" cy="52" r="38"/>';break;case 1:body='<path d="M50 10 C71 30 89 47 89 64 A39 39 0 1 1 11 64 C11 47 29 30 50 10 Z"/>';break;case 2:body='<rect x="13" y="15" width="74" height="74" rx="26"/>';break;case 3:body='<path d="M50 11 L87 32 L87 74 L50 95 L13 74 L13 32 Z"/>';break;case 4:body='<path d="M34 12 L66 12 C72 12 77 17 77 23 L77 30 C84 34 88 42 88 52 C88 62 84 70 77 74 L77 81 C77 87 72 92 66 92 L34 92 C28 92 23 87 23 81 L23 74 C16 70 12 62 12 52 C12 42 16 34 23 30 L23 23 C23 17 28 12 34 12 Z"/>';break;case 5:body='<path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/>';break;default:body='<circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/>'}
+ const eyes='<g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g>';
+ return '<svg viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
+}
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
 function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  root._modelPicker?.destroy();
@@ -267,7 +275,9 @@ function renderBoxes(boxes){
   for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;select.disabled=b.state==='deleting'||deletingBoxes.has(b.id);
   select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);
   const name=node('td',''),link=node(b.state==='deleting'?'span':'a',b.name);link.className='table-text';link.title=b.name;if(b.state!=='deleting')link.href='/boxes/'+encodeURIComponent(b.id);name.append(link);
+  {const av=node('span');av.className='avatar row-avatar';const m=node('span');m.className='avatar-mascot';m.innerHTML=blobSVG(b.id);av.append(m);name.prepend(av)}
   status.replaceChildren(tableText(startingBoxes.has(b.id)&&b.state!=='running'?'starting':b.state));
+  status.dataset.state=startingBoxes.has(b.id)&&b.state!=='running'?'starting':b.state;
   if(b.restorationState)status.append(tableNote(b.restorationState));
   if(b.failureReason)status.append(tableNote(b.failureReason));
   if(boxPhase(b.state)==='stopped'||boxPhase(b.state)==='failed'){
@@ -307,7 +317,7 @@ function renderBoxes(boxes){
     overflow.append(trigger,menu);actions.replaceChildren(details,overflow);
    }
   }
-  const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vbox '+JSON.stringify(b.name)));const permissions=node('td');permissions.append(button('Manage…',()=>openBoxPolicyEditor(b)));row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
+  const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vbox '+JSON.stringify(b.name)));const permissions=node('td');actions.append(button('Manage…',()=>openBoxPolicyEditor(b)));row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(selectedManagedBoxID)renderBoxDetail();
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}

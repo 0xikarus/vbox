@@ -865,3 +865,78 @@ dialog::backdrop,.model-picker-dialog::backdrop{background:color-mix(in srgb,var
 .vb-segmented button[aria-pressed="true"]{background:var(--vb-surface);color:var(--vb-ink);box-shadow:var(--vb-shadow)}
 .vb-segmented button:hover{color:var(--vb-ink)}
 .vb-tooltip{display:inline-flex;padding:.35rem .6rem;background:var(--vb-ink);color:var(--vb-bg);border-radius:8px;font-size:.75rem;font-weight:600;box-shadow:var(--vb-shadow-md)}
+
+/* ============================================================================
+   Chat-focused review round
+   ========================================================================== */
+
+/* 1 · neutral focus (never red), distinct from error */
+:root{--vb-ring:0 0 0 3px color-mix(in srgb,var(--vb-ink) 13%,transparent)}
+input:focus-visible,select:focus-visible,textarea:focus-visible{border-color:var(--vb-ink);outline:none;box-shadow:var(--vb-ring)}
+button:focus-visible{outline:none;box-shadow:var(--vb-ring)}
+input[type=checkbox]:focus-visible,input[type=radio]:focus-visible{outline:none;box-shadow:var(--vb-ring)}
+.is-focus{border-color:var(--vb-ink)!important;box-shadow:var(--vb-ring)!important}
+.vb-secondary.is-focus{border-color:var(--vb-ink)!important;box-shadow:var(--vb-ring)!important}
+
+/* 2 · loading keeps its label and shows a spinner */
+.is-loading{color:inherit!important;pointer-events:none}
+.is-loading::before{content:'';display:inline-block;width:1rem;height:1rem;margin-right:.5rem;border:2px solid color-mix(in srgb,currentColor 35%,transparent);border-top-color:currentColor;border-radius:50%;animation:vb-spin .7s linear infinite;vertical-align:-2px}
+.is-loading::after{display:none}
+
+/* 3 · summary chevrons render (inline-block) and never double up */
+details>summary::before{display:inline-block}
+.inspect-fold summary::before{display:none!important}
+
+/* 10 · mobile Usage icon (beat the higher-specificity top-bar rule) */
+@media (max-width:899px){
+  #chat-top.workspace-top #usage-toggle,#chat-top.workspace-top .workspace-nav-usage{
+    font-size:0;width:2.4rem;min-width:2.4rem;height:2.4rem;padding:0;line-height:0;
+    display:inline-flex;align-items:center;justify-content:center
+  }
+}
+
+/* mobile chat header: compact single row, translucent */
+@media (max-width:899px){
+  #chat-header{flex-direction:row;align-items:center;justify-content:flex-start;gap:.55rem;min-height:3.5rem;padding:.3rem 2.9rem;
+    background:color-mix(in srgb,var(--vb-bg) 76%,transparent);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);border-bottom:1px solid var(--vb-line)}
+  #chat-header-avatar .avatar{width:3rem;height:1.875rem;border-radius:.55rem}
+  #chat-header-avatar .avatar .dot{width:.7rem;height:.7rem}
+  #chat-header-text{flex-direction:column;align-items:flex-start;gap:0;background:none;border:0;box-shadow:none;padding:0;max-width:none}
+  #chat-header-text strong{font-size:.9rem;font-weight:700}
+  #chat-header-state{display:block;font-size:.68rem;color:var(--vb-ink-soft)}
+}
+
+/* grid tiles: clean controls, merged status, rounded terminals */
+.tile-controls details>summary::before{display:none}
+.tile-controls details:not([open]) summary{
+  border-color:var(--vb-line);background:var(--vb-surface);color:var(--vb-ink-soft)
+}
+.tile-controls details:not([open]) summary::after{
+  content:'';width:1.1rem;height:1.1rem;background:currentColor;
+  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='6' width='20' height='12' rx='2'/%3E%3Cpath d='M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10'/%3E%3C/svg%3E") center/contain no-repeat;
+  mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='2' y='6' width='20' height='12' rx='2'/%3E%3Cpath d='M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10'/%3E%3C/svg%3E") center/contain no-repeat
+}
+.tile-session-select:empty{display:none}
+.tile .screen{border-radius:0 0 calc(var(--vb-radius-lg) - 1px) calc(var(--vb-radius-lg) - 1px);padding:6px}
+.tile .screen .xterm{padding:6px 8px}
+.tile>p[role="status"]{padding:.15rem .75rem .4rem;font-size:.72rem}
+
+/* manage rows: chat-like list rows */
+#box-list tr.row{grid-template-columns:minmax(9rem,1fr) auto minmax(9rem,1.2fr) auto auto;gap:1.25rem}
+#box-list td:nth-child(5),#box-list td:nth-child(6){display:none}
+#box-list td:nth-child(1)::before{display:none}
+#box-list .row-avatar{width:2.6rem;height:1.65rem;flex:none}
+#box-list .row-avatar .avatar-mascot{width:50%}
+#box-list td:nth-child(1){display:flex;align-items:center;gap:.7rem}
+
+/* 6 · state dot colour by state (gray default/amber transitional) */
+#box-list td:nth-child(2)::before{background:var(--vb-ink-faint)}
+#box-list td:nth-child(2)[data-state="running"]::before{background:var(--vb-ok)}
+#box-list td:nth-child(2)[data-state="starting"]::before,
+#box-list td:nth-child(2)[data-state="creating"]::before,
+#box-list td:nth-child(2)[data-state="attaching"]::before,
+#box-list td:nth-child(2)[data-state="reserved"]::before,
+#box-list td:nth-child(2)[data-state="allocating"]::before,
+#box-list td:nth-child(2)[data-state="restoring"]::before,
+#box-list td:nth-child(2)[data-state="pending"]::before{background:var(--vb-warn)}
+#box-list td:nth-child(2)[data-state="failed"]::before{background:var(--vb-danger)}

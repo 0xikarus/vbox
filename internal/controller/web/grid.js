@@ -5,7 +5,8 @@
  const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e};
  const ICON={
   refresh:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>',
-  next:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="m12 6 6 6-6 6"/></svg>'
+  next:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="m12 6 6 6-6 6"/></svg>',
+  play:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 4 14 8-14 8z"/></svg>'
  };
  function blobSVG(seed){
   const s=String(seed||'box');let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
@@ -25,7 +26,7 @@
  }
  // A tile only offers an action its box state can satisfy.
  const boxPhase=state=>state==='running'?'running':state==='failed'?'failed':(state==='reserved'||state==='attaching')?'creating':state==='deleting'?'deleting':(state==='hibernating'||state==='draining')?'transitioning':'stopped';
- function syncActions(t){const b=boxes.find(x=>x.id===t.box.value),phase=b?boxPhase(b.state):'';const available=phase==='running'||phase==='stopped'||phase==='failed';t.reconnect.hidden=!available;t.reconnect.disabled=!available;t.reconnect.textContent=phase==='running'?'Reconnect':'Resume'}
+ function syncActions(t){const b=boxes.find(x=>x.id===t.box.value),phase=b?boxPhase(b.state):'';const available=phase==='running'||phase==='stopped'||phase==='failed';t.reconnect.hidden=!available;t.reconnect.disabled=!available;const label=phase==='running'?'Reconnect':'Resume';t.reconnect.setAttribute('aria-label',label);t.reconnect.title=label;t.reconnect.innerHTML=phase==='running'?ICON.refresh:ICON.play}
  async function resumeTile(t){
   const b=boxes.find(x=>x.id===t.box.value);if(!b)return;
   const phase=boxPhase(b.state);if(phase!=='stopped'&&phase!=='failed')return;

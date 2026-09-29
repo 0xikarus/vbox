@@ -39,3 +39,8 @@ button.is-hover,.vb-icon.is-hover,.vb-secondary.is-hover,.vb-ghost.is-hover{back
 .kit-dialog header{display:flex;align-items:baseline;gap:.6rem}
 .kit-dialog header .hint{margin-left:auto}
 .kit-row button.kit-sm{padding:.32rem .72rem;font-size:.78rem;min-height:2rem}
+
+/* menu / toast spacing in the kitchen */
+.workspace-nav-panel{display:grid}
+.workspace-nav-panel a,.workspace-nav-panel button{display:block;width:100%}
+.toast{display:inline-flex;align-items:center;max-width:18rem;padding:.45rem .9rem;white-space:normal}
