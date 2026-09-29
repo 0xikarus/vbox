@@ -45,6 +45,7 @@ var tmuxSubmitPause = waitBeforeTmuxSubmit
 var agentReadySettlePause = waitForAgentSettle
 var tmuxSubmitConfirmPause = waitBeforeTmuxSubmitConfirmation
 var claudeChannelReadyWait = waitForClaudeChannelReady
+var codexCompactVisibleThread = CodexCompactVisibleThread
 
 func waitBeforeTmuxSubmit(ctx context.Context) error {
 	timer := time.NewTimer(150 * time.Millisecond)
@@ -363,6 +364,69 @@ func ResetAgentContext(ctx context.Context, root, session, agent, messageID stri
 		return err
 	}
 	return DeliverTmuxInput(ctx, root, session, messageID+"-submit", "\r", false)
+}
+
+// CompactAgentContext asks the existing visible conversation to summarize its
+// history. A returned success means the harness accepted the request, not that
+// the summarization turn has completed.
+func CompactAgentContext(ctx context.Context, root, session, agent, operationID string) error {
+	if err := validateTmuxToken("session", session); err != nil {
+		return err
+	}
+	if err := validateTmuxToken("operation ID", operationID); err != nil {
+		return err
+	}
+	if agent != "codex" && agent != "claude" && agent != "opencode" {
+		return fmt.Errorf("unsupported context compaction agent %q", agent)
+	}
+	directory := filepath.Join(root, "chat", "compact")
+	if err := os.MkdirAll(directory, 0700); err != nil {
+		return err
+	}
+	delivered := filepath.Join(directory, operationID+".delivered")
+	if _, err := os.Stat(delivered); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if agent == "codex" {
+		pending := filepath.Join(directory, operationID+".pending")
+		file, err := os.OpenFile(pending, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if errors.Is(err, os.ErrExist) {
+			return ErrAmbiguousMessage
+		}
+		if err != nil {
+			return err
+		}
+		if err := file.Close(); err != nil {
+			return err
+		}
+		if err := codexCompactVisibleThread(ctx, root, session); err != nil {
+			return fmt.Errorf("%w: Codex compaction request: %v", ErrAmbiguousMessage, err)
+		}
+		if err := os.Rename(pending, delivered); err != nil {
+			return ErrAmbiguousMessage
+		}
+		return nil
+	}
+	if err := waitForAgentReady(ctx, session, agent); err != nil {
+		return err
+	}
+	if agent == "claude" {
+		if err := settleAgentReadiness(ctx, session, agent); err != nil {
+			return err
+		}
+	}
+	if err := DeliverTmuxInput(ctx, root, session, operationID+"-compact-command", "/compact", false); err != nil {
+		return err
+	}
+	if err := tmuxSubmitPause(ctx); err != nil {
+		return ErrAmbiguousMessage
+	}
+	if err := DeliverTmuxInput(ctx, root, session, operationID+"-compact-submit", "\r", false); err != nil {
+		return err
+	}
+	return writeTextAtomic(delivered, "requested\n", 0600)
 }
 
 func waitForCodexAppServerReady(ctx context.Context, session string) error {

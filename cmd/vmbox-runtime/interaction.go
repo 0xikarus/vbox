@@ -214,6 +214,11 @@ func runTmuxInteraction(args []string, runtime *boxruntime.Runtime) (bool, error
 			return true, fmt.Errorf("chat-reset requires SESSION AGENT MESSAGE_ID")
 		}
 		return true, boxruntime.ResetAgentContext(context.Background(), runtime.Root, args[1], args[2], args[3])
+	case "chat-compact":
+		if len(args) != 4 {
+			return true, fmt.Errorf("chat-compact requires SESSION AGENT MESSAGE_ID")
+		}
+		return true, boxruntime.CompactAgentContext(context.Background(), runtime.Root, args[1], args[2], args[3])
 	case "chat-pull":
 		if len(args) != 2 {
 			return true, fmt.Errorf("chat-pull requires SESSION")

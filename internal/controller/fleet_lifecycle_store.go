@@ -457,6 +457,30 @@ func (s *Store) DeleteLogicalBoxRecord(ctx context.Context, p Principal, assignm
 	if _, err := tx.ExecContext(ctx, `DELETE FROM coworkers WHERE account_id=$1 AND box_id=$2`, p.AccountID, assignment.Box.ID); err != nil {
 		return err
 	}
+	// Save the media referenced by this box before the box/task/message cascade
+	// removes its links. Other boxes may still reference the same upload.
+	imageRows, err := tx.QueryContext(ctx, `SELECT DISTINCT j.image_id::text
+		FROM box_message_images j
+		JOIN box_messages m ON m.id=j.message_id AND m.account_id=j.account_id
+		JOIN box_tasks t ON t.id=m.task_id AND t.account_id=m.account_id
+		WHERE j.account_id=$1 AND t.logical_box_id=$2`, p.AccountID, assignment.Box.ID)
+	if err != nil {
+		return err
+	}
+	var imageIDs []string
+	for imageRows.Next() {
+		var id string
+		if err := imageRows.Scan(&id); err != nil {
+			imageRows.Close()
+			return err
+		}
+		imageIDs = append(imageIDs, id)
+	}
+	if err := imageRows.Err(); err != nil {
+		imageRows.Close()
+		return err
+	}
+	imageRows.Close()
 	if assignment.Slot.ID != "" {
 		result, err := tx.ExecContext(ctx, "UPDATE compute_slots SET state='free',lease_owner=NULL,lease_expires_at=NULL,fencing_token=NULL,deployment_instance_id=NULL,failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND assignment_generation=$3 AND fencing_token=$4 AND state='draining'", p.AccountID, assignment.Slot.ID, assignment.Box.AssignmentGeneration, assignment.FencingToken)
 		if err != nil {
@@ -472,6 +496,13 @@ func (s *Store) DeleteLogicalBoxRecord(ctx context.Context, p Principal, assignm
 	}
 	if changed, _ := result.RowsAffected(); changed != 1 {
 		return fmt.Errorf("stale logical-box delete fence")
+	}
+	if len(imageIDs) > 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM run_once_images i
+			WHERE i.account_id=$1 AND i.id=ANY($2::uuid[])
+			AND NOT EXISTS (SELECT 1 FROM box_message_images j WHERE j.image_id=i.id)`, p.AccountID, imageIDs); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, "INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'logical_box.volume.delete','logical_box',$3,jsonb_build_object('volume_id',$4::text,'volume_name',$5::text))", p.AccountID, p.UserID, assignment.Box.ID, assignment.Box.VolumeID, assignment.Box.VolumeName); err != nil {
 		return err

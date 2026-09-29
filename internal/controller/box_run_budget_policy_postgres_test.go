@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -48,6 +49,19 @@ func TestBoxRunBudgetPolicyPostgres(t *testing.T) {
 		VALUES($1,$2,$3,'fixture','railway','running','fixture-volume','fixture-volume',$4,'fixture-fence')`, boxID, owner.AccountID, owner.UserID, slotID); err != nil {
 		t.Fatal(err)
 	}
+	started := time.Now().UTC().Add(-90 * time.Minute)
+	if _, err := store.DB.ExecContext(ctx, `INSERT INTO allocation_requests(id,account_id,logical_box_id,state,idempotency_key,requested_by,slot_id,assignment_generation,updated_at)
+		VALUES($1,$2,$3,'ready',$4,$5,$6,0,$7)`, uuid(), owner.AccountID, boxID, uuid(), owner.UserID, slotID, started); err != nil {
+		t.Fatal(err)
+	}
+	get := httptest.NewRequest(http.MethodGet, "/v1/logical-boxes/"+boxID+"/run-budget-policy", nil)
+	get.SetPathValue("id", boxID)
+	getResponse := httptest.NewRecorder()
+	(&Server{Store: store}).boxRunBudgetPolicy(getResponse, get, owner)
+	var view boxRunBudgetPolicyResponse
+	if err := json.Unmarshal(getResponse.Body.Bytes(), &view); getResponse.Code != http.StatusOK || err != nil || view.RunningSince == nil || view.RunningSince.Sub(started) > time.Second || started.Sub(*view.RunningSince) > time.Second {
+		t.Fatalf("running since: status=%d body=%s error=%v", getResponse.Code, getResponse.Body.String(), err)
+	}
 	budget, err := store.syncAgentRunBudget(ctx, owner.AccountID, boxID, 8*time.Hour)
 	if err != nil || budget.BudgetSeconds != 8*3600 || budget.DeadlineAt == nil {
 		t.Fatalf("default budget=%+v error=%v", budget, err)
@@ -86,11 +100,23 @@ func TestBoxRunBudgetPolicyPostgres(t *testing.T) {
 	if err != nil || budget.BudgetSeconds != 0 || budget.DeadlineAt != nil || budget.RemainingSeconds != 0 {
 		t.Fatalf("disabled budget=%+v error=%v", budget, err)
 	}
+	getResponse = httptest.NewRecorder()
+	(&Server{Store: store}).boxRunBudgetPolicy(getResponse, get, owner)
+	view = boxRunBudgetPolicyResponse{}
+	if err := json.Unmarshal(getResponse.Body.Bytes(), &view); getResponse.Code != http.StatusOK || err != nil || view.RunningSince == nil {
+		t.Fatalf("runtime disappeared with limit off: status=%d body=%s error=%v", getResponse.Code, getResponse.Body.String(), err)
+	}
 	if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='hibernated',assignment_generation=assignment_generation+1 WHERE id=$1`, boxID); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SetBoxRunBudget(ctx, owner.AccountID, boxID, 2*3600); err != nil {
 		t.Fatal(err)
+	}
+	getResponse = httptest.NewRecorder()
+	(&Server{Store: store}).boxRunBudgetPolicy(getResponse, get, owner)
+	view = boxRunBudgetPolicyResponse{}
+	if err := json.Unmarshal(getResponse.Body.Bytes(), &view); getResponse.Code != http.StatusOK || err != nil || view.RunningSince != nil {
+		t.Fatalf("stopped box still has current runtime: status=%d body=%s error=%v", getResponse.Code, getResponse.Body.String(), err)
 	}
 	budget, err = store.syncAgentRunBudget(ctx, owner.AccountID, boxID, 8*time.Hour)
 	if err != nil || budget.BudgetSeconds != 2*3600 || budget.DeadlineAt != nil {
@@ -98,6 +124,17 @@ func TestBoxRunBudgetPolicyPostgres(t *testing.T) {
 	}
 	if _, err := store.DB.ExecContext(ctx, `UPDATE logical_boxes SET state='running',assignment_generation=assignment_generation+1 WHERE id=$1`, boxID); err != nil {
 		t.Fatal(err)
+	}
+	resumedAt := time.Now().UTC().Add(-10 * time.Minute)
+	if _, err := store.DB.ExecContext(ctx, `INSERT INTO allocation_requests(id,account_id,logical_box_id,state,idempotency_key,requested_by,slot_id,assignment_generation,updated_at)
+		VALUES($1,$2,$3,'ready',$4,$5,$6,2,$7)`, uuid(), owner.AccountID, boxID, uuid(), owner.UserID, slotID, resumedAt); err != nil {
+		t.Fatal(err)
+	}
+	getResponse = httptest.NewRecorder()
+	(&Server{Store: store}).boxRunBudgetPolicy(getResponse, get, owner)
+	view = boxRunBudgetPolicyResponse{}
+	if err := json.Unmarshal(getResponse.Body.Bytes(), &view); getResponse.Code != http.StatusOK || err != nil || view.RunningSince == nil || view.RunningSince.Sub(resumedAt) > time.Second || resumedAt.Sub(*view.RunningSince) > time.Second {
+		t.Fatalf("resumed run did not reset elapsed time: status=%d body=%s error=%v", getResponse.Code, getResponse.Body.String(), err)
 	}
 	budget, err = store.syncAgentRunBudget(ctx, owner.AccountID, boxID, 8*time.Hour)
 	if err != nil || budget.BudgetSeconds != 2*3600 || budget.DeadlineAt == nil {

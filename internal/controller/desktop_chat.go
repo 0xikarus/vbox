@@ -268,3 +268,83 @@ func (s *Server) recordContextClear(ctx context.Context, accountID, taskID, agen
 	}
 	return s.Store.SetBoxTaskBusy(ctx, accountID, taskID, false)
 }
+
+// compactBoxContextHandler asks the existing managed conversation to compact
+// its history. The harness accepts the request before its summary is ready.
+func (s *Server) compactBoxContextHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("Idempotency-Key is required"))
+		return
+	}
+	box, err := s.Store.LogicalBox(r.Context(), p, r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, fmt.Errorf("box unavailable"))
+		return
+	}
+	if box.State != v1.LogicalBoxRunning {
+		writeError(w, http.StatusConflict, fmt.Errorf("logical box is %s, not running", box.State))
+		return
+	}
+	if box.DefaultAgent != "codex" && box.DefaultAgent != "claude" && box.DefaultAgent != "opencode" {
+		writeError(w, http.StatusConflict, fmt.Errorf("the box does not use an agent context"))
+		return
+	}
+	tasks, err := s.Store.ListBoxTasks(r.Context(), p, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("chat task unavailable"))
+		return
+	}
+	task := reusableBoxTask(tasks, box.State, box.DefaultAgent, "")
+	if task == nil || task.State != "active" {
+		writeError(w, http.StatusConflict, fmt.Errorf("no active %s chat context to compact", box.DefaultAgent))
+		return
+	}
+	busy, known, _, err := s.Store.BoxAgentBusy(r.Context(), p.AccountID, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("agent activity unavailable"))
+		return
+	}
+	if !known {
+		writeError(w, http.StatusConflict, fmt.Errorf("agent activity is unknown; wait for a completed chat turn before compacting"))
+		return
+	}
+	if busy {
+		writeError(w, http.StatusConflict, fmt.Errorf("agent is busy; compact after its current work finishes"))
+		return
+	}
+	assignment, err := s.Store.assignment(r.Context(), p.AccountID, box.ID)
+	if err != nil {
+		writeError(w, http.StatusConflict, fmt.Errorf("box assignment unavailable"))
+		return
+	}
+	prov, err := s.provider(r.Context(), p.AccountID, box.Provider, box.ProviderCredential)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("worker unavailable"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 35*time.Second)
+	defer cancel()
+	if err := stageWorkspaceRuntime(ctx, prov, assignment.Slot.ServiceID, s.WorkerRuntime); err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("could not update chat runtime: %w", err))
+		return
+	}
+	operationID := terminalInputMessageID(p.AccountID, box.ID, task.Session, "compact:"+key)
+	result, execErr := prov.Exec(ctx, assignment.Slot.ServiceID, []string{"vmbox-runtime", "chat-compact", task.Session, task.Agent, operationID}, provider.ExecOptions{})
+	if execErr != nil || result.ExitCode != 0 {
+		detail := strings.TrimSpace(result.Stderr)
+		if detail == "" && execErr != nil {
+			detail = execErr.Error()
+		}
+		writeError(w, http.StatusConflict, fmt.Errorf("could not request agent context compaction: %s", detail))
+		return
+	}
+	recordCtx, recordCancel := context.WithTimeout(context.WithoutCancel(r.Context()), 5*time.Second)
+	defer recordCancel()
+	if err := s.Store.AppendSystemBoxMessage(recordCtx, p.AccountID, task.ID, "context compaction requested · "+task.Agent, "context-compact:"+operationID); err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("compaction requested, but chat marker could not be saved"))
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusAccepted, map[string]string{"agent": task.Agent, "session": task.Session, "taskId": task.ID, "state": "requested"})
+}

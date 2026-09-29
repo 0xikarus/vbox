@@ -91,6 +91,22 @@ func validateAgentBoxContextClear(actorID string, box v1.LogicalBox, protected b
 	return nil
 }
 
+func validateAgentBoxCompact(actorID string, box v1.LogicalBox, protected bool, confirmation string) error {
+	if box.ID == actorID {
+		return fmt.Errorf("an agent box cannot compact its own context")
+	}
+	if confirmation != box.Name {
+		return fmt.Errorf("compaction confirmation must exactly match logical box name %q", box.Name)
+	}
+	if protected {
+		return fmt.Errorf("protected boxes cannot have their context compacted by an agent")
+	}
+	if box.State != v1.LogicalBoxRunning {
+		return fmt.Errorf("box is %s; only a running box can have its context compacted", box.State)
+	}
+	return nil
+}
+
 func (s *Server) agentBoxesHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	capabilities, err := s.Store.EffectiveAgentCapabilities(r.Context(), p.AccountID, agentBoxID(p))
 	if err != nil {
@@ -263,6 +279,53 @@ func (s *Server) agentBoxClearContextHandler(w http.ResponseWriter, r *http.Requ
 	// idempotency key and chat audit marker, after checking delegated authority.
 	r.SetPathValue("id", box.ID)
 	s.clearBoxContextHandler(w, r, owner)
+}
+
+func (s *Server) agentBoxCompactHandler(w http.ResponseWriter, r *http.Request, p Principal) {
+	actorID := agentBoxID(p)
+	capabilities, err := s.Store.EffectiveAgentCapabilities(r.Context(), p.AccountID, actorID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := requireCapability(capabilities.ManageAgentBoxes.Restart, "compact_agent_box_context"); err != nil {
+		writeError(w, http.StatusForbidden, err)
+		return
+	}
+	if _, err := requireIdempotency(r); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	var request struct {
+		Confirmation string `json:"confirmation"`
+	}
+	if err := decodeJSON(r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	targetRef := strings.TrimSpace(r.PathValue("box"))
+	request.Confirmation = strings.TrimSpace(request.Confirmation)
+	if targetRef == "" || request.Confirmation == "" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("box and exact name confirmation are required"))
+		return
+	}
+	owner := ownerPrincipal(p)
+	box, err := s.Store.LogicalBox(r.Context(), owner, targetRef)
+	if err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	protected, err := s.Store.BoxProtection(r.Context(), owner, box.ID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if err := validateAgentBoxCompact(actorID, box, protected, request.Confirmation); err != nil {
+		writeError(w, http.StatusConflict, err)
+		return
+	}
+	r.SetPathValue("id", box.ID)
+	s.compactBoxContextHandler(w, r, owner)
 }
 
 func (s *Server) startAgentBoxRestart(p Principal, recordID, boxID string) {

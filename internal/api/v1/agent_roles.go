@@ -18,7 +18,7 @@ var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_
 var ComputerAgentMCPTools = []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
 
 var OptionalAgentMCPTools = []string{
-	"list_agent_boxes", "get_agent_box", "create_agent_box", "get_agent_box_configs", "get_available_workers", "set_agent_box_tags", "restart_agent_box", "clear_agent_box_context", "delete_agent_box",
+	"list_agent_boxes", "get_agent_box", "create_agent_box", "get_agent_box_configs", "get_available_workers", "set_agent_box_tags", "restart_agent_box", "clear_agent_box_context", "compact_agent_box_context", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
 }

@@ -57,18 +57,23 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 }
 
 func TestClearAgentBoxContextToolRequiresTargetConfirmationAndRetryKey(t *testing.T) {
-	for _, tool := range desktopMCPTools() {
-		if tool["name"] != "clear_agent_box_context" {
-			continue
+	for _, name := range []string{"clear_agent_box_context", "compact_agent_box_context"} {
+		found := false
+		for _, tool := range desktopMCPTools() {
+			if tool["name"] != name {
+				continue
+			}
+			found = true
+			schema := tool["inputSchema"].(map[string]any)
+			required := schema["required"].([]string)
+			if !slices.Equal(required, []string{"box", "confirmation", "idempotencyKey"}) {
+				t.Fatalf("%s required fields=%v", name, required)
+			}
 		}
-		schema := tool["inputSchema"].(map[string]any)
-		required := schema["required"].([]string)
-		if !slices.Equal(required, []string{"box", "confirmation", "idempotencyKey"}) {
-			t.Fatalf("required fields=%v", required)
+		if !found {
+			t.Fatalf("%s tool is missing", name)
 		}
-		return
 	}
-	t.Fatal("clear_agent_box_context tool is missing")
 }
 
 func TestAgentBoxConfigToolUsesExplicitMode(t *testing.T) {
@@ -349,6 +354,36 @@ func TestDesktopMCPStartsChannelAfterInitializeResponse(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("MCP server did not stop")
+	}
+}
+
+func TestClaudeChannelDoesNotResendWhileBusyOnSameConnection(t *testing.T) {
+	event := chatInboundFile{ID: "message-1", Text: "queued during a long turn"}
+	sent := map[string]bool{}
+	calls := 0
+	encode := func(value any) error {
+		calls++
+		notification := value.(map[string]any)
+		if notification["method"] != "notifications/claude/channel" {
+			t.Fatalf("unexpected notification: %v", notification)
+		}
+		params := notification["params"].(map[string]any)
+		meta := params["meta"].(map[string]string)
+		if params["content"] != event.Text || meta["message_id"] != event.ID {
+			t.Fatalf("wrong channel payload: %v", params)
+		}
+		return nil
+	}
+	if !emitClaudeChannelEvent("claude-session", event, sent, encode) {
+		t.Fatal("first channel delivery was not emitted")
+	}
+	if emitClaudeChannelEvent("claude-session", event, sent, encode) || calls != 1 {
+		t.Fatalf("queued message was resent on the same connection: %d calls", calls)
+	}
+	// A replacement Claude MCP process gets a new connection after the old TUI
+	// exits. An inbox without a native receipt must be delivered there.
+	if !emitClaudeChannelEvent("claude-session", event, map[string]bool{}, encode) || calls != 2 {
+		t.Fatalf("replacement connection did not retry the inbox: %d calls", calls)
 	}
 }
 

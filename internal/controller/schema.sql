@@ -290,6 +290,8 @@ CREATE TABLE IF NOT EXISTS run_once_images (
  expires_at timestamptz NOT NULL,
  created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS run_once_images_account_expiry_idx
+  ON run_once_images(account_id,expires_at);
 CREATE TABLE IF NOT EXISTS box_messages (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
@@ -340,6 +342,8 @@ CREATE TABLE IF NOT EXISTS box_message_images (
 );
 CREATE INDEX IF NOT EXISTS box_message_images_account_idx
   ON box_message_images(account_id,message_id,ordinal);
+CREATE INDEX IF NOT EXISTS box_message_images_image_idx
+  ON box_message_images(image_id);
 
 CREATE TABLE IF NOT EXISTS chat_groups (
   id uuid PRIMARY KEY,

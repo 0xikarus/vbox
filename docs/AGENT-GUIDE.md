@@ -184,7 +184,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   idempotent retry observes the existing grants. The delegated
   `clear_agent_box_context` tool is available with the restart permission and
   resets another running, unprotected box through the owner chat reset path;
-  it requires an exact target name and idempotency key. Entry points:
+  it requires an exact target name and idempotency key. The same permission
+  grants `compact_agent_box_context`, which requests compaction in another
+  running, idle, unprotected box's current conversation. Codex uses
+  `thread/compact/start` on the visible thread; Claude and OpenCode submit their
+  `/compact` command to the managed TUI. The tool reports request acceptance,
+  not summary completion. Entry points:
   `internal/controller/agent_box_creation.go`,
   `internal/controller/fleet_create_store.go`,
   `internal/controller/agent_box_management.go`.

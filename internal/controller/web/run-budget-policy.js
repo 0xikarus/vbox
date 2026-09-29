@@ -2,13 +2,16 @@
 // A box's allocated-time limit is separate from its desktop idle policy.
 window.VMBoxRunBudgetPolicy = (() => {
  const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
- function mount(root,{boxId,request}){
-  if(!root || root.dataset.budgetBox===boxId)return;
-  root.dataset.budgetBox=boxId;root.replaceChildren();
+ function mount(root,{boxId,request,state='',assignmentGeneration=''}){
+  if(!root)return;
+  const key=boxId+'|'+state+'|'+assignmentGeneration;
+  if(root.dataset.budgetKey===key)return;
+  root.dataset.budgetKey=key;root.replaceChildren();
   const card=text('section','');card.className='idle-policy run-budget-policy';
   const top=text('div','');top.className='idle-policy-top';
   const name=text('strong','Run-time limit');
   const badge=text('span','Loading…');badge.className='idle-policy-badge';top.append(name,badge);
+  const elapsed=text('p','Current run: Loading…');elapsed.className='run-budget-elapsed';
   const controls=text('div','');controls.className='idle-policy-controls';
   const label=text('label','Limit after');
   const hours=document.createElement('input');hours.type='number';hours.min='0';hours.max='720';hours.step='0.25';hours.disabled=true;
@@ -19,10 +22,23 @@ window.VMBoxRunBudgetPolicy = (() => {
   const note=text('p','Counts only while the box is running. 0 turns this limit off. Saving starts a new countdown for the current run.');note.className='idle-policy-note';
   const status=text('p','Loading run-time limit…');status.className='idle-policy-status';status.setAttribute('role','status');
   const retry=text('button','Retry');retry.type='button';retry.className='idle-policy-retry';retry.hidden=true;
-  card.append(top,controls,note,status,retry);root.append(card);
-  const current=()=>root.isConnected&&root.dataset.budgetBox===boxId;
+  card.append(top,elapsed,controls,note,status,retry);root.append(card);
+  const current=()=>root.isConnected&&root.dataset.budgetKey===key;
+  let elapsedTimer=0;
+  function showElapsed(policy){
+   clearTimeout(elapsedTimer);
+   if(!current())return;
+   if(policy.state!=='running'){elapsed.textContent='Current run: Not running';return}
+   const since=Date.parse(policy.runningSince||'');
+   if(!Number.isFinite(since)){elapsed.textContent='Current run: Unavailable';return}
+   const total=Math.max(0,Math.floor((Date.now()-since)/1000));
+   const days=Math.floor(total/86400),hours=Math.floor(total%86400/3600),minutes=Math.floor(total%3600/60),seconds=total%60;
+   elapsed.textContent='Current run: '+[days?days+'d':'',hours?hours+'h':'',minutes?minutes+'m':'',seconds+'s'].filter(Boolean).join(' ');
+   elapsedTimer=setTimeout(()=>showElapsed(policy),1000);
+  }
   function render(policy){
    const seconds=Number(policy.seconds)||0;
+   showElapsed(policy);
    hours.value=String(seconds/3600);hours.disabled=false;save.disabled=false;
    badge.textContent=seconds>0?'On':'Off';badge.dataset.enabled=String(seconds>0);
    if(seconds===0){status.textContent='Run-time limit is off for this box.';return}
