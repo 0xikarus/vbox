@@ -1440,7 +1440,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;appEl.classList.add('in-chat');
   $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
   $('#chat-header-state').textContent='Direct messages between boxes · read only';
-  $('#chat-header-avatar').replaceChildren(Object.assign(mk('span','↔'),{className:'pair-avatar'}));headerAvatarKey='';
+  {const stack=mk('span');stack.className='pair-avatar pair-avatar-stack';const a=boxes.get(pair.boxAId),b=boxes.get(pair.boxBId);if(a)stack.append(avatarNode(a,true,false));if(b)stack.append(avatarNode(b,true,false));$('#chat-header-avatar').replaceChildren(stack);}headerAvatarKey='';
   setBanner('');statusEl.textContent='';renderRows();doodle('Loading messages…');
   try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
   if(epoch===viewEpoch&&selectedPair===key)requestAnimationFrame(()=>{

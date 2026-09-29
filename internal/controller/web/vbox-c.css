@@ -1671,3 +1671,27 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #empty-new-box{padding:.55rem 1.1rem;border:1px solid var(--vb-ink);border-radius:var(--r-pill);background:var(--vb-ink);color:var(--vb-bg);font-weight:650;cursor:pointer}
 #empty-search{padding:.55rem 1.1rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-pill);background:var(--vb-surface);color:var(--vb-ink);font-weight:600;cursor:pointer}
 #empty-search:hover{background:var(--vb-surface-2)}
+
+/* box ↔ box read-only chat */
+#chat-conversation.pair-view #chat-header-avatar .avatar{width:1.95rem!important;height:1.95rem!important}
+#chat-conversation.pair-view #chat-header-state{color:var(--vb-ink-soft);font-size:.74rem}
+#chat-conversation.pair-view #chat-status{display:block;margin:.4rem .85rem .9rem;padding:.6rem .8rem;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-bg-soft);color:var(--vb-ink-soft);font-size:.78rem;text-align:center}
+.msg .agent-origin{display:inline-flex;align-items:center;gap:.4rem;text-transform:none!important;letter-spacing:0;font-size:.7rem;font-weight:650;color:var(--vb-ink-soft)}
+
+/* row context menu popover */
+#row-menu{background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg);padding:.3rem;min-width:12.5rem}
+#row-menu button{display:flex;align-items:center;gap:.6rem;width:100%;padding:.55rem .65rem;border:0!important;background:none!important;border-radius:var(--r-control);color:var(--vb-ink);font-size:.82rem;font-weight:560;text-align:left;cursor:pointer}
+#row-menu button:hover{background:var(--vb-surface-2)}
+#row-menu button.danger{color:var(--vb-danger-text)}
+#row-menu button.danger:hover{background:var(--vb-danger-soft)}
+#row-menu .menu-sep,#row-menu hr{border:0;border-top:1px solid var(--vb-line);margin:.3rem .4rem}
+
+/* menu sheet sections */
+#chat-menu-sheet .menu-links{display:flex;flex-direction:column;gap:.1rem;padding:.5rem .7rem 1rem}
+#chat-menu-sheet .menu-group-label{margin:.8rem .5rem .3rem;font-size:.63rem;font-weight:750;letter-spacing:.1em;text-transform:uppercase;color:var(--vb-ink-faint)}
+#chat-menu-sheet .menu-group-label:first-child{margin-top:.3rem}
+#chat-menu-sheet .menu-links a,#chat-menu-sheet .menu-links button{display:flex;align-items:center;gap:.6rem;width:100%;padding:.6rem .7rem;border:0;border-radius:var(--r-control);background:none;color:var(--vb-ink);font:inherit;font-size:.86rem;font-weight:560;text-align:left;text-decoration:none;cursor:pointer}
+#chat-menu-sheet .menu-links a:hover,#chat-menu-sheet .menu-links button:hover{background:var(--vb-surface-2)}
+#chat-menu-sheet .menu-logout{color:var(--vb-danger-text)!important;margin-top:.2rem}
+#chat-menu-sheet .menu-logout:hover{background:var(--vb-danger-soft)!important}
+#chat-menu-sheet .menu-status{margin:.2rem .7rem;color:var(--vb-ink-soft);font-size:.74rem}

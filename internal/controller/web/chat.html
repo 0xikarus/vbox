@@ -381,21 +381,26 @@
  <section class="sheet-card menu-card" role="dialog" aria-modal="true">
   <header><strong>vbox chats</strong><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
   <div class="menu-links">
+   <p class="menu-group-label">Navigate</p>
+   <a href="/chat">Chats</a>
    <a href="/#boxes">Boxes</a>
    <a href="/grid" data-owner-nav>Grid</a>
    <a href="/#providers" data-owner-nav>Providers</a>
    <a href="/#profiles" data-owner-nav>Profiles</a>
-   <button id="usage-toggle" class="menu-usage" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
+   <p class="menu-group-label">Agent tools</p>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>
    <button id="ai-settings-toggle" type="button" hidden>AI writing helper</button>
-   <button id="install-app" type="button" hidden>Install Android app</button>
-   <p id="install-status" class="menu-status" role="status" hidden></p>
+   <p class="menu-group-label">Notifications</p>
    <button id="push-toggle" type="button" hidden title="Send new chat replies and box conversation activity to this phone">Enable notifications</button>
    <button id="push-check" type="button" hidden>Check notification permission</button>
    <p id="push-status" class="menu-status" role="status" hidden></p>
-   <button id="logout" type="button" hidden>Log out</button>
+   <button id="install-app" type="button" hidden>Install Android app</button>
+   <p id="install-status" class="menu-status" role="status" hidden></p>
+   <p class="menu-group-label">Account</p>
+   <button id="usage-toggle" class="menu-usage" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
+   <button id="logout" type="button" class="menu-logout" hidden>Log out</button>
   </div>
  </section>
 </div>
