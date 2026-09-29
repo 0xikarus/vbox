@@ -1183,10 +1183,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    if(label!==day){day=label;prevAgent=false;const sep=document.createElement('div');sep.className='day-sep';sep.textContent=day;messagesEl.append(sep)}
    const node=bubble(box,message);
    const isAgent=message.direction!=='user'&&message.direction!=='system';
-   if(isAgent&&!prevAgent){
-    node.classList.add('group-start');
-    const avatar=document.createElement('span');avatar.className='msg-avatar';avatar.setAttribute('aria-hidden','true');avatar.innerHTML=mascotMiniSVG(box.id);node.prepend(avatar);
-   }
+   if(isAgent&&!prevAgent)node.classList.add('group-start');
    prevAgent=isAgent;
    if(!firstRender&&!box.renderedIds.has(message.id))node.classList.add('msg-enter');
    messagesEl.append(node);
@@ -1232,7 +1229,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    setTimeout(()=>{if(stickToBottom)scrollMessagesToBottom()},150);
   }
   const msgNodes=[...messagesEl.querySelectorAll('.msg')];
-  msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('user')===m.classList.contains('user');m.classList.toggle('tail',!same)});
+  msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('user')===m.classList.contains('user');const tail=!same;m.classList.toggle('tail',tail);if(tail&&m.classList.contains('agent')&&!m.classList.contains('processing')&&!m.querySelector('.msg-avatar')){const avatar=document.createElement('span');avatar.className='msg-avatar';avatar.setAttribute('aria-hidden','true');avatar.innerHTML=mascotMiniSVG(box.id);m.prepend(avatar)}});
  }
 
  /* ---------- forwarding ---------- */
@@ -1406,7 +1403,10 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    const label=dayLabel(message.createdAt);
    if(label!==day){day=label;const sep=mk('div',day);sep.className='day-sep';messagesEl.append(sep)}
    const fromB=message.senderBoxId===pair.boxBId;
-   messagesEl.append(bubble(pair,{...message,direction:fromB?'user':'agent',pairAuthor:fromB?pair.boxBName:pair.boxAName},true));
+   const node=bubble(pair,{...message,direction:fromB?'user':'agent',pairAuthor:fromB?pair.boxBName:pair.boxAName},true);
+   const sender=boxes.get(message.senderBoxId);
+   if(sender){const av=document.createElement('span');av.className='msg-avatar';av.setAttribute('aria-hidden','true');av.innerHTML=mascotMiniSVG(sender.id);node.classList.add('has-avatar');if(fromB)node.prepend(av);else node.append(av)}
+   messagesEl.append(node);
   }
   if(!(pair.messages||[]).length){const empty=mk('p','No direct messages between these boxes yet.');empty.className='day-sep';messagesEl.append(empty)}
   statusEl.textContent='Read only · '+(pair.messages||[]).length+' messages'+((pair.messages||[]).length===500?' (latest 500)':'');
@@ -2341,16 +2341,18 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
   rowMenu.replaceChildren();
   const key=box?pinKey('box',box.id):pinKey('pair',pairKey(pair));
   // Keep the menu small: everything else lives in the Details panel.
+ const IC={pin:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 4h6l-3 3 3 3h-2l-2 7-5-5-4 4-1-1 4-4-5-5 7-2z"/></svg>',info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>',wake:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',restart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>',trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>'};
   const items=[
-   [pins.has(key)?'Unpin chat':'Pin chat',()=>togglePin(key)],
+   [pins.has(key)?'Unpin chat':'Pin chat',()=>togglePin(key),null,IC.pin],
   ];
   if(box){
-   items.push(['Show details',()=>{if(!inspectOpen)$('#chat-info').click()}]);
-   if(canWakeBox(box))items.push(['Wake box',()=>void wakeBox(box)]);
-   if(box.state==='running')items.push(['Hibernate box',()=>void hibernateBox(box)],['Restart box…',()=>void restartBox(box)]);
-   items.push(['Delete box…',()=>openDeleteModal(box),'danger']);
+   items.push(['Show details',()=>{if(!inspectOpen)$('#chat-info').click()},null,IC.info]);
+   if(canWakeBox(box))items.push(['Wake box',()=>void wakeBox(box),null,IC.wake]);
+   if(box.state==='running')items.push(['Hibernate box',()=>void hibernateBox(box),null,IC.moon],['Restart box…',()=>void restartBox(box),null,IC.restart]);
+   items.push(['Delete box…',()=>openDeleteModal(box),'danger',IC.trash]);
   }
-  for(const item of items){const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');b.textContent=item[0];if(item[2])b.className='danger';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
+  let lastDanger=false;
+  for(const item of items){const danger=item[2]==='danger';if(danger&&!lastDanger){const sep=document.createElement('div');sep.className='menu-sep';rowMenu.append(sep)}lastDanger=danger;const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');if(danger)b.className='danger';b.innerHTML='<span class="menu-icon">'+(item[3]||'')+'</span><span>'+item[0]+'</span>';b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
   const touch=coarsePointer();
   rowMenu.classList.toggle('touch-mode',touch);
   rowMenu.hidden=false;
@@ -2509,22 +2511,22 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
  };
  const urlB64ToBytes=value=>{const padding='='.repeat((4-value.length%4)%4);const raw=atob(value.replace(/-/g,'+').replace(/_/g,'/')+padding);return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)))};
  function renderPushState(){
-  pushCheck.hidden=false;pushStatus.hidden=false;
-  if(!pushSupported){pushBtn.hidden=true;pushCheck.disabled=true;pushStatus.textContent=isSecureContext?'This browser does not support web push.':'Notifications require an HTTPS controller.';return}
+  pushStatus.hidden=false;
+  if(!pushSupported){pushBtn.hidden=true;pushCheck.hidden=true;pushCheck.disabled=true;pushStatus.textContent=isSecureContext?'This browser does not support web push.':'Notifications require an HTTPS controller.';return}
   pushBtn.hidden=false;
   const permission=Notification.permission;
   pushBtn.disabled=permission==='denied';
+  pushCheck.hidden=permission!=='denied';
   if(permission==='denied'){
-   pushBtn.textContent='Notifications blocked';pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then tap Check notification permission.';
+   pushBtn.textContent='Blocked';pushBtn.setAttribute('aria-label','Notifications blocked. Allow them in Android app or Chrome site settings.');pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then check again.';
   }else if(permission!=='granted'){
-   pushBtn.textContent='Enable notifications';pushStatus.textContent='Permission has not been granted.';
+   pushBtn.textContent='Off';pushBtn.setAttribute('aria-label','Enable notifications for new replies');pushStatus.textContent='Alerts for new replies are off.';
   }else if(pushSubscriptionPresent===null){
-   pushBtn.textContent='Checking notifications…';pushStatus.textContent='Checking permission and subscription.';
+   pushBtn.textContent='…';pushBtn.setAttribute('aria-label','Checking notifications');pushStatus.textContent='Checking permission and subscription.';
   }else if(pushSubscriptionPresent){
-   pushBtn.textContent='Notifications on';pushStatus.textContent='Permission allowed · push subscription active.';
+   pushBtn.textContent='On';pushBtn.setAttribute('aria-label','Notifications are on. Turn them off.');pushStatus.textContent='Permission allowed · push subscription active.';
   }else{
-   pushBtn.textContent=localStorage.getItem('vmboxChatPush')==='on'?'Reconnect notifications':'Enable notifications';
-   pushStatus.textContent='Permission allowed · push subscription inactive.';
+   pushBtn.textContent=localStorage.getItem('vmboxChatPush')==='on'?'Reconnect':'Off';pushBtn.setAttribute('aria-label','Enable notifications for new replies');pushStatus.textContent='Permission allowed · push subscription inactive.';
   }
   pushBtn.classList.toggle('on',permission==='granted'&&pushSubscriptionPresent===true);
  }
