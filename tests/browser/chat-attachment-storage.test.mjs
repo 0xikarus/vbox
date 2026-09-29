@@ -26,7 +26,7 @@ test('box details reports attachment use and clears delivered media after confir
     deleteBody=JSON.parse(Buffer.concat(chunks));cleared=true;
     return res.end(JSON.stringify({freedBytes:5242880,removedReferences:1}));
    }
-   return res.end(JSON.stringify({boxBytes:cleared?0:5242880,boxCount:cleared?0:1,clearableCount:cleared?0:1,accountBytes:cleared?0:5242880,limitBytes:1073741824}));
+   return res.end(JSON.stringify({boxBytes:cleared?0:5242880,boxCount:cleared?0:1,clearableCount:cleared?0:1,accountBytes:cleared?1048576:6291456,unusedBytes:1048576,unusedCount:2,limitBytes:1073741824}));
   }
   if(path.endsWith('/messages')||path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
@@ -41,7 +41,7 @@ test('box details reports attachment use and clears delivered media after confir
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');
   await page.click('#chat-info');
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-rows')?.textContent.includes('5.0 MiB'));
-  assert.match(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/5\.0 MiB.*5\.0 MiB \/ 1\.00 GiB/);
+  assert.match(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/5\.0 MiB.*6\.0 MiB \/ 1\.00 GiB.*Unused uploads.*1\.0 MiB/);
   await page.click('#inspect-clear-attachments');
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-status')?.textContent.includes('freed 5.0 MiB'));
   assert.equal(await page.evaluate(()=>window.__attachmentClearConfirmed),true);

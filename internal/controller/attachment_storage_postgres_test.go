@@ -45,11 +45,11 @@ func TestBoxAttachmentStoragePostgres(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	shared, private, pending := uuid(), uuid(), uuid()
+	shared, private, pending, unused := uuid(), uuid(), uuid(), uuid()
 	for _, image := range []struct {
 		id   string
 		size int
-	}{{shared, 5}, {private, 7}, {pending, 11}} {
+	}{{shared, 5}, {private, 7}, {pending, 11}, {unused, 13}} {
 		if _, err := store.DB.ExecContext(ctx, `INSERT INTO run_once_images(id,account_id,media_type,data,download_token,expires_at) VALUES($1,$2,'image/png',$3,'test-token',now()+interval '1 day')`, image.id, owner.AccountID, make([]byte, image.size)); err != nil {
 			t.Fatal(err)
 		}
@@ -88,7 +88,7 @@ func TestBoxAttachmentStoragePostgres(t *testing.T) {
 		t.Fatalf("usage HTTP %d: %s", before.Code, before.Body.String())
 	}
 	var usage boxAttachmentStorage
-	if err := json.Unmarshal(before.Body.Bytes(), &usage); err != nil || usage.BoxBytes != 23 || usage.BoxCount != 3 || usage.ClearableCount != 2 || usage.AccountBytes != 23 {
+	if err := json.Unmarshal(before.Body.Bytes(), &usage); err != nil || usage.BoxBytes != 23 || usage.BoxCount != 3 || usage.ClearableCount != 2 || usage.AccountBytes != 36 || usage.UnusedBytes != 13 || usage.UnusedCount != 1 {
 		t.Fatalf("usage=%+v error=%v", usage, err)
 	}
 	if rejected := request(http.MethodDelete, `{"confirmation":"wrong"}`); rejected.Code != http.StatusConflict {
@@ -117,7 +117,7 @@ func TestBoxAttachmentStoragePostgres(t *testing.T) {
 		t.Fatalf("other box's shared attachment lost: %d %v", remaining, err)
 	}
 	after := request(http.MethodGet, "")
-	if err := json.Unmarshal(after.Body.Bytes(), &usage); err != nil || usage.BoxBytes != 11 || usage.BoxCount != 1 || usage.ClearableCount != 0 || usage.AccountBytes != 16 {
+	if err := json.Unmarshal(after.Body.Bytes(), &usage); err != nil || usage.BoxBytes != 11 || usage.BoxCount != 1 || usage.ClearableCount != 0 || usage.AccountBytes != 29 || usage.UnusedBytes != 13 || usage.UnusedCount != 1 {
 		t.Fatalf("usage after clear=%+v error=%v", usage, err)
 	}
 }

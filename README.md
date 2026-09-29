@@ -66,8 +66,9 @@ resized and re-encoded when that makes them smaller; animated GIFs and videos
 keep their uploaded format. In Chat → Box details, owners can see per-box and
 account usage and confirm **Clear this box's attachments**. Clearing removes
 media from delivered messages while preserving their text, in-flight media,
-and attachments still used by another box. Deleting a box also releases its
-unshared chat media; unused uploads expire after seven days.
+and attachments still used by another box. The account total separately shows
+uploads with no chat message reference. Deleting a box releases its unshared
+chat media; unused uploads are reclaimed after 24 hours on the next upload.
 
 ## How it compares
 

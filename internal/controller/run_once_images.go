@@ -15,12 +15,13 @@ import (
 	"time"
 )
 
-// pruneExpiredUnusedAttachments releases uploads that were never attached to a
-// message. Keep referenced media even after its capability URL expires: chat
-// history serves those attachments through the authenticated message endpoint.
-func (s *Store) pruneExpiredUnusedAttachments(ctx context.Context, accountID string) error {
+// pruneStaleUnusedAttachments releases uploads left outside chat messages for
+// more than a day. This leaves time to submit an open composer draft. Keep
+// referenced media even after its capability URL expires: chat history serves
+// those attachments through the authenticated message endpoint.
+func (s *Store) pruneStaleUnusedAttachments(ctx context.Context, accountID string) error {
 	_, err := s.DB.ExecContext(ctx, `DELETE FROM run_once_images i
-		WHERE i.account_id=$1 AND i.expires_at<=now()
+		WHERE i.account_id=$1 AND (i.expires_at<=now() OR i.created_at<=now()-interval '24 hours')
 		AND NOT EXISTS (SELECT 1 FROM box_message_images j WHERE j.image_id=i.id)`, accountID)
 	return err
 }
@@ -100,7 +101,7 @@ func (s *Server) uploadRunOnceImage(w http.ResponseWriter, r *http.Request, p Pr
 	}
 	// Commit cleanup separately so even a rejected over-quota upload frees old
 	// unreferenced media for the next attempt.
-	if err := s.Store.pruneExpiredUnusedAttachments(r.Context(), p.AccountID); err != nil {
+	if err := s.Store.pruneStaleUnusedAttachments(r.Context(), p.AccountID); err != nil {
 		writeError(w, 500, err)
 		return
 	}

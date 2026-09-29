@@ -11,6 +11,8 @@ type boxAttachmentStorage struct {
 	BoxCount       int64 `json:"boxCount"`
 	ClearableCount int64 `json:"clearableCount"`
 	AccountBytes   int64 `json:"accountBytes"`
+	UnusedBytes    int64 `json:"unusedBytes"`
+	UnusedCount    int64 `json:"unusedCount"`
 	LimitBytes     int64 `json:"limitBytes"`
 }
 
@@ -28,7 +30,12 @@ func (s *Store) boxAttachmentStorage(ctx context.Context, accountID, boxID strin
 	if err != nil {
 		return value, err
 	}
-	err = s.DB.QueryRowContext(ctx, `SELECT COALESCE(sum(octet_length(data)),0) FROM run_once_images WHERE account_id=$1`, accountID).Scan(&value.AccountBytes)
+	err = s.DB.QueryRowContext(ctx, `SELECT COALESCE(sum(octet_length(i.data)),0),
+		COALESCE(sum(octet_length(i.data)) FILTER (WHERE j.image_id IS NULL),0),
+		count(*) FILTER (WHERE j.image_id IS NULL)
+		FROM run_once_images i
+		LEFT JOIN (SELECT DISTINCT image_id FROM box_message_images WHERE account_id=$1) j ON j.image_id=i.id
+		WHERE i.account_id=$1`, accountID).Scan(&value.AccountBytes, &value.UnusedBytes, &value.UnusedCount)
 	return value, err
 }
 
