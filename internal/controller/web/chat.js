@@ -2797,6 +2797,7 @@
  /* ---------- imported profile usage ---------- */
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
  function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
+ function usageCompactDate(value){if(!value)return 'unknown';const date=new Date(value);if(Number.isNaN(date.getTime()))return 'unknown';const options={month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'};if(date.getFullYear()!==new Date().getFullYear())options.year='numeric';return date.toLocaleString([],options)}
  function remainingPercent(used){return typeof used==='number'&&Number.isFinite(used)?Math.max(0,Math.min(100,100-used)):null}
  function lowestRemaining(profile){
   const remaining=(profile?.snapshot?.windows||[]).map(window=>remainingPercent(window.usedPercent)).filter(value=>value!==null);
@@ -2840,7 +2841,7 @@
    const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
    const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
    const source=profile.snapshot?.source?' · Source: '+profile.snapshot.source:'';
-   card.append(mk('p',boxes+source+' · '+(profile.observedAt?'Observed '+usageDate(profile.observedAt):'Waiting for first check')));
+   card.append(mk('p',boxes+source));
    const snapshot=profile.snapshot;
    for(const window of snapshot?.windows||[]){
     const row=mk('div');row.className='usage-window';
@@ -2849,7 +2850,7 @@
     const remaining=remainingPercent(window.usedPercent),head=mk('div');head.className='usage-window-head';
     head.append(mk('span',label),mk('strong',remaining===null?'Remaining unavailable':usageNumber(remaining)+'% remaining'));row.append(head);
     if(remaining!==null){const track=mk('div');track.className='usage-track';track.setAttribute('role','progressbar');track.setAttribute('aria-label',label+' remaining');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');track.setAttribute('aria-valuenow',String(remaining));const fill=mk('span');fill.style.width=remaining+'%';track.append(fill);row.append(track)}
-    row.append(mk('small',(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'')));
+    if(window.resetsAt){const reset=mk('small','Resets '+usageCompactDate(window.resetsAt));reset.title='Resets '+usageDate(window.resetsAt);row.append(reset)}
     card.append(row);
    }
    if(snapshot?.spend){
@@ -2864,7 +2865,10 @@
    if(snapshot?.rateCaps?.length){card.append(mk('p','Configured rate caps (remaining requests unavailable):'));const list=mk('ul');list.className='usage-caps';for(const cap of snapshot.rateCaps)list.append(mk('li',[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')));card.append(list)}
    if(snapshot?.note)card.append(mk('p',snapshot.note));
    if(profile.error)card.append(mk('p','Last check failed: '+profile.error));
-   if(profile.checkedAt)card.append(mk('small','Last checked '+usageDate(profile.checkedAt)));
+   const times=[];
+   if(profile.observedAt)times.push('Observed '+usageCompactDate(profile.observedAt));
+   if(profile.checkedAt)times.push('Checked '+usageCompactDate(profile.checkedAt));
+   const timing=mk('small',times.length?times.join(' · '):'Waiting for first check');timing.className='usage-profile-times';timing.title=[profile.observedAt?'Observed '+usageDate(profile.observedAt):'',profile.checkedAt?'Last checked '+usageDate(profile.checkedAt):''].filter(Boolean).join(' · ');card.append(timing);
    root.append(card);
   }
  }

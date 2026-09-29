@@ -52,6 +52,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.match(await page.$eval('#usage-toggle',element=>element.title),/all saved profiles/);
   await page.click('#usage-toggle');
   await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% remaining'));
+  if(screenshotDir){await mkdir(screenshotDir,{recursive:true});await page.screenshot({path:screenshotDir+'/usage-overview-desktop.png'})}
   const text=await page.$eval('#usage-list',element=>element.textContent);
   assert.match(text,/10% remaining/);
   assert.match(text,/60 USD remaining/);
@@ -152,6 +153,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
+  if(screenshotDir)await page.screenshot({path:screenshotDir+'/usage-overview-mobile.png'});
   await page.$eval('#usage-modal .usage-card',card=>{card.scrollTop=card.scrollHeight});
   assert.equal(await page.$eval('#usage-modal button[data-close]',button=>{const rect=button.getBoundingClientRect();return rect.top>=0&&rect.bottom<=innerHeight}),true,'usage close stays in view when the profile list scrolls');
   await page.click('#usage-modal button[data-close]');
@@ -165,6 +167,9 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-back');
   await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   await new Promise(resolve=>setTimeout(resolve,350));
+  await page.click('#usage-toggle');
+  assert.equal(await page.$eval('#usage-modal .usage-card',card=>card.scrollWidth<=card.clientWidth+1),true,'usage overview fits a narrow phone');
+  await page.click('#usage-modal button[data-close]');
   await page.click('#new-box');
   await page.waitForFunction(()=>!document.querySelector('#new-box-modal').hidden&&document.querySelectorAll('.create-profile-option').length===3);
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'profile choices fit a narrow phone');
