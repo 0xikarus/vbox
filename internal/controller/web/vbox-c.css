@@ -601,12 +601,7 @@ form#login button:hover{background:#000;border-color:#000}
     -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
     border:1px solid var(--vb-line);border-radius:var(--r-pill);padding:.25rem .85rem;box-shadow:var(--vb-shadow-md)
   }
-  #chat-header-text strong{font-size:.9rem}
-  #chat-header-state{display:none}
-  #chat-header-avatar{order:-1}
-  #chat-back{position:absolute;left:.55rem}
-  #chat-header #chat-control,#chat-header #chat-usage,#chat-header #chat-wake,#chat-header #chat-clear-context,#chat-header #chat-info,#chat-header #chat-workspace{display:none}
-  #chat-header #chat-more{position:absolute;right:.55rem;display:block}
+  #chat-header-text strong{font-size:.95rem}
   #chat-composer{width:auto}
 }
 
@@ -1489,3 +1484,67 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .provider-card details>summary{color:var(--vb-ink)}
 .provider-card details{border-top:1px solid var(--vb-line)}
 #provider-default{margin:.4rem 0 0}
+
+/* ══ chat: Messenger-style header, Details hub, composer, motion ════════ */
+#chat-header{gap:.55rem}
+.chat-header-identity{display:flex;align-items:center;gap:.65rem;min-width:0;flex:1 1 auto;padding:.2rem .35rem;border:0;background:none;color:var(--vb-ink);text-align:left;cursor:pointer;border-radius:var(--r-control);font:inherit}
+.chat-header-identity:hover{background:var(--vb-surface-2)}
+.chat-header-identity #chat-header-avatar{position:relative;width:2.6rem;height:2.6rem;flex:none}
+.chat-header-identity #chat-header-text{display:flex;flex-direction:column;min-width:0;line-height:1.2}
+.chat-header-identity #chat-header-name{font-size:.98rem;font-weight:680;color:var(--vb-ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-header-identity #chat-header-state{display:inline-flex;align-items:center;gap:.35rem;color:var(--vb-ink-soft);font-size:.74rem}
+.chat-header-identity #chat-header-state::before{content:'';width:.45rem;height:.45rem;border-radius:var(--r-pill);background:var(--vb-ink-faint)}
+.chat-header-identity #chat-header-state.running::before{background:var(--vb-ok)}
+#chat-info{flex:none;display:grid;place-items:center;width:2.4rem;height:2.4rem;padding:0;border:1px solid var(--vb-line);border-radius:var(--r-pill);background:var(--vb-surface);color:var(--vb-ink)}
+#chat-conversation:not(.pair-view) #chat-header #chat-info{display:grid}
+#chat-more.chat-action{display:grid!important;font:inherit!important;padding:.35rem .2rem!important;min-width:0;position:static}
+#chat-info:hover{background:var(--vb-surface-2);border-color:var(--vb-line-strong)}
+#chat-info svg{width:1.15rem;height:1.15rem}
+#chat-wake{flex:none}
+
+/* Details hub */
+.inspect-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem;padding:.85rem 1rem .1rem}
+.chat-action{display:grid;justify-items:center;gap:.4rem;padding:.35rem .2rem;border:0;background:none;color:var(--vb-ink-soft);font:inherit;font-size:.7rem;font-weight:600;text-decoration:none;cursor:pointer;border-radius:var(--r-control)}
+.chat-action:hover{background:var(--vb-surface-2);color:var(--vb-ink)}
+.chat-action-icon{display:grid;place-items:center;width:2.6rem;height:2.6rem;border-radius:var(--r-pill);background:var(--vb-bg-soft);border:1px solid var(--vb-line);color:var(--vb-ink)}
+.chat-action:hover .chat-action-icon{border-color:var(--vb-line-strong);background:var(--vb-surface)}
+.chat-action-icon svg{width:1.2rem;height:1.2rem}
+.chat-action-wrap{position:relative;display:block}
+#chat-more-menu{position:absolute;top:calc(100% + 6px);right:0;z-index:30;display:none;flex-direction:column;min-width:12rem;padding:.3rem;background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg)}
+#chat-more-menu:not([hidden]){display:flex}
+#chat-more-menu [role=menuitem]{display:flex;align-items:center;gap:.5rem;width:100%;padding:.55rem .65rem;border:0;background:none;border-radius:var(--r-control);color:var(--vb-ink);font:inherit;font-size:.82rem;text-align:left;text-decoration:none;cursor:pointer}
+#chat-more-menu [role=menuitem]:hover{background:var(--vb-surface-2)}
+#inspect-usage{padding:.2rem 1rem}
+#chat-usage{display:flex;align-items:center;justify-content:space-between;gap:.7rem;width:100%;padding:.6rem .75rem;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-bg-soft);color:var(--vb-ink);font:inherit;font-size:.8rem;font-weight:600;cursor:pointer}
+#chat-usage[hidden]{display:none}
+#chat-usage:hover{background:var(--vb-surface-2)}
+#chat-usage .chat-usage-label{color:var(--vb-ink-soft);font-weight:560}
+#chat-usage.usage-low{color:var(--vb-danger-text);border-color:var(--vb-danger)}
+.inspect-footer{padding:.9rem 1rem 1.1rem}
+#chat-clear-context{display:flex;align-items:center;justify-content:center;gap:.5rem;width:100%;padding:.62rem;border:1px solid transparent;border-radius:var(--r-control);background:var(--vb-danger-soft);color:var(--vb-danger-text);font:inherit;font-weight:650;font-size:.84rem;cursor:pointer}
+#chat-clear-context:hover{background:color-mix(in srgb,var(--vb-danger) 18%,transparent)}
+#chat-clear-context:disabled{opacity:.5;cursor:default}
+#chat-clear-context svg{width:1.05rem;height:1.05rem}
+
+/* composer: send morphs into stop */
+#chat-composer #chat-interrupt{display:none}
+#chat-composer.is-processing #send{display:none}
+#chat-composer.is-processing #chat-interrupt{display:grid;place-items:center;background:var(--vb-ink);color:var(--vb-bg);border:0}
+
+/* fluid motion (presentational) */
+@media(prefers-reduced-motion:no-preference){
+ button,.chat-action,.chat-header-identity,#chat-entries li,.msg{transition:background .15s var(--vb-ease),border-color .15s var(--vb-ease),transform .12s var(--vb-ease)}
+ button:active:not(:disabled),.chat-action:active,.chat-header-identity:active{transform:scale(.97)}
+ #chat-entries li:active{background:var(--vb-surface-2)}
+ #chat-messages .msg{animation:vb-msg-in .22s var(--vb-ease) both}
+ @keyframes vb-msg-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+ .unread{animation:vb-pop .24s var(--vb-ease) both}
+ @keyframes vb-pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+}
+::view-transition-old(root),::view-transition-new(root){animation-duration:.2s}
+
+/* mobile: chat header replaces the app top bar */
+@media(max-width:900px){
+ #chat-shell:has(#chat-app.in-chat) #chat-top{display:none}
+ #chat-header{padding-top:calc(env(safe-area-inset-top) + .4rem)}
+}

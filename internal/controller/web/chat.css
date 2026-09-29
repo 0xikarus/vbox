@@ -1053,7 +1053,7 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
  #chat-header-state .chat-header-agent{display:none}
  #chat-usage .chat-usage-label{display:none}
  #chat-header #chat-usage{font-size:.68rem;padding:.35rem .5rem}
- #chat-header #chat-clear-context,#chat-header #chat-info,#chat-header #chat-workspace{display:none}
+ #chat-header #chat-clear-context,#chat-header #chat-workspace{display:none}
  #chat-header #chat-wake:not([hidden]){display:block;font-size:.7rem}
  #chat-more{display:block}
  #chat-messages{padding:.75rem .55rem;gap:.55rem}

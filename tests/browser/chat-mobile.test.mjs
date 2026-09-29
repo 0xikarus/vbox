@@ -89,8 +89,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.waitForFunction(()=>document.querySelector('.msg-actions-menu').hidden);
 
   // The details drawer must fit one column on a phone.
-  await p.click('#chat-more');
-  await p.click('#chat-more-menu [data-action="details"]');
+  await p.click('#chat-info');
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await p.waitForFunction(()=>!!document.querySelector('#inspect-contacts'));
   await p.evaluate(()=>{document.activeElement?.blur()});

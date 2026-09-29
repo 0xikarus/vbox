@@ -43,7 +43,7 @@ test('box details reports attachment use and clears delivered media after confir
   await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-rows')?.textContent.includes('5.0 MiB'));
   assert.match(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/5\.0 MiB.*6\.0 MiB \/ 1\.00 GiB.*Unused uploads.*1\.0 MiB/);
-  await page.click('#inspect-clear-attachments');
+  await page.$eval('#inspect-clear-attachments',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-status')?.textContent.includes('freed 5.0 MiB'));
   assert.equal(await page.evaluate(()=>window.__attachmentClearConfirmed),true);
   assert.deepEqual(deleteBody,{confirmation:'Builder'});

@@ -74,9 +74,10 @@ test('usage shows remaining capacity and Conversations width can be resized and 
 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('80% left'));
-  assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg path[d="M12 18h6"]'),text:element.textContent.trim()})),{next:'chat-usage',label:'Open desktop and TMUX controls',icon:true,text:''});
+  assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg'),text:element.textContent.trim()})),{next:'chat-terminal',label:'Desktop',icon:true,text:'Desktop'});
   assert.match(await page.$eval('#chat-usage',element=>element.getAttribute('aria-label')),/claude personal usage: 80% remaining/);
   assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage','navbar opens all profiles without a percentage');
+  await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/80% remaining/);
@@ -133,10 +134,12 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.$eval('#chat-usage',element=>element.hidden),false,'the selected chat usage is visible on a phone');
   assert.notEqual(await page.$eval('#chat-control',element=>getComputedStyle(element).display),'none','computer icon stays available before usage on a phone');
   assert.equal(await page.$eval('#chat-header-state',element=>element.innerText.trim()),'running','mobile keeps the box state readable');
+  await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
   assert.doesNotMatch(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   await page.click('#usage-modal button[data-close]');
+  await page.evaluate(()=>{const i=document.querySelector('#inspect');if(i&&!i.hidden)document.querySelector('#inspect-close').click()});
   await page.click('#chat-back');
   await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   await new Promise(resolve=>setTimeout(resolve,350));

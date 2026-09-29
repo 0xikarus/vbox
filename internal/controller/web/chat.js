@@ -617,7 +617,7 @@
    const currentBox=()=>boxes.get(box.id)||box;
    wrap.onmouseenter=()=>{if(finePointer())showTvPreview(wrap,currentBox())};wrap.onmouseleave=scheduleHideTvPreview;
    wrap.onfocus=()=>{if(finePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(finePointer())scheduleHideTvPreview()};
-   wrap.onclick=event=>{event.stopPropagation();const box=currentBox();if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(wrap,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
+   wrap.onclick=event=>{event.stopPropagation();const box=currentBox();if($('#chat-header')?.contains(wrap)){if(!inspectOpen)openInspect();return}if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(wrap,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
   }
   return wrap;
@@ -1345,6 +1345,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
   $('#thread-composer button').disabled=box.state!=='running';
   updateSendState();
+  composer.classList.toggle('is-processing',!!box.processing);
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
   $('#chat-more-menu [data-action="workspace"]').href='/boxes/'+encodeURIComponent(box.id);
   $('#chat-more-menu [data-action="clear"]').disabled=$('#chat-clear-context').disabled;
@@ -1730,7 +1731,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
     if(selected===boxID){renderHeader();renderMessages(box)}
     renderRows();
    }
-   updateSendState();
+  updateSendState();
   }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
@@ -2019,6 +2020,9 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   if(inspectOpen){closeInspect();return}
   openInspect();
  };
+ $('#chat-header-open')?.addEventListener('click',()=>{if(!inspectOpen)openInspect()});
+ $('#chat-terminal')?.addEventListener('click',()=>{const box=boxes.get(selected);if(box)void openTakeover('tmux',box.id)});
+ $('#inspect-screen')?.addEventListener('click',()=>{const box=boxes.get(selected);if(box)void openTakeover('desktop',box.id)});
  function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#inspect-close').onclick=closeInspect;
  $('#inspect-backdrop').onclick=closeInspect;
@@ -3133,8 +3137,8 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
 
  /* ---------- generated-look controls ---------- */
  const randomSeed=()=>'0x'+Array.from({length:8},()=>'0123456789abcdef'[Math.floor(Math.random()*16)]).join('');
- $('#variant-dice').onclick=()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new mascot seed.')};
- $('#variant-seed').addEventListener('change',event=>{theme.seed=event.target.value.trim()||DEFAULT_SEED;saveTheme();applyVariant()});
+ $('#variant-dice')?.addEventListener('click',()=>{theme.seed=randomSeed();saveTheme();applyVariant();toast('Rolled a new mascot seed.')});
+ $('#variant-seed')?.addEventListener('change',event=>{theme.seed=event.target.value.trim()||DEFAULT_SEED;saveTheme();applyVariant()});
  $('#chat-menu').onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
  const mobileMenuButton=document.getElementById('mobile-menu');
  if(mobileMenuButton)mobileMenuButton.onclick=()=>{closeSheets();$('#chat-menu-sheet').hidden=false};
