@@ -8,7 +8,7 @@ import (
 )
 
 // EnsureClaudeDefaults writes the box's permissions and workspace trust into the
-// box HOME. entrypoint.sh writes the same settings, but into /data/home, which
+// box HOME. worker-agent-trust.sh writes the same settings, but into /data/home, which
 // is not the HOME of a shared-worker box, so they never reached one.
 func EnsureClaudeDefaults(home, workspace string) error {
 	if err := ensureClaudeSettings(filepath.Join(home, ".claude", "settings.json"), workspace); err != nil {

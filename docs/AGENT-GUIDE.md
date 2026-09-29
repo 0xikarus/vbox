@@ -1,6 +1,7 @@
 # vmbox: guide for future agents
 
-Current architecture and behavior, checked against the source on 2026-09-14.
+Architecture, lifecycle rules, and implementation entry points. Check the source
+for current behavior.
 Start with the [setup guide](../README.md). The [desktop MVP guide](AGENT-DESKTOP-IMPLEMENTATION.md) records the newer desktop/secret/idle implementation and verification. This document explains where to work
 and the distinctions that must survive future changes.
 
@@ -206,8 +207,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   played from the authenticated same-origin endpoint rather than a blob. Unsent
   composer text is kept per box in local storage, and the transcript remembers its
   scroll position per box. The seeded mascot is used for box avatars (with a
-  `NO SIGNAL` fallback) and the processing bubble. Screenshots live in
-  `docs/chat-ui/screenshots/mobile-first/`.
+  `NO SIGNAL` fallback) and the processing bubble.
 - Persistent-box Agent chat links images to individual messages and displays them
   through an authenticated endpoint. Codex follow-ups use the visible thread's
   app-server queue with structured image inputs. After a fresh Codex TUI starts

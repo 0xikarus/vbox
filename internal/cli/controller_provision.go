@@ -480,7 +480,7 @@ func stageControllerSource(source string) (string, func(), error) {
 	}
 	cleanup := func() { _ = os.RemoveAll(staged) }
 	var total int64
-	for _, name := range []string{"Dockerfile", ".dockerignore", "entrypoint.sh", "go.mod", "go.sum", "cmd", "internal"} {
+	for _, name := range []string{"Dockerfile", ".dockerignore", "scripts", "go.mod", "go.sum", "cmd", "internal"} {
 		if err := copyControllerSource(filepath.Join(source, name), filepath.Join(staged, name), &total); err != nil {
 			cleanup()
 			return "", func() {}, err

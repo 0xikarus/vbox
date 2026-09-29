@@ -31,7 +31,7 @@ per-box resource limits until enforcement has been verified on the target runtim
 - direct_workers currently has one enrollment per slot. workeragent/assignment.go
   persists one binding. Shared workers need worker enrollment plus many independently
   fenced box bindings, not repeated replacement of one binding.
-- boxruntime and entrypoint.sh assume /data/home, /data/workspace, a common workload
+- boxruntime and the worker entrypoint assume /data/home, /data/workspace, a common workload
   user, and single desktop/tmux context. Shared mode requires explicit box context.
 
 ## Phase 1: data model and compatibility
