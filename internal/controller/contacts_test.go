@@ -156,13 +156,38 @@ func TestContactEntriesIncludesAuthorizedSleepingContactAndExplanation(t *testin
 		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Sender"))
 	mock.ExpectQuery("SELECT \\(\\$2::uuid\\)::text,\\$3::text").WithArgs("account-a", "sender", "Sender").
 		WillReturnRows(sqlmock.NewRows([]string{"box_id", "box_name", "contact_box_id", "contact_name", "default_agent", "state", "protected", "can_message", "updated_at", "all_contacts", "roles"}).
-			AddRow("sender", "Sender", "target", "Target", "codex", "hibernated", false, nil, nil, true, []byte(`[{"id":"role-1","name":"Manager"}]`)))
+			AddRow("sender", "Sender", "target", "Target", "codex", "hibernated", false, nil, nil, true, []byte(`[{"id":"role-1","name":"Manager"}]`)).
+			AddRow("sender", "Sender", "hidden", "Hidden", "claude", "running", false, false, nil, false, []byte(`[]`)))
+	mock.ExpectQuery("SELECT groups_json,members_json FROM chat_sidebar_layouts").WithArgs("account-a").
+		WillReturnRows(sqlmock.NewRows([]string{"groups_json", "members_json"}).AddRow(
+			[]byte(`[{"id":"group-1","name":"Reviewers"},{"id":"group-2","name":"Private"}]`),
+			[]byte(`{"box:target":"group-1","box:hidden":"group-2","pair:sender/target":"group-2"}`)))
 	entries, err := store.ContactEntries(context.Background(), "account-a", "sender")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].State != "hibernated" || !strings.Contains(entries[0].Reason, "All contacts") || len(entries[0].Roles) != 1 {
+	if len(entries) != 1 || entries[0].State != "hibernated" || entries[0].Group != "Reviewers" || !strings.Contains(entries[0].Reason, "All contacts") || len(entries[0].Roles) != 1 {
 		t.Fatalf("entries=%+v", entries)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContactEntriesWithoutSavedGroups(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("SELECT name FROM logical_boxes").WithArgs("account-a", "sender").
+		WillReturnRows(sqlmock.NewRows([]string{"name"}).AddRow("Sender"))
+	mock.ExpectQuery("SELECT \\(\\$2::uuid\\)::text,\\$3::text").WithArgs("account-a", "sender", "Sender").
+		WillReturnRows(sqlmock.NewRows([]string{"box_id", "box_name", "contact_box_id", "contact_name", "default_agent", "state", "protected", "can_message", "updated_at", "all_contacts", "roles"}).
+			AddRow("sender", "Sender", "target", "Target", "codex", "running", false, nil, nil, true, []byte(`[]`)))
+	mock.ExpectQuery("SELECT groups_json,members_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnError(sql.ErrNoRows)
+	entries, err := store.ContactEntries(context.Background(), "account-a", "sender")
+	if err != nil || len(entries) != 1 || entries[0].Group != "" {
+		t.Fatalf("entries=%+v err=%v", entries, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }
 
