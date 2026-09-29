@@ -72,15 +72,25 @@
    <div id="inspect-backdrop" hidden></div>
    <aside id="inspect" role="region" aria-label="Box details" hidden>
     <header id="inspect-header">
-     <div id="inspect-header-text"><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
+     <span class="inspect-grab" aria-hidden="true"></span>
+     <div id="inspect-header-text" hidden><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
      <span class="spacer"></span>
-     <button id="inspect-close" type="button" aria-label="Close details">× <span>Close</span></button>
+     <button id="inspect-close" type="button" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button>
     </header>
      <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
       <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span>Desktop off</span></div>
       <span id="inspect-screen-title" class="inspect-screen-title">Screen</span>
      </div>
-     <div id="inspect-actions" class="inspect-actions" role="group" aria-label="Box actions">
+     <div id="inspect-body">
+      <section id="inspect-summary" aria-label="Box overview">
+       <div id="inspect-avatar"></div>
+       <div id="inspect-hero">
+        <h2 id="inspect-name">—</h2>
+        <p id="inspect-subtitle">—</p>
+        <div id="inspect-badges" class="inspect-badges"></div>
+        <div id="inspect-quick-actions" class="inspect-quick"></div>
+       </div>
+       <div id="inspect-actions" class="inspect-actions" role="group" aria-label="Box actions">
       <button id="chat-control" class="chat-action" type="button" aria-label="Desktop" title="Desktop"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></span><span class="chat-action-label">Desktop</span></button>
       <button id="chat-terminal" class="chat-action" type="button" aria-label="Terminal" title="Terminal (TMUX)"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></span><span class="chat-action-label">Terminal</span></button>
       <a id="chat-workspace" class="chat-action" href="#"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span><span class="chat-action-label">Workspace</span></a>
@@ -94,16 +104,7 @@
        </div>
       </span>
      </div>
-     <div id="inspect-body">
-      <section id="inspect-summary" aria-label="Box overview">
-       <div id="inspect-avatar"></div>
-       <div id="inspect-hero">
-        <h2 id="inspect-name">—</h2>
-        <p id="inspect-subtitle">—</p>
-        <div id="inspect-badges" class="inspect-badges"></div>
-        <div id="inspect-quick-actions" class="inspect-quick"></div>
-       </div>
-       <div id="inspect-facts" class="inspect-facts"></div>
+     <div id="inspect-facts" class="inspect-facts"></div>
        <div id="inspect-usage" class="inspect-group"><button id="chat-usage" type="button" hidden aria-label="Usage for this chat">Usage</button></div>
        <details class="inspect-block inspect-fold inspect-technical" data-fold="technical">
         <summary><h3>Technical details</h3></summary>
@@ -175,7 +176,7 @@
     <button id="attach" type="button" title="Attach files" aria-label="Attach files">+</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
-    <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
+    <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
     <button id="send" type="submit" title="Send" aria-label="Send" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
    </form>
    <p id="chat-status" role="status"></p>

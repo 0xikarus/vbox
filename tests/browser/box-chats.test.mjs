@@ -158,7 +158,7 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   await desktop.click('#row-menu button:first-child');
   assert.equal(new URL(desktop.url()).hash,'#box='+a,'pinning from a context menu must not navigate away from the open chat');
-  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'||item.className==='conversation-divider'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Other chats','box:'+a]);
+  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'||item.className==='conversation-divider'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Chats','box:'+a]);
   assert.equal(await desktop.$eval('#chat-entries .conversation-divider',item=>item.getAttribute('role')),'separator');
   await desktop.click('[data-pair-key]',{button:'right'});
   assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');

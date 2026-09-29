@@ -845,7 +845,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
  }
  const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
  const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
- const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Other chats'));
+ const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Chats'));
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter));
@@ -858,7 +858,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{x:event.clientX,y:event.clientY})};
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
-    const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
+    const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const pin=mk('span');pin.className='pin-mark';pin.setAttribute('aria-hidden','true');pin.hidden=true;pin.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 4h6l-3 3 3 3h-2l-2 7-5-5-4 4-1-1 4-4-5-5 7-2z"/></svg>';const time=document.createElement('time');r1.append(name,pin,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
     const note=mk('span','New messages');note.className='unread-note';note.hidden=true;
     meta.append(r1,r2,note);row.append(meta);
@@ -879,7 +879,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    }
    else{const avatar=avatarNode(box,false,true);if(oldAvatar)oldAvatar.replaceWith(avatar);else row.prepend(avatar)}
    const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
-   row.querySelector('time').classList.toggle('recent',!!box.unread);
+   const pinMark=row.querySelector('.pin-mark');if(pinMark)pinMark.hidden=!pins.has(pinKey('box',box.id));row.querySelector('time').classList.toggle('recent',!!box.unread);
    const preview=row.querySelector('.preview'),nextPreview=box.streaming?'typing…':box.processing?'processing…':previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
    const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=box.unread>99?'99+':box.unread;
    const note=row.querySelector('.unread-note');note.hidden=!box.unread;note.textContent=box.unread===1?'New message':'New messages';
@@ -893,15 +893,17 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
     row=document.createElement('li');row.dataset.pairKey=key;
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{x:event.clientX,y:event.clientY})};
-    const avatar=document.createElement('span');avatar.className='pair-avatar';avatar.textContent='↔';avatar.setAttribute('aria-hidden','true');
+    const avatar=document.createElement('span');avatar.className='pair-avatar pair-avatar-stack';avatar.setAttribute('aria-hidden','true');
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
-    const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
+    const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName));const pairPin=mk('span');pairPin.className='pin-mark';pairPin.setAttribute('aria-hidden','true');pairPin.hidden=true;pairPin.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 4h6l-3 3 3 3h-2l-2 7-5-5-4 4-1-1 4-4-5-5 7-2z"/></svg>';first.append(pairPin,document.createElement('time'));first.firstChild.className='name';
     const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';second.append(badge,preview);
     const note=mk('span','New messages');note.className='unread-note';note.hidden=true;
     meta.append(first,second,note);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
    }
    const name=pair.boxAName+' ↔ '+pair.boxBName;
    row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
+   const stack=row.querySelector('.pair-avatar');if(stack&&stack.dataset.key!==key){stack.dataset.key=key;stack.replaceChildren();const a=boxes.get(pair.boxAId),b=boxes.get(pair.boxBId);if(a)stack.append(avatarNode(a,true,false));if(b)stack.append(avatarNode(b,true,false));}
+   const pairPinMark=row.querySelector('.pin-mark');if(pairPinMark)pairPinMark.hidden=!pins.has(pinKey('pair',key));
    row.querySelector('.chat-meta').setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
    row.classList.toggle('active',key===selectedPair);
    row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
@@ -1229,6 +1231,8 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    for(const image of messagesEl.querySelectorAll('img'))if(!image.complete)image.addEventListener('load',()=>{if(stickToBottom)scrollMessagesToBottom()},{once:true});
    setTimeout(()=>{if(stickToBottom)scrollMessagesToBottom()},150);
   }
+  const msgNodes=[...messagesEl.querySelectorAll('.msg')];
+  msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('user')===m.classList.contains('user');m.classList.toggle('tail',!same)});
  }
 
  /* ---------- forwarding ---------- */
@@ -1735,6 +1739,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
+messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.target.closest('a,button,input,textarea,.msg-actions,.tv-button,.media-button,.choice'))return;const msg=event.target.closest('.msg');if(!msg)return;const on=!msg.classList.contains('show-meta');for(const node of messagesEl.querySelectorAll('.msg.show-meta'))node.classList.remove('show-meta');if(on)msg.classList.add('show-meta')});
  // Swipe in from the left edge on a phone to pull the chat list back out.
  let listSwipe=null;
  appEl.addEventListener('touchstart',event=>{
