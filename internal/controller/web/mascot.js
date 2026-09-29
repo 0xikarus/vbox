@@ -6,11 +6,11 @@
  const MOODS=['idle','working','waiting','happy','laughing','angry','sleeping','waking'];
  const MACHINE={idle:{WORK:'working',SEND:'waiting',PRAISE:'happy',JOKE:'laughing',ERROR:'angry',SLEEP:'sleeping',WAKE:'waking'},working:{SEND:'waiting',DONE:'happy',ERROR:'angry',JOKE:'laughing',STOP:'idle',SLEEP:'sleeping'},waiting:{REPLY:'happy',TIMEOUT:'angry',WORK:'working',JOKE:'laughing',STOP:'idle',SLEEP:'sleeping'},happy:{JOKE:'laughing',WORK:'working',SEND:'waiting',ERROR:'angry',SETTLE:'idle',SLEEP:'sleeping'},laughing:{SETTLE:'happy',WORK:'working',ERROR:'angry',SLEEP:'sleeping'},angry:{CALM:'idle',PRAISE:'happy',WORK:'working',SLEEP:'sleeping'},sleeping:{WAKE:'waking',WORK:'waking'},waking:{READY:'idle',WORK:'working',SLEEP:'sleeping'}};
  const hash=s=>{let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0};
- const traits=seed=>{const h=hash(seed);return {shape:SHAPES[h%SHAPES.length],color:COLORS[Math.floor(h/8)%COLORS.length],wide:1.02+((h>>>12)%9)/100,tall:.91+((h>>>17)%9)/100,tilt:((h>>>22)%9-4)*.35,phase:(h%1000)/1000*6.283,blink:2.3+(h%190)/100,eyes:['A','B','C'][Math.floor(h/64)%3]}};
+ const traits=seed=>{const h=hash(seed);return {shape:SHAPES[h%SHAPES.length],color:h%37===0?COLORS[11]:COLORS[Math.floor(h/8)%11],wide:1.02+((h>>>12)%9)/100,tall:.91+((h>>>17)%9)/100,tilt:((h>>>22)%9-4)*.35,phase:(h%1000)/1000*6.283,blink:2.3+(h%190)/100,eyes:['A','B','C'][Math.floor(h/64)%3]}};
  const PATHS={
  circle:'M50 11 C71 10 87 26 88 48 C90 72 76 89 50 90 C24 89 10 72 12 48 C13 26 29 10 50 11 Z',
  drop:'M45 14 Q50 7 55 14 C69 29 83 46 85 62 C87 79 73 90 50 91 C27 90 13 79 15 62 C17 46 31 29 45 14 Z',
- cloud:'M16 55 C11 44 19 34 31 35 C31 23 44 19 53 27 C64 19 77 26 76 37 C87 39 92 49 85 60 C88 77 73 90 50 91 C27 90 12 77 16 60 Z',
+ cloud:'M17 56 C13 46 20 36 31 36 C30 24 43 19 52 27 C62 20 76 26 76 37 C87 39 91 50 84 60 C87 78 71 90 50 91 C28 90 12 78 17 60 Z',
  square:'M34 11 C20 11 12 20 12 34 L12 65 C12 82 22 90 37 90 L63 90 C78 90 88 82 88 65 L88 34 C88 20 80 11 66 11 Z',
  gem:'M45 12 Q50 9 55 12 L77 25 Q87 31 87 42 L87 63 Q87 75 76 82 L62 89 Q50 94 38 89 L24 82 Q13 75 13 63 L13 42 Q13 31 23 25 Z',
  triangle:'M38 29 Q50 14 62 29 C72 41 83 54 86 68 Q90 86 74 89 Q50 93 26 89 Q10 86 14 68 C17 54 29 37 38 29 Z',
@@ -18,7 +18,7 @@
  bean:'M28 18 C42 11 54 24 68 22 C83 21 91 39 89 57 C87 79 72 90 51 91 C29 90 13 78 11 57 C9 40 17 24 28 18 Z'};
  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const eyePath=p=>`M${p[0]} ${p[1]} C${p[2]} ${p[3]} ${p[4]} ${p[5]} ${p[6]} ${p[7]}`;
- const rawEyesFor=(mood,variant='A')=>{const spread=variant==='C'?1:0,L=36-spread,R=64+spread,lo=57;const line=(cx,side=1)=>[cx-4,lo-6*side,cx-2,lo-3*side,cx+2,lo+3*side,cx+4,lo+6*side];switch(mood){
+ const rawEyesFor=(mood,variant='A')=>{const spread=variant==='C'?1:0,L=36-spread,R=64+spread,lo=57;const line=(cx,side=1)=>[cx-2.5,lo-6*side,cx-1.2,lo-3*side,cx+1.2,lo+3*side,cx+2.5,lo+6*side];switch(mood){
   case 'working':return [[L-5,lo-1,L-2,lo-3,L+2,lo-2,L+5,lo],[R-5,lo,R-2,lo-2,R+2,lo-3,R+5,lo-1]];
   case 'waiting':return [[L-4,lo-8,L-2,lo-12,L+2,lo-12,L+4,lo-8],[R-4,lo-9,R-2,lo-13,R+2,lo-12,R+4,lo-8]];
   case 'happy':return [[L-6,lo+3,L-3,lo-12,L+3,lo-12,L+6,lo+3],[R-6,lo+3,R-3,lo-12,R+3,lo-12,R+6,lo+3]];
@@ -93,7 +93,7 @@
    if(now>this.glanceAt){this.glance=(hash(this.seed+Math.floor(now/1600))%3)-1;this.glanceAt=now+1700+hash(this.seed+Math.floor(now/900))%2400}
    this.accent*=.88;this.motion.style.transform=`translate3d(${this.state==='angry'?Math.sin(t*32)*1.5:0}px,${(bob-this.accent*2).toFixed(2)}px,0) rotate(${rot.toFixed(2)}deg) scale(${(sx+this.accent*.035+morph*.045).toFixed(3)},${(sy-this.accent*.045-morph*.055).toFixed(3)})`;
    this.render(false,now)}
-  render(instant,now=performance.now()){if(instant&&this.transition){this.pose=this.target.slice();this.color=this.toColor.slice();this.transition=null}this.svg.querySelector('.vbox-mascot-shape').style.fill=mix(this.color,this.color,0);this.blush.style.opacity=this.appearance.blush===false||!['happy','laughing'].includes(this.state)?0:'.36';this.z.style.opacity=this.state==='sleeping'?'0.75':'0';this.eyes.forEach((el,j)=>{const p=this.pose.slice(j*8,j*8+8),g=instant?0:this.glance*1.2;for(let k=0;k<8;k+=2)p[k]+=g;if(this.blink&&!instant){for(let k=1;k<8;k+=2)p[k]+=(53-p[k])*this.blink*.93}el.setAttribute('d',eyePath(p.map(v=>+v.toFixed(1))))});if(instant)this.motion.style.transform='none'}
+  render(instant,now=performance.now()){if(instant&&this.transition){this.pose=this.target.slice();this.color=this.toColor.slice();this.transition=null}this.svg.querySelector('.vbox-mascot-shape').style.fill=mix(this.color,this.color,0);this.blush.style.opacity=this.appearance.blush===false||this.appearance.blush!=='always'&&!['happy','laughing'].includes(this.state)?0:'.36';this.z.style.opacity=this.state==='sleeping'?'0.75':'0';this.eyes.forEach((el,j)=>{const p=this.pose.slice(j*8,j*8+8),g=instant?0:this.glance*1.2;for(let k=0;k<8;k+=2)p[k]+=g;if(this.blink&&!instant){for(let k=1;k<8;k+=2)p[k]+=(53-p[k])*this.blink*.93}el.setAttribute('d',eyePath(p.map(v=>+v.toFixed(1))))});if(instant)this.motion.style.transform='none'}
   destroy(){this.dead=true;this.clearTimer();this.host.removeEventListener('pointerenter',this.enter);this.host.removeEventListener('pointerdown',this.down);observer?.unobserve(this.svg);active.delete(this);this.svg.remove();kick()}
  }
  global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;for(const m of active){if(forcedReduce)m.finishMorph();m.render(forcedReduce)}kick()},traits,MACHINE,shapes:SHAPES,colors:COLORS,moods:MOODS};
