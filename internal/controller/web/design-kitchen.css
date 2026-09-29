@@ -12,7 +12,7 @@ body{
 .kit-group{max-width:74rem;margin:0 auto 2.4rem}
 .kit-group>h2{margin:0 0 .2rem;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--vb-ink-faint);font-weight:700;border:0;padding:0}
 .kit-group>p{margin:.1rem 0 1rem;color:var(--vb-ink-soft);font-size:.82rem}
-.kit-row{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;padding:1rem;border:1px solid var(--vb-line);border-radius:16px;background:var(--vb-surface)}
+.kit-row{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;padding:1rem;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-surface)}
 .kit-row+.kit-row{margin-top:.75rem}
 .kit-cell{display:flex;flex-direction:column;gap:.4rem;min-width:11rem}
 .kit-label{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--vb-ink-faint);font-weight:700}

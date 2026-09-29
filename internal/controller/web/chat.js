@@ -134,7 +134,7 @@
   pop:'var(--vb-pop)','bubble-out':'var(--vb-bubble-out)','bubble-in':'var(--vb-bubble-in)','bubble-in-ink':'var(--vb-ink)',
   danger:'var(--vb-danger)','danger-text':'var(--vb-danger-text)',warn:'var(--vb-warn)','warn-text':'var(--vb-warn-text)',ok:'var(--vb-ok)','ok-text':'var(--vb-ok-text)'};
  function deriveTheme(seed){
-  const t=Object.assign({},WORKSPACE_THEME,{radius:'var(--vb-radius)','radius-sm':'var(--vb-radius-sm)','radius-lg':'var(--vb-radius-lg)',shadow:'var(--vb-shadow)','shadow-pop':'var(--vb-shadow-lg)',wall:'none'});
+  const t=Object.assign({},WORKSPACE_THEME,{radius:'var(--r-surface)','radius-sm':'var(--r-control)','radius-lg':'var(--r-bubble)',shadow:'var(--vb-shadow)','shadow-pop':'var(--vb-shadow-lg)',wall:'none'});
   return {name:String(seed),font:'var(--vb-font)',radius:6,tokens:t};
  }
  function applyVariant(){
