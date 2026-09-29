@@ -14,7 +14,7 @@ function renderStats(){
  row.hidden=!boxSummary||boxSummary.state!=='running';
  const current=viewerStats[selectedWorkspaceView]||{state:'connecting'};
  const fields=[['Box',boxSummary?.state||'—'],['Provider',boxSummary?.provider||'—'],['Viewer',(selectedWorkspaceView==='desktop'?'Desktop':'TMUX')+' · '+current.state],['Desktop ping',viewerStats.desktop.ping==null?'—':viewerStats.desktop.ping+' ms'],['Controller',controllerPing==null?'—':controllerPing+' ms']];
- row.replaceChildren(...fields.map(([label,value])=>{const item=document.createElement('span');item.textContent=label+': '+value;if(label==='Desktop ping')item.title='Round trip to the box over the live VNC connection. Includes transport and server response time.';if(label==='Controller')item.title='HTTP round trip to the controller; this does not measure the worker.';return item}));
+ row.replaceChildren(...fields.map(([label,value])=>{const item=document.createElement('span');if(label==='Box'){const dot=document.createElement('i');dot.className='stat-dot';dot.dataset.state=String(value);item.append(dot)}const l=document.createElement('small');l.textContent=label;const v=document.createElement('b');v.textContent=': '+value;if(value==='—'||value==null)v.className='muted';item.append(l,v);if(label==='Desktop ping')item.title='Round trip to the box over the live VNC connection. Includes transport and server response time.';if(label==='Controller')item.title='HTTP round trip to the controller; this does not measure the worker.';return item}));
  const chips=$('#viewer-chips');
  if(chips){
   chips.hidden=row.hidden;
