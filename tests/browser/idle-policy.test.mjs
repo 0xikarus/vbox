@@ -33,7 +33,8 @@ if(screenshotDir)await mkdir(screenshotDir,{recursive:true});
 async function openDetails(page){
  await page.goto(base+'/chat#box=builder');
  await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
- await page.evaluate(()=>document.querySelector('#chat-info').click());
+ await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
+ await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
  await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-switch input:not(:disabled)'));
 }
 try{

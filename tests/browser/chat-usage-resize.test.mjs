@@ -50,7 +50,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.waitForFunction(()=>!document.querySelector('#usage-toggle').hidden&&document.querySelector('#usage-list').textContent.includes('claude · work'));
   assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
   assert.match(await page.$eval('#usage-toggle',element=>element.title),/all saved profiles/);
-  await page.click('#usage-toggle');
+  await page.click('#chat-menu');await page.click('#usage-toggle');
   await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% remaining'));
   const text=await page.$eval('#usage-list',element=>element.textContent);
   assert.match(text,/10% remaining/);
@@ -84,7 +84,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="builder"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('10% left'));
-  await page.click('#usage-toggle');
+  await page.click('#chat-menu');await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/Profile usage limits/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
   await page.click('#usage-refresh');
@@ -149,7 +149,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'new box profile list fits mobile width');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/create-profiles-mobile.png'});
   await page.click('#new-box-close');
-  await page.click('#usage-toggle');
+  await page.click('#chat-menu');await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
   await page.$eval('#usage-modal .usage-card',card=>{card.scrollTop=card.scrollHeight});

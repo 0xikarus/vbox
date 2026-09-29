@@ -38,6 +38,7 @@ test('chat details edits one box creation limit without changing its other permi
  try{
   const page=await browser.newPage();await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');await page.click('#chat-info');
+  await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='2 total');
   await page.$eval('#inspect-create-limit input',input=>{input.value='5';input.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.click('#inspect-create-limit .idle-policy-controls button');

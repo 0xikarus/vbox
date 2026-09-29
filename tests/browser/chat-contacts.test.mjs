@@ -112,7 +112,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-app').hidden);
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
-  await p.click('#usage-toggle');
+  await p.click('#chat-menu');await p.click('#usage-toggle');
   await p.waitForFunction(()=>document.querySelector('#usage-list').textContent.includes('claude · personal'));
   await p.click('#usage-refresh');
   await p.waitForFunction(()=>document.querySelector('#usage-status').textContent==='Usage updated.');

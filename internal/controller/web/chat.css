@@ -1,5 +1,17 @@
 /* vmbox agent chats: mobile-first shell with a stable Quiet workspace palette. */
 html{height:100%;-webkit-text-size-adjust:100%}
+/* Base fallbacks for the variant token layer. The Studio variation sheet
+   overrides these; without it the shell keeps the original Quiet palette. */
+:root{
+  --vb-bg:#111923;--vb-bg-soft:#18212d;--vb-surface:#1a2230;--vb-surface-2:#202e3d;
+  --vb-ink:#eaf0f8;--vb-ink-soft:#91a0b3;--vb-ink-faint:#64748b;
+  --vb-line:#2b3848;--vb-line-strong:#3a4a5e;--vb-line-faint:#223043;
+  --vb-accent:#8fb8f5;--vb-accent-text:#aaceff;--vb-accent-ink:#102136;--vb-accent-soft:#263749;
+  --vb-pop:#b691e6;--vb-bubble-out:#294b65;--vb-bubble-out-ink:#eaf0f8;--vb-bubble-in:#1b2938;
+  --vb-danger:#ec727c;--vb-danger-text:#ffadb5;--vb-warn:#e3b66d;--vb-warn-text:#f2cf8e;--vb-ok:#69d3a4;--vb-ok-text:#8ee5ba;
+  --vb-shadow:0 5px 18px #08121d44;--vb-shadow-md:0 6px 20px #08121d44;--vb-shadow-lg:0 22px 70px #06101bbb;
+  --vb-elevated:#1a2230;--vb-panel:#18212d;--vb-font:system-ui,sans-serif;
+}
 body{max-width:none;margin:0;padding:0;height:100%;
   background:var(--bg);color:var(--ink);
   font:16px/1.5 var(--font,system-ui,sans-serif);

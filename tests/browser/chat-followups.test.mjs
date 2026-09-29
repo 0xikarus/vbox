@@ -64,7 +64,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   assert.equal(await p.$('#chat-companion'),null,'conversation header mascot removed');
 
   // add-box lives in the list header and never overlaps the composer's send
-  assert.equal(await p.$eval('#new-box',el=>!!el.closest('#chat-list-head')),true);
+  assert.equal(await p.$eval('#new-box',el=>!!el.closest('#chat-filter-row')),true);
   const overlap=await p.evaluate(()=>{const a=document.querySelector('#new-box').getBoundingClientRect(),b=document.querySelector('#send').getBoundingClientRect();return !(a.right<b.left||a.left>b.right||a.bottom<b.top||a.top>b.bottom)});
   assert.equal(overlap,false,'the add-box button must not overlap send');
 

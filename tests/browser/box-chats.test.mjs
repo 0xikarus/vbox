@@ -149,7 +149,7 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   const desktop=await browser.newPage();await desktop.setViewport({width:1200,height:800});
   await desktop.goto(base+'/chat#box='+a);
   await desktop.waitForSelector('[data-pair-key]');
-  assert.equal(await desktop.$('.chat-pin'),null,'rows do not show a permanent pin control');
+  assert.equal(await desktop.$('#chat-entries .chat-pin'),null,'rows do not show a permanent pin control');
   await desktop.click('[data-box-id="'+b+'"]',{button:'right'});
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Pin chat');
@@ -162,7 +162,7 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   assert.equal(await desktop.$eval('#chat-entries .conversation-divider',item=>item.getAttribute('role')),'separator');
   await desktop.click('[data-pair-key]',{button:'right'});
   assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
-  await desktop.click('#chat-list-head h1');
+  await desktop.click('#chat-filter-row');
   await desktop.waitForFunction(()=>document.querySelector('#row-menu').hidden);
   await desktop.screenshot({path:'/tmp/vmbox-chat-pins-desktop.png'});
   await desktop.type('#chat-filter','Reviewer');
