@@ -1313,7 +1313,7 @@
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
-  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>2){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
+  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>1){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
   if(mine&&!readOnly&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
@@ -1333,9 +1333,8 @@
   copy.onclick=async()=>{closeAllMsgActions();try{await navigator.clipboard.writeText(message.question?message.question.text:message.text);toast('Message copied.')}catch{toast('Copy is unavailable here.')}};
   const forward=document.createElement('button');forward.type='button';forward.append(lucide('forward'),Object.assign(document.createElement('span'),{textContent:'Forward…'}));
   forward.onclick=()=>{closeAllMsgActions();openForwardMenu(toggle,message)};
-  const reply=document.createElement('button');reply.type='button';reply.append(lucide('reply'),Object.assign(document.createElement('span'),{textContent:'Reply in thread'}));reply.onclick=async()=>{closeAllMsgActions();await openThread(message.threadId||message.id);$('#thread-composer textarea').focus()};
-  const viewThread=document.createElement('button');viewThread.type='button';viewThread.textContent='View thread';viewThread.onclick=()=>{closeAllMsgActions();void openThread(message.threadId||message.id)};
-  menu.append(reply,copy,forward,viewThread);
+  const reply=document.createElement('button');reply.type='button';reply.append(lucide('reply'),Object.assign(document.createElement('span'),{textContent:'Reply'}));reply.onclick=()=>{closeAllMsgActions();setReply(message)};
+  menu.append(reply,copy,forward);
   if(mine&&message.state==='ambiguous'){
    const inspect=document.createElement('button');inspect.type='button';inspect.append(lucide('help'),Object.assign(document.createElement('span'),{textContent:'Check delivery in TMUX'}));
    inspect.onclick=()=>{closeAllMsgActions();void openTakeover('tmux',box.id)};
@@ -1949,7 +1948,7 @@
    statusEl.textContent=result?.message?.state==='silent'?'Note saved without waking the agent.':'';
    if(showPending&&result?.message?.state!=='silent')await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(performance.now()-pendingAt))));
    pendingSends.delete(boxID);
-   if(selected===boxID){await refreshMessages(true);if(replyTarget)await openThread(replyTarget.threadId||replyTarget.id)}
+   if(selected===boxID)await refreshMessages(true);
    else{summarize(boxID);renderRows()}
    settled=true;
   }catch(e){
