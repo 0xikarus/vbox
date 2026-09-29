@@ -953,15 +953,6 @@
   if(last&&new Date(last).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0)){seenPairs[pairKey(pair)]=last;saveSeenPairs()}
  }
  const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
- let chatType=(()=>{try{const saved=sessionStorage.getItem('vmboxChatType');return ['box','pair','all'].includes(saved)?saved:'box'}catch{return 'box'}})();
- function setChatType(type){
-  if(!['box','pair','all'].includes(type))return;
-  chatType=type;
-  try{sessionStorage.setItem('vmboxChatType',type)}catch{}
-  $('#chat-type-tabs').querySelectorAll('button').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.chatType===type)));
-  renderRows();
- }
- $('#chat-type-tabs').querySelectorAll('button').forEach(button=>button.onclick=()=>setChatType(button.dataset.chatType));
  const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
  const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Other chats'));
  const groupNodes=new Map();
@@ -1010,14 +1001,8 @@
  }
  function renderRows(){
   const filter=filterEl.value.trim().toLowerCase();
-  const boxUnread=[...boxes.values()].reduce((sum,box)=>sum+(box.unread||0),0);
-  const pairUnread=owner?[...pairs.values()].filter(pairHasUnread).length:0;
-  for(const button of $('#chat-type-tabs').querySelectorAll('button')){
-   const count=button.dataset.chatType==='box'?boxUnread:button.dataset.chatType==='pair'?pairUnread:boxUnread+pairUnread;
-   const badge=button.querySelector('.chat-type-unread');badge.hidden=!count;badge.textContent=count>99?'99+':String(count);
-  }
   const matchesGroup=key=>groupForChat(key)?.name.toLowerCase().includes(filter);
-  const list=chatType==='pair'?[]:[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter)||matchesGroup(pinKey('box',b.id)));
+  const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter)||matchesGroup(pinKey('box',b.id)));
   // Keep the list stable: activity must not reshuffle rows under the pointer.
   list.sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id));
   for(const box of list){
@@ -1055,7 +1040,7 @@
    const note=row.querySelector('.unread-note');note.hidden=!box.unread;note.textContent=box.unread===1?'New message':'New messages';
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
-  const pairList=owner&&chatType!=='box'?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)||matchesGroup(pinKey('pair',pairKey(pair)))):[];
+  const pairList=owner?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)||matchesGroup(pinKey('pair',pairKey(pair)))):[];
   pairList.sort((a,b)=>a.boxAName.localeCompare(b.boxAName)||a.boxBName.localeCompare(b.boxBName));
   for(const pair of pairList){
    const key=pairKey(pair);let row=pairRows.get(key);
@@ -1093,17 +1078,15 @@
    if(filter&&!members.length&&!memberPairs.length&&!group.name.toLowerCase().includes(filter))continue;
    const groupBoxes=[...boxes.values()].filter(box=>chatGroupMembers.get(pinKey('box',box.id))===group.id);
    const groupPairs=owner?[...pairs.values()].filter(pair=>chatGroupMembers.get(pinKey('pair',pairKey(pair)))===group.id):[];
-   if(chatType!=='all'&&(chatType==='box'?groupBoxes:groupPairs).length===0&&groupBoxes.length+groupPairs.length>0)continue;
-   const visibleBoxes=chatType==='pair'?[]:groupBoxes,visiblePairs=chatType==='box'?[]:groupPairs;
-   const unread=visibleBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+visiblePairs.filter(pairHasUnread).length;
-   desired.push(groupHeader(group,visibleBoxes.length+visiblePairs.length,unread));
+   const unread=groupBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+groupPairs.filter(pairHasUnread).length;
+   desired.push(groupHeader(group,groupBoxes.length+groupPairs.length,unread));
    if(!group.collapsed||filter)desired.push(...members,...memberPairs);
   }
   if((pinnedBoxes.length||pinnedPairs.length||chatGroups.length)&&(otherBoxes.length||otherPairs.length))desired.push(unpinnedDivider);
   desired.push(...otherBoxes);
-  if(otherPairs.length){if(chatType==='all')desired.push(pairGroup);desired.push(...otherPairs)}
+  if(otherPairs.length)desired.push(pairGroup,...otherPairs);
   const empty=$('#chat-list-empty');empty.hidden=desired.length>0;
-  empty.textContent=filter?'No matching conversations.':chatType==='pair'?'No box conversations yet.':'No conversations yet. Create a box with the + button above.';
+  empty.textContent=filter?'No matching conversations.':'No conversations yet. Create a box with the + button above.';
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
  }
 
@@ -1580,7 +1563,7 @@
  async function openPair(key){
   const pair=pairs.get(key);if(!pair)return;
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
-  selected='';selectedPair=key;if(chatType==='box')setChatType('pair');selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
+  selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   // Box-to-box chats are read-only activity logs: opening one starts at its
@@ -1645,7 +1628,7 @@
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
-  if(selected!==id)cancelReply();selected=id;if(chatType==='pair')setChatType('box');lastSignature='';hideComposerPicker();
+  if(selected!==id)cancelReply();selected=id;lastSignature='';hideComposerPicker();
   selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
@@ -2792,9 +2775,6 @@
  async function enter(initial=false){
   try{
    const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');
-   $('#chat-type-tabs [data-chat-type="pair"]').hidden=!owner;$('#chat-type-tabs [data-chat-type="all"]').hidden=!owner;
-   if(!owner&&chatType!=='box')setChatType('box');
-   else setChatType(chatType);
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
    $('#usage-toggle').hidden=!owner;
    $('#presets-toggle').hidden=!owner;
