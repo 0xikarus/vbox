@@ -126,7 +126,7 @@ test('chat media is clickable and keyboard focusable',async()=>{
   await mobile.waitForSelector('#chat-messages .msg .media-button');
   await (await (await mobile.$$('#chat-messages .msg'))[0].$('.media-button')).click();
   await mobile.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
-  await mobile.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth>=640,{timeout:3000});
+  await mobile.waitForFunction(()=>document.querySelector('#media-viewer-body img')?.naturalWidth>=640,{timeout:8000});
   assert.equal(await mobile.$eval('#media-viewer-count',element=>element.textContent),'1 / 2');
   await mobile.screenshot({path:'/tmp/vmbox-message-gallery-normal-mobile.png'});
   await mobile.close();

@@ -96,6 +96,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-entries [data-box-id="shell"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Terminal');
   assert.equal(await page.$eval('#chat-usage',element=>element.hidden),true,'shell chat has no profile usage');
+  await page.click('#chat-type-tabs [data-chat-type="all"]');
   await page.click('#chat-entries [data-pair-key] .chat-meta');
   assert.equal(await page.$eval('#chat-usage',element=>element.hidden),true,'direct box conversation has no single profile');
   delayWriterProfile=true;

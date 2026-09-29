@@ -49,6 +49,7 @@
    <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
   <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"><button id="new-chat-group" type="button" title="New chat group">+ Group</button></div>
+  <div id="chat-type-tabs" role="group" aria-label="Conversation filter"><button type="button" data-chat-type="box" aria-pressed="true">Chats <span class="chat-type-unread" hidden></span></button><button type="button" data-chat-type="pair" aria-pressed="false">Box conversations <span class="chat-type-unread" hidden></span></button><button type="button" data-chat-type="all" aria-pressed="false">All <span class="chat-type-unread" hidden></span></button></div>
   <ul id="chat-entries"></ul>
   <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
  </aside>
@@ -246,13 +247,12 @@
  <div class="sheet-backdrop" data-close="box-instructions-modal"></div>
  <section class="sheet-card" role="dialog" aria-modal="true">
   <header><strong id="box-instructions-title">Instructions</strong><span class="spacer"></span><button type="button" data-close="box-instructions-modal" aria-label="Close">×</button></header>
-  <label>Box <select id="box-instructions-box"></select></label>
   <p id="box-instructions-current" class="hint"></p>
   <label>Preset <select id="box-instructions-preset"></select></label>
   <label>Markdown <textarea id="box-instructions-markdown" rows="6" maxlength="65536" spellcheck="false"></textarea></label>
   <div id="box-instructions-preview" class="md-preview"></div>
-  <details open><summary>Effective AGENTS.md / CLAUDE.md</summary><pre id="box-instructions-effective" class="instruction-effective"></pre></details>
-  <div class="instruction-actions"><button type="button" id="box-instructions-apply" class="primary">Apply instructions</button><button type="button" id="box-instructions-reset">Reset to vmbox defaults</button></div>
+  <details><summary>View effective AGENTS.md / CLAUDE.md</summary><pre id="box-instructions-effective" class="instruction-effective"></pre></details>
+  <button type="button" id="box-instructions-apply" class="primary">Apply instructions</button>
   <p id="box-instructions-status" role="status"></p>
  </section></div>
 
@@ -374,7 +374,6 @@
    <a href="/grid" data-owner-nav>Grid</a>
    <button id="roles-toggle" type="button" hidden>Agent permissions</button>
    <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
-   <button id="agents-file-toggle" type="button">AGENTS.md</button>
    <button id="commands-toggle" type="button" hidden>Commands</button>
    <button id="ai-settings-toggle" type="button" hidden>AI writing helper</button>
    <button id="install-app" type="button" hidden>Install Android app</button>
@@ -417,9 +416,24 @@
   <button id="media-viewer-next" type="button" aria-label="Next attachment">›</button>
   <div id="media-viewer-body"></div>
   <span id="media-viewer-count" aria-hidden="true"></span>
+  <button id="media-annotate" type="button" hidden>Annotate and reply</button>
   <a id="media-viewer-open" href="#" target="_blank" rel="noopener noreferrer" hidden>Open original in a new tab</a>
  </section>
 </div>
+
+<dialog id="image-annotation" aria-labelledby="image-annotation-title">
+ <div class="image-annotation-head"><h2 id="image-annotation-title">Annotate image</h2><button id="image-annotation-close" type="button" aria-label="Close annotation editor">×</button></div>
+ <div class="image-annotation-tools" role="toolbar" aria-label="Drawing tools">
+  <button type="button" data-annotation-color="#f44336" aria-label="Red pen" aria-pressed="true" title="Red pen"><span style="background:#f44336"></span></button>
+  <button type="button" data-annotation-color="#ffdf4f" aria-label="Yellow pen" aria-pressed="false" title="Yellow pen"><span style="background:#ffdf4f"></span></button>
+  <button type="button" data-annotation-color="#40d9ff" aria-label="Blue pen" aria-pressed="false" title="Blue pen"><span style="background:#40d9ff"></span></button>
+  <label>Pen size <select id="image-annotation-size"><option value="1">Fine</option><option value="2" selected>Medium</option><option value="4">Thick</option></select></label>
+  <button id="image-annotation-undo" type="button" disabled>Undo</button><button id="image-annotation-clear" type="button" disabled>Clear marks</button>
+ </div>
+ <div class="image-annotation-stage"><canvas id="image-annotation-canvas" aria-label="Image annotation canvas; draw with a mouse, pen, or finger"></canvas></div>
+ <label class="image-annotation-note">What should change? <textarea id="image-annotation-text" rows="2" placeholder="Describe what the marks refer to…"></textarea></label>
+ <div class="image-annotation-footer"><span id="image-annotation-status" role="status"></span><button id="image-annotation-add" type="button" class="primary">Add to reply</button></div>
+</dialog>
 
 </div>
 <script src="/markdown.js" defer></script>

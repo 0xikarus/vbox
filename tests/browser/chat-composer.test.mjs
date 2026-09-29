@@ -138,8 +138,9 @@ test('thread sidebar fits a phone without a resize handle',async()=>{
   await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);
   await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.includes('Reply in thread')).click());
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden);
+  await p.waitForFunction(()=>{const rect=document.querySelector('#thread-panel').getBoundingClientRect();return Math.abs(rect.left)<1&&Math.abs(rect.right-390)<1});
   const layout=await p.evaluate(()=>({panel:document.querySelector('#thread-panel').getBoundingClientRect().toJSON(),handle:getComputedStyle(document.querySelector('#thread-resizer')).display}));
-  assert.ok(Math.abs(layout.panel.left)<1&&Math.abs(layout.panel.right-390)<1,'the thread sidebar fills the phone viewport');
+  assert.ok(Math.abs(layout.panel.left)<1&&Math.abs(layout.panel.right-390)<1,'the thread sidebar fills the phone viewport: '+JSON.stringify(layout.panel));
   assert.equal(layout.handle,'none','the desktop resize handle is hidden on phones');
   await p.evaluate(()=>document.activeElement.blur());
   await p.screenshot({path:'/tmp/vmbox-chat-thread-mobile.png'});await p.close();
