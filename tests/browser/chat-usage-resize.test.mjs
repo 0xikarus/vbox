@@ -74,6 +74,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('80% left'));
+  assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg path[d="M12 18h6"]'),text:element.textContent.trim()})),{next:'chat-usage',label:'Open desktop and TMUX controls',icon:true,text:''});
   assert.match(await page.$eval('#chat-usage',element=>element.getAttribute('aria-label')),/claude personal usage: 80% remaining/);
   assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage','navbar opens all profiles without a percentage');
   await page.click('#chat-usage');
@@ -130,6 +131,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name').textContent==='Writer'&&document.querySelector('#chat-usage').textContent.includes('80% left'));
   assert.equal(await page.$eval('#chat-usage',element=>element.hidden),false,'the selected chat usage is visible on a phone');
+  assert.notEqual(await page.$eval('#chat-control',element=>getComputedStyle(element).display),'none','computer icon stays available before usage on a phone');
   assert.equal(await page.$eval('#chat-header-state',element=>element.innerText.trim()),'running','mobile keeps the box state readable');
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
