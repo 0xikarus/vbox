@@ -1964,3 +1964,59 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-loading p{color:var(--vb-ink-faint);font-size:.78rem}
 #chat-messages:empty::before{content:'';display:block;height:5.5rem;border-radius:var(--r-surface);background:linear-gradient(90deg,var(--vb-bg-soft),var(--vb-surface-2),var(--vb-bg-soft));background-size:200% 100%;animation:vb-skel 1.4s linear infinite}
 @keyframes vb-skel{from{background-position:200% 0}to{background-position:-200% 0}}
+
+/* ══ WhatsApp-style bubble shape, tails, gaps, list rows, typing ═══════ */
+/* list rows: square, full-width band, no coral accent */
+#chat-entries{padding:0}
+#chat-entries li{border-radius:0!important;margin:0!important;padding:.62rem .8rem}
+#chat-entries li:hover{background:color-mix(in srgb,var(--vb-ink) 5%,transparent)!important}
+#chat-entries li.active{background:color-mix(in srgb,var(--vb-ink) 9%,transparent)!important;box-shadow:none!important}
+#chat-entries li.active:hover{background:color-mix(in srgb,var(--vb-ink) 12%,transparent)!important}
+
+/* gaps: 4px within a group, 12px between senders */
+#chat-messages{gap:4px}
+#chat-messages .msg{position:relative;border-radius:8px;padding:7px 11px;font-size:15.5px;line-height:1.36}
+#chat-messages .msg.group-start{margin-top:12px}
+#chat-messages .msg.tail{border-bottom-left-radius:8px;border-bottom-right-radius:8px}
+#chat-messages .msg.agent:not(.group-start){border-top-left-radius:8px}
+#chat-messages .msg.user:not(.group-start){border-top-right-radius:8px}
+
+/* WhatsApp tail: first bubble of each group, square corner + curved notch */
+#chat-messages .msg.agent{--tail-color:var(--vb-bubble-in)}
+#chat-messages .msg.user{--tail-color:var(--vb-bubble-out)}
+#chat-messages .msg.group-start.agent{border-top-left-radius:0}
+#chat-messages .msg.group-start.user{border-top-right-radius:0}
+#chat-messages .msg.group-start.agent::before,
+#chat-messages .msg.group-start.user::before{content:'';position:absolute;top:0;width:8px;height:13px;background:var(--tail-color);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath fill='white' d='M8 0H0c0 5.2 1.7 8.4 8 13V0z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath fill='white' d='M8 0H0c0 5.2 1.7 8.4 8 13V0z'/%3E%3C/svg%3E") center/contain no-repeat}
+#chat-messages .msg.group-start.agent::before{left:-8px}
+#chat-messages .msg.group-start.user::before{right:-8px;transform:scaleX(-1)}
+
+/* time + ticks inside the bubble, bottom-right, reserved by an inline spacer */
+#chat-messages .msg .meta{position:absolute!important;right:9px;bottom:5px;float:none!important;display:inline-flex!important;align-items:center;gap:.25rem;margin:0!important;width:auto!important;font-size:11px;line-height:1;justify-content:flex-end}
+#chat-messages .msg:not(.tail) .meta{display:none!important}
+.meta-spacer{display:inline-block;width:4.9rem;height:1px;vertical-align:baseline}
+#chat-messages .msg.user .meta-spacer{width:4.9rem}
+
+/* typing: tiny incoming bubble with the avatar in the gutter */
+#chat-messages .msg.processing{margin-left:28px;min-height:34px;height:34px;padding:0 14px;border-radius:8px;border-top-left-radius:0;display:flex;align-items:center;gap:.32rem;background:var(--vb-bubble-in)}
+#chat-messages .msg.processing .processing-mascot{display:none}
+#chat-messages .msg.processing .msg-avatar{left:-28px;bottom:0;width:24px;height:24px}
+#chat-messages .msg.processing::before{content:'';position:absolute;top:0;left:-8px;width:8px;height:13px;background:var(--vb-bubble-in);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath fill='white' d='M8 0H0c0 5.2 1.7 8.4 8 13V0z'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 13'%3E%3Cpath fill='white' d='M8 0H0c0 5.2 1.7 8.4 8 13V0z'/%3E%3C/svg%3E") center/contain no-repeat}
+#chat-messages .msg.processing .typing-dots span{width:.5rem;height:.5rem}
+#chat-messages .msg .meta .ticks svg{width:13px;height:13px}
+@media(min-width:601px){
+ #chat-messages .msg{padding:7px 12px}
+}
+
+#chat-messages .msg.tail,#chat-messages .msg.tail.agent,#chat-messages .msg.tail.user{border-bottom-left-radius:8px!important;border-bottom-right-radius:8px!important}
+#chat-messages .msg.agent:not(.group-start){border-top-left-radius:8px!important}
+#chat-messages .msg.user:not(.group-start){border-top-right-radius:8px!important}
+#chat-messages .msg.agent.group-start{border-top-left-radius:0!important}
+#chat-messages .msg.user.group-start{border-top-right-radius:0!important}
+
+.meta-spacer{width:6rem!important}
+#chat-messages .msg .meta{right:10px!important;bottom:5px}
+
+/* meta drops to its own line when it cannot share the last line: never overlaps */
+.meta-spacer{display:none!important}
+#chat-messages .msg .meta{position:static!important;display:flex!important;justify-content:flex-end!important;width:100%!important;margin:.18rem 0 0!important;float:none!important;right:auto!important;bottom:auto!important}

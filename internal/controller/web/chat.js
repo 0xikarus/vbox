@@ -1049,6 +1049,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   const text=document.createElement('div');text.className='text';
   const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
   renderRichText(text,body);
+  {const spacer=document.createElement('span');spacer.className='meta-spacer';const last=text.lastElementChild;if(last&&/^(P|DIV|LI|BLOCKQUOTE|H[1-6]|SPAN)$/.test(last.tagName))last.append(spacer);else if(last&&last.tagName==='PRE')text.append(spacer);else text.append(spacer)}
   row.append(text);
   const gallery=messageMediaGallery(message);
   for(const [index,image] of (message.images||[]).entries()){
@@ -1208,11 +1209,11 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   }
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
-   t.style.setProperty('--mascot',mascotColor(box.id));
-   const mini=document.createElement('span');mini.className='processing-mascot';mini.innerHTML=mascotMiniSVG(box.id);
+   t.style.setProperty('--mascot',mascotColor(box.id));t.setAttribute('aria-label',box.name+' is working');
+   const mini=document.createElement('span');mini.className='msg-avatar processing-avatar';mini.setAttribute('aria-hidden','true');mini.innerHTML=mascotMiniSVG(box.id);
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
-   const label=document.createElement('span');label.className='typing-label';label.textContent='agent is processing…';
+   const label=document.createElement('span');label.className='typing-label sr-only';label.textContent='agent is processing…';
    const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover or tap to preview; open it for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
    tv.append(tvIcon());
    tv.onmouseenter=()=>{if(finePointer())showTvPreview(tv,box)};
@@ -1220,7 +1221,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
    tv.onfocus=()=>{if(finePointer())showTvPreview(tv,box)};
    tv.onblur=()=>{if(finePointer())scheduleHideTvPreview()};
    tv.onclick=()=>{if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(tv,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
-   t.append(mini,dots,label,tv);messagesEl.append(t);
+   t.prepend(mini);t.append(dots,label,tv);messagesEl.append(t);
   }
   if(follow){
    scrollMessagesToBottom();
