@@ -1327,6 +1327,7 @@
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
   if(hasNewReply&&!stickToBottom)newMessagesBtn.hidden=false;
   renderRows();renderInspect();
+  if(owner&&inspectOpen&&(force||hasNewReply))void loadInspectAttachmentStorage(box);
   if(owner&&box.state==='running'&&['codex','claude','opencode'].includes(box.defaultAgent))void refreshAgentResume(box,!!force);
  }
  function renderPairMessages(pair){
@@ -1595,6 +1596,7 @@
     drafts.push({id:result.id,number:drafts.length+1,url:URL.createObjectURL(file),kind:isVideo?'video':'image',mediaType:file.type});
     attachmentDrafts.set(boxID,drafts);
     if(selected===boxID)renderDrafts();
+    if(owner&&inspectOpen&&selected===boxID)void loadInspectAttachmentStorage(boxes.get(boxID));
    }catch(e){statusEl.textContent=e.message}
   }
   fileInput.value='';
@@ -1759,6 +1761,15 @@
  let inspectProfilesFor='',inspectProfileCache=null;
  let inspectWorkerKey='',inspectWorker=null;
  let inspectInstructionsFor='',inspectInstructions=null,inspectInstructionsRequest=0;
+ let inspectAttachmentFor='',inspectAttachmentCache=null,inspectAttachmentRequest=0;
+ const storageSize=bytes=>bytes>=1024*1024*1024?(bytes/1073741824).toFixed(2)+' GiB':bytes>=1024*1024?(bytes/1048576).toFixed(1)+' MiB':bytes>=1024?(bytes/1024).toFixed(1)+' KiB':bytes+' B';
+ async function loadInspectAttachmentStorage(box){
+  const request=++inspectAttachmentRequest;inspectAttachmentFor=box.id;inspectAttachmentCache=null;
+  try{
+   const value=await api(boxPath(box.id)+'/attachment-storage');
+   if(inspectOpen&&selected===box.id&&inspectAttachmentFor===box.id&&request===inspectAttachmentRequest){inspectAttachmentCache=value;renderInspect()}
+  }catch(e){if(inspectOpen&&selected===box.id&&inspectAttachmentFor===box.id&&request===inspectAttachmentRequest){inspectAttachmentCache={error:e.message};renderInspect()}}
+ }
  async function loadInspectInstructions(box){
   const id=box.id,request=++inspectInstructionsRequest;
   inspectInstructionsFor=id;inspectInstructions=null;
@@ -1841,6 +1852,16 @@
    ['Last instructions sync',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null)],
    ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
   ]);
+  const attachmentRoot=$('#inspect-attachment-storage');attachmentRoot.hidden=!owner;
+  if(owner){
+   if(inspectAttachmentFor!==box.id)void loadInspectAttachmentStorage(box);
+   const usage=inspectAttachmentCache;
+   fillRows($('#inspect-attachment-rows'),usage?.error?[['Storage',usage.error,'alert']]:[
+    ['This box',usage?storageSize(usage.boxBytes)+' · '+usage.boxCount+' files':'Loading…'],
+    ['Account',usage?storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes):'Loading…'],
+   ]);
+   $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
+  }
   const quick=$('#inspect-quick-actions');quick.replaceChildren();
   const link=document.createElement('a');
   link.href='/boxes/'+encodeURIComponent(box.id);link.textContent='Open workspace';link.target='_blank';link.rel='noopener';
@@ -1897,9 +1918,20 @@
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#inspect-close').onclick=closeInspect;
  $('#inspect-backdrop').onclick=closeInspect;
+ $('#inspect-clear-attachments').onclick=async()=>{
+  const box=boxes.get(selected);if(!box)return;
+  if(!confirm('Permanently remove attachments from delivered chat messages in "'+box.name+'"? Message text stays available. Attachments still used by another box remain there.'))return;
+  const button=$('#inspect-clear-attachments'),storageStatus=$('#inspect-attachment-status');button.disabled=true;storageStatus.textContent='Clearing attachments…';
+  try{
+   const result=await api(boxPath(box.id)+'/attachment-storage','DELETE',{}, {confirmation:box.name});
+   for(const message of box.messages||[])if(message.state==='delivered')message.images=[];
+   if(selected===box.id)await refreshMessages(true);
+   if(inspectOpen&&selected===box.id){await loadInspectAttachmentStorage(box);storageStatus.textContent='Removed '+result.removedReferences+' attachment references; freed '+storageSize(result.freedBytes)+'.'}
+  }catch(e){storageStatus.textContent=e.message;button.disabled=false}
+ };
  // Collapsible details sections, remembered per browser.
  const foldKey='vmbox.inspectFold';
  let foldState={};try{foldState=JSON.parse(localStorage.getItem(foldKey)||'{}')}catch{}
