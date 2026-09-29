@@ -1602,7 +1602,7 @@
   try{
    await api(boxPath(box.id)+'/agent-resume','POST',{}, {choice,sessionId:candidate.sessionId,savedAt:candidate.savedAt});
    box.resumeCandidate=null;resumeChecks.delete(box.id);
-   if(selected===box.id){renderMessages(box);updateSendState()}
+   if(selected===box.id){renderMessages(box);updateSendState();void refreshMessages(true).catch(e=>{statusEl.textContent=e.message})}
    toast(choice==='restore'?'Saved '+agentLabel(box)+' conversation restored.':'Continuing with a fresh '+agentLabel(box)+' conversation.');
   }catch(e){statusEl.textContent=e.message;for(const button of actions.querySelectorAll('button'))button.disabled=false}
  }
