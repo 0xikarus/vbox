@@ -114,7 +114,7 @@
   }
   transition(region,to,event,guard=()=>true){if(!guard())return false;const from=this.chart[region];if(from!==to){this.chart[region]=to;this.lastTransition={region,from,to,event,at:performance.now()}}return true}
   track(control){this.controls.add(control);control.finished?.finally(()=>this.controls.delete(control)).catch(()=>{});return control}
-  stopControls(){for(const control of this.controls)control.stop?.();this.controls.clear();this.sparklePose=null;if(!this.dead&&this.particles&&Number(this.particles.getAttribute('opacity'))>.001)this.fade(this.particles,0,MOTION.exit.duration)}
+  stopControls(){if(this.symbolPose)this.paintSymbolPose(this.symbolPose);if(this.cometPose)this.paintCometPose(this.cometPose);for(const control of this.controls)control.stop?.();this.controls.clear();this.symbolPose=null;this.cometPose=null;this.stemAnimating=false;this.sparklePose=null;if(!this.dead&&this.particles&&Number(this.particles.getAttribute('opacity'))>.001)this.fade(this.particles,0,MOTION.exit.duration)}
   clearTimers(){for(const t of this.timers)clearTimeout(t);this.timers=[];clearTimeout(this.busyTimer);this.busyTimer=null;clearTimeout(this.expressionTimer);this.expressionTimer=null;clearTimeout(this.gestureTimer);this.gestureTimer=null}
   timer(fn,ms){const t=setTimeout(fn,ms);this.timers.push(t);return t}
   setPath(d){this.currentPath=d;this.shapePath.setAttribute('d',d);this.highlight.setAttribute('d',d)}
@@ -130,6 +130,8 @@
   frame(now){
    if(this.dead||!this.visible){this.lastFrame=now;return}
    if(this.bodyPose){const p=this.bodyPose;this.body.setAttribute('transform','translate(50 52) translate(0 '+p.dy.toFixed(3)+') rotate('+p.angle.toFixed(3)+') scale('+p.sx.toFixed(4)+' '+p.sy.toFixed(4)+') translate(-50 -52)')}
+   if(this.symbolPose)this.paintSymbolPose(this.symbolPose);
+   if(this.cometPose)this.paintCometPose(this.cometPose);
    if(this.sparklePose){const p=this.sparklePose;this.particles.setAttribute('opacity',p.alpha.toFixed(3));for(let i=0;i<this.particles.children.length;i++){const node=this.particles.children[i],x=i%2?1:-1,y=i<2?-1:1;node.setAttribute('transform','translate('+(x*p.dist).toFixed(3)+' '+(y*p.dist).toFixed(3)+')')}}
    this.smearActive=!!(this.cometSmear||this.stemSmear);if(this.splitPose){const p=this.splitPose;for(const [dot,v,dir] of [[this.dotLeft,p.left,-1],[this.dotRight,p.right,1]]){const cx=50+dir*18*v,r=4*Math.max(0,v);dot.setAttribute('cx',cx.toFixed(3));dot.setAttribute('r',r.toFixed(3));const smear=v>.43&&v<.6;dot.setAttribute('transform',smear?'translate('+cx.toFixed(3)+' 52) scale(1.18 .8475) translate('+(-cx).toFixed(3)+' -52)':'');this.smearActive ||=smear}}
    const dt=this.lastFrame?Math.min(50,now-this.lastFrame)/1000:0;this.lastFrame=now;
@@ -251,6 +253,15 @@
   setColor(mood,instant=false){this.motionSegments.color++;const to=this.tint(mood),from=this.shapePath.getAttribute('fill'),apply=v=>{this.shapePath.setAttribute('fill',v);this.dotLeft.setAttribute('fill',v);this.dotRight.setAttribute('fill',v);this.bangStem.setAttribute('fill',v)};if(instant)apply(to);else this.track(animate(from,to,{duration:MOTION.eye.duration,ease:smoother,onUpdate:apply}))}
   setNoticeScale(value){this.noticeScale=value;this.notice.setAttribute('transform','translate(79 22) scale('+value.toFixed(4)+') translate(-79 -22)')}
   setStem(value){this.stemProgress=value;this.bangStem.setAttribute('d',stemPath(value));this.stemSmear=!!(this.stemAnimating&&value>.52&&value<.68);this.bangStem.setAttribute('transform',this.stemSmear?'translate(50 76) scale(.85 1.1765) translate(-50 -76)':'')}
+  paintSymbolPose(pose){if(pose.d!==this.currentPath)this.setPath(pose.d);if(pose.stem!==this.stemProgress)this.setStem(pose.stem);if(pose.angle!==this.bangAngle){this.bangAngle=pose.angle;this.setBangTransform(pose.angle)}}
+  paintCometPose(pose){
+   if(pose.d!==this.currentPath)this.setPath(pose.d);
+   const t=Math.max(0,Math.min(1,pose.travel)),arc=Math.sin(Math.PI*t),x=74*arc,y=-11*arc-2*Math.sin(2*Math.PI*t);
+   this.cometSmear=t>.17&&t<.25||t>.75&&t<.83;
+   const stretch=this.cometSmear?1.18:1;
+   this.motion.setAttribute('transform','translate('+x.toFixed(2)+' '+y.toFixed(2)+') translate(50 52) scale('+stretch.toFixed(3)+' '+(1/stretch).toFixed(3)+') translate(-50 -52)');
+   this.cometTrail.setAttribute('opacity',arc.toFixed(3));this.speedLines.setAttribute('opacity',(arc*.7).toFixed(3));this.cometTrail.setAttribute('stroke-dashoffset',(-100*t).toFixed(2))
+  }
   animateStem(to,duration=MOTION.stem.duration){this.motionSegments.symbol++;const from=this.stemProgress;const control=this.track(animate(from,to,{duration,ease:smooth,onUpdate:v=>this.setStem(v)}));this.stemControl=control;this.stemAnimating=true;return control.finished.catch(()=>{}).finally(()=>{if(this.stemControl===control){this.stemAnimating=false;this.motionSegments.symbol++}})}
   resetDecor(){this.splitPose=null;this.sparklePose=null;this.smearActive=false;this.dotLeft.removeAttribute('transform');this.dotRight.removeAttribute('transform');this.dots.setAttribute('opacity','0');this.dotLeft.setAttribute('cx','50');this.dotRight.setAttribute('cx','50');this.dotLeft.setAttribute('r','0');this.dotRight.setAttribute('r','0');this.setStem(0);if(quiet())this.particles.setAttribute('opacity','0');else if(Number(this.particles.getAttribute('opacity'))>0)this.fade(this.particles,0,.2).then(()=>{for(const node of this.particles.children)node.removeAttribute('transform')});this.notice.setAttribute('opacity','0');this.setNoticeScale(0);this.sleepScale=1;this.formAngle=0;this.bangAngle=0;this.stemProgress=0;this.faceScale=1;if(quiet())this.motion.removeAttribute('transform')}
   async leaveDecor(token){this.motionSegments.dots++;this.motionSegments.symbol++;const tasks=[];if(Number(this.dots.getAttribute('opacity'))>0){const centerFrom=this.shapePath.getBBox().width/2;this.dotCenterRadius=centerFrom;tasks.push(this.track(animate(0,1,{duration:.3,ease:smooth,onUpdate:t=>{this.dotCenterRadius=centerFrom+(5-centerFrom)*t+.55*Math.sin(Math.PI*t);this.setPath(pointsPath(circlePoints(this.dotCenterRadius)));this.dotLeft.setAttribute('cx',(50-18*(1-t)).toFixed(2));this.dotRight.setAttribute('cx',(50+18*(1-t)).toFixed(2));this.dotLeft.setAttribute('r',(4*(1-t)).toFixed(2));this.dotRight.setAttribute('r',(4*(1-t)).toFixed(2))}})).finished.catch(()=>{}));tasks.push(this.fade(this.dots,0,.3))}if(Math.abs(this.bangAngle)>.01)tasks.push(this.track(animate(this.bangAngle,0,{duration:.38,ease:'easeInOut',onUpdate:v=>{this.bangAngle=v;this.setBangTransform(v)}})).finished.catch(()=>{}));if(this.stemProgress>0)tasks.push(this.animateStem(0,.38));if(Number(this.notice.getAttribute('opacity'))>0){tasks.push(this.fade(this.notice,0,.2));tasks.push(this.track(animate(this.noticeScale,0,{duration:.2,ease:'easeInOut',onUpdate:v=>this.setNoticeScale(v)})).finished.catch(()=>{}))}if(Number(this.particles.getAttribute('opacity'))>0)tasks.push(this.fade(this.particles,0,.2));await Promise.all(tasks);if(this.dead||token!==this.token)return false;this.resetDecor();this.lookTo(0,0,.3);return true}
@@ -286,16 +297,59 @@
    if(signal==='sleeping'){this.fade(this.eyesGroup,0,.2);this.fade(this.glyphHost,0,.2);await this.morph('dot',MOTION.stem.duration);if(token!==this.token)return;const grow=this.track(animate(liveMotionScale,.58,{duration:MOTION.stem.duration,ease:smoother,onUpdate:v=>this.setSleepScale(v)}));await Promise.all([this.morphPath(this.paths.home,MOTION.stem.duration),grow.finished.catch(()=>{})]);if(token!==this.token)return;this.setEyes('sleeping',null);this.lastFrame=0;this.phase='settled';return}
    if(signal==='asking'||signal==='failed'){
     this.fade(this.eyesGroup,0,MOTION.exit.duration);this.fade(this.glyphHost,0,MOTION.exit.duration);
-    await this.morph('bangDot',MOTION.split.duration);if(token!==this.token)return;
-    await this.animateStem(1,MOTION.stem.duration);if(token!==this.token)return;
+    const pose=this.symbolPose={d:this.currentPath,stem:this.stemProgress,angle:this.bangAngle};
+    this.stemAnimating=true;this.motionSegments.body++;this.motionSegments.symbol++;
+    const build=this.track(animate([
+     [pose,{d:this.paths.bangDot},{duration:MOTION.split.duration,ease:smooth}],
+     [pose,{stem:1},{at:.26,duration:MOTION.stem.duration,ease:smooth}]
+    ]));
+    this.timer(()=>{if(this.symbolPose===pose)this.motionSegments.symbol++},260);
+    await build.finished.catch(()=>{});if(token!==this.token||this.dead)return;
+    this.paintSymbolPose(pose);this.symbolPose=null;this.stemAnimating=false;this.motionSegments.body++;this.motionSegments.symbol++;
     const swayStart=performance.now();this.bangSway=this.track(animate(0,1,{duration:2.1,repeat:Infinity,ease:'linear',onUpdate:t=>{const amplitude=Math.min(1,(performance.now()-swayStart)/400);this.bangAngle=3*amplitude*Math.sin(2*Math.PI*t);this.setBangTransform(this.bangAngle)}}));
     this.phase='settled';
-    this.timer(async()=>{if(this.dead||this.signal!==signal)return;this.bangSway?.stop?.();this.phase='turning';const straighten=this.track(animate(this.bangAngle,0,{duration:.25,ease:'easeInOut',onUpdate:v=>{this.bangAngle=v;this.setBangTransform(v)}}));await straighten.finished.catch(()=>{});if(this.dead||this.signal!==signal)return;await this.animateStem(0,.45);if(this.dead||this.signal!==signal)return;await this.morphPath(this.paths.home,.56);if(this.dead||this.signal!==signal)return;this.setEyes(signal==='failed'?'angry':'curious',signal==='failed'?'error':null);this.lastFrame=0;this.phase='settled';this.timer(()=>{if(!this.dead&&this.signal===signal)this.setEyes('idle',null)},650);this.timer(()=>{if(!this.dead&&this.signal===signal)void this.startSignal()},1900)},1400);return
+    this.timer(async()=>{
+     if(this.dead||token!==this.token||this.signal!==signal)return;
+     this.bangSway?.stop?.();this.phase='turning';
+     const back=this.symbolPose={d:this.currentPath,stem:this.stemProgress,angle:this.bangAngle};
+     this.motionSegments.body++;this.motionSegments.symbol++;
+     const retract=this.track(animate([
+      [back,{angle:0},{duration:.25,ease:smoother}],
+      [back,{stem:0},{at:.08,duration:MOTION.stem.duration,ease:smooth}],
+      [back,{d:this.paths.home},{at:.25,duration:MOTION.stem.duration,ease:smooth}]
+     ]));
+     await retract.finished.catch(()=>{});if(this.dead||token!==this.token||this.signal!==signal)return;
+     this.paintSymbolPose(back);this.symbolPose=null;this.motionSegments.body++;this.motionSegments.symbol++;
+     this.setEyes(signal==='failed'?'angry':'curious',signal==='failed'?'error':null);this.lastFrame=0;this.phase='settled';
+     this.timer(()=>{if(!this.dead&&this.signal===signal)this.setEyes('idle',null)},650);
+     this.timer(()=>{if(!this.dead&&this.signal===signal)void this.startSignal()},1900)
+    },1400);return
    }
    if(signal==='starting'){this.fade(this.eyesGroup,0,.18);this.fade(this.glyphHost,0,.18);if(!wakingFromSleep){await this.morph('dot',.25);if(token!==this.token)return}this.timer(()=>{if(!this.dead&&token===this.token)this.fade(this.particles,1,.24)},130);const grow=wakingFromSleep?this.track(animate(wakeFromScale,1,{duration:MOTION.wake.duration,ease:smoother,onUpdate:v=>this.setSleepScale(v)})).finished.catch(()=>{}):Promise.resolve();await Promise.all([this.morphPath(this.paths.home,MOTION.wake.duration),grow]);if(token!==this.token)return;this.sleepScale=1;this.motion.removeAttribute('transform');this.setEyes('tall',null);this.fade(this.particles,0,.4);this.lastFrame=0;this.phase='settled';this.timer(()=>{if(!this.dead&&this.signal==='starting')this.setEyes('idle',null)},800);return}
    const content=this.wideOnArrival&&signal==='idle';this.wideOnArrival=false;this.timer(()=>{if(!this.dead&&token===this.token)this.setEyes(signal==='unread'?'tall':content?'wide':'idle',null)},45);await this.morphPath(this.paths.home,MOTION.stem.duration);if(token!==this.token)return;if(signal==='unread'||content)this.timer(()=>{if(!this.dead&&this.signal===signal)this.setEyes('idle',null)},850);if(signal==='unread')this.track(animate(this.noticeScale,1,{duration:.28,ease:'easeOut',onUpdate:v=>this.setNoticeScale(v*(1+.12*Math.sin(Math.PI*v)))}));else this.track(animate(this.noticeScale,0,{duration:.25,ease:'easeInOut',onUpdate:v=>this.setNoticeScale(v)}));this.fade(this.notice,signal==='unread'?1:0,.25);this.lastFrame=0;this.phase='settled';
   }
-  async comet(){if(this.dead||quiet()||!this.visible||this.cometActive)return false;this.cometActive=true;this.transition('body','sending','COMET');const token=++this.token;this.stopControls();this.transitionMotion('comet');this.clearTimers();this.phase='turning';if(!await this.leaveDecor(token))return false;this.fade(this.eyesGroup,0,.18);this.fade(this.glyphHost,0,.18);await this.morph('dot',.25);if(this.dead||token!==this.token)return false;const travel=this.track(animate(0,1,{duration:MOTION.comet.duration,ease:smoother,onUpdate:t=>{const arc=Math.sin(Math.PI*t),x=74*arc,y=-11*arc-2*Math.sin(2*Math.PI*t);this.cometSmear=t>.17&&t<.25||t>.75&&t<.83;const stretch=this.cometSmear?1.18:1;this.motion.setAttribute('transform','translate('+x.toFixed(2)+' '+y.toFixed(2)+') translate(50 52) scale('+stretch.toFixed(3)+' '+(1/stretch).toFixed(3)+') translate(-50 -52)');this.cometTrail.setAttribute('opacity',arc.toFixed(3));this.speedLines.setAttribute('opacity',(arc*.7).toFixed(3));this.cometTrail.setAttribute('stroke-dashoffset',(-100*t).toFixed(2))}}));await travel.finished.catch(()=>{});if(this.dead||token!==this.token)return false;this.motion.removeAttribute('transform');this.cometSmear=false;this.cometTrail.setAttribute('opacity','0');this.speedLines.setAttribute('opacity','0');await this.morphPath(this.paths.home,MOTION.stem.duration);if(this.dead||token!==this.token)return false;this.cometActive=false;const pending=this.pendingPose;this.pendingPose=null;if(pending)this.jump(...pending);else{void this.startSignal();this.transitionMotion('pop')}return true}
+  async comet(){
+   if(this.dead||quiet()||!this.visible||this.cometActive)return false;
+   this.cometActive=true;this.transition('body','sending','COMET');
+   const token=++this.token;this.stopControls();this.transitionMotion('comet');this.clearTimers();this.phase='turning';
+   if(!await this.leaveDecor(token))return false;
+   this.fade(this.eyesGroup,0,MOTION.exit.duration);this.fade(this.glyphHost,0,MOTION.exit.duration);
+   const pose=this.cometPose={d:this.currentPath,travel:0};this.motionSegments.body++;
+   const timeline=this.track(animate([
+    [pose,{d:this.paths.dot},{duration:.25,ease:smooth}],
+    [pose,{travel:1},{at:.2,duration:MOTION.comet.duration,ease:smoother}],
+    [pose,{d:this.paths.home},{at:.58,duration:MOTION.stem.duration,ease:smooth}]
+   ]));
+   this.timer(()=>{if(this.cometPose===pose)this.motionSegments.body++},200);
+   this.timer(()=>{if(this.cometPose===pose)this.motionSegments.body++},580);
+   await timeline.finished.catch(()=>{});if(this.dead||token!==this.token)return false;
+   this.paintCometPose(pose);this.cometPose=null;this.motionSegments.body++;
+   this.motion.removeAttribute('transform');this.cometSmear=false;
+   this.cometTrail.setAttribute('opacity','0');this.speedLines.setAttribute('opacity','0');
+   this.cometActive=false;const pending=this.pendingPose;this.pendingPose=null;
+   if(pending)this.jump(...pending);else{void this.startSignal();this.transitionMotion('pop')}
+   return true
+  }
   send(evt){const next=MACHINE[this.state]?.[evt];return next?this.jump(next,MOOD_GLYPH[next]||null,null,evt):false}
   showExpression(expression){return this.jump(this.state,expression,this.signal)}
   jump(mood,expression=MOOD_GLYPH[mood]||null,signal=null,event=null){if(this.dead||!MOODS.includes(mood))return false;const next=signal||({working:'busy',waiting:'asking',happy:'unread',angry:'failed',sleeping:'sleeping',waking:'starting'}[mood]||'idle');if(this.cometActive){this.pendingPose=[mood,expression,next,event];return true}if(this.state===mood&&this.signal===next&&this.phase==='settled')return false;const old=this.signal,flowing=!quiet()&&this.phase==='settled'&&((old==='idle'&&next==='busy'&&this.busyMode==='ball')||(old==='busy'&&this.busyMode==='ball'&&next==='idle'));this.wideOnArrival=old==='busy'&&next==='idle';this.state=mood;this.expression=expression;this.signal=next;this.transition('body',next==='busy'?(this.busyMode==='dots'?'busy.dots':'busy.scan'):next==='sleeping'?'hibernated':next==='starting'?'waking':next,event||signal||mood,()=>!this.dead);this.svg.dataset.mood=mood;this.svg.dataset.signal=next;this.svg.setAttribute('aria-label',mood+' mascot');this.busyRemaining=this.busyInterval;if(flowing){this.resetBlink();this.updateFaceTransform();clearTimeout(this.busyTimer);this.busyTimer=null;this.setColor(mood);this.setEyes(this.wideOnArrival?'wide':'idle',null);if(this.wideOnArrival){this.wideOnArrival=false;this.timer(()=>{if(!this.dead&&this.signal==='idle')this.setEyes('idle',null)},850)}if(next==='busy')this.scheduleBusy()}else void this.startSignal();this.transitionMotion(next==='sleeping'?'sleeping':next==='starting'?'waking':next==='failed'?'failed':'pop');this.onMood?.(mood,this);return true}
