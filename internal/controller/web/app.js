@@ -195,7 +195,7 @@ function renderWorkerCapacity(){
  root.append(rawDetails(fleetSnapshots));
 }
 $('#capacity-pool').addEventListener('change',renderWorkerCapacity);
-function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){root.append(node('p','No notification destinations configured. Notifications are optional.'));return}
+function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){const empty=node('div');empty.className='notice-empty';empty.innerHTML='<svg class="notice-empty-mascot" viewBox="0 0 100 104" aria-hidden="true"><g fill="#ff6f59"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg>';empty.append(node('p','No notification destinations configured. Notifications are optional.'));root.append(empty);return}
  const list=node('div');list.className='notice-list';
  for(const n of values){
   const row=node('article');row.className='notice-row';row.dataset.enabled=String(!!n.enabled);

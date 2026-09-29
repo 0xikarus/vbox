@@ -15,6 +15,15 @@ function renderStats(){
  const current=viewerStats[selectedWorkspaceView]||{state:'connecting'};
  const fields=[['Box',boxSummary?.state||'—'],['Provider',boxSummary?.provider||'—'],['Viewer',(selectedWorkspaceView==='desktop'?'Desktop':'TMUX')+' · '+current.state],['Desktop ping',viewerStats.desktop.ping==null?'—':viewerStats.desktop.ping+' ms'],['Controller',controllerPing==null?'—':controllerPing+' ms']];
  row.replaceChildren(...fields.map(([label,value])=>{const item=document.createElement('span');item.textContent=label+': '+value;if(label==='Desktop ping')item.title='Round trip to the box over the live VNC connection. Includes transport and server response time.';if(label==='Controller')item.title='HTTP round trip to the controller; this does not measure the worker.';return item}));
+ const chips=$('#viewer-chips');
+ if(chips){
+  chips.hidden=row.hidden;
+  const bits=[];
+  bits.push((selectedWorkspaceView==='desktop'?'Desktop':'TMUX')+' · '+current.state);
+  if(viewerStats.desktop.ping!=null)bits.push('Live · '+viewerStats.desktop.ping+' ms');
+  if(controllerPing!=null)bits.push('Controller · '+controllerPing+' ms');
+  chips.replaceChildren(...bits.map(text=>{const chip=document.createElement('span');chip.className='viewer-chip';chip.textContent=text;return chip}));
+ }
 }
 function recordViewer(view,value){Object.assign(viewerStats[view],value);renderStats()}
 function stopStats(){statsGeneration++;clearTimeout(statsTimer);controllerPing=null;renderStats()}
@@ -405,7 +414,7 @@ if(messageForm){
    const recent=messages.slice(-5),note=document.querySelector('#agent-chat-note-text');
    if(note)note.textContent=messages.length>recent.length?('Showing the last '+recent.length+' of '+messages.length+' messages.'):'Showing all '+recent.length+' messages.';
    const chatLink=document.querySelector('#agent-chat-link');if(chatLink)chatLink.href='/chat#box='+encodeURIComponent(boxID);
-   for(const message of recent){const row=document.createElement('li');const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);for(const attachment of message.images||[]){const response=await fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(attachment.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)});if(response.ok){const imageURL=URL.createObjectURL(await response.blob()),image=document.createElement('img');messageURLs.push(imageURL);image.src=imageURL;image.alt='Image '+attachment.number+' from '+message.direction;row.append(image)}}appendQuestion(row,message);list.append(row)}
+   for(const message of recent){const row=document.createElement('li');row.className=message.direction==='user'?'bubble user':'bubble agent';const label=document.createElement('strong');label.textContent=message.direction+(message.state==='silent'?' · silent':'')+': ';const text=document.createElement('span');text.textContent=message.text;row.append(label,text);for(const attachment of message.images||[]){const response=await fetch('/v1/messages/'+encodeURIComponent(message.id)+'/images/'+encodeURIComponent(attachment.id),{credentials:'same-origin',signal:AbortSignal.timeout(30000)});if(response.ok){const imageURL=URL.createObjectURL(await response.blob()),image=document.createElement('img');messageURLs.push(imageURL);image.src=imageURL;image.alt='Image '+attachment.number+' from '+message.direction;row.append(image)}}appendQuestion(row,message);list.append(row)}
   }catch(e){status.textContent=e.message}
   timer=setTimeout(refresh,3000);
  };
