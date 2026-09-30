@@ -2029,3 +2029,9 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg.group-start{margin-top:12px!important}
 #chat-messages .msg.group-start.agent::before{left:-8px;right:auto;transform:none}
 #chat-messages .msg.group-start.user::before{right:-8px;left:auto;transform:scaleX(-1)}
+
+/* takeover: header copy becomes screen-reader-only while the inline notice shows */
+#takeover-status.is-error{position:absolute!important;width:1px;height:1px;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;white-space:nowrap!important;border:0!important;color:inherit!important}
+
+/* search empty state sits under the filter */
+#chat-list-empty{margin-top:.6rem}

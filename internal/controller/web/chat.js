@@ -920,7 +920,10 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
   if((pinnedBoxes.length||pinnedPairs.length)&&(otherBoxes.length||otherPairs.length))desired.push(unpinnedDivider);
   desired.push(...otherBoxes);
   if(otherPairs.length)desired.push(pairGroup,...otherPairs);
-  $('#chat-list-empty').hidden=list.length+pairList.length>0;
+  {const emptyEl=$('#chat-list-empty'),isEmpty=list.length+pairList.length===0;emptyEl.hidden=!isEmpty;
+   if(isEmpty){const q=filterEl.value.trim(),title=emptyEl.querySelector('strong'),hint=emptyEl.querySelector('.hint'),cta=$('#empty-list-new-box');
+    if(q){title.textContent='No chats match \u201c'+q+'\u201d';hint.textContent='Try a different name.';cta.textContent='Clear search';cta.dataset.action='clear'}
+    else{title.textContent='No conversations yet';hint.textContent='Create your first box to start chatting.';cta.textContent='New box';cta.dataset.action='new'}}}
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
   renderPins();
  }
@@ -1743,7 +1746,7 @@ const finePointer=()=>matchMedia('(hover:hover) and (pointer:fine)').matches;
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
 document.getElementById('empty-new-box')?.addEventListener('click',()=>document.getElementById('new-box')?.click());
-document.getElementById('empty-list-new-box')?.addEventListener('click',()=>document.getElementById('new-box')?.click());
+document.getElementById('empty-list-new-box')?.addEventListener('click',event=>{const el=event.currentTarget;if(el.dataset.action==='clear'){const f=document.getElementById('chat-filter');if(f){f.value='';f.dispatchEvent(new Event('input',{bubbles:true}))}return}document.getElementById('new-box')?.click()});
 document.getElementById('empty-search')?.addEventListener('click',()=>document.getElementById('chat-filter')?.focus());
 messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.target.closest('a,button,input,textarea,.msg-actions,.tv-button,.media-button,.choice'))return;const msg=event.target.closest('.msg');if(!msg)return;const on=!msg.classList.contains('show-meta');for(const node of messagesEl.querySelectorAll('.msg.show-meta'))node.classList.remove('show-meta');if(on)msg.classList.add('show-meta')});
  // Swipe in from the left edge on a phone to pull the chat list back out.
