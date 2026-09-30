@@ -2331,3 +2331,17 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-resizer::before{opacity:0!important;transition:opacity .15s var(--vb-ease)}
 #chat-resizer:hover::before,#chat-resizer:focus-visible::before{opacity:1!important}
 #chat-list{border-right:1px solid var(--vb-line)!important}
+
+/* pair real avatars + code copy/fade */
+#chat-entries .pair-avatar.pair-avatar-stack{position:relative;width:2.7rem;height:2.7rem;flex:none;display:block;background:none}
+#chat-entries .pair-avatar.pair-avatar-stack::before,#chat-entries .pair-avatar.pair-avatar-stack::after{content:none!important}
+#chat-entries .pair-avatar-stack .avatar{position:absolute!important;width:1.85rem!important;height:1.85rem!important;border-radius:var(--r-control);background:var(--vb-bg-soft);border:1px solid var(--vb-line);overflow:hidden}
+#chat-entries .pair-avatar-stack .avatar:first-child{left:0;top:0;z-index:1}
+#chat-entries .pair-avatar-stack .avatar:nth-child(2){right:0;bottom:0;z-index:2}
+#chat-entries .pair-avatar-stack .avatar .dot{width:.5rem;height:.5rem;border-width:1px}
+#chat-messages .text pre{position:relative;background:#1e1f22;overflow-x:auto;max-width:100%}
+#chat-messages .text pre::after{content:"";position:absolute;top:0;right:0;width:1.4rem;height:100%;pointer-events:none;background:linear-gradient(90deg,transparent,#1e1f22)}
+#chat-messages .text pre .code-copy{position:absolute;top:.3rem;right:.3rem;width:1.6rem;height:1.6rem;display:grid;place-items:center;border:1px solid color-mix(in srgb,#fff 22%,transparent);border-radius:var(--r-control);background:color-mix(in srgb,#000 30%,transparent);color:#dbdee1;cursor:pointer;opacity:0;transition:opacity .15s var(--vb-ease)}
+#chat-messages .text pre:hover .code-copy,#chat-messages .text pre .code-copy:focus-visible{opacity:1}
+#chat-messages .text pre .code-copy svg{width:.95rem;height:.95rem}
+#chat-messages .text pre .code-copy.copied{color:var(--vb-ok-text);border-color:var(--vb-ok)}
