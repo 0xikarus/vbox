@@ -80,6 +80,16 @@ func TestRetiredCoordinationToolsAreDroppedFromOlderPolicies(t *testing.T) {
 	}
 }
 
+func TestSavedHeartbeatToolGrantsUseOneCurrentPermission(t *testing.T) {
+	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "Timer", Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"start_heartbeat", "stop_heartbeat"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(request.Capabilities.MCPTools.AllowedTools, []string{"heartbeat"}) {
+		t.Fatalf("legacy heartbeat grants=%v", request.Capabilities.MCPTools.AllowedTools)
+	}
+}
+
 func TestTeamRolePresetUsesEditableExplicitCapabilities(t *testing.T) {
 	normal, manager, err := teamRolePresetRequests("normal-role-id")
 	if err != nil {

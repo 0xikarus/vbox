@@ -253,14 +253,23 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the [local prompt API guide](LOCAL-AGENT-PROMPT.md) covers its contract and
   retry limits. The generated `~/.config/vmbox/mcp-tools.md` includes the
   request format for agents working inside the box.
-- The optional Lifecycle MCP tools `start_heartbeat` and `stop_heartbeat`
-  manage a single box-local timer in `~/.local/share/vmbox/heartbeat.json`.
+- The optional Lifecycle MCP tool `heartbeat` manages a single box-local timer
+  in `~/.local/share/vmbox/heartbeat.json`. Call it with
+  `{"action":"start","intervalMinutes":5,"count":2}` to schedule ticks, or
+  `{"action":"stop"}` to cancel them.
   The box's local MCP HTTP façade watches the private state file and sends
   due prompts through its own `/prompt` endpoint with a stable message ID.
   Ticks are at least five minutes apart, count defaults to one, and multi-tick
   prompts include the remaining count. The timer resumes from the volume
   after a box wake and never wakes a hibernated box. The controller supplies
   the ordinary MCP tool policy, but does not schedule or store heartbeat ticks.
+- Each box-side desktop MCP tool invocation queues a small local activity record.
+  The box-local HTTP facade sends it to the controller, which shows a system
+  bullet in that box's Chat. A stable event ID makes retries idempotent and the
+  queue survives a box wake. Only the tool name, heartbeat action, whether a
+  contact was targeted, and success/failure are stored; arguments, message
+  bodies, paths, credentials, and screenshots are excluded. Direct replies to
+  the box's own Chat already appear there and get no bullet.
 - A new OpenCode Agent chat starts a bare TUI, waits for the visible bridge, then
   submits its first message through the loopback API with structured image parts.
   Persistent OpenCode and OpenCode one-shot
