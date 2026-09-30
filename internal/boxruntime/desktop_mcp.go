@@ -56,6 +56,7 @@ func desktopMCPTools() []map[string]any {
 		makeTool("get_agent_box_configs", "Use mode=list to read exact saved login profile references, assignable role IDs, tool preset IDs, allowed agents and creation limits. Use mode=models with application and name to read that saved Claude, Codex or OpenCode profile's live model catalog. Never returns credentials.", map[string]any{"mode": map[string]any{"type": "string", "enum": []string{"list", "models"}}, "application": map[string]any{"type": "string", "enum": []string{"claude", "codex", "opencode"}}, "name": map[string]any{"type": "string", "minLength": 1}}, "mode"),
 		makeTool("get_available_workers", "List healthy free worker slots across this account's configured pools. Returns slotId, provider, providerCredential, serviceName, ordinal, region, and memoryConfigurable for container-isolated pools. Pass a returned slotId to create_agent_box to choose that slot and pool. Availability is checked again when creating the box.", map[string]any{}),
 		makeTool("set_agent_box_tags", "Replace an agent box's plain metadata tags. Tags are labels only and never grant contact or tool access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 32}}}, "box", "tags"),
+		makeTool("set_agent_box_run_budget", "Set another unprotected box's run-time budget and restart its current countdown. The countdown advances only while the box is running. Use seconds=0 to disable automatic hibernation from the run budget; otherwise choose 60–2592000 seconds (up to 30 days). This is separate from desktop inactivity. confirmation must exactly match the target box name.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "seconds": map[string]any{"type": "integer", "minimum": 0, "maximum": 2592000}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}}, "box", "seconds", "confirmation"),
 		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("wake_agent_box", "Wake another hibernated, unprotected agent box without restarting a running box. Optionally set sessionChoice to restore the saved conversation or start fresh after wake. The request may queue until capacity is free; use get_agent_box to check progress if allowed. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "sessionChoice": map[string]any{"type": "string", "enum": []string{"restore", "fresh"}}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("clear_agent_box_context", "Start a fresh agent conversation in another running, unprotected box while keeping its chat history and workspace. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
@@ -709,6 +710,21 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		var result map[string]any
 		if err := desktopAgentAPI(ctx, assignment, http.MethodPut, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/tags", map[string]any{"tags": request.Tags}, &result); err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
+	if name == "set_agent_box_run_budget" {
+		var request struct {
+			Box          string `json:"box"`
+			Confirmation string `json:"confirmation"`
+			Seconds      *int64 `json:"seconds"`
+		}
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.Seconds == nil || *request.Seconds < 0 || *request.Seconds > 2592000 || (*request.Seconds > 0 && *request.Seconds < 60) {
+			return nil, fmt.Errorf("box, exact name confirmation, and seconds (0 or 60–2592000) are required")
+		}
+		var result map[string]any
+		if err := desktopAgentAPI(ctx, assignment, http.MethodPut, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/run-budget", map[string]any{"confirmation": request.Confirmation, "seconds": *request.Seconds}, &result); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)

@@ -201,7 +201,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   not summary completion. The separately granted
   `get_agent_box_screenshot` tool returns an image of another running,
   unprotected box's current desktop. It uses the existing fenced worker
-  capture path and never wakes the target or grants desktop control. Entry points:
+  capture path and never wakes the target or grants desktop control. The
+  separately selected `set_agent_box_run_budget` admin tool requires the box
+  management restart grant and exact target name confirmation. It changes the
+  target's durable run-time limit and restarts its current countdown; zero
+  disables that limit. Entry points:
   `internal/controller/agent_box_creation.go`,
   `internal/controller/fleet_create_store.go`,
   `internal/controller/agent_box_management.go`.

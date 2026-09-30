@@ -159,6 +159,29 @@ paths:
         '403': {description: Permission denied, target is protected, or target is the calling box}
         '404': {description: Box unavailable}
         '409': {description: Target desktop is offline or its assignment changed}
+  /v1/agent-desktop/boxes/{box}/run-budget:
+    put:
+      security: [{desktopAgentAuth: []}]
+      summary: Set another unprotected box's run-time budget and restart its countdown
+      description: Requires the set_agent_box_run_budget MCP tool and box management restart permission. The configured limit survives hibernation. Zero disables this limit, independently of desktop inactivity.
+      parameters:
+        - {in: path, name: box, required: true, schema: {type: string}, description: Exact box name or ID}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [seconds, confirmation]
+              properties:
+                seconds: {type: integer, minimum: 0, maximum: 2592000, description: Zero or at least 60 seconds}
+                confirmation: {type: string, description: Exact target box name}
+      responses:
+        '200': {description: Target box and updated run-time budget}
+        '400': {description: Invalid limit or missing confirmation}
+        '403': {description: Permission denied}
+        '404': {description: Box unavailable}
+        '409': {description: Target is protected, is the caller, or confirmation differs}
   /v1/locations:
     get:
       summary: Available location presets from the controller-managed fleet

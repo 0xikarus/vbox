@@ -3227,7 +3227,7 @@
  const summaryToolGroups={
   computer:['take_screenshot','capture_window','move_mouse','click_mouse','drag_mouse','scroll_mouse','type_text','press_keys'],
   passwords:['secret_request','generate_password','type_secret'],
-  admin:['list_agent_boxes','get_agent_box','get_agent_box_screenshot','set_agent_box_tags','restart_agent_box','wake_agent_box','delete_agent_box']
+  admin:['list_agent_boxes','get_agent_box','get_agent_box_screenshot','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','wake_agent_box','delete_agent_box']
  };
  function policySummaryCell(kind,policy){
   const cell=mk('div');cell.className='role-perm-cell';cell.append(mk('small',kind==='contacts'?'Contacts':kind==='computer'?'Computer':kind==='passwords'?'Passwords':kind==='admin'?'Admin':'Create'));
@@ -3290,7 +3290,7 @@
  function directPolicyBody(form){
   const f=form.elements,num=name=>Number.parseInt(f[name].value,10)||0,allowedTools=[...form.querySelectorAll('input[name=mcpTools]:checked')].map(input=>input.value),hasTool=name=>allowedTools.includes(name);
   const chosenAgents=[...form.querySelectorAll('input[name=allowedAgents]:checked')].map(input=>input.value);
-  return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
+  return {capabilities:{allContacts:{enabled:f.allContactsEnabled.checked},createAgentBox:{enabled:hasTool('create_agent_box'),maxBoxes:num('maxBoxes'),maxDiskGiB:num('maxDiskGiB'),allowedAgents:chosenAgents.length?chosenAgents:['codex','claude','opencode']},manageAgentBoxes:{list:hasTool('list_agent_boxes'),inspect:hasTool('get_agent_box')||hasTool('get_agent_box_screenshot'),tag:hasTool('set_agent_box_tags'),restart:hasTool('restart_agent_box')||hasTool('wake_agent_box')||hasTool('set_agent_box_run_budget'),delete:hasTool('delete_agent_box')},mcpTools:{enabled:true,allowedTools}}};
  }
  $('#roles-toggle').onclick=()=>void openPermissionsModal();
  $('#inspect-edit-roles').onclick=()=>void openBoxPolicyEditor(selected);
