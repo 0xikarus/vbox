@@ -2415,7 +2415,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 
 /* ══ chat sidebar header: Messenger/WhatsApp-style ══════════════════════ */
 #chat-list #chat-sidebar-head{display:flex;align-items:center;gap:.5rem;flex:none;padding:.9rem .75rem .35rem}
-.chat-sidebar-title{margin:0;font-size:20px;line-height:1.2;font-weight:600;letter-spacing:-.02em;color:var(--vb-ink);flex:1;min-width:0}
+.chat-sidebar-title{margin:0;padding:0;border:0;font-size:20px;line-height:1.2;font-weight:600;letter-spacing:-.02em;color:var(--vb-ink);flex:1;min-width:0}
 .chat-sidebar-actions{display:inline-flex;align-items:center;gap:.2rem;flex:none}
 #chat-list #new-box,#chat-list #new-chat-group{
   width:32px!important;height:32px!important;min-height:32px!important;min-width:32px!important;
