@@ -10,6 +10,7 @@ const motionJS=await readFile('internal/controller/web/motion.js','utf8');
 const mascotJS=await readFile('internal/controller/web/mascot.js','utf8');
 const mascotCSS=await readFile('internal/controller/web/mascot.css','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
+const tokensCSS=await readFile('internal/controller/web/vbox-tokens.css','utf8');
 const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
@@ -22,7 +23,7 @@ test('re-rendering a chat keeps existing messages and avatars still',async()=>{
   id:'message-'+index,direction:index%2?'agent':'user',state:'delivered',
   text:'Message '+index,createdAt:timestamp(index),updatedAt:timestamp(index)
  }));
- const assets={'/chat':[html,'text/html'],'/chat.js':[js,'text/javascript'],'/motion.js':[motionJS,'text/javascript'],'/mascot.js':[mascotJS,'text/javascript'],'/mascot.css':[mascotCSS,'text/css'],'/chat.css':[css,'text/css'],'/vbox-c.css':[vboxCSS,'text/css'],'/app.css':[appcss,'text/css'],'/markdown.js':[markdownJS,'text/javascript'],'/model-picker.js':[modelPickerJS,'text/javascript']};
+ const assets={'/chat':[html,'text/html'],'/chat.js':[js,'text/javascript'],'/motion.js':[motionJS,'text/javascript'],'/mascot.js':[mascotJS,'text/javascript'],'/mascot.css':[mascotCSS,'text/css'],'/chat.css':[css,'text/css'],'/vbox-tokens.css':[tokensCSS,'text/css'],'/vbox-c.css':[vboxCSS,'text/css'],'/app.css':[appcss,'text/css'],'/markdown.js':[markdownJS,'text/javascript'],'/model-picker.js':[modelPickerJS,'text/javascript']};
  const server=http.createServer((req,res)=>{
   const path=req.url.split('?')[0];
   if(assets[path]){res.setHeader('Content-Type',assets[path][1]);return res.end(assets[path][0])}
