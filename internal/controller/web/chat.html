@@ -67,7 +67,7 @@
   </section>
   <section id="chat-conversation" hidden>
    <header id="chat-header">
-    <button id="chat-back" type="button" aria-label="Back to chat list">‹</button>
+    <button id="chat-back" type="button" aria-label="Back to chat list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 4-8 8 8 8"/></svg><span id="chat-back-count" hidden></span></button>
     <button id="chat-header-open" type="button" class="chat-header-identity" aria-label="Open box details">
      <span id="chat-header-avatar"></span>
      <span id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></span>
@@ -127,6 +127,7 @@
         <details id="inspect-attachment-storage" class="inspect-block inspect-fold" data-fold="attachments" open hidden>
          <summary><h3>Chat attachments</h3></summary>
          <dl id="inspect-attachment-rows" class="inspect-rows"></dl>
+         <p class="inspect-attachment-help">Unused uploads are cleaned on the next upload after 24 hours.</p>
          <div class="inspect-actions"><button id="inspect-clear-attachments" type="button">Clear this box's attachments…</button></div>
          <p id="inspect-attachment-status" role="status"></p>
         </details>

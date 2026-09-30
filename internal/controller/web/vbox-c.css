@@ -2463,3 +2463,64 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-loading:not([hidden]){background:var(--vb-bg);color:var(--vb-ink-soft)}
 #chat-loading img{opacity:1}
 #chat-loading p{color:var(--vb-ink-soft)}
+
+/* A thread link belongs to the transcript, directly below its bubble. */
+#chat-messages .msg-thread-line{align-self:flex-start;display:block;max-width:88%;margin:-2px 0 4px;padding:2px 4px;border:0;background:none;color:var(--vb-accent-text);font:600 12px/1.35 var(--vb-font);text-align:left;cursor:pointer}
+#chat-messages .msg-thread-line.user{align-self:flex-end;text-align:right}
+#chat-messages .msg-thread-line:hover{text-decoration:underline}
+#chat-messages .msg-thread-line:focus-visible{outline:2px solid var(--vb-accent-text);outline-offset:2px;border-radius:var(--r-control)}
+#chat-messages .msg .meta{position:static;display:flex;justify-content:flex-end;width:100%;margin:.18rem 0 0;opacity:1;pointer-events:auto}
+#chat-messages .msg:not(.meta-block).tail .meta{position:static;display:flex;justify-content:flex-end;width:100%;margin:.18rem 0 0;right:auto;bottom:auto}
+#chat-messages .msg .meta-spacer{display:none}
+
+@media(max-width:899px){
+ #chat-header{padding-left:12px;gap:8px}
+ #chat-header #chat-back{display:inline-flex;align-items:center;justify-content:flex-start;gap:2px;flex:none;width:auto;min-width:44px;height:44px;min-height:44px;padding:0;border:0;color:var(--vb-ink);font:650 12px/1 var(--vb-font)}
+ #chat-header #chat-back svg{display:block;width:24px;height:24px;flex:none}
+ #chat-back-count:not([hidden]){display:inline-block;min-width:8px;font-size:12px}
+ #chat-header .chat-header-identity{gap:8px;padding:0;min-width:0}
+ #chat-header .chat-header-identity #chat-header-text{flex:1 1 0;width:0;max-width:100%;overflow:hidden}
+ #chat-header .chat-header-identity #chat-header-name{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ #chat-header .chat-header-identity #chat-header-avatar{width:36px;height:36px;margin:0}
+ #chat-header-avatar .avatar{width:36px;height:36px}
+ #chat-header .chat-header-identity #chat-header-text{padding:0}
+ #chat-header #chat-info{margin-left:auto}
+}
+
+@media(max-width:640px){
+ /* The sheet header and preview are solid layers above its own scroll area. */
+ #inspect{display:flex;flex-direction:column;overflow:hidden;background:var(--vb-bg-soft)}
+ #inspect[hidden]{display:none}
+ #inspect-header{position:relative;z-index:2;flex:none;background:var(--vb-bg-soft)}
+ #inspect-screen{position:relative;z-index:2;flex:none;background:var(--vb-bg-soft);padding:8px 12px 12px}
+ #inspect-body,#inspect:not(.with-contacts) #inspect-body{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;background:var(--vb-bg-soft)}
+ #inspect-summary,#inspect:not(.with-contacts) #inspect-summary{min-width:0;padding:0 12px 16px;text-align:left}
+ #inspect-attachment-storage .inspect-rows>div{display:block}
+ #inspect-attachment-storage .inspect-rows dt,#inspect-attachment-storage .inspect-rows dd{display:block;text-align:left}
+ #inspect-attachment-storage .inspect-rows dd{margin-top:3px;white-space:normal;overflow-wrap:break-word}
+ #inspect-attachment-storage .inspect-attachment-help{margin:0;padding:10px 14px 4px;color:var(--vb-ink-soft);font-size:12px;line-height:1.4;text-align:left}
+ #inspect-attachment-storage .inspect-actions{display:block;width:100%;padding:8px 12px 12px}
+ #inspect-attachment-storage #inspect-clear-attachments{display:block;width:100%;min-height:44px;padding:10px 14px;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-danger-text);font-size:14px;font-weight:600;text-align:left;white-space:normal}
+ #inspect-attachment-storage #inspect-clear-attachments:hover{background:var(--vb-danger-soft)}
+ #inspect-config-actions{display:block;width:100%;margin:0;padding:0 12px 12px}
+ #inspect-config-actions .inspect-config-action{display:flex;align-items:center;gap:12px;width:100%;min-height:48px;margin:0;padding:10px 12px;border:1px solid var(--vb-line);border-bottom:0;border-radius:0;background:var(--vb-surface);color:var(--vb-ink);font-size:14px;font-weight:600;text-align:left}
+ #inspect-config-actions .inspect-config-action:first-child{border-radius:var(--r-control) var(--r-control) 0 0}
+ #inspect-config-actions .inspect-config-action:last-child{border-bottom:1px solid var(--vb-line);border-radius:0 0 var(--r-control) var(--r-control)}
+ #inspect-config-actions .inspect-config-action svg{width:18px;height:18px;flex:none;color:var(--vb-ink-soft)}
+ #inspect-config-actions .inspect-config-action span{flex:1;min-width:0}
+ #inspect-config-actions .inspect-config-action svg:last-child{width:16px;height:16px;color:var(--vb-ink-faint)}
+ #inspect-config-actions .inspect-config-action.danger,#inspect-config-actions .inspect-config-action.danger svg:first-child{color:var(--vb-danger-text)}
+ #inspect-runtime-rows{margin:0 12px 12px;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-surface);overflow:hidden}
+ #inspect-runtime-rows>div{display:grid;grid-template-columns:minmax(0,42%) minmax(0,1fr);align-items:center;gap:12px;min-height:44px;padding:10px 14px}
+ #inspect-runtime-rows dt,#inspect-runtime-rows dd{min-width:0;margin:0;font-size:15px;line-height:1.35;text-align:left}
+ #inspect-runtime-rows dt{font-weight:500;color:var(--vb-ink-soft)}
+ #inspect-runtime-rows dd{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;overflow-wrap:normal;font-weight:600}
+ #inspect-runtime-rows dd.copy-value{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+ #inspect-runtime-rows dd.profile-lines{white-space:normal;display:flex;flex-direction:column;gap:3px;color:var(--vb-ink-soft);font-size:13px;font-weight:500}
+ #inspect-runtime-rows dd.profile-lines span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+ #inspect-memory-settings{margin:12px;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-surface);padding:0;overflow:hidden}
+ #inspect-memory-settings h4{margin:0;padding:12px 14px;border-bottom:1px solid var(--vb-line);font-size:15px;font-weight:650;text-align:left}
+ #inspect-memory-settings .memory-availability{margin:0;padding:12px 14px;border:0;border-bottom:1px solid var(--vb-line);border-radius:0;background:transparent;color:var(--vb-ink-soft);font-size:13px;line-height:1.4;text-align:left}
+ #inspect-memory-settings form{padding:12px 14px;gap:10px}
+ #inspect-memory-settings p{padding:0 14px 12px;margin:0;text-align:left}
+}

@@ -152,7 +152,7 @@ test('Reply uses the main composer without opening the thread sidebar',async()=>
   const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg.agent');
   assert.equal(await p.$$eval('#chat-messages .msg',nodes=>nodes.length),2,'the agent reply shown in the chat-list preview must also appear in the open transcript');
   assert.equal(await p.$eval('#chat-messages .msg.agent',node=>node.textContent.includes('verification suite is green')),true);
-  assert.equal(await p.$eval('#chat-messages .msg.user .msg-thread',button=>button.textContent),'2 in thread','the thread link is visible after the first reply');
+  assert.equal(await p.$eval('#chat-messages .msg.user + .msg-thread-line',button=>button.textContent),'↳ 1 reply','the thread link is visible below the bubble after the first reply');
   await p.click('.msg.user',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.trim()==='Reply').click());
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'Reply does not open the thread sidebar');
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),false,'the reply target appears above the main composer');
@@ -168,7 +168,7 @@ test('Reply uses the main composer without opening the thread sidebar',async()=>
   await p.type('#chat-input','Agreed.');await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts.at(-1).parentMessageId,threadMessages[1].id,'replying to a thread member preserves the direct parent');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
-  await p.click('#chat-messages .msg.user .msg-thread');
+  await p.click('#chat-messages .msg.user + .msg-thread-line');
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
   const initialWidth=await p.$eval('#thread-panel',panel=>panel.getBoundingClientRect().width);
   assert.ok(initialWidth>=400,'the thread sidebar starts at its intended desktop width');
@@ -191,10 +191,14 @@ test('thread sidebar fits a phone without a resize handle',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user');
+  const mobile=await p.evaluate(()=>{const back=document.querySelector('#chat-back').getBoundingClientRect(),bubble=document.querySelector('#chat-messages .msg.user').getBoundingClientRect(),thread=document.querySelector('#chat-messages .msg.user + .msg-thread-line').getBoundingClientRect();return {back:back.toJSON(),bubble:bubble.toJSON(),thread:thread.toJSON()}});
+  assert.ok(mobile.back.left>=12&&mobile.back.left<=17,'the back tap target starts at the mobile gutter');
+  assert.ok(mobile.back.width>=44&&mobile.back.height>=44,'the back target is at least 44px');
+  assert.ok(mobile.thread.top>=mobile.bubble.bottom,'the thread link sits outside and below its bubble');
   await p.$eval('#chat-messages .msg.user .msg-reply',button=>button.click());
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),false,'the direct icon also works on mobile');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
-  await p.click('#chat-messages .msg.user .msg-thread');
+  await p.click('#chat-messages .msg.user + .msg-thread-line');
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden);
   await p.waitForFunction(()=>{const rect=document.querySelector('#thread-panel').getBoundingClientRect();return Math.abs(rect.left)<1&&Math.abs(rect.right-390)<1});
   const layout=await p.evaluate(()=>({panel:document.querySelector('#thread-panel').getBoundingClientRect().toJSON(),handle:getComputedStyle(document.querySelector('#thread-resizer')).display}));
@@ -210,7 +214,7 @@ test('agent-to-agent messages identify their source box and preserve the thread'
   const p=await browser.newPage();await p.setViewport({width:1180,height:820,deviceScaleFactor:1});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg .agent-origin');
   assert.equal(await p.$eval('.msg .agent-origin',element=>element.textContent),'From Research');
   await p.screenshot({path:'docs/chat-ui/screenshots/agent-to-agent-conversation.png'});
-  await p.click('.msg.tail .msg-thread');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===4);
+  await p.click('.msg + .msg-thread-line');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===4);
   await p.screenshot({path:'docs/chat-ui/screenshots/agent-to-agent-thread.png'});await p.close();
  },agentThreadMessages);
 });

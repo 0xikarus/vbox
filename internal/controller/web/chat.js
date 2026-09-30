@@ -1080,6 +1080,10 @@
    if(q){if(title)title.textContent='No chats match \u201c'+q+'\u201d';if(hint)hint.textContent='Try a different name.';if(cta){cta.textContent='Clear search';cta.dataset.action='clear'}}
    else{if(title)title.textContent='No conversations yet';if(hint)hint.textContent='Create your first box to start chatting.';if(cta){cta.textContent='New box';cta.dataset.action='new'}}}
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
+  const otherUnread=[...boxes.values()].reduce((count,box)=>count+(box.id===selected?0:box.unread||0),0)
+   +(owner?[...pairs.values()].filter(pair=>pairKey(pair)!==selectedPair&&pairHasUnread(pair)).length:0);
+  const backCount=$('#chat-back-count');backCount.hidden=!otherUnread;backCount.textContent=otherUnread>99?'99+':String(otherUnread);
+  $('#chat-back').setAttribute('aria-label','Back to chat list'+(otherUnread?' · '+otherUnread+' unread in other chats':''));
  }
 
  /* ---------- messages ---------- */
@@ -1100,6 +1104,11 @@
   users:[['path',{d:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'}],['circle',{cx:'9',cy:'7',r:'4'}],['path',{d:'M22 21v-2a4 4 0 0 0-3-3.87'}],['path',{d:'M16 3.13a4 4 0 0 1 0 7.75'}]],
   activity:[['path',{d:'M22 12h-4l-3 9L9 3l-3 9H2'}]],
   terminal:[['rect',{x:'2',y:'3',width:'20',height:'18',rx:'2'}],['path',{d:'m7 9 3 3-3 3'}],['path',{d:'M13 15h4'}]],
+  'file-text':[['path',{d:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'}],['path',{d:'M14 2v6h6'}],['path',{d:'M8 13h8M8 17h8'}]],
+  key:[['circle',{cx:'8',cy:'15',r:'4'}],['path',{d:'m10.8 12.2 9-9L22 5l-2 2 2 2-2 2-2-2-5.2 5.2'}]],
+  'refresh-cw':[['path',{d:'M20 11a8 8 0 0 0-14-5L4 8'}],['path',{d:'M4 4v4h4'}],['path',{d:'M4 13a8 8 0 0 0 14 5l2-2'}],['path',{d:'M16 16h4v4'}]],
+  'power':[['path',{d:'M12 2v10'}],['path',{d:'M18.4 6.6a9 9 0 1 1-12.8 0'}]],
+  'chevron-right':[['path',{d:'m9 6 6 6-6 6'}]],
   copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
   reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
@@ -1216,7 +1225,8 @@
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
-  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>1){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
+  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;
+  if(message.threadId&&threadSize>1&&!message.parentMessageId){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread msg-thread-line '+(mine?'user':'agent');thread.textContent='↳ '+(threadSize-1)+' '+(threadSize===2?'reply':'replies');thread.onclick=()=>void openThread(message.threadId);row._threadLink=thread}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
   if(mine&&!readOnly&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
@@ -1446,6 +1456,7 @@
     if(senderKey!==prevSender)node.classList.add('group-start');
     prevSender=senderKey;
     messagesEl.append(node);
+    if(node._threadLink)messagesEl.append(node._threadLink);
    }
   }
   const pending=pendingSends.get(box.id);
@@ -2212,9 +2223,14 @@
  const importedProfileLabel=ref=>[ref.application,ref.name,ref.model,ref.reasoningEffort].filter(Boolean).join(' · ');
  const fillRows=(target,rows)=>{
   target.replaceChildren();
-  for(const [dt,dd,cls] of rows){
+  for(const [dt,dd,cls,copy] of rows){
    const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
-   t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);target.append(row);
+   t.textContent=dt;
+   if(Array.isArray(dd)){d.classList.add('profile-lines');for(const line of dd){const span=document.createElement('span');span.textContent=line;span.title=line;d.append(span)}}
+   else d.textContent=dd;
+   if(cls)d.classList.add(cls);
+   if(copy){d.classList.add('copy-value');d.title=copy+' · tap to copy';d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label','Copy full '+dt.toLowerCase());const write=async()=>{try{await navigator.clipboard.writeText(copy);toast(dt+' copied.')}catch{toast('Copy is unavailable here.')}};d.onclick=write;d.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write()}}}
+   row.append(t,d);target.append(row);
   }
  };
  function mountInspectMemory(box){
@@ -2281,11 +2297,11 @@
   fillRows($('#inspect-runtime-rows'),[
    ['State',stateText,stateClass(box.state)],
    ['Agent',agent],
-   ...(owner?[['Imported profiles',inspectProfileCache?inspectProfileCache.error||((inspectProfileCache.profiles||[]).map(importedProfileLabel).join(', ')||'None')+(inspectProfileCache.pending?.length?' · queued: '+inspectProfileCache.pending.map(importedProfileLabel).join(', '):''):'Loading…']]:[]),
+   ...(owner?[['Imported profiles',inspectProfileCache?inspectProfileCache.error||([...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))].length?[...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))]:['None']):'Loading…']]:[]),
    ['Provider',box.provider||'—'],
-   ['Worker',inspectWorker?.name||'Loading…'],
-   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId]]:[]),
-   ['Slot',inspectWorker?.slot||'Loading…'],
+   ['Worker',inspectWorker?.name||'Loading…','',inspectWorker?.name],
+   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,'',inspectWorker.serviceId]]:[]),
+   ['Slot',inspectWorker?.slot||'Loading…','',box.slotId],
    ['Messages',msgs.length+' total'],
   ]);
   fillRows($('#inspect-activity-rows'),[
@@ -2302,7 +2318,7 @@
    fillRows($('#inspect-attachment-rows'),usage?.error?[['Storage',usage.error,'alert']]:[
     ['This box',usage?storageSize(usage.boxBytes)+' · '+usage.boxCount+' files':'Loading…'],
     ['Account',usage?storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes):'Loading…'],
-    ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files; cleaned on the next upload after 24 hours':'Loading…'],
+    ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files':'Loading…'],
    ]);
    $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
   }
@@ -2320,11 +2336,11 @@
   }
   // Config the box keeps in sync, editable from the same place it is reported.
   const actions=$('#inspect-config-actions');actions.replaceChildren();
-  const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;actions.append(b)};
-  act('Instructions…','Edit the Markdown instructions synced into this box',()=>void openBoxInstructions(box));
-  if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
-  if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box',()=>void resyncBox(box));
-  if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
+  const act=(label,title,icon,fn,danger=false)=>{const b=document.createElement('button');b.type='button';b.className='inspect-config-action'+(danger?' danger':'');b.title=title;b.append(lucide(icon),Object.assign(document.createElement('span'),{textContent:label}),lucide('chevron-right'));b.onclick=fn;actions.append(b)};
+  act('Instructions…','Edit the Markdown instructions synced into this box','file-text',()=>void openBoxInstructions(box));
+  if(owner)act('Credentials…','Replace the login profiles imported into this box','key',()=>void openBoxCredentials(box));
+  if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box','refresh-cw',()=>void resyncBox(box));
+  if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end','power',()=>void restartBox(box),true);
   mountInspectMemory(box);
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
