@@ -2554,7 +2554,7 @@
   inspectOpen=true;inspect.hidden=false;$('#inspect-backdrop').hidden=false;
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
-  controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
+  controllerPing=null;renderInspect();void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
  function closeInspect(){inspectOpen=false;inspect.hidden=true;stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#chat-header-open')?.addEventListener('click',()=>$('#chat-info').click());
