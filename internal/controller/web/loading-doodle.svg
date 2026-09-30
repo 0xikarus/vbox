@@ -22,6 +22,7 @@
     @keyframes blink{0%,68%,72%,100%{transform:scaleY(1)}70%{transform:scaleY(.16)}}
     @keyframes glow{0%,35%,100%{opacity:.35}58%,82%{opacity:1}}
     .word{fill:#f3efe4;stroke:#1b2a41;stroke-width:2;paint-order:stroke}
+    @media (prefers-color-scheme: light){.word{fill:#1b2a41;stroke:#f3efe4;stroke-width:1}}
     @media (prefers-reduced-motion: reduce){.robot,.disk,.shadow,.eye,.lamp{animation:none}}
   </style>
   <defs>

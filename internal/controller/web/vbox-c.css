@@ -2560,3 +2560,35 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-menu-sheet .menu-row-slot{display:inline-flex!important;flex:none;align-items:center}
 #chat-menu-sheet .menu-row-slot .menu-pill{width:auto!important;flex:none}
 #chat-menu-sheet .menu-row-slot .menu-row-check{width:2rem!important;height:2rem!important;flex:none}
+
+/* final integration: one neutral, aligned Details card */
+#inspect-summary>.inspect-technical{margin-bottom:0!important;border-bottom:0!important;border-radius:var(--r-surface) var(--r-surface) 0 0!important}
+#inspect-summary>.inspect-technical:not(:has(+#inspect-contacts:not([hidden]))){border-bottom:1px solid var(--vb-line)!important;border-radius:var(--r-surface)!important}
+#inspect-summary>#inspect-contacts{padding:0!important;margin:-1px 0 0!important;border:1px solid var(--vb-line)!important;border-radius:0 0 var(--r-surface) var(--r-surface)!important;background:var(--vb-bg-soft)}
+#inspect-summary>.inspect-technical>summary,#inspect-summary>#inspect-contacts>summary{display:grid!important;grid-template-columns:1.1rem minmax(0,1fr) 1rem;align-items:center;gap:.6rem;min-height:3.1rem;padding:.85rem .9rem!important}
+#inspect-summary>.inspect-technical>summary h3,#inspect-summary>#inspect-contacts>summary h3{justify-self:start!important;text-align:left!important}
+#inspect-summary>.inspect-technical>summary{border-bottom:1px solid var(--vb-line)}
+#inspect-summary>#inspect-contacts>summary{border-top:1px solid var(--vb-line)}
+#inspect-summary>#inspect-contacts .inspect-contact-body{padding:.55rem .9rem .9rem}
+
+/* neutral selection matches the chat list */
+.manage-sidebar a[href^="#"][aria-current="page"]{background:var(--vb-surface-2);color:var(--vb-ink)}
+.manage-sidebar a[href^="#"][aria-current="page"]::before{content:none}
+
+/* explicit Grid field labels and a secondary Apply action */
+#layout{gap:.7rem;padding:.65rem .75rem}
+#layout label{display:grid;gap:.3rem;color:var(--vb-ink-soft);font-size:.7rem;font-weight:650}
+#layout select{min-width:5.5rem;min-height:2.25rem;padding:.35rem 1.8rem .35rem .65rem;border:1px solid var(--vb-line-strong);background:var(--vb-surface);color:var(--vb-ink);font-size:.82rem}
+#layout button{align-self:end;min-height:2.25rem;padding:.35rem .85rem;border:1px solid var(--vb-line-strong);background:var(--vb-surface);color:var(--vb-ink);font-size:.8rem;font-weight:650}
+#layout button:hover{background:var(--vb-surface-2)}
+#tiles .tile-mark svg{border-radius:50%}
+
+/* the Workspace actions share the same secondary treatment */
+.workspace-actions #connect{border:1px solid var(--vb-line-strong);background:var(--vb-surface);color:var(--vb-ink)}
+.workspace-actions #connect:hover{background:var(--vb-surface-2)}
+#session:empty{display:none}
+
+/* the main robot loader uses Studio surfaces in both themes */
+#chat-loading:not([hidden]){background:var(--vb-bg);color:var(--vb-ink-soft)}
+#chat-loading img{opacity:1}
+#chat-loading p{color:var(--vb-ink-soft)}

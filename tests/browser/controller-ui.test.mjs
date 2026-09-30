@@ -613,7 +613,8 @@ test('box link opens separate mobile workspace and reuses shell',async()=>{
  await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
  await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('#box-list a',{visible:true});
  await Promise.all([page.waitForNavigation(),page.click('#box-list a')]);
- await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
+ await page.waitForFunction(()=>managedSession==='persistent-shell');
+ assert.equal(await page.$eval('#session',e=>e.textContent),'');
  assert.equal(new URL(page.url()).pathname,'/boxes/box-1');
  assert(requests.some(r=>r.path.endsWith('/sessions/interactive')&&r.body.agent==='shell'&&r.body.reuseExisting===true));
  assert.deepEqual(errors,[]);await page.close();
@@ -632,7 +633,8 @@ test('workspace network failure explains safe recovery',async()=>{
  assert.match(await page.$eval('#error',e=>e.textContent),/Resume \/ reconnect.*not replayed/);
  assert.equal(await page.$eval('#connect',e=>e.disabled),false);
  await page.click('#connect');
- await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
+ await page.waitForFunction(()=>managedSession==='persistent-shell');
+ assert.equal(await page.$eval('#session',e=>e.textContent),'');
  assert.equal(await page.$eval('#error',e=>e.textContent),'');
  await page.close();
 });

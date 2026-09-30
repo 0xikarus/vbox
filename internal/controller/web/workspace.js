@@ -5,6 +5,7 @@ let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
 let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
 let refreshDesktopPreview=()=>{};
 let selectedWorkspaceView='',workspaceRole='',managedSession='';
+const workspaceMascot=window.VBoxMascot?.Mascot?new window.VBoxMascot.Mascot($('.workspace-avatar-mascot'),boxID):null;
 function showLogin(message=''){$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
 
 let boxSummary=null,controllerPing=null,statsTimer,statsGeneration=0;
@@ -59,7 +60,7 @@ async function ensureTerminal(version=epoch){
   try{
    const session=await api(bp+'/sessions/interactive','POST',{agent,reuseExisting:true});if(!workspaceCurrent(version))return false;
    managedSession=session.session;
-   $('#session').textContent=session.session?'Terminal: '+session.session:'';
+   $('#session').textContent='';
    closeTerminal();terminalAttached=true;recordViewer('terminal',{state:'connecting'});
    const dispose=openWorkspaceTerminal(boxID,session.session,message=>{if(workspaceCurrent(version))$('#status').textContent=message},{autoFocus:false,onMetrics:value=>{if(!$('#workspace').hidden)recordViewer('terminal',value)}});
    closeTerminal=()=>{terminalAttached=false;recordViewer('terminal',{state:'disconnected'});dispose()};
@@ -193,6 +194,7 @@ let deletePending=false;
 function statusLine(b){const phase=boxPhase(b.state);const hint=phase==='creating'?'being created; connect becomes available when it is running':phase==='transitioning'?'transitioning; this page updates automatically':phase==='deleting'?'being deleted':'';return [b.state,b.restorationState,b.failureReason,hint].filter(Boolean).join(' · ')}
 function applyBoxState(b){
  boxSummary=b;renderStats();
+ if(workspaceMascot){const mood=b.state==='hibernated'?'sleeping':b.state==='failed'?'angry':['reserved','attaching'].includes(b.state)?'waking':'idle';workspaceMascot.jump(mood)}
  $('#name').textContent=b.name;document.title='vbox / workspace / '+b.name;
  const phase=boxPhase(b.state),owner=workspaceRole==='owner',connectable=phase==='running'||phase==='stopped'||phase==='failed';
  $('#status').textContent=statusLine(b);

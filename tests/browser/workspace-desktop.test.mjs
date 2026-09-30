@@ -6,6 +6,7 @@ import puppeteer from 'puppeteer-core';
 
 const html=await readFile('internal/controller/web/workspace.html','utf8');
 const script=await readFile('internal/controller/web/workspace.js','utf8');
+const mascotScript=await readFile('internal/controller/web/mascot.js','utf8');
 test('workspace desktop selection, tabs, and manual fallback',async t=>{
  let tools=['blender'],enabled=true,fail='',hold='',release,role='owner',state='running',connectionTransport='openssh',thumbnailAvailable=false,thumbnailRequests=0,holdThumbnail=false,releaseThumbnail;
  let requests=[],messageHistory=[],messagePayloads=[],interactiveRequests=[],defaultAgent='shell';
@@ -13,7 +14,8 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
  const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC','base64');
  const server=http.createServer(async(req,res)=>{
   const path=req.url,method=req.method;
-  if(path==='/boxes/test')return res.end(html.replace(/<script[\s\S]*$/,`<script>window.attaches=0;window.terminals=0;window.openWorkspaceTerminal=()=>{window.terminals++;return()=>{}};window.openWorkspaceDesktop=(box,status,options)=>{window.attaches++;window.desktopMetrics=options.onMetrics;return()=>{}};</script><script src="/workspace.js"></script>`));
+  if(path==='/boxes/test')return res.end(html.replace(/<script[\s\S]*$/,`<script>window.attaches=0;window.terminals=0;window.openWorkspaceTerminal=()=>{window.terminals++;return()=>{}};window.openWorkspaceDesktop=(box,status,options)=>{window.attaches++;window.desktopMetrics=options.onMetrics;return()=>{}};</script><script src="/mascot.js"></script><script src="/workspace.js"></script>`));
+  if(path==='/mascot.js'){res.setHeader('Content-Type','text/javascript');return res.end(mascotScript)}
   if(path==='/workspace.js'){res.setHeader('Content-Type','text/javascript');return res.end(script)}
   if(!path.startsWith('/v1/'))return res.end();
   requests.push(method+' '+path);
@@ -94,7 +96,9 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    for(const agent of ['codex','claude','opencode']){
     defaultAgent=agent;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
     assert.deepEqual(interactiveRequests,[{agent,reuseExisting:true}]);
-    assert.equal(await p.$eval('#session',element=>element.textContent),'Terminal: shell-test');
+    assert.equal(await p.$eval('#session',element=>element.textContent),'');
+    const mascotColors=await p.evaluate(()=>({actual:document.querySelector('.workspace-avatar-mascot .vbox-mascot-shape')?.getAttribute('fill'),expected:VBoxMascot.traits('test').color}));
+    assert.equal(mascotColors.actual,mascotColors.expected);
     await p.reload();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
     assert.deepEqual(interactiveRequests,[{agent,reuseExisting:true},{agent,reuseExisting:true}]);
     await p.close();

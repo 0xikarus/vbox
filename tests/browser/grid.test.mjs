@@ -42,6 +42,8 @@ async function pageReady(){const p=await browser.newPage();await p.evaluateOnNew
 test('four real tmux terminals, isolated input, layouts and viewer-only disconnect',async()=>{
  const p=await pageReady(),errors=[];p.on('pageerror',e=>errors.push(e.message));assert.equal(await p.$$('.tile').then(x=>x.length),4);
  assert.deepEqual(await p.$$eval('.tile header .tile-title-select',xs=>xs.map(x=>x.value)),['box1','box2','box3','box4']);
+ const mascotColors=await p.$$eval('.tile',tiles=>tiles.map(tile=>{const id=tile.querySelector('.tile-title-select').value;return {actual:tile.querySelector('.tile-mark .vbox-mascot-shape')?.getAttribute('fill'),expected:VBoxMascot.traits(id).color}}));
+ assert.ok(mascotColors.every(({actual,expected})=>actual===expected),JSON.stringify(mascotColors));
  await p.waitForFunction(()=>[...document.querySelectorAll('.terminal-panel .viewer-overlay')].every(n=>n.textContent.includes('Connected')));
  await p.waitForFunction(()=>[...document.querySelectorAll('.terminal-panel .connection-badge')].every(n=>/^Live · \d+ ms$/.test(n.textContent)));
  for(let i=1;i<=4;i++){

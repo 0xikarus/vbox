@@ -8,13 +8,8 @@
   next:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h13"/><path d="m12 6 6 6-6 6"/></svg>',
   play:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 4 14 8-14 8z"/></svg>'
  };
- function blobSVG(seed){
-  const s=String(seed||'box');let h=2166136261>>>0;for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
-  const palette=['#7c5cff','#3b82f6','#22c55e','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444'];
-  const color=palette[Math.abs(h)%palette.length],shape=Math.abs(h>>>5)%7;let body='';
-  switch(shape){case 0:body='<circle cx="50" cy="52" r="38"/>';break;case 1:body='<path d="M50 10 C71 30 89 47 89 64 A39 39 0 1 1 11 64 C11 47 29 30 50 10 Z"/>';break;case 2:body='<rect x="13" y="15" width="74" height="74" rx="26"/>';break;case 3:body='<path d="M50 11 L87 32 L87 74 L50 95 L13 74 L13 32 Z"/>';break;case 4:body='<path d="M34 12 L66 12 C72 12 77 17 77 23 L77 30 C84 34 88 42 88 52 C88 62 84 70 77 74 L77 81 C77 87 72 92 66 92 L34 92 C28 92 23 87 23 81 L23 74 C16 70 12 62 12 52 C12 42 16 34 23 30 L23 23 C23 17 28 12 34 12 Z"/>';break;case 5:body='<path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/>';break;default:body='<circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/>'}
-  const eyes='<g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g>';
-  return '<svg viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
+ function mascotSVG(seed){
+  return (seed?window.VBoxMascot?.miniSVG(seed):window.VBoxMascot?.svg('account','idle',true,{color:'#FF6F59'}))||'<svg viewBox="0 0 100 104" aria-hidden="true"><circle cx="50" cy="52" r="38" fill="#FF6F59"/><ellipse cx="38" cy="53" rx="4" ry="8" fill="#fff"/><ellipse cx="62" cy="53" rx="4" ry="8" fill="#fff"/></svg>';
  }
  function connectionBadge(label,title){const badge=node('span');badge.className='connection-badge';badge.title=title;badge.dataset.viewer=label;badge.dataset.state='idle';badge.dataset.ping='';updateConnectionBadge(badge,{state:'idle'});return badge}
  function updateConnectionBadge(badge,metrics){
@@ -48,10 +43,10 @@
  async function api(path,method='GET',headers={},body){const r=await fetch(path,{method,credentials:'same-origin',headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});if(r.status===401){stop();$('#grid-app').hidden=true;showLogin('Please log in again.');throw Error('Please log in again.')}if(!r.ok)throw Error('Controller request failed ('+r.status+'). Use Refresh or reconnect.');return r.status===204?null:r.json();}
  function stop(){epoch++;clearTimeout(timer);for(const t of tiles){t.disconnect();t.box.value='';}}
  function fill(){if($('#grid-app').hidden)return;const used=new Set(tiles.map(t=>t.box.value));for(const t of tiles){if(t.box.value)continue;const b=boxes.find(b=>b.state==='running'&&!used.has(b.id)&&(unavailable.get(b.id)||0)<=Date.now());if(b){t.box.value=b.id;used.add(b.id);void t.connect()}}tiles.forEach(picker)}
- function picker(t){const selected=t.box.value;t.box.replaceChildren(new Option('Select a box…',''));for(const b of boxes){const o=new Option(b.name+' · '+b.state,b.id);o.disabled=tiles.some(x=>x!==t&&x.box.value===b.id);t.box.add(o)}t.box.value=selected;if(t.mark)t.mark.innerHTML=blobSVG(selected||'');syncActions(t);t.element.classList.toggle('tile-empty',!selected);if(!selected)t.status.textContent='Add a box';}
+ function picker(t){const selected=t.box.value;t.box.replaceChildren(new Option('Select a box…',''));for(const b of boxes){const o=new Option(b.name+' · '+b.state,b.id);o.disabled=tiles.some(x=>x!==t&&x.box.value===b.id);t.box.add(o)}t.box.value=selected;if(t.mark)t.mark.innerHTML=mascotSVG(selected);syncActions(t);t.element.classList.toggle('tile-empty',!selected);if(!selected)t.status.textContent='Add a box';}
  function makeTile(){
   const element=node('section');element.className='tile';const header=node('header');
-  const mark=node('span');mark.className='tile-mark';mark.innerHTML=blobSVG('');mark.setAttribute('aria-hidden','true');
+  const mark=node('span');mark.className='tile-mark';mark.innerHTML=mascotSVG('');mark.setAttribute('aria-hidden','true');
   const box=node('select');box.className='tile-title-select';box.setAttribute('aria-label','Box');
   const boxField=node('span');boxField.className='tile-title-field';boxField.append(box);
   const session=node('select');session.className='tile-session-select';session.setAttribute('aria-label','Session');
