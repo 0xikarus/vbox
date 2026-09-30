@@ -2447,3 +2447,17 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
   #chat-list #chat-sidebar-head{padding:.7rem .75rem .25rem}
   #chat-list #chat-filter-row{margin:0 .75rem .35rem}
 }
+
+/* ══ item 7 · new box (modal + embedded) ════════════════════════════════ */
+/* keep the last field clear of the footer while the body scrolls */
+#new-box-card #create-box{padding-bottom:2.4rem!important}
+#create-card #create{padding-bottom:1rem}
+.login-none-note{margin:.15rem 0 0;color:var(--vb-ink-faint);font-size:.74rem}
+/* chevrons on every new-box select (modal + embedded) */
+#new-box-card #create-box select,#create-card #create select{
+  appearance:none!important;-webkit-appearance:none!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6b7f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right .6rem center!important;background-size:1rem!important;
+  padding-right:2.1rem!important
+}
+.usage-row-value.muted{min-width:0;max-width:11rem;white-space:normal;line-height:1.2}

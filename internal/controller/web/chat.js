@@ -2509,7 +2509,7 @@
     button.onclick=()=>{profileSelect.value=value;profileSelect.dispatchEvent(new Event('change',{bubbles:true}))};
     profileList.append(button);
    };
-   addChoice('','None','No profile','No saved profile selected');
+   addChoice('','None','No agent login','Starts without an agent login; connect one later');
    for(const profile of choices){
     const ref=JSON.stringify({application:profile.application,name:profile.name});
     const measured=usageProfiles.find(item=>item.application===profile.application&&item.name===profile.name);
@@ -2519,7 +2519,7 @@
      const labels={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};
      return (labels[window.name]||window.name)+(window.scope?' · '+window.scope:'')+' '+usageNumber(value)+'%';
     }).filter(Boolean);
-    let summary=remaining===null?(usageLoaded||profileUsageLoadError?'Usage unavailable':'Checking usage…'):usageNumber(remaining)+'% left';
+    let summary=remaining===null?(usageLoaded||profileUsageLoadError?'Usage could not be checked':'Checking usage…'):usageNumber(remaining)+'% left';
     let details=windows.slice(0,3).join(' · ');
     if(windows.length>3)details+=' · +'+(windows.length-3)+' more';
     if(!details&&measured?.snapshot?.spend){const spend=measured.snapshot.spend;const left=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;if(left!==null){summary=usageNumber(left)+(spend.currency?' '+spend.currency:'')+' left';details='Spending balance'}}
@@ -3091,11 +3091,11 @@ function renderUsage(data){
    if(remaining!==null){bar.setAttribute('role','progressbar');bar.setAttribute('aria-label',label+' remaining');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',String(remaining));const fill=mk('i');fill.style.width=remaining+'%';bar.append(fill)}
    else bar.hidden=true;
    row.append(bar);
-   const value=mk('span',remaining===null?'Unavailable':usageNumber(remaining)+'% left');value.className='usage-row-value';
+   const value=mk('span',remaining===null?'Usage could not be checked':usageNumber(remaining)+'% left');value.className='usage-row-value';
    if(remaining===null)value.classList.add('muted');
    if(remaining!==null&&remaining<=10)value.classList.add('low');
    row.append(value);
-   row.title=(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'');
+   row.title=(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage could not be checked')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'');
    card.append(row);
   }
   if(snapshot?.spend){const spend=snapshot.spend,unit=spend.currency||spend.unit||'',remaining=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;const parts=[];if(spend.used!=null)parts.push('used '+usageNumber(spend.used));if(spend.limit!=null)parts.push('limit '+usageNumber(spend.limit));card.append(mk('p','Spend: '+(remaining===null?'unavailable':usageNumber(remaining)+(unit?' '+unit:'')+' remaining')+(parts.length?' · '+parts.join(' · '):'')))}

@@ -221,7 +221,7 @@
     <fieldset class="nb-step"><legend>1 · Box</legend>
      <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
      <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
-     <label>Disk GiB <input name="disk" type="number" min="1" max="1024" value="10"></label>
+     <label>Disk (GiB) <input name="disk" type="number" min="1" max="1024" value="10"></label>
      <div id="create-memory-settings" hidden><label>RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label>Swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label></div>
      <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
      <p id="create-pool-status" class="hint" hidden></p>

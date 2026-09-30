@@ -96,7 +96,8 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(node('option','None'));githubSelect.options[0].value='';githubLabel.append(githubSelect);
  for(const profile of profiles.filter(profile=>profile.application==='github')){const option=node('option',profile.name);option.value=JSON.stringify({application:'github',name:profile.name});githubSelect.append(option)}
  githubLabel.hidden=githubSelect.options.length===1;
- root.append(profileLabel,modelLabel,githubLabel);
+ const noneNote=node('p','Starts without an agent login; connect one later.');noneNote.className='hint login-none-note';
+ root.append(profileLabel,modelLabel,githubLabel,noneNote);
  const populate=()=>{
   const app=agentSelect.value,previous=profileSelect.value||selected;profileSelect.replaceChildren();
   const empty=node('option','None');empty.value='';profileSelect.append(empty);
@@ -104,6 +105,7 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
   for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setApplication(app);
   if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
   profileLabel.hidden=app==='shell'||choices.length===0;
+  noneNote.hidden=profileLabel.hidden;
   root.hidden=profileLabel.hidden&&githubLabel.hidden;
   syncModel();
  };
