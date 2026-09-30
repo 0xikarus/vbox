@@ -75,6 +75,8 @@ test('usage shows remaining capacity and Conversations width can be resized and 
 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('80% left'));
+  assert.equal(await page.$eval('#chat-usage .chat-usage-ring-value',element=>element.getAttribute('stroke-dasharray')),'80 100','the header ring tracks the lowest remaining window');
+  assert.equal(await page.$eval('#chat-header-terminal',element=>element.getAttribute('aria-label')),'Open terminal');
   assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg'),text:element.textContent.trim()})),{next:'chat-terminal',label:'Desktop',icon:true,text:'Desktop'});
   assert.match(await page.$eval('#chat-usage',element=>element.getAttribute('aria-label')),/claude personal usage: 80% remaining/);
   assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage','navbar opens all profiles without a percentage');
@@ -133,9 +135,10 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name').textContent==='Writer'&&document.querySelector('#chat-usage').textContent.includes('80% left'));
   assert.equal(await page.$eval('#chat-usage',element=>element.hidden),false,'the selected chat usage is visible on a phone');
-  assert.notEqual(await page.$eval('#chat-control',element=>getComputedStyle(element).display),'none','computer icon stays available before usage on a phone');
+  assert.notEqual(await page.$eval('#chat-header-desktop',element=>getComputedStyle(element).display),'none','desktop action stays available beside usage on a phone');
+  assert.equal(await page.$eval('#chat-header-terminal',element=>getComputedStyle(element).display),'none','terminal action is hidden in the mobile header');
+  assert.equal(await page.$eval('#chat-usage .chat-usage-left',element=>getComputedStyle(element).display),'none','the mobile chip shows only the ring and percent');
   assert.equal(await page.$eval('#chat-header-state',element=>element.innerText.trim()),'running','mobile keeps the box state readable');
-  await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
   assert.doesNotMatch(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);

@@ -1619,8 +1619,6 @@
   $('#thread-composer button').disabled=box.state!=='running';
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
-  $('#chat-more-menu [data-action="workspace"]').href='/boxes/'+encodeURIComponent(box.id);
-  $('#chat-more-menu [data-action="clear"]').disabled=$('#chat-clear-context').disabled;
   updateBanner();
  }
  // One banner for the two things that silently confuse people: a dropped
@@ -2087,6 +2085,8 @@
   if(wasOpen&&inspectOpen)renderInspect();
  }
  $('#chat-control').onclick=()=>void openTakeover('desktop');
+ $('#chat-header-desktop').onclick=()=>void openTakeover('desktop');
+ $('#chat-header-terminal').onclick=()=>{const box=boxes.get(selected);if(box)void openTakeover('tmux',box.id)};
  $('#takeover-close').onclick=closeTakeover;
  $('#takeover-backdrop').onclick=closeTakeover;
  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.onclick=()=>void openTakeover(b.dataset.kind));
@@ -2791,7 +2791,7 @@
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
- addEventListener('keydown',event=>{if(event.key==='Escape'){const overlayOpen=!!document.querySelector('.sheet:not([hidden])')||!newBoxModal.hidden||!deleteModal.hidden||!takeover.hidden;closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();if(inspectOpen&&!overlayOpen){closeInspect();$(matchMedia('(max-width:640px)').matches?'#chat-more':'#chat-info').focus()}}});
+  addEventListener('keydown',event=>{if(event.key==='Escape'){const overlayOpen=!!document.querySelector('.sheet:not([hidden])')||!newBoxModal.hidden||!deleteModal.hidden||!takeover.hidden;closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();if(inspectOpen&&!overlayOpen){closeInspect();$('#chat-info').focus()}}});
  // Re-push the instructions the box already carries. A replaced worker or a
  // restored hibernation can leave a running box behind its saved config, and
  // re-typing the same Markdown just to trigger a write is a poor way to fix it.
@@ -2851,25 +2851,6 @@
   finally{wakingBoxes.delete(box.id);renderHeader()}
  }
  $('#chat-wake').onclick=()=>void wakeBox(boxes.get(selected));
- const moreButton=$('#chat-more'),moreMenu=$('#chat-more-menu');
- function closeChatMore(){moreMenu.hidden=true;moreButton.setAttribute('aria-expanded','false')}
- moreButton.onclick=()=>{const willOpen=moreMenu.hidden;moreMenu.hidden=!willOpen;moreButton.setAttribute('aria-expanded',String(willOpen));if(willOpen)moreMenu.querySelector('[role="menuitem"]')?.focus()};
- moreMenu.onkeydown=event=>{
-  if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
-  event.preventDefault();const items=[...moreMenu.querySelectorAll('[role="menuitem"]')].filter(item=>!item.disabled),index=items.indexOf(document.activeElement);
-  const next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;
-  items[next]?.focus();
- };
- moreMenu.onclick=event=>{
-  const action=event.target.closest('[data-action]')?.dataset.action;
-  if(!action)return;
-  closeChatMore();
-  if(action==='details')$('#chat-info').click();
-  if(action==='control')$('#chat-control').click();
-  if(action==='clear')$('#chat-clear-context').click();
- };
- document.addEventListener('pointerdown',event=>{if(!moreMenu.hidden&&!moreMenu.contains(event.target)&&event.target!==moreButton)closeChatMore()});
- document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!moreMenu.hidden){closeChatMore();moreButton.focus()}});
  async function hibernateBox(box){
   try{
    await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
@@ -3084,12 +3065,12 @@
  function renderChatUsage(){
   const button=$('#chat-usage');
   const ref=selectedUsageProfile;
-  button.hidden=!owner||!selected||!ref||!usageLoaded;
-  if(button.hidden)return;
-  const profile=usageProfiles.find(item=>item.application===ref.application&&item.name===ref.name);
+  const profile=ref?usageProfiles.find(item=>item.application===ref.application&&item.name===ref.name):null;
   const lowest=lowestRemaining(profile);
-  const label=mk('span','Usage · ');label.className='chat-usage-label';
-  button.replaceChildren(label,mk('span',lowest===null?'unavailable':usageNumber(lowest)+'% left'));
+  button.hidden=!owner||!selected||!ref||!usageLoaded||lowest===null;
+  if(button.hidden)return;
+  button.querySelector('.chat-usage-value').textContent=usageNumber(lowest)+'%';
+  button.querySelector('.chat-usage-ring-value').setAttribute('stroke-dasharray',lowest+' 100');
   button.setAttribute('aria-label',ref.application+' '+ref.name+' usage: '+(lowest===null?'remaining unavailable':usageNumber(lowest)+'% remaining'));
   button.title=ref.application+' · '+ref.name+(lowest===null?' · No remaining usage reported':' · Lowest reported remaining window: '+usageNumber(lowest)+'%. Open this profile’s usage details.');
   button.classList.toggle('usage-low',lowest!==null&&lowest<=20);

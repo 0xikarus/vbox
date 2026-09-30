@@ -191,9 +191,10 @@ test('thread sidebar fits a phone without a resize handle',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user');
-  const mobile=await p.evaluate(()=>{const back=document.querySelector('#chat-back').getBoundingClientRect(),bubble=document.querySelector('#chat-messages .msg.user').getBoundingClientRect(),thread=document.querySelector('#chat-messages .msg.user + .msg-thread-line').getBoundingClientRect();return {back:back.toJSON(),bubble:bubble.toJSON(),thread:thread.toJSON()}});
-  assert.ok(mobile.back.left>=12&&mobile.back.left<=17,'the back tap target starts at the mobile gutter');
-  assert.ok(mobile.back.width>=44&&mobile.back.height>=44,'the back target is at least 44px');
+  await new Promise(resolve=>setTimeout(resolve,350));
+  const mobile=await p.evaluate(()=>{const header=document.querySelector('#chat-header').getBoundingClientRect(),back=document.querySelector('#chat-back').getBoundingClientRect(),bubble=document.querySelector('#chat-messages .msg.user').getBoundingClientRect(),thread=document.querySelector('#chat-messages .msg.user + .msg-thread-line').getBoundingClientRect();return {header:header.toJSON(),back:back.toJSON(),bubble:bubble.toJSON(),thread:thread.toJSON()}});
+  assert.equal(Math.round(mobile.back.left-mobile.header.left),12,'the back tap target starts at the header gutter');
+  assert.ok(mobile.back.width>=44&&mobile.back.height>=44,'the back target is at least 44px: '+JSON.stringify(mobile.back));
   assert.ok(mobile.thread.top>=mobile.bubble.bottom,'the thread link sits outside and below its bubble');
   await p.$eval('#chat-messages .msg.user .msg-reply',button=>button.click());
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),false,'the direct icon also works on mobile');

@@ -74,7 +74,10 @@
     </button>
     <span class="spacer"></span>
     <button id="chat-wake" type="button" hidden>Wake</button>
-    <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button>
+    <button id="chat-usage" type="button" hidden aria-label="Usage for this chat"><svg class="chat-usage-ring" viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="3" opacity=".18"/><circle class="chat-usage-ring-value" cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" pathLength="100"/></svg><span class="chat-usage-value"></span><span class="chat-usage-left"> left</span></button>
+    <button id="chat-header-desktop" type="button" title="Desktop" aria-label="Open desktop"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M8 21h8M12 18v3"/></svg></button>
+    <button id="chat-header-terminal" type="button" title="Terminal (TMUX)" aria-label="Open terminal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m4 7 5 5-5 5M12 17h8"/></svg></button>
+    <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button>
    </header>
    <div id="chat-banner" hidden role="status"></div>
    <div id="inspect-backdrop" hidden></div>
@@ -101,18 +104,8 @@
       <button id="chat-control" class="chat-action" type="button" aria-label="Desktop" title="Desktop"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></span><span class="chat-action-label">Desktop</span></button>
       <button id="chat-terminal" class="chat-action" type="button" aria-label="Terminal" title="Terminal (TMUX)"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></span><span class="chat-action-label">Terminal</span></button>
       <a id="chat-workspace" class="chat-action" href="#"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span><span class="chat-action-label">Workspace</span></a>
-      <span class="chat-action-wrap">
-       <button id="chat-more" class="chat-action" type="button" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></span><span class="chat-action-label">More</span></button>
-       <div id="chat-more-menu" role="menu" hidden>
-        <a data-action="workspace" href="#" role="menuitem">Open workspace</a>
-        <button type="button" data-action="control" role="menuitem">Desktop / TMUX</button>
-        <button type="button" data-action="details" role="menuitem">Box details</button>
-        <button type="button" data-action="clear" role="menuitem">Clear context</button>
-       </div>
-      </span>
      </div>
      <div id="inspect-facts" class="inspect-facts"></div>
-       <div id="inspect-usage" class="inspect-group"><button id="chat-usage" type="button" hidden aria-label="Usage for this chat">Usage</button></div>
        <details class="inspect-block inspect-fold inspect-technical" data-fold="technical">
         <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><h3>Technical details</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
         <div class="inspect-technical-inner">
