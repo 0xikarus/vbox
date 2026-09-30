@@ -2284,7 +2284,7 @@
   $('#inspect-title').textContent=box.name;
   $('#inspect-header-state').textContent=stateText;
   $('#inspect-header-state').className=stateClass(box.state);
-  $('#inspect-avatar').replaceChildren(messageMascot(box,'inspect-hero-mascot'));
+  {const hero=$('#inspect-avatar'),live=hero.firstElementChild,next=reuseMessageMascot(live,box,'inspect-hero-mascot',false);if(next!==live)hero.replaceChildren(next)}
   renderInspectScreen(box);
   $('#inspect-name').textContent=box.name;
   $('#inspect-subtitle').textContent=stateText;

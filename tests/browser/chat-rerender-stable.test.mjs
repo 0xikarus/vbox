@@ -52,6 +52,14 @@ test('re-rendering a chat keeps existing messages and avatars still',async()=>{
   assert.deepEqual(await page.$$eval('#chat-messages .msg-enter',nodes=>nodes.map(node=>node.dataset.key)),['message-6'],'only the new message animates in');
   assert.equal(await page.$eval('#chat-messages .msg[data-key="message-5"] > .msg-avatar',avatar=>avatar.dataset.probe),'kept','the unchanged avatar survives the re-render');
   assert.equal(await page.$$eval('#chat-messages .msg:not(.msg-enter)',nodes=>nodes.filter(node=>node.getAnimations().length).length),0,'existing messages do not replay an animation');
+
+  await page.click('#chat-info');
+  await page.waitForFunction(()=>!document.querySelector('#inspect').hidden&&document.querySelector('#inspect-avatar .inspect-hero-mascot'));
+  await page.$eval('#inspect-avatar .inspect-hero-mascot',mascot=>{mascot.dataset.probe='kept'});
+  messages=[...messages,{id:'message-7',direction:'agent',state:'delivered',text:'Message 7',createdAt:timestamp(7),updatedAt:timestamp(7)}];
+  await page.$eval('#refresh',button=>button.click());
+  await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('Message 7'));
+  assert.equal(await page.$eval('#inspect-avatar .inspect-hero-mascot',mascot=>mascot.dataset.probe),'kept','the details mascot keeps its state across refreshes');
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });
