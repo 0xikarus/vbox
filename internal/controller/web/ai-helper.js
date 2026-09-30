@@ -108,7 +108,7 @@ window.VMBoxAIHelper = (() => {
    for(const side of [1536,1200,960]){
     const scale=Math.min(1,side/Math.max(width,height));
     const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
-    const context=canvas.getContext('2d');context.fillStyle='#fff';context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(loaded,0,0,canvas.width,canvas.height);
+    const context=canvas.getContext('2d');context.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--vb-white').trim();context.fillRect(0,0,canvas.width,canvas.height);context.drawImage(loaded,0,0,canvas.width,canvas.height);
     const image=canvas.toDataURL('image/jpeg',.8);
     if(image.length<=650000)return {number:attachment.number,kind:video?'video':'image',image};
    }

@@ -166,22 +166,9 @@
 
  /* The chat palette, type, spacing and brand mascot are fixed for vbox. */
  try{localStorage.removeItem('vmboxChatTheme')}catch{}
- const WORKSPACE_THEME={bg:'#111923',bg2:'#18212d',surface:'#1a2230',surface2:'#202e3d',
-  ink:'#eaf0f8','ink-soft':'#91a0b3',line:'#2b3848',
-  accent:'#8fb8f5','accent-text':'#aaceff','accent-ink':'#102136','accent-soft':'#263749',
-  pop:'#b691e6','bubble-out':'#294b65','bubble-in':'#1b2938','bubble-in-ink':'#eaf0f8',
-  danger:'#ec727c','danger-text':'#ffadb5',warn:'#e3b66d','warn-text':'#f2cf8e',ok:'#69d3a4','ok-text':'#8ee5ba'};
- function deriveTheme(){
-  const t=Object.assign({},WORKSPACE_THEME,{radius:'6px','radius-sm':'4px','radius-lg':'9px',shadow:'0 5px 18px #08121d44','shadow-pop':'0 22px 70px #06101bbb',wall:'none'});
-  return {font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:6,tokens:t};
- }
  function applyVariant(){
   document.documentElement.dataset.variant='A';
-  const derived=deriveTheme();
-  const root=document.documentElement.style;
-  for(const key in derived.tokens)root.setProperty('--'+key,derived.tokens[key]);
-  root.setProperty('--font',derived.font);
-  const themeColor=document.querySelector('meta[name="theme-color"]');if(themeColor)themeColor.setAttribute('content',derived.tokens.bg);
+  const themeColor=document.querySelector('meta[name="theme-color"]');if(themeColor)themeColor.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--vb-bg').trim());
   refreshAccountMascots();
  }
 
@@ -215,7 +202,7 @@
  }
  const mxBodyPath=t=>smoothClosed(blobPoints(120,190-t.H/2,t.W/2,t.H/2,t));
  function mxPattern(t){
-  const W=t.W,H=t.H,x=120-W/2,y=190-H,cy=y+H/2,tone=t.patTone,op=tone==='#fff'?.2:.15,sw=t.patW;
+  const W=t.W,H=t.H,x=120-W/2,y=190-H,cy=y+H/2,tone=t.patTone,op=tone===getComputedStyle(document.documentElement).getPropertyValue('--vb-white').trim()?.2:.15,sw=t.patW;
   const wrapF=i=>'<g fill="'+tone+'" fill-opacity="'+op+'">'+i+'</g>';
   const wrapS=(i,extra)=>'<g fill="none" stroke="'+tone+'" stroke-opacity="'+op+'" stroke-width="'+sw+'" stroke-linecap="round" '+(extra||'')+'>'+i+'</g>';
   const ripplePts=r=>t.lumps.map((k,j)=>{const a=j/t.lumps.length*Math.PI*2,rr=r*(1+(k-.5)*.35);return [120+rr*Math.cos(a),cy+rr*.92*Math.sin(a)];});
@@ -242,10 +229,8 @@
  const Mascot=window.VBoxMascot?.Mascot||class{
   constructor(host,id,{appearance={}}={}){
    this.state='idle';this.expression=null;this.signal='idle';
-   const colors=['#965FF0','#378EF5','#24C77A','#23C5BB','#FF8A38','#F5BC29','#F253B1','#F25564','#BE67E8','#60C989','#FF6F59','#1B2A41'];
-   let hash=2166136261;for(const char of String(id)){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619)}hash>>>=0;
-   const color=appearance.color||colors[hash%37===0?11:Math.floor(hash/8)%11];
-   host.innerHTML='<svg class="vbox-mascot" viewBox="0 0 100 100" role="img" aria-label="idle mascot"><circle cx="50" cy="50" r="39" fill="'+color+'"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="#fff"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="#fff"/></svg>';
+   const color=appearance.color||getComputedStyle(document.documentElement).getPropertyValue('--vb-mascot-fallback').trim();
+   host.innerHTML='<svg class="vbox-mascot" viewBox="0 0 100 100" role="img" aria-label="idle mascot"><circle cx="50" cy="50" r="39" fill="'+color+'"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/></svg>';
    this.svg=host.querySelector('svg');this.svg.__vboxMascot=this;
   }
   jump(mood,expression=null,signal=null){this.state=mood;this.expression=expression;this.signal=signal||'idle';return true}
@@ -293,7 +278,7 @@
   accountMascots.splice(0).forEach(m=>m.destroy&&m.destroy());
   for(const id of ['chat-empty-mascot','chat-list-empty-mascot']){
    const host=document.getElementById(id);if(!host)continue;
-   accountMascots.push(new Mascot(host,'vbox-brand',{appearance:{color:'#FF6F59',eyes:'A'}}));
+   accountMascots.push(new Mascot(host,'vbox-brand',{appearance:{color:'var(--vb-brand-coral)',eyes:'A'}}));
   }
  }
  /* ═══ message body: tiny Markdown via /markdown.js, bare URLs linkified ═══ */
@@ -581,7 +566,7 @@
  /* ---------- annotate a received image, then attach it to a reply ---------- */
  const annotationDialog=$('#image-annotation'),annotationCanvas=$('#image-annotation-canvas'),annotationContext=annotationCanvas.getContext('2d');
  const annotationStatus=$('#image-annotation-status');
- let annotationImage=null,annotationTarget=null,annotationStrokes=[],activeAnnotationStroke=null,activeAnnotationPointer=null,annotationColor='#f44336',annotationBusy=false;
+ let annotationImage=null,annotationTarget=null,annotationStrokes=[],activeAnnotationStroke=null,activeAnnotationPointer=null,annotationColor=getComputedStyle(document.documentElement).getPropertyValue('--vb-annotation-red').trim(),annotationBusy=false;
  function annotationPoint(event){
   const rect=annotationCanvas.getBoundingClientRect();
   return {x:Math.max(0,Math.min(annotationCanvas.width,(event.clientX-rect.left)*annotationCanvas.width/rect.width)),y:Math.max(0,Math.min(annotationCanvas.height,(event.clientY-rect.top)*annotationCanvas.height/rect.height))};
@@ -632,7 +617,7 @@
  const finishAnnotationStroke=event=>{if(activeAnnotationPointer===event.pointerId){activeAnnotationStroke=null;activeAnnotationPointer=null}};
  annotationCanvas.addEventListener('pointerup',finishAnnotationStroke);annotationCanvas.addEventListener('pointercancel',finishAnnotationStroke);
  annotationDialog.querySelectorAll('[data-annotation-color]').forEach(button=>button.onclick=()=>{
-  annotationColor=button.dataset.annotationColor;
+  annotationColor=getComputedStyle(document.documentElement).getPropertyValue('--vb-annotation-'+button.dataset.annotationColor).trim();
   annotationDialog.querySelectorAll('[data-annotation-color]').forEach(choice=>choice.setAttribute('aria-pressed',String(choice===button)));
  });
  $('#image-annotation-undo').onclick=()=>{annotationStrokes.pop();redrawAnnotation();updateAnnotationTools()};
@@ -651,7 +636,7 @@
    let extension='png';
    if(blob.size>25*1024*1024){
     const flattened=document.createElement('canvas');flattened.width=annotationCanvas.width;flattened.height=annotationCanvas.height;
-    const ctx=flattened.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,flattened.width,flattened.height);ctx.drawImage(annotationCanvas,0,0);
+    const ctx=flattened.getContext('2d');ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--vb-white').trim();ctx.fillRect(0,0,flattened.width,flattened.height);ctx.drawImage(annotationCanvas,0,0);
     blob=await new Promise(resolve=>flattened.toBlob(resolve,'image/jpeg',.85));extension='jpg';
     flattened.width=0;flattened.height=0;
     if(!blob)throw Error('Could not export the annotated image.');
@@ -1095,6 +1080,10 @@
    if(q){if(title)title.textContent='No chats match \u201c'+q+'\u201d';if(hint)hint.textContent='Try a different name.';if(cta){cta.textContent='Clear search';cta.dataset.action='clear'}}
    else{if(title)title.textContent='No conversations yet';if(hint)hint.textContent='Create your first box to start chatting.';if(cta){cta.textContent='New box';cta.dataset.action='new'}}}
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
+  const otherUnread=[...boxes.values()].reduce((count,box)=>count+(box.id===selected?0:box.unread||0),0)
+   +(owner?[...pairs.values()].filter(pair=>pairKey(pair)!==selectedPair&&pairHasUnread(pair)).length:0);
+  const backCount=$('#chat-back-count');backCount.hidden=!otherUnread;backCount.textContent=otherUnread>99?'99+':String(otherUnread);
+  $('#chat-back').setAttribute('aria-label','Back to chat list'+(otherUnread?' · '+otherUnread+' unread in other chats':''));
  }
 
  /* ---------- messages ---------- */
@@ -1115,6 +1104,11 @@
   users:[['path',{d:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'}],['circle',{cx:'9',cy:'7',r:'4'}],['path',{d:'M22 21v-2a4 4 0 0 0-3-3.87'}],['path',{d:'M16 3.13a4 4 0 0 1 0 7.75'}]],
   activity:[['path',{d:'M22 12h-4l-3 9L9 3l-3 9H2'}]],
   terminal:[['rect',{x:'2',y:'3',width:'20',height:'18',rx:'2'}],['path',{d:'m7 9 3 3-3 3'}],['path',{d:'M13 15h4'}]],
+  'file-text':[['path',{d:'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z'}],['path',{d:'M14 2v6h6'}],['path',{d:'M8 13h8M8 17h8'}]],
+  key:[['circle',{cx:'8',cy:'15',r:'4'}],['path',{d:'m10.8 12.2 9-9L22 5l-2 2 2 2-2 2-2-2-5.2 5.2'}]],
+  'refresh-cw':[['path',{d:'M20 11a8 8 0 0 0-14-5L4 8'}],['path',{d:'M4 4v4h4'}],['path',{d:'M4 13a8 8 0 0 0 14 5l2-2'}],['path',{d:'M16 16h4v4'}]],
+  'power':[['path',{d:'M12 2v10'}],['path',{d:'M18.4 6.6a9 9 0 1 1-12.8 0'}]],
+  'chevron-right':[['path',{d:'m9 6 6 6-6 6'}]],
   copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
   reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
@@ -1231,7 +1225,8 @@
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
-  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>1){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
+  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;
+  if(message.threadId&&threadSize>1&&!message.parentMessageId){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread msg-thread-line '+(mine?'user':'agent');thread.textContent='↳ '+(threadSize-1)+' '+(threadSize===2?'reply':'replies');thread.onclick=()=>void openThread(message.threadId);row._threadLink=thread}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
   if(mine&&!readOnly&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
@@ -1461,6 +1456,7 @@
     if(senderKey!==prevSender)node.classList.add('group-start');
     prevSender=senderKey;
     messagesEl.append(node);
+    if(node._threadLink)messagesEl.append(node._threadLink);
    }
   }
   const pending=pendingSends.get(box.id);
@@ -1623,8 +1619,6 @@
   $('#thread-composer button').disabled=box.state!=='running';
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
-  $('#chat-more-menu [data-action="workspace"]').href='/boxes/'+encodeURIComponent(box.id);
-  $('#chat-more-menu [data-action="clear"]').disabled=$('#chat-clear-context').disabled;
   updateBanner();
  }
  // One banner for the two things that silently confuse people: a dropped
@@ -2091,6 +2085,8 @@
   if(wasOpen&&inspectOpen)renderInspect();
  }
  $('#chat-control').onclick=()=>void openTakeover('desktop');
+ $('#chat-header-desktop').onclick=()=>void openTakeover('desktop');
+ $('#chat-header-terminal').onclick=()=>{const box=boxes.get(selected);if(box)void openTakeover('tmux',box.id)};
  $('#takeover-close').onclick=closeTakeover;
  $('#takeover-backdrop').onclick=closeTakeover;
  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.onclick=()=>void openTakeover(b.dataset.kind));
@@ -2225,11 +2221,22 @@
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
  const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
  const importedProfileLabel=ref=>[ref.application,ref.name,ref.model,ref.reasoningEffort].filter(Boolean).join(' · ');
+ const shortRuntimeId=value=>{const text=String(value);return text.length>20?text.slice(0,8)+'…'+text.slice(-6):text};
  const fillRows=(target,rows)=>{
   target.replaceChildren();
-  for(const [dt,dd,cls] of rows){
+  for(const [dt,dd,cls,copy] of rows){
    const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
-   t.textContent=dt;d.textContent=dd;if(cls)d.className=cls;row.append(t,d);target.append(row);
+   t.textContent=dt;
+   if(Array.isArray(dd)){d.classList.add('profile-lines');for(const line of dd){const span=document.createElement('span');span.textContent=line;span.title=line;d.append(span)}}
+   else d.textContent=dd;
+   if(cls)d.classList.add(cls);
+   if(copy){
+    const value=d.textContent,visible=dt==='Slot'&&value.includes(' · ')?value.split(' · ')[0]+' · '+shortRuntimeId(value.split(' · ').slice(1).join(' · ')):shortRuntimeId(value);
+    d.replaceChildren();const label=document.createElement('span');label.className='copy-value-text';label.textContent=visible;
+    const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('fill','none');icon.setAttribute('stroke','currentColor');icon.setAttribute('stroke-width','1.9');icon.setAttribute('stroke-linecap','round');icon.setAttribute('stroke-linejoin','round');icon.setAttribute('aria-hidden','true');icon.innerHTML='<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>';
+    d.append(label,icon);d.classList.add('copy-value');d.title=copy+' · tap to copy';d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label','Copy full '+dt.toLowerCase());const write=async()=>{try{await navigator.clipboard.writeText(copy);toast('Copied')}catch{toast('Copy is unavailable here.')}};d.onclick=write;d.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write()}}
+   }
+   row.append(t,d);target.append(row);
   }
  };
  function mountInspectMemory(box){
@@ -2244,7 +2251,7 @@
   void api('/v1/fleet/host-resources?'+hostQuery).then(host=>{
    if(root.dataset.boxId!==box.id||root.dataset.generation!==String(box.assignmentGeneration))return;
    const fmt=bytes=>(bytes/(1024**3)).toFixed(1)+' GiB';
-   availability.textContent='Worker available now · RAM '+fmt(host.memoryAvailableBytes)+' / '+fmt(host.memoryTotalBytes)+' · swap '+fmt(host.swapFreeBytes)+' / '+fmt(host.swapTotalBytes);
+   availability.textContent='Worker available now · RAM '+fmt(host.memoryAvailableBytes)+' available of '+fmt(host.memoryTotalBytes)+' · swap '+fmt(host.swapFreeBytes)+' free of '+fmt(host.swapTotalBytes);
    if(host.observedAt)availability.title='Measured '+new Date(host.observedAt).toLocaleString();
   }).catch(()=>{if(root.dataset.boxId===box.id)availability.textContent='Worker availability unavailable.'});
   const load=async()=>{
@@ -2296,11 +2303,11 @@
   fillRows($('#inspect-runtime-rows'),[
    ['State',stateText,stateClass(box.state)],
    ['Agent',agent],
-   ...(owner?[['Imported profiles',inspectProfileCache?inspectProfileCache.error||((inspectProfileCache.profiles||[]).map(importedProfileLabel).join(', ')||'None')+(inspectProfileCache.pending?.length?' · queued: '+inspectProfileCache.pending.map(importedProfileLabel).join(', '):''):'Loading…']]:[]),
+   ...(owner?[['Imported profiles',inspectProfileCache?inspectProfileCache.error||([...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))].length?[...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))]:['None']):'Loading…']]:[]),
    ['Provider',box.provider||'—'],
-   ['Worker',inspectWorker?.name||'Loading…'],
-   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId]]:[]),
-   ['Slot',inspectWorker?.slot||'Loading…'],
+   ['Worker',inspectWorker?.name||'Loading…','',inspectWorker?.name],
+   ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,'',inspectWorker.serviceId]]:[]),
+   ['Slot',inspectWorker?.slot||'Loading…','',box.slotId],
    ['Messages',msgs.length+' total'],
   ]);
   fillRows($('#inspect-activity-rows'),[
@@ -2317,7 +2324,7 @@
    fillRows($('#inspect-attachment-rows'),usage?.error?[['Storage',usage.error,'alert']]:[
     ['This box',usage?storageSize(usage.boxBytes)+' · '+usage.boxCount+' files':'Loading…'],
     ['Account',usage?storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes):'Loading…'],
-    ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files; cleaned on the next upload after 24 hours':'Loading…'],
+    ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files':'Loading…'],
    ]);
    $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
   }
@@ -2335,11 +2342,11 @@
   }
   // Config the box keeps in sync, editable from the same place it is reported.
   const actions=$('#inspect-config-actions');actions.replaceChildren();
-  const act=(label,title,fn)=>{const b=document.createElement('button');b.type='button';b.textContent=label;b.title=title;b.onclick=fn;actions.append(b)};
-  act('Instructions…','Edit the Markdown instructions synced into this box',()=>void openBoxInstructions(box));
-  if(owner)act('Credentials…','Replace the login profiles imported into this box',()=>void openBoxCredentials(box));
-  if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box',()=>void resyncBox(box));
-  if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end',()=>void restartBox(box));
+  const act=(label,title,icon,fn,danger=false)=>{const b=document.createElement('button');b.type='button';b.className='inspect-config-action'+(danger?' danger':'');b.title=title;b.append(lucide(icon),Object.assign(document.createElement('span'),{textContent:label}),lucide('chevron-right'));b.onclick=fn;actions.append(b)};
+  act('Instructions…','Edit the Markdown instructions synced into this box','file-text',()=>void openBoxInstructions(box));
+  if(owner)act('Credentials…','Replace the login profiles imported into this box','key',()=>void openBoxCredentials(box));
+  if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box','refresh-cw',()=>void resyncBox(box));
+  if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end','power',()=>void restartBox(box),true);
   mountInspectMemory(box);
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
@@ -2790,7 +2797,7 @@
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
- addEventListener('keydown',event=>{if(event.key==='Escape'){const overlayOpen=!!document.querySelector('.sheet:not([hidden])')||!newBoxModal.hidden||!deleteModal.hidden||!takeover.hidden;closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();if(inspectOpen&&!overlayOpen){closeInspect();$(matchMedia('(max-width:640px)').matches?'#chat-more':'#chat-info').focus()}}});
+  addEventListener('keydown',event=>{if(event.key==='Escape'){const overlayOpen=!!document.querySelector('.sheet:not([hidden])')||!newBoxModal.hidden||!deleteModal.hidden||!takeover.hidden;closeRowMenu();closeSheets();if(!newBoxModal.hidden)newBoxModal.hidden=true;if(!deleteModal.hidden)deleteModal.hidden=true;if(!takeover.hidden)closeTakeover();if(inspectOpen&&!overlayOpen){closeInspect();$('#chat-info').focus()}}});
  // Re-push the instructions the box already carries. A replaced worker or a
  // restored hibernation can leave a running box behind its saved config, and
  // re-typing the same Markdown just to trigger a write is a poor way to fix it.
@@ -2850,25 +2857,6 @@
   finally{wakingBoxes.delete(box.id);renderHeader()}
  }
  $('#chat-wake').onclick=()=>void wakeBox(boxes.get(selected));
- const moreButton=$('#chat-more'),moreMenu=$('#chat-more-menu');
- function closeChatMore(){moreMenu.hidden=true;moreButton.setAttribute('aria-expanded','false')}
- moreButton.onclick=()=>{const willOpen=moreMenu.hidden;moreMenu.hidden=!willOpen;moreButton.setAttribute('aria-expanded',String(willOpen));if(willOpen)moreMenu.querySelector('[role="menuitem"]')?.focus()};
- moreMenu.onkeydown=event=>{
-  if(!['ArrowDown','ArrowUp','Home','End'].includes(event.key))return;
-  event.preventDefault();const items=[...moreMenu.querySelectorAll('[role="menuitem"]')].filter(item=>!item.disabled),index=items.indexOf(document.activeElement);
-  const next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;
-  items[next]?.focus();
- };
- moreMenu.onclick=event=>{
-  const action=event.target.closest('[data-action]')?.dataset.action;
-  if(!action)return;
-  closeChatMore();
-  if(action==='details')$('#chat-info').click();
-  if(action==='control')$('#chat-control').click();
-  if(action==='clear')$('#chat-clear-context').click();
- };
- document.addEventListener('pointerdown',event=>{if(!moreMenu.hidden&&!moreMenu.contains(event.target)&&event.target!==moreButton)closeChatMore()});
- document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!moreMenu.hidden){closeChatMore();moreButton.focus()}});
  async function hibernateBox(box){
   try{
    await api(boxPath(box.id)+'/hibernate','POST',{'Idempotency-Key':crypto.randomUUID()},{});
@@ -3083,12 +3071,12 @@
  function renderChatUsage(){
   const button=$('#chat-usage');
   const ref=selectedUsageProfile;
-  button.hidden=!owner||!selected||!ref||!usageLoaded;
-  if(button.hidden)return;
-  const profile=usageProfiles.find(item=>item.application===ref.application&&item.name===ref.name);
+  const profile=ref?usageProfiles.find(item=>item.application===ref.application&&item.name===ref.name):null;
   const lowest=lowestRemaining(profile);
-  const label=mk('span','Usage · ');label.className='chat-usage-label';
-  button.replaceChildren(label,mk('span',lowest===null?'unavailable':usageNumber(lowest)+'% left'));
+  button.hidden=!owner||!selected||!ref||!usageLoaded||lowest===null;
+  if(button.hidden)return;
+  button.querySelector('.chat-usage-value').textContent=usageNumber(lowest)+'%';
+  button.querySelector('.chat-usage-ring-value').setAttribute('stroke-dasharray',lowest+' 100');
   button.setAttribute('aria-label',ref.application+' '+ref.name+' usage: '+(lowest===null?'remaining unavailable':usageNumber(lowest)+'% remaining'));
   button.title=ref.application+' · '+ref.name+(lowest===null?' · No remaining usage reported':' · Lowest reported remaining window: '+usageNumber(lowest)+'%. Open this profile’s usage details.');
   button.classList.toggle('usage-low',lowest!==null&&lowest<=20);

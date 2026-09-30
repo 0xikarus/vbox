@@ -1,0 +1,321 @@
+/* Browser design tokens. Edit shared colour, radius, spacing, type and motion here. */
+:root{
+  --vb-font:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --vb-mono:ui-monospace,SFMono-Regular,Menlo,Consolas,'Liberation Mono',monospace;
+
+  --vb-bg:#ffffff;
+  --vb-bg-soft:#f7f7f8;
+  --vb-surface:#ffffff;
+  --vb-surface-2:#f2f2f3;
+  --vb-panel:#ffffff;
+  --vb-elevated:#ffffff;
+
+  --vb-ink:#111114;
+  --vb-ink-soft:#5b5b63;
+  --vb-ink-faint:#686872;
+
+  --vb-line:#ededef;
+  --vb-line-strong:#e1e1e4;
+  --vb-line-faint:#f2f2f3;
+
+  --vb-accent:#ff6f59;
+  --vb-accent-hover:#e85a45;
+  --vb-accent-text:#dc5240;
+  --vb-accent-soft:#fff0ed;
+  --vb-accent-ink:#ffffff;
+
+  --vb-navy:#1b2a41;
+  --vb-cream:#f3efe4;
+
+  --vb-ok:#16a34a;      --vb-ok-text:#15803d;   --vb-ok-soft:#eafaf0;
+  --vb-warn:#d97706;    --vb-warn-text:#b45309; --vb-warn-soft:#fdf4e5;
+  --vb-danger:#dc2626;  --vb-danger-text:#b91c1c; --vb-danger-soft:#fdecec;
+  --vb-pop:#7c5cff;
+  --vb-code:#16171a;
+  --vb-code-surface:#1e1f22;
+
+  --vb-bubble-out:#111114;
+  --vb-bubble-out-ink:#ffffff;
+  --vb-bubble-in:#f2f2f3;
+
+  --vb-radius-10:10px;--r-control:var(--vb-radius-10);
+  --vb-radius-16:16px;--r-surface:var(--vb-radius-16);
+  --vb-radius-22:22px;--r-bubble:var(--vb-radius-22);
+  --r-composer:999px;
+  --vb-radius-pill:999px;--r-pill:var(--vb-radius-pill);
+  --vb-shadow:0 1px 2px rgba(17,17,20,.05),0 1px 3px rgba(17,17,20,.04);
+  --vb-shadow-md:0 6px 20px rgba(17,17,20,.10);
+  --vb-shadow-lg:0 24px 60px rgba(17,17,20,.16);
+
+  --background:var(--vb-surface);
+  --foreground:var(--vb-ink);
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --vb-bg:#0e0f12;
+    --vb-bg-soft:#141519;
+    --vb-surface:#17181d;
+    --vb-surface-2:#1d1e24;
+    --vb-panel:#17181d;
+    --vb-elevated:#1a1b21;
+
+    --vb-ink:#f3f3f5;
+    --vb-ink-soft:#b3b3bc;
+    --vb-ink-faint:#9a9aa2;
+
+    --vb-line:#26272e;
+    --vb-line-strong:#33343c;
+    --vb-line-faint:#202128;
+
+    --vb-accent:#ff7d68;
+    --vb-accent-hover:#ff9482;
+    --vb-accent-text:#ff9a86;
+    --vb-accent-soft:#3a2622;
+    --vb-accent-ink:#1b1010;
+
+    --vb-ok:#4ade80;      --vb-ok-text:#86efac;   --vb-ok-soft:#16281d;
+    --vb-warn:#fbbf24;    --vb-warn-text:#fcd34d; --vb-warn-soft:#3a2f16;
+    --vb-danger:#f87171;  --vb-danger-text:#fca5a5; --vb-danger-soft:#3a1e1e;
+    --vb-pop:#a78bfa;
+    --vb-code:#26262b;
+    --vb-code-surface:#111318;
+
+    --vb-bubble-out:#f3f3f5;
+    --vb-bubble-out-ink:#111114;
+    --vb-bubble-in:#1d1e24;
+
+    --vb-shadow:0 1px 2px rgba(0,0,0,.5),0 1px 3px rgba(0,0,0,.4);
+    --vb-shadow-md:0 8px 24px rgba(0,0,0,.5);
+    --vb-shadow-lg:0 26px 70px rgba(0,0,0,.6);
+  }
+}
+
+
+:root{
+  --font:var(--vb-font);
+  --bg:var(--vb-bg);--bg2:var(--vb-bg-soft);--surface:var(--vb-surface);--surface2:var(--vb-surface-2);
+  --ink:var(--vb-ink);--ink-soft:var(--vb-ink-soft);--line:var(--vb-line);
+  --accent:var(--vb-accent);--accent-text:var(--vb-accent-text);--accent-ink:var(--vb-accent-ink);--accent-soft:var(--vb-accent-soft);
+  --pop:var(--vb-pop);--bubble-out:var(--vb-bubble-out);--bubble-in:var(--vb-bubble-in);--bubble-in-ink:var(--vb-ink);
+  --danger:var(--vb-danger);--danger-text:var(--vb-danger-text);--warn:var(--vb-warn);--warn-text:var(--vb-warn-text);
+  --ok:var(--vb-ok);--ok-text:var(--vb-ok-text);
+  --radius:var(--r-surface);--radius-sm:var(--r-control);--radius-lg:var(--r-surface);
+  --shadow:var(--vb-shadow);--shadow-pop:var(--vb-shadow-lg);--wall:none;
+}
+
+/* Spacing, type and motion shared by every browser surface. */
+:root{
+  --vb-space-4:4px;--vb-space-8:8px;--vb-space-12:12px;--vb-space-16:16px;--vb-space-24:24px;
+  --vb-gutter:12px;
+  --vb-type-xs:.68rem;--vb-type-sm:.78rem;--vb-type-base:.9rem;--vb-type-lg:1.16rem;--vb-type-xl:1.5rem;
+  --vb-motion-fast:150ms;--vb-motion-normal:300ms;--vb-motion-wake:440ms;
+  --vb-motion-ease:cubic-bezier(.2,.6,.2,1);--vb-motion-spring:cubic-bezier(.2,.9,.1,1);
+  --vb-primary:var(--vb-ink);--vb-primary-ink:var(--vb-bg);
+  --vb-white:#fff;--vb-brand-coral:#ff6f59;
+  --vb-annotation-red:#f44336;--vb-annotation-yellow:#ffdf4f;--vb-annotation-blue:#40d9ff;
+  --vb-mascot-fallback:#2563eb;
+  --vb-code-ink:#e6e6ea;
+  --vb-control-h:2.5rem;--vb-focus-border:color-mix(in srgb,var(--vb-ink) 55%,transparent);
+  --vb-ring:0 0 0 3px color-mix(in srgb,var(--vb-ink) 12%,transparent);
+  --vb-ease:var(--vb-motion-ease);--vb-t:var(--vb-motion-fast);
+  --vb-bubble-out-icon:rgba(255,255,255,.78);--vb-bubble-out-icon-hover:#fff;--vb-bubble-out-icon-bg:rgba(255,255,255,.18);
+}
+@media(prefers-color-scheme:dark){:root{
+  --vb-code-ink:#e6e6ea;
+  --vb-bubble-out-icon:rgba(17,17,20,.62);--vb-bubble-out-icon-hover:#111114;--vb-bubble-out-icon-bg:rgba(17,17,20,.12);
+}}
+
+/* Exact legacy swatches used by older surfaces. Keep raw values here only. */
+:root{
+  --vb-swatch-000:#000;
+  --vb-swatch-0002:#0002;
+  --vb-swatch-0005:#0005;
+  --vb-swatch-0007:#0007;
+  --vb-swatch-0008:#0008;
+  --vb-swatch-0009:#0009;
+  --vb-swatch-001b72:#001b72;
+  --vb-swatch-03c:#03c;
+  --vb-swatch-06101bbb:#06101bbb;
+  --vb-swatch-06101bcc:#06101bcc;
+  --vb-swatch-07101aaa:#07101aaa;
+  --vb-swatch-07101ac4:#07101ac4;
+  --vb-swatch-080d14:#080d14;
+  --vb-swatch-080d14eb:#080d14eb;
+  --vb-swatch-080e19aa:#080e19aa;
+  --vb-swatch-080e19bc:#080e19bc;
+  --vb-swatch-0a7a0a:#0a7a0a;
+  --vb-swatch-0b0b0b:#0b0b0b;
+  --vb-swatch-0b0b0d:#0b0b0d;
+  --vb-swatch-0b111bf2:#0b111bf2;
+  --vb-swatch-0d1114:#0d1114;
+  --vb-swatch-0d1119:#0d1119;
+  --vb-swatch-0e1116:#0e1116;
+  --vb-swatch-101418:#101418;
+  --vb-swatch-101714ee:#101714ee;
+  --vb-swatch-101b27e8:#101b27e8;
+  --vb-swatch-102136:#102136;
+  --vb-swatch-111:#111;
+  --vb-swatch-111923:#111923;
+  --vb-swatch-111b21:#111b21;
+  --vb-swatch-15202d:#15202d;
+  --vb-swatch-162131:#162131;
+  --vb-swatch-171d29:#171d29;
+  --vb-swatch-18212d:#18212d;
+  --vb-swatch-1a2230:#1a2230;
+  --vb-swatch-1b2533:#1b2533;
+  --vb-swatch-1c2a39:#1c2a39;
+  --vb-swatch-1c2c40:#1c2c40;
+  --vb-swatch-1c3441:#1c3441;
+  --vb-swatch-1d2a38:#1d2a38;
+  --vb-swatch-1d2a39:#1d2a39;
+  --vb-swatch-1e1f22:#1e1f22;
+  --vb-swatch-1e1f2200:#1e1f2200;
+  --vb-swatch-202b3a:#202b3a;
+  --vb-swatch-202e3d:#202e3d;
+  --vb-swatch-222:#222;
+  --vb-swatch-22c55e:#22c55e;
+  --vb-swatch-22c55e1f:#22c55e1f;
+  --vb-swatch-242d3a:#242d3a;
+  --vb-swatch-243243:#243243;
+  --vb-swatch-243b68:#243b68;
+  --vb-swatch-26303e:#26303e;
+  --vb-swatch-26303f:#26303f;
+  --vb-swatch-26313f:#26313f;
+  --vb-swatch-263448:#263448;
+  --vb-swatch-263749:#263749;
+  --vb-swatch-29457d:#29457d;
+  --vb-swatch-294f9c:#294f9c;
+  --vb-swatch-2b3848:#2b3848;
+  --vb-swatch-2c4058:#2c4058;
+  --vb-swatch-304052:#304052;
+  --vb-swatch-30445e:#30445e;
+  --vb-swatch-31445b:#31445b;
+  --vb-swatch-315da8:#315da8;
+  --vb-swatch-34445a:#34445a;
+  --vb-swatch-34624d:#34624d;
+  --vb-swatch-34a853:#34a853;
+  --vb-swatch-35d58a:#35d58a;
+  --vb-swatch-394779:#394779;
+  --vb-swatch-3a4b5e:#3a4b5e;
+  --vb-swatch-3a4f63:#3a4f63;
+  --vb-swatch-3b2630:#3b2630;
+  --vb-swatch-3b82f6:#3b82f6;
+  --vb-swatch-3e2d3b:#3e2d3b;
+  --vb-swatch-3e6074:#3e6074;
+  --vb-swatch-3f3d3a:#3f3d3a;
+  --vb-swatch-40516a:#40516a;
+  --vb-swatch-40536b:#40536b;
+  --vb-swatch-40536c:#40536c;
+  --vb-swatch-42647c:#42647c;
+  --vb-swatch-432b35:#432b35;
+  --vb-swatch-455678:#455678;
+  --vb-swatch-465b7b:#465b7b;
+  --vb-swatch-4b5e72:#4b5e72;
+  --vb-swatch-51647b:#51647b;
+  --vb-swatch-52514e:#52514e;
+  --vb-swatch-526174:#526174;
+  --vb-swatch-5264e9:#5264e9;
+  --vb-swatch-526782:#526782;
+  --vb-swatch-53647a:#53647a;
+  --vb-swatch-53647b:#53647b;
+  --vb-swatch-555:#555;
+  --vb-swatch-566477:#566477;
+  --vb-swatch-5cbf7b:#5cbf7b;
+  --vb-swatch-637b9b:#637b9b;
+  --vb-swatch-647fba:#647fba;
+  --vb-swatch-65799a:#65799a;
+  --vb-swatch-666:#666;
+  --vb-swatch-6678c5:#6678c5;
+  --vb-swatch-6781ba:#6781ba;
+  --vb-swatch-6b6864:#6b6864;
+  --vb-swatch-717782:#717782;
+  --vb-swatch-725b33:#725b33;
+  --vb-swatch-728096:#728096;
+  --vb-swatch-758ab8:#758ab8;
+  --vb-swatch-777:#777;
+  --vb-swatch-7c5cff:#7c5cff;
+  --vb-swatch-7c5cff22:#7c5cff22;
+  --vb-swatch-7ce5b2:#7ce5b2;
+  --vb-swatch-7ce5b226:#7ce5b226;
+  --vb-swatch-7f8c93:#7f8c93;
+  --vb-swatch-805267:#805267;
+  --vb-swatch-8390ff:#8390ff;
+  --vb-swatch-888:#888;
+  --vb-swatch-898781:#898781;
+  --vb-swatch-8a6d1f:#8a6d1f;
+  --vb-swatch-8a8a92:#8a8a92;
+  --vb-swatch-8ea3d0:#8ea3d0;
+  --vb-swatch-8ee5ba:#8ee5ba;
+  --vb-swatch-8fb8f5:#8fb8f5;
+  --vb-swatch-8fb8f533:#8fb8f533;
+  --vb-swatch-91a0b3:#91a0b3;
+  --vb-swatch-97a8bc:#97a8bc;
+  --vb-swatch-9b5e6a:#9b5e6a;
+  --vb-swatch-9fb0cc:#9fb0cc;
+  --vb-swatch-a8bad0:#a8bad0;
+  --vb-swatch-aaa:#aaa;
+  --vb-swatch-aab8c9:#aab8c9;
+  --vb-swatch-aaceff:#aaceff;
+  --vb-swatch-aebed0:#aebed0;
+  --vb-swatch-b00:#b00;
+  --vb-swatch-b5c2d1:#b5c2d1;
+  --vb-swatch-b5c9e5:#b5c9e5;
+  --vb-swatch-b9c5d5:#b9c5d5;
+  --vb-swatch-bdc9d7:#bdc9d7;
+  --vb-swatch-c00:#c00;
+  --vb-swatch-c3d0eb:#c3d0eb;
+  --vb-swatch-c4e7e3:#c4e7e3;
+  --vb-swatch-c6ddf3:#c6ddf3;
+  --vb-swatch-c9defe:#c9defe;
+  --vb-swatch-ccd7ef:#ccd7ef;
+  --vb-swatch-ced9e6:#ced9e6;
+  --vb-swatch-cfd5dc:#cfd5dc;
+  --vb-swatch-d2f4ff:#d2f4ff;
+  --vb-swatch-d5d9dc:#d5d9dc;
+  --vb-swatch-d6dbe4:#d6dbe4;
+  --vb-swatch-dbdee1:#dbdee1;
+  --vb-swatch-dbe8ff:#dbe8ff;
+  --vb-swatch-dce4ff:#dce4ff;
+  --vb-swatch-ddd:#ddd;
+  --vb-swatch-e0e0e0:#e0e0e0;
+  --vb-swatch-e2e2e2:#e2e2e2;
+  --vb-swatch-e2eaf5:#e2eaf5;
+  --vb-swatch-eaf0f8:#eaf0f8;
+  --vb-swatch-ec727c:#ec727c;
+  --vb-swatch-ecf6ff:#ecf6ff;
+  --vb-swatch-ecfff4:#ecfff4;
+  --vb-swatch-eee:#eee;
+  --vb-swatch-eef3fa:#eef3fa;
+  --vb-swatch-eef3ff:#eef3ff;
+  --vb-swatch-f0f0f0:#f0f0f0;
+  --vb-swatch-f0f3f6:#f0f3f6;
+  --vb-swatch-f1f5fd:#f1f5fd;
+  --vb-swatch-f2f2f2:#f2f2f2;
+  --vb-swatch-f2f4f5:#f2f4f5;
+  --vb-swatch-f2f6ff:#f2f6ff;
+  --vb-swatch-f3f6fa:#f3f6fa;
+  --vb-swatch-f3f6fd:#f3f6fd;
+  --vb-swatch-f4f4f4:#f4f4f4;
+  --vb-swatch-f4f7ff:#f4f7ff;
+  --vb-swatch-f4faf4:#f4faf4;
+  --vb-swatch-f59e0b:#f59e0b;
+  --vb-swatch-f59e0b1f:#f59e0b1f;
+  --vb-swatch-f5c46d:#f5c46d;
+  --vb-swatch-f5d18c:#f5d18c;
+  --vb-swatch-f5d18c26:#f5d18c26;
+  --vb-swatch-f7f7f7:#f7f7f7;
+  --vb-swatch-fafafa:#fafafa;
+  --vb-swatch-fdf4f4:#fdf4f4;
+  --vb-swatch-ff6f5922:#ff6f5922;
+  --vb-swatch-ff7a9a:#ff7a9a;
+  --vb-swatch-ff9eaa:#ff9eaa;
+  --vb-swatch-ff9eaa26:#ff9eaa26;
+  --vb-swatch-ffadb5:#ffadb5;
+  --vb-swatch-ffbfca:#ffbfca;
+  --vb-swatch-ffd0d0:#ffd0d0;
+  --vb-swatch-ffd1d6:#ffd1d6;
+  --vb-swatch-fff:#fff;
+  --vb-swatch-fff4dd:#fff4dd;
+  --vb-swatch-ffffff35:#ffffff35;
+}

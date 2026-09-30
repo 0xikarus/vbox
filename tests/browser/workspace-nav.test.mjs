@@ -6,7 +6,7 @@ import puppeteer from 'puppeteer-core';
 
 const root='internal/controller/web/';
 const source={};
-for(const name of ['chat.html','grid.html','index.html','app.css','chat.css','vbox-c.css','grid.css','controller.css','manager-theme.css','workspace-nav.css','workspace-nav.js'])source[name]=await readFile(root+name);
+for(const name of ['chat.html','grid.html','index.html','app.css','chat.css','vbox-tokens.css','vbox-c.css','grid.css','controller.css','manager-theme.css','workspace-nav.css','workspace-nav.js'])source[name]=await readFile(root+name);
 const server=http.createServer((req,res)=>{
  const path=new URL(req.url,'http://local').pathname;
  if(path==='/v1/profile-usage'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({profiles:[{application:'codex',name:'saved',snapshot:{windows:[{name:'session',usedPercent:40}]}}]}))}

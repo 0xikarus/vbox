@@ -16,7 +16,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/mascot.css','/motion.js','/mascot.js','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/mascot.css','/motion.js','/mascot.js','/vbox-tokens.css','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.png')?'image/png':file.endsWith('.woff2')?'font/woff2':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -640,7 +640,8 @@ test('workspace network failure explains safe recovery',async()=>{
 });
 test('configuration UI stays tiny and has no terminal code',async()=>{
  const css=await readFile(resolve(root,'app.css'),'utf8'),js=await readFile(resolve(root,'app.js'),'utf8');
- assert(Buffer.byteLength(css)<2048);assert(!/@import|url\(/.test(css));
+ // Shared token references are longer than the old literal colours.
+ assert(Buffer.byteLength(css)<2600);assert(!/@import|url\(/.test(css));
  for(const removed of ['/terminal','/tasks','chat-groups','setInterval'])assert(!js.includes(removed),removed);
 });
 test('index styles ship in a page-scoped sheet, not inline and not in shared app.css',async()=>{
@@ -652,7 +653,7 @@ test('index styles ship in a page-scoped sheet, not inline and not in shared app
  // Only the index links controller.css: grid, chat and workspace share app.css
  // and their terminal viewers are sensitive to changes in page geometry.
  for(const other of ['grid.html','chat.html','workspace.html'])assert(!(await readFile(resolve(root,other),'utf8')).includes('controller.css'),other);
- assert(Buffer.byteLength(page)<14336);assert(!/@import|url\(/.test(page));
+ assert(Buffer.byteLength(page)<18000);assert(!/@import|url\(/.test(page));
 });
 test('new box starts automatically and its row follows startup through the temporary saved state',async()=>{
  const page=await browser.newPage();

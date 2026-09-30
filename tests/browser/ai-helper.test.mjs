@@ -5,7 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const root='internal/controller/web/';
-const files=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css'];
+const files=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css'];
 const assets=Object.fromEntries(await Promise.all(files.map(async name=>[name,await readFile(root+name)])));
 const requests=[];
 const sentMessages=[];

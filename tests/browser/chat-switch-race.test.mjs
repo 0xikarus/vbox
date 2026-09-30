@@ -10,6 +10,7 @@ const motionJS=await readFile('internal/controller/web/motion.js','utf8');
 const mascotJS=await readFile('internal/controller/web/mascot.js','utf8');
 const mascotCSS=await readFile('internal/controller/web/mascot.css','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
+const tokensCSS=await readFile('internal/controller/web/vbox-tokens.css','utf8');
 const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
@@ -31,6 +32,7 @@ test('a late response from the previous box cannot overwrite the new one',async(
   if(path==='/mascot.js'){res.setHeader('Content-Type','text/javascript');return res.end(mascotJS)}
   if(path==='/mascot.css'){res.setHeader('Content-Type','text/css');return res.end(mascotCSS)}
   if(path==='/chat.css'){res.setHeader('Content-Type','text/css');return res.end(css)}
+  if(path==='/vbox-tokens.css'){res.setHeader('Content-Type','text/css');return res.end(tokensCSS)}
   if(path==='/vbox-c.css'){res.setHeader('Content-Type','text/css');return res.end(vboxCSS)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
