@@ -28,7 +28,7 @@ const agentThreadMessages=[
  {id:'66666666-6666-4666-8666-666666666666',taskId:'task-agent',direction:'agent',text:'Understood. Stable provider-side idempotency will be a hard requirement in the recommendation.',state:'delivered',parentMessageId:'55555555-5555-4555-8555-555555555555',threadId:agentThreadRoot,createdAt:'2026-09-21T10:03:00Z',updatedAt:'2026-09-21T10:03:00Z'}
 ];
 
-async function withChat(fn,messages=threadMessages){
+async function withChat(fn,messages=threadMessages,{boxList=boxes,postDelayMs=0}={}){
  const posts=[];
  const server=http.createServer((req,res)=>{
   const path=req.url.split('?')[0];
@@ -41,12 +41,12 @@ async function withChat(fn,messages=threadMessages){
   if(!path.startsWith('/v1/'))return res.end('');
   res.setHeader('Content-Type','application/json');
   if(path==='/v1/whoami')return res.end(JSON.stringify({role:'owner'}));
-  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxes));
+  if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes')return res.end(JSON.stringify(boxList));
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path==='/v1/logical-boxes/builder/messages'&&req.method==='POST'){
    let body='';req.on('data',chunk=>body+=chunk);
-   return req.on('end',()=>{posts.push(JSON.parse(body));res.end(JSON.stringify({message:{state:'delivered'}}))});
+   return req.on('end',()=>{posts.push(JSON.parse(body));setTimeout(()=>res.end(JSON.stringify({message:{state:'delivered'}})),postDelayMs)});
   }
   if(path.endsWith('/messages'))return res.end(JSON.stringify(messages));
   return res.end('{}');
@@ -105,6 +105,38 @@ test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
  });
 });
 
+test('a slow send clears the composer and allows the next draft',async()=>{
+ await withChat(async(browser,base,posts)=>{
+  const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-input');
+  await p.type('#chat-input','First message');await p.click('#send');
+  assert.equal(await p.$eval('#chat-input',input=>input.value),'','the first draft clears before the server answers');
+  await p.type('#chat-input','Next draft');
+  assert.equal(await p.$eval('#send',button=>button.disabled),false,'the next draft can be sent while the first request is pending');
+  await p.click('#send');
+  assert.equal(await p.$eval('#chat-input',input=>input.value),'','the second send also clears immediately');
+  await p.type('#chat-input','Third draft');
+  await new Promise(resolve=>setTimeout(resolve,1400));
+  assert.equal(await p.$eval('#chat-input',input=>input.value),'Third draft','earlier responses do not erase text typed meanwhile');
+  assert.equal(await p.$eval('#send',button=>button.disabled),false);
+  assert.deepEqual(posts.map(post=>post.text),['First message','Next draft']);
+  await p.close();
+ },threadMessages,{postDelayMs:1200});
+});
+
+test('a disabled Send button shows why the box cannot accept a message',async()=>{
+ await withChat(async(browser,base,posts)=>{
+  const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-input');
+  await p.type('#chat-input','Keep this draft');
+  assert.equal(await p.$eval('#send',button=>button.disabled),true);
+  assert.equal(await p.$eval('#send-blocked-reason',reason=>reason.hidden),false,'the reason is visible below the composer');
+  assert.equal(await p.$eval('#send-blocked-reason',reason=>reason.textContent),'Wait for this box to be running before sending');
+  await p.keyboard.press('Enter');
+  assert.equal(await p.$eval('#chat-input',input=>input.value),'Keep this draft');
+  assert.equal(posts.length,0);
+  await p.close();
+ },threadMessages,{boxList:[{...boxes[0],state:'hibernated'}]});
+});
+
 test('Reply uses the main composer without opening the thread sidebar',async()=>{
  await withChat(async(browser,base,posts)=>{
   const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg.agent');
@@ -119,8 +151,9 @@ test('Reply uses the main composer without opening the thread sidebar',async()=>
   assert.equal(posts.at(-1).parentMessageId,threadRoot,'the message stays in the selected thread');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'sending the reply does not open the thread sidebar');
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),true,'the reply target clears after sending');
-  await p.click('.msg.agent',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.agent .msg-actions-menu').hidden);
-  await p.evaluate(()=>[...document.querySelectorAll('.msg.agent .msg-actions-menu button')].find(button=>button.textContent.trim()==='Reply').click());
+  await p.click('#chat-messages .msg.agent .msg-reply');
+  assert.equal(await p.$eval('#reply-preview-text',preview=>preview.textContent.includes('verification suite is green')),true,'the direct icon chooses that message');
+  assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'the direct icon leaves the thread closed');
   await p.type('#chat-input','Agreed.');await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts.at(-1).parentMessageId,threadMessages[1].id,'replying to a thread member preserves the direct parent');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
@@ -151,6 +184,10 @@ test('thread sidebar fits a phone without a resize handle',async()=>{
   await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);
   await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.trim()==='Reply').click());
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'Reply keeps the mobile chat visible');
+  await p.click('#reply-cancel');
+  await p.click('#chat-messages .msg.user .msg-reply');
+  assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),false,'the direct icon also works on mobile');
+  assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
   await p.click('#chat-messages .msg.user .msg-thread');
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden);
   await p.waitForFunction(()=>{const rect=document.querySelector('#thread-panel').getBoundingClientRect();return Math.abs(rect.left)<1&&Math.abs(rect.right-390)<1});
@@ -175,9 +212,10 @@ test('agent-to-agent messages identify their source box and preserve the thread'
 test('message actions open toward available space and stay inside the transcript',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:520});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user .msg-more');
-  const corners=await p.$eval('#chat-messages .msg.user',message=>({message:message.getBoundingClientRect().toJSON(),chevron:message.querySelector('.msg-more').getBoundingClientRect().toJSON()}));
+  const corners=await p.$eval('#chat-messages .msg.user',message=>({message:message.getBoundingClientRect().toJSON(),reply:message.querySelector('.msg-reply').getBoundingClientRect().toJSON(),chevron:message.querySelector('.msg-more').getBoundingClientRect().toJSON()}));
   assert.ok(corners.chevron.top-corners.message.top<8,'the chevron is at the top of the message');
   assert.ok(corners.message.right-corners.chevron.right<8,'the chevron is at the right edge of the message');
+  assert.ok(corners.reply.top-corners.message.top<8&&corners.reply.right<corners.chevron.left,'the direct reply icon is beside the chevron');
   await p.evaluate(()=>{
    const messages=document.querySelector('#chat-messages');
    for(const edge of ['before','after']){

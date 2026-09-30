@@ -1324,9 +1324,11 @@
    if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'unconfirmed'));
    meta.append(ticks);
   }
-  // Keep the chevron visible on touch, above the message text at its top right.
+  // Keep direct reply and the menu available on touch at the message's top right.
   if(readOnly){row.append(meta);return row}
   const actions=document.createElement('div');actions.className='msg-actions';
+  const replyShortcut=document.createElement('button');replyShortcut.type='button';replyShortcut.className='msg-reply';replyShortcut.setAttribute('aria-label','Reply to message');replyShortcut.title='Reply';replyShortcut.append(lucide('reply'));
+  replyShortcut.onclick=()=>{closeAllMsgActions();setReply(message)};
   const toggle=document.createElement('button');toggle.type='button';toggle.className='msg-more';toggle.setAttribute('aria-label','Message actions');toggle.setAttribute('aria-expanded','false');toggle.append(lucide('chevron-down'));
   const menu=document.createElement('div');menu.className='msg-actions-menu';menu.hidden=true;
   const copy=document.createElement('button');copy.type='button';copy.append(lucide('copy'),Object.assign(document.createElement('span'),{textContent:'Copy'}));
@@ -1342,7 +1344,7 @@
   }
   toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen)openMsgActions(menu,toggle)};
   row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle,{x:event.clientX,y:event.clientY})};
-  actions.append(toggle,menu);row.append(meta,actions);
+  actions.append(replyShortcut,toggle,menu);row.append(meta,actions);
   return row;
  }
  const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
@@ -1655,7 +1657,7 @@
   if(hasNewReply&&!stickToBottom)newMessagesBtn.hidden=false;
   renderRows();renderInspect();
   if(owner&&inspectOpen&&(force||hasNewReply))void loadInspectAttachmentStorage(box);
-  if(owner&&box.state==='running'&&['codex','claude','opencode'].includes(box.defaultAgent))void refreshAgentResume(box,!!force);
+  if(owner&&box.state==='running'&&['codex','claude','opencode'].includes(box.defaultAgent))void refreshAgentResume(box);
  }
  function renderPairMessages(pair){
   const follow=stickToBottom;
@@ -1709,25 +1711,31 @@
   });
  }
  function agentLabel(box){return box.defaultAgent==='claude'?'Claude':box.defaultAgent==='opencode'?'OpenCode':'Codex'}
- async function refreshAgentResume(box,force){
+ async function refreshAgentResume(box){
   const prior=resumeChecks.get(box.id);
-  if(prior&&(!force&&Date.now()-prior.at<20000||prior.pending))return;
-  const check={at:Date.now(),pending:true};resumeChecks.set(box.id,check);
-  box.resumeCheckPending=true;if(selected===box.id)updateSendState();
+  // loadBoxes invalidates the check on wake. A history refresh after sending
+  // must not force another blocking check; later periodic retries can run in
+  // the background in case a saved session appeared after the first response.
+  if(prior&&(prior.pending||Date.now()-prior.at<20000))return;
+  const blockSend=!prior?.complete;
+  const check={at:Date.now(),pending:true,complete:false};resumeChecks.set(box.id,check);
+  if(blockSend){box.resumeCheckPending=true;if(selected===box.id)updateSendState()}
   try{
    const result=await api(boxPath(box.id)+'/agent-resume');
    if(resumeChecks.get(box.id)!==check)return;
+   check.complete=true;
+   const previous=box.resumeCandidate||null;
    box.resumeCandidate=result.candidate||null;
-   if(selected===box.id){renderMessages(box);updateSendState()}
+   if(selected===box.id){if(JSON.stringify(previous)!==JSON.stringify(box.resumeCandidate))renderMessages(box);updateSendState()}
   }catch(e){if(selected===box.id)statusEl.textContent='Could not check saved '+agentLabel(box)+' sessions: '+e.message}
-  finally{check.pending=false;if(resumeChecks.get(box.id)===check){box.resumeCheckPending=false;if(selected===box.id)updateSendState()}}
+  finally{check.pending=false;if(blockSend&&resumeChecks.get(box.id)===check){box.resumeCheckPending=false;if(selected===box.id)updateSendState()}}
  }
  async function chooseAgentResume(box,choice,actions){
   const candidate=box.resumeCandidate;if(!candidate)return;
   for(const button of actions.querySelectorAll('button'))button.disabled=true;
   try{
    await api(boxPath(box.id)+'/agent-resume','POST',{}, {choice,sessionId:candidate.sessionId,savedAt:candidate.savedAt});
-   box.resumeCandidate=null;resumeChecks.delete(box.id);
+   box.resumeCandidate=null;
    if(selected===box.id){renderMessages(box);updateSendState();void refreshMessages(true).catch(e=>{statusEl.textContent=e.message})}
    toast(choice==='restore'?'Saved '+agentLabel(box)+' conversation restored.':'Continuing with a fresh '+agentLabel(box)+' conversation.');
   }catch(e){statusEl.textContent=e.message;for(const button of actions.querySelectorAll('button'))button.disabled=false}
@@ -1853,6 +1861,7 @@
   const count=drafts.length,label=count?'Send ('+count+' attachment'+(count===1?'':'s')+')':'Send';
   send.setAttribute('aria-label',label);
   send.title=running?label+(enterInsertsNewline()?'':' · Enter to send; Shift+Enter for a new line'):box?.resumeCandidate?'Choose whether to restore the saved '+agentLabel(box)+' session first.':box?.resumeCheckPending?'Checking for a saved conversation…':'Wait for this box to be running before sending';
+  const reason=$('#send-blocked-reason');reason.hidden=!hasContent||running;reason.textContent=reason.hidden?'':send.title;
  }
  inputEl.addEventListener('input',()=>{grow();updateSendState();if(acceptingComposerSuggestion)acceptingComposerSuggestion=false;else void updateComposerPicker();if(!selected)return;inputDrafts[selected]=inputEl.value;clearTimeout(inputDraftTimer);inputDraftTimer=setTimeout(saveInputDrafts,250)});
  let composerHintShown=false;
@@ -1965,9 +1974,17 @@
   // reply from here; passive inbound refreshes still preserve a scrolled-up
   // reading position.
   stickToBottom=true;scrollMemory.delete(boxID);followMemory.set(boxID,true);newMessagesBtn.hidden=true;
-  // Delivery can finish after a fast MCP reply, so show the outgoing message
-  // and existing processing state while the synchronous POST is in flight.
-  if(showPending){pendingSends.set(boxID,{messageCount:(box.messages||[]).length,text,at:new Date().toISOString()});summarize(boxID);renderHeader();renderRows();renderMessages(box)}
+  // Let the cleared composer paint before rebuilding a long transcript for
+  // the pending bubble. The network request can start without that render.
+  if(showPending){
+   const pending={messageCount:(box.messages||[]).length,text,at:new Date().toISOString()};
+   pendingSends.set(boxID,pending);
+   requestAnimationFrame(()=>setTimeout(()=>{
+    if(pendingSends.get(boxID)!==pending)return;
+    summarize(boxID);renderRows();
+    if(selected===boxID){renderHeader();renderMessages(box)}
+   },0));
+  }
   let settled=false;
   try{
    const result=await api(boxPath(boxID)+'/messages','POST',{'Idempotency-Key':pendingKey},{text,images,parentMessageId:replyTarget?.id||'',mentionedBoxIds});

@@ -148,7 +148,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
   padding:.25rem .7rem;border-radius:var(--radius-sm);box-shadow:var(--shadow);margin:.35rem 0}
 .msg{max-width:min(88%,34rem);padding:.45rem .6rem .35rem;border-radius:var(--radius);
   background:var(--bubble-in);color:var(--bubble-in-ink);box-shadow:var(--shadow);position:relative;overflow-wrap:anywhere;line-height:1.5}
-.msg:has(> .msg-actions){padding-right:2.15rem}
+.msg:has(> .msg-actions){padding-right:3.7rem}
 .msg:has(> .msg-actions .msg-actions-menu:not([hidden])){z-index:12}
 .msg .text{white-space:pre-wrap}
 .msg-parent{display:block;width:100%;border:0;border-left:3px solid var(--accent);border-radius:var(--radius-sm);background:color-mix(in srgb,var(--surface) 72%,transparent);color:var(--ink-soft);padding:.35rem .45rem;margin:0 0 .35rem;text-align:left;font:inherit;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
@@ -247,6 +247,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #composer-picker button strong{display:block;font-size:.88rem}
 #composer-picker button span{display:block;font-size:.74rem;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chat-status{margin:0;padding:0 .7rem .15rem;font-size:.78rem;color:var(--ink-soft);min-height:.95rem}
+#send-blocked-reason{margin:0;padding:.2rem .7rem;color:var(--warn-text);font-size:.75rem;background:var(--surface)}
+#send-blocked-reason[hidden],#chat-conversation.pair-view #send-blocked-reason{display:none}
 #thread-panel{position:absolute;top:0;right:0;bottom:0;z-index:13;width:min(var(--chat-thread-width,26rem),92vw);display:flex;flex-direction:column;background:var(--bg);border-left:1px solid var(--line);box-shadow:var(--shadow-pop)}
 #thread-panel[hidden]{display:none}
 #thread-resizer{display:none}
@@ -909,11 +911,11 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .inspect-fold summary h3{margin:0}
 
 /* ── always-visible message actions (touch friendly) ─────────────────── */
-.msg-actions{position:absolute;top:.2rem;right:.2rem;display:inline-flex;align-items:center}
-.msg-more{border:0;background:none;color:var(--ink-soft);cursor:pointer;padding:.15rem;border-radius:.3rem;
+.msg-actions{position:absolute;top:.2rem;right:.2rem;display:inline-flex;align-items:center;gap:.1rem}
+.msg-reply,.msg-more{border:0;background:none;color:var(--ink-soft);cursor:pointer;padding:.15rem;border-radius:.3rem;
   display:inline-flex;min-width:1.45rem;min-height:1.45rem;align-items:center;justify-content:center}
-.msg-more:hover,.msg-more[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent-text)}
-.msg-more svg{width:1rem;height:1rem}
+.msg-reply:hover,.msg-more:hover,.msg-more[aria-expanded="true"]{background:var(--accent-soft);color:var(--accent-text)}
+.msg-reply svg,.msg-more svg{width:1rem;height:1rem}
 .msg-actions-menu{position:absolute;top:0;left:0;z-index:12;display:flex;flex-direction:column;min-width:9rem;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-pop);
   padding:.25rem;max-width:calc(100vw - 1rem);overflow-y:auto}
@@ -921,8 +923,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
   font:inherit;font-size:.85rem;text-align:left;padding:.45rem .5rem;border-radius:var(--radius-sm);cursor:pointer;min-height:2.6rem}
 .msg-actions-menu button:hover{background:var(--accent-soft)}
 .msg-actions-menu svg{width:1rem;height:1rem;flex:none}
-.msg.user .msg-more{color:rgba(255,255,255,.78)}
-.msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:rgba(255,255,255,.18);color:#fff}
+.msg.user .msg-reply,.msg.user .msg-more{color:rgba(255,255,255,.78)}
+.msg.user .msg-reply:hover,.msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:rgba(255,255,255,.18);color:#fff}
 /* Hide message controls while an app sheet is open so they cannot visually
    bleed through a modal backdrop or card. */
 body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
