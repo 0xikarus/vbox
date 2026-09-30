@@ -312,10 +312,15 @@ func (s *Server) agentBoxWakeHandler(w http.ResponseWriter, r *http.Request, p P
 		return
 	}
 	var request struct {
-		Confirmation string `json:"confirmation"`
+		Confirmation  string `json:"confirmation"`
+		SessionChoice string `json:"sessionChoice"`
 	}
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if request.SessionChoice != "" && request.SessionChoice != "restore" && request.SessionChoice != "fresh" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("sessionChoice must be restore or fresh"))
 		return
 	}
 	targetRef := strings.TrimSpace(r.PathValue("box"))
@@ -339,6 +344,10 @@ func (s *Server) agentBoxWakeHandler(w http.ResponseWriter, r *http.Request, p P
 		writeError(w, http.StatusConflict, err)
 		return
 	}
+	if request.SessionChoice != "" && box.DefaultAgent != "codex" && box.DefaultAgent != "claude" && box.DefaultAgent != "opencode" {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("sessionChoice requires a Codex, Claude, or OpenCode box"))
+		return
+	}
 	// Allocation keys are account scoped. Include the actor and operation so
 	// another box or owner request cannot accidentally share this retry key.
 	allocationKey := "agent-wake:" + actorID + ":" + key
@@ -347,8 +356,17 @@ func (s *Server) agentBoxWakeHandler(w http.ResponseWriter, r *http.Request, p P
 			writeError(w, http.StatusConflict, fmt.Errorf("idempotency key was already used for another box"))
 			return
 		}
+		var savedChoice string
+		if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT COALESCE(session_choice,'') FROM allocation_requests WHERE account_id=$1 AND id=$2`, p.AccountID, existing.RequestID).Scan(&savedChoice); err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if savedChoice != request.SessionChoice {
+			writeError(w, http.StatusConflict, fmt.Errorf("idempotency key was already used with another session choice"))
+			return
+		}
 		s.startAgentBoxWakeAllocation(owner, existing, allocationKey)
-		writeJSON(w, http.StatusAccepted, map[string]any{"id": box.ID, "name": box.Name, "state": existing.State})
+		writeJSON(w, http.StatusAccepted, map[string]any{"id": box.ID, "name": box.Name, "state": existing.State, "sessionChoice": savedChoice})
 		return
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		writeError(w, http.StatusInternalServerError, err)
@@ -367,12 +385,28 @@ func (s *Server) agentBoxWakeHandler(w http.ResponseWriter, r *http.Request, p P
 		writeError(w, http.StatusConflict, fmt.Errorf("idempotency key was already used for another box"))
 		return
 	}
+	if _, err := s.Store.DB.ExecContext(r.Context(), `UPDATE allocation_requests SET session_choice=NULLIF($3,''),updated_at=now() WHERE account_id=$1 AND id=$2 AND session_choice IS NULL`, p.AccountID, allocation.RequestID, request.SessionChoice); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	var savedChoice string
+	if err := s.Store.DB.QueryRowContext(r.Context(), `SELECT COALESCE(session_choice,'') FROM allocation_requests WHERE account_id=$1 AND id=$2`, p.AccountID, allocation.RequestID).Scan(&savedChoice); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if savedChoice != request.SessionChoice {
+		writeError(w, http.StatusConflict, fmt.Errorf("wake request already uses another session choice"))
+		return
+	}
 	s.startAgentBoxWakeAllocation(owner, allocation, allocationKey)
-	writeJSON(w, http.StatusAccepted, map[string]any{"id": box.ID, "name": box.Name, "state": allocation.State})
+	writeJSON(w, http.StatusAccepted, map[string]any{"id": box.ID, "name": box.Name, "state": allocation.State, "sessionChoice": request.SessionChoice})
 }
 
 func (s *Server) startAgentBoxWakeAllocation(p Principal, allocation v1.Allocation, key string) {
-	if allocation.IdempotencyKey != key || (allocation.State != "reserved" && allocation.State != "attaching") {
+	if allocation.IdempotencyKey != key {
+		return
+	}
+	if allocation.State != "reserved" && allocation.State != "attaching" {
 		return
 	}
 	go func() {

@@ -73,12 +73,12 @@ func TestDesktopMCPHTTPPromptKeepsUnacknowledgedClaudeInbox(t *testing.T) {
 		}
 	}
 	handler := desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy)
-	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"run the local check"}`)
+	status, response := desktopMCPHTTPRequest(t, handler, http.MethodPost, "/prompt", "secret-token", `{"text":"run the local check","messageId":"heartbeat_1"}`)
 	if status != http.StatusConflict || !strings.Contains(response["error"].(string), ErrAmbiguousMessage.Error()) {
 		t.Fatalf("prompt returned %d %v", status, response)
 	}
 	inbound, _, found, err := nextChatInbound(home, "agent-session")
-	if err != nil || !found || inbound.Text != "run the local check" {
+	if err != nil || !found || inbound.Text != "run the local check" || inbound.ID != "heartbeat_1" {
 		t.Fatalf("inbound=%+v found=%v err=%v", inbound, found, err)
 	}
 }
@@ -397,6 +397,23 @@ func TestDesktopMCPHTTPNamesTheConversationForChatTools(t *testing.T) {
 	session, err := soleAgentConversation(context.Background())
 	if err != nil || session != "codex-abc123" {
 		t.Fatalf("sole conversation = %q %v", session, err)
+	}
+}
+
+func TestDesktopMCPHTTPCanStopHeartbeatWithoutAgentConversation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if _, err := startLocalHeartbeat("closed-agent", 5, 1); err != nil {
+		t.Fatal(err)
+	}
+	stubTmuxSessions(t, map[string]string{"shell-one": "shell"})
+	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy), http.MethodPost, "/tools/heartbeat", "secret-token", `{"action":"stop"}`)
+	if status != http.StatusOK {
+		t.Fatalf("stop without agent returned %d %v", status, body)
+	}
+	state, err := readLocalHeartbeat(home)
+	if err != nil || state != nil {
+		t.Fatalf("timer remained after stop: %+v %v", state, err)
 	}
 }
 

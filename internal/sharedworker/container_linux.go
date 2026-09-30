@@ -124,6 +124,10 @@ func (r *ContainerRuntime) Prepare(ctx context.Context, w Workspace) error {
 	if err := validateWorkspace(w); err != nil {
 		return err
 	}
+	memoryGiB, swapGiB, err := containerMemoryLimits(w)
+	if err != nil {
+		return err
+	}
 	parent := filepath.Join(r.Root, "workspaces")
 	if err := os.Mkdir(parent, 0711); err != nil && !errors.Is(err, os.ErrExist) {
 		return err
@@ -155,12 +159,14 @@ func (r *ContainerRuntime) Prepare(ctx context.Context, w Workspace) error {
 		if err != nil {
 			return err
 		}
-		// Upgrade only the previous no-swap policy. Preserve any host-side
-		// resource customization and keep live agent sessions intact.
-		if existing.HostConfig.Memory == 2<<30 && existing.HostConfig.MemorySwap == 2<<30 {
+		// Explicit saved limits are authoritative across wakeups. Legacy
+		// workspaces retain host-side customization except the old no-swap
+		// policy, which is upgraded in place.
+		explicit := w.MemoryGiB != 0 || w.SwapGiB != nil
+		if (explicit && (existing.HostConfig.Memory != memoryGiB<<30 || existing.HostConfig.MemorySwap != (memoryGiB+swapGiB)<<30)) || (!explicit && existing.HostConfig.Memory == 2<<30 && existing.HostConfig.MemorySwap == 2<<30) {
 			// Docker 26 requires the memory limit alongside --memory-swap even
 			// when that limit is already set on the running container.
-			if _, err = r.run(ctx, "update", "--memory", "2g", "--memory-swap", "3g", r.name(w)); err != nil {
+			if _, err = r.run(ctx, "update", "--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), r.name(w)); err != nil {
 				return err
 			}
 		}
@@ -228,15 +234,46 @@ func (r *ContainerRuntime) waitReady(ctx context.Context, w Workspace) error {
 }
 
 func (r *ContainerRuntime) createArgs(w Workspace) []string {
+	memoryGiB, swapGiB, _ := containerMemoryLimits(w)
 	args := []string{"create", "--name", r.name(w), "--hostname", "box-" + w.ID[:12], "--label", "io.vmbox.workspace=" + w.ID, "--label", "io.vmbox.root=" + r.Root, "--label", "io.vmbox.policy=" + r.Image + ":v2-sudo",
 		"--network", r.name(w) + "-net", "--user", "0:0", "--cap-drop=ALL",
 		"--cap-add=CHOWN", "--cap-add=DAC_OVERRIDE", "--cap-add=FOWNER", "--cap-add=FSETID", "--cap-add=SETUID", "--cap-add=SETGID", "--cap-add=SETFCAP", "--cap-add=SYS_CHROOT", "--cap-add=KILL", "--cap-add=NET_BIND_SERVICE", "--cap-add=AUDIT_WRITE",
-		"--memory", "2g", "--memory-swap", "3g", "--cpus", "1", "--pids-limit", "512", "--shm-size", "256m", "--restart", "no", "--no-healthcheck",
+		"--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), "--cpus", "1", "--pids-limit", "512", "--shm-size", "256m", "--restart", "no", "--no-healthcheck",
 		"--log-opt", "max-size=10m", "--log-opt", "max-file=2", "--workdir", "/",
 		"--mount", "type=bind,src=" + r.root(w) + ",dst=/data,bind-propagation=rprivate",
 		"--tmpfs", "/tmp:rw,nosuid,nodev,size=256m,mode=1777", "--tmpfs", "/var/tmp:rw,nosuid,nodev,size=128m,mode=1777", "--tmpfs", "/run:rw,nosuid,nodev,size=64m,mode=1777",
 		"--entrypoint", "/bin/sh", r.Image, "-c", containerInit, "vmbox-container-init", strconv.Itoa(w.UID)}
 	return args
+}
+
+func containerMemoryLimits(w Workspace) (int64, int64, error) {
+	memoryGiB, swapGiB := w.MemoryGiB, int64(1)
+	if memoryGiB == 0 {
+		memoryGiB = 2 // Legacy workspaces used the original fixed limit.
+	}
+	if w.SwapGiB != nil {
+		swapGiB = *w.SwapGiB
+	}
+	if memoryGiB < 1 || memoryGiB > 8 || swapGiB < 0 || swapGiB > 4 {
+		return 0, 0, errors.New("memory must be 1–8 GiB and swap 0–4 GiB")
+	}
+	return memoryGiB, swapGiB, nil
+}
+
+func (r *ContainerRuntime) UpdateMemory(ctx context.Context, w Workspace) error {
+	memoryGiB, swapGiB, err := containerMemoryLimits(w)
+	if err != nil {
+		return err
+	}
+	current, err := r.inspect(ctx, w)
+	if err != nil {
+		return err
+	}
+	if current == nil || !current.State.Running {
+		return errors.New("workspace container is not running")
+	}
+	_, err = r.run(ctx, "update", "--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), r.name(w))
+	return err
 }
 
 func (r *ContainerRuntime) Command(ctx context.Context, w Workspace, argv []string) (*exec.Cmd, error) {

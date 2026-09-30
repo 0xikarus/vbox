@@ -3,6 +3,12 @@ CREATE TABLE IF NOT EXISTS accounts (
   name text NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS chat_sidebar_layouts (
+  account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+  groups_json jsonb NOT NULL DEFAULT '[]'::jsonb,
+  members_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
 CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),
@@ -233,6 +239,9 @@ CREATE TABLE IF NOT EXISTS allocation_requests (
 );
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS phase text;
 ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS retry_count integer NOT NULL DEFAULT 0;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice text;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice_applied boolean NOT NULL DEFAULT false;
+ALTER TABLE allocation_requests ADD COLUMN IF NOT EXISTS session_choice_attempted_at timestamptz;
 CREATE INDEX IF NOT EXISTS allocation_requests_queue_idx
   ON allocation_requests(account_id, state, created_at, id);
 CREATE INDEX IF NOT EXISTS logical_boxes_detached_idx
@@ -840,6 +849,8 @@ CREATE TABLE IF NOT EXISTS agent_box_creations (
   requested_name text NOT NULL,
   requested_agent text NOT NULL,
   requested_disk_gib bigint NOT NULL,
+  requested_memory_gib bigint NOT NULL DEFAULT 0,
+  requested_swap_gib bigint,
   requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
   requested_login_profiles jsonb NOT NULL DEFAULT '[]'::jsonb,
   requested_tools jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -851,6 +862,8 @@ CREATE TABLE IF NOT EXISTS agent_box_creations (
 );
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_agent text NOT NULL DEFAULT 'codex';
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_disk_gib bigint NOT NULL DEFAULT 10;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_memory_gib bigint NOT NULL DEFAULT 0;
+ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_swap_gib bigint;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_role_ids jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_login_profiles jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE agent_box_creations ADD COLUMN IF NOT EXISTS requested_tools jsonb NOT NULL DEFAULT '[]'::jsonb;

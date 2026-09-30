@@ -15,6 +15,8 @@ type agentBoxConfigs struct {
 	AllowedAgents   []string              `json:"allowedAgents"`
 	MaxBoxes        int                   `json:"maxBoxes"`
 	MaxDiskGiB      int                   `json:"maxDiskGiB"`
+	MaxMemoryGiB    int                   `json:"maxMemoryGiB"`
+	MaxSwapGiB      int                   `json:"maxSwapGiB"`
 	LoginProfiles   []v1.LoginProfile     `json:"loginProfiles"`
 	AssignableRoles []v1.AgentRoleSummary `json:"assignableRoles"`
 	ToolPresets     []v1.ToolPreset       `json:"toolPresets"`
@@ -70,6 +72,8 @@ func (s *Server) agentBoxConfigsHandler(w http.ResponseWriter, r *http.Request, 
 		AllowedAgents:   grant.AllowedAgents,
 		MaxBoxes:        grant.MaxBoxes,
 		MaxDiskGiB:      min(grant.MaxDiskGiB, 1000),
+		MaxMemoryGiB:    8,
+		MaxSwapGiB:      4,
 		LoginProfiles:   profiles,
 		AssignableRoles: assignable,
 		ToolPresets:     v1.ToolPresets(),

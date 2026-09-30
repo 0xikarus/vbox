@@ -9,7 +9,7 @@ const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.c
 for(const agent of ['codex','claude','opencode'])test(agent+' wake offers an explicit restore choice and blocks sends until chosen',async()=>{
  const box={id:'sleeping',name:'sleeping',state:'hibernated',defaultAgent:agent};
  const candidate={sessionId:'01234567-89ab-cdef-0123-456789abcdef',savedAt:'2026-09-23T12:00:00Z',startedAt:'2026-09-23T11:00:00Z'};
- const decisions=[];let wakeRequests=0,offered=true;
+ const decisions=[];let wakeRequests=0,offered=true,event=null;
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];
   if(path==='/chat')return res.end(assets['chat.html']);
@@ -23,9 +23,12 @@ for(const agent of ['codex','claude','opencode'])test(agent+' wake offers an exp
   if(path==='/v1/logical-boxes/sleeping/agent-resume'){
    if(req.method==='GET')return res.end(JSON.stringify({candidate:offered?candidate:null}));
    let body='';for await(const chunk of req)body+=chunk;
-   decisions.push(JSON.parse(body));offered=false;return res.end(JSON.stringify({choice:decisions.at(-1).choice}));
+   decisions.push(JSON.parse(body));offered=false;
+   const choice=decisions.at(-1).choice,label=agent==='opencode'?'OpenCode':agent[0].toUpperCase()+agent.slice(1);
+   event={id:'event-1',direction:'system',state:'delivered',text:choice==='restore'?'Saved '+label+' session restored after wake':'Fresh '+label+' session chosen after wake',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};
+   return res.end(JSON.stringify({choice}));
   }
-  if(path.endsWith('/messages'))return res.end('[]');
+  if(path.endsWith('/messages'))return res.end(JSON.stringify(event?[event]:[]));
   if(path==='/v1/tool-presets')return res.end('[]');
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   return res.end('{}');
@@ -41,10 +44,17 @@ for(const agent of ['codex','claude','opencode'])test(agent+' wake offers an exp
   assert.match(await page.$eval('.codex-resume-card strong',element=>element.textContent),new RegExp(agent,'i'));
   assert.equal(await page.$eval('#send',element=>element.disabled),true);
   assert.equal(wakeRequests,1);
-  await page.click('.codex-resume-actions button:first-child');
+  const choice=agent==='claude'?'fresh':'restore';
+  await page.click('.codex-resume-actions button:'+(choice==='fresh'?'last':'first')+'-child');
   await page.waitForFunction(()=>!document.querySelector('.codex-resume-card'));
-  assert.deepEqual(decisions,[{choice:'restore',sessionId:candidate.sessionId,savedAt:candidate.savedAt}]);
+  assert.deepEqual(decisions,[{choice,sessionId:candidate.sessionId,savedAt:candidate.savedAt}]);
+  await page.waitForFunction(()=>document.querySelector('.msg.system')?.textContent.includes('after wake'));
+  assert.equal(await page.$eval('.msg.system',element=>element.textContent),event.text);
   assert.equal(await page.$eval('#send',element=>element.disabled),false);
+  if(agent==='codex'){
+   await page.reload();
+   await page.waitForFunction(()=>document.querySelector('.msg.system')?.textContent.includes('Saved Codex session restored after wake'));
+  }
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });

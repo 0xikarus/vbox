@@ -19,6 +19,7 @@
 .idle-policy-controls button:disabled,.idle-policy-controls input:disabled{opacity:.55;cursor:default}
 .idle-policy-note,.idle-policy-status{margin:0;color:var(--idle-muted);font-size:.72rem;line-height:1.4}
 .run-budget-elapsed{margin:0;color:var(--idle-ink);font-size:.85rem;font-weight:700}
+.run-budget-actions{gap:.35rem}
 .idle-policy-status{min-height:1rem}
 .idle-policy-retry{justify-self:start;padding:.3rem .6rem;border:1px solid var(--idle-border);border-radius:var(--r-control);background:transparent;color:var(--idle-ink);font:650 .72rem system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer}
 #inspect-idle-policy{margin-top:.65rem}

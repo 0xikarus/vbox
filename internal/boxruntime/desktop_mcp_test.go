@@ -57,6 +57,12 @@ func TestCreateAgentBoxToolDescribesStartupInstructions(t *testing.T) {
 		if properties["loginProfiles"] == nil || properties["roleIds"] == nil || properties["slotId"] == nil {
 			t.Fatalf("creation config missing from schema: %#v", properties)
 		}
+		for name, bounds := range map[string][2]int{"memoryGiB": {1, 8}, "swapGiB": {0, 4}} {
+			limit, ok := properties[name].(map[string]any)
+			if !ok || limit["type"] != "integer" || limit["minimum"] != bounds[0] || limit["maximum"] != bounds[1] {
+				t.Fatalf("%s schema=%#v", name, properties[name])
+			}
+		}
 		return
 	}
 	t.Fatal("create_agent_box tool is missing")
@@ -79,6 +85,59 @@ func TestAgentBoxLifecycleToolRequiresTargetConfirmationAndRetryKey(t *testing.T
 		if !found {
 			t.Fatalf("%s tool is missing", name)
 		}
+	}
+}
+
+func TestWakeAgentBoxToolOffersSessionChoice(t *testing.T) {
+	for _, tool := range desktopMCPTools() {
+		if tool["name"] != "wake_agent_box" {
+			continue
+		}
+		choice := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)["sessionChoice"].(map[string]any)
+		if !reflect.DeepEqual(choice["enum"], []string{"restore", "fresh"}) {
+			t.Fatalf("sessionChoice schema=%v", choice)
+		}
+		return
+	}
+	t.Fatal("wake_agent_box tool is missing")
+}
+
+func TestContactSendReturnsControllerRejectionAndRemovesAcknowledgedEvent(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/agent-desktop/chat-ready" {
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+		var payload struct {
+			Event ChatEvent `json:"event"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil || payload.Event.Contact != "mascot" {
+			t.Errorf("unexpected event %+v: %v", payload.Event, err)
+		}
+		_, _ = w.Write([]byte(`{"stored":true,"delivered":false,"reason":"mascot is hibernated"}`))
+	}))
+	defer server.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-test")
+	certFile := filepath.Join(home, "test-ca.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", certFile)
+	configPath := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, _ := json.Marshal(DesktopAgentConfig{Controller: server.URL, Assignment: "assignment", Token: strings.Repeat("a", 64)})
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := sendDesktopContactEvent(context.Background(), "assignment", ChatEvent{Kind: "contact", Contact: "mascot", Text: "wake up"})
+	if err == nil || !strings.Contains(err.Error(), "mascot is hibernated") {
+		t.Fatalf("rejection not returned to sender: %v", err)
+	}
+	if event, found, err := PullChatEvent(home, "codex-test"); err != nil || found {
+		t.Fatalf("acknowledged rejection was left in outbox: event=%+v found=%t err=%v", event, found, err)
 	}
 }
 

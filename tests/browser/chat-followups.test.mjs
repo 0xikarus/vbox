@@ -101,6 +101,9 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   await p.$eval('.draft-open',el=>el.click());
   await p.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
   assert.equal(await p.$eval('#media-viewer-body img',el=>el.naturalWidth>=1),true);
+  assert.equal(await p.$eval('#media-viewer-zoom',el=>el.hidden),false,'unsent attachments can be zoomed too');
+  await p.click('#media-viewer-zoom-in');
+  assert.equal(await p.$eval('#media-viewer-zoom-level',el=>el.textContent),'150%');
   await p.keyboard.press('Escape');
   await p.waitForFunction(()=>document.querySelector('#media-viewer').hidden,{timeout:3000});
   await p.close();

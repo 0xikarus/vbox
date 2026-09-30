@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"slices"
 	"strings"
@@ -76,6 +77,16 @@ func TestRetiredCoordinationToolsAreDroppedFromOlderPolicies(t *testing.T) {
 	}
 	if !slices.Equal(request.Capabilities.MCPTools.AllowedTools, []string{"click_mouse"}) {
 		t.Fatalf("retired tools survived policy normalization: %v", request.Capabilities.MCPTools.AllowedTools)
+	}
+}
+
+func TestSavedHeartbeatToolGrantsUseOneCurrentPermission(t *testing.T) {
+	request, err := validateAgentRoleRequest(v1.PutAgentRoleRequest{Name: "Timer", Capabilities: v1.AgentRoleCapabilities{MCPTools: v1.MCPToolsGrant{Enabled: true, AllowedTools: []string{"start_heartbeat", "stop_heartbeat"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(request.Capabilities.MCPTools.AllowedTools, []string{"heartbeat"}) {
+		t.Fatalf("legacy heartbeat grants=%v", request.Capabilities.MCPTools.AllowedTools)
 	}
 }
 
@@ -245,10 +256,14 @@ func TestAgentBoxIdempotencyComparesEveryCreationParameter(t *testing.T) {
 	tools := []string{"blender", "foundry"}
 	storedTools := []byte(`["foundry","blender"]`)
 	match := func(agent string, roles []string, selectedProfiles []v1.LoginProfileRef, selectedTools []string, instructions, slotID string) bool {
-		return sameAgentBoxRequest("alpha", agent, 20, roles, selectedProfiles, selectedTools, instructions, slotID, "alpha", "codex", 20, stored, storedProfiles, storedTools, "# Build it", "slot-a")
+		return sameAgentBoxRequest("alpha", agent, 20, 0, nil, roles, selectedProfiles, selectedTools, instructions, slotID, "alpha", "codex", 20, 0, sql.NullInt64{}, stored, storedProfiles, storedTools, "# Build it", "slot-a")
 	}
 	if !match("codex", []string{"role-a", "role-b"}, profiles, tools, "# Build it", "slot-a") {
 		t.Fatal("identical create-agent-box request was not reusable")
+	}
+	swap := int64(2)
+	if sameAgentBoxRequest("alpha", "codex", 20, 3, &swap, []string{"role-a", "role-b"}, profiles, tools, "# Build it", "slot-a", "alpha", "codex", 20, 0, sql.NullInt64{}, stored, storedProfiles, storedTools, "# Build it", "slot-a") {
+		t.Fatal("memory and swap were ignored during idempotency comparison")
 	}
 	if match("opencode", []string{"role-a", "role-b"}, profiles, tools, "# Build it", "slot-a") {
 		t.Fatal("agent type was ignored during idempotency comparison")

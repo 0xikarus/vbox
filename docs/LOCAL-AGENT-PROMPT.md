@@ -61,24 +61,25 @@ they must match.
 
 | Status | Meaning |
 | --- | --- |
-| `202` | The prompt was handed to the selected managed conversation. The JSON response contains `accepted`, `session`, and a generated `messageId`. |
+| `202` | The prompt was handed to the selected managed conversation. The JSON response contains `accepted`, `session`, and its `messageId`. |
 | `400` | The JSON is invalid, `text` is empty or too long, the session name is invalid, or the body and header sessions disagree. |
 | `401` | The Bearer token is missing or incorrect. |
 | `405` | The endpoint was called with a method other than `POST`. |
 | `409` | No managed conversation is running, several need a session choice, or native delivery failed or could not be confirmed. |
 
-`text` is limited to 140,000 bytes. Send exactly one JSON object with only
-`text` and optional `session`; unknown fields are rejected. The request can
+`text` is limited to 140,000 bytes. Send exactly one JSON object with `text`,
+optional `session`, and optional `messageId` (1–128 letters, digits, hyphens,
+or underscores); unknown fields are rejected. The request can
 wait up to two minutes for the native handoff. A `202` means the handoff
 succeeded; it does not mean the agent finished the work. Any agent reply
 goes through its normal conversation, not back to this HTTP request. This
 local prompt is not recorded as a controller owner chat message.
 
-The server creates a fresh `messageId` for every request. A `409` or lost
-HTTP response can be ambiguous: the prompt may already be in the agent's
-inbox. `/prompt` has no caller-controlled idempotency key, so retrying can
-send the same prompt twice. Have the app check its own result or the agent's
-conversation before retrying uncertain requests.
+The server creates a fresh `messageId` when one is omitted. For a retryable
+local job, provide one stable `messageId` and reuse it on retries so the
+agent inbox and native receipt can recognize the same prompt. A `409` or lost
+HTTP response can still be ambiguous: check the agent's conversation before
+changing the prompt or its ID.
 
 The token in `mcp-http.json` also authorizes the box's HTTP MCP tools. Keep
 the file private and give the token only to apps you trust with those tools.

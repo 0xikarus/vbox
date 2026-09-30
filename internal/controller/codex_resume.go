@@ -19,6 +19,38 @@ type codexResumeDecision struct {
 	Choice  string    `json:"choice"`
 }
 
+func agentResumeEventText(agent, choice string) string {
+	label := map[string]string{"codex": "Codex", "claude": "Claude", "opencode": "OpenCode"}[agent]
+	if choice == "restore" {
+		return "Saved " + label + " session restored after wake"
+	}
+	return "Fresh " + label + " session chosen after wake"
+}
+
+func (s *Store) saveAgentResumeDecision(ctx context.Context, p Principal, a fleetAssignment, agent string, candidate boxruntime.ResumeCandidate, choice string) (bool, error) {
+	encoded, _ := json.Marshal(codexResumeDecision{SavedAt: candidate.SavedAt, Choice: choice})
+	decisionKey := agent + "ResumeDecision"
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	updated, err := tx.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,ARRAY[$7],$3::jsonb),updated_at=now()
+		WHERE account_id=$1 AND id=$2 AND state='running' AND slot_id=$4 AND assignment_generation=$5 AND fencing_token=$6
+		AND (metadata->$7->>'savedAt') IS DISTINCT FROM $8`, p.AccountID, a.Box.ID, string(encoded), a.Slot.ID, a.Box.AssignmentGeneration, a.FencingToken, decisionKey, candidate.SavedAt.Format(time.RFC3339Nano))
+	if err != nil {
+		return false, err
+	}
+	if count, _ := updated.RowsAffected(); count != 1 {
+		return false, nil
+	}
+	eventKey := "agent-resume:" + a.Box.ID + ":" + agent + ":" + candidate.SessionID + ":" + candidate.SavedAt.UTC().Format(time.RFC3339Nano)
+	if err := appendBoxEvent(ctx, tx, p.AccountID, a.Box.ID, agentResumeEventText(agent, choice), eventKey); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
+}
+
 func (s *Server) codexResumeHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	s.resumeHandler(w, r, p, "codex")
 }
@@ -154,14 +186,13 @@ func (s *Server) resumeHandler(w http.ResponseWriter, r *http.Request, p Princip
 			return
 		}
 	}
-	encoded, _ := json.Marshal(codexResumeDecision{SavedAt: candidate.SavedAt, Choice: request.Choice})
-	updated, err := s.Store.DB.ExecContext(ctx, `UPDATE logical_boxes SET metadata=jsonb_set(metadata,ARRAY[$7],$3::jsonb),updated_at=now() WHERE account_id=$1 AND id=$2 AND state='running' AND slot_id=$4 AND assignment_generation=$5 AND fencing_token=$6`, p.AccountID, box.ID, string(encoded), a.Slot.ID, a.Box.AssignmentGeneration, a.FencingToken, decisionKey)
+	saved, err := s.Store.saveAgentResumeDecision(ctx, p, a, agent, *candidate, request.Choice)
 	if err != nil {
 		writeError(w, 500, fmt.Errorf("could not save resume choice"))
 		return
 	}
-	if count, _ := updated.RowsAffected(); count != 1 {
-		writeError(w, 409, fmt.Errorf("box assignment changed"))
+	if !saved {
+		writeError(w, 409, fmt.Errorf("box assignment changed or saved session was already handled; refresh Chat"))
 		return
 	}
 	writeJSON(w, 200, map[string]any{"choice": request.Choice})

@@ -248,11 +248,11 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	if err != nil {
 		return err
 	}
-	if err := codexQueueInput(ctx, client, thread, messageID, text, images); err != nil {
+	if err := codexSubmitVisibleInput(ctx, client, thread, messageID, text, images); err != nil {
 		return err
 	}
-	// Queueing only stores the submission. After an interrupted turn Codex can
-	// leave that queue idle until another client explicitly starts its head.
+	// A steer enters the active turn. The queue fallback stores a submission;
+	// after an interrupted turn Codex can leave its head idle until started.
 	if err := codexStartQueuedIfIdle(ctx, client, thread); err != nil {
 		return fmt.Errorf("%w: Codex message queued but pending queue could not start: %v", ErrAmbiguousMessage, err)
 	}
@@ -261,6 +261,55 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	}
 	_ = os.Remove(codexResetPendingFile(root, session))
 	return nil
+}
+
+// Steer a running visible turn so chat reaches Codex while it is working.
+// Only a definitive pre-acceptance error falls back to the native queue.
+// Other failures are ambiguous and must be reconciled by exact message ID.
+func codexSubmitVisibleInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {
+	result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
+	if codexQueueMethodUnavailable(err, "thread/turns/list") || codexUnmaterializedThread(err) {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	if err != nil {
+		return err
+	}
+	turns, _ := result["data"].([]any)
+	if len(turns) == 0 {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	latest, _ := turns[0].(map[string]any)
+	if latest["status"] != "inProgress" {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	turnID, _ := latest["id"].(string)
+	if turnID == "" {
+		return fmt.Errorf("Codex active turn has no ID")
+	}
+	err = codexStartTurnWithFallback(text, images, func(input []map[string]any) error {
+		_, err := client.call(ctx, "turn/steer", map[string]any{
+			"threadId": thread, "expectedTurnId": turnID,
+			"clientUserMessageId": messageID, "input": input,
+		})
+		return err
+	})
+	if err == nil {
+		return nil
+	}
+	if codexQueueMethodUnavailable(err, "turn/steer") || codexSteerPreconditionFailed(err) {
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
+	}
+	return fmt.Errorf("%w: Codex turn steer outcome uncertain: %v", ErrAmbiguousMessage, err)
+}
+
+func codexSteerPreconditionFailed(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no active turn to steer") ||
+		strings.Contains(message, "expected active turn id") ||
+		strings.Contains(message, "active turn is not steerable")
 }
 
 // The remote TUI binds its own new thread after it connects. Wait for that
@@ -303,6 +352,12 @@ func codexStartQueuedIfIdle(ctx context.Context, client *codexClient, thread str
 	if codexQueueMethodUnavailable(err, "thread/turns/list") {
 		return nil
 	}
+	if codexUnmaterializedThread(err) {
+		// The visible TUI's fresh zero-turn thread is not persisted yet.
+		// Its first queued input must start before turns can be listed.
+		err = nil
+		busy = false
+	}
 	if err != nil || busy {
 		return err
 	}
@@ -339,6 +394,10 @@ func codexQueueMethodUnavailable(err error, method string) bool {
 	return err != nil && strings.Contains(err.Error(), "unknown variant `"+method+"`")
 }
 
+func codexUnmaterializedThread(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "thread/turns/list is unavailable before first user message")
+}
+
 // ConfirmCodexChat probes an earlier ambiguous handoff without submitting it
 // again. An idle native queue may be started, but its existing contents stay
 // in their original order and the receipt is confirmed only after consumption.
@@ -366,11 +425,15 @@ func ConfirmCodexChat(ctx context.Context, root, home, session, messageID string
 	return true, nil
 }
 
+var codexUserItemPollInterval = 250 * time.Millisecond
+var codexQueueRetryInterval = 2 * time.Second
+
 // A queue receipt only confirms storage. The matching native user item proves
 // that this thread consumed the exact message before Chat shows it as delivered.
 func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, messageID string) error {
 	deadline := time.NewTimer(90 * time.Second)
 	defer deadline.Stop()
+	lastQueueStart := time.Now()
 	for {
 		accepted, err := codexUserItemPresent(ctx, client, thread, messageID, false)
 		if err != nil {
@@ -379,12 +442,22 @@ func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, mess
 		if accepted {
 			return nil
 		}
+		// An active turn can finish or be interrupted after the initial queue
+		// start check. The TUI does not always advance its native queue then.
+		// Keep starting only its oldest item when idle, so this delivery does
+		// not have to wait for the controller's later receipt reconciliation.
+		if time.Since(lastQueueStart) >= codexQueueRetryInterval {
+			if err := codexStartQueuedIfIdle(ctx, client, thread); err != nil {
+				return fmt.Errorf("%w: Codex message queued but pending queue could not restart: %v", ErrAmbiguousMessage, err)
+			}
+			lastQueueStart = time.Now()
+		}
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("%w: Codex queue accepted but native consumption was not confirmed: %v", ErrAmbiguousMessage, ctx.Err())
 		case <-deadline.C:
 			return fmt.Errorf("%w: Codex queue accepted but native consumption was not confirmed within 90 seconds", ErrAmbiguousMessage)
-		case <-time.After(250 * time.Millisecond):
+		case <-time.After(codexUserItemPollInterval):
 		}
 	}
 }

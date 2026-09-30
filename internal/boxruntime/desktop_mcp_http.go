@@ -87,6 +87,8 @@ func ServeDesktopMCPHTTP(ctx context.Context, assignment, home string) error {
 		_ = listener.Close()
 		return err
 	}
+	go runLocalHeartbeats(ctx, assignment, home, token)
+	go runLocalMCPActivity(ctx, assignment, home)
 	server := &http.Server{Handler: desktopMCPHTTPHandler(assignment, token), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -173,8 +175,9 @@ func localAgentPromptHandler() http.HandlerFunc {
 			return
 		}
 		var input struct {
-			Text    string `json:"text"`
-			Session string `json:"session,omitempty"`
+			Text      string `json:"text"`
+			Session   string `json:"session,omitempty"`
+			MessageID string `json:"messageId,omitempty"`
 		}
 		decoder := json.NewDecoder(io.LimitReader(request.Body, 1<<20))
 		decoder.DisallowUnknownFields()
@@ -218,7 +221,14 @@ func localAgentPromptHandler() http.HandlerFunc {
 			writeDesktopMCPError(writer, http.StatusInternalServerError, "box home is unavailable")
 			return
 		}
-		inbound := ChatInbound{ID: ID("local_"), Text: input.Text}
+		messageID := input.MessageID
+		if messageID == "" {
+			messageID = ID("local_")
+		} else if err := validateTmuxToken("messageId", messageID); err != nil {
+			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
+			return
+		}
+		inbound := ChatInbound{ID: messageID, Text: input.Text}
 		switch agent {
 		case "codex":
 			err = DeliverCodexChat(ctx, New("").Root, home, session, inbound)
@@ -260,6 +270,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 		query.Del("vmbox_session")
 		arguments, status, err := desktopMCPArguments(request, query, name)
 		if err != nil {
+			_ = queueLocalMCPActivity(assignment, name, arguments, err)
 			writeDesktopMCPError(writer, status, err.Error())
 			return
 		}
@@ -267,16 +278,25 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 		defer cancel()
 		_, allowed, err := allowedDesktopMCPTools(ctx, assignment, resolve)
 		if err != nil {
+			_ = queueLocalMCPActivity(assignment, name, arguments, err)
 			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
 			return
 		}
 		if !allowed[name] {
+			_ = queueLocalMCPActivity(assignment, name, arguments, fmt.Errorf("MCP tool is not allowed for this box"))
 			writeDesktopMCPError(writer, http.StatusForbidden, "MCP tool is not allowed for this box")
 			return
 		}
-		if desktopMCPChatTools[name] {
+		var heartbeatRequest struct {
+			Action string `json:"action"`
+		}
+		if name == "heartbeat" {
+			_ = json.Unmarshal(arguments, &heartbeatRequest)
+		}
+		if desktopMCPChatTools[name] || (name == "heartbeat" && heartbeatRequest.Action == "start") {
 			if session == "" {
 				if session, err = soleAgentConversation(ctx); err != nil {
+					_ = queueLocalMCPActivity(assignment, name, arguments, err)
 					writeDesktopMCPError(writer, http.StatusConflict, err.Error())
 					return
 				}
@@ -284,6 +304,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 			ctx = WithChatSession(ctx, session)
 		}
 		result, err := callDesktopTool(ctx, assignment, name, arguments)
+		_ = queueLocalMCPActivity(assignment, name, arguments, err)
 		if err != nil {
 			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
 			return

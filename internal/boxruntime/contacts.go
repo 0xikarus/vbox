@@ -14,6 +14,7 @@ import (
 type ContactSummary struct {
 	ID         string `json:"id"`
 	Name       string `json:"name"`
+	Group      string `json:"group,omitempty"`
 	Agent      string `json:"agent,omitempty"`
 	State      string `json:"state,omitempty"`
 	CanMessage bool   `json:"canMessage"`
@@ -86,6 +87,9 @@ func resolveContactFromList(contacts []ContactSummary, ref string) (string, erro
 		if contact.ID == ref || strings.EqualFold(contact.Name, ref) || fullBoxIDMatchesCompact(contact.ID, ref) {
 			if !contact.CanMessage {
 				return "", fmt.Errorf("messaging contact %q is not permitted", ref)
+			}
+			if contact.State != "" && contact.State != "running" {
+				return "", fmt.Errorf("contact %q is %s; wake it and retry after it is running", contact.Name, contact.State)
 			}
 			// The controller accepts exact box names. Normalize compact IDs,
 			// incoming full box IDs, and case-insensitive names before enqueueing.

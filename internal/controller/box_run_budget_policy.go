@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"time"
 
@@ -38,6 +39,22 @@ func (s *Server) boxRunBudgetPolicy(w http.ResponseWriter, r *http.Request, p Pr
 			writeError(w, http.StatusConflict, err)
 			return
 		}
+	} else if r.Method == http.MethodPost {
+		var request struct {
+			Action             string     `json:"action"`
+			Seconds            int64      `json:"seconds"`
+			ExpectedDeadlineAt *time.Time `json:"expectedDeadlineAt"`
+		}
+		if err := decodeJSON(r, &request); err != nil || request.ExpectedDeadlineAt == nil || (request.Action != "reset" && request.Action != "add") ||
+			(request.Action == "reset" && request.Seconds != 0) ||
+			(request.Action == "add" && request.Seconds != 4*3600 && request.Seconds != 8*3600 && request.Seconds != 24*3600) {
+			writeError(w, http.StatusBadRequest, fmt.Errorf("choose reset or add 4, 8, or 24 hours"))
+			return
+		}
+		if err := s.Store.AdjustBoxRunBudget(r.Context(), p.AccountID, box.ID, request.Action, request.Seconds, *request.ExpectedDeadlineAt, s.DefaultRunBudget); err != nil {
+			writeError(w, http.StatusConflict, err)
+			return
+		}
 	}
 	budget, err := s.Store.syncAgentRunBudget(r.Context(), p.AccountID, box.ID, s.DefaultRunBudget)
 	if err != nil {
@@ -62,6 +79,72 @@ func (s *Server) boxRunBudgetPolicy(w http.ResponseWriter, r *http.Request, p Pr
 		Seconds: budget.BudgetSeconds, RemainingSeconds: budget.RemainingSeconds,
 		DeadlineAt: budget.DeadlineAt, RunningSince: runningSince, State: budget.State,
 	})
+}
+
+// AdjustBoxRunBudget changes only the current allocation's countdown. The
+// configured limit remains the default for the next allocation.
+func (s *Store) AdjustBoxRunBudget(ctx context.Context, accountID, boxID, action string, addSeconds int64, expectedDeadline time.Time, defaultBudget time.Duration) error {
+	if (action != "reset" && action != "add") || (action == "reset" && addSeconds != 0) ||
+		(action == "add" && addSeconds != 4*3600 && addSeconds != 8*3600 && addSeconds != 24*3600) {
+		return fmt.Errorf("invalid run-time adjustment")
+	}
+	if _, err := s.syncAgentRunBudget(ctx, accountID, boxID, defaultBudget); err != nil {
+		return err
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	defaultSeconds := max(int64(1), int64(normalizedRunBudget(defaultBudget)/time.Second))
+	var state string
+	var generation, configuredSeconds int64
+	err = tx.QueryRowContext(ctx, `SELECT state,assignment_generation,
+		COALESCE(CASE WHEN (metadata->>'runBudgetSeconds') ~ '^[0-9]{1,7}$'
+			THEN CASE WHEN (metadata->>'runBudgetSeconds')::bigint<=$4
+				THEN (metadata->>'runBudgetSeconds')::bigint END END,$3)
+		FROM logical_boxes WHERE account_id=$1 AND id=$2 AND state<>'deleting' FOR UPDATE`, accountID, boxID, defaultSeconds, maxAgentRunBudgetSeconds).Scan(&state, &generation, &configuredSeconds)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("box unavailable")
+	}
+	if err != nil {
+		return err
+	}
+	if state != string(v1.LogicalBoxRunning) {
+		return fmt.Errorf("box is not running")
+	}
+	if configuredSeconds == 0 {
+		return fmt.Errorf("run-time limit is off")
+	}
+	var deadline sql.NullTime
+	if err := tx.QueryRowContext(ctx, `SELECT deadline_at FROM agent_run_budgets WHERE account_id=$1 AND box_id=$2 AND assignment_generation=$3 FOR UPDATE`, accountID, boxID, generation).Scan(&deadline); err != nil || !deadline.Valid {
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		return fmt.Errorf("run-time countdown unavailable")
+	}
+	if !deadline.Time.Equal(expectedDeadline) {
+		return fmt.Errorf("run-time countdown changed; refresh and try again")
+	}
+	now := time.Now().UTC()
+	remaining := configuredSeconds
+	if action == "add" {
+		remaining = max(int64(0), int64(math.Ceil(deadline.Time.Sub(now).Seconds())))
+		if remaining > maxAgentRunBudgetSeconds-addSeconds {
+			return fmt.Errorf("run-time countdown cannot exceed 30 days")
+		}
+		remaining += addSeconds
+	}
+	result, err := tx.ExecContext(ctx, `UPDATE agent_run_budgets SET remaining_seconds=$4,deadline_at=$5,
+		extension_seconds=CASE WHEN $6 THEN 0 ELSE extension_seconds END,updated_at=now()
+		WHERE account_id=$1 AND box_id=$2 AND assignment_generation=$3`, accountID, boxID, generation, remaining, now.Add(time.Duration(remaining)*time.Second), action == "reset")
+	if err != nil {
+		return err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return fmt.Errorf("run-time countdown changed")
+	}
+	return tx.Commit()
 }
 
 // SetBoxRunBudget sets the limit for future allocations and starts a new

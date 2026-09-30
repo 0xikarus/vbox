@@ -45,18 +45,19 @@ func desktopMCPTools() []map[string]any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	return []map[string]any{
-		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns a compact id, exact box name, agent, state and whether messaging is allowed. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns a compact id, exact box name, chat group, agent, state and whether messaging is allowed. Groups are owner-organized labels and do not grant access. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("heartbeat", "Manage this box's local heartbeat. Use action=start with intervalMinutes (5–1440) and optional count (default 1) to schedule prompts; starting again replaces the timer. Use action=stop with no other arguments to stop it, even when the agent conversation has closed. A hibernated box cannot tick or wake itself; due ticks resume after an external wake. With count above 1, prompts include the ticks left after that prompt.", map[string]any{"action": map[string]any{"type": "string", "enum": []string{"start", "stop"}}, "intervalMinutes": map[string]any{"type": "integer", "minimum": 5, "maximum": 1440}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000, "default": 1}}, "action"),
 		makeTool("get_run_budget", "Get this box's durable run-time budget. The countdown advances only while the box is allocated and is separate from desktop inactivity.", map[string]any{}),
 		makeTool("get_thread_history", "Read a paginated direct or shared-chat thread this box already has access to. Pass chatId for a shared-chat thread. A thread reference alone never grants access.", map[string]any{"threadId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "before": map[string]any{"type": "string"}, "beforeId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "threadId"),
 		makeTool("list_agent_boxes", "List safe lifecycle summaries for the account's agent boxes. Does not expose provider credentials, volume identifiers, terminal access, or desktop access.", map[string]any{}),
 		makeTool("get_agent_box", "Inspect one agent box's safe lifecycle details by ID or exact name. Does not grant terminal or desktop access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box"),
 		makeTool("get_agent_box_screenshot", "Capture another running, unprotected agent box's current desktop as a PNG image by ID or exact name. Does not wake a box, start its desktop, or grant desktop control. Use take_screenshot for this box's own desktop.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "thumbnail": map[string]any{"type": "boolean", "default": false}}, "box"),
-		makeTool("create_agent_box", "Create an agent box in any available account worker pool within this box's agent, disk, and count permission limits. The creator and new box become mutual direct contacts automatically. Call get_agent_box_configs with mode=list for saved profiles, roles, and exact tool preset IDs; call get_available_workers for free worker slots across pools. Pass slotId to choose a specific slot and its pool, or omit it for automatic placement that prefers this box's pool, then another available pool. Pass tools as an array of preset IDs such as [\"blender\"] or [\"foundry\"], never as a string. Blender includes desktop setup. Presets install before the new box becomes usable. loginProfiles imports one matching agent profile and optionally one GitHub profile; model and reasoningEffort override that saved profile for this box. Omit roleIds for core chat/history tools only. Optional instructions become managed startup instructions. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000}, "slotId": map[string]any{"type": "string", "minLength": 1, "description": "Exact slotId returned by get_available_workers; selects that slot and pool."}, "tools": map[string]any{"type": "array", "maxItems": 3, "uniqueItems": true, "items": map[string]any{"type": "string", "enum": []string{"foundry", "blender", "desktop"}}}, "loginProfiles": map[string]any{"type": "array", "maxItems": 2, "items": map[string]any{"type": "object", "properties": map[string]any{"application": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode", "github"}}, "name": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string"}, "reasoningEffort": map[string]any{"type": "string"}}, "required": []string{"application", "name"}, "additionalProperties": false}}, "roleIds": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string", "minLength": 1}}, "instructions": map[string]any{"type": "string", "maxLength": v1.MaxInstructionMarkdownBytes, "description": "Managed Markdown instructions given to the new agent at startup."}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
+		makeTool("create_agent_box", "Create an agent box in an available account worker pool within this box's agent, disk, and count permission limits. The creator and new box become mutual direct contacts automatically. Call get_agent_box_configs with mode=list for saved profiles, roles, and exact tool preset IDs; call get_available_workers for free worker slots across pools. Pass slotId to choose a specific slot and its pool, or omit it for automatic placement. Optional memoryGiB (1–8) and swapGiB (0–4) require a container-isolated shared-worker pool; omitted values use 2 GiB RAM and 1 GiB swap there. Pass tools as an array of preset IDs such as [\"blender\"] or [\"foundry\"], never as a string. Presets install before the new box becomes usable. loginProfiles imports one matching agent profile and optionally one GitHub profile; model and reasoningEffort override that saved profile. Optional instructions become managed startup instructions. Reuse idempotencyKey when retrying.", map[string]any{"name": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "agent": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode"}}, "diskGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000}, "memoryGiB": map[string]any{"type": "integer", "minimum": 1, "maximum": 8}, "swapGiB": map[string]any{"type": "integer", "minimum": 0, "maximum": 4}, "slotId": map[string]any{"type": "string", "minLength": 1, "description": "Exact slotId returned by get_available_workers; selects that slot and pool."}, "tools": map[string]any{"type": "array", "maxItems": 3, "uniqueItems": true, "items": map[string]any{"type": "string", "enum": []string{"foundry", "blender", "desktop"}}}, "loginProfiles": map[string]any{"type": "array", "maxItems": 2, "items": map[string]any{"type": "object", "properties": map[string]any{"application": map[string]any{"type": "string", "enum": []string{"codex", "claude", "opencode", "github"}}, "name": map[string]any{"type": "string", "minLength": 1}, "model": map[string]any{"type": "string"}, "reasoningEffort": map[string]any{"type": "string"}}, "required": []string{"application", "name"}, "additionalProperties": false}}, "roleIds": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string", "minLength": 1}}, "instructions": map[string]any{"type": "string", "maxLength": v1.MaxInstructionMarkdownBytes, "description": "Managed Markdown instructions given to the new agent at startup."}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "name", "agent", "idempotencyKey"),
 		makeTool("get_agent_box_configs", "Use mode=list to read exact saved login profile references, assignable role IDs, tool preset IDs, allowed agents and creation limits. Use mode=models with application and name to read that saved Claude, Codex or OpenCode profile's live model catalog. Never returns credentials.", map[string]any{"mode": map[string]any{"type": "string", "enum": []string{"list", "models"}}, "application": map[string]any{"type": "string", "enum": []string{"claude", "codex", "opencode"}}, "name": map[string]any{"type": "string", "minLength": 1}}, "mode"),
-		makeTool("get_available_workers", "List healthy free worker slots across this account's configured pools. Returns slotId, provider, providerCredential, serviceName, ordinal, and region. Pass a returned slotId to create_agent_box to choose that slot and pool. Availability is checked again when creating the box.", map[string]any{}),
+		makeTool("get_available_workers", "List healthy free worker slots across this account's configured pools. Returns slotId, provider, providerCredential, serviceName, ordinal, region, and memoryConfigurable for container-isolated pools. Pass a returned slotId to create_agent_box to choose that slot and pool. Availability is checked again when creating the box.", map[string]any{}),
 		makeTool("set_agent_box_tags", "Replace an agent box's plain metadata tags. Tags are labels only and never grant contact or tool access.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "tags": map[string]any{"type": "array", "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 32}}}, "box", "tags"),
 		makeTool("restart_agent_box", "Hibernate and start another running, unprotected agent box again. Running agents and terminal sessions end. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
-		makeTool("wake_agent_box", "Wake another hibernated, unprotected agent box without restarting a running box. The request may queue until capacity is free; use get_agent_box to check progress if that tool is allowed. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
+		makeTool("wake_agent_box", "Wake another hibernated, unprotected agent box without restarting a running box. Optionally set sessionChoice to restore the saved conversation or start fresh after wake. The request may queue until capacity is free; use get_agent_box to check progress if allowed. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "sessionChoice": map[string]any{"type": "string", "enum": []string{"restore", "fresh"}}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("clear_agent_box_context", "Start a fresh agent conversation in another running, unprotected box while keeping its chat history and workspace. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("compact_agent_box_context", "Request /compact in another running, unprotected agent box's existing conversation. The target must be idle; this preserves its thread and workspace. The response confirms that compaction was requested, not that summarization has finished. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
@@ -75,6 +76,18 @@ func desktopMCPTools() []map[string]any {
 		makeTool("type_text", "Type ordinary literal text in the focused application. Use the secret service for credentials.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 16384}}, "text"),
 		makeTool("press_keys", "Press a shortcut: keys contains modifiers and a key, e.g. [ctrl,l] or [Return].", map[string]any{"keys": map[string]any{"type": "array", "minItems": 1, "maxItems": 5, "items": map[string]any{"type": "string"}}}, "keys"),
 	}
+}
+
+func desktopContactLine(contact ContactSummary) string {
+	state := contact.State
+	if state == "" {
+		state = "unknown"
+	}
+	group := "none"
+	if contact.Group != "" {
+		group = strconv.Quote(contact.Group)
+	}
+	return fmt.Sprintf("- id %s | name %s | group %s | agent %s | %s | message %t", contact.ID, contact.Name, group, contact.Agent, state, contact.CanMessage)
 }
 
 type desktopToolPolicyResolver func(context.Context, string) (map[string]bool, error)
@@ -132,6 +145,46 @@ func writeDesktopChatEvent(ctx context.Context, assignment string, event ChatEve
 	return nil
 }
 
+// Contact text needs a delivery verdict in the tool response. Persist the
+// event first so a lost controller response cannot lose the message; the
+// controller deduplicates retries by event ID. A network error is explicitly
+// unconfirmed, while a controller rejection can be reported to the agent.
+func sendDesktopContactEvent(ctx context.Context, assignment string, event ChatEvent) (string, error) {
+	if len(event.Images) != 0 {
+		if err := writeDesktopChatEvent(ctx, assignment, event); err != nil {
+			return "", err
+		}
+		return "Contact message queued with images; delivery is not yet confirmed. Check the conversation before retrying.", nil
+	}
+	session, err := chatSession(ctx)
+	if err != nil {
+		return "", err
+	}
+	event.ID, err = chatEventID()
+	if err != nil {
+		return "", err
+	}
+	if err := writeChatEvent(ctx, event); err != nil {
+		return "", err
+	}
+	var result struct {
+		Stored    bool   `json:"stored"`
+		Delivered bool   `json:"delivered"`
+		Reason    string `json:"reason"`
+	}
+	err = desktopAgentAPI(ctx, assignment, http.MethodPost, "/v1/agent-desktop/chat-ready", map[string]any{"session": session, "event": event}, &result)
+	if err != nil || !result.Stored {
+		return "", fmt.Errorf("contact message queued but delivery is unconfirmed; check the sender conversation before retrying")
+	}
+	if err := AckChatEvent(os.Getenv("HOME"), session, event.ID); err != nil {
+		return "", fmt.Errorf("contact delivery recorded but local confirmation failed; check the conversation before retrying")
+	}
+	if !result.Delivered {
+		return "", fmt.Errorf("contact message rejected: %s", result.Reason)
+	}
+	return "Message delivered to the contact's conversation.", nil
+}
+
 func notifyDesktopChatReady(ctx context.Context, assignment, home, session string, event ChatEvent, post func(context.Context, string, string, string, any, any) error) {
 	const path = "/v1/agent-desktop/chat-ready"
 	if len(event.Images) == 0 {
@@ -166,7 +219,7 @@ func writeDesktopMCPGuide(home string) error {
 	guide.WriteString("Only contacts returned by `get_contacts` are permitted. If a box is absent, ask the owner to add it as a direct contact or grant All contacts. Omit `contact` to message the owner. Add `files` with absolute PNG, JPEG, or GIF paths to attach images to either kind of message.\n\n")
 	guide.WriteString("## Send a prompt from a box-local app\n\n")
 	guide.WriteString("Read `~/.local/share/vmbox/mcp-http.json` inside the box. Its `promptUrl` is a local `http://127.0.0.1:<port>/prompt` address and its `token` authorizes the request. POST one JSON object with non-empty `text`, for example `{\"text\":\"Check the latest build result\"}`, and send `Authorization: Bearer <token>` and `Content-Type: application/json` headers. The token also authorizes HTTP MCP tools, so keep it private.\n\n")
-	guide.WriteString("A `202` response contains `accepted`, `session`, and `messageId`; the agent's reply goes through its normal conversation, not the HTTP response. `/prompt` requires a running managed agent and never starts or wakes one. If several conversations are running, include `session` in the JSON body or use an `X-Vmbox-Session` header. A `409` can mean delivery is uncertain, and retries can duplicate the prompt because callers cannot set the message ID.\n\n")
+	guide.WriteString("A `202` response contains `accepted`, `session`, and `messageId`; the agent's reply goes through its normal conversation, not the HTTP response. `/prompt` requires a running managed agent and never starts or wakes one. If several conversations are running, include `session` in the JSON body or use an `X-Vmbox-Session` header. For a retryable local job, set one stable `messageId` in the JSON body and reuse it on retries; a `409` may still mean delivery is uncertain.\n\n")
 	for _, tool := range desktopMCPTools() {
 		name := tool["name"].(string)
 		description := tool["description"].(string)
@@ -266,6 +319,7 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			} else {
 				result, err = callDesktopTool(callCtx, assignment, params.Name, params.Arguments)
 			}
+			_ = queueLocalMCPActivity(assignment, params.Name, params.Arguments, err)
 			cancel()
 			if err != nil {
 				result = map[string]any{"isError": true, "content": []map[string]any{{"type": "text", "text": err.Error()}}}
@@ -480,6 +534,44 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			return nil, fmt.Errorf("missing required argument: %s", key)
 		}
 	}
+	if name == "heartbeat" {
+		var request struct {
+			Action          string `json:"action"`
+			IntervalMinutes int    `json:"intervalMinutes"`
+			Count           int    `json:"count"`
+		}
+		if json.Unmarshal(args, &request) != nil {
+			return nil, fmt.Errorf("invalid heartbeat arguments")
+		}
+		if request.Action == "stop" {
+			if _, ok := values["intervalMinutes"]; ok {
+				return nil, fmt.Errorf("stop does not accept intervalMinutes or count")
+			}
+			if _, ok := values["count"]; ok {
+				return nil, fmt.Errorf("stop does not accept intervalMinutes or count")
+			}
+			result, err := stopLocalHeartbeat()
+			if err != nil {
+				return nil, err
+			}
+			return desktopToolJSON(result)
+		}
+		if request.Action != "start" || request.IntervalMinutes < 5 || request.IntervalMinutes > 1440 || request.Count < 0 || request.Count > 1000 {
+			return nil, fmt.Errorf("intervalMinutes must be 5–1440 and count 1–1000")
+		}
+		if request.Count == 0 {
+			request.Count = 1
+		}
+		session, err := chatSession(ctx)
+		if err != nil {
+			return nil, err
+		}
+		result, err := startLocalHeartbeat(session, request.IntervalMinutes, request.Count)
+		if err != nil {
+			return nil, err
+		}
+		return desktopToolJSON(result)
+	}
 	if name == "get_contacts" {
 		contacts, err := DesktopContacts(ctx, assignment)
 		if err != nil {
@@ -490,11 +582,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		}
 		var lines []string
 		for _, contact := range contacts {
-			state := contact.State
-			if state == "" {
-				state = "unknown"
-			}
-			lines = append(lines, fmt.Sprintf("- id %s | name %s | agent %s | %s | message %t", contact.ID, contact.Name, contact.Agent, state, contact.CanMessage))
+			lines = append(lines, desktopContactLine(contact))
 		}
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
 	}
@@ -537,6 +625,8 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			Name           string               `json:"name"`
 			Agent          string               `json:"agent"`
 			DiskGiB        int                  `json:"diskGiB"`
+			MemoryGiB      int                  `json:"memoryGiB"`
+			SwapGiB        *int                 `json:"swapGiB"`
 			SlotID         string               `json:"slotId"`
 			Tools          []string             `json:"tools"`
 			LoginProfiles  []v1.LoginProfileRef `json:"loginProfiles"`
@@ -548,7 +638,7 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			return nil, fmt.Errorf("name, agent, and idempotencyKey are required")
 		}
 		var result map[string]any
-		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes", request.IdempotencyKey, map[string]any{"name": request.Name, "agent": request.Agent, "diskGiB": request.DiskGiB, "slotId": request.SlotID, "tools": request.Tools, "loginProfiles": request.LoginProfiles, "roleIds": request.RoleIDs, "instructions": request.Instructions}, &result); err != nil {
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes", request.IdempotencyKey, map[string]any{"name": request.Name, "agent": request.Agent, "diskGiB": request.DiskGiB, "memoryGiB": request.MemoryGiB, "swapGiB": request.SwapGiB, "slotId": request.SlotID, "tools": request.Tools, "loginProfiles": request.LoginProfiles, "roleIds": request.RoleIDs, "instructions": request.Instructions}, &result); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)
@@ -658,12 +748,16 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			Box            string `json:"box"`
 			Confirmation   string `json:"confirmation"`
 			IdempotencyKey string `json:"idempotencyKey"`
+			SessionChoice  string `json:"sessionChoice"`
 		}
 		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Box) == "" || request.Confirmation == "" || request.IdempotencyKey == "" {
 			return nil, fmt.Errorf("box, confirmation, and idempotencyKey are required")
 		}
+		if request.SessionChoice != "" && request.SessionChoice != "restore" && request.SessionChoice != "fresh" {
+			return nil, fmt.Errorf("sessionChoice must be restore or fresh")
+		}
 		var result map[string]any
-		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/wake", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation}, &result); err != nil {
+		if err := desktopAgentAPIWithKey(ctx, assignment, http.MethodPost, "/v1/agent-desktop/boxes/"+url.PathEscape(request.Box)+"/wake", request.IdempotencyKey, map[string]any{"confirmation": request.Confirmation, "sessionChoice": request.SessionChoice}, &result); err != nil {
 			return nil, err
 		}
 		return desktopToolJSON(result)
@@ -760,10 +854,11 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if err != nil {
 				return nil, err
 			}
-			if err := writeDesktopChatEvent(ctx, assignment, ChatEvent{Kind: "contact", ReplyTo: request.ReplyTo, Contact: contact, Text: request.Text, Images: images}); err != nil {
+			confirmation, err := sendDesktopContactEvent(ctx, assignment, ChatEvent{Kind: "contact", ReplyTo: request.ReplyTo, Contact: contact, Text: request.Text, Images: images})
+			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Message delivered to the contact's conversation."}}}, nil
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": confirmation}}}, nil
 		}
 		images, err := loadChatImages(request.Files)
 		if err != nil {
@@ -810,10 +905,11 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			if request.Multiple {
 				text += "\n\nOne or more choices may be selected."
 			}
-			if err := writeDesktopChatEvent(ctx, assignment, ChatEvent{Kind: "contact", Contact: contact, Text: text}); err != nil {
+			confirmation, err := sendDesktopContactEvent(ctx, assignment, ChatEvent{Kind: "contact", Contact: contact, Text: text})
+			if err != nil {
 				return nil, err
 			}
-			return map[string]any{"content": []map[string]any{{"type": "text", "text": "Question delivered to the contact's conversation."}}}, nil
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": confirmation}}}, nil
 		}
 		event := ChatEvent{Kind: "question", ReplyTo: request.ReplyTo, Text: request.Question, Question: &ChatQuestion{Text: request.Question, Choices: request.Choices, Multiple: request.Multiple}}
 		if err := writeDesktopChatEvent(ctx, assignment, event); err != nil {

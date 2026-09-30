@@ -105,13 +105,26 @@ test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
  });
 });
 
-test('thread replies stay visible in the main timeline and use the thread composer',async()=>{
+test('Reply uses the main composer without opening the thread sidebar',async()=>{
  await withChat(async(browser,base,posts)=>{
   const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg.agent');
   assert.equal(await p.$$eval('#chat-messages .msg',nodes=>nodes.length),2,'the agent reply shown in the chat-list preview must also appear in the open transcript');
   assert.equal(await p.$eval('#chat-messages .msg.agent',node=>node.textContent.includes('verification suite is green')),true);
-  assert.equal(await p.$('.msg-thread'),null,'a two-message thread has no count label');
-  await p.click('.msg.user',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.includes('Reply in thread')).click());
+  assert.equal(await p.$eval('#chat-messages .msg.user .msg-thread',button=>button.textContent),'2 in thread','the thread link is visible after the first reply');
+  await p.click('.msg.user',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.trim()==='Reply').click());
+  assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'Reply does not open the thread sidebar');
+  assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),false,'the reply target appears above the main composer');
+  assert.equal(await p.evaluate(()=>document.activeElement?.id),'chat-input');
+  await p.type('#chat-input','Ship it.');await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
+  assert.equal(posts.at(-1).parentMessageId,threadRoot,'the message stays in the selected thread');
+  assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'sending the reply does not open the thread sidebar');
+  assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),true,'the reply target clears after sending');
+  await p.click('.msg.agent',{button:'right'});await p.waitForFunction(()=>!document.querySelector('.msg.agent .msg-actions-menu').hidden);
+  await p.evaluate(()=>[...document.querySelectorAll('.msg.agent .msg-actions-menu button')].find(button=>button.textContent.trim()==='Reply').click());
+  await p.type('#chat-input','Agreed.');await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
+  assert.equal(posts.at(-1).parentMessageId,threadMessages[1].id,'replying to a thread member preserves the direct parent');
+  assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
+  await p.click('#chat-messages .msg.user .msg-thread');
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===2);
   const initialWidth=await p.$eval('#thread-panel',panel=>panel.getBoundingClientRect().width);
   assert.ok(initialWidth>=400,'the thread sidebar starts at its intended desktop width');
@@ -125,7 +138,7 @@ test('thread replies stay visible in the main timeline and use the thread compos
   assert.equal(await p.evaluate(()=>Number(localStorage.getItem('vmboxChatThreadWidth'))),keyboardWidth,'thread width is remembered');
   await p.evaluate(()=>document.activeElement.blur());
   await p.screenshot({path:'/tmp/vmbox-chat-thread-resized.png'});
-  await p.type('#thread-composer textarea','Ship it.');await p.click('#thread-composer button');await p.waitForFunction(()=>document.querySelector('#thread-composer textarea').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
+  await p.type('#thread-composer textarea','One more thing.');await p.click('#thread-composer button');await p.waitForFunction(()=>document.querySelector('#thread-composer textarea').value==='');assert.equal(posts.at(-1).parentMessageId,threadRoot);
   await (await p.$('#thread-panel')).screenshot({path:'docs/chat-ui/screenshots/chat-thread.png'});await p.close();
  });
 });
@@ -136,10 +149,13 @@ test('thread sidebar fits a phone without a resize handle',async()=>{
   await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user');
   await p.click('.msg.user',{button:'right'});
   await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);
-  await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.includes('Reply in thread')).click());
+  await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.trim()==='Reply').click());
+  assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'Reply keeps the mobile chat visible');
+  await p.click('#chat-messages .msg.user .msg-thread');
   await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden);
+  await p.waitForFunction(()=>{const rect=document.querySelector('#thread-panel').getBoundingClientRect();return Math.abs(rect.left)<1&&Math.abs(rect.right-390)<1});
   const layout=await p.evaluate(()=>({panel:document.querySelector('#thread-panel').getBoundingClientRect().toJSON(),handle:getComputedStyle(document.querySelector('#thread-resizer')).display}));
-  assert.ok(Math.abs(layout.panel.left)<1&&Math.abs(layout.panel.right-390)<1,'the thread sidebar fills the phone viewport');
+  assert.ok(Math.abs(layout.panel.left)<1&&Math.abs(layout.panel.right-390)<1,'the thread sidebar fills the phone viewport: '+JSON.stringify(layout.panel));
   assert.equal(layout.handle,'none','the desktop resize handle is hidden on phones');
   await p.evaluate(()=>document.activeElement.blur());
   await p.screenshot({path:'/tmp/vmbox-chat-thread-mobile.png'});await p.close();
@@ -159,6 +175,9 @@ test('agent-to-agent messages identify their source box and preserve the thread'
 test('message actions open toward available space and stay inside the transcript',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:520});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user .msg-more');
+  const corners=await p.$eval('#chat-messages .msg.user',message=>({message:message.getBoundingClientRect().toJSON(),chevron:message.querySelector('.msg-more').getBoundingClientRect().toJSON()}));
+  assert.ok(corners.chevron.top-corners.message.top<8,'the chevron is at the top of the message');
+  assert.ok(corners.message.right-corners.chevron.right<8,'the chevron is at the right edge of the message');
   await p.evaluate(()=>{
    const messages=document.querySelector('#chat-messages');
    for(const edge of ['before','after']){
@@ -174,12 +193,21 @@ test('message actions open toward available space and stay inside the transcript
     return {placement:menu.dataset.placement,top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right,clipTop:clip.top,clipBottom:clip.bottom,clipLeft:clip.left,clipRight:clip.right};
    });
    assert.equal(result.placement,expected);
-   assert.ok(result.top>=result.clipTop-1&&result.bottom<=result.clipBottom+1,'menu must fit vertically inside the transcript');
-   assert.ok(result.left>=result.clipLeft-1&&result.right<=result.clipRight+1,'menu must fit horizontally inside the transcript');
+   assert.ok(result.top>=result.clipTop-1&&result.bottom<=result.clipBottom+1,'menu must fit vertically inside the transcript: '+JSON.stringify(result));
+   assert.ok(result.left>=result.clipLeft-1&&result.right<=result.clipRight+1,'menu must fit horizontally inside the transcript: '+JSON.stringify(result));
    await p.click('#chat-messages .msg.user .msg-more');
   }
   await check('end','up');
   await check('start','down');
+  await p.$eval('#chat-messages .msg.user',message=>message.scrollIntoView({block:'center'}));
+  const target=await p.$eval('#chat-messages .msg.user .text',text=>text.getBoundingClientRect().toJSON());
+  const click={x:Math.round(target.left+Math.min(65,target.width/2)),y:Math.round(target.top+target.height/2)};
+  await p.mouse.click(click.x,click.y,{button:'right'});
+  const context=await p.$eval('#chat-messages .msg.user .msg-actions-menu',menu=>({hidden:menu.hidden,placement:menu.dataset.placement,rect:menu.getBoundingClientRect().toJSON()}));
+  assert.equal(context.hidden,false,'right-click opens the message actions');
+  assert.ok(Math.abs(context.rect.left-click.x)<5,'the menu opens at the horizontal click position');
+  assert.ok(context.placement==='up'?Math.abs(context.rect.bottom-click.y)<5:Math.abs(context.rect.top-click.y)<5,'the menu opens beside the vertical click position');
+  await p.screenshot({path:'/tmp/vmbox-chat-message-context-menu.png'});
   await p.close();
  });
 });

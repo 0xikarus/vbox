@@ -76,7 +76,7 @@ func (p *Provider) rpc(ctx context.Context, request sharedworker.Request) (share
 
 func (p *Provider) Validate(ctx context.Context) (provider.Capabilities, error) {
 	_, err := p.rpc(ctx, sharedworker.Request{Operation: "validate"})
-	return provider.Capabilities{Provider: p.Name(), Architectures: []string{"amd64"}, Interactive: true, Detached: true, ExactArgv: true, PersistentStorage: true, AutomatedStorage: true, ControllerCompatible: true, Warnings: []string{"Shared worker boxes use separate Unix users, not containers. CPU, memory, network and disk capacity are shared. Retained workspaces are pinned to this worker."}}, err
+	return provider.Capabilities{Provider: p.Name(), Architectures: []string{"amd64"}, Interactive: true, Detached: true, ExactArgv: true, PersistentStorage: true, AutomatedStorage: true, ControllerCompatible: true, Warnings: []string{"Shared-worker isolation depends on the worker tier. CPU, memory, network and disk capacity are shared by the host. Retained workspaces are pinned to this worker."}}, err
 }
 
 func (p *Provider) Create(ctx context.Context, req provider.CreateRequest) (provider.Box, error) {
@@ -101,6 +101,33 @@ func (p *Provider) Stop(ctx context.Context, id string) (provider.Box, error) {
 }
 func (p *Provider) Resize(context.Context, string, provider.Resources) (provider.Box, error) {
 	return provider.Box{}, provider.ErrUnsupported
+}
+
+func (p *Provider) ResourceLimits(ctx context.Context, id string) (provider.Resources, error) {
+	result, err := p.rpc(ctx, sharedworker.Request{Operation: "resource-limits", ID: id})
+	if err != nil {
+		return provider.Resources{}, err
+	}
+	if result.Resources == nil {
+		return provider.Resources{}, errors.New("shared worker omitted resource limits")
+	}
+	return *result.Resources, nil
+}
+
+func (p *Provider) SetResourceLimits(ctx context.Context, id string, resources provider.Resources) error {
+	_, err := p.rpc(ctx, sharedworker.Request{Operation: "set-resource-limits", ID: id, Resources: resources})
+	return err
+}
+
+func (p *Provider) HostResources(ctx context.Context) (provider.HostResources, error) {
+	result, err := p.rpc(ctx, sharedworker.Request{Operation: "host-resources"})
+	if err != nil {
+		return provider.HostResources{}, err
+	}
+	if result.HostResources == nil {
+		return provider.HostResources{}, errors.New("shared worker omitted host resource usage")
+	}
+	return *result.HostResources, nil
 }
 func (p *Provider) Delete(ctx context.Context, id string, owner provider.Owner) error {
 	_, err := p.rpc(ctx, sharedworker.Request{Operation: "delete", ID: id, Owner: owner})
