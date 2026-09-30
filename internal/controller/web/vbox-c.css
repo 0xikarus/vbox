@@ -2345,3 +2345,12 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .text pre:hover .code-copy,#chat-messages .text pre .code-copy:focus-visible{opacity:1}
 #chat-messages .text pre .code-copy svg{width:.95rem;height:.95rem}
 #chat-messages .text pre .code-copy.copied{color:var(--vb-ok-text);border-color:var(--vb-ok)}
+
+/* ══ item 1 · bubble meta inline (WhatsApp invisible-spacer) ═════════════ */
+/* The spacer reserves exactly the meta width on the last text line; the meta
+   is absolutely placed bottom-right. When the spacer cannot fit it wraps to a
+   new line, so the meta drops below without ever overlapping the text. */
+#chat-messages .msg .meta-spacer{display:inline-block!important;width:0;height:1px;vertical-align:baseline;max-width:100%}
+#chat-messages .msg:not(.meta-block).tail .meta{position:absolute!important;right:9px!important;bottom:5px!important;left:auto!important;top:auto!important;float:none!important;display:inline-flex!important;align-items:center;gap:.25rem;width:auto!important;margin:0!important;justify-content:flex-end!important}
+#chat-messages .msg.meta-block .meta{position:static!important;display:flex!important;justify-content:flex-end!important;width:100%!important;margin:.18rem 0 0!important;float:none!important;right:auto!important;bottom:auto!important;left:auto!important;top:auto!important}
+#chat-messages .msg:not(.tail) .meta{display:none!important}

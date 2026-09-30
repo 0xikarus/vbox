@@ -1303,7 +1303,10 @@
   const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
   renderRichText(text,body);
   for(const pre of text.querySelectorAll('pre')){if(pre.querySelector('.code-copy'))continue;const copy=document.createElement('button');copy.type='button';copy.className='code-copy';copy.setAttribute('aria-label','Copy code');copy.title='Copy code';copy.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';copy.onclick=async()=>{try{await navigator.clipboard.writeText(pre.textContent.replace('Copy code',''));copy.classList.add('copied');setTimeout(()=>copy.classList.remove('copied'),1200)}catch{}};pre.append(copy)}
-  {const spacer=document.createElement('span');spacer.className='meta-spacer';const last=text.lastElementChild;if(last&&/^(P|DIV|LI|BLOCKQUOTE|H[1-6]|SPAN)$/.test(last.tagName))last.append(spacer);else text.append(spacer)}
+  // Invisible spacer at the end of the last text line: the absolutely placed
+  // meta overlays the reserved space inline and only wraps to its own line when
+  // the spacer cannot fit. Code blocks get their own meta line (spacer skipped).
+  {const spacer=document.createElement('span');spacer.className='meta-spacer';let host=text,ownLine=false;for(;;){const last=host.lastElementChild;if(!last)break;if(last.tagName==='PRE'){ownLine=true;break}if(/^(DIV|P|LI|BLOCKQUOTE|H[1-6]|UL|OL|TABLE|SECTION|ARTICLE)$/.test(last.tagName)){host=last;continue}break}if(ownLine)row.classList.add('meta-block');else host.append(spacer)}
   row.append(text);
   const gallery=messageMediaGallery(message);
   for(const [index,image] of (message.images||[]).entries()){
@@ -1352,8 +1355,26 @@
   row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle,{x:event.clientX,y:event.clientY})};
   actions.append(toggle,menu);row.append(meta,actions);
   return row;
- }
- const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
+  }
+  // Measure each tail meta and reserve exactly its width on the last text line
+  // so the inline time/ticks never overlap the message text.
+  function sizeMetaSpacers(root=messagesEl){
+   if(!root)return;
+   for(const msg of root.querySelectorAll('.msg')){
+    const spacer=msg.querySelector('.meta-spacer');
+    if(!spacer)continue;
+    const meta=msg.querySelector(':scope > .meta');
+    if(!meta||!msg.classList.contains('tail')){spacer.style.width='0px';continue}
+    const width=Math.ceil(meta.getBoundingClientRect().width);
+    spacer.style.width=width?width+6+'px':'0px';
+   }
+  }
+  let metaSizeFrame=0;
+  const scheduleMetaSize=()=>{cancelAnimationFrame(metaSizeFrame);metaSizeFrame=requestAnimationFrame(()=>sizeMetaSpacers())};
+  if(messagesEl)new MutationObserver(scheduleMetaSize).observe(messagesEl,{childList:true,subtree:true,characterData:true});
+  window.addEventListener('resize',scheduleMetaSize,{passive:true});
+  try{document.fonts?.ready.then(scheduleMetaSize)}catch{}
+  const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
  function mcpCallGroup(messages){
   const group=document.createElement('div');group.className='mcp-call-group';
   const toggle=document.createElement('button');toggle.type='button';toggle.className='mcp-call-toggle';
