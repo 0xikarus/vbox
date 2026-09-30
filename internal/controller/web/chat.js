@@ -1313,7 +1313,7 @@
   }
   const form=readOnly?null:questionForm(box,message);if(form)row.append(form);
   const meta=document.createElement('span');meta.className='meta';
-  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>2){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
+  const threadSize=readOnly?0:(box.messages||[]).filter(value=>value.threadId&&value.threadId===message.threadId).length;if(message.threadId&&threadSize>1){const thread=document.createElement('button');thread.type='button';thread.className='msg-thread';thread.textContent=threadSize+' in thread';thread.onclick=()=>void openThread(message.threadId);meta.append(thread)}
   meta.append(Object.assign(document.createElement('time'),{textContent:new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}));
   if(mine&&!readOnly&&message.state!=='silent'){
    const ticks=document.createElement('span');ticks.className='ticks'+(message.state==='failed'||message.state==='ambiguous'?' failed':'');
@@ -1323,8 +1323,7 @@
    if(message.state==='failed'||message.state==='ambiguous')ticks.append(document.createTextNode(message.state==='failed'?'failed':'unconfirmed'));
    meta.append(ticks);
   }
-  // Always-visible actions (hover-only controls are invisible on touch): the
-  // chevron sits beside the delivery state and time, then reveals the menu.
+  // Keep the chevron visible on touch, above the message text at its top right.
   if(readOnly){row.append(meta);return row}
   const actions=document.createElement('div');actions.className='msg-actions';
   const toggle=document.createElement('button');toggle.type='button';toggle.className='msg-more';toggle.setAttribute('aria-label','Message actions');toggle.setAttribute('aria-expanded','false');toggle.append(lucide('chevron-down'));
@@ -1333,17 +1332,16 @@
   copy.onclick=async()=>{closeAllMsgActions();try{await navigator.clipboard.writeText(message.question?message.question.text:message.text);toast('Message copied.')}catch{toast('Copy is unavailable here.')}};
   const forward=document.createElement('button');forward.type='button';forward.append(lucide('forward'),Object.assign(document.createElement('span'),{textContent:'Forward…'}));
   forward.onclick=()=>{closeAllMsgActions();openForwardMenu(toggle,message)};
-  const reply=document.createElement('button');reply.type='button';reply.append(lucide('reply'),Object.assign(document.createElement('span'),{textContent:'Reply in thread'}));reply.onclick=async()=>{closeAllMsgActions();await openThread(message.threadId||message.id);$('#thread-composer textarea').focus()};
-  const viewThread=document.createElement('button');viewThread.type='button';viewThread.textContent='View thread';viewThread.onclick=()=>{closeAllMsgActions();void openThread(message.threadId||message.id)};
-  menu.append(reply,copy,forward,viewThread);
+  const reply=document.createElement('button');reply.type='button';reply.append(lucide('reply'),Object.assign(document.createElement('span'),{textContent:'Reply'}));reply.onclick=()=>{closeAllMsgActions();setReply(message)};
+  menu.append(reply,copy,forward);
   if(mine&&message.state==='ambiguous'){
    const inspect=document.createElement('button');inspect.type='button';inspect.append(lucide('help'),Object.assign(document.createElement('span'),{textContent:'Check delivery in TMUX'}));
    inspect.onclick=()=>{closeAllMsgActions();void openTakeover('tmux',box.id)};
    menu.append(inspect);
   }
   toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen)openMsgActions(menu,toggle)};
-  row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle)};
-  actions.append(toggle,menu);meta.append(actions);row.append(meta);
+  row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle,{x:event.clientX,y:event.clientY})};
+  actions.append(toggle,menu);row.append(meta,actions);
   return row;
  }
  function messageAuthor(message){return message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent'}
@@ -1362,27 +1360,27 @@
   try{await api(boxPath(selected)+'/messages','POST',{'Idempotency-Key':crypto.randomUUID()},{text,parentMessageId:openThreadID});form.reset();await refreshMessages(true);await openThread(openThreadID)}
   catch(e){statusEl.textContent=e.message}finally{button.disabled=boxes.get(selected)?.state!=='running'}
  };
- function closeAllMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu'))menu.hidden=true;for(const toggle of document.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
- function openMsgActions(menu,toggle){menu.hidden=false;toggle.setAttribute('aria-expanded','true');placeMsgActions(menu,toggle)}
+ function closeAllMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu')){menu.hidden=true;menu._contextPoint=null}for(const toggle of document.querySelectorAll('.msg-more'))toggle.setAttribute('aria-expanded','false')}
+ function openMsgActions(menu,toggle,point=null){menu._contextPoint=point;menu.hidden=false;toggle.setAttribute('aria-expanded','true');placeMsgActions(menu,toggle)}
  function placeMsgActions(menu,toggle){
   const scroller=toggle.closest('#chat-messages,#thread-messages');
   if(!scroller)return;
   const clip=scroller.getBoundingClientRect(),viewport=window.visualViewport;
   const top=Math.max(8,clip.top,viewport?.offsetTop||0),bottom=Math.min(innerHeight-8,clip.bottom,(viewport?.offsetTop||0)+(viewport?.height||innerHeight));
   const left=Math.max(8,clip.left,viewport?.offsetLeft||0),right=Math.min(innerWidth-8,clip.right,(viewport?.offsetLeft||0)+(viewport?.width||innerWidth));
-  const anchor=toggle.getBoundingClientRect();
+  const anchor=toggle.getBoundingClientRect(),point=menu._contextPoint;
   if(anchor.bottom<top||anchor.top>bottom){closeAllMsgActions();return}
-  menu.style.top='100%';menu.style.bottom='auto';menu.style.marginTop='.2rem';menu.style.marginBottom='0';
-  menu.style.maxHeight='none';menu.style.transform='none';
-  const height=menu.getBoundingClientRect().height,below=Math.max(0,bottom-anchor.bottom-4),above=Math.max(0,anchor.top-top-4);
-  const up=height>below&&above>below;
-  menu.style.top=up?'auto':'100%';menu.style.bottom=up?'100%':'auto';
-  menu.style.marginTop=up?'0':'.2rem';menu.style.marginBottom=up?'.2rem':'0';
-  menu.style.maxHeight=Math.max(0,(up?above:below)-4)+'px';
+  menu.style.left='0';menu.style.top='0';menu.style.maxHeight='none';
+  const width=menu.getBoundingClientRect().width,height=menu.getBoundingClientRect().height;
+  const downY=point?point.y+2:anchor.bottom+4,upY=point?point.y-2:anchor.top-4;
+  const below=Math.max(0,bottom-downY),above=Math.max(0,upY-top),up=height>below&&above>below;
+  menu.style.maxHeight=Math.max(0,up?above:below)+'px';
   menu.dataset.placement=up?'up':'down';
-  const rect=menu.getBoundingClientRect();
-  const shift=rect.left<left?left-rect.left:rect.right>right?right-rect.right:0;
-  menu.style.transform='translateX('+shift+'px)';
+  const origin=menu.getBoundingClientRect(),visibleHeight=origin.height;
+  const targetX=Math.max(left,Math.min(point?point.x:anchor.right-width,right-width));
+  const targetY=Math.max(top,Math.min(up?upY-visibleHeight:downY,bottom-visibleHeight));
+  menu.style.left=Math.round(targetX-origin.left)+'px';
+  menu.style.top=Math.round(targetY-origin.top)+'px';
  }
  document.addEventListener('click',event=>{if(!event.target.closest('.msg-actions'))closeAllMsgActions()});
  function repositionMsgActions(){for(const menu of document.querySelectorAll('.msg-actions-menu:not([hidden])'))placeMsgActions(menu,menu.parentElement.querySelector('.msg-more'))}
@@ -1949,7 +1947,7 @@
    statusEl.textContent=result?.message?.state==='silent'?'Note saved without waking the agent.':'';
    if(showPending&&result?.message?.state!=='silent')await new Promise(resolve=>setTimeout(resolve,Math.max(0,350-(performance.now()-pendingAt))));
    pendingSends.delete(boxID);
-   if(selected===boxID){await refreshMessages(true);if(replyTarget)await openThread(replyTarget.threadId||replyTarget.id)}
+   if(selected===boxID)await refreshMessages(true);
    else{summarize(boxID);renderRows()}
    settled=true;
   }catch(e){
