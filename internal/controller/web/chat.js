@@ -2429,7 +2429,6 @@
     if(f.loginProfile&&!f.loginProfile.hidden&&profile?.value)rows.push(['Profile',profile.textContent]);
     if(model)rows.push(['Model',model]);
     const pickerModel=window.VMBoxModelPicker?.catalog?.().find(entry=>entry.id===model);
-    if(pickerModel?.inputCost)rows.push(['Price',money(pickerModel.inputCost)+' in · '+money(pickerModel.outputCost)+' out / Mtok']);
     if(pickerModel?.context)rows.push(['Context',ctxLabel(pickerModel.context)+' tokens']);
     if(f.agentReasoningEffort?.value)rows.push(['Reasoning',f.agentReasoningEffort.value]);
     if(poolChoices.length){
@@ -3062,9 +3061,10 @@ function renderUsage(data){
    row.append(mk('span',label));row.firstChild.className='usage-row-label';
    const bar=mk('span');bar.className='usage-bar';
    if(remaining!==null){bar.setAttribute('role','progressbar');bar.setAttribute('aria-label',label+' remaining');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',String(remaining));const fill=mk('i');fill.style.width=remaining+'%';bar.append(fill)}
-   else bar.classList.add('usage-bar-empty');
+   else bar.hidden=true;
    row.append(bar);
-   const value=mk('span',remaining===null?'\u2014':usageNumber(remaining)+'% left');value.className='usage-row-value';
+   const value=mk('span',remaining===null?'Unavailable':usageNumber(remaining)+'% left');value.className='usage-row-value';
+   if(remaining===null)value.classList.add('muted');
    if(remaining!==null&&remaining<=10)value.classList.add('low');
    row.append(value);
    row.title=(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'');
@@ -3171,7 +3171,7 @@ let usagePending=null,usageGeneration=0;
   const filtered=chatCommands.filter(command=>!query||command.name.toLocaleLowerCase().includes(query)||command.prompt.toLocaleLowerCase().includes(query));
   if(!filtered.length){root.append(Object.assign(mk('p','No commands match your search.'),{className:'command-no-results'}));return}
   for(const command of filtered){
-   const row=mk('button');row.type='button';row.className='command-row';row.setAttribute('aria-pressed',String(command.name===selectedCommandName));
+   const row=mk('button');row.type='button';row.className='command-row';row.setAttribute('aria-selected',String(command.name===selectedCommandName));
    row.append(mk('strong','/'+command.name),mk('small',command.prompt));
    row.onclick=()=>selectChatCommand(command);root.append(row);
   }

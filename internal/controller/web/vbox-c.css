@@ -2260,9 +2260,12 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg.pair-right .msg-avatar{order:2;margin-left:.45rem}
 
 /* ══ merge-regression fixes (rebased) ══════════════════════════════════ */
-/* legacy palette tokens follow the Studio tokens (author !important beats the
-   inline theme variables chat.js sets), so light/dark stay consistent */
-:root{
+/* Legacy palette tokens scoped to the chat shell. Upstream chat.js sets the
+   old palette names (--bg/--ink/--line/…) as inline variables on :root, which
+   would otherwise win in light mode and make text/lines follow the dark
+   palette. Author !important here overrides those inline values for the chat
+   subtree only. */
+#chat-shell{
  --bg:var(--vb-bg)!important;--bg2:var(--vb-bg-soft)!important;--surface:var(--vb-surface)!important;--surface2:var(--vb-surface-2)!important;
  --ink:var(--vb-ink)!important;--ink-soft:var(--vb-ink-soft)!important;--line:var(--vb-line)!important;
  --accent:var(--vb-accent)!important;--accent-text:var(--vb-accent-text)!important;--accent-ink:var(--vb-accent-ink)!important;--accent-soft:var(--vb-accent-soft)!important;
@@ -2305,3 +2308,26 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #new-chat-group:hover{background:var(--vb-surface-2)!important}
 .chat-header-identity #chat-header-state,.chat-header-identity #chat-header-state *{color:var(--vb-ink-soft)!important}
 .chat-header-identity #chat-header-state .running::after{content:none!important}
+
+/* critic batch: contrast, pair labels, code blocks, usage, commands */
+:root{--vb-ink-faint:#686872;--vb-ink-soft:#5b5b63}
+@media(prefers-color-scheme:dark){:root{--vb-ink-faint:#9a9aa2;--vb-ink-soft:#a8a8b0}}
+/* pair sender label + time contrast */
+.msg.pair-msg .agent-origin{color:var(--vb-ink)!important;font-weight:680}
+.msg.pair-msg .meta,.msg.readonly .meta{color:var(--vb-ink-faint)!important}
+/* code blocks never overflow the bubble; edge fade when scrollable */
+#chat-messages .text pre{overflow-x:auto;max-width:100%;position:relative}
+#chat-messages .msg{overflow-wrap:anywhere}
+#chat-messages .text pre{background-image:linear-gradient(90deg,transparent,#1e1f2200 0),linear-gradient(270deg,color-mix(in srgb,var(--vb-ink) 12%,transparent),transparent);background-repeat:no-repeat;background-position:right center;background-size:2rem 100%}
+/* usage: missing data is muted text, no empty track */
+.usage-bar[hidden]{display:none}
+.usage-row-value.muted{color:var(--vb-ink-faint);font-weight:500}
+/* commands selected row fill + mono */
+#command-list .command-row[aria-selected="true"]{background:var(--vb-bg-soft)!important}
+
+/* user-flagged: resizer hairline + topbar surface */
+#chat-top{background:var(--vb-bg)!important;border-bottom:1px solid var(--vb-line)!important}
+#chat-resizer{background:transparent!important;border:0!important}
+#chat-resizer::before{opacity:0!important;transition:opacity .15s var(--vb-ease)}
+#chat-resizer:hover::before,#chat-resizer:focus-visible::before{opacity:1!important}
+#chat-list{border-right:1px solid var(--vb-line)!important}
