@@ -1203,7 +1203,10 @@
   const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
   renderRichText(text,body);
   for(const pre of text.querySelectorAll('pre')){if(pre.querySelector('.code-copy'))continue;const copy=document.createElement('button');copy.type='button';copy.className='code-copy';copy.setAttribute('aria-label','Copy code');copy.title='Copy code';copy.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';copy.onclick=async()=>{try{await navigator.clipboard.writeText(pre.textContent.replace('Copy code',''));copy.classList.add('copied');setTimeout(()=>copy.classList.remove('copied'),1200)}catch{}};pre.append(copy)}
-  {const spacer=document.createElement('span');spacer.className='meta-spacer';const last=text.lastElementChild;if(last&&/^(P|DIV|LI|BLOCKQUOTE|H[1-6]|SPAN)$/.test(last.tagName))last.append(spacer);else text.append(spacer)}
+  // Invisible spacer at the end of the last text line: the absolutely placed
+  // meta overlays the reserved space inline and only wraps to its own line when
+  // the spacer cannot fit. Code blocks get their own meta line (spacer skipped).
+  {const spacer=document.createElement('span');spacer.className='meta-spacer';let host=text,ownLine=false;for(;;){const last=host.lastElementChild;if(!last)break;if(last.tagName==='PRE'){ownLine=true;break}if(/^(DIV|P|LI|BLOCKQUOTE|H[1-6]|UL|OL|TABLE|SECTION|ARTICLE)$/.test(last.tagName)){host=last;continue}break}if(ownLine)row.classList.add('meta-block');else host.append(spacer)}
   row.append(text);
   const gallery=messageMediaGallery(message);
   for(const [index,image] of (message.images||[]).entries()){
@@ -1298,7 +1301,6 @@
   row.addEventListener('pointerup',release,{passive:true});
   row.addEventListener('pointercancel',release,{passive:true});
  }
- const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
  function mcpCallDisplay(message){
   const parts=message.text.slice(6).split(' · '),tool=parts[0],contact=parts.includes('contact');
   let label=tool.replaceAll('_',' ');
@@ -1310,6 +1312,25 @@
   const icon=tool.startsWith('chat_')?'message-square':tool.includes('screenshot')||tool==='capture_window'?'camera':tool.includes('contact')?'users':tool==='heartbeat'?'activity':'terminal';
   return {tool,label,icon,failed:parts.includes('failed')};
  }
+  // Measure each tail meta and reserve exactly its width on the last text line
+  // so the inline time/ticks never overlap the message text.
+  function sizeMetaSpacers(root=messagesEl){
+   if(!root)return;
+   for(const msg of root.querySelectorAll('.msg')){
+    const spacer=msg.querySelector('.meta-spacer');
+    if(!spacer)continue;
+    const meta=msg.querySelector(':scope > .meta');
+    if(!meta||!msg.classList.contains('tail')){spacer.style.width='0px';continue}
+    const width=Math.ceil(meta.getBoundingClientRect().width);
+    spacer.style.width=width?width+6+'px':'0px';
+   }
+  }
+  let metaSizeFrame=0;
+  const scheduleMetaSize=()=>{cancelAnimationFrame(metaSizeFrame);metaSizeFrame=requestAnimationFrame(()=>sizeMetaSpacers())};
+  if(messagesEl)new MutationObserver(scheduleMetaSize).observe(messagesEl,{childList:true,subtree:true,characterData:true});
+  window.addEventListener('resize',scheduleMetaSize,{passive:true});
+  try{document.fonts?.ready.then(scheduleMetaSize)}catch{}
+ const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
  function mcpCallGroup(messages){
   const group=document.createElement('div');group.className='mcp-call-group';
   const toggle=document.createElement('button');toggle.type='button';toggle.className='mcp-call-toggle';
@@ -2519,7 +2540,7 @@
     button.onclick=()=>{profileSelect.value=value;profileSelect.dispatchEvent(new Event('change',{bubbles:true}))};
     profileList.append(button);
    };
-   addChoice('','None','No profile','No saved profile selected');
+   addChoice('','None','No agent login','Starts without an agent login; connect one later');
    for(const profile of choices){
     const ref=JSON.stringify({application:profile.application,name:profile.name});
     const measured=usageProfiles.find(item=>item.application===profile.application&&item.name===profile.name);
@@ -2529,7 +2550,7 @@
      const labels={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};
      return (labels[window.name]||window.name)+(window.scope?' · '+window.scope:'')+' '+usageNumber(value)+'%';
     }).filter(Boolean);
-    let summary=remaining===null?(usageLoaded||profileUsageLoadError?'Usage unavailable':'Checking usage…'):usageNumber(remaining)+'% left';
+    let summary=remaining===null?(usageLoaded||profileUsageLoadError?'Usage could not be checked':'Checking usage…'):usageNumber(remaining)+'% left';
     let details=windows.slice(0,3).join(' · ');
     if(windows.length>3)details+=' · +'+(windows.length-3)+' more';
     if(!details&&measured?.snapshot?.spend){const spend=measured.snapshot.spend;const left=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;if(left!==null){summary=usageNumber(left)+(spend.currency?' '+spend.currency:'')+' left';details='Spending balance'}}
@@ -2902,18 +2923,20 @@
   pushBtn.hidden=false;
   const permission=Notification.permission;
   pushBtn.disabled=permission==='denied';
+  pushBtn.classList.remove('loading');
+  let label='Off',title='Enable notifications';
   if(permission==='denied'){
-   pushBtn.textContent='Notifications blocked';pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then tap Check notification permission.';
+   label='Blocked';title='Notifications blocked';pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then tap Check notification permission.';
   }else if(permission!=='granted'){
-   pushBtn.textContent='Enable notifications';pushStatus.textContent='Permission has not been granted.';
+   pushStatus.textContent='Enable alerts for new replies.';
   }else if(pushSubscriptionPresent===null){
-   pushBtn.textContent='Checking notifications…';pushStatus.textContent='Checking permission and subscription.';
+   label='';title='Checking notifications';pushBtn.classList.add('loading');pushStatus.textContent='Checking permission and subscription.';
   }else if(pushSubscriptionPresent){
-   pushBtn.textContent='Notifications on';pushStatus.textContent='Permission allowed · push subscription active.';
+   label='On';title='Disable notifications';pushStatus.textContent='Permission allowed · push subscription active.';
   }else{
-   pushBtn.textContent=localStorage.getItem('vmboxChatPush')==='on'?'Reconnect notifications':'Enable notifications';
    pushStatus.textContent='Permission allowed · push subscription inactive.';
   }
+  pushBtn.textContent=label;pushBtn.title=title;pushBtn.setAttribute('aria-label',title);
   pushBtn.classList.toggle('on',permission==='granted'&&pushSubscriptionPresent===true);
  }
  async function syncPushSubscription(){
@@ -3099,11 +3122,11 @@ function renderUsage(data){
    if(remaining!==null){bar.setAttribute('role','progressbar');bar.setAttribute('aria-label',label+' remaining');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',String(remaining));const fill=mk('i');fill.style.width=remaining+'%';bar.append(fill)}
    else bar.hidden=true;
    row.append(bar);
-   const value=mk('span',remaining===null?'Unavailable':usageNumber(remaining)+'% left');value.className='usage-row-value';
+   const value=mk('span',remaining===null?'Usage could not be checked':usageNumber(remaining)+'% left');value.className='usage-row-value';
    if(remaining===null)value.classList.add('muted');
    if(remaining!==null&&remaining<=10)value.classList.add('low');
    row.append(value);
-   row.title=(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'');
+   row.title=(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage could not be checked')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'');
    card.append(row);
   }
   if(snapshot?.spend){const spend=snapshot.spend,unit=spend.currency||spend.unit||'',remaining=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;const parts=[];if(spend.used!=null)parts.push('used '+usageNumber(spend.used));if(spend.limit!=null)parts.push('limit '+usageNumber(spend.limit));card.append(mk('p','Spend: '+(remaining===null?'unavailable':usageNumber(remaining)+(unit?' '+unit:'')+' remaining')+(parts.length?' · '+parts.join(' · '):'')))}

@@ -112,7 +112,8 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(node('option','None'));githubSelect.options[0].value='';githubLabel.append(githubSelect);
  for(const profile of profiles.filter(profile=>profile.application==='github')){const option=node('option',profile.name);option.value=JSON.stringify({application:'github',name:profile.name});githubSelect.append(option)}
  githubLabel.hidden=githubSelect.options.length===1;
- root.append(profileLabel,modelLabel,githubLabel);
+ const noneNote=node('p','Starts without an agent login; connect one later.');noneNote.className='hint login-none-note';
+ root.append(profileLabel,modelLabel,githubLabel,noneNote);
  const populate=()=>{
   const app=agentSelect.value,previous=profileSelect.value||selected;profileSelect.replaceChildren();
   const empty=node('option','None');empty.value='';profileSelect.append(empty);
@@ -120,6 +121,7 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
   for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setApplication(app);
   if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
   profileLabel.hidden=app==='shell'||choices.length===0;
+  noneNote.hidden=profileLabel.hidden;
   root.hidden=profileLabel.hidden&&githubLabel.hidden;
   syncModel();
  };
@@ -529,6 +531,18 @@ function resetCreationForm(form){
  form.querySelectorAll('details').forEach(details=>details.open=false);
  void syncCreateInstructionText();
 }
+const createCard=$('#create-card');
+const focusCreateName=()=>createCard?.querySelector('#create input[name="name"]')?.focus({preventScroll:true});
+function revealCreateCard(){
+ if(!createCard)return;
+ createCard.open=true;
+ focusCreateName();
+ createCard.scrollIntoView({behavior:'smooth',block:'start'});
+}
+document.querySelector('.section-actions a[href="#create"]')?.addEventListener('click',event=>{event.preventDefault();revealCreateCard()});
+window.addEventListener('hashchange',()=>{if(location.hash==='#create')revealCreateCard()});
+createCard?.addEventListener('toggle',()=>{if(createCard.open)focusCreateName()});
+$('#create-cancel')?.addEventListener('click',()=>{resetCreationForm($('#create'));createCard.open=false;createCard.scrollIntoView({behavior:'smooth',block:'nearest'})});
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=f.loginProfile?.value,profileRef=profile?JSON.parse(profile):null,loginProfiles=profileRef?[{...profileRef,model:f.agentModel.value.trim(),...(f.agentReasoningEffort.value?{reasoningEffort:f.agentReasoningEffort.value}:{})}]:[],github=f.githubProfile?.value,tools=['desktop',...[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value)],setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();if(profileRef&&!loginProfiles[0].model)throw Error('Choose a model');if(github)loginProfiles.push(JSON.parse(github));const createdName=f.name.value.trim(),created=await api('/v1/logical-boxes','POST',{name:createdName,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,tools,...(d.provider==='shared-worker'?{memoryGiB:Number(f.memoryGiB.value),swapGiB:Number(f.swapGiB.value)}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);resetCreationForm(e.target);try{await refresh();notice('Box '+createdName+' is starting.')}finally{document.activeElement?.blur();window.scrollTo(0,0)}}));
 $('#agent-cli-versions').addEventListener('submit',action(async e=>{const fields=e.target.elements,values={};for(const agent of ['claude','codex','opencode'])values[agent]=fields[agent].value.trim();await api('/v1/agent-cli-versions','PUT',values);$('#agent-cli-versions-status').textContent='Saved. New boxes will use these versions.'}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));

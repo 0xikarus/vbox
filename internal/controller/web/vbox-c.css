@@ -19,8 +19,8 @@
   --vb-elevated:#ffffff;
 
   --vb-ink:#111114;
-  --vb-ink-soft:#6b6b73;
-  --vb-ink-faint:#9a9aa2;
+  --vb-ink-soft:#5b5b63;
+  --vb-ink-faint:#686872;
 
   --vb-line:#ededef;
   --vb-line-strong:#e1e1e4;
@@ -68,8 +68,8 @@
     --vb-elevated:#1a1b21;
 
     --vb-ink:#f3f3f5;
-    --vb-ink-soft:#a0a0aa;
-    --vb-ink-faint:#6f6f79;
+    --vb-ink-soft:#a8a8b0;
+    --vb-ink-faint:#9a9aa2;
 
     --vb-line:#26272e;
     --vb-line-strong:#33343c;
@@ -2352,6 +2352,135 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .text pre .code-copy svg{width:.95rem;height:.95rem}
 #chat-messages .text pre .code-copy.copied{color:var(--vb-ok-text);border-color:var(--vb-ok)}
 
+/* ══ item 1 · bubble meta inline (WhatsApp invisible-spacer) ═════════════ */
+/* The spacer reserves exactly the meta width on the last text line; the meta
+   is absolutely placed bottom-right. When the spacer cannot fit it wraps to a
+   new line, so the meta drops below without ever overlapping the text. */
+#chat-messages .msg .meta-spacer{display:inline-block!important;width:0;height:1px;vertical-align:baseline;max-width:100%}
+#chat-messages .msg:not(.meta-block).tail .meta{position:absolute!important;right:9px!important;bottom:5px!important;left:auto!important;top:auto!important;float:none!important;display:inline-flex!important;align-items:center;gap:.25rem;width:auto!important;margin:0!important;justify-content:flex-end!important}
+#chat-messages .msg.meta-block .meta{position:static!important;display:flex!important;justify-content:flex-end!important;width:100%!important;margin:.18rem 0 0!important;float:none!important;right:auto!important;bottom:auto!important;left:auto!important;top:auto!important}
+#chat-messages .msg:not(.tail) .meta{display:none!important}
+
+/* ══ item 2 · mobile terminal toolbar: scrollable strip + pinned keys ════ */
+@media(max-width:760px){
+ .workspace-body .terminal-keys{display:flex!important;align-items:center;flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;max-width:100%;gap:2px;padding:3px;padding-right:0;scrollbar-width:none}
+ .workspace-body .terminal-keys::-webkit-scrollbar{display:none}
+ .workspace-body .terminal-keys button{flex:0 0 auto}
+ .workspace-body .terminal-keys .term-key-pinned{position:sticky;z-index:3;width:44px;height:44px;min-width:44px;min-height:44px;padding:0;display:grid;place-items:center;background:var(--vb-bg-soft);color:var(--vb-ink)}
+ .workspace-body .terminal-keys .term-key-pinned svg{width:1.15rem;height:1.15rem}
+ .workspace-body .terminal-keys .term-key-pinned:not(:last-child){right:44px}
+ .workspace-body .terminal-keys .term-key-pinned:last-child{right:0}
+ .workspace-body .terminal-keys .term-key-pinned:not(:last-child)::before{content:'';position:absolute;top:0;bottom:0;left:-10px;width:10px;background:linear-gradient(90deg,transparent,var(--vb-bg-soft));pointer-events:none}
+ .workspace-body .terminal-keys .term-key-pinned:not(:last-child)::after{content:'';position:absolute;top:25%;bottom:25%;right:-1px;width:1px;background:var(--vb-line);pointer-events:none}
+}
+
+/* ══ item 3 · menu sheet ════════════════════════════════════════════════ */
+/* Notifications: three columns — icon / label + wrapping description / pill */
+#chat-menu-sheet .menu-row{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:.65rem}
+#chat-menu-sheet .menu-row .menu-icon{align-self:start;margin-top:.15rem}
+#chat-menu-sheet .menu-row-sub{white-space:normal;overflow-wrap:anywhere;display:block}
+#chat-menu-sheet .menu-row-slot{display:inline-flex;align-items:center;justify-content:flex-end;gap:.35rem;flex:none;min-width:5.6rem}
+#chat-menu-sheet .menu-pill{width:auto;min-width:3.6rem;white-space:nowrap}
+#chat-menu-sheet .menu-pill.loading{color:transparent;position:relative}
+#chat-menu-sheet .menu-pill.loading::after{content:'';position:absolute;top:50%;left:50%;width:.8rem;height:.8rem;margin:-.4rem 0 0 -.4rem;border:2px solid var(--vb-line-strong);border-top-color:var(--vb-ink-soft);border-radius:var(--r-pill);animation:vb-spin .7s linear infinite}
+@keyframes vb-spin{to{transform:rotate(360deg)}}
+/* Usage + Log out: ordinary left-aligned rows with an icon column */
+#chat-menu-sheet .menu-links>a,#chat-menu-sheet .menu-links>button{display:flex!important;align-items:center;gap:.6rem;justify-content:flex-start!important;text-align:left;width:100%}
+#chat-menu-sheet .menu-links>.menu-usage{color:var(--vb-ink)}
+#chat-menu-sheet .menu-links>.menu-logout{color:var(--vb-danger-text)!important}
+#chat-menu-sheet .menu-links>.menu-logout .menu-icon{color:var(--vb-danger-text)}
+/* current destination marked */
+#chat-menu-sheet .menu-links a[aria-current="page"]{background:color-mix(in srgb,var(--vb-ink) 8%,transparent)!important;border-color:transparent!important;color:var(--vb-ink);font-weight:650}
+#chat-menu-sheet .menu-links a[aria-current="page"] .menu-icon{color:var(--vb-ink)}
+
+/* ══ item 4 · grid ══════════════════════════════════════════════════════ */
+/* box picker: chevron via an overlay so it themes with the tokens */
+.tile-title-field{position:relative;display:flex;flex:1 1 auto;min-width:7rem}
+.tile-title-field .tile-title-select{flex:1 1 auto;min-width:0;padding-right:1.9rem}
+.tile-title-field::after{content:'';position:absolute;right:.55rem;top:50%;transform:translateY(-50%);width:1rem;height:1rem;background:var(--vb-ink-faint);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;pointer-events:none}
+/* session field: labelled, hidden while the inventory is empty */
+.tile-session-field{display:inline-flex!important;align-items:center;gap:.35rem;flex:0 1 auto;min-width:0;margin:0;color:var(--vb-ink-soft);font-size:.68rem;font-weight:650}
+.tile-session-label{white-space:nowrap;color:var(--vb-ink-faint)}
+.tile-session-field:has(.tile-session-select:empty){display:none!important}
+.tile .tile-session-select{max-width:10rem}
+/* empty tile: an "Add a box" placeholder, no idle badge */
+.tile.tile-empty{border-style:dashed;border-color:var(--vb-line-strong);background:transparent;box-shadow:none}
+.tile.tile-empty .tile-icon-btn,.tile.tile-empty .tile-controls,.tile.tile-empty .tile-session-field,.tile.tile-empty .connection-badge{display:none!important}
+.tile.tile-empty .tile-mark{opacity:.45}
+.tile.tile-empty>p[role="status"]{min-height:9rem;display:flex;align-items:center;justify-content:center;color:var(--vb-ink-soft);font-size:.82rem}
+
+/* ══ item 5 · run-time limit copy ═══════════════════════════════════════ */
+.run-budget-remaining{margin:.15rem 0 0;color:var(--vb-ink);font-size:.82rem;font-weight:650;font-variant-numeric:tabular-nums}
+.run-budget-remaining[hidden]{display:none}
+
+/* ══ item 6 · manage boxes: collapsed New box ═══════════════════════════ */
+#create-card:not([open]){padding-bottom:0}
+#create-card:not([open])>.create-card-summary{padding-bottom:1rem}
+#create-card[open]>.create-card-summary{border-bottom:1px solid var(--vb-line);margin-bottom:.9rem}
+#create-card>.create-card-summary:focus-visible{outline:2px solid color-mix(in srgb,var(--vb-ink) 55%,transparent);outline-offset:2px;border-radius:var(--r-control)}
+
+/* ══ chat sidebar header: Messenger/WhatsApp-style ══════════════════════ */
+#chat-list #chat-sidebar-head{display:flex;align-items:center;gap:.5rem;flex:none;padding:.9rem .75rem .35rem}
+.chat-sidebar-title{margin:0;padding:0;border:0;font-size:20px;line-height:1.2;font-weight:600;letter-spacing:-.02em;color:var(--vb-ink);flex:1;min-width:0}
+.chat-sidebar-actions{display:inline-flex;align-items:center;gap:.2rem;flex:none}
+#chat-list #new-box,#chat-list #new-chat-group{
+  width:32px!important;height:32px!important;min-height:32px!important;min-width:32px!important;
+  padding:0!important;flex:none;display:grid;place-items:center;
+  background:transparent!important;border:0!important;border-radius:var(--r-control)!important;
+  color:var(--vb-ink-soft)!important;font-size:0!important;font-weight:400!important;cursor:pointer
+}
+#chat-list #new-box svg,#chat-list #new-chat-group svg{width:1.05rem;height:1.05rem;display:block}
+#chat-list #new-box:hover,#chat-list #new-chat-group:hover{background:color-mix(in srgb,var(--vb-ink) 7%,transparent)!important;color:var(--vb-ink)!important}
+#chat-list #new-box:active,#chat-list #new-chat-group:active{transform:scale(.94)}
+/* groups are created from the row context menu; keep the trigger in the DOM
+   for tests/handlers but visually hidden */
+#chat-list #new-chat-group.sr-only{position:absolute!important;width:1px!important;height:1px!important;min-width:1px!important;min-height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;border:0!important;background:none!important;color:transparent!important}
+#chat-list #chat-filter-row{
+  position:relative;display:flex;align-items:center;gap:.5rem;flex:none;
+  margin:0 .75rem .4rem;padding:0 .75rem;height:36px;min-height:36px;
+  background:color-mix(in srgb,var(--vb-ink) 6%,transparent);border:1px solid transparent;border-radius:var(--r-pill)
+}
+#chat-list #chat-filter-row:focus-within{background:var(--vb-surface);border-color:var(--vb-line-strong)}
+.chat-search-icon{width:1rem;height:1rem;flex:none;color:var(--vb-ink-faint)}
+#chat-list #chat-filter{
+  flex:1;min-width:0;height:100%;margin:0;padding:0;
+  border:0!important;background:transparent!important;border-radius:0!important;box-shadow:none!important;
+  color:var(--vb-ink);font-size:.86rem;outline:none
+}
+#chat-list #chat-filter::placeholder{color:var(--vb-ink-faint)}
+#chat-list #chat-filter::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+@media (max-width:899px){
+  #chat-list #chat-sidebar-head{padding:.7rem .75rem .25rem}
+  #chat-list #chat-filter-row{margin:0 .75rem .35rem}
+}
+
+/* ══ item 7 · new box (modal + embedded) ════════════════════════════════ */
+/* keep the last field clear of the footer while the body scrolls */
+#new-box-card #create-box{padding-bottom:2.4rem!important}
+#create-card #create{padding-bottom:1rem}
+.login-none-note{margin:.15rem 0 0;color:var(--vb-ink-faint);font-size:.74rem}
+/* chevrons on every new-box select (modal + embedded) */
+#new-box-card #create-box select,#create-card #create select{
+  appearance:none!important;-webkit-appearance:none!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235b6b7f' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-position:right .6rem center!important;background-size:1rem!important;
+  padding-right:2.1rem!important
+}
+.usage-row-value.muted{min-width:0;max-width:11rem;white-space:normal;line-height:1.2}
+
+/* ══ item 8 · dark mode contrast, outgoing chevron, subtle dividers ═════ */
+/* secondary text ≥4.5:1, secondary icons ≥3:1 on the theme surfaces */
+:root{--vb-ink-soft:#5b5b63;--vb-ink-faint:#686872}
+@media(prefers-color-scheme:dark){:root{--vb-ink-soft:#b3b3bc;--vb-ink-faint:#9a9aa2}}
+/* chevron on the (white) outgoing bubble needs a dark icon in dark mode */
+:root{--vb-bubble-out-icon:rgba(255,255,255,.78);--vb-bubble-out-icon-hover:#fff;--vb-bubble-out-icon-bg:rgba(255,255,255,.18)}
+@media(prefers-color-scheme:dark){
+  :root{--vb-bubble-out-icon:rgba(17,17,20,.62);--vb-bubble-out-icon-hover:#111114;--vb-bubble-out-icon-bg:rgba(17,17,20,.12)}
+}
+.msg.user .msg-more{color:var(--vb-bubble-out-icon)!important}
+.msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:var(--vb-bubble-out-icon-bg)!important;color:var(--vb-bubble-out-icon-hover)!important}
+/* workspace card headings: subtle 1px divider instead of the default bright h2 rule */
+.workspace-body .side-card>h2{border-bottom:1px solid var(--vb-line);padding-bottom:.55rem}
 /* Integration: one desktop hero with the mascot contained in its corner. */
 #inspect-screen .inspect-screen-frame{isolation:isolate}
 #inspect-screen #inspect-avatar{position:absolute;right:.25rem;bottom:.15rem;z-index:2;display:block!important;width:6.25rem;height:6.25rem;overflow:hidden;pointer-events:none}
@@ -2362,10 +2491,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg-avatar{isolation:isolate}
 #chat-messages .msg-avatar .msg-avatar-static{position:absolute;inset:0;z-index:0;display:block;width:100%;height:100%}
 #chat-messages .msg-avatar>svg{position:relative;z-index:1}
-
-/* Both reply controls occupy their own line above message text. */
-#chat-messages .msg:has(.msg-actions){padding-top:2rem!important}
-#chat-messages .msg .msg-actions{top:.35rem!important}
 
 /* Manage rows use the desktop image when available and a screen-off card otherwise. */
 #box-list .row-avatar{position:relative;width:3.5rem;height:2.25rem;background:none;border:0;overflow:visible}
@@ -2405,10 +2530,10 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #inspect-screen .inspect-screen-frame.is-live #inspect-screen-live{opacity:1}
 #inspect-screen .inspect-screen-frame.is-live #inspect-screen-image{opacity:0}
 #inspect-screen #inspect-screen-live>div,#inspect-screen #inspect-screen-live canvas{width:100%!important;height:100%!important;object-fit:contain}
-#inspect-screen #inspect-screen-live-chip{position:absolute;left:.55rem;top:.55rem;z-index:3;padding:.18rem .45rem;border-radius:var(--r-pill);background:#101714d9;color:#ecfff4;font-size:.65rem;font-weight:750;letter-spacing:.03em;box-shadow:0 2px 6px #0004}
+#inspect-screen #inspect-screen-live-chip{position:absolute;right:.55rem;top:.55rem;z-index:3;padding:.18rem .45rem;border:1px solid #ffffff35;border-radius:var(--r-pill);background:#0b111bf2;color:#ecfff4;font-size:.65rem;font-weight:750;letter-spacing:.03em;box-shadow:0 2px 6px #0007}
 #inspect-screen #inspect-screen-live-chip::before{content:'';display:inline-block;width:.38rem;height:.38rem;margin-right:.32rem;vertical-align:middle;border-radius:50%;background:#35d58a}
-#inspect-screen #inspect-screen-hint{position:absolute;left:.45rem;bottom:.45rem;z-index:3;max-width:calc(100% - 7.5rem);padding:.2rem .4rem;border-radius:.3rem;background:#101714d9;color:#f0f3f6;font-size:.62rem;line-height:1.25;text-align:left}
-#inspect-screen #inspect-avatar{right:.2rem;bottom:.1rem;width:8rem;height:8rem;overflow:visible;filter:drop-shadow(0 3px 7px #0007)}
-#inspect-screen #inspect-avatar::before{content:'';position:absolute;inset:10%;border:3px solid var(--vb-surface);border-radius:50%;box-shadow:0 2px 8px #0005;background:var(--vb-surface);z-index:-1}
+#inspect-screen #inspect-screen-hint{position:absolute;left:.45rem;bottom:.45rem;z-index:3;max-width:calc(100% - 9rem);padding:.2rem .4rem;border-radius:.3rem;background:#101714ee;color:#f0f3f6;font-size:.62rem;line-height:1.25;text-align:left}
+#inspect-screen #inspect-avatar{right:-.35rem;bottom:-.4rem;width:8rem;height:8rem;overflow:visible;filter:drop-shadow(0 3px 7px #0007)}
+#inspect-screen #inspect-avatar::before{content:'';position:absolute;inset:14%;border:2px solid var(--vb-surface);border-radius:50%;box-shadow:0 2px 8px #0005;background:var(--vb-surface);z-index:-1}
 #inspect-screen #inspect-avatar .inspect-hero-mascot,#inspect-screen #inspect-avatar .inspect-hero-mascot svg{opacity:1!important}
-@media(max-width:1099px){#inspect-screen #inspect-avatar{width:6.25rem;height:6.25rem}}
+@media(max-width:1099px){#inspect-screen #inspect-avatar{width:6.25rem;height:6.25rem}#inspect-screen #inspect-screen-hint{max-width:calc(100% - 7.5rem)}}
