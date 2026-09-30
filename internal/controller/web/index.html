@@ -22,7 +22,7 @@
 </nav>
 <div class="manage-content">
 <section id="boxes"><div class="section-heading"><div><h2>Boxes</h2><p class="hint">Every agent box, its worker slot and its default agent. Open a box to inspect or manage it.</p></div><div class="section-actions"><label class="field">Search boxes <input id="box-search" type="search" placeholder="Filter boxes by name"></label><a class="btn-primary section-new" href="#create">+ New box</a></div></div><div id="box-list"></div>
-<details class="manage-card create-card" id="create-card" open><summary class="create-card-summary"><span class="create-card-title">New box</span><span class="create-card-hint">Box → Logins → Tools → Instructions</span></summary>
+<details class="manage-card create-card" id="create-card"><summary class="create-card-summary"><span class="create-card-title">New box</span><span class="create-card-hint">Box → Logins → Tools → Instructions</span></summary>
 <form id="create">
 <fieldset class="group"><legend>1 · Box</legend>
 <div class="row-fields">
@@ -45,7 +45,7 @@
 <label class="field">Preset <select id="create-instructions" name="instructions"><option value="auto">Account default / none</option></select></label>
 <details id="create-instructions-editor" hidden><summary>customize Markdown</summary><label class="field" >Markdown <textarea id="create-instructions-custom" name="instructionsMarkdown" rows="5" maxlength="65536" readonly></textarea></label><div id="create-instructions-preview" class="md-preview" hidden></div></details>
 </fieldset>
-<div class="form-actions"><button type="submit" class="primary">create and start box</button></div>
+<div class="form-actions"><button type="submit" class="primary">create and start box</button><button type="button" class="linkbtn" id="create-cancel">Cancel</button></div>
 </form></details></section>
 <section id="roles" data-owner><div class="section-heading"><div><h2>Permissions</h2><p class="hint">Each box owns its optional MCP tools and limits directly. Contact lists live in the box details in Agent chat.</p></div><div class="section-actions"><label class="field">Search boxes <input id="role-box-search" type="search" placeholder="Filter by box name"></label></div></div>
 <div id="role-assignments"></div><p id="role-status" role="status"></p></section>

@@ -2406,3 +2406,9 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 /* ══ item 5 · run-time limit copy ═══════════════════════════════════════ */
 .run-budget-remaining{margin:.15rem 0 0;color:var(--vb-ink);font-size:.82rem;font-weight:650;font-variant-numeric:tabular-nums}
 .run-budget-remaining[hidden]{display:none}
+
+/* ══ item 6 · manage boxes: collapsed New box ═══════════════════════════ */
+#create-card:not([open]){padding-bottom:0}
+#create-card:not([open])>.create-card-summary{padding-bottom:1rem}
+#create-card[open]>.create-card-summary{border-bottom:1px solid var(--vb-line);margin-bottom:.9rem}
+#create-card>.create-card-summary:focus-visible{outline:2px solid color-mix(in srgb,var(--vb-ink) 55%,transparent);outline-offset:2px;border-radius:var(--r-control)}
