@@ -141,6 +141,37 @@ func TestContactSendReturnsControllerRejectionAndRemovesAcknowledgedEvent(t *tes
 	}
 }
 
+func TestContactSendKeepsQueuedEventWhenControllerDefersDelivery(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":"contact delivery deferred"}`))
+	}))
+	defer server.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "codex-test")
+	certFile := filepath.Join(home, "test-ca.pem")
+	if err := os.WriteFile(certFile, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SSL_CERT_FILE", certFile)
+	configPath := filepath.Join(home, ".config", "vmbox", "desktop-agent.json")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	config, _ := json.Marshal(DesktopAgentConfig{Controller: server.URL, Assignment: "assignment", Token: strings.Repeat("a", 64)})
+	if err := os.WriteFile(configPath, config, 0600); err != nil {
+		t.Fatal(err)
+	}
+	confirmation, err := sendDesktopContactEvent(context.Background(), "assignment", ChatEvent{Kind: "contact", Contact: "mascot", Text: "hello"})
+	if err != nil || !strings.Contains(confirmation, "retry automatically") {
+		t.Fatalf("confirmation=%q err=%v", confirmation, err)
+	}
+	if event, found, err := PullChatEvent(home, "codex-test"); err != nil || !found || event.Text != "hello" {
+		t.Fatalf("deferred event was not retained: event=%+v found=%t err=%v", event, found, err)
+	}
+}
+
 func TestAgentBoxScreenshotToolReturnsAnImageSchema(t *testing.T) {
 	for _, tool := range desktopMCPTools() {
 		if tool["name"] != "get_agent_box_screenshot" {

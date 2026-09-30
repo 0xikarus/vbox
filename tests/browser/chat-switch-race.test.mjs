@@ -94,6 +94,11 @@ test('a reply to a previously opened chat updates its unread notification after 
   await page.$eval('[data-box-id="beta"]',row=>row.click());
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('Other chat'));
   const now=new Date().toISOString();
+  alpha.push({id:'mcp-1',direction:'system',state:'delivered',text:'MCP · get_contacts',createdAt:now,updatedAt:now});
+  const mcpRefresh=page.waitForResponse(response=>response.url().includes('/v1/logical-boxes/alpha/messages'));
+  await page.evaluate(()=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push',box:'alpha'}})));
+  await mcpRefresh;
+  assert.equal(await page.$eval('[data-box-id="alpha"] .unread',badge=>badge.hidden),true,'MCP activity must not create an unread badge');
   alpha.push({id:'a2',direction:'agent',state:'delivered',text:'New reply after switching',createdAt:now,updatedAt:now});
   await page.evaluate(()=>navigator.serviceWorker.dispatchEvent(new MessageEvent('message',{data:{type:'vmbox-push',box:'alpha'}})));
   await page.waitForFunction(()=>{

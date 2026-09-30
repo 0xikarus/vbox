@@ -170,9 +170,11 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   sends check the target's current state before queueing. Text sends also wait
   for the controller's delivery verdict and return a rejection to the caller;
   an uncertain controller response leaves the event in the durable outbox and
-  is reported as unconfirmed rather than delivered. Contact images still use
-  the outbox fallback and report that confirmation is pending.
-  messages and direct agent replies to them appear in the separate owner-only
+  is reported as queued and unconfirmed while automatic retries continue.
+  Transient worker or database failures do not create permanent rejection
+  bullets. Contact images still use the outbox fallback and report that
+  confirmation is pending. Contact messages and direct agent replies to them
+  appear in the separate owner-only
   Box ↔ Box transcript, with image attachments supported. The owner
   edits roles through `/v1/agent-roles` and `/v1/agent-role-assignments`, and
   direct contacts at `/v1/logical-boxes/{id}/contacts`, metadata labels at
@@ -181,6 +183,8 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   page and chat Details drawer expose each box's direct contacts and labels. Entry points:
   `internal/controller/agent_roles.go`, `internal/controller/contacts.go`,
   `internal/boxruntime/contacts.go`.
+  The isolated worker supervisor uses `TasksMax=2048` so concurrent Docker
+  session probes do not exhaust its systemd task limit.
 - Agent-initiated `create_agent_box` inserts reciprocal direct-contact grants
   and contact events in the same transaction as the new logical box. An
   idempotent retry observes the existing grants. The delegated
