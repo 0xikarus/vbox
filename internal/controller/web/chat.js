@@ -261,10 +261,15 @@
   if(box.unread)return ['happy','surprised','unread'];
   return box.state==='running'?['idle',null,'idle']:['waking','surprised','starting'];
  }
+ function messageMascotPose(box,busyDots=false){return busyDots?['working','focused','busy']:boxMascotPose(box)}
+ function messageMascotKey(box,busyDots=false){return [box.id,...messageMascotPose(box,busyDots)].join('|')}
+ // Reuses a still-matching avatar from the previous render so its animation keeps running.
+ function reuseMessageMascot(live,box,className,busyDots){return live?.dataset.pose===messageMascotKey(box,busyDots)?live:messageMascot(box,className,busyDots)}
  function messageMascot(box,className='msg-avatar',busyDots=false){
   const host=document.createElement('span');host.className=className;host.setAttribute('aria-hidden','true');
   const mascot=new Mascot(host,box.id);
-  const [mood,expression,signal]=busyDots?['working','focused','busy']:boxMascotPose(box);
+  const [mood,expression,signal]=messageMascotPose(box,busyDots);
+  host.dataset.pose=messageMascotKey(box,busyDots);
   if(busyDots)mascot.busyMode='dots';
   if(mood!=='idle'||expression)mascot.jump(mood,expression,signal);
   if(host.classList.contains('msg-avatar')){
@@ -1424,10 +1429,17 @@
    if(!wasFollowing){if(selected)applySeen(selected);else if(selectedPair)applyPairSeen(pairs.get(selectedPair));renderRows()}
   }
  });
+ // Keys of the messages last painted per box: re-renders only animate rows
+ // that are new, and live avatars move to the rebuilt rows instead of restarting.
+ const paintedMessages=new Map();
+ function messageKey(message){return message.id||[message.direction,message.createdAt,message.text].join('|')}
  function renderMessages(box){
   if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
   const follow=stickToBottom;
+  const painted=messagesEl.dataset.box===box.id?paintedMessages.get(box.id):null,nextPainted=new Set(),liveAvatars=new Map();
+  if(painted)for(const row of messagesEl.querySelectorAll('.msg[data-key]')){const avatar=row.querySelector(':scope > .msg-avatar');if(avatar)liveAvatars.set(row.dataset.key,avatar)}
+  const paint=(node,key,settled=false)=>{node.dataset.key=key;nextPainted.add(key);if(painted&&!settled&&!painted.has(key))node.classList.add('msg-enter')};
   messagesEl.replaceChildren();
   messagesEl.dataset.box=box.id;
   if(box.hasOlder){const older=document.createElement('button');older.type='button';older.className='load-older';older.textContent=box.historyLoading?'Loading older messages…':'Load older messages';older.disabled=!!box.historyLoading;older.onclick=()=>void loadOlderMessages(box.id);messagesEl.append(older)}
@@ -1443,6 +1455,7 @@
     messagesEl.append(mcpCallGroup(calls));
    }else{
     const node=bubble(box,message);
+    paint(node,messageKey(message),message.direction==='user'&&painted?.has('pending'));
     const isAgent=message.direction!=='user'&&message.direction!=='system';
     const senderKey=isAgent?'agent':'user';
     if(senderKey!==prevSender)node.classList.add('group-start');
@@ -1453,7 +1466,7 @@
   const pending=pendingSends.get(box.id);
   if(pending&&!(box.messages||[]).slice(pending.messageCount).some(m=>m.direction==='user'&&m.text===pending.text)){
    const row=bubble(box,{id:'pending',direction:'user',state:'delivering',text:pending.text||'📷 Image',createdAt:pending.at,images:[]});
-   row.querySelector('.fwd')?.remove();messagesEl.append(row);
+   row.querySelector('.fwd')?.remove();paint(row,'pending');messagesEl.append(row);
   }
   if(!(box.messages||[]).length&&!pending){const hint=document.createElement('p');hint.className='day-sep';hint.textContent='No messages yet — say hello to '+box.name;messagesEl.append(hint)}
   if(box.resumeCandidate){
@@ -1470,7 +1483,7 @@
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
    t.setAttribute('aria-label',box.name+' is working');
-   const mini=messageMascot(box,'msg-avatar processing-avatar processing-mascot',true);
+   const mini=reuseMessageMascot(liveAvatars.get('processing'),box,'msg-avatar processing-avatar processing-mascot',true);
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label sr-only';label.textContent='agent is processing…';
@@ -1481,10 +1494,11 @@
    tv.onfocus=()=>{if(!coarsePointer())showTvPreview(tv,box)};
    tv.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
    tv.onclick=()=>{if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(tv,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
-   t.prepend(mini);t.append(dots,label,tv);messagesEl.append(t);
+   t.prepend(mini);t.append(dots,label,tv);paint(t,'processing');messagesEl.append(t);
   }
   {const msgNodes=[...messagesEl.querySelectorAll('.msg')];
-   msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('user')===m.classList.contains('user');const tail=!same;m.classList.toggle('tail',tail);if(tail&&m.classList.contains('agent')&&!m.classList.contains('processing')&&!m.querySelector('.msg-avatar'))m.prepend(messageMascot(box))});}
+   msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('user')===m.classList.contains('user');const tail=!same;m.classList.toggle('tail',tail);if(tail&&m.classList.contains('agent')&&!m.classList.contains('processing')&&!m.querySelector('.msg-avatar'))m.prepend(reuseMessageMascot(liveAvatars.get(m.dataset.key),box,'msg-avatar',false))});}
+  paintedMessages.set(box.id,nextPainted);
   if(follow){
    scrollMessagesToBottom();
    // Late layout and image decoding grow the transcript after the first pass.
