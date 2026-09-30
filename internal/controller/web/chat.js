@@ -1203,6 +1203,11 @@
   alert:[['path',{d:'m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'}],['path',{d:'M12 9v4'}],['path',{d:'M12 17h.01'}]],
   help:[['circle',{cx:'12',cy:'12',r:'10'}],['path',{d:'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'}],['path',{d:'M12 17h.01'}]],
   'chevron-down':[['path',{d:'m6 9 6 6 6-6'}]],
+  'message-square':[['path',{d:'M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'}]],
+  camera:[['path',{d:'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z'}],['circle',{cx:'12',cy:'13',r:'3'}]],
+  users:[['path',{d:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'}],['circle',{cx:'9',cy:'7',r:'4'}],['path',{d:'M22 21v-2a4 4 0 0 0-3-3.87'}],['path',{d:'M16 3.13a4 4 0 0 1 0 7.75'}]],
+  activity:[['path',{d:'M22 12h-4l-3 9L9 3l-3 9H2'}]],
+  terminal:[['rect',{x:'2',y:'3',width:'20',height:'18',rx:'2'}],['path',{d:'m7 9 3 3-3 3'}],['path',{d:'M13 15h4'}]],
   copy:[['rect',{width:'14',height:'14',x:'8',y:'8',rx:'2',ry:'2'}],['path',{d:'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2'}]],
   forward:[['path',{d:'m15 17 5-5-5-5'}],['path',{d:'M4 18v-2a4 4 0 0 1 4-4h12'}]],
   reply:[['polyline',{points:'9 17 4 12 9 7'}],['path',{d:'M20 18v-2a4 4 0 0 0-4-4H4'}]],
@@ -1348,6 +1353,17 @@
   return row;
  }
  const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
+ function mcpCallDisplay(message){
+  const parts=message.text.slice(6).split(' · '),tool=parts[0],contact=parts.includes('contact');
+  let label=tool.replaceAll('_',' ');
+  label=label.charAt(0).toUpperCase()+label.slice(1);
+  if(tool==='chat_message')label=contact?'Message to contact':'Message to owner';
+  else if(tool==='chat_ask')label=contact?'Question to contact':'Question to owner';
+  else if(tool==='heartbeat'&&parts.includes('start'))label='Start heartbeat';
+  else if(tool==='heartbeat'&&parts.includes('stop'))label='Stop heartbeat';
+  const icon=tool.startsWith('chat_')?'message-square':tool.includes('screenshot')||tool==='capture_window'?'camera':tool.includes('contact')?'users':tool==='heartbeat'?'activity':'terminal';
+  return {tool,label,icon,failed:parts.includes('failed')};
+ }
  function mcpCallGroup(messages){
   const group=document.createElement('div');group.className='mcp-call-group';
   const toggle=document.createElement('button');toggle.type='button';toggle.className='mcp-call-toggle';
@@ -1359,10 +1375,13 @@
   const list=document.createElement('div');list.className='mcp-call-list';list.id='mcp-calls-'+messages[0].id;
   toggle.setAttribute('aria-controls',list.id);
   for(const message of messages){
-   const row=document.createElement('div');row.className='mcp-call-item';
-   const text=document.createElement('span');text.textContent=message.text.slice(6);
+   const display=mcpCallDisplay(message);
+   const row=document.createElement('div');row.className='mcp-call-item';row.title=message.text;row.dataset.tool=display.tool;
+   const icon=document.createElement('span');icon.className='mcp-call-icon';icon.append(lucide(display.icon));
+   const text=document.createElement('span');text.className='mcp-call-text';text.textContent=display.label;
+   if(display.failed){const failure=document.createElement('span');failure.className='mcp-call-failed';failure.textContent='Failed';text.append(failure)}
    const time=document.createElement('time');time.textContent=new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-   row.append(text,time);list.append(row);
+   row.append(icon,text,time);list.append(row);
   }
   const setOpen=open=>{toggle.setAttribute('aria-expanded',String(open));list.hidden=!open;for(const message of messages){if(open)expandedMCPEvents.add(message.id);else expandedMCPEvents.delete(message.id)}};
   setOpen(messages.some(message=>expandedMCPEvents.has(message.id)));
