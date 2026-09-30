@@ -598,6 +598,113 @@ func TestCodexActiveTurnLeavesNativeQueueAlone(t *testing.T) {
 	}
 }
 
+func TestCodexListTurnsUnsupportedUsesThreadReadForSteer(t *testing.T) {
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			if err := json.Unmarshal(raw, &request); err != nil {
+				t.Error(err)
+				return
+			}
+			methods = append(methods, request.Method)
+			response := map[string]any{"id": request.ID, "result": map[string]any{}}
+			switch request.Method {
+			case "thread/turns/list":
+				response["error"] = map[string]any{"message": "list_turns is not supported yet"}
+				delete(response, "result")
+			case "thread/read":
+				response["result"] = map[string]any{"thread": map[string]any{"turns": []any{map[string]any{"id": "live-turn", "status": "inProgress"}}}}
+			case "turn/steer":
+			default:
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			encoded, _ := json.Marshal(response)
+			_ = conn.Write(r.Context(), websocket.MessageText, encoded)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexSubmitVisibleInput(context.Background(), client, "visible-thread", "message-1", "hello", nil); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(methods, []string{"thread/turns/list", "thread/read", "turn/steer"}) {
+		t.Fatalf("methods=%v", methods)
+	}
+}
+
+func TestCodexListTurnsUnsupportedStillStartsIdleQueue(t *testing.T) {
+	var methods []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		for {
+			_, raw, err := conn.Read(r.Context())
+			if err != nil {
+				return
+			}
+			var request struct {
+				ID     int64  `json:"id"`
+				Method string `json:"method"`
+			}
+			_ = json.Unmarshal(raw, &request)
+			methods = append(methods, request.Method)
+			response := map[string]any{"id": request.ID}
+			switch request.Method {
+			case "thread/turns/list":
+				response["error"] = map[string]any{"message": "list_turns is not supported yet"}
+			case "thread/read":
+				response["result"] = map[string]any{"thread": map[string]any{"turns": []any{map[string]any{"id": "last-turn", "status": "completed"}}}}
+			case "thread/queue/list":
+				response["result"] = map[string]any{"data": []any{map[string]any{"id": "queued-1"}}}
+			case "thread/queue/start":
+				response["result"] = map[string]any{}
+			default:
+				t.Errorf("unexpected method %q", request.Method)
+				return
+			}
+			encoded, _ := json.Marshal(response)
+			_ = conn.Write(r.Context(), websocket.MessageText, encoded)
+		}
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	if err := codexStartQueuedIfIdle(context.Background(), client, "visible-thread"); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(methods, []string{"thread/turns/list", "thread/read", "thread/queue/list", "thread/queue/start"}) {
+		t.Fatalf("methods=%v", methods)
+	}
+}
+
 func TestCodexReceiptFindsUserItemBeyondRecentPage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
