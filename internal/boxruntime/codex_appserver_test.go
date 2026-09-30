@@ -627,7 +627,7 @@ func TestCodexListTurnsUnsupportedUsesThreadReadForSteer(t *testing.T) {
 				response["error"] = map[string]any{"message": "list_turns is not supported yet"}
 				delete(response, "result")
 			case "thread/read":
-				response["result"] = map[string]any{"thread": map[string]any{"turns": []any{map[string]any{"id": "live-turn", "status": "inProgress"}}}}
+				response["result"] = map[string]any{"thread": map[string]any{"status": map[string]any{"type": "active", "activeTurnId": "live-turn"}}}
 			case "turn/steer":
 			default:
 				t.Errorf("unexpected method %q", request.Method)
@@ -677,7 +677,7 @@ func TestCodexListTurnsUnsupportedStillStartsIdleQueue(t *testing.T) {
 			case "thread/turns/list":
 				response["error"] = map[string]any{"message": "list_turns is not supported yet"}
 			case "thread/read":
-				response["result"] = map[string]any{"thread": map[string]any{"turns": []any{map[string]any{"id": "last-turn", "status": "completed"}}}}
+				response["result"] = map[string]any{"thread": map[string]any{"status": map[string]any{"type": "idle"}}}
 			case "thread/queue/list":
 				response["result"] = map[string]any{"data": []any{map[string]any{"id": "queued-1"}}}
 			case "thread/queue/start":
@@ -746,6 +746,75 @@ func TestCodexReceiptFindsUserItemBeyondRecentPage(t *testing.T) {
 	accepted, err := codexUserItemPresent(context.Background(), client, "visible-thread", "old-message", true)
 	if err != nil || !accepted {
 		t.Fatalf("accepted=%t error=%v", accepted, err)
+	}
+}
+
+func TestCodexNativeRolloutReceiptRequiresExactUserItemAndThread(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "2026", "09", "30")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "rollout-2026-09-30T10-00-00-other-thread.jsonl")
+	matching := filepath.Join(dir, "rollout-2026-09-30T10-00-01-visible-thread.jsonl")
+	if err := os.WriteFile(other, []byte(`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","client_id":"message-1"}}}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(matching, []byte(`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"AgentMessage","client_id":"message-1"}}}`+"\n"+`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","client_id":"message-2"}}}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if found, err := codexUserItemInRollout(root, "visible-thread", "message-1"); err != nil || found {
+		t.Fatalf("wrong item/thread receipt: found=%t err=%v", found, err)
+	}
+	if found, err := codexUserItemInRollout(root, "visible-thread", "message-2"); err != nil || !found {
+		t.Fatalf("native receipt: found=%t err=%v", found, err)
+	}
+}
+
+func TestCodexReceiptFallsBackWhenItemsListingIsUnimplemented(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".codex", "sessions", "2026", "09", "30")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "rollout-2026-09-30T10-00-00-visible-thread.jsonl")
+	if err := os.WriteFile(path, []byte(`{"type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","client_id":"message-1"}}}`+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer conn.CloseNow()
+		_, raw, err := conn.Read(r.Context())
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		var request struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		_ = json.Unmarshal(raw, &request)
+		if request.Method != "thread/items/list" {
+			t.Errorf("method=%q", request.Method)
+		}
+		response, _ := json.Marshal(map[string]any{"id": request.ID, "error": map[string]any{"message": "thread/items/list is not supported yet"}})
+		_ = conn.Write(r.Context(), websocket.MessageText, response)
+	}))
+	defer server.Close()
+	conn, _, err := websocket.Dial(context.Background(), "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &codexClient{conn: conn}
+	defer client.Close()
+	found, err := codexUserItemPresent(context.Background(), client, "visible-thread", "message-1", false)
+	if err != nil || !found {
+		t.Fatalf("found=%t err=%v", found, err)
 	}
 }
 

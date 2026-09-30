@@ -1,11 +1,14 @@
 package boxruntime
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -282,7 +285,9 @@ func codexSubmitVisibleInput(ctx context.Context, client *codexClient, thread, m
 	}
 	turnID, _ := latest["id"].(string)
 	if turnID == "" {
-		return fmt.Errorf("Codex active turn has no ID")
+		// Older app servers expose only an active thread status, not its turn
+		// ID. Their native queue still accepts the message safely.
+		return codexQueueInput(ctx, client, thread, messageID, text, images)
 	}
 	err = codexStartTurnWithFallback(text, images, func(input []map[string]any) error {
 		_, err := client.call(ctx, "turn/steer", map[string]any{
@@ -378,25 +383,32 @@ func codexStartQueuedIfIdle(ctx context.Context, client *codexClient, thread str
 }
 
 // Some Codex releases accept thread/turns/list but return a server-side
-// "list_turns is not supported yet" error. thread/read still exposes the
-// visible thread's turns, including the active turn needed for steering.
+// "list_turns is not supported yet" error. Reading the thread without turns
+// still exposes its activity status, so idle queue startup remains possible.
 func codexLatestTurn(ctx context.Context, client *codexClient, thread string) (map[string]any, error) {
 	result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
 	if codexUnmaterializedThread(err) {
 		return nil, nil
 	}
 	if err != nil && strings.Contains(err.Error(), "list_turns is not supported yet") {
-		result, err = client.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
+		result, err = client.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": false})
 		if err != nil {
 			return nil, err
 		}
 		threadData, _ := result["thread"].(map[string]any)
-		turns, _ := threadData["turns"].([]any)
-		if len(turns) == 0 {
+		status, _ := threadData["status"].(map[string]any)
+		switch status["type"] {
+		case "idle":
 			return nil, nil
+		case "active", "running", "inProgress":
+			id, _ := status["activeTurnId"].(string)
+			if id == "" {
+				id, _ = status["turnId"].(string)
+			}
+			return map[string]any{"status": "inProgress", "id": id}, nil
+		default:
+			return nil, fmt.Errorf("Codex thread has unknown activity status %q", status["type"])
 		}
-		latest, _ := turns[len(turns)-1].(map[string]any)
-		return latest, nil
 	}
 	if err != nil {
 		return nil, err
@@ -483,6 +495,9 @@ func waitForCodexUserItem(ctx context.Context, client *codexClient, thread, mess
 
 func codexUserItemPresent(ctx context.Context, client *codexClient, thread, messageID string, searchHistory bool) (bool, error) {
 	result, err := client.call(ctx, "thread/items/list", map[string]any{"threadId": thread, "sortDirection": "desc", "limit": 100})
+	if codexListItemsUnavailable(err) {
+		return codexNativeUserItemPresent(thread, messageID)
+	}
 	if err == nil {
 		entries, _ := result["data"].([]any)
 		for _, value := range entries {
@@ -498,6 +513,9 @@ func codexUserItemPresent(ctx context.Context, client *codexClient, thread, mess
 	}
 	// A long Codex turn can push the user item outside the newest 100 items.
 	result, err = client.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
+	if err != nil && strings.Contains(err.Error(), "list_turns is not supported yet") {
+		return codexNativeUserItemPresent(thread, messageID)
+	}
 	if err != nil {
 		return false, err
 	}
@@ -514,6 +532,69 @@ func codexUserItemPresent(ctx context.Context, client *codexClient, thread, mess
 		}
 	}
 	return false, nil
+}
+
+func codexListItemsUnavailable(err error) bool {
+	return codexQueueMethodUnavailable(err, "thread/items/list") ||
+		(err != nil && strings.Contains(err.Error(), "thread/items/list is not supported yet"))
+}
+
+// The native rollout is Codex's durable record of consumed user items. This
+// fallback is used only when the app server has no item-list endpoint; queue
+// acceptance alone is never reported as message delivery.
+func codexNativeUserItemPresent(thread, messageID string) (bool, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return false, err
+	}
+	return codexUserItemInRollout(filepath.Join(home, ".codex", "sessions"), thread, messageID)
+}
+
+func codexUserItemInRollout(sessionsRoot, thread, messageID string) (bool, error) {
+	var matched bool
+	err := filepath.WalkDir(sessionsRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if os.IsNotExist(walkErr) {
+			return nil
+		}
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), "-"+thread+".jsonl") {
+			return nil
+		}
+		file, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		scanner.Buffer(make([]byte, 64<<10), 32<<20)
+		for scanner.Scan() {
+			line := scanner.Bytes()
+			if !bytes.Contains(line, []byte(messageID)) {
+				continue
+			}
+			var record struct {
+				Type    string `json:"type"`
+				Payload struct {
+					Type string `json:"type"`
+					Item struct {
+						Type     string `json:"type"`
+						ClientID string `json:"client_id"`
+					} `json:"item"`
+				} `json:"payload"`
+			}
+			if err := json.Unmarshal(line, &record); err != nil {
+				return err
+			}
+			if record.Type == "event_msg" && record.Payload.Type == "item_completed" && record.Payload.Item.Type == "UserMessage" && record.Payload.Item.ClientID == messageID {
+				matched = true
+				return fs.SkipAll
+			}
+		}
+		return scanner.Err()
+	})
+	return matched, err
 }
 
 func codexQueueInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {
