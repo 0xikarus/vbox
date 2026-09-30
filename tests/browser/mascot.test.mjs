@@ -32,6 +32,18 @@ async function openPage(){
  return {page,errors};
 }
 try{
+ await test('box hues are stable, distinct in the fixture set, and exclude account coral',async()=>{
+  const {page,errors}=await openPage();
+  try{
+   const result=await page.evaluate(()=>({colors:VBoxMascot.colors,fixtures:['builder','reviewer','designer','research'].map(name=>VBoxMascot.traits(name).color),repeat:VBoxMascot.traits('builder').color}));
+   assert.equal(result.colors.length,9);
+   assert.equal(new Set(result.colors.map(color=>color.toLowerCase())).size,9);
+   assert.ok(!result.colors.some(color=>color.toLowerCase()==='#ff6f59'));
+   assert.equal(new Set(result.fixtures).size,4);
+   assert.equal(result.fixtures[0],result.repeat);
+   assert.deepEqual(errors,[]);
+  }finally{await page.close()}
+ });
  await test('chat signals enter the expected body statechart states',async()=>{
   const {page,errors}=await openPage();
   try{

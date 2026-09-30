@@ -166,22 +166,9 @@
 
  /* The chat palette, type, spacing and brand mascot are fixed for vbox. */
  try{localStorage.removeItem('vmboxChatTheme')}catch{}
- const WORKSPACE_THEME={bg:'#111923',bg2:'#18212d',surface:'#1a2230',surface2:'#202e3d',
-  ink:'#eaf0f8','ink-soft':'#91a0b3',line:'#2b3848',
-  accent:'#8fb8f5','accent-text':'#aaceff','accent-ink':'#102136','accent-soft':'#263749',
-  pop:'#b691e6','bubble-out':'#294b65','bubble-in':'#1b2938','bubble-in-ink':'#eaf0f8',
-  danger:'#ec727c','danger-text':'#ffadb5',warn:'#e3b66d','warn-text':'#f2cf8e',ok:'#69d3a4','ok-text':'#8ee5ba'};
- function deriveTheme(){
-  const t=Object.assign({},WORKSPACE_THEME,{radius:'6px','radius-sm':'4px','radius-lg':'9px',shadow:'0 5px 18px #08121d44','shadow-pop':'0 22px 70px #06101bbb',wall:'none'});
-  return {font:'system-ui, -apple-system, "Segoe UI", sans-serif',radius:6,tokens:t};
- }
  function applyVariant(){
   document.documentElement.dataset.variant='A';
-  const derived=deriveTheme();
-  const root=document.documentElement.style;
-  for(const key in derived.tokens)root.setProperty('--'+key,derived.tokens[key]);
-  root.setProperty('--font',derived.font);
-  const themeColor=document.querySelector('meta[name="theme-color"]');if(themeColor)themeColor.setAttribute('content',derived.tokens.bg);
+  const themeColor=document.querySelector('meta[name="theme-color"]');if(themeColor)themeColor.setAttribute('content',getComputedStyle(document.documentElement).getPropertyValue('--vb-bg').trim());
   refreshAccountMascots();
  }
 
@@ -215,7 +202,7 @@
  }
  const mxBodyPath=t=>smoothClosed(blobPoints(120,190-t.H/2,t.W/2,t.H/2,t));
  function mxPattern(t){
-  const W=t.W,H=t.H,x=120-W/2,y=190-H,cy=y+H/2,tone=t.patTone,op=tone==='#fff'?.2:.15,sw=t.patW;
+  const W=t.W,H=t.H,x=120-W/2,y=190-H,cy=y+H/2,tone=t.patTone,op=tone===getComputedStyle(document.documentElement).getPropertyValue('--vb-white').trim()?.2:.15,sw=t.patW;
   const wrapF=i=>'<g fill="'+tone+'" fill-opacity="'+op+'">'+i+'</g>';
   const wrapS=(i,extra)=>'<g fill="none" stroke="'+tone+'" stroke-opacity="'+op+'" stroke-width="'+sw+'" stroke-linecap="round" '+(extra||'')+'>'+i+'</g>';
   const ripplePts=r=>t.lumps.map((k,j)=>{const a=j/t.lumps.length*Math.PI*2,rr=r*(1+(k-.5)*.35);return [120+rr*Math.cos(a),cy+rr*.92*Math.sin(a)];});
@@ -242,10 +229,8 @@
  const Mascot=window.VBoxMascot?.Mascot||class{
   constructor(host,id,{appearance={}}={}){
    this.state='idle';this.expression=null;this.signal='idle';
-   const colors=['#965FF0','#378EF5','#24C77A','#23C5BB','#FF8A38','#F5BC29','#F253B1','#F25564','#BE67E8','#60C989','#FF6F59','#1B2A41'];
-   let hash=2166136261;for(const char of String(id)){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619)}hash>>>=0;
-   const color=appearance.color||colors[hash%37===0?11:Math.floor(hash/8)%11];
-   host.innerHTML='<svg class="vbox-mascot" viewBox="0 0 100 100" role="img" aria-label="idle mascot"><circle cx="50" cy="50" r="39" fill="'+color+'"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="#fff"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="#fff"/></svg>';
+   const color=appearance.color||getComputedStyle(document.documentElement).getPropertyValue('--vb-mascot-fallback').trim();
+   host.innerHTML='<svg class="vbox-mascot" viewBox="0 0 100 100" role="img" aria-label="idle mascot"><circle cx="50" cy="50" r="39" fill="'+color+'"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/></svg>';
    this.svg=host.querySelector('svg');this.svg.__vboxMascot=this;
   }
   jump(mood,expression=null,signal=null){this.state=mood;this.expression=expression;this.signal=signal||'idle';return true}
@@ -293,7 +278,7 @@
   accountMascots.splice(0).forEach(m=>m.destroy&&m.destroy());
   for(const id of ['chat-empty-mascot','chat-list-empty-mascot']){
    const host=document.getElementById(id);if(!host)continue;
-   accountMascots.push(new Mascot(host,'vbox-brand',{appearance:{color:'#FF6F59',eyes:'A'}}));
+   accountMascots.push(new Mascot(host,'vbox-brand',{appearance:{color:'var(--vb-brand-coral)',eyes:'A'}}));
   }
  }
  /* ═══ message body: tiny Markdown via /markdown.js, bare URLs linkified ═══ */
@@ -581,7 +566,7 @@
  /* ---------- annotate a received image, then attach it to a reply ---------- */
  const annotationDialog=$('#image-annotation'),annotationCanvas=$('#image-annotation-canvas'),annotationContext=annotationCanvas.getContext('2d');
  const annotationStatus=$('#image-annotation-status');
- let annotationImage=null,annotationTarget=null,annotationStrokes=[],activeAnnotationStroke=null,activeAnnotationPointer=null,annotationColor='#f44336',annotationBusy=false;
+ let annotationImage=null,annotationTarget=null,annotationStrokes=[],activeAnnotationStroke=null,activeAnnotationPointer=null,annotationColor=getComputedStyle(document.documentElement).getPropertyValue('--vb-annotation-red').trim(),annotationBusy=false;
  function annotationPoint(event){
   const rect=annotationCanvas.getBoundingClientRect();
   return {x:Math.max(0,Math.min(annotationCanvas.width,(event.clientX-rect.left)*annotationCanvas.width/rect.width)),y:Math.max(0,Math.min(annotationCanvas.height,(event.clientY-rect.top)*annotationCanvas.height/rect.height))};
@@ -632,7 +617,7 @@
  const finishAnnotationStroke=event=>{if(activeAnnotationPointer===event.pointerId){activeAnnotationStroke=null;activeAnnotationPointer=null}};
  annotationCanvas.addEventListener('pointerup',finishAnnotationStroke);annotationCanvas.addEventListener('pointercancel',finishAnnotationStroke);
  annotationDialog.querySelectorAll('[data-annotation-color]').forEach(button=>button.onclick=()=>{
-  annotationColor=button.dataset.annotationColor;
+  annotationColor=getComputedStyle(document.documentElement).getPropertyValue('--vb-annotation-'+button.dataset.annotationColor).trim();
   annotationDialog.querySelectorAll('[data-annotation-color]').forEach(choice=>choice.setAttribute('aria-pressed',String(choice===button)));
  });
  $('#image-annotation-undo').onclick=()=>{annotationStrokes.pop();redrawAnnotation();updateAnnotationTools()};
@@ -651,7 +636,7 @@
    let extension='png';
    if(blob.size>25*1024*1024){
     const flattened=document.createElement('canvas');flattened.width=annotationCanvas.width;flattened.height=annotationCanvas.height;
-    const ctx=flattened.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,flattened.width,flattened.height);ctx.drawImage(annotationCanvas,0,0);
+    const ctx=flattened.getContext('2d');ctx.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--vb-white').trim();ctx.fillRect(0,0,flattened.width,flattened.height);ctx.drawImage(annotationCanvas,0,0);
     blob=await new Promise(resolve=>flattened.toBlob(resolve,'image/jpeg',.85));extension='jpg';
     flattened.width=0;flattened.height=0;
     if(!blob)throw Error('Could not export the annotated image.');

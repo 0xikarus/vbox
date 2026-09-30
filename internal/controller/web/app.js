@@ -77,13 +77,9 @@ const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" st
 const RESTART_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.4 7"/><path d="M3 4v7h7"/></svg>';
 const ICON_MORE='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
 function blobSVG(seed){
- const str=String(seed||'box');let h=2166136261>>>0;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
- const palette=['#7c5cff','#3b82f6','#22c55e','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444'];
- const color=palette[Math.abs(h)%palette.length],shape=Math.abs(h>>>5)%7;let body='';
- switch(shape){case 0:body='<circle cx="50" cy="52" r="38"/>';break;case 1:body='<path d="M50 10 C71 30 89 47 89 64 A39 39 0 1 1 11 64 C11 47 29 30 50 10 Z"/>';break;case 2:body='<rect x="13" y="15" width="74" height="74" rx="26"/>';break;case 3:body='<path d="M50 11 L87 32 L87 74 L50 95 L13 74 L13 32 Z"/>';break;case 4:body='<path d="M34 12 L66 12 C72 12 77 17 77 23 L77 30 C84 34 88 42 88 52 C88 62 84 70 77 74 L77 81 C77 87 72 92 66 92 L34 92 C28 92 23 87 23 81 L23 74 C16 70 12 62 12 52 C12 42 16 34 23 30 L23 23 C23 17 28 12 34 12 Z"/>';break;case 5:body='<path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/>';break;default:body='<circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/>'}
- const eyes='<g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g>';
- return '<svg viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
+ return window.VBoxMascot?.miniSVG(seed)||'<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="39" fill="var(--vb-mascot-fallback)"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/></svg>';
 }
+
 const rowMascots=[];
 function boxRowAvatar(box){
  const avatar=node('span');avatar.className='avatar row-avatar';avatar.setAttribute('aria-hidden','true');
@@ -97,7 +93,7 @@ function boxRowAvatar(box){
   if(box.state==='hibernated')mascot.jump('sleeping','sleeping','sleeping');
   else if(box.state==='failed')mascot.jump('angry','error','failed');
   else if(box.state!=='running')mascot.jump('waking','surprised','starting');
- }else host.innerHTML='<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="39" fill="#23c5bb"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="#fff"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="#fff"/></svg>';
+ }else host.innerHTML='<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="39" fill="var(--vb-mascot-fallback)"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="var(--vb-white)"/></svg>';
  avatar.append(screen,host);return avatar;
 }
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
@@ -226,7 +222,7 @@ function renderWorkerCapacity(){
  root.append(rawDetails(fleetSnapshots));
 }
 $('#capacity-pool').addEventListener('change',renderWorkerCapacity);
-function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){const empty=node('div');empty.className='notice-empty';empty.innerHTML='<svg class="notice-empty-mascot" viewBox="0 0 100 104" aria-hidden="true"><g fill="#ff6f59"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg>';empty.append(node('p','No notification destinations configured. Notifications are optional.'));root.append(empty);return}
+function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){const empty=node('div');empty.className='notice-empty';empty.innerHTML='<svg class="notice-empty-mascot" viewBox="0 0 100 104" aria-hidden="true"><g fill="var(--vb-brand-coral)"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="var(--vb-white)" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg>';empty.append(node('p','No notification destinations configured. Notifications are optional.'));root.append(empty);return}
  const list=node('div');list.className='notice-list';
  for(const n of values){
   const row=node('article');row.className='notice-row';row.dataset.enabled=String(!!n.enabled);

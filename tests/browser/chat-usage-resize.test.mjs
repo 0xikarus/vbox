@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 const usage={profiles:[{application:'claude',name:'work',boxes:['Builder'],observedAt:'2026-09-24T03:00:00Z',checkedAt:'2026-09-24T03:01:00Z',snapshot:{windows:[
  {name:'session',usedPercent:25,resetsAt:'2026-09-24T04:00:00Z'},
  {name:'weekly_all',usedPercent:90,resetsAt:'2026-09-30T00:00:00Z'}

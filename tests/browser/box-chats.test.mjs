@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-chats.html','box-chats.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-chats.html','box-chats.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const illustration=id=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#142433"/><rect x="24" y="24" width="592" height="352" rx="16" fill="${id==='image-3'?'#294b48':'#244060'}" stroke="#8cb8df"/><text x="50" y="85" fill="#f3f8ff" font-family="sans-serif" font-size="28" font-weight="bold">${id==='image-1'?'Build output · 1':id==='image-2'?'Build output · 2':'Review result'}</text><path d="M90 205h460" stroke="#9bc8ec" stroke-width="7"/><g fill="#eaf3ff" font-family="sans-serif" font-size="23"><text x="68" y="175">Source</text><text x="274" y="175">Build</text><text x="472" y="175">Review</text></g><circle cx="95" cy="205" r="19" fill="#94c5ee"/><circle cx="320" cy="205" r="19" fill="#94c5ee"/><circle cx="545" cy="205" r="19" fill="#94c5ee"/></svg>`);
 

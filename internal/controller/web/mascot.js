@@ -27,7 +27,8 @@
  */
 (function(global){
  'use strict';
- const COLORS=['#965FF0','#378EF5','#24C77A','#23C5BB','#FF8A38','#F5BC29','#F253B1','#F25564','#BE67E8','#60C989','#FF6F59','#1B2A41'];
+ // Nine separated box hues; coral is reserved for the account mascot.
+ const COLORS=['#7E22CE','#2563EB','#0E7490','#15803D','#A16207','#C2410C','#BE185D','#475569','#4D7C0F'];
  const MOODS=['idle','working','waiting','happy','laughing','angry','sleeping','waking'];
  const MACHINE={idle:{WORK:'working',SEND:'waiting',PRAISE:'happy',JOKE:'laughing',ERROR:'angry',SLEEP:'sleeping',WAKE:'waking'},working:{SEND:'waiting',DONE:'happy',ERROR:'angry',JOKE:'laughing',STOP:'idle',SLEEP:'sleeping'},waiting:{REPLY:'happy',TIMEOUT:'angry',WORK:'working',JOKE:'laughing',STOP:'idle',SLEEP:'sleeping'},happy:{JOKE:'laughing',WORK:'working',SEND:'waiting',ERROR:'angry',SETTLE:'idle',SLEEP:'sleeping'},laughing:{SETTLE:'happy',WORK:'working',ERROR:'angry',SLEEP:'sleeping'},angry:{CALM:'idle',PRAISE:'happy',WORK:'working',SLEEP:'sleeping'},sleeping:{WAKE:'waking',WORK:'waking'},waking:{READY:'idle',WORK:'working',SLEEP:'sleeping'}};
  const MOTION=Object.freeze({
@@ -46,7 +47,7 @@
   bang:{spring:{type:'spring',stiffness:420,damping:10,mass:.55},heavy:{type:'spring',stiffness:280,damping:11,mass:.9},bobInterval:2500},
  });
  const hash=s=>{let h=2166136261;for(const c of String(s)){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0};
- const traits=seed=>{const h=hash(seed);return {shape:'circle',color:h%37===0?COLORS[11]:COLORS[Math.floor(h/8)%11],eyeSpread:((h>>>12)%7-3)*.35,eyeTilt:((h>>>17)%7-3)*.12,phase:(h%1000)/1000*6.283,blink:2.3+(h%190)/100,eyes:'A'}};
+ const traits=seed=>{const h=hash(seed);return {shape:'circle',color:COLORS[Math.floor(h/8)%COLORS.length],eyeSpread:((h>>>12)%7-3)*.35,eyeTilt:((h>>>17)%7-3)*.12,phase:(h%1000)/1000*6.283,blink:2.3+(h%190)/100,eyes:'A'}};
  const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const eyeGeometry=p=>{const cx=(p[0]+p[6])/2,cy=(p[1]+p[7])/2,dx=p[6]-p[0],dy=p[7]-p[1];return {cx,cy,length:Math.hypot(dx,dy),angle:Math.atan2(dy,dx)*180/Math.PI}};
  const sleepEye=(cx,cy)=>eyeLine(cx,cy,8,0);

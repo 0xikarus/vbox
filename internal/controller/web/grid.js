@@ -9,7 +9,7 @@
   play:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 4 14 8-14 8z"/></svg>'
  };
  function mascotSVG(seed){
-  return (seed?window.VBoxMascot?.miniSVG(seed):window.VBoxMascot?.svg('account','idle',true,{color:'#FF6F59'}))||'<svg viewBox="0 0 100 104" aria-hidden="true"><circle cx="50" cy="52" r="38" fill="#FF6F59"/><ellipse cx="38" cy="53" rx="4" ry="8" fill="#fff"/><ellipse cx="62" cy="53" rx="4" ry="8" fill="#fff"/></svg>';
+  return (seed?window.VBoxMascot?.miniSVG(seed):window.VBoxMascot?.svg('account','idle',true,{color:'var(--vb-brand-coral)'}))||'<svg viewBox="0 0 100 104" aria-hidden="true"><circle cx="50" cy="52" r="38" fill="var(--vb-brand-coral)"/><ellipse cx="38" cy="53" rx="4" ry="8" fill="var(--vb-white)"/><ellipse cx="62" cy="53" rx="4" ry="8" fill="var(--vb-white)"/></svg>';
  }
  function connectionBadge(label,title){const badge=node('span');badge.className='connection-badge';badge.title=title;badge.dataset.viewer=label;badge.dataset.state='idle';badge.dataset.ping='';updateConnectionBadge(badge,{state:'idle'});return badge}
  function updateConnectionBadge(badge,metrics){

@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-create-limit.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-create-limit.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
 test('chat details edits one box creation limit without changing its other permissions',async()=>{
  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude'};
