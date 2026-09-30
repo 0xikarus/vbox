@@ -2157,6 +2157,30 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .chat-folder-arrow{color:var(--vb-ink-faint);width:.75rem}
 .chat-folder-count{color:var(--vb-ink-faint);font-weight:700}
 .chat-folder-menu{color:var(--vb-ink-faint);font-size:1rem}
+
+/* Sidebar mute and section controls share the same quiet badge treatment. */
+#chat-entries .mute-bell{display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--vb-ink-soft)}
+#chat-entries .mute-bell[hidden]{display:none}
+#chat-entries .mute-bell svg{width:14px;height:14px}
+#chat-entries .row1 .mute-bell{margin-left:4px}
+#chat-entries .row1 .name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chat-entries .unread.muted{background:var(--vb-ink-faint);color:var(--vb-bg)}
+#chat-entries .conversation-group,#chat-entries .conversation-divider{display:flex;align-items:center;gap:4px;padding:0 8px;margin:0;min-height:34px;border-bottom:1px solid var(--vb-line)}
+#chat-entries .section-toggle{display:flex;align-items:center;gap:6px;min-width:0;flex:1;padding:6px 0;background:none;border:0;color:var(--vb-ink-faint);font:inherit;font-weight:750;letter-spacing:inherit;text-transform:inherit;text-align:left;cursor:pointer}
+#chat-entries .section-toggle .unread{margin-left:2px}
+#chat-entries .section-menu{flex:none;width:32px;height:32px;border:0;background:none;color:var(--vb-ink-soft);font-size:18px;cursor:pointer}
+#chat-entries .chat-folder-menu{width:36px;height:36px}
+@media(max-width:600px){#chat-entries .section-menu,#chat-entries .chat-folder-menu{width:44px;height:44px}}
+#chat-entries .chat-folder-toggle{min-width:0;flex:1}
+#chat-entries .chat-folder .mute-bell{margin-left:2px}
+#chat-entries li.chat-folder,#chat-entries li.conversation-group,#chat-entries li.conversation-divider{user-select:none;-webkit-user-select:none;touch-action:pan-y;transition:transform .15s var(--vb-ease)}
+#chat-entries li.pressing{transform:scale(.985)}
+#row-menu button:disabled{opacity:.55;cursor:default}
+@media(max-width:600px){
+ #row-menu.touch-mode{position:fixed;left:12px;right:12px;top:auto;bottom:calc(12px + env(safe-area-inset-bottom));width:auto;max-height:min(70dvh,540px);overflow-y:auto;border-radius:var(--r-bubble);padding:10px;background:var(--vb-elevated)}
+ #row-menu.touch-mode button{min-height:44px;font-size:14px}
+ #row-menu.touch-mode .row-submenu{margin:0 0 6px 12px;padding-left:8px;border-left:1px solid var(--vb-line)}
+}
 /* 3 · pair rows: two overlapping tiles (screen look) */
 #chat-entries .pair-avatar{position:relative;width:2.7rem;height:2.7rem;background:none;color:transparent;font-size:0;line-height:0}
 #chat-entries .pair-avatar::before,#chat-entries .pair-avatar::after{content:'';position:absolute;width:1.85rem;height:1.85rem;border-radius:var(--r-control);border:1px solid var(--vb-line);box-shadow:var(--vb-shadow)}

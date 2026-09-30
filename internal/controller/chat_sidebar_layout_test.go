@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
@@ -16,19 +17,32 @@ func TestChatSidebarLayoutPersistsByAccount(t *testing.T) {
 	store, mock := testStore(t)
 	groups := `[ {"id":"group-1","name":"Projects","collapsed":true} ]`
 	members := `{"box:box-1":"group-1"}`
+	mutes := `{"group:group-1":null}`
+	pins := `["box:box-1"]`
+	sections := `{"boxes":true}`
 	mock.ExpectExec("INSERT INTO chat_sidebar_layouts").WithArgs("account-a", sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg(), sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(0, 1))
 	server := &Server{Store: store}
 	w := httptest.NewRecorder()
-	server.chatSidebarLayoutHandler(w, httptest.NewRequest(http.MethodPut, "/v1/chat-sidebar-layout", strings.NewReader(`{"groups":`+groups+`,"members":`+members+`}`)), Principal{AccountID: "account-a"})
+	server.chatSidebarLayoutHandler(w, httptest.NewRequest(http.MethodPut, "/v1/chat-sidebar-layout", strings.NewReader(`{"groups":`+groups+`,"members":`+members+`,"mutes":`+mutes+`,"pins":`+pins+`,"sections":`+sections+`}`)), Principal{AccountID: "account-a"})
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"Projects"`) {
 		t.Fatalf("PUT status=%d body=%s", w.Code, w.Body.String())
 	}
-	mock.ExpectQuery("SELECT groups_json,members_json,mutes_json,pins_json,sections_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"groups_json", "members_json", "mutes_json", "pins_json", "sections_json"}).AddRow([]byte(groups), []byte(members), []byte(`{}`), []byte(`[]`), []byte(`{}`)))
+	mock.ExpectQuery("SELECT groups_json,members_json,mutes_json,pins_json,sections_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(sqlmock.NewRows([]string{"groups_json", "members_json", "mutes_json", "pins_json", "sections_json"}).AddRow([]byte(groups), []byte(members), []byte(mutes), []byte(pins), []byte(sections)))
 	w = httptest.NewRecorder()
 	server.chatSidebarLayoutHandler(w, httptest.NewRequest(http.MethodGet, "/v1/chat-sidebar-layout", nil), Principal{AccountID: "account-a"})
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"collapsed":true`) || !strings.Contains(w.Body.String(), `"box:box-1":"group-1"`) {
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"collapsed":true`) || !strings.Contains(w.Body.String(), `"box:box-1":"group-1"`) || !strings.Contains(w.Body.String(), `"group:group-1":null`) || !strings.Contains(w.Body.String(), `"pins":["box:box-1"]`) || !strings.Contains(w.Body.String(), `"sections":{"boxes":true}`) {
 		t.Fatalf("GET status=%d body=%s", w.Code, w.Body.String())
 	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMutedAgentReplyDoesNotSchedulePush(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("SELECT members_json,mutes_json,pins_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(
+		sqlmock.NewRows([]string{"members_json", "mutes_json", "pins_json"}).AddRow([]byte(`{}`), []byte(`{"box:box-1":null}`), []byte(`[]`)))
+	(&Server{Store: store}).pushAgentReply(context.Background(), "account-a", v1.BoxTask{LogicalBoxID: "box-1", BoxName: "Builder"}, "Completed")
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}
