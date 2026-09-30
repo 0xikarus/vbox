@@ -431,6 +431,8 @@ test('long-press group mute greys unread badges and excludes them from the back 
   await page.waitForFunction(()=>document.querySelector('.chat-folder .mute-bell')?.hidden===false);
   assert.equal(await page.$eval('.chat-folder .unread',node=>node.classList.contains('muted')),true);
   assert.equal(await page.$eval('[data-box-id="'+b+'"] .unread',node=>node.classList.contains('muted')),true);
+  await page.waitForFunction(async()=>!!(await (await fetch('/v1/chat-sidebar-layout')).json()).mutes?.['group:'+document.querySelector('.chat-folder').dataset.groupId]);
+  await page.reload();await page.waitForFunction(()=>document.querySelector('.chat-folder .mute-bell')?.hidden===false);
   await page.click('[data-box-id="'+a+'"]');
   await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
   assert.equal(await page.$eval('#chat-back-count',node=>node.hidden),true);
@@ -446,6 +448,32 @@ test('long-press group mute greys unread badges and excludes them from the back 
   await page.$eval('[data-pair-key]',row=>row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:80,clientY:300})));
   assert.equal(await page.$eval('#row-menu button:nth-child(2)',button=>button.textContent),'Always muted');
   assert.equal(await page.$eval('#row-menu button:nth-child(2)',button=>button.disabled),true);
+  await page.close();
+ },{boxMessagesB});
+});
+
+test('individual and Chats section mutes persist and suppress navigation alerts',async()=>{
+ const boxMessagesB=[{id:'section-reply',direction:'agent',text:'Status ready',state:'delivered',createdAt:now,updatedAt:now}];
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();await page.setViewport({width:1200,height:800});await page.goto(base+'/chat#box='+a);
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.textContent==='1',{},b);
+  await page.click('[data-box-id="'+b+'"]',{button:'right'});
+  await page.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Mute›').click());
+  await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='Always').click());
+  assert.equal(await page.$eval('[data-box-id="'+b+'"] .unread',node=>node.classList.contains('muted')),true);
+  assert.equal(await page.$eval('#chat-back-count',node=>node.hidden),true);
+  assert.equal(savedLayout().mutes['box:'+b],null);
+  await page.reload();await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .mute-bell')?.hidden===false,{},b);
+  await page.click('[data-box-id="'+b+'"]',{button:'right'});
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Unmute').click());
+  await page.waitForFunction(()=>document.querySelector('#chat-back-count')?.textContent==='1');
+  await page.$eval('[data-section="boxes"] .section-menu',node=>node.click());
+  await page.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Mute›').click());
+  await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='1 week').click());
+  assert.equal(await page.$eval('[data-section="boxes"] .mute-bell',node=>node.hidden),false);
+  assert.equal(await page.$eval('[data-box-id="'+b+'"] .unread',node=>node.classList.contains('muted')),true);
+  assert.equal(await page.$eval('#chat-back-count',node=>node.hidden),true);
+  assert.ok(new Date(savedLayout().mutes['section:boxes']).getTime()>Date.now());
   await page.close();
  },{boxMessagesB});
 });

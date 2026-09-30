@@ -2163,7 +2163,8 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-entries .mute-bell[hidden]{display:none}
 #chat-entries .mute-bell svg{width:14px;height:14px}
 #chat-entries .row1 .mute-bell{margin-left:4px}
-#chat-entries .row1 .name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chat-entries .row1 .name{min-width:0;flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#chat-entries .row1 time{margin-left:auto}
 #chat-entries .unread.muted{background:var(--vb-ink-faint);color:var(--vb-bg)}
 #chat-entries .conversation-group,#chat-entries .conversation-divider{display:flex;align-items:center;gap:4px;padding:0 8px;margin:0;min-height:34px;border-bottom:1px solid var(--vb-line)}
 #chat-entries .section-toggle{display:flex;align-items:center;gap:6px;min-width:0;flex:1;padding:6px 0;background:none;border:0;color:var(--vb-ink-faint);font:inherit;font-weight:750;letter-spacing:inherit;text-transform:inherit;text-align:left;cursor:pointer}
