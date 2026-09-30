@@ -24,11 +24,13 @@ RFB.prototype.requestLatencyProbe=function(payload){
  if(typeof payload!=='string'||payload.length>64)throw Error('Invalid fence payload');
  RFB.messages.clientFence(this._sock,0x80000000,payload);return true;
 };export default RFB;`,resolveDir:process.cwd(),loader:'js'},plugins:[fullscreenCursor,fenceLatency],bundle:true,format:'iife',globalName:'NoVNC',minify:true,outfile:'internal/controller/web/novnc.js',legalComments:'eof'});
+// Keep Motion's hybrid animate engine (JS object timelines and springs), while
+// tree-shaking exports that the mascot never uses.
+await build({stdin:{contents:"import {animate} from 'motion';export {animate};",resolveDir:process.cwd(),loader:'js'},bundle:true,format:'iife',globalName:'Motion',minify:true,outfile:'internal/controller/web/motion.js',legalComments:'none'});
 for(const [source,target] of [
  ['@novnc/novnc/LICENSE.txt','novnc-LICENSE.txt'],
  ['@novnc/novnc/AUTHORS','novnc-AUTHORS.txt'],
  ['@xterm/xterm/lib/xterm.js','xterm.js'],
- ['motion/dist/motion.js','motion.js'],
  ['motion/LICENSE.md','motion-LICENSE.md'],
  ['@xterm/xterm/css/xterm.css','xterm.css'],
  ['@xterm/xterm/LICENSE','xterm-LICENSE.txt'],

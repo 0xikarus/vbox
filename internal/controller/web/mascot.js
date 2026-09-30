@@ -101,15 +101,16 @@
  const pointer={x:0,y:0,type:'mouse',active:false};
  function dispatchPointer(){pointerFrame=0;if(!pointer.active)return;for(const mascot of active)mascot.followPointer(pointer.x,pointer.y,pointer.type)}
  function releasePointer(){pointer.active=false;clearTimeout(pointerIdleTimer);if(pointerFrame){cancelAnimationFrame(pointerFrame);pointerFrame=0}for(const mascot of active)mascot.releasePointer()}
- function queuePointer(e){if(e.pointerType==='touch')return;pointer.x=e.clientX;pointer.y=e.clientY;pointer.type=e.pointerType||'mouse';pointer.active=true;if(!pointerFrame)pointerFrame=requestAnimationFrame(dispatchPointer);clearTimeout(pointerIdleTimer);pointerIdleTimer=setTimeout(releasePointer,2500)}
+ function queuePointer(e){if(e.pointerType==='touch'||reduce.matches||forcedReduce)return;pointer.x=e.clientX;pointer.y=e.clientY;pointer.type=e.pointerType||'mouse';pointer.active=true;if(!pointerFrame)pointerFrame=requestAnimationFrame(dispatchPointer);clearTimeout(pointerIdleTimer);pointerIdleTimer=setTimeout(releasePointer,2500)}
  window.addEventListener('pointermove',queuePointer,{passive:true});
- window.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')return;pointer.x=e.clientX;pointer.y=e.clientY;pointer.type='touch';pointer.active=true;if(!pointerFrame)pointerFrame=requestAnimationFrame(dispatchPointer);clearTimeout(pointerIdleTimer);pointerIdleTimer=setTimeout(releasePointer,850)},{passive:true});
+ window.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch'||reduce.matches||forcedReduce)return;pointer.x=e.clientX;pointer.y=e.clientY;pointer.type='touch';pointer.active=true;if(!pointerFrame)pointerFrame=requestAnimationFrame(dispatchPointer);clearTimeout(pointerIdleTimer);pointerIdleTimer=setTimeout(releasePointer,850)},{passive:true});
  window.addEventListener('mouseout',e=>{if(!e.relatedTarget)releasePointer()},{passive:true});
  window.addEventListener('blur',releasePointer);
  let morphClock=0;
- function morphFrame(now){if(!active.size){morphClock=0;return}morphClock=requestAnimationFrame(morphFrame);if(document.hidden)return;for(const mascot of active)mascot.frame(now)}
+ function syncMorphClock(){let running=false;if(!quiet())for(const mascot of active)if(!mascot.dead&&mascot.visible){running=true;break}if(running&&!morphClock)morphClock=requestAnimationFrame(morphFrame);else if(!running&&morphClock){cancelAnimationFrame(morphClock);morphClock=0}}
+ function morphFrame(now){morphClock=0;if(quiet())return;for(const mascot of active)if(mascot.visible&&!mascot.dead)mascot.frame(now);syncMorphClock()}
  document.addEventListener('visibilitychange',()=>{for(const mascot of active)mascot.updateVisibility()});
- reduce.addEventListener?.('change',()=>{for(const mascot of active)mascot.updateVisibility()});
+ reduce.addEventListener?.('change',()=>{if(reduce.matches)releasePointer();for(const mascot of active)mascot.updateVisibility()});
  class Mascot{
   constructor(host,seed,{onMood,appearance={}}={}){
    this.host=host;this.seed=String(seed);this.traits=traits(seed);if(appearance.color)this.traits.color=appearance.color;this.appearance=appearance;this.onMood=onMood||null;
@@ -120,13 +121,13 @@
    this.paths={home:pointsPath(circlePoints(39)),bangDot:pointsPath(circlePoints(5,50,82)),dot:pointsPath(circlePoints(5))};this.glanceCount=0;this.blinkedYet=false;this.expressionCount=0;
    this.breathPhase=this.traits.phase;this.breathSpeed=2*Math.PI/3.6;this.breathAccel=0;this.formAngle=0;this.bangAngle=0;this.stemProgress=0;this.stemDetach=0;this.dotX=1;this.dotY=1;this.bangSignal=null;this.bangWiggleActive=false;this.faceScale=1;this.faceRadius=39;this.blinkScale=1;this.blinking=false;this.blinkGeneration=0;this.blinkQueued=false;this.eyeMorphUntil=0;this.gazeUntil=0;this.pendingLook=null;this.pendingEyes=null;this.dotCenterRadius=5;this.lastFrame=0;
    this.chart={body:'idle',eyes:'default',gaze:'ahead'};this.motionSegments={body:0,eyes:0,gaze:0,dots:0,symbol:0,color:0,particles:0};this.scanBlend=0;this.idleDriftBlend=1;this.currentPath=this.paths.home;this.setPath(this.paths.home);this.look=[0,0];this.gazeTarget=[0,0];this.gazeVelocity=[0,0];this.rightLook=[0,0];this.rightLookVelocity=[0,0];this.cursorActive=false;this.bodyFollow=[0,0,0];this.bodyFollowVelocity=[0,0,0];this.wasMounted=false;this.setEyes('idle',null,true);
-   observer?.observe(this.svg);active.add(this);if(!morphClock)morphClock=requestAnimationFrame(morphFrame);this.scheduleBlink();this.scheduleGlance();this.scheduleExpression();this.scheduleGesture();
+   observer?.observe(this.svg);active.add(this);syncMorphClock();this.scheduleBlink();this.scheduleGlance();this.scheduleExpression();this.scheduleGesture();
   }
   transition(region,to,event,guard=()=>true){if(!guard())return false;const from=this.chart[region];if(from!==to){this.chart[region]=to;this.lastTransition={region,from,to,event,at:performance.now()}}return true}
   track(control){this.controls.add(control);control.finished?.finally(()=>this.controls.delete(control)).catch(()=>{});return control}
   stopControls(){if(this.symbolPose)this.paintSymbolPose(this.symbolPose);if(this.cometPose)this.paintCometPose(this.cometPose);for(const control of this.controls)control.stop?.();this.controls.clear();this.symbolPose=null;this.cometPose=null;this.stemAnimating=false;this.bangWiggleActive=false;this.sparklePose=null;if(!this.dead&&this.particles&&Number(this.particles.getAttribute('opacity'))>.001)this.fade(this.particles,0,MOTION.exit.duration)}
   clearTimers(){for(const t of this.timers)clearTimeout(t);this.timers=[];clearTimeout(this.busyTimer);this.busyTimer=null;clearTimeout(this.expressionTimer);this.expressionTimer=null;clearTimeout(this.gestureTimer);this.gestureTimer=null}
-  timer(fn,ms){const t=setTimeout(fn,ms);this.timers.push(t);return t}
+  timer(fn,ms){const t=setTimeout(()=>{const index=this.timers.indexOf(t);if(index>=0)this.timers.splice(index,1);fn()},ms);this.timers.push(t);return t}
   setPath(d){this.currentPath=d;this.shapePath.setAttribute('d',d);this.highlight.setAttribute('d',d)}
   eyeDimensions(index){const eye=this.eyes[index],m=this.shapeGroups[index].transform.baseVal.consolidate()?.matrix,blink=this.blinkGroups[index].transform.baseVal.consolidate()?.matrix,b=eye.getBBox();return {w:b.width*(m?Math.hypot(m.a,m.b):1),h:b.height*(m?Math.hypot(m.c,m.d):1)*(blink?Math.hypot(blink.c,blink.d):1)}}
   updateFaceTransform(radius=this.faceRadius){
@@ -184,6 +185,14 @@
    this.gazeTarget=[Math.max(-MOTION.gaze.maxX,Math.min(MOTION.gaze.maxX,x)),Math.max(-MOTION.gaze.maxY,Math.min(MOTION.gaze.maxY,y))];
    this.transition('gaze',mode,mode,()=>!this.dead);this.motionSegments.gaze++;
    this.gazeUntil=performance.now()+duration*1000+30;
+   if(reduce.matches||forcedReduce){
+    const from=this.look.slice(),to=this.gazeTarget.slice();
+    this.gazeControl=this.track(animate(0,1,{duration:Math.max(.45,duration),ease:smoother,onUpdate:t=>{
+     this.look=[from[0]+(to[0]-from[0])*t,from[1]+(to[1]-from[1])*t];this.rightLook=this.look.slice();
+     this.eyes[1].removeAttribute('transform');this.updateFaceTransform();
+     for(let i=0;i<2;i++){const {cx,cy}=this.eyeCenters[i],tilt=Math.max(-8,Math.min(8,this.look[0]*.7));this.tiltGroups[i].setAttribute('transform','rotate('+tilt.toFixed(3)+' '+cx.toFixed(3)+' '+cy.toFixed(3)+')')}
+    }}));
+   }
   }
   scanTo(x,y){
    this.gazeControl?.stop?.();const from=this.gazeTarget.slice();
@@ -433,7 +442,7 @@
   send(evt){const next=MACHINE[this.state]?.[evt];return next?this.jump(next,MOOD_GLYPH[next]||null,null,evt):false}
   showExpression(expression){return this.jump(this.state,expression,this.signal)}
   jump(mood,expression=MOOD_GLYPH[mood]||null,signal=null,event=null){if(this.dead||!MOODS.includes(mood))return false;const next=signal||({working:'busy',waiting:'asking',happy:'unread',angry:'failed',sleeping:'sleeping',waking:'starting'}[mood]||'idle');if(this.cometActive){this.pendingPose=[mood,expression,next,event];return true}if(this.state===mood&&this.signal===next&&this.phase==='settled')return false;const old=this.signal,flowing=!quiet()&&this.phase==='settled'&&((old==='idle'&&next==='busy'&&this.busyMode==='ball')||(old==='busy'&&this.busyMode==='ball'&&next==='idle'));this.wideOnArrival=old==='busy'&&next==='idle';this.state=mood;this.expression=expression;this.signal=next;this.transition('body',next==='busy'?(this.busyMode==='dots'?'busy.dots':'busy.scan'):next==='sleeping'?'hibernated':next==='starting'?'waking':next,event||signal||mood,()=>!this.dead);this.svg.dataset.mood=mood;this.svg.dataset.signal=next;this.svg.setAttribute('aria-label',mood+' mascot');this.busyRemaining=this.busyInterval;if(flowing){this.resetBlink();this.updateFaceTransform();clearTimeout(this.busyTimer);this.busyTimer=null;this.setColor(mood);this.setEyes(this.wideOnArrival?'wide':'idle',null);if(this.wideOnArrival){this.wideOnArrival=false;this.timer(()=>{if(!this.dead&&this.signal==='idle')this.setEyes('idle',null)},850)}if(next==='busy')this.scheduleBusy()}else void this.startSignal();if(!((old==='asking'||old==='failed')&&this.stemProgress>0&&next!==old))this.transitionMotion(next==='sleeping'?'sleeping':next==='starting'?'waking':next==='failed'?'failed':next==='asking'?'bang':'pop',!['asking','failed'].includes(old)&&!['asking','failed'].includes(next));this.onMood?.(mood,this);return true}
-  updateVisibility(){if(this.dead)return;if(quiet()||!this.visible){this.pauseBusy();for(const c of this.controls)c.pause?.();if(!this.visible){this.cursorActive=false;clearTimeout(this.glanceTimer);this.glanceTimer=null}if(quiet()){this.needsResume=true;this.stopControls();this.resetBlink();this.clearTimers();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58);this.phase='settled'}}else{if(this.needsResume){void this.startSignal();return}for(const c of this.controls)c.play?.();if(this.signal==='busy'&&this.phase==='settled')this.scheduleBusy();this.scheduleBlink();this.scheduleGlance();if(pointer.active)this.followPointer(pointer.x,pointer.y,pointer.type)}if((reduce.matches||forcedReduce)&&!document.hidden&&this.visible)this.scheduleGlance()}
+  updateVisibility(){if(this.dead)return;syncMorphClock();if(quiet()||!this.visible){this.pauseBusy();for(const c of this.controls)c.pause?.();clearTimeout(this.blinkTimer);this.blinkTimer=null;clearTimeout(this.expressionTimer);this.expressionTimer=null;clearTimeout(this.gestureTimer);this.gestureTimer=null;if(!this.visible||document.hidden){this.cursorActive=false;clearTimeout(this.glanceTimer);this.glanceTimer=null}if(quiet()){this.needsResume=true;this.stopControls();this.resetBlink();this.clearTimers();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58);this.phase='settled';if(reduce.matches||forcedReduce){this.bodyFollow=[0,0,0];this.bodyFollowVelocity=[0,0,0];this.gazeFollow.removeAttribute('transform')}}}else{if(this.needsResume){void this.startSignal();return}for(const c of this.controls)c.play?.();if(this.signal==='busy'&&this.phase==='settled')this.scheduleBusy();this.scheduleBlink();this.scheduleGlance();if(pointer.active)this.followPointer(pointer.x,pointer.y,pointer.type)}if((reduce.matches||forcedReduce)&&!document.hidden&&this.visible)this.scheduleGlance()}
   blink(allowDouble=true,wink=false,second=false){
    if(this.dead||quiet()||!this.visible||this.phase!=='settled'||this.signal!=='idle'&&!['tall','wide'].includes(this.chart.eyes))return false;
    if(this.blinking||this.eyeMomentActive&&!['tall','wide'].includes(this.chart.eyes)||performance.now()<this.eyeMorphUntil||performance.now()<this.gazeUntil){
@@ -450,7 +459,7 @@
     if(allowDouble&&!wink&&hash(this.seed+Date.now())%5===0)this.timer(()=>this.blink(false,false,true),250)
    }).catch(()=>{});return true
   }
-  scheduleBlink(){if(this.blinkTimer||this.dead)return;const delay=this.blinkedYet?2800+hash(this.seed+Date.now())%700:1400+hash(this.seed)%1300;this.blinkTimer=setTimeout(()=>{this.blinkTimer=null;if(!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){this.blinkedYet=true;this.blink()}this.scheduleBlink()},delay)}
+  scheduleBlink(){if(this.blinkTimer||this.dead||quiet()||!this.visible)return;const delay=this.blinkedYet?2800+hash(this.seed+Date.now())%700:1400+hash(this.seed)%1300;this.blinkTimer=setTimeout(()=>{this.blinkTimer=null;if(!quiet()&&this.visible&&this.phase==='settled'&&this.signal==='idle'){this.blinkedYet=true;this.blink()}this.scheduleBlink()},delay)}
   scheduleGlance(delay){
    if(this.glanceTimer||this.dead||document.hidden||!this.visible||this.signal!=='idle'||this.cursorActive)return;
    const n=hash(this.seed+'gaze'+this.glanceCount++),wait=delay??1500+n%2501;
@@ -487,7 +496,7 @@
    }this.scheduleGesture()},delay)
   }
   render(instant){if(instant){this.stopControls();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58)}}
-  destroy(){if(this.dead)return;this.dead=true;this.token++;this.stopControls();this.clearTimers();clearTimeout(this.blinkTimer);clearTimeout(this.glanceTimer);clearTimeout(this.expressionTimer);clearTimeout(this.gestureTimer);observer?.unobserve(this.svg);active.delete(this);this.svg.remove()}
+  destroy(){if(this.dead)return;this.dead=true;this.token++;this.stopControls();this.clearTimers();clearTimeout(this.blinkTimer);clearTimeout(this.glanceTimer);clearTimeout(this.expressionTimer);clearTimeout(this.gestureTimer);this.blinkTimer=this.glanceTimer=this.expressionTimer=this.gestureTimer=null;observer?.unobserve(this.svg);active.delete(this);syncMorphClock();this.svg.remove()}
  }
- global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;for(const mascot of active)mascot.updateVisibility()},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
+ global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;if(forcedReduce)releasePointer();for(const mascot of active)mascot.updateVisibility()},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
 })(window);
