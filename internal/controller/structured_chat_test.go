@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -143,6 +144,59 @@ func TestChatReadyContactReportsHibernatedRejectionToSender(t *testing.T) {
 	chatTestServer(store).agentChatReadyHandler(w, r, Principal{AccountID: "account-a", UserID: "user-a", Role: "desktop-agent"})
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"delivered":false`) || !strings.Contains(w.Body.String(), `"reason":"mascot is hibernated`) {
 		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChatReadyContactKeepsTransientFailureForRetry(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(restartTestBoxRow())
+	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").WithArgs("account-a", "box-1").WillReturnRows(restartTestTaskRow("task-1", "active"))
+	mock.ExpectQuery("FROM logical_boxes b").WithArgs("account-a", "mascot").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "agent", "state", "protected"}).AddRow("target", "mascot", "codex", "running", false))
+	mock.ExpectQuery("SELECT EXISTS\\(SELECT 1 FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery("SELECT b.state,EXISTS").WithArgs("account-a", "target").WillReturnRows(sqlmock.NewRows([]string{"state", "protected"}).AddRow("running", false))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WithArgs("account-a", "box-1", "target").WillReturnRows(sqlmock.NewRows([]string{"can_message"}).AddRow(true))
+	mock.ExpectQuery("SELECT EXISTS\\(SELECT 1 FROM box_role_assignments").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery("SELECT owner_user_id::text FROM logical_boxes").WithArgs("account-a", "target").WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow("user-a"))
+	mock.ExpectQuery("FROM box_messages m JOIN box_tasks").WillReturnError(errors.New("temporary database failure"))
+	r := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/chat-ready", strings.NewReader(`{"session":"opencode-one","event":{"id":"0123456789ab","kind":"contact","contact":"mascot","text":"hello"}}`))
+	r.SetPathValue("id", "box-1")
+	w := httptest.NewRecorder()
+	chatTestServer(store).agentChatReadyHandler(w, r, Principal{AccountID: "account-a", UserID: "user-a", Role: "desktop-agent"})
+	if w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), `"stored":true`) {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContactWorkerProbeFailureDoesNotRejectMessage(t *testing.T) {
+	store, mock := testStore(t)
+	server := chatTestServer(store)
+	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) {
+		return &sessionProbeProvider{err: errors.New("worker command preparation failed")}, nil
+	}
+	mock.ExpectQuery("FROM logical_boxes b").WithArgs("account-a", "mascot").WillReturnRows(sqlmock.NewRows([]string{"id", "name", "agent", "state", "protected"}).AddRow("box-1", "mascot", "opencode", "running", false))
+	mock.ExpectQuery("SELECT EXISTS\\(SELECT 1 FROM logical_boxes").WithArgs("account-a", "sender").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	mock.ExpectQuery("SELECT b.state,EXISTS").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"state", "protected"}).AddRow("running", false))
+	mock.ExpectQuery("SELECT can_message FROM box_contacts").WithArgs("account-a", "sender", "box-1").WillReturnRows(sqlmock.NewRows([]string{"can_message"}).AddRow(true))
+	mock.ExpectQuery("SELECT EXISTS\\(SELECT 1 FROM box_role_assignments").WithArgs("account-a", "sender").WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+	mock.ExpectQuery("SELECT owner_user_id::text FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"owner_user_id"}).AddRow("user-a"))
+	mock.ExpectQuery("FROM box_messages m JOIN box_tasks").WillReturnRows(emptyBoxMessageRows())
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(restartTestBoxRow())
+	mock.ExpectQuery("FROM box_notes").WithArgs("account-a", "box-1", "contact:0123456789ab").WillReturnRows(sqlmock.NewRows([]string{"id", "user_id", "body", "created_at"}))
+	mock.ExpectQuery("FROM box_messages m JOIN box_tasks").WillReturnRows(emptyBoxMessageRows())
+	mock.ExpectQuery("SELECT COALESCE\\(metadata").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"session", "agent"}).AddRow("opencode-one", "opencode"))
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(restartTestBoxRow())
+	mock.ExpectQuery("FROM box_tasks t JOIN logical_boxes b").WithArgs("account-a", "box-1").WillReturnRows(restartTestTaskRow("task-1", "active"))
+	mock.ExpectQuery("FROM logical_boxes").WithArgs("account-a", "box-1").WillReturnRows(restartTestBoxRow())
+	mock.ExpectQuery("SELECT COALESCE\\(fencing_token").WithArgs("account-a", "box-1").WillReturnRows(sqlmock.NewRows([]string{"fencing_token"}).AddRow("fence"))
+	messageID, reason, err := server.routeContactMessage(context.Background(), "account-a", v1.BoxTask{ID: "source-task", LogicalBoxID: "sender"}, boxruntime.ChatEvent{ID: "0123456789ab", Contact: "mascot", Text: "hello"})
+	if err == nil || !strings.Contains(err.Error(), "worker command preparation failed") || messageID != "" || reason != "" {
+		t.Fatalf("messageID=%q reason=%q err=%v", messageID, reason, err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

@@ -173,7 +173,11 @@ func (s *Server) agentChatReadyHandler(w http.ResponseWriter, r *http.Request, p
 				return
 			}
 			if request.Event.Kind == "contact" {
-				messageID, reason := s.routeContactMessage(r.Context(), p.AccountID, task, *request.Event)
+				messageID, reason, err := s.routeContactMessage(r.Context(), p.AccountID, task, *request.Event)
+				if err != nil {
+					writeError(w, http.StatusServiceUnavailable, fmt.Errorf("contact delivery deferred; queued event will be retried"))
+					return
+				}
 				writeJSON(w, http.StatusOK, map[string]any{"stored": true, "delivered": reason == "", "messageId": messageID, "reason": reason})
 				return
 			}

@@ -222,10 +222,10 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 		text = encodeBoxMessageQuestion(v1.BoxMessageQuestion{Text: event.Question.Text, Choices: event.Question.Choices, Multiple: event.Question.Multiple})
 	case "contact":
 		// An inter-box message is never an answer to the sender's own chat. It is
-		// routed into the contact's conversation and acknowledged here; a rejection
-		// is recorded on the sender's task instead of blocking the outbox.
-		messageID, _ := s.routeContactMessage(ctx, accountID, task, event)
-		return messageID, false, nil
+		// routed into the contact's conversation. Permanent rejections are
+		// acknowledged; transient delivery errors leave the event in the outbox.
+		messageID, _, err := s.routeContactMessage(ctx, accountID, task, event)
+		return messageID, false, err
 	default:
 		return "", false, fmt.Errorf("unknown structured chat event")
 	}
@@ -363,16 +363,14 @@ func (s *Server) drainAgentChat(ctx context.Context, accountID string, task v1.B
 }
 
 // routeContactMessage delivers one inter-box message into the contact's live
-// conversation through the same path the owner chat uses, so there is still a
-// single native conversation per task. It never returns an error: a rejected or
-// undeliverable contact message is recorded on the sender's task and
-// acknowledged, so one bad recipient cannot head-of-line block the sender's
-// entire chat outbox.
-func (s *Server) routeContactMessage(ctx context.Context, accountID string, task v1.BoxTask, event boxruntime.ChatEvent) (string, string) {
+// conversation through the same path the owner chat uses. Permanent policy or
+// state rejections are reported and acknowledged. A transient worker or store
+// failure leaves the sender's durable event unacknowledged for later retry.
+func (s *Server) routeContactMessage(ctx context.Context, accountID string, task v1.BoxTask, event boxruntime.ChatEvent) (string, string, error) {
 	text := strings.TrimSpace(event.Text)
-	reject := func(reason string) (string, string) {
+	reject := func(reason string) (string, string, error) {
 		_ = s.Store.AppendSystemBoxMessage(ctx, accountID, task.ID, "Contact message rejected: "+reason, "contact-reject:"+event.ID)
-		return "", reason
+		return "", reason, nil
 	}
 	if text == "" || len(text) > 100_000 {
 		return reject("message must contain between 1 and 100000 bytes")
@@ -393,15 +391,15 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 	}
 	var ownerID string
 	if err := s.Store.DB.QueryRowContext(ctx, `SELECT owner_user_id::text FROM logical_boxes WHERE account_id=$1 AND id=$2`, accountID, targetID).Scan(&ownerID); err != nil {
-		return reject("contact box owner unavailable")
+		return "", "", fmt.Errorf("contact box owner unavailable: %w", err)
 	}
 	body := text
 	principal := Principal{AccountID: accountID, UserID: ownerID, Role: "owner", Subject: "box:" + task.LogicalBoxID}
 	key := "contact:" + event.ID
 	if _, existing, found, err := s.Store.DirectBoxMessageByKey(ctx, principal, targetID, key); err == nil && found {
-		return existing.ID, ""
+		return existing.ID, "", nil
 	} else if err != nil {
-		return reject("delivery lookup failed")
+		return "", "", fmt.Errorf("contact delivery lookup failed: %w", err)
 	}
 	images, err := s.Store.saveContactImages(ctx, accountID, event.Images)
 	if err != nil {
@@ -412,7 +410,7 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 		for _, image := range images {
 			_, _ = s.Store.DB.ExecContext(ctx, `DELETE FROM run_once_images i WHERE i.id=$1 AND i.account_id=$2 AND NOT EXISTS (SELECT 1 FROM box_message_images j WHERE j.image_id=i.id AND j.account_id=i.account_id)`, image.ID, accountID)
 		}
-		return reject("delivery failed: " + err.Error())
+		return "", "", fmt.Errorf("contact delivery deferred: %w", err)
 	}
 	_, _ = s.Store.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.message','logical_box',$3,jsonb_build_object('sender_box_id',$4::text,'event_id',$5::text))`, accountID, ownerID, targetID, task.LogicalBoxID, event.ID)
 	senderName := task.BoxName
@@ -420,7 +418,7 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 		senderName = "Agent box"
 	}
 	s.pushContactMessage(accountID, task.LogicalBoxID, senderName, targetID, targetName, text)
-	return result.Message.ID, ""
+	return result.Message.ID, "", nil
 }
 
 // claimChatDrain rate limits outbox polling per task so that an open chat

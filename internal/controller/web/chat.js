@@ -1019,10 +1019,11 @@
 
  /* ---------- chat list ---------- */
  const fmtTime=value=>{const d=new Date(value),now=new Date(),sameDay=d.toDateString()===now.toDateString();if(sameDay)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(d.toDateString()===yesterday.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'2-digit',month:'2-digit',year:'numeric'})};
+ const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
  function summarize(id){
   const box=boxes.get(id);if(!box)return;
   const ms=box.messages||[];
-  box.last=ms[ms.length-1];
+  box.last=ms.findLast(m=>!isMCPActivity(m));
   box.streaming=ms.some(m=>m.state==='streaming');
   const agent=(box.defaultAgent||'').toLowerCase();
   const last=box.last;
@@ -1034,7 +1035,7 @@
   // currently in flight in this page. Persisted state takes over after it lands.
   box.processing=agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy));
   const marker=seen[id]?new Date(seen[id]).getTime():0;
-  box.unread=ms.filter(m=>m.direction!=='user'&&new Date(m.createdAt).getTime()>marker).length;
+  box.unread=ms.filter(m=>m.direction!=='user'&&!isMCPActivity(m)&&new Date(m.createdAt).getTime()>marker).length;
  }
  function previewText(m){
   if(!m)return 'No messages yet';
@@ -1352,7 +1353,6 @@
   actions.append(replyShortcut,toggle,menu);row.append(meta,actions);
   return row;
  }
- const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
  function mcpCallDisplay(message){
   const parts=message.text.slice(6).split(' · '),tool=parts[0],contact=parts.includes('contact');
   let label=tool.replaceAll('_',' ');
@@ -1610,7 +1610,7 @@
  function applySeen(id){
   const box=boxes.get(id);if(!box)return;
   if(id===selected&&(!stickToBottom||!conversationVisible())){summarize(id);return}
-  const last=(box.messages||[]).filter(m=>m.direction!=='user').pop();
+  const last=(box.messages||[]).filter(m=>m.direction!=='user'&&!isMCPActivity(m)).pop();
   if(last&&new Date(last.createdAt).getTime()>(seen[id]?new Date(seen[id]).getTime():0)){seen[id]=last.createdAt;saveSeen()}
   summarize(id);
  }
@@ -1660,7 +1660,7 @@
   applyBusyState(box,history);
   const latest=history.messages||[];
   const known=box.historyLoaded?new Set((box.messages||[]).map(message=>message.id)):null;
-  const hasNewReply=known&&latest.some(message=>message.direction!=='user'&&!known.has(message.id));
+  const hasNewReply=known&&latest.some(message=>message.direction!=='user'&&!isMCPActivity(message)&&!known.has(message.id));
   if(box.historyLoaded){
    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
    for(const message of latest)merged.set(message.id,message);

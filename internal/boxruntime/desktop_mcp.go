@@ -175,10 +175,10 @@ func sendDesktopContactEvent(ctx context.Context, assignment string, event ChatE
 	}
 	err = desktopAgentAPI(ctx, assignment, http.MethodPost, "/v1/agent-desktop/chat-ready", map[string]any{"session": session, "event": event}, &result)
 	if err != nil || !result.Stored {
-		return "", fmt.Errorf("contact message queued but delivery is unconfirmed; check the sender conversation before retrying")
+		return "Contact message queued locally. Delivery is unconfirmed and will retry automatically while this box is running.", nil
 	}
 	if err := AckChatEvent(os.Getenv("HOME"), session, event.ID); err != nil {
-		return "", fmt.Errorf("contact delivery recorded but local confirmation failed; check the conversation before retrying")
+		return "Contact delivery recorded. Local confirmation is pending; retries use the same message ID.", nil
 	}
 	if !result.Delivered {
 		return "", fmt.Errorf("contact message rejected: %s", result.Reason)
