@@ -93,6 +93,30 @@ test('mobile Enter inserts a newline and opening a chat does not focus the compo
  });
 });
 
+test('composer keeps a 16px field radius as it grows and joins the reply preview',async()=>{
+ await withChat(async(browser,base)=>{
+  for(const width of [390,1000]){
+   const p=await browser.newPage();
+   await p.setViewport({width,height:844,isMobile:width<600,hasTouch:width<600});
+   await p.goto(base+'/chat#box=builder');
+   await p.waitForSelector('#chat-messages .msg.user');
+   const radius=()=>p.$eval('#chat-composer',element=>getComputedStyle(element).borderTopLeftRadius);
+   assert.equal(await radius(),'16px',`${width}px single-line composer`);
+   await p.type('#chat-input','first line\nsecond line\nthird line');
+   assert.equal(await radius(),'16px',`${width}px multiline composer`);
+   await p.$eval('#chat-messages .msg.user .msg-reply',button=>button.click());
+   const joined=await p.evaluate(()=>{
+    const preview=document.querySelector('#reply-preview');
+    const composer=document.querySelector('#chat-composer');
+    return {bottomRadius:getComputedStyle(preview).borderBottomLeftRadius,topRadius:getComputedStyle(composer).borderTopLeftRadius,
+      gap:Math.round(composer.getBoundingClientRect().top-preview.getBoundingClientRect().bottom)};
+   });
+   assert.deepEqual(joined,{bottomRadius:'0px',topRadius:'0px',gap:0},`${width}px reply preview joins composer`);
+   await p.close();
+  }
+ });
+});
+
 // A hardware keyboard keeps Enter-to-send and Shift+Enter for a newline.
 test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
  await withChat(async(browser,base,posts)=>{

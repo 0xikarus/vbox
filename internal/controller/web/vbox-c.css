@@ -835,7 +835,9 @@ details>summary::before{display:inline-block}
 #chat-empty .empty-copy p{color:var(--vb-ink-soft)}
 #chat-loading{background:color-mix(in srgb,var(--vb-bg) 72%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);color:var(--vb-ink-soft)}
 #chat-banner{background:var(--vb-warn-soft);color:var(--vb-warn-text);border:0;border-radius:var(--r-pill);padding:.45rem .85rem;margin:.35rem auto;font-size:.78rem}
-#reply-preview{background:var(--vb-surface-2);border:1px solid var(--vb-line);border-left:3px solid var(--vb-accent);border-radius:var(--r-surface);margin:.3rem .9rem}
+#reply-preview{background:var(--vb-surface-2);border:1px solid var(--vb-line);border-left:3px solid var(--vb-accent);border-radius:var(--r-md);margin:.3rem .9rem 0}
+#chat-conversation:has(#reply-preview:not([hidden])) #reply-preview{border-bottom-left-radius:0;border-bottom-right-radius:0}
+#chat-conversation:has(#reply-preview:not([hidden])) #chat-composer{margin-top:0;border-top:0;border-top-left-radius:0;border-top-right-radius:0}
 #reply-preview strong{color:var(--vb-accent-text)}
 #chat-image-drafts{background:transparent;border:0;padding:.4rem .9rem}
 #chat-image-drafts .draft img,#chat-image-drafts .draft-open video{border-radius:var(--r-control)}
@@ -1643,6 +1645,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-banner:empty{display:none}
 /* no accent stripes on notices */
 #reply-preview{border-left:0}
+@media(max-width:600px){#reply-preview{margin:0}}
 #chat-shell .flash,.flash.error{border-left:0}
 
 @media(min-width:601px){
@@ -1685,6 +1688,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #thread-panel{background:var(--vb-bg-soft);border-left:1px solid var(--vb-line)}
 #thread-panel header{background:transparent;border-bottom:1px solid var(--vb-line)}
 #thread-composer{background:var(--vb-surface);border-top:1px solid var(--vb-line)}
+#thread-composer textarea{border-radius:var(--r-md)}
 #forward-menu{background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg);padding:.3rem}
 #chat-loading{color:var(--vb-ink-soft)}
 #chat-loading p{font-size:.8rem}
