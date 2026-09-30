@@ -1531,10 +1531,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
  button,.chat-action,.chat-header-identity,#chat-entries li,.msg{transition:background .15s var(--vb-ease),border-color .15s var(--vb-ease),transform .12s var(--vb-ease)}
  button:active:not(:disabled),.chat-action:active,.chat-header-identity:active{transform:scale(.97)}
  #chat-entries li:active{background:var(--vb-surface-2)}
- #chat-messages .msg{animation:vb-msg-in .22s var(--vb-ease) both}
- @keyframes vb-msg-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
- .unread{animation:vb-pop .24s var(--vb-ease) both}
- @keyframes vb-pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
 }
 ::view-transition-old(root),::view-transition-new(root){animation-duration:.2s}
 
