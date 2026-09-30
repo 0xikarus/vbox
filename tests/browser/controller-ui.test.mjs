@@ -92,7 +92,7 @@ test('management views expose box placement and keep details easy to close',asyn
   };
  });
  await page.goto(base+'/#boxes');await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('railway-worker-01'));
+ await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('slot 1'));
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'boxes');
  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / boxes');
  assert.equal(await page.title(),'vbox / boxes');
@@ -398,9 +398,9 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('4 workers · 6 compute slots'));
- assert.match(await page.$eval('[data-box-id="dedicated"] .box-placement',e=>e.textContent),/Dedicated · railway-worker-01 · slot 1/);
- assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · shared-01 · slot 1/);
- assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · shared-02 · slot 1/);
+ assert.match(await page.$eval('[data-box-id="dedicated"] .box-placement',e=>e.textContent),/Dedicated · slot 1/);
+ assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · slot 1/);
+ assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · slot 1/);
  assert.match(await page.$eval('#provider-list',e=>e.textContent),/Host RAM used5\.0 GiB \/ 8\.0 GiB/);
  const selected=JSON.stringify({provider:'shared-worker',providerCredential:'shared-02'});
  await page.click('#create details summary');

@@ -19,6 +19,13 @@ function boxPlacement(box){
  const fleet=fleetSnapshots.find(f=>f.provider===box.provider&&f.providerCredential===(box.providerCredential||''));
  const slot=fleet?.slots?.find(s=>s.id===box.slotId);
  const worker=box.provider==='shared-worker'?(box.providerCredential||'shared worker'):(slot?.serviceName||slot?.serviceId||box.slotId);
+ return (box.provider==='shared-worker'?'Shared':'Dedicated')+' · slot '+(slot?.ordinal??box.slotId);
+}
+function boxPlacementFull(box){
+ if(!box.slotId)return 'Unassigned';
+ const fleet=fleetSnapshots.find(f=>f.provider===box.provider&&f.providerCredential===(box.providerCredential||''));
+ const slot=fleet?.slots?.find(s=>s.id===box.slotId);
+ const worker=box.provider==='shared-worker'?(box.providerCredential||'shared worker'):(slot?.serviceName||slot?.serviceId||box.slotId);
  return (box.provider==='shared-worker'?'Shared':'Dedicated')+' · '+worker+' · slot '+(slot?.ordinal??box.slotId);
 }
 function updateBoxPlacements(boxes){
@@ -272,7 +279,7 @@ function renderBoxDetail(){
  const state=node('span',box.state);state.className='box-detail-state';state.dataset.state=box.state;
  const intro=node('div');intro.className='box-detail-intro';intro.append(state,node('span',box.defaultAgent||'shell'));
  const facts=node('dl');facts.className='box-detail-facts';
- for(const [label,value] of [['Worker / slot',boxPlacement(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Last instructions sync',boxDetailSyncLabel()],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
+ for(const [label,value] of [['Worker / slot',boxPlacementFull(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Last instructions sync',boxDetailSyncLabel()],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
  if(box.failureReason){const error=node('p',box.failureReason);error.className='box-detail-error';root.append(error)}
  const actions=node('div');actions.className='box-detail-actions';
  const workspace=node('a','Open workspace');workspace.href='/boxes/'+encodeURIComponent(box.id);
