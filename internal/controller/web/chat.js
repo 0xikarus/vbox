@@ -1000,7 +1000,7 @@
    const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));toggle.append(bell);
    const badge=document.createElement('span');badge.className='unread';toggle.append(badge);
    toggle.onclick=()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()};
-   const menu=document.createElement('button');menu.type='button';menu.className='section-menu';menu.textContent='⋯';menu.setAttribute('aria-label','Actions for '+label);
+   const menu=document.createElement('button');menu.type='button';menu.className='section-menu header-menu-button';menu.textContent='⋯';menu.setAttribute('aria-label','Actions for '+label);
    menu.onclick=event=>{event.stopPropagation();const rect=menu.getBoundingClientRect();openSectionMenu(id,{x:rect.right,y:rect.bottom})};
    row.oncontextmenu=event=>{event.preventDefault();openSectionMenu(id,{x:event.clientX,y:event.clientY})};
    bindLongPress(row,(x,y)=>openSectionMenu(id,{x,y}),450);bindPressFeedback(row);
@@ -1011,8 +1011,8 @@
   toggle.setAttribute('aria-expanded',String(!sectionCollapsed[id]));
   toggle.setAttribute('aria-label',label+', '+unread+' unread, '+(muted?'muted, ':'')+(sectionCollapsed[id]?'collapsed':'expanded'));
   row.querySelector('.mute-bell').hidden=!muted;
-  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(unread);badge.setAttribute('aria-label',unread+' unread');
-  badge.classList.toggle('muted',muted||!!unread&&!alertUnread);
+  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(alertUnread||unread);badge.setAttribute('aria-label',unread+' unread'+(alertUnread&&alertUnread!==unread?', '+alertUnread+' unmuted':''));
+  badge.classList.toggle('muted',!alertUnread);
   return row;
  }
  bindChatDrop(pinnedGroup,moveChatToPinned);
@@ -1025,10 +1025,9 @@
    const toggle=document.createElement('button');toggle.type='button';toggle.className='chat-folder-toggle';
    const arrow=mk('span','▸');arrow.className='chat-folder-arrow';arrow.setAttribute('aria-hidden','true');
    const name=mk('span',group.name);name.className='chat-folder-name';
-   const amount=mk('span');amount.className='chat-folder-count';
    const badge=mk('span');badge.className='unread';badge.hidden=true;
-   toggle.append(arrow,name,amount,badge);toggle.onclick=()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()};
-   const menu=document.createElement('button');menu.type='button';menu.className='chat-folder-menu';menu.textContent='⋯';menu.setAttribute('aria-label','Group actions for '+group.name);
+   toggle.append(arrow,name,badge);toggle.onclick=()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()};
+   const menu=document.createElement('button');menu.type='button';menu.className='chat-folder-menu header-menu-button';menu.textContent='⋯';menu.setAttribute('aria-label','Group actions for '+group.name);
    menu.onclick=event=>{event.stopPropagation();const rect=menu.getBoundingClientRect();openGroupMenu(group.id,{x:rect.right,y:rect.bottom})};
    row.oncontextmenu=event=>{event.preventDefault();openGroupMenu(group.id,{x:event.clientX,y:event.clientY})};
    bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openGroupMenu(group.id,{x,y})},450);bindPressFeedback(row);
@@ -1037,13 +1036,12 @@
   }
   row.querySelector('.chat-folder-name').textContent=group.name;
   row.querySelector('.chat-folder-menu').setAttribute('aria-label','Group actions for '+group.name);
-  row.querySelector('.chat-folder-count').textContent=String(count);
   row.querySelector('.chat-folder-arrow').textContent=group.collapsed?'▸':'▾';
   const toggle=row.querySelector('.chat-folder-toggle');toggle.setAttribute('aria-expanded',String(!group.collapsed));
   toggle.setAttribute('aria-label',group.name+', '+count+' chats, '+unread+' new messages, '+(group.collapsed?'collapsed':'expanded'));
-  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(unread);badge.setAttribute('aria-label',unread+' unread');
-  const muted=activeMute('group:'+group.id);badge.classList.toggle('muted',muted||!!unread&&!alertUnread);
-  let bell=row.querySelector('.mute-bell');if(!bell){bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));row.querySelector('.chat-folder-toggle').insertBefore(bell,row.querySelector('.chat-folder-count'))}bell.hidden=!muted;
+  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(alertUnread||unread);badge.setAttribute('aria-label',unread+' unread'+(alertUnread&&alertUnread!==unread?', '+alertUnread+' unmuted':''));
+  const muted=activeMute('group:'+group.id);badge.classList.toggle('muted',!alertUnread);
+  let bell=row.querySelector('.mute-bell');if(!bell){bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));row.querySelector('.chat-folder-toggle').insertBefore(bell,badge)}bell.hidden=!muted;
   return row;
  }
  function renderRows(){
@@ -1146,7 +1144,7 @@
   }
   if(otherPairs.length){
    const unread=otherPairs.reduce((sum,row)=>sum+pairUnreadCount(pairs.get(row.dataset.pairKey)),0);
-   desired.push(sectionHeader(pairGroup,'pairs','Box conversations',unread));
+   desired.push(sectionHeader(pairGroup,'pairs','Box conversations',unread,0));
    if(!sectionCollapsed.pairs||filter)desired.push(...otherPairs);
   }
   const emptyEl=$('#chat-list-empty'),isEmpty=desired.length===0;emptyEl.hidden=!isEmpty;
@@ -2890,8 +2888,16 @@
  }
  const IC={pin:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 4h6l-3 3 3 3h-2l-2 7-5-5-4 4-1-1 4-4-5-5 7-2z"/></svg>',info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>',wake:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',restart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>',trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'};
  const bellOffIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 3.2A6 6 0 0 1 18 9v4l2 3H7M4.9 4.9A6 6 0 0 0 6 9v4l-2 3h12M10 20h4M2 2l20 20"/></svg>';
- function showActionMenu(items,point){
+ const menuIcons={
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 9 7 7 7-7"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 15 7-7 7 7"/></svg>',
+  pencil:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+ };
+ function showActionMenu(items,point,title=''){
   rowMenu.replaceChildren();
+  if(title){const heading=document.createElement('div');heading.className='row-menu-heading';const handle=document.createElement('span');handle.className='row-menu-handle';handle.setAttribute('aria-hidden','true');const name=document.createElement('span');name.textContent=title;heading.append(handle,name);rowMenu.append(heading)}
   let lastDanger=false;
   for(const item of items){
    const danger=item[2]==='danger';
@@ -2905,7 +2911,7 @@
     b.classList.add('row-submenu-toggle');b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls','row-group-options');
     const arrow=mk('span','›');arrow.className='row-submenu-arrow';arrow.setAttribute('aria-hidden','true');b.append(arrow);
     const submenu=document.createElement('div');submenu.id='row-group-options';submenu.className='row-submenu';submenu.setAttribute('role','menu');submenu.hidden=true;
-    for(const [label,action] of item[3]){const option=document.createElement('button');option.type='button';option.setAttribute('role','menuitem');option.textContent=label;option.onclick=()=>{closeRowMenu();action()};submenu.append(option)}
+    for(const [label,action] of item[3]){const option=document.createElement('button');option.type='button';option.setAttribute('role','menuitem');const icon=document.createElement('span');icon.className='menu-icon';icon.innerHTML=item[0]==='Mute'?menuIcons.clock:IC.folder;option.append(icon,document.createTextNode(label));option.onclick=()=>{closeRowMenu();action()};submenu.append(option)}
     b.onclick=()=>{submenu.hidden=!submenu.hidden;b.setAttribute('aria-expanded',String(!submenu.hidden));positionRowMenu(point)};
     rowMenu.append(b,submenu);
    }else{b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
@@ -2920,7 +2926,7 @@
  const muteDurationOptions=key=>[['1 hour',()=>setChatMute(key,60)],['8 hours',()=>setChatMute(key,480)],['1 week',()=>setChatMute(key,10080)],['Always',()=>setChatMute(key,null)]];
  function muteMenuItem(key){
   if(key==='section:pairs'||key.startsWith('pair:'))return ['Always muted',()=>{},null,null,bellOffIcon,true];
-  return activeMute(key)?['Unmute',()=>setChatMute(key,false),null,null,bellOffIcon]:['Mute',null,null,muteDurationOptions(key),bellOffIcon];
+  return activeMute(key)?['Unmute',()=>setChatMute(key,false),null,null,menuIcons.bell]:['Mute',null,null,muteDurationOptions(key),bellOffIcon];
  }
  function openRowMenu({box,pair},point){
   const key=box?pinKey('box',box.id):pinKey('pair',pairKey(pair));
@@ -2940,28 +2946,28 @@
    if(box.state==='running')items.push(['Hibernate box',()=>void hibernateBox(box),null,null,IC.moon],['Restart box…',()=>void restartBox(box),null,null,IC.restart]);
    items.push(['Delete box…',()=>openDeleteModal(box),'danger',null,IC.trash]);
   }
-  showActionMenu(items,point);
+  showActionMenu(items,point,box?box.name:pair.boxAName+' ↔ '+pair.boxBName);
  }
  function openGroupMenu(id,point){
   const group=chatGroups.find(group=>group.id===id);if(!group)return;
   showActionMenu([
    muteMenuItem('group:'+id),
-   [group.collapsed?'Expand group':'Collapse group',()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()}],
-   ['Rename group…',()=>openGroupDialog(group)],
+   [group.collapsed?'Expand group':'Collapse group',()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()},null,null,group.collapsed?menuIcons.down:menuIcons.up],
+   ['Rename group…',()=>openGroupDialog(group),null,null,menuIcons.pencil],
    ['Delete group…',()=>{
     if(!confirm('Delete group "'+group.name+'"? Its chats will move to Other chats.'))return;
     chatGroups.splice(chatGroups.indexOf(group),1);
     for(const [key,groupId] of chatGroupMembers)if(groupId===id)chatGroupMembers.delete(key);
     chatMutes.delete('group:'+id);
     groupNodes.delete(id);saveChatGroups();renderRows();
-   },'danger'],
-  ],point);
+   },'danger',null,IC.trash],
+  ],point,group.name);
  }
  function openSectionMenu(id,point){
   showActionMenu([
    muteMenuItem('section:'+id),
-   [sectionCollapsed[id]?'Expand':'Collapse',()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()}],
-  ],point);
+   [sectionCollapsed[id]?'Expand':'Collapse',()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()},null,null,sectionCollapsed[id]?menuIcons.down:menuIcons.up],
+  ],point,id==='pinned'?'Pinned':id==='boxes'?'Chats':'Box conversations');
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});
