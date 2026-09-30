@@ -698,13 +698,14 @@
  function renderInspectScreen(box){
   if(!inspectOpen||selected!==box.id)return;
   const frame=$('#inspect-screen .inspect-screen-frame'),img=$('#inspect-screen-image');
-  if(box.state==='running'&&!avatarFresh(avatarCache.get(box.id),box.state))avatarRefresh(box);
+  if(box.state==='running'&&!(heroBox===box.id&&heroEnabled===false)&&!avatarFresh(avatarCache.get(box.id),box.state))avatarRefresh(box);
   const cached=avatarCache.get(box.id);
-  const url=box.state==='running'&&cached?.state===box.state?cached.url:null;
+  const url=box.state==='running'&&cached?.state===box.state&&!(heroBox===box.id&&heroEnabled===false)?cached.url:null;
   frame.classList.toggle('has-shot',!!url);
   img.hidden=!url;
   if(url){if(img.src!==url){img.onerror=()=>avatarImageFailed(box,url);img.src=url}}
   else img.removeAttribute('src');
+  syncInspectHero(box);
  }
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
@@ -2028,6 +2029,7 @@
   const box=boxes.get(boxID);if(!box)return;
   if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it from the workspace first.';return}
   takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
+  stopInspectHero();
   takeover.hidden=false;takeoverKind=kind;
   $('#takeover-title').textContent=box.name+' · '+(kind==='desktop'?'Desktop':'TMUX');
   takeoverStatus.textContent=kind==='desktop'?'Starting desktop…':'Opening session…';
@@ -2048,8 +2050,10 @@
   await openTakeover(kind,box.id);
  }
  function closeTakeover(){
+  const wasOpen=!takeover.hidden;
   takeoverDispose?.();takeoverDispose=null;takeoverKind='';
   takeover.hidden=true;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
+  if(wasOpen&&inspectOpen)renderInspect();
  }
  $('#chat-control').onclick=()=>void openTakeover('desktop');
  $('#takeover-close').onclick=closeTakeover;
@@ -2087,6 +2091,57 @@
  /* ---------- inspect drawer: ping / activity per box ---------- */
  const inspect=$('#inspect');
  let inspectOpen=false,inspectTimer,controllerPing=null;
+ const heroFrame=$('#inspect-screen .inspect-screen-frame'),heroLive=$('#inspect-screen-live'),heroControls=document.createElement('div');
+ let heroBox='',heroEnabled=null,heroChecking=false,heroConnected=false,heroDispose=null,heroRetry=null,heroDelay=1000,heroEpoch=0,heroFailure='';
+ function heroVisible(box){return inspectOpen&&!inspect.hidden&&!document.hidden&&takeover.hidden&&selected===box.id&&box.state==='running'}
+ function heroAppearance(){
+  heroFrame.classList.toggle('is-live',heroConnected);
+  $('#inspect-screen-live-chip').hidden=!heroConnected;
+  const hint=$('#inspect-screen-hint');hint.hidden=!heroFailure||heroConnected;hint.textContent=heroFailure;
+  $('#inspect-screen-off').textContent=heroEnabled===false?'Desktop off':heroChecking?'Connecting desktop…':heroFailure?'Desktop unavailable':'Desktop off';
+ }
+ function stopInspectHero(){
+  heroEpoch++;clearTimeout(heroRetry);heroRetry=null;
+  const dispose=heroDispose;heroDispose=null;dispose?.();heroLive.replaceChildren();heroControls.replaceChildren();
+  heroBox='';heroEnabled=null;heroChecking=false;heroConnected=false;heroDelay=1000;heroFailure='';heroAppearance();
+ }
+ function retryInspectHero(box,checkEnabled=false){
+  if(!heroVisible(box)||heroBox!==box.id)return;
+  heroConnected=false;heroChecking=false;heroFailure='Live view unavailable · showing preview';heroAppearance();
+  clearTimeout(heroRetry);const delay=heroDelay;heroDelay=Math.min(30000,heroDelay*2);
+  heroRetry=setTimeout(()=>{heroRetry=null;if(!heroVisible(box)||heroBox!==box.id)return;if(checkEnabled){heroBox='';syncInspectHero(box)}else connectInspectHero(box)},delay);
+ }
+ function connectInspectHero(box){
+  if(!heroVisible(box)||heroBox!==box.id||heroDispose)return;
+  heroChecking=true;heroFailure='';heroAppearance();
+  const epoch=heroEpoch;
+  try{
+   heroDispose=openWorkspaceDesktop(box.id,status=>{
+    if(epoch!==heroEpoch||heroBox!==box.id)return;
+    heroChecking=false;heroConnected=status==='Desktop connected';
+    if(heroConnected){heroDelay=1000;heroFailure=''}
+    heroAppearance();
+   },{root:heroLive,controls:heroControls,viewOnly:true,onDisconnect:()=>{
+    if(epoch!==heroEpoch||heroBox!==box.id)return;
+    const dispose=heroDispose;heroDispose=null;dispose?.();heroLive.replaceChildren();retryInspectHero(box);
+   }});
+  }catch{heroDispose=null;heroLive.replaceChildren();retryInspectHero(box)}
+ }
+ async function syncInspectHero(box){
+  if(!heroVisible(box)){if(heroBox)stopInspectHero();return}
+  if(heroBox===box.id&&(heroChecking||heroDispose||heroRetry||heroEnabled===false))return;
+  stopInspectHero();heroBox=box.id;heroChecking=true;heroAppearance();
+  const epoch=heroEpoch;
+  try{
+   const state=await api(boxPath(box.id)+'/desktop');
+   if(epoch!==heroEpoch||!heroVisible(box)||heroBox!==box.id)return;
+   heroChecking=false;heroEnabled=state?.enabled===true;heroAppearance();
+   if(heroEnabled)connectInspectHero(box);else renderInspectScreen(box);
+  }catch{
+   if(epoch!==heroEpoch||heroBox!==box.id)return;
+   retryInspectHero(box,true);
+  }
+ }
  let inspectProfilesFor='',inspectProfileCache=null;
  let inspectWorkerKey='',inspectWorker=null;
  let inspectInstructionsFor='',inspectInstructions=null,inspectInstructionsRequest=0;
@@ -2290,7 +2345,7 @@
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#chat-header-open')?.addEventListener('click',()=>$('#chat-info').click());
  $('#chat-terminal')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('tmux',b.id)});
  $('#inspect-screen')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('desktop',b.id)});
@@ -2925,7 +2980,7 @@
  }
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(!document.hidden){clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages()}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden)stopInspectHero();else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();if(inspectOpen)renderInspect()}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
@@ -2944,7 +2999,7 @@
   usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
   $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';$('#chat-usage').hidden=true;owner=false;
   closeTakeover();
-  inspectOpen=false;inspect.hidden=true;clearInterval(inspectTimer);controllerPing=null;
+  inspectOpen=false;inspect.hidden=true;stopInspectHero();clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
   releaseImageURLs();
   for(const cached of avatarCache.values()){if(cached?.url)URL.revokeObjectURL(cached.url)}

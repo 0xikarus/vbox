@@ -2398,3 +2398,17 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg.swiping .swipe-reply-hint,#thread-messages .msg.swiping .swipe-reply-hint{color:var(--vb-accent)}
 #chat-messages .msg pre,#thread-messages .msg pre{touch-action:auto}
 @media(prefers-reduced-motion:reduce){#chat-messages .msg.swipe-returning,#thread-messages .msg.swipe-returning,#chat-messages .msg .swipe-reply-hint,#thread-messages .msg .swipe-reply-hint{transition:none}}
+
+/* Details hero: one contained live screen with a full-strength mascot. */
+#inspect-screen .inspect-screen-frame{cursor:pointer}
+#inspect-screen #inspect-screen-live{position:absolute;inset:0;z-index:1;opacity:0;pointer-events:none;overflow:hidden;background:#0b0b0d}
+#inspect-screen .inspect-screen-frame.is-live #inspect-screen-live{opacity:1}
+#inspect-screen .inspect-screen-frame.is-live #inspect-screen-image{opacity:0}
+#inspect-screen #inspect-screen-live>div,#inspect-screen #inspect-screen-live canvas{width:100%!important;height:100%!important;object-fit:contain}
+#inspect-screen #inspect-screen-live-chip{position:absolute;left:.55rem;top:.55rem;z-index:3;padding:.18rem .45rem;border-radius:var(--r-pill);background:#101714d9;color:#ecfff4;font-size:.65rem;font-weight:750;letter-spacing:.03em;box-shadow:0 2px 6px #0004}
+#inspect-screen #inspect-screen-live-chip::before{content:'';display:inline-block;width:.38rem;height:.38rem;margin-right:.32rem;vertical-align:middle;border-radius:50%;background:#35d58a}
+#inspect-screen #inspect-screen-hint{position:absolute;left:.45rem;bottom:.45rem;z-index:3;max-width:calc(100% - 7.5rem);padding:.2rem .4rem;border-radius:.3rem;background:#101714d9;color:#f0f3f6;font-size:.62rem;line-height:1.25;text-align:left}
+#inspect-screen #inspect-avatar{right:.2rem;bottom:.1rem;width:8rem;height:8rem;overflow:visible;filter:drop-shadow(0 3px 7px #0007)}
+#inspect-screen #inspect-avatar::before{content:'';position:absolute;inset:10%;border:3px solid var(--vb-surface);border-radius:50%;box-shadow:0 2px 8px #0005;background:var(--vb-surface);z-index:-1}
+#inspect-screen #inspect-avatar .inspect-hero-mascot,#inspect-screen #inspect-avatar .inspect-hero-mascot svg{opacity:1!important}
+@media(max-width:1099px){#inspect-screen #inspect-avatar{width:6.25rem;height:6.25rem}}
