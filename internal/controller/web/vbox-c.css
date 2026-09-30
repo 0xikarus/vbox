@@ -2354,3 +2354,16 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg:not(.meta-block).tail .meta{position:absolute!important;right:9px!important;bottom:5px!important;left:auto!important;top:auto!important;float:none!important;display:inline-flex!important;align-items:center;gap:.25rem;width:auto!important;margin:0!important;justify-content:flex-end!important}
 #chat-messages .msg.meta-block .meta{position:static!important;display:flex!important;justify-content:flex-end!important;width:100%!important;margin:.18rem 0 0!important;float:none!important;right:auto!important;bottom:auto!important;left:auto!important;top:auto!important}
 #chat-messages .msg:not(.tail) .meta{display:none!important}
+
+/* ══ item 2 · mobile terminal toolbar: scrollable strip + pinned keys ════ */
+@media(max-width:760px){
+ .workspace-body .terminal-keys{display:flex!important;align-items:center;flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;max-width:100%;gap:2px;padding:3px;padding-right:0;scrollbar-width:none}
+ .workspace-body .terminal-keys::-webkit-scrollbar{display:none}
+ .workspace-body .terminal-keys button{flex:0 0 auto}
+ .workspace-body .terminal-keys .term-key-pinned{position:sticky;z-index:3;width:44px;height:44px;min-width:44px;min-height:44px;padding:0;display:grid;place-items:center;background:var(--vb-bg-soft);color:var(--vb-ink)}
+ .workspace-body .terminal-keys .term-key-pinned svg{width:1.15rem;height:1.15rem}
+ .workspace-body .terminal-keys .term-key-pinned:not(:last-child){right:44px}
+ .workspace-body .terminal-keys .term-key-pinned:last-child{right:0}
+ .workspace-body .terminal-keys .term-key-pinned:not(:last-child)::before{content:'';position:absolute;top:0;bottom:0;left:-10px;width:10px;background:linear-gradient(90deg,transparent,var(--vb-bg-soft));pointer-events:none}
+ .workspace-body .terminal-keys .term-key-pinned:not(:last-child)::after{content:'';position:absolute;top:25%;bottom:25%;right:-1px;width:1px;background:var(--vb-line);pointer-events:none}
+}
