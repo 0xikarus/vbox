@@ -71,6 +71,19 @@ try{
    assert.deepEqual(errors,[]);
   }finally{await page.close()}
  });
+ await test('comet body motion finishes without decorative particles or trails',async()=>{
+  const {page,errors}=await openPage();
+  try{
+   const result=await page.evaluate(async()=>{
+    const host=document.createElement('div');host.style.cssText='width:120px;height:120px';document.querySelector('#stage').append(host);
+    const mascot=new VBoxMascot.Mascot(host,'comet');
+    const decorations=host.querySelectorAll('.vbox-mascot-particles,.vbox-mascot-comet,.vbox-mascot-speed-lines').length;
+    const completed=await mascot.comet();
+    const value={decorations,completed,bodySegments:mascot.motionSegments.body,active:mascot.cometActive};mascot.destroy();return value;
+   });
+   assert.equal(result.decorations,0);assert.equal(result.completed,true);assert.ok(result.bodySegments>0);assert.equal(result.active,false);assert.deepEqual(errors,[]);
+  }finally{await page.close()}
+ });
  await test('destroy releases timers, controls, observation, and instance work',async()=>{
   const {page,errors}=await openPage();
   try{
