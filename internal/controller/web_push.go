@@ -325,7 +325,9 @@ func (s *Server) pushAgentReply(ctx context.Context, accountID string, task v1.B
 	muted, err := s.isBoxPushMuted(ctx, accountID, task.LogicalBoxID)
 	if err != nil {
 		s.Logger.Warn("could not check chat mute before push", "error", err)
-	} else if muted {
+		return
+	}
+	if muted {
 		return
 	}
 	probe := v1.BoxMessage{Text: text}

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,6 +44,15 @@ func TestMutedAgentReplyDoesNotSchedulePush(t *testing.T) {
 	mock.ExpectQuery("SELECT members_json,mutes_json,pins_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnRows(
 		sqlmock.NewRows([]string{"members_json", "mutes_json", "pins_json"}).AddRow([]byte(`{}`), []byte(`{"box:box-1":null}`), []byte(`[]`)))
 	(&Server{Store: store}).pushAgentReply(context.Background(), "account-a", v1.BoxTask{LogicalBoxID: "box-1", BoxName: "Builder"}, "Completed")
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPushLookupFailureDoesNotBypassMute(t *testing.T) {
+	store, mock := testStore(t)
+	mock.ExpectQuery("SELECT members_json,mutes_json,pins_json FROM chat_sidebar_layouts").WithArgs("account-a").WillReturnError(sql.ErrConnDone)
+	(&Server{Store: store, Logger: slog.Default()}).pushAgentReply(context.Background(), "account-a", v1.BoxTask{LogicalBoxID: "box-1"}, "Completed")
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
 	}

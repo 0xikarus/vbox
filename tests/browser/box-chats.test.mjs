@@ -474,6 +474,13 @@ test('individual and Chats section mutes persist and suppress navigation alerts'
   assert.equal(await page.$eval('[data-box-id="'+b+'"] .unread',node=>node.classList.contains('muted')),true);
   assert.equal(await page.$eval('#chat-back-count',node=>node.hidden),true);
   assert.ok(new Date(savedLayout().mutes['section:boxes']).getTime()>Date.now());
+  await page.$eval('[data-section="boxes"] .section-menu',node=>node.click());
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Collapse').click());
+  assert.equal(await page.$('[data-box-id="'+b+'"]'),null,'collapsed section hides its rows');
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('[data-section="boxes"] .section-toggle')?.getAttribute('aria-expanded')==='false');
+  await page.click('[data-section="boxes"] .section-toggle');
+  await page.waitForSelector('[data-box-id="'+b+'"]');
   await page.close();
  },{boxMessagesB});
 });
