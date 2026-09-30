@@ -187,9 +187,20 @@
    default:return '';
   }
  }
- function makeTraits(seedStr){return {...window.VBoxMascot.traits(seedStr),seed:String(seedStr)}}
- const MACHINE=window.VBoxMascot.MACHINE;
- class Mascot extends window.VBoxMascot.Mascot{}
+ // Keep chat usable if either mascot asset fails to load.
+ const Mascot=window.VBoxMascot?.Mascot||class{
+  constructor(host,id,{appearance={}}={}){
+   this.state='idle';this.expression=null;this.signal='idle';
+   const colors=['#965FF0','#378EF5','#24C77A','#23C5BB','#FF8A38','#F5BC29','#F253B1','#F25564','#BE67E8','#60C989','#FF6F59','#1B2A41'];
+   let hash=2166136261;for(const char of String(id)){hash^=char.charCodeAt(0);hash=Math.imul(hash,16777619)}hash>>>=0;
+   const color=appearance.color||colors[hash%37===0?11:Math.floor(hash/8)%11];
+   host.innerHTML='<svg class="vbox-mascot" viewBox="0 0 100 100" role="img" aria-label="idle mascot"><circle cx="50" cy="50" r="39" fill="'+color+'"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="#fff"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="#fff"/></svg>';
+   this.svg=host.querySelector('svg');this.svg.__vboxMascot=this;
+  }
+  jump(mood,expression=null,signal=null){this.state=mood;this.expression=expression;this.signal=signal||'idle';return true}
+  comet(){return Promise.resolve()}
+  destroy(){this.svg?.remove()}
+ };
  function boxMascotPose(box){
   if(box.state==='hibernated')return ['sleeping','sleeping','sleeping'];
   if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','failed'];

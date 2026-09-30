@@ -83,7 +83,19 @@
  const animate=global.Motion?.animate;
  const smooth=t=>t*t*(3-2*t);
  const smoother=t=>t*t*t*(t*(t*6-15)+10);
- if(!animate)throw Error('motion.js must load before mascot.js');
+ if(!animate){
+  const staticSvg=(seed,mood='idle',mini=false,appearance={})=>`<svg class="vbox-mascot${mini?' vbox-mascot-mini':''}" viewBox="0 0 100 100" role="img" aria-label="${mood} mascot" data-mood="${mood}"><circle class="vbox-mascot-shape" cx="50" cy="50" r="39" fill="${appearance.color||traits(seed).color}"/><ellipse class="vbox-mascot-eye left" cx="37" cy="55" rx="4.5" ry="9.5" fill="#fff"/><ellipse class="vbox-mascot-eye right" cx="63" cy="55" rx="4.5" ry="9.5" fill="#fff"/></svg>`;
+  class StaticMascot{
+   constructor(host,seed,{appearance={}}={}){this.host=host;this.seed=seed;this.appearance=appearance;this.state='idle';this.signal='idle';this.expression=null;this.dead=false;host.innerHTML=staticSvg(seed,'idle',false,appearance);this.svg=host.querySelector('svg');this.svg.__vboxMascot=this}
+   jump(mood,expression=null,signal=null){if(this.dead)return false;this.state=mood;this.signal=signal||mood;this.expression=expression;this.svg.dataset.mood=mood;this.svg.setAttribute('aria-label',mood+' mascot');this.svg.querySelector('.vbox-mascot-shape').setAttribute('fill',mood==='sleeping'?'#a9a8bf':mood==='angry'?'#FF6F59':this.appearance.color||traits(this.seed).color);for(const eye of this.svg.querySelectorAll('.vbox-mascot-eye')){eye.setAttribute('rx',mood==='sleeping'?'5':'4.5');eye.setAttribute('ry',mood==='sleeping'?'1.5':mood==='waking'?'12':'9.5')}return true}
+   send(event){const next=MACHINE[this.state]?.[event];return next?this.jump(next):false}
+   showExpression(expression){return this.jump(this.state,expression,this.signal)}
+   comet(){return Promise.resolve()}
+   destroy(){if(this.dead)return;this.dead=true;this.svg.remove()}
+  }
+  global.VBoxMascot={Mascot:StaticMascot,svg:staticSvg,miniSVG:(seed,mood='idle')=>staticSvg(seed,mood,true),setReducedMotion:()=>{},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
+  return;
+ }
  const active=new Set();let forcedReduce=false;
  const reduce=matchMedia('(prefers-reduced-motion: reduce)');
  const observer=typeof IntersectionObserver==='undefined'?null:new IntersectionObserver(entries=>{for(const entry of entries){const mascot=entry.target.__vboxMascot;if(mascot){mascot.visible=entry.isIntersecting;mascot.updateVisibility()}}});

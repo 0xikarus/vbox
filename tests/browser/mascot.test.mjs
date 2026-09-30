@@ -140,4 +140,33 @@ try{
    assert.equal(result.frames,96);assert.deepEqual(result.failures,[]);assert.deepEqual(errors,[]);
   }finally{await page.close()}
  });
+ await test('chat renders static mascots when mascot and Motion assets fail to load',async()=>{
+  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'codex'};
+  let serveMascot=false;
+  const chatServer=http.createServer(async(req,res)=>{
+   const path=new URL(req.url,'http://localhost').pathname;
+   if(path==='/motion.js'||path==='/mascot.js'&&!serveMascot){res.statusCode=503;return res.end('unavailable')}
+   if(path==='/v1/whoami'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({role:'owner'}))}
+   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify([box]))}
+   if(path.startsWith('/v1/')){res.setHeader('Content-Type','application/json');return res.end(path.endsWith('/messages')||path==='/v1/tool-presets'?'[]':'{}')}
+   const name=path==='/chat'?'chat.html':path.slice(1);
+   if(!/^[\w.-]+$/.test(name)){res.statusCode=404;return res.end()}
+   try{const body=await readFile(root+name);res.setHeader('Content-Type',name.endsWith('.js')?'text/javascript':name.endsWith('.css')?'text/css':name.endsWith('.html')?'text/html':'application/octet-stream');res.end(body)}
+   catch{res.statusCode=404;res.end()}
+  });
+  await new Promise(resolve=>chatServer.listen(0,'127.0.0.1',resolve));
+  const errors=[];
+  try{
+   for(const mascotAvailable of [false,true]){
+    serveMascot=mascotAvailable;
+    const page=await browser.newPage();page.on('pageerror',error=>errors.push(error.message));
+    try{
+     await page.goto('http://127.0.0.1:'+chatServer.address().port+'/chat');
+     await page.waitForSelector('[data-avatar="builder"] svg.vbox-mascot');
+     const result=await page.evaluate(()=>{const avatar=document.querySelector('[data-avatar="builder"] svg');if(window.VBoxMascot)avatar.__vboxMascot.jump('sleeping');return {name:document.querySelector('#chat-entries')?.textContent,shape:!!avatar.querySelector('circle'),eyes:avatar.querySelectorAll('ellipse').length,eyeHeight:avatar.querySelector('ellipse')?.getAttribute('ry'),motion:!!window.Motion,mascot:!!window.VBoxMascot}});
+     assert.match(result.name,/Builder/);assert.equal(result.shape,true);assert.equal(result.eyes,2);assert.equal(result.motion,false);assert.equal(result.mascot,mascotAvailable);if(mascotAvailable)assert.equal(result.eyeHeight,'1.5');assert.deepEqual(errors,[]);
+    }finally{await page.close()}
+   }
+  }finally{await new Promise(resolve=>chatServer.close(resolve))}
+ });
 }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
