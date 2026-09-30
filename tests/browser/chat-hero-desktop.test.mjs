@@ -99,7 +99,7 @@ test('Details hero keeps one view-only desktop, tears it down, and preserves its
   if(frames){await mobile.waitForFunction(()=>document.querySelector('#inspect-screen .inspect-screen-frame').classList.contains('is-live'),{timeout:3000});await gifShots(16)}
   await mobile.$eval('#inspect-screen',screen=>screen.click());
   await mobile.waitForFunction(()=>!document.querySelector('#takeover').hidden);
-  assert.equal(await mobile.$eval('#takeover-title',title=>title.textContent),'builder · Desktop','the hero opens the full desktop takeover');
+  assert.equal(await mobile.$eval('#takeover-title',title=>title.textContent),'builder','the hero opens the full desktop takeover for this box');
   await mobile.close();
  }finally{await browser.close();await new Promise(done=>server.close(done))}
 });

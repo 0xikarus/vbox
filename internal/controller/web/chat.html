@@ -197,13 +197,13 @@
  <div id="takeover-backdrop"></div>
  <section id="takeover-card" role="dialog" aria-modal="true">
   <header id="takeover-header">
-   <strong id="takeover-title"></strong>
-   <div id="takeover-tabs"><button type="button" data-kind="desktop">Desktop</button><button type="button" data-kind="terminal">TMUX</button></div>
-   <span class="spacer"></span><span id="takeover-status"></span>
    <button id="takeover-close" type="button" aria-label="Close" title="Close">×</button>
+   <div id="takeover-heading"><strong id="takeover-title"></strong><span id="takeover-status" role="status"></span></div>
+   <div id="takeover-tabs" role="group" aria-label="Viewer mode"><button type="button" data-kind="desktop">Desktop</button><button type="button" data-kind="terminal">TMUX</button></div>
   </header>
-  <div id="takeover-controls"></div>
   <div id="takeover-screen"></div>
+  <div id="takeover-type" hidden></div>
+  <div id="takeover-controls"><div id="takeover-scroll"></div><div id="takeover-pinned"></div></div>
  </section>
 </div>
 

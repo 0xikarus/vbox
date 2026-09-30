@@ -55,6 +55,24 @@ test('workspace clipboard controls move text through TMUX and Desktop',async()=>
    await page.click(selector);
    assert.match(await page.$eval('#status',element=>element.textContent),/blocked by the browser/);
   }
+  await page.evaluate(()=>{
+   closeDesk();closeTerm();
+   const scroll=document.createElement('div'),pinned=document.createElement('div'),typeBar=document.createElement('div');
+   scroll.id='viewer-scroll';pinned.id='viewer-pinned';typeBar.id='viewer-type';document.body.append(scroll,pinned,typeBar);
+   window.closeViewerDesk=openWorkspaceDesktop('test',()=>{},{root:document.querySelector('#desktop-screen'),controls:scroll,typeBar});
+  });
+  assert.equal(await page.$eval('#viewer-type',node=>node.hidden),true,'desktop keyboard field starts closed');
+  await page.click('#viewer-scroll [data-action="type"]');
+  await page.type('#viewer-type input','Hi');
+  await page.click('#viewer-type button');
+  assert.deepEqual(await page.evaluate(()=>fakeRFB.keys.map(args=>args[0])),[72,105],'Type sends text when submitted');
+  await page.evaluate(()=>{
+   closeViewerDesk();
+   window.closeViewerTerm=openWorkspaceTerminal('test','shell',()=>{},{root:document.querySelector('#terminal-screen'),keys:document.querySelector('#viewer-scroll'),pinnedKeys:document.querySelector('#viewer-pinned'),autoFocus:false});
+  });
+  assert.equal(await page.$$eval('#viewer-pinned button',buttons=>buttons.length),2,'Keyboard and Fullscreen stay outside the scroll strip');
+  assert.equal(await page.$$eval('#viewer-scroll .term-key-pinned',buttons=>buttons.length),0);
+  await page.evaluate(()=>closeViewerTerm());
   assert.deepEqual(errors,[]);
  }finally{await browser.close()}
 });

@@ -2200,27 +2200,37 @@
  });
 
  /* ---------- takeover popup: VNC/TMUX control ---------- */
- const takeover=$('#takeover'),takeoverScreen=$('#takeover-screen'),takeoverControls=$('#takeover-controls'),takeoverStatus=$('#takeover-status');
+ const takeover=$('#takeover'),takeoverScreen=$('#takeover-screen'),takeoverScroll=$('#takeover-scroll'),takeoverPinned=$('#takeover-pinned'),takeoverType=$('#takeover-type'),takeoverStatus=$('#takeover-status');
  const boxViewerMetrics=new Map();
- let takeoverDispose=null,takeoverKind='';
+ let takeoverDispose=null,takeoverKind='',takeoverEpoch=0;
+ function setTakeoverStatus(message){
+  if(takeoverKind==='terminal'&&/^Connected\b/.test(message))message='TMUX '+message.toLowerCase();
+  takeoverStatus.textContent=message;
+  takeoverStatus.dataset.state=/failed|disconnected|unavailable|error/i.test(message)?'error':/connected/i.test(message)?'connected':'connecting';
+ }
  async function openTakeover(kind,boxID=selected){
   const box=boxes.get(boxID);if(!box)return;
   if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it from the workspace first.';return}
-  takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
+  kind=kind==='tmux'?'terminal':kind;
+  const epoch=++takeoverEpoch;
+  takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverScroll.replaceChildren();takeoverPinned.replaceChildren();takeoverType.replaceChildren();takeoverType.hidden=true;
   stopInspectHero();
   takeover.hidden=false;takeoverKind=kind;
-  $('#takeover-title').textContent=box.name+' · '+(kind==='desktop'?'Desktop':'TMUX');
-  takeoverStatus.textContent=kind==='desktop'?'Starting desktop…':'Opening session…';
-  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>b.classList.toggle('on',b.dataset.kind===kind));
+  takeoverScreen.classList.toggle('is-terminal',kind==='terminal');
+  $('#takeover-title').textContent=box.name;
+  setTakeoverStatus(kind==='desktop'?'Connecting to desktop…':'Connecting to TMUX…');
+  takeover.querySelectorAll('#takeover-tabs button').forEach(b=>{const active=b.dataset.kind===kind;b.classList.toggle('on',active);b.setAttribute('aria-pressed',String(active))});
   try{
    if(kind==='desktop'){
     await ensureDesktopRunning(box);
-    takeoverDispose=openWorkspaceDesktop(box.id,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,controls:takeoverControls,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
+    if(epoch!==takeoverEpoch)return;
+    takeoverDispose=openWorkspaceDesktop(box.id,setTakeoverStatus,{root:takeoverScreen,controls:takeoverScroll,typeBar:takeoverType,onMetrics:m=>{boxViewerMetrics.set(box.id,m);renderInspect()}});
    }else{
     const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{},{agent:box.defaultAgent||'shell',reuseExisting:true});
-    takeoverDispose=openWorkspaceTerminal(box.id,s.session,msg=>{takeoverStatus.textContent=msg},{root:takeoverScreen,keys:takeoverControls,autoFocus:true,onDisconnect:()=>{takeoverStatus.textContent+=' · disconnected'}});
+    if(epoch!==takeoverEpoch)return;
+    takeoverDispose=openWorkspaceTerminal(box.id,s.session,setTakeoverStatus,{root:takeoverScreen,keys:takeoverScroll,pinnedKeys:takeoverPinned,autoFocus:true,onDisconnect:()=>setTakeoverStatus('TMUX disconnected')});
    }
-  }catch(e){takeoverStatus.textContent=e.message}
+  }catch(e){if(epoch===takeoverEpoch)setTakeoverStatus(e.message)}
  }
  async function openBoxControl(box,kind){
   hideTvPreview();
@@ -2229,8 +2239,9 @@
  }
  function closeTakeover(){
   const wasOpen=!takeover.hidden;
+  takeoverEpoch++;
   takeoverDispose?.();takeoverDispose=null;takeoverKind='';
-  takeover.hidden=true;takeoverScreen.replaceChildren();takeoverControls.replaceChildren();
+  takeover.hidden=true;takeoverScreen.replaceChildren();takeoverScroll.replaceChildren();takeoverPinned.replaceChildren();takeoverType.replaceChildren();takeoverType.hidden=true;
   if(wasOpen&&inspectOpen)renderInspect();
  }
  $('#chat-control').onclick=()=>void openTakeover('desktop');

@@ -2181,7 +2181,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 @media(max-width:600px){
  #row-menu.touch-mode{position:fixed;left:12px;right:12px;top:auto;bottom:calc(12px + env(safe-area-inset-bottom));width:auto;max-height:min(70dvh,540px);overflow-y:auto;border-radius:var(--r-bubble);padding:10px;background:var(--vb-elevated)}
  #row-menu.touch-mode .row-menu-heading{display:flex;flex-direction:column;align-items:center;gap:8px;min-height:43px;padding:0 8px 8px;color:var(--vb-ink-soft);font-size:13px;font-weight:600}
- #row-menu.touch-mode .row-menu-handle{display:block;width:36px;height:4px;border-radius:var(--r-pill);background:var(--vb-line-strong)}
+#row-menu.touch-mode .row-menu-handle{display:block;width:36px;height:4px;border-radius:var(--r-pill);background:var(--vb-line-strong)}
  #row-menu.touch-mode button{min-height:44px;font-size:14px}
  #row-menu.touch-mode .row-submenu{margin:0 0 6px 12px;padding-left:8px;border-left:1px solid var(--vb-line)}
 }
@@ -2600,3 +2600,45 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #inspect-runtime-rows dd.copy-value svg{width:14px;height:14px;flex:none;color:var(--vb-ink-soft)}
 #inspect-memory-settings input,#inspect-memory-settings button{box-sizing:border-box;height:44px;min-height:44px;border-radius:var(--r-control)}
 #inspect-memory-settings button{border-color:var(--vb-ink);background:var(--vb-ink);color:var(--vb-bg)}
+
+/* Full-height desktop and TMUX viewer. The bottom controls never wrap. */
+#takeover[hidden]{display:none}
+#takeover-card{box-sizing:border-box;width:min(1200px,calc(100vw - 32px));height:min(820px,calc(100dvh - 48px));max-height:none;padding:0;overflow:hidden;border:1px solid var(--vb-line);border-radius:var(--r-bubble);background:var(--vb-surface)}
+#takeover-header{box-sizing:border-box;display:flex;align-items:center;gap:8px;flex:none;height:56px;min-height:56px;padding:0 12px;background:var(--vb-surface);border-bottom:1px solid var(--vb-line)}
+#takeover-header #takeover-close{order:0;display:grid;place-items:center;flex:none;width:44px;height:44px;min-width:44px;padding:0;border:0;border-radius:var(--r-control);background:none;color:var(--vb-ink);font:400 28px/1 var(--vb-font)}
+#takeover-heading{order:1;display:flex;flex-direction:column;justify-content:center;gap:2px;flex:1 1 0;min-width:0;overflow:hidden}
+#takeover-title{display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vb-ink);font:600 16px/1.2 var(--vb-font)}
+#takeover-status,#takeover-status.is-error{position:static;display:block;width:auto;height:auto;margin:0;overflow:hidden;clip:auto;white-space:nowrap;text-overflow:ellipsis;color:var(--vb-ink-soft);font:400 12px/1.2 var(--vb-font)}
+#takeover-status::before{content:'●';margin-right:5px;color:var(--vb-ink-faint)}
+#takeover-status[data-state="connected"]::before{color:var(--vb-ok)}
+#takeover-status[data-state="error"]::before{color:var(--vb-danger)}
+#takeover-tabs{order:2;box-sizing:border-box;display:flex;align-items:center;gap:2px;flex:none;height:32px;margin-left:auto;padding:3px;border-radius:var(--r-pill);background:var(--vb-surface-2)}
+#takeover-tabs button,#takeover-tabs button.on{box-sizing:border-box;min-width:62px;height:26px;margin:0;padding:0 8px;border:0;border-radius:var(--r-pill);background:none;color:var(--vb-ink-soft);font:600 12px/1 var(--vb-font);white-space:nowrap}
+#takeover-tabs button.on{background:var(--vb-surface);color:var(--vb-ink);box-shadow:var(--vb-shadow)}
+#takeover-screen{display:flex;align-items:center;justify-content:center;flex:1 1 auto;min-height:0;min-width:0;margin:0;border:0;border-radius:0;overflow:hidden;background:var(--vb-code);box-shadow:none}
+#takeover-screen>div{width:100%;height:100%;min-width:0;min-height:0}
+#takeover-screen .xterm{box-sizing:border-box;width:100%;height:100%;padding:8px 12px;background:var(--vb-terminal-bg)}
+#takeover-type{box-sizing:border-box;display:flex;align-items:center;gap:8px;flex:none;padding:8px 12px 0;background:var(--vb-surface)}
+#takeover-type[hidden]{display:none}
+#takeover-type input{box-sizing:border-box;flex:1;min-width:0;height:44px;padding:0 14px;border:1px solid var(--vb-line-strong);border-radius:var(--r-surface);background:var(--vb-bg-soft);color:var(--vb-ink);font:inherit}
+#takeover-type button{display:grid;place-items:center;flex:none;width:44px;height:44px;border:0;border-radius:var(--r-pill);background:var(--vb-ink);color:var(--vb-bg);font:600 18px/1 var(--vb-font)}
+#takeover-controls{box-sizing:border-box;display:flex;flex-wrap:nowrap;align-items:center;gap:0;flex:none;width:100%;min-width:0;min-height:60px;margin:0;padding:0 8px;border:0;border-top:1px solid var(--vb-line);border-radius:0;background:var(--vb-surface)}
+#takeover-scroll{display:flex;align-items:center;gap:8px;flex:1 1 auto;min-width:0;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;white-space:nowrap;touch-action:pan-x;mask-image:linear-gradient(to right,transparent,#000 10px,#000 calc(100% - 10px),transparent)}
+#takeover-scroll::-webkit-scrollbar{display:none}
+#takeover-controls button{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;min-height:44px;margin:0;padding:0 12px;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-surface-2);color:var(--vb-ink);font:600 12px/1 var(--vb-font);white-space:nowrap}
+#takeover-controls button:hover{background:var(--vb-bg-soft);color:var(--vb-ink)}
+#takeover-controls button svg{width:17px;height:17px;flex:none}
+#takeover-pinned{display:flex;align-items:center;gap:6px;flex:none;margin-left:6px;padding-left:8px;border-left:1px solid var(--vb-line)}
+#takeover-pinned:empty{display:none}
+#takeover-pinned button{width:44px;min-width:44px;padding:0}
+@media(max-width:600px){
+ #takeover{align-items:stretch;justify-content:stretch}
+ #takeover-backdrop{display:none}
+ #takeover-card{width:100vw;height:100dvh;max-width:none;max-height:none;border:0;border-radius:0}
+ #takeover-header{height:calc(56px + env(safe-area-inset-top));min-height:calc(56px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 8px 0 4px}
+ #takeover-tabs button,#takeover-tabs button.on{min-width:56px;padding:0 5px}
+ #takeover-controls{padding-bottom:env(safe-area-inset-bottom)}
+ #takeover-screen .xterm{padding:8px}
+ /* noVNC sets canvas margin inline; this override anchors portrait viewing to the header. */
+ #takeover-screen:not(.is-terminal) canvas{margin:0 auto !important}
+}
