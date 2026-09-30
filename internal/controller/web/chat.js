@@ -3027,6 +3027,7 @@ let usagePending=null,usageGeneration=0;
   const status=$('#preset-status');status.textContent='';
   $('#presets-modal').hidden=false;$('.presets-card')?.classList.remove('show-editor');
   try{applyInstructionPresets(await api('/v1/instruction-presets'))}catch(e){status.textContent=e.message}
+  selectedPresetName='';updatePresetControls();
  }
  function startNewPreset(){
   selectedPresetName='';renderPresetList();updatePresetControls();
