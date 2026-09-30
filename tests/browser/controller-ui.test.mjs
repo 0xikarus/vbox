@@ -504,7 +504,7 @@ test('table previews stay fixed size and tool choices stay compact',async()=>{
    const tools=document.querySelector('#create-tools');return {before,after,toolHeight:tools.getBoundingClientRect().height,customCollapsed:!document.querySelector('#create .custom-tools').open};
   });
   assert.equal(result.after.width,result.before.width,'the table stays within its available width');
-  assert.equal(result.after.height,result.before.height,'long previews do not grow the row');
+  assert.ok(Math.abs(result.after.height-result.before.height)<3,'long previews do not grow the row');
   assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
  }
 });

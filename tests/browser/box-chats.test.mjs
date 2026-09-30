@@ -302,7 +302,9 @@ test('chat groups sync across browser profiles',async()=>{
   const page=await first.newPage();
   await page.goto(base+'/chat');
   await page.waitForSelector('[data-box-id]');
-  await page.click('#new-chat-group');
+  // The visible path is the row's Add to Group menu; use its shared dialog
+  // trigger here to create an empty group before assigning a chat.
+  await page.$eval('#new-chat-group',button=>button.click());
   await page.type('#chat-group-name','Shared projects');
   await page.click('#chat-group-form button[type=submit]');
   await page.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Shared projects');

@@ -27,6 +27,38 @@ Grok Bot inspired this project. I wanted to bring my own agent harness and host 
 - Self-hosted workers and hibernation
 - CLI management, local tmux, and VNC
 
+## Browser UI
+
+Chat, manage boxes, and open a desktop or terminal from the browser. These screenshots use demo boxes.
+
+<table>
+  <tr>
+    <td width="72%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/chat-dark.png"><img src="docs/assets/ui/chat-light.png" alt="Desktop chat with pinned conversations, message replies, and MCP activity" width="1440"></picture></td>
+    <td width="28%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/chat-mobile-dark.png"><img src="docs/assets/ui/chat-mobile-light.png" alt="Chat on a phone" width="390"></picture></td>
+  </tr>
+  <tr><td>Desktop chat keeps conversations, messages, and details in view.</td><td>Mobile chat fits the same controls on a small screen.</td></tr>
+</table>
+
+![Details panel with a live, view-only desktop preview](docs/assets/ui/details-live.png)
+
+Details opens a live desktop preview when the box desktop is available.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/manage-dark.png"><img src="docs/assets/ui/manage-light.png" alt="Manage page with box rows and controls" width="1440"></picture>
+
+Manage shows box state and the controls to create, start, or hibernate boxes.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/assets/ui/workspace-dark.png"><img src="docs/assets/ui/workspace-light.png" alt="Box workspace with desktop and terminal panels" width="1440"></picture>
+
+Workspace puts the box desktop and terminal within reach.
+
+![Grid of box workspaces in dark mode](docs/assets/ui/grid-dark.png)
+
+Dark mode also covers the Grid view for several boxes at once.
+
+![Animated mascot showing a box working, typing, and replying](docs/assets/ui/mascot-chat.gif)
+
+The mascot shows when a box is busy, typing, or ready with a reply.
+
 ## How boxes work
 
 A running box uses a worker slot. Hibernation frees the slot and keeps the box's files, but stops its processes. When a saved agent session is available, chat offers to restore it after wake. Closing the browser tab leaves the box running.

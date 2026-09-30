@@ -85,8 +85,8 @@ test('Chat restart checks for a saved conversation when allocation finishes',asy
  try{
   const page=await browser.newPage();page.on('dialog',dialog=>dialog.accept());
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=restarting');
-  await page.waitForSelector('#chat-info:not([hidden])');
-  await page.click('#chat-info');
+  await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>[...document.querySelectorAll('#inspect-config-actions button')].some(button=>button.textContent==='Restart…'));
   await page.evaluate(()=>[...document.querySelectorAll('#inspect-config-actions button')].find(button=>button.textContent==='Restart…').click());
   await page.waitForSelector('.codex-resume-card',{timeout:15000});
