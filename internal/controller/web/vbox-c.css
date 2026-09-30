@@ -2386,3 +2386,19 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 /* current destination marked */
 #chat-menu-sheet .menu-links a[aria-current="page"]{background:color-mix(in srgb,var(--vb-ink) 8%,transparent)!important;border-color:transparent!important;color:var(--vb-ink);font-weight:650}
 #chat-menu-sheet .menu-links a[aria-current="page"] .menu-icon{color:var(--vb-ink)}
+
+/* ══ item 4 · grid ══════════════════════════════════════════════════════ */
+/* box picker: chevron via an overlay so it themes with the tokens */
+.tile-title-field{position:relative;display:flex;flex:1 1 auto;min-width:7rem}
+.tile-title-field .tile-title-select{flex:1 1 auto;min-width:0;padding-right:1.9rem}
+.tile-title-field::after{content:'';position:absolute;right:.55rem;top:50%;transform:translateY(-50%);width:1rem;height:1rem;background:var(--vb-ink-faint);-webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center/contain no-repeat;pointer-events:none}
+/* session field: labelled, hidden while the inventory is empty */
+.tile-session-field{display:inline-flex!important;align-items:center;gap:.35rem;flex:0 1 auto;min-width:0;margin:0;color:var(--vb-ink-soft);font-size:.68rem;font-weight:650}
+.tile-session-label{white-space:nowrap;color:var(--vb-ink-faint)}
+.tile-session-field:has(.tile-session-select:empty){display:none!important}
+.tile .tile-session-select{max-width:10rem}
+/* empty tile: an "Add a box" placeholder, no idle badge */
+.tile.tile-empty{border-style:dashed;border-color:var(--vb-line-strong);background:transparent;box-shadow:none}
+.tile.tile-empty .tile-icon-btn,.tile.tile-empty .tile-controls,.tile.tile-empty .tile-session-field,.tile.tile-empty .connection-badge{display:none!important}
+.tile.tile-empty .tile-mark{opacity:.45}
+.tile.tile-empty>p[role="status"]{min-height:9rem;display:flex;align-items:center;justify-content:center;color:var(--vb-ink-soft);font-size:.82rem}

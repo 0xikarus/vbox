@@ -30,33 +30,36 @@
  async function resumeTile(t){
   const b=boxes.find(x=>x.id===t.box.value);if(!b)return;
   const phase=boxPhase(b.state);if(phase!=='stopped'&&phase!=='failed')return;
-  t.status.textContent=b.name+' · requesting compute…';
+  t.status.textContent='Requesting compute…';
   try{
    let a=await api('/v1/logical-boxes/'+encodeURIComponent(b.id)+'/allocate','POST',{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},{leaseOwner:'web'});
    const deadline=Date.now()+180000;
    while(a.state!=='ready'){
     if(['failed','cancelled'].includes(a.state))throw Error(a.failureReason||a.state);
     if(Date.now()>deadline)throw Error('Allocation still running; refresh to check again.');
-    t.status.textContent=b.name+' · '+[a.phase,a.state,a.queuePosition?'queue '+a.queuePosition:''].filter(Boolean).join(' · ');
+    t.status.textContent=[a.phase,a.state,a.queuePosition?'queue '+a.queuePosition:''].filter(Boolean).join(' · ');
     await new Promise(r=>setTimeout(r,2000));
     a=await api('/v1/allocations/'+encodeURIComponent(a.requestId));
    }
    await refresh();await t.connect();
-  }catch(e){t.status.textContent=b.name+' · '+e.message}
+  }catch(e){t.status.textContent=e.message}
  }
  function showLogin(message=''){$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
  async function api(path,method='GET',headers={},body){const r=await fetch(path,{method,credentials:'same-origin',headers,body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(30000)});if(r.status===401){stop();$('#grid-app').hidden=true;showLogin('Please log in again.');throw Error('Please log in again.')}if(!r.ok)throw Error('Controller request failed ('+r.status+'). Use Refresh or reconnect.');return r.status===204?null:r.json();}
  function stop(){epoch++;clearTimeout(timer);for(const t of tiles){t.disconnect();t.box.value='';}}
  function fill(){if($('#grid-app').hidden)return;const used=new Set(tiles.map(t=>t.box.value));for(const t of tiles){if(t.box.value)continue;const b=boxes.find(b=>b.state==='running'&&!used.has(b.id)&&(unavailable.get(b.id)||0)<=Date.now());if(b){t.box.value=b.id;used.add(b.id);void t.connect()}}tiles.forEach(picker)}
- function picker(t){const selected=t.box.value;t.box.replaceChildren(new Option('Select a box…',''));for(const b of boxes){const o=new Option(b.name+' · '+b.state,b.id);o.disabled=tiles.some(x=>x!==t&&x.box.value===b.id);t.box.add(o)}t.box.value=selected;if(t.mark)t.mark.innerHTML=blobSVG(selected||'');syncActions(t);}
+ function picker(t){const selected=t.box.value;t.box.replaceChildren(new Option('Select a box…',''));for(const b of boxes){const o=new Option(b.name+' · '+b.state,b.id);o.disabled=tiles.some(x=>x!==t&&x.box.value===b.id);t.box.add(o)}t.box.value=selected;if(t.mark)t.mark.innerHTML=blobSVG(selected||'');syncActions(t);t.element.classList.toggle('tile-empty',!selected);if(!selected)t.status.textContent='Add a box';}
  function makeTile(){
   const element=node('section');element.className='tile';const header=node('header');
   const mark=node('span');mark.className='tile-mark';mark.innerHTML=blobSVG('');mark.setAttribute('aria-hidden','true');
   const box=node('select');box.className='tile-title-select';box.setAttribute('aria-label','Box');
+  const boxField=node('span');boxField.className='tile-title-field';boxField.append(box);
   const session=node('select');session.className='tile-session-select';session.setAttribute('aria-label','Session');
+  const sessionField=node('label');sessionField.className='tile-session-field';
+  const sessionLabel=node('span','Session');sessionLabel.className='tile-session-label';sessionField.append(sessionLabel,session);
   const reconnect=node('button');reconnect.className='tile-icon-btn';reconnect.setAttribute('aria-label','Reconnect');reconnect.title='Reconnect';reconnect.innerHTML=ICON.refresh;
   const close=node('button');close.className='tile-icon-btn';close.setAttribute('aria-label','Next box');close.title='Next box';close.innerHTML=ICON.next;
-  header.append(mark,box,session,reconnect,close);
+  header.append(mark,boxField,sessionField,reconnect,close);
   const status=node('p','Select a running box.');status.setAttribute('role','status');
   const controlsBar=node('div');controlsBar.className='tile-controls';
   const desktopPanel=node('section');desktopPanel.className='viewer-panel desktop-panel';desktopPanel.hidden=true;
@@ -81,7 +84,7 @@
    desktopPanel.hidden=false;desktopControls.hidden=false;desktopStatus.hidden=false;desktopStatus.textContent='Desktop · Starting…';updateConnectionBadge(desktopBadge,{state:'connecting',ping:null});
    try{
     await api('/v1/logical-boxes/'+encodeURIComponent(b.id)+'/desktop','POST');if(ticket!==version)return;
-    disposeDesktop=openWorkspaceDesktop(b.id,message=>{if(ticket===version){desktopStatus.textContent=message;status.textContent=b.name+' · '+message}},{root:desktopScreen,controls:desktopKeys,onMetrics:metrics=>{if(ticket!==version)return;updateConnectionBadge(desktopBadge,metrics);if(metrics.state==='connected'){t.desktopActive=true;t.desktopPending=false;desktopStatus.hidden=true}else if(metrics.state==='disconnected'){t.desktopActive=false;t.desktopPending=false;desktopStatus.hidden=false;maybeDrop(ticket)}},onDisconnect:()=>{if(ticket===version){t.desktopActive=false;t.desktopPending=false;desktopStatus.hidden=false;updateConnectionBadge(desktopBadge,{state:'disconnected',ping:null});maybeDrop(ticket)}}});
+    disposeDesktop=openWorkspaceDesktop(b.id,message=>{if(ticket===version){desktopStatus.textContent=message;status.textContent=message}},{root:desktopScreen,controls:desktopKeys,onMetrics:metrics=>{if(ticket!==version)return;updateConnectionBadge(desktopBadge,metrics);if(metrics.state==='connected'){t.desktopActive=true;t.desktopPending=false;desktopStatus.hidden=true}else if(metrics.state==='disconnected'){t.desktopActive=false;t.desktopPending=false;desktopStatus.hidden=false;maybeDrop(ticket)}},onDisconnect:()=>{if(ticket===version){t.desktopActive=false;t.desktopPending=false;desktopStatus.hidden=false;updateConnectionBadge(desktopBadge,{state:'disconnected',ping:null});maybeDrop(ticket)}}});
    }catch(e){if(ticket===version){desktopStatus.textContent=e.message;desktopStatus.hidden=false;updateConnectionBadge(desktopBadge,{state:'disconnected',ping:null});t.desktopPending=false;maybeDrop(ticket)}}
   }
   async function connectTerminal(ticket,b){
@@ -96,17 +99,17 @@
   }
   const t={element,box,session,status,reconnect,mark,desktopPending:false,terminalPending:false,desktopActive:false,terminalActive:false,disconnect(){version++;terminalVersion++;disposeDesktop();disposeTerminal();disposeDesktop=()=>{};disposeTerminal=()=>{};desktopScreen.replaceChildren();terminalScreen.replaceChildren();desktopKeys.replaceChildren();keys.replaceChildren();desktopPanel.hidden=true;desktopControls.hidden=true;desktopStatus.textContent='Desktop · Checking connection…';desktopStatus.hidden=false;terminalStatus.textContent='TMUX · Select a running box.';terminalStatus.hidden=false;updateConnectionBadge(desktopBadge,{state:'idle',ping:null});updateConnectionBadge(terminalBadge,{state:'idle',ping:null});t.desktopPending=false;t.terminalPending=false;t.desktopActive=false;t.terminalActive=false;},async connect(){
    t.disconnect();const ticket=version,selected=box.value;session.replaceChildren();
-   if(!selected){status.textContent='Select a running box.';return}
-   const b=boxes.find(b=>b.id===selected);syncActions(t);if(!b||b.state!=='running'){status.textContent=(b?.state||'Unavailable')+(b?.failureReason?' · '+b.failureReason:'')+' · '+(boxPhase(b?.state)==='creating'?'being created; this tile updates automatically':'resume to attach it here');return}
-   status.textContent=b.name+' · '+b.state;t.desktopPending=true;t.terminalPending=true;
+    if(!selected){status.textContent='Add a box';return}
+    const b=boxes.find(b=>b.id===selected);syncActions(t);if(!b||b.state!=='running'){status.textContent=(b?.state||'Unavailable')+(b?.failureReason?' · '+b.failureReason:'')+' · '+(boxPhase(b?.state)==='creating'?'being created; this tile updates automatically':'resume to attach it here');return}
+    status.textContent=b.state;t.desktopPending=true;t.terminalPending=true;
    await Promise.allSettled([connectDesktop(ticket,b),connectTerminal(ticket,b)]);
   },attach(){const ticket=version,b=boxes.find(b=>b.id===box.value);terminalVersion++;const sessionTicket=terminalVersion;disposeTerminal();disposeTerminal=()=>{};terminalScreen.replaceChildren();keys.replaceChildren();t.terminalActive=false;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'connecting',ping:null});if(!b||!session.value){t.terminalPending=false;updateConnectionBadge(terminalBadge,{state:'idle',ping:null});return}t.terminalPending=true;terminalStatus.textContent='TMUX · Connecting to '+session.value+'…';
-   try{disposeTerminal=openWorkspaceTerminal(b.id,session.value,message=>{if(ticket===version&&sessionTicket===terminalVersion){terminalStatus.textContent=message;status.textContent=b.name+' · '+message}},{root:terminalScreen,keys,autoFocus:false,onMetrics:metrics=>{if(ticket!==version||sessionTicket!==terminalVersion)return;updateConnectionBadge(terminalBadge,metrics);if(metrics.state==='connected'){t.terminalActive=true;t.terminalPending=false;terminalStatus.hidden=true}else if(metrics.state==='disconnected'){t.terminalActive=false;t.terminalPending=false;terminalStatus.hidden=false;maybeDrop(ticket)}},onDisconnect:()=>{if(ticket===version&&sessionTicket===terminalVersion){t.terminalActive=false;t.terminalPending=false;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'disconnected',ping:null});maybeDrop(ticket)}}})}catch(e){terminalStatus.textContent=e.message;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'disconnected',ping:null});t.terminalPending=false;maybeDrop(ticket)}
+       try{disposeTerminal=openWorkspaceTerminal(b.id,session.value,message=>{if(ticket===version&&sessionTicket===terminalVersion){terminalStatus.textContent=message;status.textContent=message.split(' · ')[0]}},{root:terminalScreen,keys,autoFocus:false,onMetrics:metrics=>{if(ticket!==version||sessionTicket!==terminalVersion)return;updateConnectionBadge(terminalBadge,metrics);if(metrics.state==='connected'){t.terminalActive=true;t.terminalPending=false;terminalStatus.hidden=true}else if(metrics.state==='disconnected'){t.terminalActive=false;t.terminalPending=false;terminalStatus.hidden=false;maybeDrop(ticket)}},onDisconnect:()=>{if(ticket===version&&sessionTicket===terminalVersion){t.terminalActive=false;t.terminalPending=false;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'disconnected',ping:null});maybeDrop(ticket)}}})}catch(e){terminalStatus.textContent=e.message;terminalStatus.hidden=false;updateConnectionBadge(terminalBadge,{state:'disconnected',ping:null});t.terminalPending=false;maybeDrop(ticket)}
   }};
   box.onchange=()=>{t.connect();tiles.forEach(picker)};session.onchange=()=>t.attach();reconnect.onclick=()=>{const b=boxes.find(x=>x.id===box.value),phase=b?boxPhase(b.state):'';if(phase==='running')t.connect();else if(phase==='stopped'||phase==='failed')void resumeTile(t)};close.onclick=dropped;tiles.push(t);picker(t);
  }
  function layout(){const form=$('#layout'),columns=Number(form.elements.columns.value),rows=automaticLayout?Math.max(1,Math.ceil(boxes.filter(b=>b.state==='running').length/columns)):Number(form.elements.rows.value);while(tiles.length>columns*rows){const t=tiles.pop();t.disconnect();t.element.remove()}while(tiles.length<columns*rows)makeTile();$('#tiles').style.setProperty('--columns',columns);$('#tiles').style.setProperty('--rows',rows);tiles.forEach(picker);fill();}
- async function refresh(){clearTimeout(timer);const ticket=++epoch;try{const current=await api('/v1/grid-boxes');if(ticket!==epoch)return;boxes=current;$('#grid-count').textContent=boxes.filter(box=>box.state==='running').length+' running · '+boxes.length+' total';$('#error').textContent='';for(const t of tiles){const selected=t.box.value,b=boxes.find(b=>b.id===selected);if(selected&&(!b||b.state!=='running')){t.disconnect();t.box.value='';t.session.replaceChildren();t.status.textContent=b?b.name+' · '+b.state+' · not connected.':'Box removed or no longer interactive.';}picker(t)}if(automaticLayout)layout();else fill()}catch(e){if(ticket===epoch)$('#error').textContent=e.message}finally{if(ticket===epoch&&!$('#grid-app').hidden)timer=setTimeout(refresh,15000)}}
+ async function refresh(){clearTimeout(timer);const ticket=++epoch;try{const current=await api('/v1/grid-boxes');if(ticket!==epoch)return;boxes=current;$('#grid-count').textContent=boxes.filter(box=>box.state==='running').length+' running · '+boxes.length+' total';$('#error').textContent='';for(const t of tiles){const selected=t.box.value,b=boxes.find(b=>b.id===selected);if(selected&&(!b||b.state!=='running')){t.disconnect();t.box.value='';t.session.replaceChildren();t.status.textContent=b?b.state+' · not connected.':'Box removed or no longer interactive.';}picker(t)}if(automaticLayout)layout();else fill()}catch(e){if(ticket===epoch)$('#error').textContent=e.message}finally{if(ticket===epoch&&!$('#grid-app').hidden)timer=setTimeout(refresh,15000)}}
  async function enter(initial=false){try{const who=await api('/v1/whoami');workspaceNav?.setOwner(who.role==='owner');$('#login').hidden=true;$('#login-error').textContent='';$('#error').textContent='';$('#logout').hidden=false;$('#grid-app').hidden=false;if(!tiles.length)layout();await refresh()}catch(e){workspaceNav?.setOwner(false);showLogin(initial&&e.message==='Please log in again.'?'':e.message)}}
  $('#layout').onsubmit=e=>{e.preventDefault();automaticLayout=$('#layout').elements.rows.value==='auto';layout()};$('#refresh').onclick=refresh;
  $('#login').onsubmit=async e=>{e.preventDefault();$('#login-error').textContent='';try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();await enter()}catch(err){showLogin(err.message)}};
