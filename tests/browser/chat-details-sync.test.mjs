@@ -29,12 +29,13 @@ test('chat details shows the last applied instruction time and pending edits',as
   await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('changes pending'));
-  assert.match(await page.$eval('#inspect-activity-rows',el=>el.textContent),/Last instructions sync.*2026.*changes pending/);
+  assert.match(await page.$eval('#inspect-activity-rows',el=>el.textContent),/Instructions synced.*\d+ d ago.*changes pending/);
+  assert.match(await page.$eval('#inspect-activity-rows',el=>el.querySelector('[aria-label="Copy full instructions synced"]')?.title||''),/2026/);
   await page.$eval('#inspect-close',button=>button.click());
   instructions={instructions:{},pending:true};
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-activity-rows')?.textContent.includes('Never · changes pending'));
-  assert.match(await page.$eval('#inspect-activity-rows',el=>el.textContent),/Last instructions syncNever · changes pending/);
+  assert.match(await page.$eval('#inspect-activity-rows',el=>el.textContent),/Instructions syncedNever · changes pending/);
   await page.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });

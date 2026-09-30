@@ -2375,8 +2375,12 @@
   if(state.error)return 'Unavailable';
   const appliedAt=state.instructions?.appliedAt;
   const date=appliedAt?new Date(appliedAt):null;
-  const last=date&&!Number.isNaN(date.getTime())?date.toLocaleString():'Never';
+  const last=date&&!Number.isNaN(date.getTime())?fmtAgo(appliedAt):'Never';
   return last+(state.pending?' · changes pending':'');
+ }
+ function instructionSyncFull(state){
+  const date=state?.instructions?.appliedAt?new Date(state.instructions.appliedAt):null;
+  return date&&!Number.isNaN(date.getTime())?date.toLocaleString():'';
  }
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
  const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
@@ -2391,9 +2395,10 @@
    if(Array.isArray(dd)){d.classList.add('profile-lines');for(const line of dd){const span=document.createElement('span');span.textContent=line;span.title=line+' · tap to copy';span.tabIndex=0;span.setAttribute('role','button');span.setAttribute('aria-label','Copy imported profile');span.onclick=()=>void write(line);span.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write(line)}};d.append(span)}}
    else d.textContent=dd;
    if(cls)d.classList.add(cls);
+   if(!Array.isArray(dd)&&/^\d/.test(String(dd)))d.classList.add('numeric');
    const copyText=copy||(!Array.isArray(dd)&&String(dd).length>32?String(dd):'');
    if(copyText){
-    const value=d.textContent,visible=copy?dt==='Slot'&&value.includes(' · ')?value.split(' · ')[0]+' · '+shortRuntimeId(value.split(' · ').slice(1).join(' · ')):shortRuntimeId(value):value;
+    const value=d.textContent,visible=copy&&['Worker','Service ID','Slot'].includes(dt)?dt==='Slot'&&value.includes(' · ')?value.split(' · ')[0]+' · '+shortRuntimeId(value.split(' · ').slice(1).join(' · ')):shortRuntimeId(value):value;
     d.replaceChildren();const label=document.createElement('span');label.className='copy-value-text';label.textContent=visible;
     const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('fill','none');icon.setAttribute('stroke','currentColor');icon.setAttribute('stroke-width','1.9');icon.setAttribute('stroke-linecap','round');icon.setAttribute('stroke-linejoin','round');icon.setAttribute('aria-hidden','true');icon.innerHTML='<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>';
     d.append(label,icon);d.classList.add('copy-value');d.title=copyText+' · tap to copy';d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label','Copy full '+dt.toLowerCase());d.onclick=()=>void write(copyText);d.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write(copyText)}}
@@ -2449,6 +2454,8 @@
   const livePing=boxViewerMetrics.get(box.id)?.ping;
   const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
   const agent=box.defaultAgent||'shell';
+  const workerName=inspectWorker?.name||'Loading…';
+  const workerCopy=workerName==='Unknown worker'||workerName==='Loading…'?'':workerName;
   const stateText=box.state+((box.streaming||box.processing)?' · working':'');
   $('#inspect-title').textContent=box.name;
   $('#inspect-header-state').textContent=stateText;
@@ -2465,18 +2472,18 @@
   fillRows($('#inspect-runtime-rows'),[
    ['State',stateText,stateClass(box.state)],
    ['Agent',agent],
-   ...(owner?[['Imported profiles',inspectProfileCache?inspectProfileCache.error||([...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))].length?[...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))]:['None']):'Loading…']]:[]),
+   ...(owner?[['Profiles',inspectProfileCache?inspectProfileCache.error||([...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))].length?[...(inspectProfileCache.profiles||[]).map(importedProfileLabel),...(inspectProfileCache.pending||[]).map(ref=>'Queued: '+importedProfileLabel(ref))]:['None']):'Loading…']]:[]),
    ['Provider',box.provider||'—'],
-   ['Worker',inspectWorker?.name||'Loading…','',inspectWorker?.name],
+   ['Worker',workerName,workerCopy?'':'muted',workerCopy],
    ...(inspectWorker?.serviceId&&inspectWorker.serviceId!==inspectWorker.name?[['Service ID',inspectWorker.serviceId,'',inspectWorker.serviceId]]:[]),
    ['Slot',inspectWorker?.slot||'Loading…','',box.slotId],
    ['Messages',msgs.length+' total'],
   ]);
   fillRows($('#inspect-activity-rows'),[
    ['Controller ping',controllerPing==null?'—':controllerPing+' ms'],
-   ['Box ping (live VNC)',livePing!=null?livePing+' ms':'opens with the desktop popup'],
+   ['Box ping',livePing!=null?livePing+' ms':'Open Desktop to measure',livePing!=null?'':'explain'],
    ['Last agent activity',box.streaming?'streaming now…':lastAgent?fmtAgo(lastAgent.updatedAt||lastAgent.createdAt):'—'],
-   ['Last instructions sync',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null)],
+   ['Instructions synced',instructionSyncLabel(inspectInstructionsFor===box.id?inspectInstructions:null),'',instructionSyncFull(inspectInstructionsFor===box.id?inspectInstructions:null)],
    ['Waiting for agent',waiting?'since '+fmtAgo(lastUser.createdAt):'no',waiting?'alert':'ok'],
   ]);
   const attachmentRoot=$('#inspect-attachment-storage');attachmentRoot.hidden=!owner;
