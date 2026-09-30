@@ -133,7 +133,7 @@ test('workspace desktop selection, tabs, and manual fallback',async t=>{
    tools=['BlEnDeR'];enabled=true;const p=await page();await p.waitForFunction(()=>window.attaches===1&&!document.querySelector('#connect').disabled);
    assert.equal(await p.evaluate(()=>window.terminals),1);
    await p.evaluate(()=>desktopMetrics({state:'connected',ping:73}));
-   assert.match(await p.$eval('#connection-stats',e=>e.textContent),/Desktop ping: 73 ms/);
+   assert.match(await p.$eval('#connection-stats',e=>e.textContent),/Desktop ping\s*73 ms/);
    assert.equal(await p.$eval('#workspace-tabs',e=>!!e.closest('.viewer-toolbar')),true,'workspace tabs live in the viewer toolbar');
 
    assert.deepEqual(await selected(p,'#desktop-tab'),{selected:'true',panel:false});
