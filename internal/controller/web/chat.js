@@ -2384,17 +2384,19 @@
  const shortRuntimeId=value=>{const text=String(value);return text.length>20?text.slice(0,8)+'…'+text.slice(-6):text};
  const fillRows=(target,rows)=>{
   target.replaceChildren();
+  const write=async value=>{try{await navigator.clipboard.writeText(value);toast('Copied')}catch{toast('Copy is unavailable here.')}};
   for(const [dt,dd,cls,copy] of rows){
    const row=document.createElement('div'),t=document.createElement('dt'),d=document.createElement('dd');
    t.textContent=dt;
-   if(Array.isArray(dd)){d.classList.add('profile-lines');for(const line of dd){const span=document.createElement('span');span.textContent=line;span.title=line;d.append(span)}}
+   if(Array.isArray(dd)){d.classList.add('profile-lines');for(const line of dd){const span=document.createElement('span');span.textContent=line;span.title=line+' · tap to copy';span.tabIndex=0;span.setAttribute('role','button');span.setAttribute('aria-label','Copy imported profile');span.onclick=()=>void write(line);span.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write(line)}};d.append(span)}}
    else d.textContent=dd;
    if(cls)d.classList.add(cls);
-   if(copy){
-    const value=d.textContent,visible=dt==='Slot'&&value.includes(' · ')?value.split(' · ')[0]+' · '+shortRuntimeId(value.split(' · ').slice(1).join(' · ')):shortRuntimeId(value);
+   const copyText=copy||(!Array.isArray(dd)&&String(dd).length>32?String(dd):'');
+   if(copyText){
+    const value=d.textContent,visible=copy?dt==='Slot'&&value.includes(' · ')?value.split(' · ')[0]+' · '+shortRuntimeId(value.split(' · ').slice(1).join(' · ')):shortRuntimeId(value):value;
     d.replaceChildren();const label=document.createElement('span');label.className='copy-value-text';label.textContent=visible;
     const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('fill','none');icon.setAttribute('stroke','currentColor');icon.setAttribute('stroke-width','1.9');icon.setAttribute('stroke-linecap','round');icon.setAttribute('stroke-linejoin','round');icon.setAttribute('aria-hidden','true');icon.innerHTML='<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>';
-    d.append(label,icon);d.classList.add('copy-value');d.title=copy+' · tap to copy';d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label','Copy full '+dt.toLowerCase());const write=async()=>{try{await navigator.clipboard.writeText(copy);toast('Copied')}catch{toast('Copy is unavailable here.')}};d.onclick=write;d.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write()}}
+    d.append(label,icon);d.classList.add('copy-value');d.title=copyText+' · tap to copy';d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label','Copy full '+dt.toLowerCase());d.onclick=()=>void write(copyText);d.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write(copyText)}}
    }
    row.append(t,d);target.append(row);
   }
