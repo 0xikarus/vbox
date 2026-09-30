@@ -4,6 +4,11 @@ window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  const root=options.root||document.querySelector('#desktop-screen');root.replaceChildren();
  const url=new URL('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/desktop/stream',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';
  const rfb=new NoVNC.default(root,url.href);rfb.scaleViewport=true;rfb.resizeSession=false;rfb.showDotCursor=true;rfb.viewOnly=viewOnly;let closed=false;
+ // A takeover can change its stage height when the mobile keyboard opens.
+ // Recompute noVNC's proportional fit for that stage; Fit still toggles to 1:1.
+ const fitObserver=options.typeBar&&typeof ResizeObserver!=='undefined'?new ResizeObserver(()=>{if(!closed&&rfb.scaleViewport)rfb.scaleViewport=true}):null;
+ fitObserver?.observe(root);
+ requestAnimationFrame(()=>{if(!closed&&rfb.scaleViewport)rfb.scaleViewport=true});
  let latencyTimer,pendingProbe=null,probeSequence=0;
  const metrics=value=>options.onMetrics?.(value);
  function probe(){
@@ -47,7 +52,7 @@ window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  chip('Ctrl-Alt-Del',()=>rfb.sendCtrlAltDel(),'ctrl-alt-del');
  if(!typeBar){const text=document.createElement('textarea');text.rows=1;text.placeholder='Type into desktop';text.setAttribute('aria-label','Desktop keyboard input');const type=()=>{sendText(text.value);text.value=''};text.addEventListener('input',e=>{if(!e.isComposing)type()});text.addEventListener('compositionend',type);text.addEventListener('keydown',e=>{if(e.key==='Backspace'&&!text.value){e.preventDefault();rfb.sendKey(0xff08)}});controls.append(text)}
  }
- chip('Fit',()=>{rfb.scaleViewport=!rfb.scaleViewport});
+ const fitButton=chip('Fit',()=>{rfb.scaleViewport=!rfb.scaleViewport;fitButton.setAttribute('aria-pressed',String(rfb.scaleViewport))});fitButton.setAttribute('aria-pressed','true');
  chip('Fullscreen',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await root.requestFullscreen()}catch{onStatus('Fullscreen unavailable')}});
- return()=>{closed=true;clearInterval(latencyTimer);pendingProbe=null;rfb.disconnect();controls.replaceChildren();if(typeBar){typeBar.replaceChildren();typeBar.hidden=true}};
+ return()=>{closed=true;fitObserver?.disconnect();clearInterval(latencyTimer);pendingProbe=null;rfb.disconnect();controls.replaceChildren();if(typeBar){typeBar.replaceChildren();typeBar.hidden=true}};
 };

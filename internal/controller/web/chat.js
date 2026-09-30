@@ -2216,6 +2216,7 @@
   takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverScroll.replaceChildren();takeoverPinned.replaceChildren();takeoverType.replaceChildren();takeoverType.hidden=true;
   stopInspectHero();
   takeover.hidden=false;takeoverKind=kind;
+  takeoverScreen.classList.toggle('is-terminal',kind==='terminal');
   $('#takeover-title').textContent=box.name;
   setTakeoverStatus(kind==='desktop'?'Connecting to desktop…':'Connecting to TMUX…');
   takeover.querySelectorAll('#takeover-tabs button').forEach(b=>{const active=b.dataset.kind===kind;b.classList.toggle('on',active);b.setAttribute('aria-pressed',String(active))});
