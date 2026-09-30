@@ -88,6 +88,7 @@ func ServeDesktopMCPHTTP(ctx context.Context, assignment, home string) error {
 		return err
 	}
 	go runLocalHeartbeats(ctx, assignment, home, token)
+	go runLocalMCPActivity(ctx, assignment, home)
 	server := &http.Server{Handler: desktopMCPHTTPHandler(assignment, token), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
@@ -269,6 +270,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 		query.Del("vmbox_session")
 		arguments, status, err := desktopMCPArguments(request, query, name)
 		if err != nil {
+			_ = queueLocalMCPActivity(assignment, name, arguments, err)
 			writeDesktopMCPError(writer, status, err.Error())
 			return
 		}
@@ -276,16 +278,25 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 		defer cancel()
 		_, allowed, err := allowedDesktopMCPTools(ctx, assignment, resolve)
 		if err != nil {
+			_ = queueLocalMCPActivity(assignment, name, arguments, err)
 			writeDesktopMCPError(writer, http.StatusServiceUnavailable, "MCP tool policy unavailable")
 			return
 		}
 		if !allowed[name] {
+			_ = queueLocalMCPActivity(assignment, name, arguments, fmt.Errorf("MCP tool is not allowed for this box"))
 			writeDesktopMCPError(writer, http.StatusForbidden, "MCP tool is not allowed for this box")
 			return
 		}
-		if desktopMCPChatTools[name] {
+		var heartbeatRequest struct {
+			Action string `json:"action"`
+		}
+		if name == "heartbeat" {
+			_ = json.Unmarshal(arguments, &heartbeatRequest)
+		}
+		if desktopMCPChatTools[name] || (name == "heartbeat" && heartbeatRequest.Action == "start") {
 			if session == "" {
 				if session, err = soleAgentConversation(ctx); err != nil {
+					_ = queueLocalMCPActivity(assignment, name, arguments, err)
 					writeDesktopMCPError(writer, http.StatusConflict, err.Error())
 					return
 				}
@@ -293,6 +304,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 			ctx = WithChatSession(ctx, session)
 		}
 		result, err := callDesktopTool(ctx, assignment, name, arguments)
+		_ = queueLocalMCPActivity(assignment, name, arguments, err)
 		if err != nil {
 			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
 			return
@@ -308,7 +320,7 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 // facade serves the whole box from one process, so it has to say which
 // conversation rather than letting the writer infer it from its own tmux
 // session, which is the facade's own.
-var desktopMCPChatTools = map[string]bool{"set_busy": true, "chat_message": true, "chat_ask": true, "start_heartbeat": true}
+var desktopMCPChatTools = map[string]bool{"set_busy": true, "chat_message": true, "chat_ask": true}
 
 // soleAgentConversation names the box's agent conversation when there is
 // exactly one. With several, the caller has to choose: guessing would post a

@@ -157,6 +157,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/agent-desktop/contacts", s.desktopAgentAuth(s.agentContactsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/busy", s.desktopAgentAuth(s.agentBusyHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/chat-ready", s.desktopAgentAuth(s.agentChatReadyHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/tool-activity", s.desktopAgentAuth(s.agentToolActivityHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/run-budget", s.desktopAgentAuth(s.agentRunBudgetHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/run-budget/extend", s.desktopAgentAuth(s.agentRunBudgetHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/followups", s.desktopAgentAuth(s.agentFollowupHandler))

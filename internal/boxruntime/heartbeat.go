@@ -101,7 +101,7 @@ func runLocalHeartbeats(ctx context.Context, assignment, home, token string) {
 		_ = advanceLocalHeartbeat(ctx, home, time.Now(),
 			func(ctx context.Context) (bool, error) {
 				allowed, err := desktopAgentToolPolicy(ctx, assignment)
-				return allowed["start_heartbeat"], err
+				return allowed["heartbeat"], err
 			},
 			func(ctx context.Context, state localHeartbeat, text, messageID string) error {
 				return postLocalHeartbeat(ctx, assignment, token, state.Session, text, messageID)

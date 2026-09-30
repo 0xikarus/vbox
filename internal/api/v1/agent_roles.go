@@ -18,7 +18,7 @@ var BasicAgentMCPTools = []string{"get_contacts", "get_run_budget", "get_thread_
 var ComputerAgentMCPTools = []string{"take_screenshot", "capture_window", "move_mouse", "click_mouse", "drag_mouse", "scroll_mouse", "type_text", "press_keys"}
 
 var OptionalAgentMCPTools = []string{
-	"start_heartbeat", "stop_heartbeat",
+	"heartbeat",
 	"list_agent_boxes", "get_agent_box", "get_agent_box_screenshot", "create_agent_box", "get_agent_box_configs", "get_available_workers", "set_agent_box_tags", "restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context", "delete_agent_box",
 	"secret_request", "generate_password", "type_secret", "take_screenshot", "capture_window", "move_mouse", "click_mouse",
 	"drag_mouse", "scroll_mouse", "type_text", "press_keys",
@@ -37,6 +37,8 @@ var RetiredCoordinationMCPTools = map[string]bool{
 // without continuing to advertise the old names.
 func CanonicalAgentMCPToolName(name string) string {
 	switch name {
+	case "start_heartbeat", "stop_heartbeat":
+		return "heartbeat"
 	case "secret_ensure":
 		return "generate_password"
 	case "typeSecret":

@@ -86,22 +86,27 @@ func TestLocalHeartbeatCountOneOmitsRemainingSuffix(t *testing.T) {
 	}
 }
 
-func TestHeartbeatMCPToolsStartAndStopLocalTimer(t *testing.T) {
+func TestHeartbeatMCPToolStartsAndStopsLocalTimer(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "managed-one")
-	if _, err := callDesktopTool(context.Background(), "assignment", "start_heartbeat", json.RawMessage(`{"intervalMinutes":5}`)); err != nil {
+	if _, err := callDesktopTool(context.Background(), "assignment", "heartbeat", json.RawMessage(`{"action":"start","intervalMinutes":5}`)); err != nil {
 		t.Fatal(err)
 	}
 	state, err := readLocalHeartbeat(home)
 	if err != nil || state == nil || state.TicksLeft != 1 || state.Session != "managed-one" {
 		t.Fatalf("state=%+v err=%v", state, err)
 	}
-	if _, err := callDesktopTool(context.Background(), "assignment", "stop_heartbeat", json.RawMessage(`{}`)); err != nil {
+	if _, err := callDesktopTool(context.Background(), "assignment", "heartbeat", json.RawMessage(`{"action":"stop"}`)); err != nil {
 		t.Fatal(err)
 	}
 	state, err = readLocalHeartbeat(home)
 	if err != nil || state != nil {
 		t.Fatalf("stopped state=%+v err=%v", state, err)
+	}
+	for _, args := range []string{`{"action":"start","intervalMinutes":4}`, `{"action":"stop","count":2}`, `{"action":"pause"}`} {
+		if _, err := callDesktopTool(context.Background(), "assignment", "heartbeat", json.RawMessage(args)); err == nil {
+			t.Fatalf("accepted invalid heartbeat arguments %s", args)
+		}
 	}
 }

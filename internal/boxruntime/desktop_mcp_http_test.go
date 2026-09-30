@@ -400,6 +400,23 @@ func TestDesktopMCPHTTPNamesTheConversationForChatTools(t *testing.T) {
 	}
 }
 
+func TestDesktopMCPHTTPCanStopHeartbeatWithoutAgentConversation(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if _, err := startLocalHeartbeat("closed-agent", 5, 1); err != nil {
+		t.Fatal(err)
+	}
+	stubTmuxSessions(t, map[string]string{"shell-one": "shell"})
+	status, body := desktopMCPHTTPRequest(t, desktopMCPHTTPHandler("assignment", "secret-token", allDesktopToolPolicy), http.MethodPost, "/tools/heartbeat", "secret-token", `{"action":"stop"}`)
+	if status != http.StatusOK {
+		t.Fatalf("stop without agent returned %d %v", status, body)
+	}
+	state, err := readLocalHeartbeat(home)
+	if err != nil || state != nil {
+		t.Fatalf("timer remained after stop: %+v %v", state, err)
+	}
+}
+
 func TestSoleAgentConversationRefusesToGuess(t *testing.T) {
 	stubTmuxSessions(t, map[string]string{"codex-abc123": "codex", "claude-def456": "claude"})
 	session, err := soleAgentConversation(context.Background())
