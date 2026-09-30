@@ -2702,50 +2702,55 @@ function usageAgo(value){if(!value)return 'unknown';const d=new Date(value);if(N
   }catch{if(request!==chatUsageRequest||selected!==id||!owner)return;selectedUsageProfile=null}
   renderChatUsage();
  }
- function renderUsage(data){
-  const root=$('#usage-list');root.replaceChildren();
-  const profiles=Array.isArray(data?.profiles)?data.profiles:[];
-  usageProfiles=profiles;
-  if(data?.loaded)usageLoaded=true;
-  profileUsageLoadError=false;renderCreateProfileUsage();
-  renderChatUsage();
-  $('#usage-title').textContent=usageScope?'Profile usage · '+usageScope.application+' · '+usageScope.name:'Profile usage limits';
-  const visible=usageScope?profiles.filter(profile=>profile.application===usageScope.application&&profile.name===usageScope.name):profiles;
-  if(!visible.length){root.append(mk('p',usageScope?'No usage data for this chat’s profile yet.':'No saved agent profiles yet.'));return}
-  for(const profile of visible){
-   const card=mk('article');card.className='usage-profile';
-   const heading=mk('h3',profile.application+' · '+profile.name);card.append(heading);
-   const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
-   const source=profile.snapshot?.source?' · Source: '+profile.snapshot.source:'';
-   card.append(mk('p',boxes+source+' · '+(profile.observedAt?'Checked '+usageAgo(profile.observedAt):'Waiting for first check')));
-   const snapshot=profile.snapshot;
-   for(const window of snapshot?.windows||[]){
-    const row=mk('div');row.className='usage-window';
-    const names={session:'Current session',weekly_all:'Current week (all models)',weekly_scoped:'Current week',primary:'Primary',secondary:'Secondary'};
-    const label=[names[window.name]||window.name,window.scope,window.group&&window.group!==window.name?(names[window.group]||window.group):null,window.durationMinutes?window.durationMinutes+' min':null].filter(Boolean).join(' · ');
-    const remaining=remainingPercent(window.usedPercent),head=mk('div');head.className='usage-window-head';
-    head.append(mk('span',label),mk('strong',remaining===null?'Remaining unavailable':usageNumber(remaining)+'% remaining'));row.append(head);
-    if(remaining!==null){const track=mk('div');track.className='usage-track';track.setAttribute('role','progressbar');track.setAttribute('aria-label',label+' remaining');track.setAttribute('aria-valuemin','0');track.setAttribute('aria-valuemax','100');track.setAttribute('aria-valuenow',String(remaining));const fill=mk('span');fill.style.width=remaining+'%';track.append(fill);row.append(track)}
-    row.append(mk('small',(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'')));
-    card.append(row);
-   }
-   if(snapshot?.spend){
-    const spend=snapshot.spend,unit=spend.currency||spend.unit||'',remaining=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;
-    const parts=[];
-    if(spend.used!=null)parts.push('used '+usageNumber(spend.used));
-    if(spend.limit!=null)parts.push('limit '+usageNumber(spend.limit));
-    const summary=mk('p');summary.className='usage-spend';summary.append(mk('strong',remaining===null?'Spend remaining unavailable':usageNumber(remaining)+(unit?' '+unit:'')+' remaining'));
-    summary.append(document.createTextNode((parts.length?' · '+parts.join(' · '):'')+(spend.period?' · '+spend.period:'')));card.append(summary);
-   }
-   if(snapshot?.balances?.length)card.append(mk('p','Available balances: '+snapshot.balances.map(balance=>balance.unit+' '+usageNumber(balance.amount)).join(' · ')));
-   if(snapshot?.rateCaps?.length){card.append(mk('p','Configured rate caps (remaining requests unavailable):'));const list=mk('ul');list.className='usage-caps';for(const cap of snapshot.rateCaps)list.append(mk('li',[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')));card.append(list)}
-   if(snapshot?.note)card.append(mk('p',snapshot.note));
-   if(profile.error)card.append(mk('p','Last check failed: '+profile.error));
-   if(profile.checkedAt)card.append(mk('small','Last checked '+usageDate(profile.checkedAt)));
-   root.append(card);
+ function appLogo(app){const icons={claude:'/harness-claude.svg',codex:'/harness-codex.svg',opencode:'/harness-opencode-light.svg'};if(icons[app])return '<img src="'+icons[app]+'" alt="">';return '<span class="usage-logo-letter">'+String(app||'?').slice(0,1).toUpperCase()+'</span>'}
+function friendlyDuration(minutes){if(!minutes)return'';return minutes>=1440?Math.round(minutes/1440)+'d':minutes>=60?Math.round(minutes/60)+'h':minutes+' min'}
+function usageShortLabel(window){const names={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};let label=names[window.name]||window.name||'Limit';const duration=friendlyDuration(window.durationMinutes);if(duration)label+=' · '+duration;else if(window.scope&&window.scope!==label)label+=' · '+window.scope;return label}
+function usageLevel(remaining){return remaining===null?'none':remaining>30?'ok':remaining>=10?'warn':'low'}
+function renderUsage(data){
+ const root=$('#usage-list');root.replaceChildren();
+ const profiles=Array.isArray(data?.profiles)?data.profiles:[];
+ usageProfiles=profiles;
+ if(data?.loaded)usageLoaded=true;
+ profileUsageLoadError=false;renderCreateProfileUsage();
+ renderChatUsage();
+ $('#usage-title').textContent=usageScope?'Profile usage · '+usageScope.application+' · '+usageScope.name:'Profile usage limits';
+ const visible=usageScope?profiles.filter(profile=>profile.application===usageScope.application&&profile.name===usageScope.name):profiles;
+ if(!visible.length){root.append(mk('p',usageScope?'No usage data for this chat\u2019s profile yet.':'No saved agent profiles yet.'));return}
+ for(const profile of visible){
+  const card=mk('article');card.className='usage-profile';
+  const head=mk('div');head.className='usage-profile-head';
+  const logo=mk('span');logo.className='usage-logo';logo.setAttribute('aria-hidden','true');logo.innerHTML=appLogo(profile.application);
+  const name=mk('strong',profile.application+' · '+profile.name);
+  const boxes=(profile.boxes||[]).length?'Running: '+profile.boxes.join(', '):'No running box';
+  const source=profile.snapshot?.source?'Source: '+profile.snapshot.source:'';
+  const checked=mk('span','checked '+(profile.observedAt?usageAgo(profile.observedAt):'never'));
+  checked.className='usage-checked';checked.title=[boxes,source].filter(Boolean).join(' · ');
+  head.append(logo,name,checked);card.append(head);
+  const snapshot=profile.snapshot;
+  for(const window of snapshot?.windows||[]){
+   const label=usageShortLabel(window),remaining=remainingPercent(window.usedPercent),level=usageLevel(remaining);
+   const row=mk('div');row.className='usage-row';row.dataset.level=level;
+   row.append(mk('span',label));
+   row.firstChild.className='usage-row-label';
+   const bar=mk('span');bar.className='usage-bar';
+   if(remaining!==null){bar.setAttribute('role','progressbar');bar.setAttribute('aria-label',label+' remaining');bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');bar.setAttribute('aria-valuenow',String(remaining));const fill=mk('i');fill.style.width=remaining+'%';bar.append(fill)}
+   else bar.classList.add('usage-bar-empty');
+   row.append(bar);
+   const value=mk('span',remaining===null?'\u2014':usageNumber(remaining)+'% left');value.className='usage-row-value';
+   if(remaining!==null&&remaining<=10)value.classList.add('low');
+   row.append(value);
+   row.title=(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'');
+   card.append(row);
   }
+  if(snapshot?.spend){const spend=snapshot.spend,unit=spend.currency||spend.unit||'',remaining=typeof spend.remaining==='number'?spend.remaining:typeof spend.limit==='number'&&typeof spend.used==='number'?Math.max(0,spend.limit-spend.used):null;const parts=[];if(spend.used!=null)parts.push('used '+usageNumber(spend.used));if(spend.limit!=null)parts.push('limit '+usageNumber(spend.limit));card.append(mk('p','Spend: '+(remaining===null?'unavailable':usageNumber(remaining)+(unit?' '+unit:'')+' remaining')+(parts.length?' · '+parts.join(' · '):'')))}
+  if(snapshot?.balances?.length)card.append(mk('p','Available balances: '+snapshot.balances.map(balance=>balance.unit+' '+usageNumber(balance.amount)).join(' · ')));
+  if(snapshot?.rateCaps?.length){const caps=snapshot.rateCaps.map(cap=>[cap.model,cap.type,usageNumber(cap.amount)].filter(Boolean).join(' · ')).join(', ');card.append(mk('p','Rate caps (remaining unavailable): '+caps))}
+  if(snapshot?.note)card.append(mk('p',snapshot.note));
+  if(profile.error){const notice=mk('p','Couldn\u2019t load usage: '+profile.error);notice.className='usage-notice';card.append(notice)}
+  root.append(card);
  }
- let usagePending=null,usageGeneration=0;
+}
+let usagePending=null,usageGeneration=0;
  async function refreshUsage(){
   if(!owner||document.hidden)return;
   if(usagePending)return usagePending;

@@ -31,11 +31,17 @@ window.VMBoxWorkspaceNav=(()=>{
      const heading=document.createElement('h3');heading.textContent=profile.application+' · '+profile.name;card.append(heading);
      const windows=profile.snapshot?.windows||[];
      if(!windows.length){const note=document.createElement('p');note.textContent=profile.error||'Remaining usage unavailable.';card.append(note)}
+     const shortNames={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};
+     const duration=minutes=>!minutes?'':minutes>=1440?Math.round(minutes/1440)+'d':minutes>=60?Math.round(minutes/60)+'h':minutes+' min';
      for(const window of windows){
+      const percent=Number.isFinite(window.usedPercent)?Math.max(0,Math.min(100,100-window.usedPercent)):null;
       const row=document.createElement('div');row.className='workspace-usage-window';
-      const label=document.createElement('span');label.textContent=[window.name,window.scope].filter(Boolean).join(' · ');
-      const remaining=document.createElement('strong');remaining.textContent=Number.isFinite(window.usedPercent)?format(Math.max(0,Math.min(100,100-window.usedPercent)))+'% remaining':'Unavailable';
-      row.append(label,remaining);card.append(row);
+      if(percent!==null)row.dataset.level=percent>30?'ok':percent>=10?'warn':'low';
+      const label=document.createElement('span');let text=shortNames[window.name]||window.name||'Limit';const dur=duration(window.durationMinutes);if(dur)text+=' · '+dur;else if(window.scope)text+=' · '+window.scope;label.textContent=text;
+      const bar=document.createElement('span');bar.className='usage-bar';
+      if(percent!==null){const fill=document.createElement('i');fill.style.width=percent+'%';bar.append(fill)}else bar.classList.add('usage-bar-empty');
+      const remaining=document.createElement('strong');remaining.textContent=percent!==null?format(percent)+'% left':'—';if(percent!==null&&percent<=10)remaining.classList.add('low');
+      row.append(label,bar,remaining);card.append(row);
      }
      if(profile.snapshot?.note){const note=document.createElement('p');note.textContent=profile.snapshot.note;card.append(note)}
      list.append(card);

@@ -2035,3 +2035,38 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 
 /* search empty state sits under the filter */
 #chat-list-empty{margin-top:.6rem}
+
+/* ══ compact usage rows ═════════════════════════════════════════════════ */
+#usage-list{display:flex;flex-direction:column;gap:0;padding:0}
+.usage-profile{background:none!important;border:0!important;border-radius:0!important;padding:0!important}
+.usage-profile+.usage-profile{border-top:1px solid var(--vb-line)!important}
+.usage-profile-head{display:flex;align-items:center;gap:.55rem;padding:.55rem .1rem .3rem}
+.usage-logo{width:1rem;height:1rem;flex:none;display:grid;place-items:center}
+.usage-logo img{width:1rem;height:1rem;display:block}
+.usage-logo-letter{font-weight:800;color:var(--vb-ink-soft);font-size:.78rem}
+.usage-profile-head strong{font-size:.9rem;font-weight:700;color:var(--vb-ink)}
+.usage-checked{margin-left:auto;color:var(--vb-ink-faint);font-size:.72rem;white-space:nowrap}
+.usage-row{display:flex;align-items:center;gap:.7rem;min-height:28px;padding:.12rem .1rem}
+.usage-row-label{flex:0 0 38%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vb-ink-soft);font-size:.78rem}
+.usage-bar{flex:1 1 auto;height:4px;border-radius:var(--r-pill);background:var(--vb-line);overflow:hidden}
+.usage-bar i{display:block;height:100%;border-radius:var(--r-pill);background:var(--vb-ok)}
+.usage-row[data-level="warn"] .usage-bar i{background:var(--vb-warn)}
+.usage-row[data-level="low"] .usage-bar i{background:var(--vb-danger)}
+.usage-row-value{flex:0 0 auto;min-width:4.4rem;text-align:right;font-variant-numeric:tabular-nums;font-weight:650;color:var(--vb-ink);font-size:.8rem}
+.usage-row-value.low{color:var(--vb-danger-text)}
+.usage-profile>p{margin:.25rem .1rem;color:var(--vb-ink-faint);font-size:.74rem}
+.usage-notice{color:var(--vb-danger-text)!important;font-size:.76rem!important;margin:.3rem .1rem!important}
+#usage-modal .usage-card{padding:.95rem 1.05rem 1.1rem}
+#usage-modal header{padding:0 0 .5rem}
+#usage-modal .hint{margin:.15rem 0 .5rem;font-size:.76rem}
+#usage-modal #usage-list{max-height:min(64vh,34rem);overflow:auto}
+
+/* manage usage dialog: same compact rows */
+.workspace-usage-profile{border:0!important;border-radius:0!important;background:none!important;padding:0!important;margin:0!important}
+.workspace-usage-profile+.workspace-usage-profile{border-top:1px solid var(--vb-line)!important}
+.workspace-usage-profile h3{margin:.55rem 0 .25rem;font-size:.9rem}
+.workspace-usage-window{display:flex;align-items:center;gap:.7rem;min-height:28px}
+.workspace-usage-window .usage-bar{flex:1 1 auto}
+.workspace-usage-window>span{flex:0 0 38%;color:var(--vb-ink-soft);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workspace-usage-window>strong{flex:0 0 auto;min-width:4.4rem;text-align:right;font-variant-numeric:tabular-nums;font-weight:650;font-size:.8rem}
+.workspace-usage-window>p{margin:.2rem .1rem;color:var(--vb-ink-faint);font-size:.74rem}

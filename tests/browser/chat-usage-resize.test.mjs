@@ -51,14 +51,14 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
   assert.match(await page.$eval('#usage-toggle',element=>element.title),/all saved profiles/);
   await page.click('#chat-menu');await page.click('#usage-toggle');
-  await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% remaining'));
+  await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% left'));
   const text=await page.$eval('#usage-list',element=>element.textContent);
-  assert.match(text,/10% remaining/);
+  assert.match(text,/10% left/);
   assert.match(text,/60 USD remaining/);
   assert.match(text,/Available balances: USD 12/);
-  assert.match(text,/remaining requests unavailable/);
-  assert.match(text,/No running box · Source: saved profile/);
-  assert.deepEqual(await page.$$eval('.usage-track',tracks=>tracks.map(track=>track.getAttribute('aria-valuenow'))),['75','10','80','60']);
+  assert.match(text,/Rate caps/);
+  assert.match(await page.$$eval('.usage-checked',els=>els.map(e=>e.title).join(' | ')),/Source: saved profile/);
+  assert.deepEqual(await page.$$eval('.usage-bar[role=progressbar]',tracks=>tracks.map(track=>track.getAttribute('aria-valuenow'))),['75','10','80','60']);
   await page.click('#usage-modal button[data-close]');
   await page.click('#new-box');
   await page.waitForFunction(()=>document.querySelectorAll('.create-profile-option').length===3&&document.querySelector('.create-profile-list').textContent.includes('10% left'));
@@ -80,7 +80,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
-  assert.match(await page.$eval('#usage-list',element=>element.textContent),/80% remaining/);
+  assert.match(await page.$eval('#usage-list',element=>element.textContent),/80% left/);
   assert.doesNotMatch(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="builder"] .chat-meta');
