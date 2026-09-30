@@ -20,6 +20,7 @@
  const seenPairs=(()=>{try{return JSON.parse(localStorage.getItem('vmboxChatPairSeen')||'{}')}catch{return{}}})();
  const saveSeenPairs=()=>{try{localStorage.setItem('vmboxChatPairSeen',JSON.stringify(seenPairs))}catch{}};
  const pins=(()=>{try{const saved=JSON.parse(localStorage.getItem('vmboxChatPins')||'[]');return new Set(Array.isArray(saved)?saved.filter(key=>typeof key==='string'):[])}catch{return new Set()}})();
+ const expandedMCPEvents=new Set();
  const pinKey=(kind,id)=>kind+':'+id;
  let groupStorageKey='';
  const chatGroups=[];
@@ -1344,6 +1345,28 @@
   actions.append(toggle,menu);row.append(meta,actions);
   return row;
  }
+ const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
+ function mcpCallGroup(messages){
+  const group=document.createElement('div');group.className='mcp-call-group';
+  const toggle=document.createElement('button');toggle.type='button';toggle.className='mcp-call-toggle';
+  const label=document.createElement('span');label.className='mcp-call-label';label.textContent='MCP Calls';
+  const count=document.createElement('span');count.className='mcp-call-count';count.textContent=String(messages.length);
+  const failed=messages.filter(message=>message.text.endsWith(' · failed')).length;
+  const failures=document.createElement('span');failures.className='mcp-call-failures';failures.textContent=failed+' failed';failures.hidden=!failed;
+  toggle.append(label,count,failures,lucide('chevron-down'));
+  const list=document.createElement('div');list.className='mcp-call-list';list.id='mcp-calls-'+messages[0].id;
+  toggle.setAttribute('aria-controls',list.id);
+  for(const message of messages){
+   const row=document.createElement('div');row.className='mcp-call-item';
+   const text=document.createElement('span');text.textContent=message.text.slice(6);
+   const time=document.createElement('time');time.textContent=new Date(message.createdAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+   row.append(text,time);list.append(row);
+  }
+  const setOpen=open=>{toggle.setAttribute('aria-expanded',String(open));list.hidden=!open;for(const message of messages){if(open)expandedMCPEvents.add(message.id);else expandedMCPEvents.delete(message.id)}};
+  setOpen(messages.some(message=>expandedMCPEvents.has(message.id)));
+  toggle.onclick=()=>setOpen(toggle.getAttribute('aria-expanded')!=='true');
+  group.append(toggle,list);return group;
+ }
  function messageAuthor(message){return message.direction==='user'?'You':message.direction==='box'?(boxes.get(message.senderBoxId)?.name||'Agent box'):'Agent'}
  function setReply(message){replyingTo=message;replyPreview.hidden=false;$('#reply-preview-text').textContent=messageAuthor(message)+': '+(message.question?.text||message.text||(message.images?.length?'Image':'Message'));inputEl.focus()}
  function cancelReply(){replyingTo=null;replyPreview.hidden=true;$('#reply-preview-text').textContent=''}
@@ -1421,10 +1444,16 @@
   messagesEl.dataset.box=box.id;
   if(box.hasOlder){const older=document.createElement('button');older.type='button';older.className='load-older';older.textContent=box.historyLoading?'Loading older messages…':'Load older messages';older.disabled=!!box.historyLoading;older.onclick=()=>void loadOlderMessages(box.id);messagesEl.append(older)}
   let day='';
-  for(const message of box.messages||[]){
+  const messages=box.messages||[];
+  for(let index=0;index<messages.length;index++){
+   const message=messages[index];
    const label=dayLabel(message.createdAt);
    if(label!==day){day=label;const sep=document.createElement('div');sep.className='day-sep';sep.textContent=day;messagesEl.append(sep)}
-   messagesEl.append(bubble(box,message));
+   if(isMCPActivity(message)){
+    const calls=[message];
+    while(index+1<messages.length&&isMCPActivity(messages[index+1])&&dayLabel(messages[index+1].createdAt)===label)calls.push(messages[++index]);
+    messagesEl.append(mcpCallGroup(calls));
+   }else messagesEl.append(bubble(box,message));
   }
   const pending=pendingSends.get(box.id);
   if(pending&&!(box.messages||[]).slice(pending.messageCount).some(m=>m.direction==='user'&&m.text===pending.text)){
