@@ -93,6 +93,30 @@ test('mobile Enter inserts a newline and opening a chat does not focus the compo
  });
 });
 
+test('composer keeps a 16px field radius as it grows and joins the reply preview',async()=>{
+ await withChat(async(browser,base)=>{
+  for(const width of [390,1000]){
+   const p=await browser.newPage();
+   await p.setViewport({width,height:844,isMobile:width<600,hasTouch:width<600});
+   await p.goto(base+'/chat#box=builder');
+   await p.waitForSelector('#chat-messages .msg.user');
+   const radius=()=>p.$eval('#chat-composer',element=>getComputedStyle(element).borderTopLeftRadius);
+   assert.equal(await radius(),'16px',`${width}px single-line composer`);
+   await p.type('#chat-input','first line\nsecond line\nthird line');
+   assert.equal(await radius(),'16px',`${width}px multiline composer`);
+   await p.$eval('#chat-messages .msg.user .msg-reply',button=>button.click());
+   const joined=await p.evaluate(()=>{
+    const preview=document.querySelector('#reply-preview');
+    const composer=document.querySelector('#chat-composer');
+    return {bottomRadius:getComputedStyle(preview).borderBottomLeftRadius,topRadius:getComputedStyle(composer).borderTopLeftRadius,
+      gap:Math.round(composer.getBoundingClientRect().top-preview.getBoundingClientRect().bottom)};
+   });
+   assert.deepEqual(joined,{bottomRadius:'0px',topRadius:'0px',gap:0},`${width}px reply preview joins composer`);
+   await p.close();
+  }
+ });
+});
+
 // A hardware keyboard keeps Enter-to-send and Shift+Enter for a newline.
 test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
  await withChat(async(browser,base,posts)=>{
@@ -262,33 +286,35 @@ test('message actions open toward available space and stay inside the transcript
  });
 });
 
-test('touch swipe right replies to the chosen message, short swipe does nothing, and vertical scroll remains native',async()=>{
+test('touch swipe left replies to the chosen message, while right and vertical swipes do not',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.agent');
   const client=await p.createCDPSession();
-  async function swipe(selector,dx,dy,atEnd){
+  async function swipe(selector,dx,dy,atEnd,steps=5){
    const rect=await p.$eval(selector,element=>element.querySelector('.text').getBoundingClientRect().toJSON());
-   const x=Math.round(rect.left+Math.min(rect.width/2,55)),y=Math.round(rect.top+Math.min(rect.height/2,22));
+   const x=Math.round(rect.right-35),y=Math.round(rect.top+Math.min(rect.height/2,22));
    await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
-   for(let step=1;step<=5;step++){
-    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:Math.round(x+dx*step/5),y:Math.round(y+dy*step/5),id:1}]});
+   for(let step=1;step<=steps;step++){
+    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:Math.round(x+dx*step/steps),y:Math.round(y+dy*step/steps),id:1}]});
     await new Promise(resolve=>setTimeout(resolve,16));
    }
    if(atEnd)await atEnd();
    await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
   }
-  await swipe('#chat-messages .msg.user',35,0);
+  await swipe('#chat-messages .msg.user',-35,0);
   assert.equal(await p.$eval('#reply-preview',node=>node.hidden),true,'a short swipe leaves the composer alone');
-  await swipe('#chat-messages .msg.agent',92,0,async()=>{
+  await swipe('#chat-messages .msg.agent',-115,0,async()=>{
    const state=await p.$eval('#chat-messages .msg.agent',node=>({shift:new DOMMatrix(getComputedStyle(node).transform).m41,hint:Number(getComputedStyle(node.querySelector('.swipe-reply-hint')).opacity)}));
-   assert.ok(state.shift>=55&&state.shift<=72,`the bubble follows the finger with resistance (${state.shift}px)`);
-   assert.ok(state.hint>.8,'the reply glyph appears behind the bubble');
-  });
+   assert.ok(state.shift<=-64&&state.shift>=-72,`the bubble follows the finger left with resistance (${state.shift}px)`);
+   assert.ok(state.hint>.8,'the reply glyph appears behind the bubble on the right');
+  },12);
   await p.waitForFunction(()=>!document.querySelector('#reply-preview').hidden);
   assert.match(await p.$eval('#reply-preview-text',node=>node.textContent),/verification suite is green/,'the reply targets the swiped message');
   assert.equal(await p.evaluate(()=>document.activeElement?.id),'chat-input','the existing reply action focuses the composer');
   await p.click('#reply-cancel');
+  await swipe('#chat-messages .msg.agent',55,0);
+  assert.equal(await p.$eval('#reply-preview',node=>node.hidden),true,'a right swipe never replies');
   await p.evaluate(()=>{const messages=document.querySelector('#chat-messages');messages.prepend(Object.assign(document.createElement('div'),{style:'height:440px;flex:none'}));messages.append(Object.assign(document.createElement('div'),{style:'height:440px;flex:none'}));document.querySelector('.msg.user').scrollIntoView({block:'center'})});
   const before=await p.$eval('#chat-messages',node=>node.scrollTop);
   await swipe('#chat-messages .msg.user',3,-110);
@@ -296,6 +322,59 @@ test('touch swipe right replies to the chosen message, short swipe does nothing,
   const after=await p.$eval('#chat-messages',node=>node.scrollTop);
   assert.ok(after>before+25,`vertical gesture scrolls the transcript (${before} → ${after})`);
   assert.equal(await p.$eval('#reply-preview',node=>node.hidden),true,'vertical scroll does not start a reply');
+  await p.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
+  await p.$eval('#chat-messages .msg.agent',node=>node.scrollIntoView({block:'center'}));
+  await swipe('#chat-messages .msg.agent',-100,0,async()=>{
+   assert.equal(await p.$eval('#chat-messages .msg.agent',node=>new DOMMatrix(getComputedStyle(node).transform).m41),0,'reduced motion detects the swipe without moving the bubble');
+  });
+  await p.waitForFunction(()=>!document.querySelector('#reply-preview').hidden);
+  await client.detach();await p.close();
+ });
+});
+
+test('a rightward transcript swipe reveals the list and returns to it only past the threshold',async()=>{
+ await withChat(async(browser,base)=>{
+  const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.agent');
+  const client=await p.createCDPSession();
+  async function drag(dx,hold=0,during=async()=>{},selector=''){
+   const rect=await p.$eval(selector||'#chat-messages',element=>element.getBoundingClientRect().toJSON());
+   const x=selector?Math.round(rect.left+40):160,y=selector?Math.round(rect.top+rect.height/2):Math.round(rect.top+Math.min(160,rect.height/2));
+   await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+   for(let step=1;step<=6;step++){
+    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x+Math.round(dx*step/6),y,id:1}]});
+    await new Promise(resolve=>setTimeout(resolve,20));
+   }
+   await during();
+   if(hold)await new Promise(resolve=>setTimeout(resolve,hold));
+   await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  }
+  await drag(42,180);
+  await new Promise(resolve=>setTimeout(resolve,320));
+  assert.equal(await p.$eval('#chat-app',node=>node.classList.contains('in-chat')),true,'short swipe returns to chat');
+  await p.evaluate(()=>{
+   const pre=document.createElement('pre');pre.className='back-scroll-probe';pre.textContent='long-code-line-'.repeat(35);
+   pre.style.cssText='width:180px;overflow-x:auto;white-space:pre;touch-action:auto';
+   document.querySelector('#chat-messages').append(pre);pre.scrollIntoView({block:'center'});pre.scrollLeft=80;
+  });
+  await drag(95,0,async()=>{
+   assert.equal(await p.$eval('#chat-app',node=>node.classList.contains('back-swiping')),false,'a code block scrolled away from its left edge keeps the gesture');
+  },'.back-scroll-probe');
+  assert.equal(await p.$eval('#chat-app',node=>node.classList.contains('in-chat')),true);
+  await drag(150,0,async()=>{
+   const state=await p.evaluate(()=>({main:new DOMMatrix(getComputedStyle(document.querySelector('#chat-main')).transform).m41,list:new DOMMatrix(getComputedStyle(document.querySelector('#chat-list')).transform).m41}));
+   assert.ok(state.main>=100,'chat follows the finger and reveals the list');
+   assert.ok(state.list<0,'list enters with parallax');
+  });
+  await p.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  assert.equal(await p.evaluate(()=>location.hash),'','back swipe uses the header back action');
+  await p.click('[data-box-id="builder"] .chat-meta');
+  await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
+  await p.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
+  await drag(150,0,async()=>{
+   assert.equal(await p.$eval('#chat-main',node=>new DOMMatrix(getComputedStyle(node).transform).m41),0,'reduced motion keeps the chat still while detecting the threshold');
+  });
+  await p.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   await client.detach();await p.close();
  });
 });
