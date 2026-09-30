@@ -2402,3 +2402,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .tile.tile-empty .tile-icon-btn,.tile.tile-empty .tile-controls,.tile.tile-empty .tile-session-field,.tile.tile-empty .connection-badge{display:none!important}
 .tile.tile-empty .tile-mark{opacity:.45}
 .tile.tile-empty>p[role="status"]{min-height:9rem;display:flex;align-items:center;justify-content:center;color:var(--vb-ink-soft);font-size:.82rem}
+
+/* ══ item 5 · run-time limit copy ═══════════════════════════════════════ */
+.run-budget-remaining{margin:.15rem 0 0;color:var(--vb-ink);font-size:.82rem;font-weight:650;font-variant-numeric:tabular-nums}
+.run-budget-remaining[hidden]{display:none}
