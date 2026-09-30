@@ -1041,9 +1041,13 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .mcp-call-count{min-width:1.15rem;padding:.05rem .28rem;border-radius:1rem;background:var(--surface2);color:var(--ink);font-size:.67rem;text-align:center}
 .mcp-call-failures{color:var(--warn-text);font-size:.67rem}
 .mcp-call-failures[hidden],.mcp-call-list[hidden]{display:none}
-.mcp-call-list{width:min(100%,37rem);padding:.2rem .55rem .35rem;border-left:1px solid var(--line);border-right:1px solid var(--line);color:var(--ink-soft);font-size:.7rem}
-.mcp-call-item{display:flex;justify-content:space-between;gap:1rem;padding:.18rem .35rem;overflow-wrap:anywhere}
-.mcp-call-item time{flex:none;color:var(--muted)}
+.mcp-call-list{width:min(100%,37rem);display:grid;gap:.25rem;padding:.3rem 0 .1rem;font-size:.72rem}
+.mcp-call-item{display:flex;align-items:center;gap:.55rem;min-width:0;padding:.32rem .5rem;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface);overflow-wrap:anywhere}
+.mcp-call-icon{display:grid;place-items:center;flex:none;width:1.65rem;height:1.65rem;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent-text)}
+.mcp-call-icon svg{width:.95rem;height:.95rem}
+.mcp-call-text{flex:1;min-width:0;color:var(--ink);font-weight:650}
+.mcp-call-failed{display:inline-block;margin-left:.45rem;padding:.03rem .3rem;border-radius:var(--radius-sm);background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn-text);font-size:.63rem;font-weight:700}
+.mcp-call-item time{flex:none;margin-left:auto;color:var(--ink-soft);font-size:.68rem;white-space:nowrap}
 .msg.note{border-color:var(--line);box-shadow:none;font-size:.75rem}
 .msg .choice{min-height:2.3rem;border-radius:var(--radius-sm);font-size:.81rem}
 .msg .question .send{background:var(--accent);color:var(--accent-ink)}

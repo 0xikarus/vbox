@@ -12,7 +12,7 @@ const message=(id,direction,text,index)=>({id,direction,text,state:'delivered',c
 test('consecutive MCP calls collapse into a divider and retain their open state on refresh',async()=>{
  let messages=[
   message('user-1','user','Please inspect the box',0),
-  message('mcp-1','system','MCP · get_contacts',1),
+  message('mcp-1','system','MCP · chat_message · contact',1),
   message('mcp-2','system','MCP · take_screenshot · failed',2),
   message('agent-1','agent','Inspection complete',3),
   message('mcp-3','system','MCP · get_run_budget',4),
@@ -44,7 +44,9 @@ test('consecutive MCP calls collapse into a divider and retain their open state 
   await page.screenshot({path:'/tmp/vmbox-mcp-collapsed.png'});
   await page.click('.mcp-call-group .mcp-call-toggle');
   assert.equal(await page.$eval('.mcp-call-group .mcp-call-toggle',button=>button.getAttribute('aria-expanded')),'true');
-  assert.equal(await page.$eval('.mcp-call-group .mcp-call-list',list=>list.textContent.includes('take_screenshot')),true);
+  assert.equal(await page.$eval('.mcp-call-group .mcp-call-list',list=>list.textContent.includes('Message to contact')&&list.textContent.includes('Take screenshot')),true);
+  assert.equal(await page.$eval('.mcp-call-item[data-tool="chat_message"] .mcp-call-icon svg',icon=>icon.querySelector('path')!==null),true);
+  assert.equal(await page.$eval('.mcp-call-item[data-tool="take_screenshot"] .mcp-call-failed',badge=>badge.textContent),'Failed');
   await page.screenshot({path:'/tmp/vmbox-mcp-expanded.png'});
   await page.click('#refresh');
   await page.waitForFunction(()=>document.querySelector('.mcp-call-group .mcp-call-toggle')?.getAttribute('aria-expanded')==='true');
