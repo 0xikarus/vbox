@@ -28,6 +28,8 @@ for(const [source,target] of [
  ['@novnc/novnc/LICENSE.txt','novnc-LICENSE.txt'],
  ['@novnc/novnc/AUTHORS','novnc-AUTHORS.txt'],
  ['@xterm/xterm/lib/xterm.js','xterm.js'],
+ ['motion/dist/motion.js','motion.js'],
+ ['motion/LICENSE.md','motion-LICENSE.md'],
  ['@xterm/xterm/css/xterm.css','xterm.css'],
  ['@xterm/xterm/LICENSE','xterm-LICENSE.txt'],
  ['@xterm/addon-fit/lib/addon-fit.js','xterm-fit.js'],
