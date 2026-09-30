@@ -1250,9 +1250,52 @@
    menu.append(inspect);
   }
   toggle.onclick=event=>{event.stopPropagation();const willOpen=menu.hidden;closeAllMsgActions();if(willOpen)openMsgActions(menu,toggle)};
-  row.oncontextmenu=event=>{if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle,{x:event.clientX,y:event.clientY})};
+  row.oncontextmenu=event=>{if(row._swipeUntil>Date.now()){event.preventDefault();return}if(event.target.closest('a,button,input,textarea,video,audio'))return;event.preventDefault();closeAllMsgActions();openMsgActions(menu,toggle,{x:event.clientX,y:event.clientY})};
   actions.append(replyShortcut,toggle,menu);row.append(meta,actions);
+  bindLongPress(row,(x,y)=>{if(row._swipeUntil>Date.now())return;closeAllMsgActions();openMsgActions(menu,toggle,{x,y})});
+  bindSwipeReply(row,message);
   return row;
+ }
+ function bindSwipeReply(row,message){
+  const hint=document.createElement('span');hint.className='swipe-reply-hint';hint.setAttribute('aria-hidden','true');hint.append(lucide('reply'));row.append(hint);
+  const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let gesture=null,settleTimer=0;
+  function settle(){
+   clearTimeout(settleTimer);row.classList.remove('swiping');row.classList.toggle('swipe-returning',!reduced());
+   row.style.setProperty('--swipe-x','0px');row.style.setProperty('--swipe-progress','0');
+   row.style.setProperty('--swipe-scale','.65');
+   settleTimer=setTimeout(()=>{row.classList.remove('swipe-returning');row.style.removeProperty('--swipe-x');row.style.removeProperty('--swipe-progress');row.style.removeProperty('--swipe-scale')},reduced()?0:260);
+  }
+  row.addEventListener('pointerdown',event=>{
+   if(event.pointerType!=='touch'&&event.pointerType!=='pen'||!event.isPrimary||event.button!==0)return;
+   if(event.target.closest('a,button,input,textarea,select,video,audio,img,pre,code,[contenteditable],.media-preview'))return;
+   const selection=getSelection();if(selection&&!selection.isCollapsed)return;
+   for(let node=event.target;node&&node!==row;node=node.parentElement)if(node.scrollWidth>node.clientWidth+2&&getComputedStyle(node).overflowX!=='visible')return;
+   clearTimeout(settleTimer);row.classList.remove('swipe-returning');
+   gesture={id:event.pointerId,x:event.clientX,y:event.clientY,axis:'',ready:false};
+   row.setPointerCapture?.(event.pointerId);
+  },{passive:true});
+  row.addEventListener('pointermove',event=>{
+   if(!gesture||event.pointerId!==gesture.id)return;
+   const dx=event.clientX-gesture.x,dy=event.clientY-gesture.y;
+   if(!gesture.axis){if(Math.abs(dx)<10&&Math.abs(dy)<10)return;gesture.axis=dx>10&&Math.abs(dx)>Math.abs(dy)?'reply':'scroll'}
+   if(gesture.axis!=='reply')return;
+   if(event.cancelable)event.preventDefault();
+   const travel=Math.min(72,Math.max(0,dx)*.8),ready=travel>=56;
+   row.classList.add('swiping');row.style.setProperty('--swipe-x',travel+'px');row.style.setProperty('--swipe-progress',String(Math.min(1,travel/56)));
+   row.style.setProperty('--swipe-scale',String(.65+.35*Math.min(1,travel/56)));
+   if(ready&&!gesture.ready)try{navigator.vibrate?.(10)}catch{}
+   gesture.ready=ready;
+  },{passive:false});
+  function release(event){
+   if(!gesture||event.pointerId!==gesture.id)return;
+   const ready=event.type==='pointerup'&&gesture.axis==='reply'&&gesture.ready;
+   if(gesture.axis==='reply')row._swipeUntil=Date.now()+500;
+   gesture=null;settle();
+   if(ready){closeAllMsgActions();setReply(message)}
+  }
+  row.addEventListener('pointerup',release,{passive:true});
+  row.addEventListener('pointercancel',release,{passive:true});
  }
  const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
  function mcpCallDisplay(message){
@@ -1315,7 +1358,7 @@
   const top=Math.max(8,clip.top,viewport?.offsetTop||0),bottom=Math.min(innerHeight-8,clip.bottom,(viewport?.offsetTop||0)+(viewport?.height||innerHeight));
   const left=Math.max(8,clip.left,viewport?.offsetLeft||0),right=Math.min(innerWidth-8,clip.right,(viewport?.offsetLeft||0)+(viewport?.width||innerWidth));
   const anchor=toggle.getBoundingClientRect(),point=menu._contextPoint;
-  if(anchor.bottom<top||anchor.top>bottom){closeAllMsgActions();return}
+  if(!point&&(anchor.bottom<top||anchor.top>bottom)){closeAllMsgActions();return}
   menu.style.left='0';menu.style.top='0';menu.style.maxHeight='none';
   const width=menu.getBoundingClientRect().width,height=menu.getBoundingClientRect().height;
   const downY=point?point.y+2:anchor.bottom+4,upY=point?point.y-2:anchor.top-4;

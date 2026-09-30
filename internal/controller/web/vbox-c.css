@@ -2374,3 +2374,27 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #box-list .row-avatar .row-screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 #box-list .row-avatar .avatar-mascot{position:absolute;right:-.25rem;bottom:-.25rem;left:auto;top:auto;width:1.45rem;height:1.45rem;filter:drop-shadow(0 2px 3px #0005)}
 #box-list .row-avatar .avatar-mascot svg{width:100%;height:100%;display:block}
+
+/* Message controls float beside the bubble; touch uses swipe and long press. */
+#chat-messages .msg:has(.msg-actions),#thread-messages .msg:has(.msg-actions){padding-top:7px!important}
+#chat-messages .msg .msg-actions,#thread-messages .msg .msg-actions{top:0!important;right:auto!important;left:calc(100% - .2rem)!important;display:inline-flex!important;gap:.1rem!important;padding:.18rem;border:1px solid var(--vb-line);border-radius:var(--r-pill);background:var(--vb-surface);box-shadow:0 3px 14px #0002;opacity:0;pointer-events:none;transform:translateY(2px);transition:opacity .15s,transform .15s;z-index:5}
+#chat-messages .msg.user .msg-actions,#thread-messages .msg.user .msg-actions{left:auto!important;right:calc(100% - .2rem)!important}
+@media(hover:hover){
+ #chat-messages .msg:hover .msg-actions,#thread-messages .msg:hover .msg-actions,#chat-messages .msg:focus-within .msg-actions,#thread-messages .msg:focus-within .msg-actions{opacity:1;pointer-events:auto;transform:none}
+}
+@media(hover:none){
+ #chat-messages .msg .msg-more,#thread-messages .msg .msg-more{display:inline-flex!important}
+ #chat-messages .msg:focus-within .msg-actions,#thread-messages .msg:focus-within .msg-actions,#chat-messages .msg:has(.msg-actions-menu:not([hidden])) .msg-actions,#thread-messages .msg:has(.msg-actions-menu:not([hidden])) .msg-actions{opacity:1;pointer-events:auto;transform:none}
+}
+#chat-messages .msg .msg-reply,#chat-messages .msg .msg-more,#thread-messages .msg .msg-reply,#thread-messages .msg .msg-more{color:var(--vb-ink-soft)}
+#chat-messages .msg .msg-actions-menu,#thread-messages .msg .msg-actions-menu{opacity:1;pointer-events:auto}
+
+/* The reply glyph stays in the space uncovered while the bubble follows a finger. */
+#chat-messages .msg:has(.swipe-reply-hint),#thread-messages .msg:has(.swipe-reply-hint){touch-action:pan-y;--swipe-x:0px;--swipe-progress:0;transform:translateX(var(--swipe-x))}
+#chat-messages .msg.swiping,#thread-messages .msg.swiping{animation:none!important;transition:none!important}
+#chat-messages .msg.swipe-returning,#thread-messages .msg.swipe-returning{animation:none!important;transition:transform .24s cubic-bezier(.2,1.4,.45,1)}
+#chat-messages .msg .swipe-reply-hint,#thread-messages .msg .swipe-reply-hint{position:absolute;left:.45rem;top:50%;width:2rem;height:2rem;display:grid;place-items:center;border-radius:50%;background:var(--vb-surface);border:1px solid var(--vb-line);box-shadow:0 2px 9px #0002;color:var(--vb-ink-soft);opacity:var(--swipe-progress);pointer-events:none;z-index:-1;transform:translate(calc(-1 * var(--swipe-x)),-50%) scale(var(--swipe-scale,.65));transition:opacity .08s}
+#chat-messages .msg .swipe-reply-hint svg,#thread-messages .msg .swipe-reply-hint svg{width:1rem;height:1rem}
+#chat-messages .msg.swiping .swipe-reply-hint,#thread-messages .msg.swiping .swipe-reply-hint{color:var(--vb-accent)}
+#chat-messages .msg pre,#thread-messages .msg pre{touch-action:auto}
+@media(prefers-reduced-motion:reduce){#chat-messages .msg.swipe-returning,#thread-messages .msg.swipe-returning,#chat-messages .msg .swipe-reply-hint,#thread-messages .msg .swipe-reply-hint{transition:none}}

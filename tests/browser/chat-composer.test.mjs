@@ -189,7 +189,7 @@ test('thread sidebar fits a phone without a resize handle',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user');
-  await p.click('#chat-messages .msg.user .msg-reply');
+  await p.$eval('#chat-messages .msg.user .msg-reply',button=>button.click());
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),false,'the direct icon also works on mobile');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
   await p.click('#chat-messages .msg.user .msg-thread');
@@ -218,8 +218,7 @@ test('message actions open toward available space and stay inside the transcript
   const p=await browser.newPage();await p.setViewport({width:390,height:520});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user .msg-more');
   const corners=await p.$eval('#chat-messages .msg.user',message=>({message:message.getBoundingClientRect().toJSON(),text:message.querySelector('.text').getBoundingClientRect().toJSON(),actions:message.querySelector('.msg-actions').getBoundingClientRect().toJSON(),reply:message.querySelector('.msg-reply').getBoundingClientRect().toJSON(),chevron:message.querySelector('.msg-more').getBoundingClientRect().toJSON()}));
   assert.ok(corners.chevron.top-corners.message.top<8,'the chevron is at the top of the message');
-  assert.ok(corners.message.right-corners.chevron.right<14,'the chevron is at the right edge of the message');
-  assert.ok(corners.actions.bottom<=corners.text.top,'reply controls do not cover message text');
+  assert.ok(corners.actions.right<=corners.text.left+1,'the floating pill is outside the outgoing text');
   assert.ok(corners.reply.top-corners.message.top<8&&corners.reply.right<corners.chevron.left,'the direct reply icon is beside the chevron');
   await p.evaluate(()=>{
    const messages=document.querySelector('#chat-messages');
@@ -230,6 +229,7 @@ test('message actions open toward available space and stay inside the transcript
   });
   async function check(block,expected){
    await p.$eval('#chat-messages .msg.user .msg-more',(toggle,position)=>toggle.scrollIntoView({block:position}),block);
+   await p.focus('#chat-messages .msg.user .msg-more');
    await p.click('#chat-messages .msg.user .msg-more');
    const result=await p.$eval('#chat-messages .msg.user .msg-actions-menu',menu=>{
     const rect=menu.getBoundingClientRect(),clip=document.querySelector('#chat-messages').getBoundingClientRect();
@@ -252,5 +252,43 @@ test('message actions open toward available space and stay inside the transcript
   assert.ok(context.placement==='up'?Math.abs(context.rect.bottom-click.y)<5:Math.abs(context.rect.top-click.y)<5,'the menu opens beside the vertical click position');
   await p.screenshot({path:'/tmp/vmbox-chat-message-context-menu.png'});
   await p.close();
+ });
+});
+
+test('touch swipe right replies to the chosen message, short swipe does nothing, and vertical scroll remains native',async()=>{
+ await withChat(async(browser,base)=>{
+  const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.agent');
+  const client=await p.createCDPSession();
+  async function swipe(selector,dx,dy,atEnd){
+   const rect=await p.$eval(selector,element=>element.querySelector('.text').getBoundingClientRect().toJSON());
+   const x=Math.round(rect.left+Math.min(rect.width/2,55)),y=Math.round(rect.top+Math.min(rect.height/2,22));
+   await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
+   for(let step=1;step<=5;step++){
+    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:Math.round(x+dx*step/5),y:Math.round(y+dy*step/5),id:1}]});
+    await new Promise(resolve=>setTimeout(resolve,16));
+   }
+   if(atEnd)await atEnd();
+   await client.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+  }
+  await swipe('#chat-messages .msg.user',35,0);
+  assert.equal(await p.$eval('#reply-preview',node=>node.hidden),true,'a short swipe leaves the composer alone');
+  await swipe('#chat-messages .msg.agent',92,0,async()=>{
+   const state=await p.$eval('#chat-messages .msg.agent',node=>({shift:new DOMMatrix(getComputedStyle(node).transform).m41,hint:Number(getComputedStyle(node.querySelector('.swipe-reply-hint')).opacity)}));
+   assert.ok(state.shift>=55&&state.shift<=72,`the bubble follows the finger with resistance (${state.shift}px)`);
+   assert.ok(state.hint>.8,'the reply glyph appears behind the bubble');
+  });
+  await p.waitForFunction(()=>!document.querySelector('#reply-preview').hidden);
+  assert.match(await p.$eval('#reply-preview-text',node=>node.textContent),/verification suite is green/,'the reply targets the swiped message');
+  assert.equal(await p.evaluate(()=>document.activeElement?.id),'chat-input','the existing reply action focuses the composer');
+  await p.click('#reply-cancel');
+  await p.evaluate(()=>{const messages=document.querySelector('#chat-messages');messages.prepend(Object.assign(document.createElement('div'),{style:'height:440px;flex:none'}));messages.append(Object.assign(document.createElement('div'),{style:'height:440px;flex:none'}));document.querySelector('.msg.user').scrollIntoView({block:'center'})});
+  const before=await p.$eval('#chat-messages',node=>node.scrollTop);
+  await swipe('#chat-messages .msg.user',3,-110);
+  await new Promise(resolve=>setTimeout(resolve,200));
+  const after=await p.$eval('#chat-messages',node=>node.scrollTop);
+  assert.ok(after>before+25,`vertical gesture scrolls the transcript (${before} → ${after})`);
+  assert.equal(await p.$eval('#reply-preview',node=>node.hidden),true,'vertical scroll does not start a reply');
+  await client.detach();await p.close();
  });
 });
