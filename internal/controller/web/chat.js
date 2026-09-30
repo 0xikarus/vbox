@@ -2892,18 +2892,20 @@
   pushBtn.hidden=false;
   const permission=Notification.permission;
   pushBtn.disabled=permission==='denied';
+  pushBtn.classList.remove('loading');
+  let label='Off',title='Enable notifications';
   if(permission==='denied'){
-   pushBtn.textContent='Notifications blocked';pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then tap Check notification permission.';
+   label='Blocked';title='Notifications blocked';pushStatus.textContent='Allow notifications in Android app or Chrome site settings, then tap Check notification permission.';
   }else if(permission!=='granted'){
-   pushBtn.textContent='Enable notifications';pushStatus.textContent='Permission has not been granted.';
+   pushStatus.textContent='Enable alerts for new replies.';
   }else if(pushSubscriptionPresent===null){
-   pushBtn.textContent='Checking notifications…';pushStatus.textContent='Checking permission and subscription.';
+   label='';title='Checking notifications';pushBtn.classList.add('loading');pushStatus.textContent='Checking permission and subscription.';
   }else if(pushSubscriptionPresent){
-   pushBtn.textContent='Notifications on';pushStatus.textContent='Permission allowed · push subscription active.';
+   label='On';title='Disable notifications';pushStatus.textContent='Permission allowed · push subscription active.';
   }else{
-   pushBtn.textContent=localStorage.getItem('vmboxChatPush')==='on'?'Reconnect notifications':'Enable notifications';
    pushStatus.textContent='Permission allowed · push subscription inactive.';
   }
+  pushBtn.textContent=label;pushBtn.title=title;pushBtn.setAttribute('aria-label',title);
   pushBtn.classList.toggle('on',permission==='granted'&&pushSubscriptionPresent===true);
  }
  async function syncPushSubscription(){

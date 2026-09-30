@@ -2367,3 +2367,22 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
  .workspace-body .terminal-keys .term-key-pinned:not(:last-child)::before{content:'';position:absolute;top:0;bottom:0;left:-10px;width:10px;background:linear-gradient(90deg,transparent,var(--vb-bg-soft));pointer-events:none}
  .workspace-body .terminal-keys .term-key-pinned:not(:last-child)::after{content:'';position:absolute;top:25%;bottom:25%;right:-1px;width:1px;background:var(--vb-line);pointer-events:none}
 }
+
+/* ══ item 3 · menu sheet ════════════════════════════════════════════════ */
+/* Notifications: three columns — icon / label + wrapping description / pill */
+#chat-menu-sheet .menu-row{display:grid!important;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;column-gap:.65rem}
+#chat-menu-sheet .menu-row .menu-icon{align-self:start;margin-top:.15rem}
+#chat-menu-sheet .menu-row-sub{white-space:normal;overflow-wrap:anywhere;display:block}
+#chat-menu-sheet .menu-row-slot{display:inline-flex;align-items:center;justify-content:flex-end;gap:.35rem;flex:none;min-width:5.6rem}
+#chat-menu-sheet .menu-pill{width:auto;min-width:3.6rem;white-space:nowrap}
+#chat-menu-sheet .menu-pill.loading{color:transparent;position:relative}
+#chat-menu-sheet .menu-pill.loading::after{content:'';position:absolute;top:50%;left:50%;width:.8rem;height:.8rem;margin:-.4rem 0 0 -.4rem;border:2px solid var(--vb-line-strong);border-top-color:var(--vb-ink-soft);border-radius:var(--r-pill);animation:vb-spin .7s linear infinite}
+@keyframes vb-spin{to{transform:rotate(360deg)}}
+/* Usage + Log out: ordinary left-aligned rows with an icon column */
+#chat-menu-sheet .menu-links>a,#chat-menu-sheet .menu-links>button{display:flex!important;align-items:center;gap:.6rem;justify-content:flex-start!important;text-align:left;width:100%}
+#chat-menu-sheet .menu-links>.menu-usage{color:var(--vb-ink)}
+#chat-menu-sheet .menu-links>.menu-logout{color:var(--vb-danger-text)!important}
+#chat-menu-sheet .menu-links>.menu-logout .menu-icon{color:var(--vb-danger-text)}
+/* current destination marked */
+#chat-menu-sheet .menu-links a[aria-current="page"]{background:color-mix(in srgb,var(--vb-ink) 8%,transparent)!important;border-color:transparent!important;color:var(--vb-ink);font-weight:650}
+#chat-menu-sheet .menu-links a[aria-current="page"] .menu-icon{color:var(--vb-ink)}
