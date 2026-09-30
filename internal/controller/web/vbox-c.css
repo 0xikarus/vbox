@@ -702,7 +702,7 @@ form#login button:hover{background:#000;border-color:#000}
    Rail / user row / send — review follow-ups
    ========================================================================== */
 .inspect-screen-frame.has-shot{background:#0b0b0d;border-color:transparent}
-.inspect-screen-frame.has-shot svg,.inspect-screen-frame.has-shot span{display:none}
+.inspect-screen-frame.has-shot>svg,.inspect-screen-frame.has-shot>span{display:none}
 #inspect-avatar,#inspect-badges,#inspect-quick-actions{display:none!important}
 .chat-user{text-align:left}
 .chat-user-name{text-align:left}
@@ -2351,3 +2351,26 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .text pre:hover .code-copy,#chat-messages .text pre .code-copy:focus-visible{opacity:1}
 #chat-messages .text pre .code-copy svg{width:.95rem;height:.95rem}
 #chat-messages .text pre .code-copy.copied{color:var(--vb-ok-text);border-color:var(--vb-ok)}
+
+/* Integration: one desktop hero with the mascot contained in its corner. */
+#inspect-screen .inspect-screen-frame{isolation:isolate}
+#inspect-screen #inspect-avatar{position:absolute;right:.25rem;bottom:.15rem;z-index:2;display:block!important;width:6.25rem;height:6.25rem;overflow:hidden;pointer-events:none}
+#inspect-screen #inspect-avatar .inspect-hero-mascot,#inspect-screen #inspect-avatar .inspect-hero-mascot svg{display:block!important;width:100%;height:100%}
+#inspect-screen #inspect-avatar .inspect-hero-mascot{position:relative}
+
+/* The animated body can briefly fade during a transition; retain its face. */
+#chat-messages .msg-avatar{isolation:isolate}
+#chat-messages .msg-avatar .msg-avatar-static{position:absolute;inset:0;z-index:0;display:block;width:100%;height:100%}
+#chat-messages .msg-avatar>svg{position:relative;z-index:1}
+
+/* Both reply controls occupy their own line above message text. */
+#chat-messages .msg:has(.msg-actions){padding-top:2rem!important}
+#chat-messages .msg .msg-actions{top:.35rem!important}
+
+/* Manage rows use the desktop image when available and a screen-off card otherwise. */
+#box-list .row-avatar{position:relative;width:3.5rem;height:2.25rem;background:none;border:0;overflow:visible}
+#box-list .row-avatar .row-screen{position:absolute;inset:0;display:grid;place-items:center;overflow:hidden;border:1px solid var(--vb-line);border-radius:var(--r-control);background:linear-gradient(145deg,var(--vb-surface-2),var(--vb-bg-soft));color:var(--vb-ink-faint)}
+#box-list .row-avatar .row-screen svg{width:1rem;height:1rem}
+#box-list .row-avatar .row-screen img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#box-list .row-avatar .avatar-mascot{position:absolute;right:-.25rem;bottom:-.25rem;left:auto;top:auto;width:1.45rem;height:1.45rem;filter:drop-shadow(0 2px 3px #0005)}
+#box-list .row-avatar .avatar-mascot svg{width:100%;height:100%;display:block}

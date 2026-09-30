@@ -84,6 +84,22 @@ function blobSVG(seed){
  const eyes='<g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g>';
  return '<svg viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
 }
+const rowMascots=[];
+function boxRowAvatar(box){
+ const avatar=node('span');avatar.className='avatar row-avatar';avatar.setAttribute('aria-hidden','true');
+ const screen=node('span');screen.className='row-screen';screen.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>';
+ if(box.state==='running'){
+  const image=document.createElement('img');image.alt='';image.src='/v1/logical-boxes/'+encodeURIComponent(box.id)+'/desktop/screenshot';image.onerror=()=>image.remove();screen.append(image);
+ }
+ const host=node('span');host.className='avatar-mascot';
+ if(window.VBoxMascot?.Mascot){
+  const mascot=new window.VBoxMascot.Mascot(host,box.id);rowMascots.push(mascot);
+  if(box.state==='hibernated')mascot.jump('sleeping','sleeping','sleeping');
+  else if(box.state==='failed')mascot.jump('angry','error','failed');
+  else if(box.state!=='running')mascot.jump('waking','surprised','starting');
+ }else host.innerHTML='<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="39" fill="#23c5bb"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="#fff"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="#fff"/></svg>';
+ avatar.append(screen,host);return avatar;
+}
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
 function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  root._modelPicker?.destroy();
@@ -314,6 +330,7 @@ function manageView(){
 addEventListener('hashchange',manageView);manageView();
 $('#manage-account')?.addEventListener('click',()=>$('#manage-menu')?.click());
 function renderBoxes(boxes){
+ for(const mascot of rowMascots)mascot.destroy();rowMascots.length=0;
  listedBoxes=boxes;
  clearTimeout(boxRefreshTimer);
  for(const id of startingBoxes){const box=boxes.find(b=>b.id===id);if(!box||box.state==='running'||box.state==='failed'||box.state==='deleting'||box.state==='hibernated'&&box.failureReason)startingBoxes.delete(id)}
@@ -325,7 +342,7 @@ function renderBoxes(boxes){
   for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;select.disabled=b.state==='deleting'||deletingBoxes.has(b.id);
   select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);
   const name=node('td',''),link=node(b.state==='deleting'?'span':'a',b.name);link.className='table-text';link.title=b.name;if(b.state!=='deleting')link.href='/boxes/'+encodeURIComponent(b.id);name.append(link);
-  {const av=node('span');av.className='avatar row-avatar';const m=node('span');m.className='avatar-mascot';m.innerHTML=blobSVG(b.id);av.append(m);name.prepend(av)}
+  name.prepend(boxRowAvatar(b));
   status.replaceChildren(tableText(startingBoxes.has(b.id)&&b.state!=='running'?'starting':b.state));
   status.dataset.state=startingBoxes.has(b.id)&&b.state!=='running'?'starting':b.state;
   if(b.restorationState)status.append(tableNote(b.restorationState));

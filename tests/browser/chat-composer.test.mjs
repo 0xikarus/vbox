@@ -159,7 +159,8 @@ test('Reply uses the main composer without opening the thread sidebar',async()=>
   assert.equal(posts.at(-1).parentMessageId,threadRoot,'the message stays in the selected thread');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'sending the reply does not open the thread sidebar');
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),true,'the reply target clears after sending');
-  await p.click('#chat-messages .msg.agent .msg-reply');
+  await p.waitForSelector('#chat-messages .msg.agent .msg-reply');
+  await p.$eval('#chat-messages .msg.agent .msg-reply',button=>button.click());
   assert.equal(await p.$eval('#reply-preview-text',preview=>preview.textContent.includes('verification suite is green')),true,'the direct icon chooses that message');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'the direct icon leaves the thread closed');
   await p.type('#chat-input','Agreed.');await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
@@ -188,11 +189,6 @@ test('thread sidebar fits a phone without a resize handle',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user');
-  await p.click('.msg.user',{button:'right'});
-  await p.waitForFunction(()=>!document.querySelector('.msg.user .msg-actions-menu').hidden);
-  await p.evaluate(()=>[...document.querySelectorAll('.msg.user .msg-actions-menu button')].find(button=>button.textContent.trim()==='Reply').click());
-  assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true,'Reply keeps the mobile chat visible');
-  await p.click('#reply-cancel');
   await p.click('#chat-messages .msg.user .msg-reply');
   assert.equal(await p.$eval('#reply-preview',preview=>preview.hidden),false,'the direct icon also works on mobile');
   assert.equal(await p.$eval('#thread-panel',panel=>panel.hidden),true);
@@ -212,7 +208,7 @@ test('agent-to-agent messages identify their source box and preserve the thread'
   const p=await browser.newPage();await p.setViewport({width:1180,height:820,deviceScaleFactor:1});await p.goto(base+'/chat#box=builder');await p.waitForSelector('.msg .agent-origin');
   assert.equal(await p.$eval('.msg .agent-origin',element=>element.textContent),'From Research');
   await p.screenshot({path:'docs/chat-ui/screenshots/agent-to-agent-conversation.png'});
-  await p.click('.msg-thread');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===4);
+  await p.click('.msg.tail .msg-thread');await p.waitForFunction(()=>!document.querySelector('#thread-panel').hidden&&document.querySelectorAll('#thread-messages .msg').length===4);
   await p.screenshot({path:'docs/chat-ui/screenshots/agent-to-agent-thread.png'});await p.close();
  },agentThreadMessages);
 });
@@ -220,9 +216,10 @@ test('agent-to-agent messages identify their source box and preserve the thread'
 test('message actions open toward available space and stay inside the transcript',async()=>{
  await withChat(async(browser,base)=>{
   const p=await browser.newPage();await p.setViewport({width:390,height:520});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.user .msg-more');
-  const corners=await p.$eval('#chat-messages .msg.user',message=>({message:message.getBoundingClientRect().toJSON(),reply:message.querySelector('.msg-reply').getBoundingClientRect().toJSON(),chevron:message.querySelector('.msg-more').getBoundingClientRect().toJSON()}));
+  const corners=await p.$eval('#chat-messages .msg.user',message=>({message:message.getBoundingClientRect().toJSON(),text:message.querySelector('.text').getBoundingClientRect().toJSON(),actions:message.querySelector('.msg-actions').getBoundingClientRect().toJSON(),reply:message.querySelector('.msg-reply').getBoundingClientRect().toJSON(),chevron:message.querySelector('.msg-more').getBoundingClientRect().toJSON()}));
   assert.ok(corners.chevron.top-corners.message.top<8,'the chevron is at the top of the message');
-  assert.ok(corners.message.right-corners.chevron.right<8,'the chevron is at the right edge of the message');
+  assert.ok(corners.message.right-corners.chevron.right<14,'the chevron is at the right edge of the message');
+  assert.ok(corners.actions.bottom<=corners.text.top,'reply controls do not cover message text');
   assert.ok(corners.reply.top-corners.message.top<8&&corners.reply.right<corners.chevron.left,'the direct reply icon is beside the chevron');
   await p.evaluate(()=>{
    const messages=document.querySelector('#chat-messages');

@@ -26,7 +26,7 @@ function tinyPNG(){
  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',zlib.deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);
 }
 
-test('composer drafts persist, attachments inspect, and the shell is dark',async()=>{
+test('composer drafts persist, attachments inspect, and the shell follows dark preference',async()=>{
  const now=new Date().toISOString();
  const boxes=[{id:'alpha',name:'alpha',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'},{id:'beta',name:'beta',state:'running',defaultAgent:'claude',provider:'railway',role:'worker'}];
  const msgs=id=>[{id:id+'1',direction:'agent',state:'delivered',text:id.toUpperCase()+'-ONLY',createdAt:now,updatedAt:now}];
@@ -63,6 +63,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
+  await p.emulateMediaFeatures([{name:'prefers-color-scheme',value:'dark'}]);
   await p.setViewport({width:420,height:900,deviceScaleFactor:1});
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=alpha');
   await p.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('ALPHA-ONLY'),{timeout:8000});
@@ -77,7 +78,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   assert.equal(overlap,false,'the add-box button must not overlap send');
 
   // Quiet workspace shell
-  assert.equal(await p.$eval('#chat-shell',el=>getComputedStyle(el).backgroundColor),'rgb(17, 25, 35)');
+  assert.ok(await p.$eval('#chat-shell',el=>getComputedStyle(el).backgroundColor.match(/\d+/g).slice(0,3).every(channel=>Number(channel)<40)),'dark preference gives the shell a dark surface');
 
   // typing persists per box and across a reload
   await p.type('#chat-input','draft for alpha');

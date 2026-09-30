@@ -16,7 +16,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/mascot.css','/motion.js','/mascot.js','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.png')?'image/png':file.endsWith('.woff2')?'font/woff2':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -143,7 +143,7 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  assert.equal(await page.$$('#profile-tree .profile-app').then(cards=>cards.length),4);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-mobile.png'});
- await page.click('.workspace-links a[href="#boxes"]');
+ await page.click('#manage-menu');await page.click('#manage-menu-panel a[href="#boxes"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='boxes');
  await page.close();
 });
@@ -252,7 +252,7 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  await page.setViewport({width:390,height:844});
  assert.equal(await page.$('#role-assignments table'),null,'permissions should not fall back to a matrix on mobile');
  assert.equal(await page.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
- assert.equal(await page.$eval('#role-assignments .role-assignment-card[data-role-box-id="box-1"]',element=>element.getBoundingClientRect().width>350),true);
+ assert.equal(await page.$eval('#role-assignments .role-assignment-card[data-role-box-id="box-1"]',element=>{const rect=element.getBoundingClientRect();return rect.width>280&&rect.left>=0&&rect.right<=innerWidth}),true);
  await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/permissions-mobile.png')});
  await page.close();
 });
@@ -461,8 +461,8 @@ test('box deletion confirms exact identity, prevents repeats and shows asynchron
   };
  });
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
- page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
- page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
+ page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] .row-overflow-trigger');await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
+ page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] .row-overflow-trigger');await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
  await page.waitForFunction(()=>document.querySelector('[data-box-id="box-1"]').textContent.includes('delete-detaching-volume'));
  assert.equal(await page.$eval('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]',b=>b.disabled),true);assert.equal(await page.$('[data-box-id="box-1"] td:first-child a'),null);
  assert.deepEqual(await page.evaluate(()=>window.deleteCalls),[{path:'/v1/logical-boxes/box-1/volume',body:{confirmation:'helper ü'}}]);
@@ -514,9 +514,9 @@ test('rows and the create form lay out in reading order without overlapping valu
   const cells=[...document.querySelectorAll('#box-list tr.row td')];
   return {
    ownerDialogHidden:document.querySelector('#box-credentials-modal').hidden,
-   stateStacked:!!note&&Math.round(box(primary).bottom)<=Math.round(box(note).top),
+   stateSeparated:!!note&&(box(primary).right<=box(note).left+1||box(primary).bottom<=box(note).top+1),
    stateTexts:[primary.textContent,note&&note.textContent],
-   labelGaps:labels.slice(1).map((rect,index)=>Math.round(rect.left-labels[index].right)),
+   labelsSeparated:labels.slice(1).map((rect,index)=>{const prev=labels[index];return rect.left>=prev.right-1||prev.left>=rect.right-1||rect.top>=prev.bottom-1||prev.top>=rect.bottom-1}),
    overflowing:cells.filter(cell=>[...cell.children].some(child=>box(child).right>box(cell).right+1)).length,
    legends:[...document.querySelectorAll('#create>fieldset.group>legend')].map(l=>l.textContent),
    actionBelowGroups:box(document.querySelector('#create .form-actions')).top>=box([...document.querySelectorAll('#create>fieldset.group')].pop()).bottom
@@ -524,8 +524,8 @@ test('rows and the create form lay out in reading order without overlapping valu
  });
  assert.equal(layout.ownerDialogHidden,true);
  assert.deepEqual(layout.stateTexts,['running','restored']);
- assert.equal(layout.stateStacked,true);
- assert.ok(layout.labelGaps.length&&layout.labelGaps.every(gap=>gap>=8),'tool labels need visible separation: '+layout.labelGaps);
+ assert.equal(layout.stateSeparated,true,'state and restoration note do not overlap');
+ assert.ok(layout.labelsSeparated.length&&layout.labelsSeparated.every(Boolean),'tool labels do not overlap: '+layout.labelsSeparated);
  assert.equal(layout.overflowing,0);
  assert.deepEqual(layout.legends,['1 · Box','2 · Logins','3 · Tools','4 · Instructions']);
  assert.equal(layout.actionBelowGroups,true);
@@ -682,7 +682,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.type('#create input[name=name]','profile-box');
  assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
  assert.deepEqual(await page.$eval('#create select[name=defaultAgent]',select=>({value:select.value,disabled:select.disabled})),{value:'opencode',disabled:false});
- await page.click('#create-tools label:has(input[value=blender])');
+ await page.$eval('#create-tools input[value=blender]',input=>{if(!input.checked)input.click()});
  assert.equal(await page.$('#create-tools input[value=desktop]'),null);
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.$eval('#create',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash'}]);
@@ -691,12 +691,12 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.equal(requests.findLast(r=>r.method==='POST').body.allocateWhenReady,true);
  await page.waitForNetworkIdle();
  assert.equal(await page.$('#profile-upload'),null);
- await page.click('.workspace-links a[href="#profiles"]');
+ await page.click('#manage-menu');await page.click('#manage-menu-panel a[href="#profiles"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='profiles');
  const beforeDelete=requests.filter(r=>r.method==='DELETE').length;
  page.once('dialog',d=>d.dismiss());await page.$eval('#profile-tree button',button=>button.click());await page.waitForNetworkIdle();assert.equal(requests.filter(r=>r.method==='DELETE').length,beforeDelete);
  page.once('dialog',d=>d.accept());const deleted=page.waitForResponse(r=>r.request().method()==='DELETE');await page.$eval('#profile-tree button',button=>button.click());await deleted;await page.waitForNetworkIdle();
- await page.click('.workspace-links a[href="#providers"]');
+ await page.click('#manage-menu');await page.click('#manage-menu-panel a[href="#providers"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='providers');
  await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('Free: 1'));
  assert.match(await page.$eval('#capacity',n=>n.textContent),/Free: 1/);

@@ -267,6 +267,11 @@
   const [mood,expression,signal]=busyDots?['working','focused','busy']:boxMascotPose(box);
   if(busyDots)mascot.busyMode='dots';
   if(mood!=='idle'||expression)mascot.jump(mood,expression,signal);
+  if(host.classList.contains('msg-avatar')){
+   const still=document.createElement('span');still.className='msg-avatar-static';still.setAttribute('aria-hidden','true');
+   still.innerHTML=window.VBoxMascot?.miniSVG?.(box.id,mood,expression)||mascot.svg?.outerHTML||'';
+   host.prepend(still);
+  }
   return host;
  }
  function syncAvatarMascot(avatar,box){
@@ -688,6 +693,18 @@
    if(cached?.url){if(!img){img=document.createElement('img');img.alt='';node.prepend(img)}if(img.src!==cached.url){img.onerror=()=>avatarImageFailed(box,cached.url);img.src=cached.url}}
    else img?.remove();
   });
+  renderInspectScreen(box);
+ }
+ function renderInspectScreen(box){
+  if(!inspectOpen||selected!==box.id)return;
+  const frame=$('#inspect-screen .inspect-screen-frame'),img=$('#inspect-screen-image');
+  if(box.state==='running'&&!avatarFresh(avatarCache.get(box.id),box.state))avatarRefresh(box);
+  const cached=avatarCache.get(box.id);
+  const url=box.state==='running'&&cached?.state===box.state?cached.url:null;
+  frame.classList.toggle('has-shot',!!url);
+  img.hidden=!url;
+  if(url){if(img.src!==url){img.onerror=()=>avatarImageFailed(box,url);img.src=url}}
+  else img.removeAttribute('src');
  }
  function avatarNode(box,small,preview){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
@@ -913,7 +930,15 @@
   const who=m.direction==='user'?'You: ':'';
   let text=m.question?m.question.text:m.text;
   if(m.images?.length)text=(text?text+' ':'')+'📷'.repeat(Math.min(3,m.images.length));
-  return who+text;
+  return who+plainPreview(text);
+ }
+ function plainPreview(value){
+  return String(value||'')
+   .replace(/!\[([^\]]*)\]\([^)]*\)/g,'$1')
+   .replace(/\[([^\]]+)\]\([^)]*\)/g,'$1')
+   .replace(/^\s{0,3}(?:#{1,6}\s+|>\s+|[-*+]\s+|\d+\.\s+)/gm,'')
+   .replace(/\*\*|__|~~|`|\*/g,'')
+   .replace(/\s+/g,' ').trim();
  }
  const pairKey=pair=>pair.boxAId+'/'+pair.boxBId;
  const pairHasUnread=pair=>!!pair.lastAt&&new Date(pair.lastAt).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0);
@@ -1034,7 +1059,7 @@
    row.classList.toggle('active',key===selectedPair);
    for(const id of [pair.boxAId,pair.boxBId])if(boxes.has(id))syncAvatarMascot(row.querySelector('[data-avatar="'+id+'"]'),boxes.get(id));
    row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
-   row.querySelector('.preview').textContent=pair.lastText||'No messages yet';
+   row.querySelector('.preview').textContent=pair.lastText?plainPreview(pair.lastText):'No messages yet';
    row.querySelector('.unread-note').hidden=!pairHasUnread(pair);
   }
   for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
@@ -2126,9 +2151,10 @@
   $('#inspect-title').textContent=box.name;
   $('#inspect-header-state').textContent=stateText;
   $('#inspect-header-state').className=stateClass(box.state);
-  $('#inspect-avatar').replaceChildren(avatarNode(box,false));
+  $('#inspect-avatar').replaceChildren(messageMascot(box,'inspect-hero-mascot'));
+  renderInspectScreen(box);
   $('#inspect-name').textContent=box.name;
-  $('#inspect-subtitle').textContent='';
+  $('#inspect-subtitle').textContent=stateText;
   const badges=$('#inspect-badges');badges.replaceChildren();
   const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
   badge(box.state,stateClass(box.state));

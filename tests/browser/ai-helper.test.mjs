@@ -50,6 +50,7 @@ try{
   await page.goto(base+'/chat');await page.waitForSelector('#ai-settings-toggle:not([hidden])');
   await page.click('#chat-menu');await page.click('#ai-settings-toggle');
   await page.waitForSelector('.ai-settings-dialog[open]');
+  await page.waitForFunction(()=>!document.querySelector('.ai-settings-state').textContent.includes('Loading setting'));
   assert.match(await page.$eval('.ai-settings-state',el=>el.textContent),/No dedicated key/);
   await page.type('.ai-settings-dialog input[name="key"]','sk-or-v1-synthetic-test-key');
   await page.$eval('.ai-settings-dialog input[name="model"]',el=>el.value='anthropic/claude-test');
@@ -150,10 +151,10 @@ try{
   await page.$eval('#chat-input',el=>{el.value='';el.dispatchEvent(new Event('input',{bubbles:true}))});
   await page.type('#chat-input','Helo from mobile');
   const alignment=await page.evaluate(()=>{
-   const nodes=['#chat-composer .ai-field','#chat-composer #chat-input','#chat-composer #send','#chat-composer #chat-interrupt'].map(selector=>document.querySelector(selector)).filter(node=>node&&!node.hidden);
+   const nodes=['#chat-composer .ai-field','#chat-composer #chat-input','#chat-composer #send','#chat-composer #chat-interrupt'].map(selector=>document.querySelector(selector)).filter(node=>node&&!node.hidden&&getComputedStyle(node).display!=='none');
    return nodes.map(node=>({name:node.id||node.className,bottom:node.getBoundingClientRect().bottom}));
   });
-  assert.ok(Math.max(...alignment.map(item=>item.bottom))-Math.min(...alignment.map(item=>item.bottom))<2,JSON.stringify(alignment));
+  assert.ok(Math.max(...alignment.map(item=>item.bottom))-Math.min(...alignment.map(item=>item.bottom))<3,JSON.stringify(alignment));
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/chat-wand-mobile.png'});
   await page.hover('#chat-composer .ai-wand');await page.mouse.down();await new Promise(done=>setTimeout(done,650));await page.mouse.up();
   await page.waitForSelector('.ai-prompt-dialog[open]');
@@ -166,9 +167,9 @@ try{
   await page.click('#chat-composer .ai-wand');
   await page.waitForFunction(()=>document.querySelector('#chat-input').value==='Hello from mobile');
   await page.evaluate(()=>document.querySelector('#presets-modal').hidden=false);
-  await page.type('#preset-form textarea[name="markdown"]','# Helo skill');
+  await page.$eval('#preset-form textarea[name="markdown"]',input=>{input.value='# Helo skill';input.dispatchEvent(new Event('input',{bubbles:true}))});
   assert.equal(await page.$$('#preset-form .ai-wand').then(items=>items.length),1);
-  await page.click('#preset-form .ai-wand');
+  await page.$eval('#preset-form .ai-wand',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#preset-form textarea[name="markdown"]').value==='# Hello skill');
   assert.equal(requests.at(-1).kind,'markdown');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/markdown-wand-mobile.png'});

@@ -66,7 +66,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   assert.ok(await page.$eval('#chat-messages',atBottom)<3,'a newly opened chat starts at its latest message');
 
   messages=[...messages,{id:'new-message',direction:'agent',state:'delivered',text:'NEW MESSAGE AT THE BOTTOM '+('new '.repeat(20)),createdAt:timestamp(31),updatedAt:timestamp(31)}];
-  await page.click('#refresh');
+  await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('NEW MESSAGE AT THE BOTTOM'));
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await page.$eval('#chat-messages',atBottom)<3,'a new message keeps a followed chat pinned to the bottom');
@@ -81,7 +81,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await page.$eval('#chat-messages',element=>{element.scrollTop=0});
   await page.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop===0);
   messages=[...messages,{id:'while-reading',direction:'agent',state:'delivered',text:'MESSAGE WHILE READING',createdAt:timestamp(32),updatedAt:timestamp(32)}];
-  await page.click('#refresh');
+  await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('MESSAGE WHILE READING'));
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await page.$eval('#chat-messages',element=>element.scrollTop)<20,'new output must not yank a reader away from older messages');
@@ -94,7 +94,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await page.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop===0);
   await new Promise(resolve=>setTimeout(resolve,120)); // allow the scroll event to update follow intent
   messages=[...messages,{id:'while-reading-mobile',direction:'agent',state:'delivered',text:'NEW REPLY ON MOBILE',createdAt:timestamp(33),updatedAt:timestamp(33)}];
-  await page.click('#refresh');
+  await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#chat-new-messages').hidden);
   await new Promise(resolve=>setTimeout(resolve,250));
   await page.screenshot({path:'/tmp/vmbox-new-message-mobile.png'});
@@ -109,7 +109,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await page.click('[data-box-id="builder"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('MESSAGE WHILE READING'));
   messages=[...messages,{id:'after-return',direction:'agent',state:'delivered',text:'VISIBLE AFTER RETURN',createdAt:timestamp(34),updatedAt:timestamp(34)}];
-  await page.click('#refresh');
+  await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('VISIBLE AFTER RETURN'));
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await page.$eval('#chat-messages',atBottom)<3,'a chat reopened at the bottom keeps following new replies');
