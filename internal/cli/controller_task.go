@@ -93,7 +93,7 @@ func (a *App) controllerTask(ctx context.Context, c config.Context, token string
 	}
 	fmt.Fprintf(a.Out, "%s · %s · %s\n", tuiLabel(task.BoxName, 100), tuiLabel(task.ID, 100), tuiLabel(task.State, 40))
 	if a.Verbose {
-		fmt.Fprintf(a.Err, "Scheduled %s (HTTP %d). Status: vmbox task-status %q %s\n", task.Agent, status, task.BoxName, task.ID)
+		fmt.Fprintf(a.Err, "Scheduled %s (HTTP %d). Status: vbox task-status %q %s\n", task.Agent, status, task.BoxName, task.ID)
 	}
 	return nil
 }
@@ -110,7 +110,7 @@ func (a *App) controllerTaskForm(ctx context.Context, c config.Context, token st
 			box.Choices = append(box.Choices, b.Name)
 		}
 		if len(box.Choices) == 0 {
-			return fmt.Errorf("no boxes available; create one with vmbox new NAME")
+			return fmt.Errorf("no boxes available; create one with vbox new NAME")
 		}
 		box.Value = box.Choices[0]
 	} else {
@@ -280,7 +280,7 @@ func (a *App) promptTaskBox(ctx context.Context, c config.Context, token string)
 		return "", err
 	}
 	if len(boxes) == 0 {
-		return "", fmt.Errorf("no logical boxes are available; create one with 'vmbox new NAME'")
+		return "", fmt.Errorf("no logical boxes are available; create one with 'vbox new NAME'")
 	}
 	labels := make([]string, len(boxes))
 	for index, box := range boxes {

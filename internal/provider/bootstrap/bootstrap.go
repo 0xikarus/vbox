@@ -31,7 +31,7 @@ if [ "$components" = "__restore__" ]; then
 fi
 chmod 700 /data/home
 if ! command -v apt-get >/dev/null 2>&1; then
-  echo "vmbox bootstrap requires a Debian/Ubuntu-compatible image with apt-get" >&2
+  echo "vbox bootstrap requires a Debian/Ubuntu-compatible image with apt-get" >&2
   exit 1
 fi
 apt-get update -qq
@@ -178,10 +178,10 @@ func Install(ctx context.Context, request provider.BootstrapRequest, exec Exec) 
 	arch := normalizeArchitecture(architecture)
 	runtime, ok := request.RuntimeBinaries[arch]
 	if !ok || len(runtime) == 0 {
-		return fmt.Errorf("no vmbox runtime binary is installed for linux/%s; reinstall the Go CLI", arch)
+		return fmt.Errorf("no vbox runtime binary is installed for linux/%s; reinstall the Go CLI", arch)
 	}
 	if len(request.Entrypoint) == 0 {
-		return fmt.Errorf("vmbox entrypoint asset is unavailable; reinstall the Go CLI")
+		return fmt.Errorf("vbox entrypoint asset is unavailable; reinstall the Go CLI")
 	}
 	payload := bootstrapPayload(runtime, request.Entrypoint)
 	finalized, err := exec(ctx, []string{"sh", "-s", "--", componentArgument, fingerprint}, strings.NewReader(payload))

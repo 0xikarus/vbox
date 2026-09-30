@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
 for(const agent of ['codex','claude','opencode'])test(agent+' wake offers an explicit restore choice and blocks sends until chosen',async()=>{
  const box={id:'sleeping',name:'sleeping',state:'hibernated',defaultAgent:agent};
@@ -85,8 +85,8 @@ test('Chat restart checks for a saved conversation when allocation finishes',asy
  try{
   const page=await browser.newPage();page.on('dialog',dialog=>dialog.accept());
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=restarting');
-  await page.waitForSelector('#chat-info:not([hidden])');
-  await page.click('#chat-info');
+  await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>[...document.querySelectorAll('#inspect-config-actions button')].some(button=>button.textContent==='Restart…'));
   await page.evaluate(()=>[...document.querySelectorAll('#inspect-config-actions button')].find(button=>button.textContent==='Restart…').click());
   await page.waitForSelector('.codex-resume-card',{timeout:15000});

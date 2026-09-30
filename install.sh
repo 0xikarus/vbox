@@ -44,8 +44,8 @@ while (($#)); do
  shift
 done
 if ((uninstall)); then
- rm -f -- "$bin/vmbox"
- echo 'Removed vmbox CLI. Contexts, credentials, legacy bundles, and remote resources were preserved.'
+ rm -f -- "$bin/vbox" "$bin/vmbox"
+ echo 'Removed vbox CLI (and its vmbox alias). Contexts, credentials, legacy bundles, and remote resources were preserved.'
  exit
 fi
 case "$(uname -s)" in Linux) cli_os=linux ;; Darwin) cli_os=darwin ;; *) echo 'Unsupported OS' >&2; exit 1 ;; esac
@@ -53,9 +53,11 @@ case "$(uname -m)" in x86_64|amd64) cli_arch=amd64 ;; arm64|aarch64) cli_arch=ar
 mkdir -p "$bin"
 output="$(mktemp "$bin/.vmbox-build.XXXXXX")"
 trap 'rm -f -- "$output"' EXIT
-build_go_binary "$output" ./cmd/vmbox "$cli_os" "$cli_arch"
+build_go_binary "$output" ./cmd/vbox "$cli_os" "$cli_arch"
 chmod 755 "$output"
-mv -f -- "$output" "$bin/vmbox"
+mv -f -- "$output" "$bin/vbox"
+# Compatibility alias: the CLI was previously installed as `vmbox`.
+ln -sfn vbox "$bin/vmbox"
 if ((update_rc)); then
  mkdir -p "$(dirname -- "$rc")"
  touch "$rc"
@@ -64,6 +66,7 @@ if ((update_rc)); then
   printf '\nexport PATH=%s:$PATH # vmbox-service\n' "$quoted_bin" >> "$rc"
  fi
 fi
-echo "Installed $bin/vmbox (controller-only; no provider tools or deployment bundle)"
-echo 'Configure: vmbox connect https://YOUR-CONTROLLER'
+echo "Installed $bin/vbox (controller-only; no provider tools or deployment bundle)"
+echo "Compatibility alias: $bin/vmbox -> vbox"
+echo 'Configure: vbox connect https://YOUR-CONTROLLER'
 echo 'Provide controller authentication securely through VMBOX_CONTROLLER_TOKEN.'

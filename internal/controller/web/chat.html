@@ -3,32 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
-<title>vmbox / chats</title>
-<meta name="theme-color" content="#313338">
+<title>vbox / chats</title>
+<meta name="theme-color" content="#ffffff">
 <link rel="icon" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
+<link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/xterm.css">
 <link rel="stylesheet" href="/chat.css">
+<link rel="stylesheet" href="/mascot.css">
 <link rel="stylesheet" href="/ai-helper.css">
 <link rel="stylesheet" href="/idle-policy.css">
-<link rel="stylesheet" href="/workspace-nav.css"><link rel="stylesheet" href="/login.css">
+<link rel="stylesheet" href="/workspace-nav.css"><link rel="stylesheet" href="/login.css"><link rel="stylesheet" href="/vbox-c.css">
 </head>
 <body>
 <div id="chat-shell">
 
 <header id="chat-top" class="workspace-top">
- <button id="chat-menu" class="workspace-nav-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog">≡</button>
- <strong class="brand">vmbox <span>/ chats</span></strong>
- <nav class="workspace-links" aria-label="Workspace"><a href="/chat" aria-current="page">Chats</a><a href="/grid" data-owner-nav>Grid</a><a href="/#boxes">Boxes</a><a href="/#providers" data-owner-nav>Providers</a><a href="/#profiles" data-owner-nav>Profiles</a></nav>
+ <button id="chat-menu" class="workspace-nav-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></button>
+ <strong class="brand"><img class="brand-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="brand-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""><span class="brand-suffix">/ chats</span></strong>
  <span class="spacer"></span>
- <button id="usage-toggle" class="workspace-nav-usage" type="button" hidden title="Usage limits for all saved profiles">Usage</button>
- <button id="refresh" class="workspace-nav-refresh" type="button" title="Refresh chats" aria-label="Refresh chats">⟳</button>
+ <button id="refresh" class="workspace-nav-refresh" type="button" title="Refresh chats" aria-label="Refresh chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
 </header>
 
 <form id="login" hidden aria-labelledby="login-title">
+ <div class="login-decor" aria-hidden="true"><svg class="b1" viewBox="0 0 100 104"><g fill="#7c5cff"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg><svg class="b2" viewBox="0 0 100 104"><g fill="#f59e0b"><path d="M50 10 C71 30 89 47 89 64 A39 39 0 1 1 11 64 C11 47 29 30 50 10 Z"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg><svg class="b3" viewBox="0 0 100 104"><g fill="#22c55e"><circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg><svg class="b4" viewBox="0 0 100 104"><g fill="#ec4899"><path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg><svg class="b5" viewBox="0 0 100 104"><g fill="#3b82f6"><rect x="13" y="15" width="74" height="74" rx="26"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg></div>
  <div class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-title">
-  <div class="login-brand"><span class="login-mark" aria-hidden="true">v</span>vmbox</div>
+  <div class="login-brand"><img class="login-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="login-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""></div>
   <h1 id="login-title" class="login-title">Log in</h1>
   <p class="login-copy">Enter your controller token to access your workspace.</p>
   <label for="login-token">Controller token</label>
@@ -41,117 +42,136 @@
 
 <div id="chat-app" hidden>
  <aside id="chat-list">
-  <div id="chat-list-head">
-   <div>
-    <h1>Conversations</h1>
-    <p id="chat-list-sub">Agent and box conversations</p>
+  <div id="chat-sidebar-head">
+   <h2 class="chat-sidebar-title">Chats</h2>
+   <div class="chat-sidebar-actions">
+    <button id="new-box" class="chat-head-icon" type="button" title="New chat" aria-label="New chat"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"/></svg></button>
+    <button id="new-chat-group" class="sr-only" type="button" title="New group" aria-label="New group" tabindex="-1"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.5L10 3.5H4a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2Z"/><path d="M12 11v6"/><path d="M9 14h6"/></svg></button>
    </div>
-   <button id="new-box" type="button" title="New box" aria-label="New box">+</button>
   </div>
-  <div id="chat-filter-row"><input id="chat-filter" type="search" placeholder="Search conversations…" autocomplete="off" aria-label="Search conversations"><button id="new-chat-group" type="button" title="New chat group">+ Group</button></div>
+  <div id="chat-filter-row"><svg class="chat-search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.2-3.2"/></svg><input id="chat-filter" type="search" placeholder="Search" autocomplete="off" aria-label="Search chats"></div>
+  <div id="chat-pins" class="chat-pins" hidden></div>
+  <div id="chat-list-empty" hidden><span id="chat-list-empty-mascot" class="empty-list-mascot" aria-hidden="true"></span><strong>No conversations yet</strong><span class="hint">Create your first box to start chatting.</span><button type="button" id="empty-list-new-box">New box</button></div>
   <ul id="chat-entries"></ul>
-  <p id="chat-list-empty" hidden>No conversations yet. Create a box with the + button above.</p>
+  <button id="chat-user" class="chat-user" type="button" aria-label="Account and settings"><span class="chat-user-avatar" aria-hidden="true">T</span><span class="chat-user-name">Team</span><span class="chat-user-menu" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span></button>
  </aside>
  <div id="chat-resizer" role="separator" aria-label="Resize Conversations sidebar" aria-orientation="vertical" aria-valuemin="240" aria-valuemax="640" tabindex="0" title="Drag or use arrow keys to resize Conversations"></div>
  <main id="chat-main">
   <section id="chat-empty">
    <div id="chat-empty-mascot" class="mascot-host" aria-hidden="true"></div>
    <div class="empty-copy">
-    <h2>vmbox agent chats</h2>
-    <p>Pick an agent chat or a direct conversation between boxes.</p>
-    <p class="hint">Avatars show a live desktop preview while a box is running.</p>
+    <h2>Pick up where you left off</h2>
+    <p class="hint">Choose a conversation, or start a new box to begin.</p>
+    <div class="empty-actions"><button type="button" id="empty-new-box">New box</button><button type="button" id="empty-search" class="vb-ghost">Search chats</button></div>
    </div>
   </section>
   <section id="chat-conversation" hidden>
    <header id="chat-header">
     <button id="chat-back" type="button" aria-label="Back to chat list">‹</button>
-    <span id="chat-header-avatar"></span>
-    <div id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></div>
+    <button id="chat-header-open" type="button" class="chat-header-identity" aria-label="Open box details">
+     <span id="chat-header-avatar"></span>
+     <span id="chat-header-text"><strong id="chat-header-name"></strong><span id="chat-header-state"></span></span>
+    </button>
     <span class="spacer"></span>
-    <button id="chat-control" type="button" aria-label="Open desktop and TMUX controls" title="Take control: Desktop or TMUX in a popup"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 18h6"/><path d="M6 18h.01"/><path d="M8 6h1"/><rect x="2" y="14" width="20" height="8" rx="2"/><rect x="4" y="2" width="16" height="12" rx="2"/></svg></button>
-    <button id="chat-usage" type="button" hidden aria-label="Usage for this chat">Usage</button>
-    <button id="chat-wake" type="button" hidden>Wake box</button>
-    <button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session">Clear context</button>
-    <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false">Details</button>
-    <a id="chat-workspace" href="#">Workspace</a>
-    <button id="chat-more" type="button" aria-label="More chat actions" aria-haspopup="menu" aria-expanded="false">⋯</button>
-    <div id="chat-more-menu" role="menu" hidden>
-     <button type="button" data-action="details" role="menuitem">Box details</button>
-     <button type="button" data-action="control" role="menuitem">Desktop / TMUX</button>
-     <a data-action="workspace" href="#" role="menuitem">Open workspace</a>
-     <button type="button" data-action="clear" role="menuitem">Clear context</button>
-    </div>
+    <button id="chat-wake" type="button" hidden>Wake</button>
+    <button id="chat-info" type="button" title="Box details" aria-label="Box details" aria-controls="inspect" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg></button>
    </header>
    <div id="chat-banner" hidden role="status"></div>
    <div id="inspect-backdrop" hidden></div>
    <aside id="inspect" role="region" aria-label="Box details" hidden>
     <header id="inspect-header">
-     <div id="inspect-header-text"><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
+     <span class="inspect-grab" aria-hidden="true"></span>
+     <div id="inspect-header-text" hidden><strong id="inspect-title">Box details</strong><span id="inspect-header-state">—</span></div>
      <span class="spacer"></span>
-     <button id="inspect-close" type="button" aria-label="Close details">× <span>Close</span></button>
+     <button id="inspect-close" type="button" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button>
     </header>
-    <div id="inspect-body">
-     <section id="inspect-summary" aria-label="Box overview">
-      <div id="inspect-avatar"></div>
-      <div id="inspect-hero">
-       <h2 id="inspect-name">—</h2>
-       <p id="inspect-subtitle">—</p>
-       <div id="inspect-badges" class="inspect-badges"></div>
-       <div id="inspect-quick-actions" class="inspect-quick"></div>
-      </div>
-      <details class="inspect-block inspect-fold" data-fold="runtime" open>
-       <summary><h3>Runtime</h3></summary>
-       <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
-      </details>
-      <details class="inspect-block inspect-fold" data-fold="activity" open>
-       <summary><h3>Activity</h3></summary>
-       <dl id="inspect-activity-rows" class="inspect-rows"></dl>
-      </details>
-      <details id="inspect-attachment-storage" class="inspect-block inspect-fold" data-fold="attachments" open hidden>
-       <summary><h3>Chat attachments</h3></summary>
-       <dl id="inspect-attachment-rows" class="inspect-rows"></dl>
-       <div class="inspect-actions"><button id="inspect-clear-attachments" type="button">Clear this box's attachments…</button></div>
-       <p id="inspect-attachment-status" role="status"></p>
-      </details>
-      <details class="inspect-block inspect-fold" data-fold="config" open>
-       <summary><h3>Config</h3></summary>
-       <div id="inspect-config-actions" class="inspect-actions"></div>
-       <div id="inspect-memory-settings" hidden></div>
-       <div id="inspect-idle-policy"></div>
-       <div id="inspect-run-budget-policy"></div>
-       <div id="inspect-create-limit"></div>
-      </details>
-     </section>
-     <section id="inspect-contacts" hidden>
-     <header class="inspect-block-head"><h3>Contacts</h3></header>
-      <div class="inspect-block">
+     <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
+      <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span id="inspect-screen-off">Desktop off</span><img id="inspect-screen-image" alt="" hidden><div id="inspect-screen-live" aria-hidden="true"></div><div id="inspect-screen-live-chip" hidden>Live</div><div id="inspect-screen-hint" hidden></div><div id="inspect-avatar" aria-hidden="true"></div></div>
+      <span id="inspect-screen-title" class="inspect-screen-title">Screen</span>
+     </div>
+     <div id="inspect-body">
+      <section id="inspect-summary" aria-label="Box overview">
+       <div id="inspect-hero">
+        <h2 id="inspect-name">—</h2>
+        <p id="inspect-subtitle">—</p>
+        <div id="inspect-badges" class="inspect-badges"></div>
+        <div id="inspect-quick-actions" class="inspect-quick"></div>
+       </div>
+       <div id="inspect-actions" class="inspect-actions" role="group" aria-label="Box actions">
+      <button id="chat-control" class="chat-action" type="button" aria-label="Desktop" title="Desktop"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></span><span class="chat-action-label">Desktop</span></button>
+      <button id="chat-terminal" class="chat-action" type="button" aria-label="Terminal" title="Terminal (TMUX)"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg></span><span class="chat-action-label">Terminal</span></button>
+      <a id="chat-workspace" class="chat-action" href="#"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></span><span class="chat-action-label">Workspace</span></a>
+      <span class="chat-action-wrap">
+       <button id="chat-more" class="chat-action" type="button" aria-label="More actions" aria-haspopup="menu" aria-expanded="false"><span class="chat-action-icon"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg></span><span class="chat-action-label">More</span></button>
+       <div id="chat-more-menu" role="menu" hidden>
+        <a data-action="workspace" href="#" role="menuitem">Open workspace</a>
+        <button type="button" data-action="control" role="menuitem">Desktop / TMUX</button>
+        <button type="button" data-action="details" role="menuitem">Box details</button>
+        <button type="button" data-action="clear" role="menuitem">Clear context</button>
+       </div>
+      </span>
+     </div>
+     <div id="inspect-facts" class="inspect-facts"></div>
+       <div id="inspect-usage" class="inspect-group"><button id="chat-usage" type="button" hidden aria-label="Usage for this chat">Usage</button></div>
+       <details class="inspect-block inspect-fold inspect-technical" data-fold="technical">
+        <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><h3>Technical details</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+        <div class="inspect-technical-inner">
+        <details class="inspect-block inspect-fold" data-fold="runtime" open>
+         <summary><h3>Runtime</h3></summary>
+         <dl id="inspect-runtime-rows" class="inspect-rows"></dl>
+        </details>
+        <details class="inspect-block inspect-fold" data-fold="activity" open>
+         <summary><h3>Activity</h3></summary>
+         <dl id="inspect-activity-rows" class="inspect-rows"></dl>
+        </details>
+        <details id="inspect-attachment-storage" class="inspect-block inspect-fold" data-fold="attachments" open hidden>
+         <summary><h3>Chat attachments</h3></summary>
+         <dl id="inspect-attachment-rows" class="inspect-rows"></dl>
+         <div class="inspect-actions"><button id="inspect-clear-attachments" type="button">Clear this box's attachments…</button></div>
+         <p id="inspect-attachment-status" role="status"></p>
+        </details>
+        <details class="inspect-block inspect-fold" data-fold="config" open>
+         <summary><h3>Config</h3></summary>
+         <div id="inspect-config-actions" class="inspect-actions"></div>
+         <div id="inspect-memory-settings" hidden></div>
+         <div id="inspect-idle-policy"></div>
+         <div id="inspect-run-budget-policy"></div>
+         <div id="inspect-create-limit"></div>
+        </details>
+        </div>
+       </details>
+     <details id="inspect-contacts" class="inspect-block inspect-fold" data-fold="contacts" hidden>
+      <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 8h5"/><path d="M18.5 5.5v5"/></svg><h3>Contacts</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+      <div class="inspect-contact-body">
        <div class="inspect-contact-heading"><h3>Direct contacts</h3><button id="inspect-add-contact" type="button" aria-expanded="false" aria-controls="inspect-contact-picker">+ Add</button></div>
        <ul id="inspect-contact-list"></ul>
        <div id="inspect-contact-picker" hidden>
         <input id="inspect-contact-search" type="search" placeholder="Search boxes…" aria-label="Search boxes to add as contacts">
         <ul id="inspect-contact-options"></ul>
        </div>
+       <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> in its MCP permissions makes every eligible box available instead.</p>
+       <div class="contact-policy">
+        <div class="contact-policy-card">
+         <span class="policy-label">MCP access</span>
+         <strong id="inspect-contact-role">Configured per box</strong>
+        <button id="inspect-edit-roles" type="button">Edit permissions</button>
+        </div>
+        <div class="contact-policy-card">
+         <span class="policy-label">Labels</span>
+         <strong id="inspect-tags">None</strong>
+         <button id="inspect-edit-tags" type="button">Edit labels</button>
+        </div>
+        <div class="contact-policy-card">
+         <span class="policy-label">Visibility</span>
+         <span id="inspect-protection-label">Protection unknown</span>
+         <button id="inspect-toggle-protection" type="button">Protect box</button>
+        </div>
+       </div>
+       <p id="inspect-contact-status" role="status"></p>
       </div>
-      <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> in its MCP permissions makes every eligible box available instead.</p>
-      <div class="contact-policy">
-       <div class="contact-policy-card">
-        <span class="policy-label">MCP access</span>
-        <strong id="inspect-contact-role">Configured per box</strong>
-       <button id="inspect-edit-roles" type="button">Edit permissions</button>
-       </div>
-       <div class="contact-policy-card">
-        <span class="policy-label">Labels</span>
-        <strong id="inspect-tags">None</strong>
-        <button id="inspect-edit-tags" type="button">Edit labels</button>
-       </div>
-       <div class="contact-policy-card">
-        <span class="policy-label">Visibility</span>
-        <span id="inspect-protection-label">Protection unknown</span>
-        <button id="inspect-toggle-protection" type="button">Protect box</button>
-       </div>
-      </div>
-      <p id="inspect-contact-status" role="status"></p>
-     </section>
+     </details>
+      </section>
+     <div class="inspect-footer"><button id="chat-clear-context" type="button" aria-label="Clear context" title="Start a new agent context in this chat session"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>Clear context</button></div>
     </div>
    </aside>
    <div id="chat-loading" hidden aria-hidden="true"><img src="/loading-doodle.svg" alt=""><p id="chat-loading-text">Loading…</p></div>
@@ -164,8 +184,8 @@
     <button id="attach" type="button" title="Attach files" aria-label="Attach files">+</button>
     <input id="attachments" type="file" accept="image/png,image/jpeg,image/gif,video/mp4,video/webm" multiple hidden>
     <textarea id="chat-input" rows="1" maxlength="100000" placeholder="Message" aria-label="Message"></textarea>
-    <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent">■</button>
-    <button id="send" type="submit" title="Send" aria-label="Send" disabled>➤</button>
+    <button id="chat-interrupt" type="button" title="Interrupt agent" aria-label="Interrupt agent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg></button>
+    <button id="send" type="submit" title="Send" aria-label="Send" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg></button>
    </form>
    <p id="send-blocked-reason" role="status" hidden></p>
    <p id="chat-status" role="status"></p>
@@ -197,29 +217,30 @@
  <div id="new-box-backdrop"></div>
  <section id="new-box-card" role="dialog" aria-modal="true">
   <header><strong>New box</strong><span class="spacer"></span><button id="new-box-close" type="button" aria-label="Close">×</button></header>
-  <form id="create-box">
-   <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
-   <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
-   <label>Disk GiB <input name="disk" type="number" min="1" max="1024" value="10"></label>
-   <div id="create-memory-settings" hidden><label>RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label>Swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label><p class="hint">Container-isolated shared-worker boxes only. Defaults: 2 GiB RAM, 1 GiB swap.</p></div>
-   <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
-   <p id="create-pool-status" class="hint" hidden></p>
-   <div id="profile-choices" class="profiles"></div>
-   <fieldset id="create-tools" class="tools"><legend>Optional tools</legend></fieldset>
-   <details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label>
-   <p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details>
-   <label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label>
-   <details id="create-instructions-editor" hidden><summary>Customize Markdown</summary>
-   <label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label>
-   <div id="create-instructions-preview" class="md-preview" hidden></div></details>
-   <button id="create-box-submit">Create and start box</button>
-  </form>
-  <aside class="preview-rail" id="create-preview" aria-label="Launch preview">
-   <h3>Launch preview</h3>
-   <div class="preview-card" id="create-preview-card"></div>
-   <p class="preview-note" id="create-preview-note">Prices come from the provider catalog; pool status refreshes live.</p>
-  </aside>
-  <p id="new-box-status" role="status"></p>
+  <div class="new-box-body">
+   <form id="create-box">
+    <fieldset class="nb-step"><legend>1 · Box</legend>
+     <label>Name <input name="name" required maxlength="63" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="my-agent-box" autocomplete="off"></label>
+     <label>Start with <select name="defaultAgent"><option value="claude">Claude</option><option value="codex">Codex</option><option value="opencode">OpenCode</option><option value="shell">Shell</option></select></label>
+     <label>Disk (GiB) <input name="disk" type="number" min="1" max="1024" value="10"></label>
+     <div id="create-memory-settings" hidden><label>RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label>Swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label></div>
+     <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
+     <p id="create-pool-status" class="hint" hidden></p>
+    </fieldset>
+    <fieldset class="nb-step"><legend>2 · Logins</legend><div id="profile-choices" class="profiles"></div></fieldset>
+    <fieldset class="nb-step"><legend>3 · Tools</legend><fieldset id="create-tools" class="tools"></fieldset><details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details></fieldset>
+    <fieldset class="nb-step"><legend>4 · Instructions</legend><label>Instructions <select id="create-instructions"><option value="auto">Account default / none</option></select></label><details id="create-instructions-editor" hidden><summary>Customize Markdown</summary><label>Markdown <textarea id="create-instructions-custom" rows="5" maxlength="65536"></textarea></label><div id="create-instructions-preview" class="md-preview" hidden></div></details></fieldset>
+   </form>
+   <aside id="create-preview" aria-label="Launch preview">
+    <div class="preview-card">
+     <span class="preview-avatar" aria-hidden="true"><span class="preview-screen"></span><span class="preview-mascot"><svg viewBox="0 0 100 104"><g fill="#ff6f59"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg></span></span>
+     <strong id="create-preview-name" class="preview-name">my-agent-box</strong>
+     <div id="create-preview-card"></div>
+    </div>
+    <p class="preview-note" id="create-preview-note">Prices come from the provider catalog; pool status refreshes live.</p>
+   </aside>
+  </div>
+  <footer class="new-box-footer"><p id="new-box-status" role="status"></p><button type="button" id="new-box-cancel" class="vb-ghost">Cancel</button><button id="create-box-submit" type="submit" form="create-box">Create and start box</button></footer>
  </section>
 </div>
 
@@ -239,7 +260,7 @@
  <div class="sheet-backdrop" data-close="usage-modal"></div>
  <section class="sheet-card usage-card" role="dialog" aria-modal="true" aria-labelledby="usage-title">
   <header><strong id="usage-title">Profile usage limits</strong><span class="spacer"></span><button id="usage-refresh" type="button" title="Check usage limits now" aria-label="Check usage limits now">↻</button><button type="button" data-close="usage-modal" aria-label="Close">×</button></header>
-  <p class="hint">Profiles are checked every 30 minutes. Use ↻ to check now.</p>
+  <p class="hint">Checked every 30 min. ↻ to refresh now.</p>
   <p id="usage-status" role="status"></p>
   <div id="usage-list"></div>
  </section>
@@ -270,15 +291,24 @@
 
 <div id="presets-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="presets-modal"></div>
- <section class="sheet-card" role="dialog" aria-modal="true">
-  <header><strong>Instruction presets</strong><span class="spacer"></span><button type="button" data-close="presets-modal" aria-label="Close">×</button></header>
-  <div id="preset-list"></div>
-  <form id="preset-form">
-   <label>Name <input name="name" required maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="code-reviewer" autocomplete="off"></label>
-   <label>Markdown <textarea name="markdown" rows="5" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
-   <div class="preset-actions"><button type="submit" class="primary">Save</button><button type="button" id="preset-upload">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle">Preview</button></div>
-  </form>
-  <div id="preset-preview" class="md-preview" hidden></div>
+ <section class="sheet-card presets-card" role="dialog" aria-modal="true">
+  <header><strong>Instruction presets</strong><span class="spacer"></span><button type="button" id="preset-new" aria-label="New preset" title="New preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" data-close="presets-modal" aria-label="Close">×</button></header>
+  <div class="commands-layout presets-layout">
+   <div class="commands-list-pane">
+    <div class="commands-list-heading"><strong>Your presets</strong><span id="preset-count">0 saved</span></div>
+    <input id="preset-filter" type="search" placeholder="Search presets…" aria-label="Search presets" autocomplete="off">
+    <div id="preset-list" role="group" aria-label="Instruction presets"></div>
+    <button id="preset-new-bottom" type="button" class="vb-secondary">+ New preset</button>
+   </div>
+   <form id="preset-form" class="preset-editor">
+    <button type="button" id="preset-editor-back" class="preset-back" aria-label="Back to presets">‹ Presets</button>
+    <div class="command-editor-heading"><h3 id="preset-editor-label">New preset</h3></div>
+    <label class="preset-field">Name <input name="name" required maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="code-reviewer" autocomplete="off"></label>
+    <label class="preset-field preset-markdown-field">Markdown <textarea name="markdown" rows="10" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
+    <div id="preset-preview" class="md-preview" hidden></div>
+    <div class="form-actions"><button type="button" id="preset-delete" class="linkbtn danger">Delete</button><button type="button" id="preset-default-toggle" class="linkbtn">Set as default</button><button type="button" id="preset-upload" class="linkbtn">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle" class="linkbtn">Preview</button><button type="submit" class="primary">Save</button></div>
+   </form>
+  </div>
   <p id="preset-status" role="status"></p>
  </section></div>
 
@@ -299,7 +329,7 @@
     <label>Slash command <span class="command-name-field"><span aria-hidden="true">/</span><input name="name" required maxlength="40" pattern="[a-z0-9][a-z0-9_-]*" placeholder="review" autocomplete="off"></span></label>
     <label>Prompt text <textarea name="prompt" required maxlength="10000" rows="6" placeholder="Review this change and list the risks."></textarea></label>
     <p class="command-tip">Type <strong>/</strong> in any chat to browse commands. You can edit inserted text before sending.</p>
-    <div class="command-actions"><button id="command-use" type="button" hidden>Use in chat</button><button type="submit" class="primary">Save command</button><button id="command-delete" type="button" hidden>Delete</button></div>
+    <div class="command-actions"><button id="command-use" type="button" hidden>Insert into chat</button><button type="submit" class="primary">Save command</button><button id="command-delete" type="button" hidden>Delete</button></div>
     <div id="command-delete-confirm" hidden><span id="command-delete-question"></span><button type="button" id="command-delete-yes">Delete command</button><button type="button" id="command-delete-no">Cancel</button></div>
     <p id="command-status" role="status"></p>
    </form>
@@ -370,28 +400,26 @@
 <div id="chat-menu-sheet" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="chat-menu-sheet"></div>
  <section class="sheet-card menu-card" role="dialog" aria-modal="true">
-  <header><strong>vmbox chats</strong><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
+  <header><span class="brand"><img class="brand-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="brand-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""></span><span class="spacer"></span><button type="button" data-close="chat-menu-sheet" aria-label="Close">×</button></header>
   <div class="menu-links">
-   <a href="/#boxes">Boxes</a>
-   <a href="/#providers" data-owner-nav>Providers</a>
-   <a href="/grid" data-owner-nav>Grid</a>
-   <button id="roles-toggle" type="button" hidden>Agent permissions</button>
-   <button id="presets-toggle" type="button" hidden title="Instruction presets">Instruction presets</button>
-   <button id="commands-toggle" type="button" hidden>Commands</button>
-   <button id="ai-settings-toggle" type="button" hidden>AI writing helper</button>
-   <button id="install-app" type="button" hidden>Install Android app</button>
+   <p class="menu-group-label">Navigate</p>
+   <a href="/chat" class="current" aria-current="page"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>Chats</a>
+   <a href="/#boxes"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5"/><path d="M12 12v9"/></svg>Boxes</a>
+   <a href="/grid" data-owner-nav><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Grid</a>
+   <a href="/#providers" data-owner-nav><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 16a4 4 0 0 1 0-8 5 5 0 0 1 9.6-1.4A4 4 0 1 1 18 16z"/></svg>Providers</a>
+   <a href="/#profiles" data-owner-nav><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5 20a7 7 0 0 1 14 0"/></svg>Profiles</a>
+   <p class="menu-group-label">Agent tools</p>
+   <button id="roles-toggle" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9.5 12l1.8 1.8 3.4-3.6"/></svg>Permissions</button>
+   <button id="presets-toggle" type="button" hidden title="Instruction presets"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12h5M9.5 15h5"/></svg>Instructions</button>
+   <button id="commands-toggle" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8 5 12l4 4"/><path d="m15 8 4 4-4 4"/></svg>Commands</button>
+   <button id="ai-settings-toggle" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6 6 2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>AI writing helper</button>
+   <p class="menu-group-label">Notifications</p>
+   <div class="menu-row"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="menu-row-text"><span class="menu-row-title">Notifications</span><small id="push-status" class="menu-row-sub" role="status">Enable alerts for new replies</small></span><span class="menu-row-slot"><button id="push-toggle" class="menu-pill" type="button" hidden aria-label="Enable notifications">Off</button><button id="push-check" class="menu-row-check" type="button" hidden aria-label="Check notification permission" title="Check notification permission"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button></span></div>
+   <button id="install-app" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/></svg>Install Android app</button>
    <p id="install-status" class="menu-status" role="status" hidden></p>
-   <button id="push-toggle" type="button" hidden title="Send new chat replies and box conversation activity to this phone">Enable notifications</button>
-   <button id="push-check" type="button" hidden>Check notification permission</button>
-   <p id="push-status" class="menu-status" role="status" hidden></p>
-   <button id="logout" type="button" hidden>Log out</button>
-  </div>
-  <div class="menu-theme">
-   <p class="hint">The seed shapes the mascot.</p>
-   <div class="seedrow">
-    <input id="variant-seed" spellcheck="false" aria-label="Look seed" maxlength="32">
-    <button id="variant-dice" type="button" title="Roll a new seed">🎲</button>
-   </div>
+   <p class="menu-group-label">Account</p>
+   <button id="usage-toggle" class="menu-usage" type="button" hidden title="Usage limits for all saved profiles"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16v-5"/><path d="M13 16V8"/><path d="M18 16v-9"/></svg>Usage</button>
+   <button id="logout" type="button" class="menu-logout" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>Log out</button>
   </div>
  </section>
 </div>
@@ -407,7 +435,6 @@
   <div class="chat-group-form-actions"><button id="chat-group-cancel" type="button">Cancel</button><button type="submit">Save group</button></div>
  </form>
 </dialog>
-
 <div id="forward-menu" hidden role="menu"></div>
 <div id="chat-toasts" aria-live="polite"></div>
 
@@ -456,6 +483,8 @@
 <script src="/idle-policy.js" defer></script>
 <script src="/run-budget-policy.js" defer></script>
 <script src="/box-create-limit.js" defer></script>
+<script src="/motion.js" defer></script>
+<script src="/mascot.js" defer></script>
 <script src="/chat.js" defer></script>
 </body>
 </html>

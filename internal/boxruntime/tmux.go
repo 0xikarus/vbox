@@ -415,7 +415,7 @@ func PrepareHibernate(ctx context.Context, root string) (HibernateResult, error)
 			}
 		}
 	}
-	_, _ = tmuxOutput(ctx, "display-message", "-a", "vmbox is hibernating: terminal state will be saved; live processes will stop")
+	_, _ = tmuxOutput(ctx, "display-message", "-a", "vbox is hibernating: terminal state will be saved; live processes will stop")
 	snapshot, err := SaveTmuxState(ctx, root)
 	if err != nil {
 		return result, err
@@ -659,6 +659,6 @@ func DecodeInterruptedPane(value string, destination io.Writer) error {
 	if pane.Log != "" {
 		fmt.Fprintf(destination, "[vmbox] Saved scrollback: %s\n", pane.Log)
 	}
-	fmt.Fprintln(destination, "[vmbox] Restart it explicitly when ready; vmbox never re-runs arbitrary commands.")
+	fmt.Fprintln(destination, "[vmbox] Restart it explicitly when ready; vbox never re-runs arbitrary commands.")
 	return nil
 }

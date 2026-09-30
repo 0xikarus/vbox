@@ -18,7 +18,7 @@ import (
 
 func (a *App) pickProvider(ctx context.Context, c config.Context, token string) (v1.ProviderCredential, error) {
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return v1.ProviderCredential{}, fmt.Errorf("specify TYPE ALIAS; use vmbox pools list to see configured worker pools")
+		return v1.ProviderCredential{}, fmt.Errorf("specify TYPE ALIAS; use vbox pools list to see configured worker pools")
 	}
 	var values []v1.ProviderCredential
 	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/provider-credentials", nil, &values, nil); err != nil {
@@ -43,7 +43,7 @@ func (a *App) pickProvider(ctx context.Context, c config.Context, token string) 
 func (a *App) setupProvider(ctx context.Context, c config.Context, token, requested string) (v1.ProviderCredential, error) {
 	var zero v1.ProviderCredential
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return zero, fmt.Errorf("use vmbox pools create TYPE ALIAS --config-file FILE --secret-env ENV; see vmbox pools schema")
+		return zero, fmt.Errorf("use vbox pools create TYPE ALIAS --config-file FILE --secret-env ENV; see vbox pools schema")
 	}
 	var schema struct {
 		Providers   map[string]map[string]string `json:"providers"`
@@ -67,7 +67,7 @@ func (a *App) setupProvider(ctx context.Context, c config.Context, token, reques
 	}
 	fields, ok := schema.Providers[requested]
 	if !ok {
-		return zero, fmt.Errorf("worker pool type is not supported by this controller; use vmbox pools schema")
+		return zero, fmt.Errorf("worker pool type is not supported by this controller; use vbox pools schema")
 	}
 	reader := bufio.NewReader(singleByteReader{a.In})
 	alias, err := a.readControllerPrompt(reader, "Worker pool alias", "primary")

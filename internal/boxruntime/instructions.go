@@ -97,7 +97,7 @@ func readInstructionLedger(home string) (instructionLedger, error) {
 		return ledger, err
 	}
 	if err := json.Unmarshal(data, &ledger); err != nil {
-		return instructionLedger{Links: map[string]string{}}, fmt.Errorf("invalid vmbox instruction ledger; remove %s to re-ownership %s", instructionLedgerPath(home), instructionCanonicalPath(home))
+		return instructionLedger{Links: map[string]string{}}, fmt.Errorf("invalid vbox instruction ledger; remove %s to re-ownership %s", instructionLedgerPath(home), instructionCanonicalPath(home))
 	}
 	if ledger.Links == nil {
 		ledger.Links = map[string]string{}

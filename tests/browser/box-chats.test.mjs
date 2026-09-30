@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js','box-chats.html','box-chats.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-chats.html','box-chats.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const illustration=id=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#142433"/><rect x="24" y="24" width="592" height="352" rx="16" fill="${id==='image-3'?'#294b48':'#244060'}" stroke="#8cb8df"/><text x="50" y="85" fill="#f3f8ff" font-family="sans-serif" font-size="28" font-weight="bold">${id==='image-1'?'Build output · 1':id==='image-2'?'Build output · 2':'Review result'}</text><path d="M90 205h460" stroke="#9bc8ec" stroke-width="7"/><g fill="#eaf3ff" font-family="sans-serif" font-size="23"><text x="68" y="175">Source</text><text x="274" y="175">Build</text><text x="472" y="175">Review</text></g><circle cx="95" cy="205" r="19" fill="#94c5ee"/><circle cx="320" cy="205" r="19" fill="#94c5ee"/><circle cx="545" cy="205" r="19" fill="#94c5ee"/></svg>`);
 
@@ -56,7 +56,7 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   assert.equal(await page.$$eval('#chat-entries [data-pair-key]',rows=>rows.length),1);
   assert.equal(await page.$eval('#chat-header-name',element=>element.textContent),'Builder ↔ Reviewer');
   assert.deepEqual(await page.$$eval('#chat-messages .agent-origin',elements=>elements.map(element=>element.textContent)),['Builder','Reviewer']);
-  assert.deepEqual(await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>element.classList.contains('user')?'right':'left')),['left','right']);
+  assert.deepEqual(await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>element.classList.contains('pair-right')?'right':'left')),['left','right']);
   const sides=await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>({left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right})));
   assert.ok(sides[0].left<sides[1].left&&sides[0].right<sides[1].right,'each box should have its own side');
   assert.equal(await page.$eval('#chat-messages img',image=>image.naturalWidth),640);
@@ -159,7 +159,7 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   const desktop=await browser.newPage();await desktop.setViewport({width:1200,height:800});
   await desktop.goto(base+'/chat#box='+a);
   await desktop.waitForSelector('[data-pair-key]');
-  assert.equal(await desktop.$('.chat-pin'),null,'rows do not show a permanent pin control');
+  assert.equal(await desktop.$('#chat-entries .chat-pin'),null,'rows do not show a permanent pin control');
   await desktop.click('[data-box-id="'+b+'"]',{button:'right'});
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Pin chat');
@@ -168,11 +168,11 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   await desktop.click('#row-menu button:first-child');
   assert.equal(new URL(desktop.url()).hash,'#box='+a,'pinning from a context menu must not navigate away from the open chat');
-  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'||item.className==='conversation-divider'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Other chats','box:'+a]);
+  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'||item.className==='conversation-divider'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Chats','box:'+a]);
   assert.equal(await desktop.$eval('#chat-entries .conversation-divider',item=>item.getAttribute('role')),'separator');
   await desktop.click('[data-pair-key]',{button:'right'});
   assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
-  await desktop.click('#chat-list-head h1');
+  await desktop.click('#chat-filter-row');
   await desktop.waitForFunction(()=>document.querySelector('#row-menu').hidden);
   await desktop.screenshot({path:'/tmp/vmbox-chat-pins-desktop.png'});
   await desktop.type('#chat-filter','Reviewer');
@@ -302,7 +302,9 @@ test('chat groups sync across browser profiles',async()=>{
   const page=await first.newPage();
   await page.goto(base+'/chat');
   await page.waitForSelector('[data-box-id]');
-  await page.click('#new-chat-group');
+  // The visible path is the row's Add to Group menu; use its shared dialog
+  // trigger here to create an empty group before assigning a chat.
+  await page.$eval('#new-chat-group',button=>button.click());
   await page.type('#chat-group-name','Shared projects');
   await page.click('#chat-group-form button[type=submit]');
   await page.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Shared projects');

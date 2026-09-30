@@ -1,6 +1,6 @@
 # Controller-first CLI
 
-The normal `vmbox` CLI connects to a controller. It does not bootstrap a
+The normal `vbox` CLI connects to a controller. It does not bootstrap a
 provider or fall back to a standalone deployment. Provider bootstrap is an
 explicit operator-only action.
 

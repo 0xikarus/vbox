@@ -469,7 +469,7 @@ func (s *Server) schedule(ctx context.Context, p Principal, run v1.Run) {
 		"VMBOX_CPU":        strconv.FormatFloat(run.Request.Resources.CPU, 'f', -1, 64),
 		"VMBOX_MEMORY_MIB": strconv.FormatInt(run.Request.Resources.MemoryMiB, 10),
 		"VMBOX_DISK_GIB":   strconv.FormatInt(run.Request.Resources.DiskGiB, 10), "VMBOX_WORKSPACE": "/data/workspace",
-		"VMBOX_COST": "use vmbox cost " + name,
+		"VMBOX_COST": "use vbox cost " + name,
 	}})
 	if err != nil {
 		s.fail(ctx, p, run, err)

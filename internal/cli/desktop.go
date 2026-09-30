@@ -21,7 +21,7 @@ import (
 
 func (a *App) controllerDesktop(ctx context.Context, c config.Context, token string, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox desktop BOX [--enable] [--no-viewer] [--viewer PATH]")
+		return fmt.Errorf("usage: vbox desktop BOX [--enable] [--no-viewer] [--viewer PATH]")
 	}
 	flags := flag.NewFlagSet("desktop", flag.ContinueOnError)
 	flags.SetOutput(a.Err)
@@ -40,7 +40,7 @@ func (a *App) controllerDesktop(ctx context.Context, c config.Context, token str
 		var err error
 		viewerPath, err = exec.LookPath(*viewer)
 		if err != nil {
-			return fmt.Errorf("VNC viewer not found; install TigerVNC Viewer or use vmbox desktop %s --no-viewer", tuiLabel(args[0], 100))
+			return fmt.Errorf("VNC viewer not found; install TigerVNC Viewer or use vbox desktop %s --no-viewer", tuiLabel(args[0], 100))
 		}
 	}
 	if err := a.requireCapability(ctx, c, token, "nativeAttach"); err != nil {
@@ -61,7 +61,7 @@ func (a *App) controllerDesktop(ctx context.Context, c config.Context, token str
 		_, err = a.waitAllocation(waitCtx, c, token, allocation)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("desktop resume observation ended; the controller may still be working; check vmbox status %s: %w", tuiLabel(box.Name, 100), err)
+			return fmt.Errorf("desktop resume observation ended; the controller may still be working; check vbox status %s: %w", tuiLabel(box.Name, 100), err)
 		}
 	}
 	if *enable {
@@ -78,7 +78,7 @@ func (a *App) controllerDesktop(ctx context.Context, c config.Context, token str
 		}
 	}
 	if _, err := a.request(ctx, c, token, http.MethodPost, bp+"/desktop", map[string]any{}, nil, nil); err != nil {
-		return fmt.Errorf("desktop startup failed: %w; if packages are missing, use vmbox desktop %s --enable", err, tuiLabel(box.Name, 100))
+		return fmt.Errorf("desktop startup failed: %w; if packages are missing, use vbox desktop %s --enable", err, tuiLabel(box.Name, 100))
 	}
 	inv, err := a.sessionInventory(ctx, c, token, box.ID)
 	if err != nil {
@@ -125,7 +125,7 @@ func (a *App) controllerDesktop(ctx context.Context, c config.Context, token str
 			return err
 		}
 		if result.ExitCode != 0 {
-			return fmt.Errorf("desktop connection exited %d; reconnect with vmbox desktop %s", result.ExitCode, tuiLabel(box.Name, 100))
+			return fmt.Errorf("desktop connection exited %d; reconnect with vbox desktop %s", result.ExitCode, tuiLabel(box.Name, 100))
 		}
 		return nil
 	}, view, func(address string) {

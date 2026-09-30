@@ -19,6 +19,13 @@ function boxPlacement(box){
  const fleet=fleetSnapshots.find(f=>f.provider===box.provider&&f.providerCredential===(box.providerCredential||''));
  const slot=fleet?.slots?.find(s=>s.id===box.slotId);
  const worker=box.provider==='shared-worker'?(box.providerCredential||'shared worker'):(slot?.serviceName||slot?.serviceId||box.slotId);
+ return (box.provider==='shared-worker'?'Shared':'Dedicated')+' · slot '+(slot?.ordinal??box.slotId);
+}
+function boxPlacementFull(box){
+ if(!box.slotId)return 'Unassigned';
+ const fleet=fleetSnapshots.find(f=>f.provider===box.provider&&f.providerCredential===(box.providerCredential||''));
+ const slot=fleet?.slots?.find(s=>s.id===box.slotId);
+ const worker=box.provider==='shared-worker'?(box.providerCredential||'shared worker'):(slot?.serviceName||slot?.serviceId||box.slotId);
  return (box.provider==='shared-worker'?'Shared':'Dedicated')+' · '+worker+' · slot '+(slot?.ordinal??box.slotId);
 }
 function updateBoxPlacements(boxes){
@@ -68,11 +75,36 @@ function tableNote(text){const n=tableText(text);n.className='table-text state-n
 function button(text,fn){const b=node('button',text);b.type='button';b.className='linkbtn';b.addEventListener('click',action(fn));return b}
 const TRASH_ICON='<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>';
 const RESTART_ICON='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.4 7"/><path d="M3 4v7h7"/></svg>';
+const ICON_MORE='<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';
+function blobSVG(seed){
+ const str=String(seed||'box');let h=2166136261>>>0;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h=Math.imul(h,16777619)>>>0}
+ const palette=['#7c5cff','#3b82f6','#22c55e','#f59e0b','#ec4899','#14b8a6','#8b5cf6','#ef4444'];
+ const color=palette[Math.abs(h)%palette.length],shape=Math.abs(h>>>5)%7;let body='';
+ switch(shape){case 0:body='<circle cx="50" cy="52" r="38"/>';break;case 1:body='<path d="M50 10 C71 30 89 47 89 64 A39 39 0 1 1 11 64 C11 47 29 30 50 10 Z"/>';break;case 2:body='<rect x="13" y="15" width="74" height="74" rx="26"/>';break;case 3:body='<path d="M50 11 L87 32 L87 74 L50 95 L13 74 L13 32 Z"/>';break;case 4:body='<path d="M34 12 L66 12 C72 12 77 17 77 23 L77 30 C84 34 88 42 88 52 C88 62 84 70 77 74 L77 81 C77 87 72 92 66 92 L34 92 C28 92 23 87 23 81 L23 74 C16 70 12 62 12 52 C12 42 16 34 23 30 L23 23 C23 17 28 12 34 12 Z"/>';break;case 5:body='<path d="M50 10 C56 10 61 14 63 20 L88 71 C91 79 85 89 76 89 L24 89 C15 89 9 79 12 71 L37 20 C39 14 44 10 50 10 Z"/>';break;default:body='<circle cx="50" cy="43" r="30"/><circle cx="25" cy="61" r="20"/><circle cx="75" cy="63" r="22"/><rect x="17" y="56" width="66" height="36" rx="18"/>'}
+ const eyes='<g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g>';
+ return '<svg viewBox="0 0 100 104" aria-hidden="true"><g fill="'+color+'">'+body+'</g>'+eyes+'</svg>';
+}
+const rowMascots=[];
+function boxRowAvatar(box){
+ const avatar=node('span');avatar.className='avatar row-avatar';avatar.setAttribute('aria-hidden','true');
+ const screen=node('span');screen.className='row-screen';screen.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></svg>';
+ if(box.state==='running'){
+  const image=document.createElement('img');image.alt='';image.src='/v1/logical-boxes/'+encodeURIComponent(box.id)+'/desktop/screenshot';image.onerror=()=>image.remove();screen.append(image);
+ }
+ const host=node('span');host.className='avatar-mascot';
+ if(window.VBoxMascot?.Mascot){
+  const mascot=new window.VBoxMascot.Mascot(host,box.id);rowMascots.push(mascot);
+  if(box.state==='hibernated')mascot.jump('sleeping','sleeping','sleeping');
+  else if(box.state==='failed')mascot.jump('angry','error','failed');
+  else if(box.state!=='running')mascot.jump('waking','surprised','starting');
+ }else host.innerHTML='<svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="39" fill="#23c5bb"/><ellipse cx="37" cy="55" rx="4.5" ry="9.5" fill="#fff"/><ellipse cx="63" cy="55" rx="4.5" ry="9.5" fill="#fff"/></svg>';
+ avatar.append(screen,host);return avatar;
+}
 function trashButton(label,fn){const b=node('button');b.type='button';b.className='linkbtn danger';b.setAttribute('aria-label',label);b.title=label;b.innerHTML=TRASH_ICON;b.addEventListener('click',action(fn));return b}
 function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  root._modelPicker?.destroy();
  root.replaceChildren();
- const profileLabel=node('label','login profile ');profileLabel.className='field';
+ const profileLabel=node('label','Login profile ');profileLabel.className='field';
  const profileSelect=document.createElement('select');profileSelect.name='loginProfile';profileLabel.append(profileSelect);
  const modelLabel=node('label','model ');modelLabel.className='field';
  const modelInput=document.createElement('input');modelInput.name='agentModel';modelInput.maxLength=200;modelLabel.append(modelInput);const modelPicker=window.VMBoxModelPicker.create(modelInput);root._modelPicker=modelPicker;
@@ -80,7 +112,8 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
  const githubSelect=document.createElement('select');githubSelect.name='githubProfile';githubSelect.append(node('option','None'));githubSelect.options[0].value='';githubLabel.append(githubSelect);
  for(const profile of profiles.filter(profile=>profile.application==='github')){const option=node('option',profile.name);option.value=JSON.stringify({application:'github',name:profile.name});githubSelect.append(option)}
  githubLabel.hidden=githubSelect.options.length===1;
- root.append(profileLabel,modelLabel,githubLabel);
+ const noneNote=node('p','Starts without an agent login; connect one later.');noneNote.className='hint login-none-note';
+ root.append(profileLabel,modelLabel,githubLabel,noneNote);
  const populate=()=>{
   const app=agentSelect.value,previous=profileSelect.value||selected;profileSelect.replaceChildren();
   const empty=node('option','None');empty.value='';profileSelect.append(empty);
@@ -88,6 +121,7 @@ function renderCreationProfileChoices(root,profiles,agentSelect,selected=''){
   for(const profile of choices){const option=node('option',profile.name);option.value=JSON.stringify({application:profile.application,name:profile.name});option.dataset.model=profile.model||'';profileSelect.append(option)}modelPicker.setApplication(app);
   if([...profileSelect.options].some(option=>option.value===previous))profileSelect.value=previous;
   profileLabel.hidden=app==='shell'||choices.length===0;
+  noneNote.hidden=profileLabel.hidden;
   root.hidden=profileLabel.hidden&&githubLabel.hidden;
   syncModel();
  };
@@ -172,7 +206,18 @@ function renderWorkerCapacity(){
   root.append(node('h3',poolLabel(fleet.provider,fleet.providerCredential)));
   if(fleet.error){root.append(node('p','Capacity unavailable: '+fleet.error));continue}
   root.append(kpi([['Desired:',fleet.desiredSlots],['Free:',fleet.freeSlots],['Occupied:',fleet.occupiedSlots],['Unhealthy:',fleet.unhealthySlots]]));
-  root.append(dataTable(['Worker','Slot','State','Health','Location','Box'],(fleet.slots||[]).map(slot=>[fleet.provider==='shared-worker'?fleet.providerCredential:(slot.serviceName||slot.serviceId||slot.id||'—'),slot.ordinal,slot.state,slot.health,slot.region,slot.logicalBoxName||'—'])));
+  const slotGrid=node('div');slotGrid.className='slot-grid';
+  for(const slot of fleet.slots||[]){
+   const card=node('article');card.className='slot-card';card.dataset.state=slot.state;
+   const dot=node('span');dot.className='slot-dot';dot.setAttribute('aria-hidden','true');
+   const title=node('strong','Slot '+slot.ordinal);
+   const worker=node('small',fleet.provider==='shared-worker'?(fleet.providerCredential||'shared worker'):(slot.serviceName||slot.serviceId||slot.id||'—'));
+   const occupant=node('span',slot.logicalBoxName||(slot.state==='free'?'Available':'—'));occupant.className='slot-box';
+   const meta=node('em',[slot.state,slot.health,slot.region].filter(Boolean).join(' · '));
+   card.append(dot,title,worker,occupant,meta);slotGrid.append(card);
+  }
+  if(!(fleet.slots||[]).length)slotGrid.append(node('p','No slots reported for this pool.'));
+  root.append(slotGrid);
   const detached=fleet.detachedLogicalBoxes||[];if(detached.length)root.append(node('h3','Detached workspaces'),dataTable(['Box','State'],detached.map(box=>[box.name,box.state])));
  }
  const target=$('#capacity-pool').value?JSON.parse($('#capacity-pool').value):defaults;
@@ -181,7 +226,18 @@ function renderWorkerCapacity(){
  root.append(rawDetails(fleetSnapshots));
 }
 $('#capacity-pool').addEventListener('change',renderWorkerCapacity);
-function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){root.append(node('p','No notification destinations configured. Notifications are optional.'));return}root.append(dataTable(['Name','Type','Status','Allowed users','Allowed chats'],values.map(n=>[n.name,n.kind,n.enabled?'Enabled':'Disabled',(n.allowedUsers||[]).join(', ')||'Not specified',(n.allowedChats||[]).join(', ')||'Not specified'])),rawDetails(values))}
+function renderNotifications(values){const root=$('#destinations');root.replaceChildren();if(!values.length){const empty=node('div');empty.className='notice-empty';empty.innerHTML='<svg class="notice-empty-mascot" viewBox="0 0 100 104" aria-hidden="true"><g fill="#ff6f59"><circle cx="50" cy="52" r="38"/></g><g fill="none" stroke="#fff" stroke-width="7.5" stroke-linecap="round"><path d="M38 33 L41 45"/><path d="M59 33 L62 45"/></g></svg>';empty.append(node('p','No notification destinations configured. Notifications are optional.'));root.append(empty);return}
+ const list=node('div');list.className='notice-list';
+ for(const n of values){
+  const row=node('article');row.className='notice-row';row.dataset.enabled=String(!!n.enabled);
+  const dot=node('span');dot.className='slot-dot';dot.setAttribute('aria-hidden','true');
+  const text=node('div');text.className='notice-text';
+  const title=node('strong',n.name);const meta=node('small',(n.kind||'webhook')+' · '+((n.allowedUsers||[]).join(', ')||'everyone')+' · '+((n.allowedChats||[]).join(', ')||'all chats'));
+  text.append(title,meta);
+  const badge=node('span',n.enabled?'Enabled':'Disabled');badge.className='notice-badge';
+  row.append(dot,text,badge);list.append(row);
+ }
+ root.append(list,rawDetails(values))}
 function renderProviders(providers){
  const root=$('#provider-list');root.replaceChildren();
  if(!providers.length){root.append(node('p','No providers configured. Add one below, validate it, then select it as the default.'));return}
@@ -241,7 +297,7 @@ function renderBoxDetail(){
  const state=node('span',box.state);state.className='box-detail-state';state.dataset.state=box.state;
  const intro=node('div');intro.className='box-detail-intro';intro.append(state,node('span',box.defaultAgent||'shell'));
  const facts=node('dl');facts.className='box-detail-facts';
- for(const [label,value] of [['Worker / slot',boxPlacement(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Last instructions sync',boxDetailSyncLabel()],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
+ for(const [label,value] of [['Worker / slot',boxPlacementFull(box)],['Provider',box.provider||'—'],['Pool',box.providerCredential||'default'],['Slot ID',box.slotId||'Unassigned'],['Last instructions sync',boxDetailSyncLabel()],['Workspace volume',box.volumeName||box.volumeId||'—'],['Box ID',box.id]]){const row=node('div');row.append(node('dt',label),node('dd',value));facts.append(row)}
  if(box.failureReason){const error=node('p',box.failureReason);error.className='box-detail-error';root.append(error)}
  const actions=node('div');actions.className='box-detail-actions';
  const workspace=node('a','Open workspace');workspace.href='/boxes/'+encodeURIComponent(box.id);
@@ -264,17 +320,19 @@ function manageView(){
  const section=location.hash.slice(1);
  const pageNames={boxes:'boxes',providers:'providers',profiles:'profiles',roles:'permissions',instructions:'instructions',fleet:'capacity',notifications:'notifications'};
  const page=pageNames[section]||'manage';
- const view=['boxes','providers','profiles'].includes(section)?section:'all';
+ const view=pageNames[section]?section:'all';
  document.body.dataset.manageView=view;
  $('#manage-page-label').textContent=page;
- document.title='vmbox / '+page;
+  document.title='vbox / '+page;
  document.querySelectorAll('.workspace-links a,.manage-subnav a').forEach(link=>{
   if(link.getAttribute('href')==='#'+section&&section)link.setAttribute('aria-current','page');
   else link.removeAttribute('aria-current');
  });
 }
 addEventListener('hashchange',manageView);manageView();
+$('#manage-account')?.addEventListener('click',()=>$('#manage-menu')?.click());
 function renderBoxes(boxes){
+ for(const mascot of rowMascots)mascot.destroy();rowMascots.length=0;
  listedBoxes=boxes;
  clearTimeout(boxRefreshTimer);
  for(const id of startingBoxes){const box=boxes.find(b=>b.id===id);if(!box||box.state==='running'||box.state==='failed'||box.state==='deleting'||box.state==='hibernated'&&box.failureReason)startingBoxes.delete(id)}
@@ -286,7 +344,9 @@ function renderBoxes(boxes){
   for(const agent of ['claude','codex','opencode','shell']){const o=node('option',agent);o.value=agent;select.append(o)}select.value=b.defaultAgent;select.disabled=b.state==='deleting'||deletingBoxes.has(b.id);
   select.addEventListener('change',action(()=>api(bp(b.id),'PATCH',{defaultAgent:select.value})));cell.append(select);
   const name=node('td',''),link=node(b.state==='deleting'?'span':'a',b.name);link.className='table-text';link.title=b.name;if(b.state!=='deleting')link.href='/boxes/'+encodeURIComponent(b.id);name.append(link);
+  name.prepend(boxRowAvatar(b));
   status.replaceChildren(tableText(startingBoxes.has(b.id)&&b.state!=='running'?'starting':b.state));
+  status.dataset.state=startingBoxes.has(b.id)&&b.state!=='running'?'starting':b.state;
   if(b.restorationState)status.append(tableNote(b.restorationState));
   if(b.failureReason)status.append(tableNote(b.failureReason));
   if(boxPhase(b.state)==='stopped'||boxPhase(b.state)==='failed'){
@@ -314,12 +374,26 @@ function renderBoxes(boxes){
    finally{deletingBoxes.delete(b.id);try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch{if(version===epoch)remove.disabled=false}}
   });remove.disabled=b.state==='deleting'||deletingBoxes.has(b.id);actions.prepend(remove);
   const details=button('Details',event=>openBoxDetail(b,event.currentTarget));details.classList.add('box-details-action');details.setAttribute('aria-label','Details for box '+b.name);actions.prepend(details);
-  const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vmbox '+JSON.stringify(b.name)));const permissions=node('td');permissions.append(button('Manage…',()=>openBoxPolicyEditor(b)));row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
+  const manage=button('Manage…',()=>openBoxPolicyEditor(b));manage.setAttribute('aria-label','Manage permissions for box '+b.name);actions.append(manage);
+  {
+   const others=[...actions.children].filter(el=>el!==details);
+   if(others.length){
+    const overflow=node('div');overflow.className='row-overflow';
+    const trigger=button('',()=>{const open=overflow.classList.toggle('open');trigger.setAttribute('aria-expanded',String(open))});
+    trigger.className='row-overflow-trigger';trigger.setAttribute('aria-haspopup','menu');trigger.setAttribute('aria-expanded','false');trigger.setAttribute('aria-label','More actions for '+b.name);trigger.title='More actions';trigger.innerHTML=ICON_MORE;
+    const menu=node('div');menu.className='row-overflow-menu';menu.setAttribute('role','menu');
+    for(const el of others)menu.append(el);
+    menu.addEventListener('click',()=>overflow.classList.remove('open'));
+    overflow.append(trigger,menu);actions.replaceChildren(details,overflow);
+   }
+  }
+  const placement=node('td'),placementText=tableText(boxPlacement(b));placementText.classList.add('box-placement');placement.append(placementText);const cli=node('td');cli.append(tableText('vbox '+JSON.stringify(b.name)));const permissions=node('td');row.append(name,status,placement,cell,permissions,cli,actions);table.append(row);
  }wrap.append(table);$('#box-list').replaceChildren(wrap);
  if(selectedManagedBoxID)renderBoxDetail();
  if(startingBoxes.size||boxes.some(b=>TRANSIENT_STATES.has(b.state))){const version=epoch;boxRefreshTimer=setTimeout(async()=>{try{const boxes=await api('/v1/logical-boxes');if(version===epoch)renderBoxes(boxes)}catch(err){if(version===epoch)$('#error').textContent='Could not check box progress. Use Refresh to retry. '+err.message}},5000)}
 }
 $('#box-search').addEventListener('input',()=>renderBoxes(listedBoxes));
+document.addEventListener('click',event=>{if(event.target.closest('.row-overflow'))return;document.querySelectorAll('.row-overflow.open').forEach(el=>el.classList.remove('open'))});
 function renderPermissionBoxes(boxes){
  roleBoxes=boxes||[];const root=$('#role-assignments'),query=$('#role-box-search').value.trim().toLowerCase(),visible=roleBoxes.filter(box=>!query||box.name.toLowerCase().includes(query));root.replaceChildren();
  if(!visible.length){root.append(node('p',query?'No boxes match this search.':'Create a box to configure agent permissions.'));return}
@@ -327,10 +401,10 @@ function renderPermissionBoxes(boxes){
  for(const box of visible){
   const card=node('article');card.className='role-assignment-card';card.dataset.state=box.state;card.dataset.roleBoxId=box.id;
   const summary=node('div');summary.className='role-assignment-summary';
-  const mark=node('span',(box.name||'?').slice(0,1).toUpperCase());mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');
-  const identity=node('div');identity.className='role-assignment-identity';identity.append(node('small','BOX / AGENT'),node('strong',box.name));const meta=node('div');meta.className='role-box-meta';const agent=node('span',box.defaultAgent||'agent');agent.className='role-agent-badge';const state=node('span',box.state);state.className='role-state-badge';meta.append(agent,state);identity.append(meta);
+  const mark=node('span');mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');mark.innerHTML='<span class="role-box-screen"></span><span class="role-box-mascot">'+blobSVG(box.id)+'</span>';
+  const identity=node('div');identity.className='role-assignment-identity';identity.append(node('strong',box.name));const meta=node('div');meta.className='role-box-meta';const agent=node('span',box.defaultAgent||'agent');agent.className='role-agent-badge';const state=node('span',box.state);state.className='role-state-badge';meta.append(agent,state);identity.append(meta);
   const current=node('div');current.className='role-assignment-current';current.append(node('span','Direct MCP permissions and contacts'));
-  const actions=node('div');actions.className='role-assignment-actions';const manage=button('Edit permissions',()=>openBoxPolicyEditor(box));manage.classList.add('role-assignment-toggle');const contacts=node('a','Manage contacts');contacts.className='role-assignment-toggle';contacts.href='/chat#box='+encodeURIComponent(box.id);actions.append(manage,contacts);
+  const actions=node('div');actions.className='role-assignment-actions';const manage=button('Edit permissions',()=>openBoxPolicyEditor(box));manage.classList.add('role-assignment-toggle','vb-secondary');const more=node('details');more.className='role-box-more';const moreSummary=node('summary');moreSummary.setAttribute('aria-label','More for '+box.name);moreSummary.innerHTML=ICON_MORE;const contacts=node('a','Manage contacts');contacts.href='/chat#box='+encodeURIComponent(box.id);more.append(moreSummary,contacts);actions.append(manage,more);
   summary.append(mark,identity,current,actions);card.append(summary);list.append(card);
  }
  root.append(list);
@@ -359,7 +433,9 @@ function paintProfileLibrary(){
   if(query&&!entries.length)continue;
   shown+=entries.length;
   const card=node('article');card.className='profile-app';card.dataset.application=app;
-  const head=node('header');head.className='profile-app-head';const mark=node('span',label.slice(0,1));mark.className='profile-app-mark';mark.setAttribute('aria-hidden','true');
+  const head=node('header');head.className='profile-app-head';const mark=node('span');mark.className='profile-app-mark';mark.setAttribute('aria-hidden','true');
+  const harnessIcons={claude:'/harness-claude.svg',codex:'/harness-codex.svg',opencode:'/harness-opencode-light.svg'};
+  if(harnessIcons[app]){const icon=document.createElement('img');icon.src=harnessIcons[app];icon.alt='';mark.append(icon)}else mark.textContent=label.slice(0,1);
   const heading=node('div'),title=node('h3',label),description=node('p',app==='github'?'Git credentials for cloning and pushing.':'Agent login snapshots for new boxes.');heading.append(title,description);
   const count=node('span',String(query?entries.length:all.length));count.className='profile-app-count';count.setAttribute('aria-label',(query?entries.length:all.length)+' '+label+' profiles');head.append(mark,heading,count);card.append(head);
   const list=node('div');list.className='profile-list';
@@ -421,7 +497,7 @@ async function loadAgentCLIVersionChoices(version){
   renderAgentCLIVersionChoice(agent,selected,result.status==='fulfilled'?result.value:null);
   if(result.status==='rejected')failed.push(agent);
  }
- if(failed.length)$('#agent-cli-versions-status').textContent='Could not load published versions for '+failed.join(', ')+'. Use Refresh to retry; saved choices remain available.';
+ if(failed.length){const status=$('#agent-cli-versions-status');status.replaceChildren();const icon=node('span','⚠');icon.className='notice-icon';const msg=node('span','Could not load published versions for '+failed.join(', ')+'. Saved choices remain available. ');const retry=button('Retry',()=>$('#refresh')?.click());retry.classList.add('notice-retry');status.append(icon,msg,retry);}
 }
 async function refresh(){
  const version=epoch,[caps,boxes,instructionList]=await Promise.all([api('/v1/capabilities'),api('/v1/logical-boxes'),api('/v1/instruction-presets').catch(()=>({defaultName:'',presets:[]}))]);if(version!==epoch)return;
@@ -455,6 +531,18 @@ function resetCreationForm(form){
  form.querySelectorAll('details').forEach(details=>details.open=false);
  void syncCreateInstructionText();
 }
+const createCard=$('#create-card');
+const focusCreateName=()=>createCard?.querySelector('#create input[name="name"]')?.focus({preventScroll:true});
+function revealCreateCard(){
+ if(!createCard)return;
+ createCard.open=true;
+ focusCreateName();
+ createCard.scrollIntoView({behavior:'smooth',block:'start'});
+}
+document.querySelector('.section-actions a[href="#create"]')?.addEventListener('click',event=>{event.preventDefault();revealCreateCard()});
+window.addEventListener('hashchange',()=>{if(location.hash==='#create')revealCreateCard()});
+createCard?.addEventListener('toggle',()=>{if(createCard.open)focusCreateName()});
+$('#create-cancel')?.addEventListener('click',()=>{resetCreationForm($('#create'));createCard.open=false;createCard.scrollIntoView({behavior:'smooth',block:'nearest'})});
 $('#create').addEventListener('submit',action(async e=>{const f=e.target.elements,profile=f.loginProfile?.value,profileRef=profile?JSON.parse(profile):null,loginProfiles=profileRef?[{...profileRef,model:f.agentModel.value.trim(),...(f.agentReasoningEffort.value?{reasoningEffort:f.agentReasoningEffort.value}:{})}]:[],github=f.githubProfile?.value,tools=['desktop',...[...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value)],setupScript=f.setupScript.value,d=f.pool.value?JSON.parse(f.pool.value):await chooseCreationPool(tools),instructions=await createInstructionSelection();if(profileRef&&!loginProfiles[0].model)throw Error('Choose a model');if(github)loginProfiles.push(JSON.parse(github));const createdName=f.name.value.trim(),created=await api('/v1/logical-boxes','POST',{name:createdName,defaultAgent:f.defaultAgent.value,diskGiB:Number(f.disk.value),provider:d.provider,providerCredential:d.providerCredential,allocateWhenReady:true,loginProfiles,tools,...(d.provider==='shared-worker'?{memoryGiB:Number(f.memoryGiB.value),swapGiB:Number(f.swapGiB.value)}:{}),...(setupScript.trim()?{setupScript}:{}),...(instructions?{instructions}:{})},{'Idempotency-Key':crypto.randomUUID()});if(created?.id)startingBoxes.add(created.id);resetCreationForm(e.target);try{await refresh();notice('Box '+createdName+' is starting.')}finally{document.activeElement?.blur();window.scrollTo(0,0)}}));
 $('#agent-cli-versions').addEventListener('submit',action(async e=>{const fields=e.target.elements,values={};for(const agent of ['claude','codex','opencode'])values[agent]=fields[agent].value.trim();await api('/v1/agent-cli-versions','PUT',values);$('#agent-cli-versions-status').textContent='Saved. New boxes will use these versions.'}));
 $('#provider').addEventListener('submit',action(async e=>{const f=e.target.elements,rev=f.revision.value,body={config:JSON.parse(f.config.value)};if(f.secret.value){body.secret=JSON.parse(f.secret.value);if(rev)body.replaceSecret=true}await api(pp(f.provider.value,f.alias.value),rev?'PATCH':'PUT',body,rev?{'If-Match':rev}:{});e.target.reset();await refresh()}));
@@ -478,19 +566,26 @@ function applyInstructionPresets(list){
 }
 function renderInstructionList(){
  const root=$('#instruction-list');root.replaceChildren();
- if(!instructionPresets.presets.length){root.append(node('p','No instruction presets yet. Create one below to reuse Markdown guidance across boxes.'));return}
- const wrap=node('div');wrap.className='table-wrap';const table=document.createElement('table');table.className='markets';
- const head=node('tr');['Name','Revision','Size','Default','Updated','Actions'].forEach(t=>head.append(node('th',t)));table.append(head);
+ if(!instructionPresets.presets.length){root.append(node('p','No instruction presets yet. Create one to reuse Markdown guidance across boxes.'));return}
+ const friendly=value=>{const d=new Date(value);if(Number.isNaN(d.getTime()))return '—';const now=new Date(),same=d.toDateString()===now.toDateString();const time=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});return same?'Today, '+time:d.toLocaleDateString([],{day:'numeric',month:'short'})+', '+time};
+ const list=node('div');list.className='preset-list';
  for(const preset of instructionPresets.presets){
-  const row=node('tr');row.className='row';
-  row.append(node('td',preset.name),node('td','r'+preset.revision),node('td',preset.sizeBytes+' B'),node('td',preset.default?'yes':'no'),node('td',new Date(preset.updatedAt).toLocaleString()));
-  const actions=node('td');
-  if(ownerTools)actions.append(button('Edit',()=>void editInstructionPreset(preset.name)),button(preset.default?'Clear default':'Set default',()=>setInstructionDefault(preset.default?'':preset.name)),trashButton('Delete instruction preset '+preset.name,()=>deleteInstructionPreset(preset)));
-  else actions.append(node('span','—'));
-  row.append(actions);table.append(row);
+  const row=node('article');row.className='preset-row';row.dataset.presetName=preset.name;
+  const main=node('div');main.className='preset-main';
+  const title=node('div');title.className='preset-title';title.append(node('strong',preset.name));
+  if(preset.default){const pill=node('span','Default');pill.className='pill';title.append(pill)}
+  const meta=node('small',['r'+preset.revision,preset.sizeBytes+' B','updated '+friendly(preset.updatedAt)].join(' · '));meta.className='preset-meta';
+  main.append(title,meta);
+  const actions=node('div');actions.className='preset-actions';
+  if(ownerTools){
+   actions.append(button('Edit',()=>void editInstructionPreset(preset.name)));
+   const more=node('details');more.className='row-overflow';const summary=node('summary');summary.setAttribute('aria-label','More for '+preset.name);summary.innerHTML=ICON_MORE;const menu=node('div');menu.className='row-overflow-menu';menu.append(button(preset.default?'Clear default':'Set default',()=>setInstructionDefault(preset.default?'':preset.name)),trashButton('Delete instruction preset '+preset.name,()=>deleteInstructionPreset(preset)));more.append(summary,menu);actions.append(more);
+  } else actions.append(node('span','—'));
+  row.append(main,actions);list.append(row);
  }
- wrap.append(table);root.append(wrap);
+ root.append(list);
 }
+document.getElementById('instruction-new')?.addEventListener('click',()=>{const editor=$('#instruction-editor');if(!editor)return;editor.open=true;editor.scrollIntoView({behavior:'smooth',block:'nearest'});const field=editor.querySelector('input[name=name]');if(field)field.focus()});
 async function editInstructionPreset(name){
  const form=$('#instruction-form'),status=$('#instruction-status');
  try{const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;$('#instruction-editor').open=true;renderInstructionPreview();status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.'}
@@ -637,7 +732,7 @@ async function openBoxCredentials(box){
   const byApplication={};for(const profile of profiles)(byApplication[profile.application]??=[]).push(profile.name);
   const current=(state.profiles||[])[0];
   const wrap=$('#box-credentials-form');wrap.replaceChildren();
-  const label=node('label','login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
+  const label=node('label','Login profile ');label.className='field';const select=document.createElement('select');select.name='loginProfile';const empty=node('option','None');empty.value='';select.append(empty);
   for(const application of ['claude','codex','opencode']){const names=(byApplication[application]||[]).slice().sort();if(!names.length)continue;const group=document.createElement('optgroup');group.label=application;for(const name of names){const option=node('option',name);option.value=JSON.stringify({application,name});group.append(option)}select.append(group)}
   const currentValue=current&&JSON.stringify({application:current.application,name:current.name});if(currentValue&&[...select.options].some(option=>option.value===currentValue))select.value=currentValue;label.append(select);wrap.append(label);
   const parts=[(state.profiles||[]).length?'Imported: '+(state.profiles||[]).map(ref=>ref.application+' · '+ref.name).join(', '):'No imported login profiles recorded'];

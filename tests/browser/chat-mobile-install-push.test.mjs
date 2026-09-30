@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const root='internal/controller/web/';
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile(root+name)])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile(root+name)])));
 const puts=[],deletes=[];
 const server=http.createServer(async(req,res)=>{
  const path=new URL(req.url,'http://local').pathname;
@@ -17,7 +17,7 @@ const server=http.createServer(async(req,res)=>{
  }
  if(path.startsWith('/v1/')){
   res.setHeader('Content-Type','application/json');
-  const values={'/v1/whoami':{role:'owner'},'/v1/grid-boxes':[],'/v1/box-conversations':[],'/v1/profile-usage':[],'/v1/chat-commands':[],'/v1/push/vapid-key':{publicKey:'BAAAAA'}};
+  const values={'/v1/whoami':{role:'owner'},'/v1/logical-boxes':[],'/v1/grid-boxes':[],'/v1/box-conversations':[],'/v1/profile-usage':[],'/v1/chat-commands':[],'/v1/push/vapid-key':{publicKey:'BAAAAA'}};
   return res.end(JSON.stringify(values[path]??{}));
  }
  res.statusCode=404;res.end();
@@ -46,12 +46,12 @@ try{
   puts.length=0;deletes.length=0;
   const p=await page('default');
   assert.equal(await p.$eval('#install-app',el=>el.hidden),false);
-  assert.equal(await p.$eval('#push-toggle',el=>el.textContent),'Enable notifications');
+  assert.deepEqual(await p.$eval('#push-toggle',el=>[el.textContent,el.getAttribute('aria-label')]),['Off','Enable notifications']);
   assert.equal(await p.evaluate(()=>window.__permissionRequests),0);
   await p.click('#install-app');
   assert.match(await p.$eval('#install-status',el=>el.textContent),/Chrome.*Install app/);
   await p.click('#push-toggle');
-  await p.waitForFunction(()=>document.querySelector('#push-toggle').textContent==='Notifications on');
+  await p.waitForFunction(()=>document.querySelector('#push-toggle').textContent==='On');
   assert.equal(await p.evaluate(()=>window.__permissionRequests),1);
   assert.equal(puts.length,1);
   assert.match(await p.$eval('#push-status',el=>el.textContent),/subscription active/);
@@ -59,10 +59,10 @@ try{
   assert.ok(puts.length>=2);
   if(process.env.VMBOX_MOBILE_SCREENSHOTS)await p.screenshot({path:process.env.VMBOX_MOBILE_SCREENSHOTS});
   await p.click('#push-toggle');
-  await p.waitForFunction(()=>document.querySelector('#push-toggle').textContent==='Enable notifications');
+  await p.waitForFunction(()=>document.querySelector('#push-toggle').textContent==='Off');
   assert.equal(deletes.length,1);
   await p.click('#push-toggle');
-  await p.waitForFunction(()=>document.querySelector('#push-toggle').textContent==='Notifications on');
+  await p.waitForFunction(()=>document.querySelector('#push-toggle').textContent==='On');
   await p.click('#logout');
   await p.waitForFunction(()=>window.__subscription===null);
   assert.equal(deletes.length,2,'logging out removes the device subscription');

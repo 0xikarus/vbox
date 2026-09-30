@@ -1346,7 +1346,7 @@ func (p *Provider) ensureSessionTarget(ctx context.Context, target, session stri
 		return fmt.Errorf("prepare tmux session exited with status %d", prepared.ExitCode)
 	}
 	if strings.TrimSpace(string(prepared.Stdout)) == "preserved" && stderr != nil {
-		fmt.Fprintln(stderr, "vmbox: existing active tmux session predates the non-root migration; it will be preserved until the box is stopped")
+		fmt.Fprintln(stderr, "vbox: existing active tmux session predates the non-root migration; it will be preserved until the box is stopped")
 	}
 	return nil
 }

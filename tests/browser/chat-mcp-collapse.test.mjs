@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 const box={id:'mcp-fixture',name:'MCP fixture',state:'running',defaultAgent:'codex'};
 const at=index=>new Date(Date.UTC(2026,8,30,10,index)).toISOString();
 const message=(id,direction,text,index)=>({id,direction,text,state:'delivered',createdAt:at(index),updatedAt:at(index)});
@@ -48,15 +48,15 @@ test('consecutive MCP calls collapse into a divider and retain their open state 
   assert.equal(await page.$eval('.mcp-call-item[data-tool="chat_message"] .mcp-call-icon svg',icon=>icon.querySelector('path')!==null),true);
   assert.equal(await page.$eval('.mcp-call-item[data-tool="take_screenshot"] .mcp-call-failed',badge=>badge.textContent),'Failed');
   await page.screenshot({path:'/tmp/vmbox-mcp-expanded.png'});
-  await page.click('#refresh');
+  await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>document.querySelector('.mcp-call-group .mcp-call-toggle')?.getAttribute('aria-expanded')==='true');
   messages=[...messages,message('mcp-4','system','MCP · take_screenshot',5)];
-  await page.click('#refresh');
+  await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>[...document.querySelectorAll('.mcp-call-count')].at(-1)?.textContent==='2');
   assert.equal(await page.$$eval('.mcp-call-group .mcp-call-toggle',buttons=>buttons.at(-1).getAttribute('aria-expanded')),'false');
   await page.$$eval('.mcp-call-group .mcp-call-toggle',buttons=>buttons.at(-1).click());
   messages=[...messages,message('mcp-5','system','MCP · get_contacts',6)];
-  await page.click('#refresh');
+  await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>[...document.querySelectorAll('.mcp-call-count')].at(-1)?.textContent==='3');
   assert.equal(await page.$$eval('.mcp-call-group .mcp-call-toggle',buttons=>buttons.at(-1).getAttribute('aria-expanded')),'true');
   await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});

@@ -20,7 +20,7 @@ func TestHelpIsOfflineAndShortByDefault(t *testing.T) {
 		if strings.Contains(out.String(), "notifications list") != (len(args) == 2) {
 			t.Fatal("advanced commands not confined to full help")
 		}
-		for _, obsolete := range []string{"vmbox menu", "delete-volume", "vmbox close"} {
+		for _, obsolete := range []string{"vbox menu", "delete-volume", "vbox close"} {
 			if strings.Contains(out.String(), obsolete) {
 				t.Fatalf("obsolete help: %s", obsolete)
 			}

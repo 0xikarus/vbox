@@ -8,7 +8,11 @@ import puppeteer from 'puppeteer-core';
 
 const html=await readFile('internal/controller/web/chat.html','utf8');
 const js=await readFile('internal/controller/web/chat.js','utf8');
+const motionJS=await readFile('internal/controller/web/motion.js','utf8');
+const mascotJS=await readFile('internal/controller/web/mascot.js','utf8');
+const mascotCSS=await readFile('internal/controller/web/mascot.css','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
+const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
@@ -22,7 +26,7 @@ function tinyPNG(){
  return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',zlib.deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);
 }
 
-test('composer drafts persist, attachments inspect, and the shell is dark',async()=>{
+test('composer drafts persist, attachments inspect, and the shell follows dark preference',async()=>{
  const now=new Date().toISOString();
  const boxes=[{id:'alpha',name:'alpha',state:'running',defaultAgent:'claude',provider:'railway',role:'owner'},{id:'beta',name:'beta',state:'running',defaultAgent:'claude',provider:'railway',role:'worker'}];
  const msgs=id=>[{id:id+'1',direction:'agent',state:'delivered',text:id.toUpperCase()+'-ONLY',createdAt:now,updatedAt:now}];
@@ -34,7 +38,11 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   const path=req.url.split('?')[0];
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(html)}
   if(path==='/chat.js'){res.setHeader('Content-Type','text/javascript');return res.end(js)}
+  if(path==='/motion.js'){res.setHeader('Content-Type','text/javascript');return res.end(motionJS)}
+  if(path==='/mascot.js'){res.setHeader('Content-Type','text/javascript');return res.end(mascotJS)}
+  if(path==='/mascot.css'){res.setHeader('Content-Type','text/css');return res.end(mascotCSS)}
   if(path==='/chat.css'){res.setHeader('Content-Type','text/css');return res.end(css)}
+  if(path==='/vbox-c.css'){res.setHeader('Content-Type','text/css');return res.end(vboxCSS)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
@@ -55,6 +63,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const p=await browser.newPage();
+  await p.emulateMediaFeatures([{name:'prefers-color-scheme',value:'dark'}]);
   await p.setViewport({width:420,height:900,deviceScaleFactor:1});
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=alpha');
   await p.waitForFunction(()=>document.querySelector('#chat-messages')?.textContent.includes('ALPHA-ONLY'),{timeout:8000});
@@ -63,13 +72,13 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   assert.equal(await p.$('#list-mascot'),null,'list header mascot removed');
   assert.equal(await p.$('#chat-companion'),null,'conversation header mascot removed');
 
-  // add-box lives in the list header and never overlaps the composer's send
-  assert.equal(await p.$eval('#new-box',el=>!!el.closest('#chat-list-head')),true);
+  // add-box lives in the list header row and never overlaps the composer's send
+  assert.equal(await p.$eval('#new-box',el=>!!el.closest('#chat-sidebar-head')),true);
   const overlap=await p.evaluate(()=>{const a=document.querySelector('#new-box').getBoundingClientRect(),b=document.querySelector('#send').getBoundingClientRect();return !(a.right<b.left||a.left>b.right||a.bottom<b.top||a.top>b.bottom)});
   assert.equal(overlap,false,'the add-box button must not overlap send');
 
   // Quiet workspace shell
-  assert.equal(await p.$eval('#chat-shell',el=>getComputedStyle(el).backgroundColor),'rgb(17, 25, 35)');
+  assert.ok(await p.$eval('#chat-shell',el=>getComputedStyle(el).backgroundColor.match(/\d+/g).slice(0,3).every(channel=>Number(channel)<40)),'dark preference gives the shell a dark surface');
 
   // typing persists per box and across a reload
   await p.type('#chat-input','draft for alpha');

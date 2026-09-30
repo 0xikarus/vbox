@@ -1,4 +1,4 @@
-# vmbox: guide for future agents
+# vbox: guide for future agents
 
 Architecture, lifecycle rules, and implementation entry points. Check the source
 for current behavior.
@@ -12,7 +12,7 @@ storage, and a reusable fleet of compute slots. The CLI is controller-first and
 provider-agnostic. A logical box is **not** a fleet service: its workspace volume
 can outlive, and later attach to, a different compute slot.
 
-- `vmbox BOX`: persistent interactive shell/tmux workspace; launch agents yourself.
+- `vbox BOX`: persistent interactive shell/tmux workspace; launch agents yourself.
 - Web box workspace: start the selected managed agent and prefer its enabled desktop, with Desktop and TMUX views of the same session. Opening Desktop raises the box's primary session window, which is titled with its tmux session name.
 - **Grid**: multiple viewers for existing persistent interactive boxes, not a
   scheduler, launcher, or broadcast-input console.
@@ -41,7 +41,7 @@ cleanup to these boxes.
 
 | Area | Entry points |
 | --- | --- |
-| Executables | `cmd/vmbox`, `cmd/vmbox-controller`, `cmd/vmbox-runtime`, `cmd/vmbox-worker-agent` |
+| Executables | `cmd/vbox`, `cmd/vmbox-controller`, `cmd/vmbox-runtime`, `cmd/vmbox-worker-agent` |
 | CLI forms and tasks | `internal/cli/creation.go`, `controller_task.go`, `logical_boxes.go` |
 | Routes and background reconciliation | `internal/controller/server.go` |
 | Fleet creation, allocation, hibernation, deletion | `internal/controller/fleet_*.go` |
@@ -108,7 +108,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   a sleeping web workspace is read-only until **Resume box** is clicked. A running
   workspace starts the desktop on attachment; TMUX retains its flow.
   PCManFM supplies desktop launch icons alongside the tint2 taskbar. Icon files
-  are created only when absent; an exact legacy vmbox Terminal icon is refreshed,
+  are created only when absent; an exact legacy vbox Terminal icon is refreshed,
   while owner edits survive reconnects. libfm's quick-execute preference allows
   desktop launchers to open without an executable-file prompt; it also applies
   to other executable files opened through PCManFM. The desktop runtime polls

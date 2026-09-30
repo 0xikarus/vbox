@@ -44,13 +44,13 @@ Creating or editing an alias does not deploy workers. Set capacity explicitly;
 later owner changes. Capacity changes can incur hosting charges.
 
 ```bash
-vmbox users add alice --role user
-vmbox users list
-vmbox providers schema
-vmbox providers list
-vmbox pools create
-vmbox pools default
-vmbox fleet status
+vbox users add alice --role user
+vbox users list
+vbox providers schema
+vbox providers list
+vbox pools create
+vbox pools default
+vbox fleet status
 ```
 
 Pass provider secrets through the CLI's named secure environment input, never as
@@ -58,7 +58,7 @@ command arguments or in provider config JSON. The controller encrypts stored
 secrets. Check each provider's prerequisites before selecting it as the default.
 
 Notifications can be listed, configured, and tested with
-`vmbox notifications list|setup|test`. Webhook and Discord secrets are JSON
+`vbox notifications list|setup|test`. Webhook and Discord secrets are JSON
 objects supplied through named secure environment variables; Discord also
 requires user and chat/channel allowlists.
 
@@ -72,7 +72,7 @@ restart remote tmux sessions; do not restart workers to test controller recovery
 
 Fresh dedicated allocations bind native runtime assignments automatically.
 Existing running boxes may require the explicit owner operation
-`vmbox sessions BOX --enable` after an approved controller rollout. Record
+`vbox sessions BOX --enable` after an approved controller rollout. Record
 process and session identities before and after; this operation should not
 restart worker compute.
 

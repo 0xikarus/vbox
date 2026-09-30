@@ -12,7 +12,7 @@ import (
 // JSON and table output on stdout remain script-friendly.
 func (a *App) progress(ctx context.Context, label string) func() {
 	started := time.Now()
-	fmt.Fprintf(a.Err, "vmbox: %s...\n", label)
+	fmt.Fprintf(a.Err, "vbox: %s...\n", label)
 	interval := a.ProgressInterval
 	if interval <= 0 {
 		interval = 10 * time.Second
@@ -26,7 +26,7 @@ func (a *App) progress(ctx context.Context, label string) func() {
 		for {
 			select {
 			case <-ticker.C:
-				fmt.Fprintf(a.Err, "vmbox: still %s (%s elapsed)\n", label, elapsedLabel(time.Since(started)))
+				fmt.Fprintf(a.Err, "vbox: still %s (%s elapsed)\n", label, elapsedLabel(time.Since(started)))
 			case <-ctx.Done():
 				return
 			case <-done:

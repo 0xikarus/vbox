@@ -21,7 +21,7 @@ func (a *App) overview(ctx context.Context) error {
 	}
 	c, err := file.Connected()
 	if err != nil || c.Controller == "" {
-		fmt.Fprintln(a.Out, "No controller connected.\nSetup: vmbox connect URL\nHelp:  vmbox help")
+		fmt.Fprintln(a.Out, "No controller connected.\nSetup: vbox connect URL\nHelp:  vbox help")
 		return nil
 	}
 	if err := validateControllerURL(c.Controller); err != nil {
@@ -58,6 +58,6 @@ func (a *App) overview(ctx context.Context) error {
 			return err
 		}
 	}
-	fmt.Fprintln(a.Out, "\nvmbox BOX            Connect / resume\nvmbox new NAME       Create a box\nvmbox hibernate BOX  Stop compute; keep files\nvmbox delete BOX     Delete box and files\nvmbox help           More commands")
+	fmt.Fprintln(a.Out, "\nvbox BOX            Connect / resume\nvbox new NAME       Create a box\nvbox hibernate BOX  Stop compute; keep files\nvbox delete BOX     Delete box and files\nvbox help           More commands")
 	return nil
 }

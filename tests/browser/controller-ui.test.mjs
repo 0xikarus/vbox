@@ -16,9 +16,9 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/mascot.css','/motion.js','/mascot.js','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
-   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
+   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.png')?'image/png':file.endsWith('.woff2')?'font/woff2':'text/html');
    return res.end(await readFile(resolve(root,file)));
   }
   res.setHeader('Content-Type','application/json');
@@ -91,11 +91,11 @@ test('management views expose box placement and keep details easy to close',asyn
    return response;
   };
  });
- await page.goto(base+'/#boxes');await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('railway-worker-01'));
+ await page.goto(base+'/#boxes');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
+ await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('slot 1'));
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'boxes');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / boxes');
- assert.equal(await page.title(),'vmbox / boxes');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / boxes');
+ assert.equal(await page.title(),'vbox / boxes');
  assert.equal(await page.$eval('#providers',section=>getComputedStyle(section).display),'none');
  await page.click('[aria-label="Details for box helper ü"]');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),false);
@@ -110,8 +110,8 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.click('.workspace-links a[href="#providers"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='providers');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'providers');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / providers');
- assert.equal(await page.title(),'vmbox / providers');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / providers');
+ assert.equal(await page.title(),'vbox / providers');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
  await page.waitForSelector('.provider-card');
  await page.setViewport({width:390,height:844});
@@ -120,11 +120,11 @@ test('management views expose box placement and keep details easy to close',asyn
 });
 test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  const page=await browser.newPage();await page.setViewport({width:1280,height:900});
- await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#profile-tree .profile-app[data-application="github"]');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'profiles');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / profiles');
- assert.equal(await page.title(),'vmbox / profiles');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / profiles');
+ assert.equal(await page.title(),'vbox / profiles');
  assert.equal(await page.$eval('.workspace-links a[href="#profiles"]',link=>link.getAttribute('aria-current')),'page');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
  assert.equal(await page.$eval('#profile-summary',summary=>summary.textContent),'5 saved profiles · Team');
@@ -143,13 +143,13 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  assert.equal(await page.$$('#profile-tree .profile-app').then(cards=>cards.length),4);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-mobile.png'});
- await page.click('.workspace-links a[href="#boxes"]');
+ await page.click('#manage-menu');await page.click('#manage-menu-panel a[href="#boxes"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='boxes');
  await page.close();
 });
 test('harness version dropdowns offer image, latest, and published releases',async()=>{
  const page=await browser.newPage();
- await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForFunction(()=>document.querySelector('#agent-cli-versions select[name=codex]')?.options.length>=5);
  assert.equal(await page.$eval('#agent-cli-versions select[name=claude]',select=>select.value),'latest');
  assert.equal(await page.$eval('#agent-cli-versions select[name=codex]',select=>select.value),'0.130.0');
@@ -173,7 +173,7 @@ test('a registry catalog outage keeps saved version choices available',async()=>
    Promise.resolve(new Response(JSON.stringify({error:'npm registry unavailable'}),{status:502,headers:{'Content-Type':'application/json'}})):
    original(path,options);
  });
- await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForFunction(()=>document.querySelector('#agent-cli-versions-status').textContent.includes('codex'));
  assert.equal(await page.$eval('#agent-cli-versions select[name=codex]',select=>select.value),'0.130.0');
  assert.deepEqual(await page.$$eval('#agent-cli-versions select[name=codex] option',options=>options.map(option=>option.value)),['','latest','__unavailable','0.130.0']);
@@ -186,18 +186,19 @@ test('a registry catalog outage keeps saved version choices available',async()=>
 test('secondary management sections and box workspaces use the same page navbar',async()=>{
  const page=await browser.newPage();
  await page.goto(base+'/#roles');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / permissions');
- assert.equal(await page.title(),'vmbox / permissions');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / permissions');
+ assert.equal(await page.title(),'vbox / permissions');
  assert.equal(await page.$eval('.manage-subnav a[href="#roles"]',link=>link.getAttribute('aria-current')),'page');
  for(const [section,label] of [['instructions','instructions'],['fleet','capacity'],['notifications','notifications']]){
   await page.evaluate(value=>{location.hash=value},section);
   await page.waitForFunction(expected=>document.querySelector('#manage-page-label').textContent===expected,{},label);
-  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / '+label);
-  assert.equal(await page.title(),'vmbox / '+label);
+  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / '+label);
+  assert.equal(await page.title(),'vbox / '+label);
  }
  await page.goto(base+'/boxes/box-1');
- assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.textContent.trim()),'vmbox / workspace');
- assert.deepEqual(await page.$$eval('.workspace-top .workspace-links a',links=>links.map(link=>link.textContent)),['Chats','Grid','Boxes','Providers','Profiles']);
+ assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / workspace');
+ assert.equal(await page.$$eval('.workspace-top .workspace-links a',links=>links.length),0,'workspace uses the shared shell without the legacy top nav');
+ assert.equal(await page.$eval('.workspace-top #logout',button=>getComputedStyle(button).display!=='none'),true,'workspace keeps a log-out action');
  await page.setViewport({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.close();
@@ -217,7 +218,7 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
    ]),{status:response.status,headers:response.headers});
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#role-assignments .role-assignment-card[data-role-box-id="box-1"]');
  await page.click('#role-assignments .role-assignment-card[data-role-box-id="box-1"] button');
  await page.waitForFunction(()=>document.querySelector('#role-editor-status').textContent==='');
@@ -251,24 +252,39 @@ test('direct per-box permissions can be edited without a role matrix',async()=>{
  await page.setViewport({width:390,height:844});
  assert.equal(await page.$('#role-assignments table'),null,'permissions should not fall back to a matrix on mobile');
  assert.equal(await page.$eval('#role-assignments .role-assignment-list',element=>getComputedStyle(element).display),'grid');
- assert.equal(await page.$eval('#role-assignments .role-assignment-card[data-role-box-id="box-1"]',element=>element.getBoundingClientRect().width>350),true);
+ assert.equal(await page.$eval('#role-assignments .role-assignment-card[data-role-box-id="box-1"]',element=>{const rect=element.getBoundingClientRect();return rect.width>280&&rect.left>=0&&rect.right<=innerWidth}),true);
  await (await page.$('#roles')).screenshot({path:resolve('docs/screenshots/agent-roles/permissions-mobile.png')});
  await page.close();
 });
 test('desktop is implicit in creation and Blender remains optional',async()=>{
  const page=await browser.newPage();
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#create-tools input[value=blender]');
  assert.equal(await page.$('#create-tools input[value=desktop]'),null);
  await page.type('#create input[name=name]','disposable-desktop-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button[type=submit]');await created;
+ await page.$eval('#create',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.tools,['desktop']);
+ await page.close();
+});
+test('new box card stays collapsed until its header is used',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.waitForSelector('#create-tools input[value=blender]');
+ assert.equal(await page.$eval('#create-card',element=>element.open),false,'the new box card is collapsed by default');
+ assert.equal(await page.$eval('#create',form=>form.checkVisibility()),false,'the create form is hidden while collapsed');
+ await page.click('#create-card .create-card-summary');
+ await page.waitForFunction(()=>document.activeElement===document.querySelector('#create input[name=name]'));
+ await page.click('#create input[name=name]');
+ await page.type('#create input[name=name]','draft');
+ await page.click('#create-cancel');
+ await page.waitForFunction(()=>!document.querySelector('#create-card').open);
+ assert.equal(await page.$eval('#create input[name=name]',element=>element.value),'');
  await page.close();
 });
 test('successful creation clears the form and returns to the top',async()=>{
  const page=await browser.newPage();await page.setViewport({width:390,height:844});
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#create-tools input[value=foundry]');
  await page.type('#create input[name=name]','disposable-reset-fixture');
  await page.$eval('#create input[name=disk]',input=>input.value='20');
@@ -280,7 +296,7 @@ test('successful creation clears the form and returns to the top',async()=>{
  await page.select('#create-instructions','none');
  await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button[type=submit]');await created;
+ await page.$eval('#create',form=>form.requestSubmit());await created;
  await page.waitForFunction(()=>{
   const form=document.querySelector('#create');
   return form.elements.name.value===''&&form.elements.disk.value==='10'&&form.elements.defaultAgent.value==='claude'&&form.elements.loginProfile.value===''&&form.elements.agentModel.value===''&&form.elements.githubProfile.value===''&&!form.querySelector('input[value=foundry]').checked&&form.elements.setupScript.value===''&&form.elements.instructions.value==='auto'&&form.querySelector('.model-picker-open').textContent==='Choose model'&&window.scrollY===0;
@@ -289,7 +305,7 @@ test('successful creation clears the form and returns to the top',async()=>{
 });
 test('model choice opens a searchable modal and loads the provider catalog',async()=>{
  const page=await browser.newPage();
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#profile-choices select');
  await page.select('#create select[name=defaultAgent]','opencode');
  await page.select('#profile-choices select',JSON.stringify({application:'opencode',name:'openrouter'}));
@@ -330,7 +346,7 @@ test('model choice opens a searchable modal and loads the provider catalog',asyn
 });
 test('creation offers documented Claude choices and Codex account models',async()=>{
  const page=await browser.newPage();
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#profile-choices select');
  await page.select('#create select[name=defaultAgent]','claude');
  await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'claude',name:'personal'}));
@@ -362,14 +378,14 @@ test('creation offers documented Claude choices and Codex account models',async(
 });
 test('creation can import one agent profile alongside a GitHub profile',async()=>{
  const page=await browser.newPage();
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#profile-choices select');
  await page.select('#create select[name=defaultAgent]','opencode');
  await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'opencode',name:'openrouter'}));
  await page.select('#profile-choices select[name=githubProfile]',JSON.stringify({application:'github',name:'gh-work'}));
  await page.type('#create input[name=name]','github-creation-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button[type=submit]');await created;
+ await page.$eval('#create',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash'},{application:'github',name:'gh-work'}]);
  await page.close();
 });
@@ -395,11 +411,11 @@ test('worker placement distinguishes shared hosts and creation targets the selec
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('4 workers · 6 compute slots'));
- assert.match(await page.$eval('[data-box-id="dedicated"] .box-placement',e=>e.textContent),/Dedicated · railway-worker-01 · slot 1/);
- assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · shared-01 · slot 1/);
- assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · shared-02 · slot 1/);
+ assert.match(await page.$eval('[data-box-id="dedicated"] .box-placement',e=>e.textContent),/Dedicated · slot 1/);
+ assert.match(await page.$eval('[data-box-id="shared-a"] .box-placement',e=>e.textContent),/Shared · slot 1/);
+ assert.match(await page.$eval('[data-box-id="shared-b"] .box-placement',e=>e.textContent),/Shared · slot 1/);
  assert.match(await page.$eval('#provider-list',e=>e.textContent),/Host RAM used5\.0 GiB \/ 8\.0 GiB/);
  const selected=JSON.stringify({provider:'shared-worker',providerCredential:'shared-02'});
  await page.click('#create details summary');
@@ -407,7 +423,7 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  assert.equal(await page.$eval('#create-memory-settings',e=>e.hidden),false);
  await page.$eval('#create input[name=memoryGiB]',e=>e.value='4');
  await page.$eval('#create input[name=swapGiB]',e=>e.value='2');
- await page.type('#create input[name=name]','comparison-box');await page.click('#create button[type=submit]');
+ await page.type('#create input[name=name]','comparison-box');await page.$eval('#create',form=>form.requestSubmit());
  await page.waitForFunction(()=>window.poolCreates.length===1);
  const created=await page.evaluate(()=>window.poolCreates[0]);assert.equal(created.provider,'shared-worker');assert.equal(created.providerCredential,'shared-02');
  assert.equal(created.memoryGiB,4);assert.equal(created.swapGiB,2);
@@ -433,16 +449,16 @@ test('automatic placement refreshes capacity and prefers a less occupied pool',a
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForFunction(()=>document.querySelector('#create-pool').options.length===4);
  assert.equal(await page.$eval('#create-pool',element=>element.value),'');
  assert.equal(await page.$eval('#create details',element=>element.open),false);
- await page.type('#create input[name=name]','auto-box');await page.click('#create button[type=submit]');
+ await page.type('#create input[name=name]','auto-box');await page.waitForNetworkIdle();await page.$eval('#create',form=>form.requestSubmit());
  await page.waitForFunction(()=>window.autoCreates.length===1);
  assert.equal(await page.evaluate(()=>window.autoCreates[0].providerCredential),'shared-02');
  await page.evaluate(()=>{window.capacityMode='full'});
  await page.type('#create input[name=name]','fallback-box');
- await page.click('#create button[type=submit]');await page.waitForFunction(()=>window.autoCreates.length===2);
+ await page.waitForNetworkIdle();await page.$eval('#create',form=>form.requestSubmit());await page.waitForFunction(()=>window.autoCreates.length===2);
  assert.equal(await page.evaluate(()=>window.autoCreates[1].providerCredential),'primary');
  await page.close();
 });
@@ -459,9 +475,9 @@ test('box deletion confirms exact identity, prevents repeats and shows asynchron
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
- page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
- page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
+ page.once('dialog',d=>{assert.match(d.message(),/helper ü/);assert.match(d.message(),/permanently deleted/);d.dismiss()});await page.click('[data-box-id="box-1"] .row-overflow-trigger');await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');assert.equal(await page.evaluate(()=>window.deleteCalls.length),0);
+ page.once('dialog',d=>d.accept());await page.click('[data-box-id="box-1"] .row-overflow-trigger');await page.click('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
  await page.waitForFunction(()=>document.querySelector('[data-box-id="box-1"]').textContent.includes('delete-detaching-volume'));
  assert.equal(await page.$eval('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]',b=>b.disabled),true);assert.equal(await page.$('[data-box-id="box-1"] td:first-child a'),null);
  assert.deepEqual(await page.evaluate(()=>window.deleteCalls),[{path:'/v1/logical-boxes/box-1/volume',body:{confirmation:'helper ü'}}]);
@@ -474,20 +490,22 @@ test('mobile box deletion reports a non-transient rejection without replaying de
   const original=window.fetch;window.deleteCalls=0;
   window.fetch=async(path,options={})=>{if(path==='/v1/logical-boxes/box-1/volume'&&options.method==='DELETE'){window.deleteCalls++;return new Response(JSON.stringify({error:'Deletion forbidden by policy.'}),{status:409})}return original(path,options)};
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]');
  page.once('dialog',d=>d.accept());await page.$eval('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]',button=>button.click());await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Deletion forbidden by policy'));
  assert.equal(await page.$eval('[data-box-id="box-1"] button[aria-label="Delete box helper ü"]',b=>b.disabled),false);assert.equal(await page.evaluate(()=>window.deleteCalls),1);assert.ok(await page.$('[data-box-id="box-1"]'));await page.close();
 });
 test('table previews stay fixed size and tool choices stay compact',async()=>{
  for(const width of [1280,390]){
-  const page=await browser.newPage();await page.setViewport({width,height:844});await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#box-list .table-text');
+  const page=await browser.newPage();await page.setViewport({width,height:844});await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('#box-list .table-text');
   const result=await page.evaluate(()=>{
    const row=document.querySelector('#box-list tr:nth-child(2)'),table=row.parentElement;
    const measure=()=>({height:row.getBoundingClientRect().height,width:table.getBoundingClientRect().width,columns:[...row.cells].map(c=>c.getBoundingClientRect().width)});
    const before=measure();row.querySelectorAll('.table-text').forEach(n=>n.textContent='very long description '.repeat(1000));const after=measure();
    const tools=document.querySelector('#create-tools');return {before,after,toolHeight:tools.getBoundingClientRect().height,customCollapsed:!document.querySelector('#create .custom-tools').open};
   });
-  assert.deepEqual(result.after,result.before);assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
+  assert.equal(result.after.width,result.before.width,'the table stays within its available width');
+  assert.ok(Math.abs(result.after.height-result.before.height)<3,'long previews do not grow the row');
+  assert.ok(result.toolHeight<70);assert.equal(result.customCollapsed,true);await page.close();
  }
 });
 test('rows and the create form lay out in reading order without overlapping values',async()=>{
@@ -503,7 +521,7 @@ test('rows and the create form lay out in reading order without overlapping valu
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('#create-tools input[value=blender]');
  const layout=await page.evaluate(()=>{
   const box=element=>element.getBoundingClientRect();
@@ -513,9 +531,9 @@ test('rows and the create form lay out in reading order without overlapping valu
   const cells=[...document.querySelectorAll('#box-list tr.row td')];
   return {
    ownerDialogHidden:document.querySelector('#box-credentials-modal').hidden,
-   stateStacked:!!note&&Math.round(box(primary).bottom)<=Math.round(box(note).top),
+   stateSeparated:!!note&&(box(primary).right<=box(note).left+1||box(primary).bottom<=box(note).top+1),
    stateTexts:[primary.textContent,note&&note.textContent],
-   labelGaps:labels.slice(1).map((rect,index)=>Math.round(rect.left-labels[index].right)),
+   labelsSeparated:labels.slice(1).map((rect,index)=>{const prev=labels[index];return rect.left>=prev.right-1||prev.left>=rect.right-1||rect.top>=prev.bottom-1||prev.top>=rect.bottom-1}),
    overflowing:cells.filter(cell=>[...cell.children].some(child=>box(child).right>box(cell).right+1)).length,
    legends:[...document.querySelectorAll('#create>fieldset.group>legend')].map(l=>l.textContent),
    actionBelowGroups:box(document.querySelector('#create .form-actions')).top>=box([...document.querySelectorAll('#create>fieldset.group')].pop()).bottom
@@ -523,10 +541,10 @@ test('rows and the create form lay out in reading order without overlapping valu
  });
  assert.equal(layout.ownerDialogHidden,true);
  assert.deepEqual(layout.stateTexts,['running','restored']);
- assert.equal(layout.stateStacked,true);
- assert.ok(layout.labelGaps.length&&layout.labelGaps.every(gap=>gap>=8),'tool labels need visible separation: '+layout.labelGaps);
+ assert.equal(layout.stateSeparated,true,'state and restoration note do not overlap');
+ assert.ok(layout.labelsSeparated.length&&layout.labelsSeparated.every(Boolean),'tool labels do not overlap: '+layout.labelsSeparated);
  assert.equal(layout.overflowing,0);
- assert.deepEqual(layout.legends,['1 · box','2 · logins','3 · tools','4 · instructions']);
+ assert.deepEqual(layout.legends,['1 · Box','2 · Logins','3 · Tools','4 · Instructions']);
  assert.equal(layout.actionBelowGroups,true);
  await page.close();
 });
@@ -544,13 +562,14 @@ test('box actions follow state: no resume while creating, resume on failure',asy
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('[data-box-id="creating"]');
  const buttons=id=>page.$$eval(`[data-box-id="${id}"] td:last-child button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
  // Delete remains available during creation so a stuck box can be cancelled.
- assert.deepEqual(await buttons('creating'),[{aria:'Details for box building',disabled:false},{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
- assert.deepEqual(await buttons('broke'),[{aria:'Details for box broken',disabled:false},{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false}]);
- assert.deepEqual(await buttons('sleepy'),[{aria:'Details for box sleepy',disabled:false},{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false}]);
+ // The redesign folds the row actions behind a "More actions" overflow menu.
+ assert.deepEqual(await buttons('creating'),[{aria:'Details for box building',disabled:false},{aria:'More actions for building',disabled:false},{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false},{aria:'Manage permissions for box building',disabled:false}]);
+ assert.deepEqual(await buttons('broke'),[{aria:'Details for box broken',disabled:false},{aria:'More actions for broken',disabled:false},{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false},{aria:'Manage permissions for box broken',disabled:false}]);
+ assert.deepEqual(await buttons('sleepy'),[{aria:'Details for box sleepy',disabled:false},{aria:'More actions for sleepy',disabled:false},{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false},{aria:'Manage permissions for box sleepy',disabled:false}]);
  assert.match(await page.$eval('[data-box-id="broke"] td:nth-child(2)',n=>n.textContent),/provider refused the volume/);
  await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
  await page.close();
@@ -572,7 +591,7 @@ test('delete retries safely while an attaching box is still creating',async()=>{
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
  await page.waitForSelector('[data-box-id="creating"] button[aria-label="Delete box building"]');
  page.once('dialog',dialog=>dialog.accept());
  await page.$eval('[data-box-id="creating"] button[aria-label="Delete box building"]',button=>button.click());
@@ -581,7 +600,7 @@ test('delete retries safely while an attaching box is still creating',async()=>{
  await page.close();
 });
 test('controller omits costs and renders compact box actions',async()=>{
- const page=await browser.newPage();await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('[data-box-id="box-1"]');
+ const page=await browser.newPage();await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('[data-box-id="box-1"]');
  assert.equal(await page.$('a[href="#costs"],#costs'),null);
  const actions=await page.$eval('[data-box-id="box-1"] td:last-child',cell=>({text:cell.textContent,labels:[...cell.querySelectorAll('button')].map(button=>button.getAttribute('aria-label')),restart:cell.querySelector('.restart-action')?.innerHTML}));
  assert.equal(actions.text.includes('Re-sync'),false);
@@ -592,9 +611,10 @@ test('controller omits costs and renders compact box actions',async()=>{
 test('box link opens separate mobile workspace and reuses shell',async()=>{
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
- await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#box-list a',{visible:true});
+ await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('#box-list a',{visible:true});
  await Promise.all([page.waitForNavigation(),page.click('#box-list a')]);
- await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
+ await page.waitForFunction(()=>managedSession==='persistent-shell');
+ assert.equal(await page.$eval('#session',e=>e.textContent),'');
  assert.equal(new URL(page.url()).pathname,'/boxes/box-1');
  assert(requests.some(r=>r.path.endsWith('/sessions/interactive')&&r.body.agent==='shell'&&r.body.reuseExisting===true));
  assert.deepEqual(errors,[]);await page.close();
@@ -613,7 +633,8 @@ test('workspace network failure explains safe recovery',async()=>{
  assert.match(await page.$eval('#error',e=>e.textContent),/Resume \/ reconnect.*not replayed/);
  assert.equal(await page.$eval('#connect',e=>e.disabled),false);
  await page.click('#connect');
- await page.waitForFunction(()=>document.querySelector('#session').textContent.includes('persistent-shell'));
+ await page.waitForFunction(()=>managedSession==='persistent-shell');
+ assert.equal(await page.$eval('#session',e=>e.textContent),'');
  assert.equal(await page.$eval('#error',e=>e.textContent),'');
  await page.close();
 });
@@ -650,9 +671,9 @@ test('new box starts automatically and its row follows startup through the tempo
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#app:not([hidden])');await page.type('#create input[name=name]','automatic');
- await page.click('#create button[type=submit]');await page.waitForSelector('[data-box-id="created-new"]');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
+ await page.waitForSelector('#app:not([hidden])');await page.waitForNetworkIdle();await page.type('#create input[name=name]','automatic');
+ await page.$eval('#create',form=>form.requestSubmit());await page.waitForSelector('[data-box-id="created-new"]');
  await page.evaluate(()=>window.createState='hibernated');
  await page.waitForFunction(()=>document.querySelector('[data-box-id="created-new"] td:nth-child(2)').textContent.includes('starting'),{timeout:12000});
  await page.evaluate(()=>window.createState='running');
@@ -663,7 +684,7 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
  // Initialize mobile before navigation; this does not prove a real phone keyboard.
  await page.setViewport(mobile?{width:390,height:844,isMobile:true,hasTouch:true}:{width:1280,height:900});
- await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
+ await page.goto(base);await page.type('#login input','test-only-token');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('#app:not([hidden])');
  await page.select('#box-list select','codex');
  await page.waitForFunction(()=>document.querySelector('#provider-list button'));
  await page.click('#provider-list button');
@@ -680,7 +701,8 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  await page.type('#create input[name=name]','profile-box');
  assert.deepEqual(await page.$$eval('#create select[name=defaultAgent] option',nodes=>nodes.map(n=>n.value)),['claude','codex','opencode','shell']);
  assert.deepEqual(await page.$eval('#create select[name=defaultAgent]',select=>({value:select.value,disabled:select.disabled})),{value:'opencode',disabled:false});
- await page.click('#create-tools label:has(input[value=blender])');
+ await page.waitForNetworkIdle();
+ await page.$eval('#create-tools input[value=blender]',input=>{if(!input.checked)input.click()});
  assert.equal(await page.$('#create-tools input[value=desktop]'),null);
  const created=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().endsWith('/v1/logical-boxes'));await page.$eval('#create',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(r=>r.method==='POST').body.loginProfiles,[{application:'opencode',name:'openrouter',model:'openrouter/deepseek/deepseek-v4.1-flash'}]);
@@ -689,12 +711,12 @@ for(const mobile of [false,true])test(mobile?'390x844 configuration controls':'d
  assert.equal(requests.findLast(r=>r.method==='POST').body.allocateWhenReady,true);
  await page.waitForNetworkIdle();
  assert.equal(await page.$('#profile-upload'),null);
- await page.click('.workspace-links a[href="#profiles"]');
+ await page.click('#manage-menu');await page.click('#manage-menu-panel a[href="#profiles"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='profiles');
  const beforeDelete=requests.filter(r=>r.method==='DELETE').length;
  page.once('dialog',d=>d.dismiss());await page.$eval('#profile-tree button',button=>button.click());await page.waitForNetworkIdle();assert.equal(requests.filter(r=>r.method==='DELETE').length,beforeDelete);
  page.once('dialog',d=>d.accept());const deleted=page.waitForResponse(r=>r.request().method()==='DELETE');await page.$eval('#profile-tree button',button=>button.click());await deleted;await page.waitForNetworkIdle();
- await page.click('.workspace-links a[href="#providers"]');
+ await page.click('#manage-menu');await page.click('#manage-menu-panel a[href="#providers"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='providers');
  await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('Free: 1'));
  assert.match(await page.$eval('#capacity',n=>n.textContent),/Free: 1/);
@@ -723,7 +745,7 @@ test('fleet locations load on demand and preserve occupied fleets on rejection',
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#capacity table');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);await page.waitForSelector('#capacity .slot-grid');
  assert.equal(await page.$eval('#location-form',e=>e.hidden),true);
  await page.click('#fleet-location summary');await page.click('#load-locations');await page.waitForSelector('#location-form:not([hidden])');
  assert.equal(await page.$eval('#location-form select',e=>e.value),'eu');
@@ -735,10 +757,10 @@ test('fleet locations load on demand and preserve occupied fleets on rejection',
 });
 test('instruction presets preview safely, bound size, and apply explicitly to boxes',async()=>{
  const page=await browser.newPage();
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#instruction-list table');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');await page.$eval('#create-card',element=>element.open=true);
+ await page.waitForSelector('#instruction-list .preset-list');
  assert.match(await page.$eval('#instruction-list',element=>element.textContent),/general/);
- assert.match(await page.$eval('#instruction-list',element=>element.textContent),/default/);
+ assert.match(await page.$eval('#instruction-list',element=>element.textContent),/Default/);
  // The creation form offers automatic, none, every preset, and a custom copy.
  await page.evaluate(()=>{document.querySelector('#create-instructions-editor').open=true});
  assert.deepEqual(await page.$$eval('#create-instructions option',nodes=>nodes.map(node=>node.value)),['auto','none','__concise__','general','custom']);
@@ -758,12 +780,12 @@ test('instruction presets preview safely, bound size, and apply explicitly to bo
  await page.evaluate(()=>{const area=document.querySelector('#create-instructions-custom');area.value='# House rules\nAlways answer briefly.\nextra';area.dispatchEvent(new Event('input',{bubbles:true}))});
  await page.type('#create input[name=name]','instructions-fixture');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button[type=submit]');await created;
+ await page.$eval('#create',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.instructions,{preset:'general',markdown:'# House rules\nAlways answer briefly.\nextra'});
  await page.type('#create input[name=name]','concise-fixture');
  await page.select('#create-instructions','__concise__');
  const conciseCreated=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
- await page.click('#create button[type=submit]');await conciseCreated;
+ await page.$eval('#create',form=>form.requestSubmit());await conciseCreated;
  assert.match(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.instructions.markdown,/few tokens as needed/);
  // Explicit Apply instructions action for an existing box.
  await page.evaluate(()=>{const row=document.querySelector('[data-box-id="box-1"]');[...row.querySelectorAll('button')].find(button=>button.textContent.includes('Instructions')).click()});

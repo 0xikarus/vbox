@@ -4,9 +4,9 @@ body{max-width:none;margin:0;padding:0;background:#fff}
 .workspace-top .brand{font-size:1rem;letter-spacing:-.03em;white-space:nowrap}
 .workspace-top .brand span{color:#91a0b3;font-weight:500}
 .workspace-top .workspace-links{display:flex;align-items:center;gap:.2rem;flex:1;min-width:0}
-.workspace-top .workspace-links a{padding:.46rem .72rem;border-radius:.4rem;color:#91a0b3;font-size:.79rem;font-weight:650;text-decoration:none;text-transform:none;white-space:nowrap}
+.workspace-top .workspace-links a{padding:.46rem .72rem;border-radius:var(--r-control);color:#91a0b3;font-size:.79rem;font-weight:650;text-decoration:none;text-transform:none;white-space:nowrap}
 .workspace-top .workspace-links a:hover,.workspace-top .workspace-links a:focus-visible{background:#263749;color:#eaf0f8}
-.workspace-top #logout{margin:0;padding:.42rem .65rem;border:1px solid #2b3848;border-radius:.4rem;background:#202e3d;color:#eaf0f8;font:650 .79rem system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;text-transform:none;white-space:nowrap}
+.workspace-top #logout{margin:0;padding:.42rem .65rem;border:1px solid #2b3848;border-radius:var(--r-control);background:#202e3d;color:#eaf0f8;font:650 .79rem system-ui,-apple-system,"Segoe UI",sans-serif;text-decoration:none;text-transform:none;white-space:nowrap}
 .workspace-top #logout:hover{background:#263749;border-color:#8fb8f5}
 .workspace-body h1{overflow-wrap:anywhere}
 #agent-message-form label{min-width:0;max-width:100%}

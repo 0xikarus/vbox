@@ -1,8 +1,8 @@
 {
   "id": "/chat",
-  "name": "vmbox",
-  "short_name": "vmbox",
-  "description": "Agent box chats, desktop previews and push notifications for vmbox.",
+  "name": "vbox",
+  "short_name": "vbox",
+  "description": "Agent box chats, desktop previews and push notifications for vbox.",
   "start_url": "/chat",
   "scope": "/",
   "display": "standalone",

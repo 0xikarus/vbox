@@ -17,7 +17,7 @@ window.openWorkspaceDesktop=function(boxID,onStatus,options={}){
  rfb.addEventListener('disconnect',e=>{clearInterval(latencyTimer);pendingProbe=null;if(!closed){metrics({state:'disconnected',ping:null});onStatus(e.detail.clean?'Desktop disconnected. Reconnect to return.':'Desktop connection failed; check runtime and authentication.');options.onDisconnect?.()}});
  rfb.addEventListener('credentialsrequired',()=>{rfb.disconnect();onStatus('Unexpected desktop authentication request; check the private VNC configuration.')});
  let remoteClipboard='';
- rfb.addEventListener('clipboard',e=>{remoteClipboard=e.detail.text||'';onStatus('Remote clipboard ready. Choose Copy to save it to this device.')});
+ rfb.addEventListener('clipboard',e=>{if(viewOnly)return;remoteClipboard=e.detail.text||'';onStatus('Remote clipboard ready. Choose Copy to save it to this device.')});
  const controls=options.controls||document.querySelector('#desktop-controls');controls.replaceChildren();
  if(!viewOnly){
  const copy=document.createElement('button');copy.type='button';copy.textContent='Copy';copy.dataset.action='copy';copy.onclick=async()=>{if(!remoteClipboard){onStatus('Copy or select text in the desktop first.');return}try{await navigator.clipboard.writeText(remoteClipboard);onStatus('Desktop clipboard copied to this device.')}catch{onStatus('Clipboard copy was blocked by the browser.')}};controls.append(copy);

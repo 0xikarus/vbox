@@ -41,7 +41,7 @@ func (s *Store) SetFleetLocation(ctx context.Context, p Principal, name, alias, 
 		return err
 	}
 	if desired != 0 || slots != 0 || boxes != 0 {
-		return fmt.Errorf("location changes require an empty fleet with zero desired and actual slots (desired=%d, actual=%d, boxes=%d); existing regional boxes cannot be migrated here; for an empty fleet run vmbox fleet slots set 0 and wait for vmbox fleet status", desired, slots, boxes)
+		return fmt.Errorf("location changes require an empty fleet with zero desired and actual slots (desired=%d, actual=%d, boxes=%d); existing regional boxes cannot be migrated here; for an empty fleet run vbox fleet slots set 0 and wait for vbox fleet status", desired, slots, boxes)
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE fleet_settings SET region=$4,updated_at=now() WHERE account_id=$1 AND provider=$2 AND provider_credential=$3`, p.AccountID, name, alias, region); err != nil {
 		return err
@@ -101,7 +101,7 @@ func (s *Server) setFleetLocation(w http.ResponseWriter, r *http.Request, p Prin
 		}
 	}
 	if !found {
-		writeError(w, 400, fmt.Errorf("unsupported region %q; use vmbox fleet location", request.Region))
+		writeError(w, 400, fmt.Errorf("unsupported region %q; use vbox fleet location", request.Region))
 		return
 	}
 	if _, err = s.Store.FleetConfig(r.Context(), p.AccountID, request.Provider, request.Credential); err != nil {

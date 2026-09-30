@@ -18,9 +18,9 @@ func uniqueVerifiableApplications(applications []string) []string {
 func (a *App) reportApplicationAuthentication(applications []string, authentication map[string]bool) {
 	for _, application := range uniqueVerifiableApplications(applications) {
 		if authentication[application] {
-			fmt.Fprintf(a.Err, "vmbox: %s authentication is ready\n", application)
+			fmt.Fprintf(a.Err, "vbox: %s authentication is ready\n", application)
 		} else {
-			fmt.Fprintf(a.Err, "vmbox: warning: %s did not recognize the uploaded login; authenticate inside the box\n", application)
+			fmt.Fprintf(a.Err, "vbox: warning: %s did not recognize the uploaded login; authenticate inside the box\n", application)
 		}
 	}
 }

@@ -33,11 +33,14 @@ HOME="$test_root/home" PATH="$fixtures:$PATH" \
   XDG_CONFIG_HOME="$test_root/config" XDG_DATA_HOME="$test_root/data" \
   "$repo/install.sh" --no-shell-update >"$test_root/install.out"
 
-installed_help="$("$test_root/bin/vmbox" --help)"
-grep -Fq 'Go vmbox test binary' <<<"$installed_help"
+installed_help="$("$test_root/bin/vbox" --help)"
+grep -Fq 'Go vbox test binary' <<<"$installed_help"
+test "$(readlink "$test_root/bin/vmbox")" = vbox
+alias_help="$("$test_root/bin/vmbox" --help)"
+grep -Fq 'Go vbox test binary' <<<"$alias_help"
 test ! -e "$test_root/data/vmbox/service"
 test ! -e "$test_root/data/vmbox/runtime"
-pass 'installer builds only CLI; no standalone bundle or worker payload'
+pass 'installer builds only CLI (vbox plus vmbox alias); no standalone bundle or worker payload'
 
 for removed_option in --go-cli --workspace-token; do
   if HOME="$test_root/home" PATH="$fixtures:$PATH" \
@@ -55,6 +58,8 @@ HOME="$test_root/home" PATH="$fixtures:$PATH" \
   VMBOX_INSTALL_DIR="$test_root/bin" VMBOX_SHELL_RC="$test_root/bashrc" \
   XDG_CONFIG_HOME="$test_root/config" XDG_DATA_HOME="$test_root/data" \
   "$repo/install.sh" --uninstall >/dev/null
+test ! -e "$test_root/bin/vbox"
+test ! -L "$test_root/bin/vmbox"
 test ! -e "$test_root/bin/vmbox"
 test ! -e "$test_root/data/vmbox/runtime/vmbox-runtime-linux-amd64"
 pass 'uninstall removes Go CLI artifacts'

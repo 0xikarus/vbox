@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assetNames=['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js','run-budget-policy.js','idle-policy.css'];
+const assetNames=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js','run-budget-policy.js','idle-policy.css'];
 const assets=Object.fromEntries(await Promise.all(assetNames.map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
 test('box details reports attachment use and clears delivered media after confirmation',async()=>{
@@ -40,9 +40,10 @@ test('box details reports attachment use and clears delivered media after confir
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');
   await page.click('#chat-info');
+  await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-rows')?.textContent.includes('5.0 MiB'));
   assert.match(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/5\.0 MiB.*6\.0 MiB \/ 1\.00 GiB.*Unused uploads.*1\.0 MiB/);
-  await page.click('#inspect-clear-attachments');
+  await page.$eval('#inspect-clear-attachments',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-status')?.textContent.includes('freed 5.0 MiB'));
   assert.equal(await page.evaluate(()=>window.__attachmentClearConfirmed),true);
   assert.deepEqual(deleteBody,{confirmation:'Builder'});

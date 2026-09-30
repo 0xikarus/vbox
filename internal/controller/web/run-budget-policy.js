@@ -2,7 +2,7 @@
 // A box's allocated-time limit is separate from its desktop idle policy.
 window.VMBoxRunBudgetPolicy = (() => {
  const text=(tag,value)=>{const el=document.createElement(tag);el.textContent=value;return el};
- function mount(root,{boxId,request,adjust,state='',assignmentGeneration=''}){
+ function mount(root,{boxId,request,adjust,state='',assignmentGeneration='',onPolicy}={}){
   if(!root)return;
   const key=boxId+'|'+state+'|'+assignmentGeneration;
   if(root.dataset.budgetKey===key)return;
@@ -12,12 +12,13 @@ window.VMBoxRunBudgetPolicy = (() => {
   const name=text('strong','Run-time limit');
   const badge=text('span','Loading…');badge.className='idle-policy-badge';top.append(name,badge);
   const elapsed=text('p','Current run: Loading…');elapsed.className='run-budget-elapsed';
+  const remaining=text('p','');remaining.className='run-budget-remaining';remaining.hidden=true;
   const controls=text('div','');controls.className='idle-policy-controls';
-  const label=text('label','Limit after');
+  const label=text('label','Stop in');
   const hours=document.createElement('input');hours.type='number';hours.min='0';hours.max='720';hours.step='0.25';hours.disabled=true;
-  hours.setAttribute('aria-label','Allocated run hours before hibernation; zero turns the limit off');
+  hours.setAttribute('aria-label','Hours until this box stops; zero turns the countdown off');
   label.append(hours,document.createTextNode(' hours'));
-  const save=text('button','Save limit');save.type='button';save.disabled=true;
+  const save=text('button','Start countdown');save.type='button';save.disabled=true;
   controls.append(label,save);
   const actions=text('div','');actions.className='idle-policy-controls run-budget-actions';actions.setAttribute('role','group');actions.setAttribute('aria-label','Current run-time countdown');
   const buttons=[['Reset countdown','reset',0],['+4h','add',4*3600],['+8h','add',8*3600],['+24h','add',24*3600]].map(([caption,action,seconds])=>{
@@ -25,12 +26,12 @@ window.VMBoxRunBudgetPolicy = (() => {
    button.title=action==='reset'?'Restart the countdown from the saved limit':'Add time to this run only';
    button.addEventListener('click',()=>void changeCountdown(action,seconds));actions.append(button);return button;
   });
-  const note=text('p','0 turns the limit off. Save or Reset restarts the countdown; added time applies only to this run. Current run elapsed time is unchanged.');note.className='idle-policy-note';
+  const note=text('p','0 turns the countdown off. Start countdown saves the hours and starts the timer; +4h / +8h / +24h and Reset change this run only. Elapsed time is unchanged.');note.className='idle-policy-note';
   const status=text('p','Loading run-time limit…');status.className='idle-policy-status';status.setAttribute('role','status');
   const retry=text('button','Retry');retry.type='button';retry.className='idle-policy-retry';retry.hidden=true;
-  card.append(top,elapsed,controls,actions,note,status,retry);root.append(card);
+  card.append(top,elapsed,remaining,controls,actions,note,status,retry);root.append(card);
   const current=()=>root.isConnected&&root.dataset.budgetKey===key;
-  let elapsedTimer=0,policy=null,pending=false;
+  let elapsedTimer=0,remainingTimer=0,policy=null,pending=false;
   function setPending(value){
    pending=value;hours.disabled=value||!policy;save.disabled=value||!policy;
    const enabled=!value&&policy?.state==='running'&&Number(policy.seconds)>0&&!!policy.deadlineAt;
@@ -47,22 +48,39 @@ window.VMBoxRunBudgetPolicy = (() => {
    elapsed.textContent='Current run: '+[days?days+'d':'',hours?hours+'h':'',minutes?minutes+'m':'',seconds+'s'].filter(Boolean).join(' ');
    elapsedTimer=setTimeout(()=>showElapsed(policy),1000);
   }
+  function formatDuration(total){
+   const days=Math.floor(total/86400),hours=Math.floor(total%86400/3600),minutes=Math.floor(total%3600/60),seconds=total%60;
+   return [days?days+'d':'',hours?hours+'h':'',minutes?minutes+'m':'',(!days&&!hours)?seconds+'s':''].filter(Boolean).join(' ');
+  }
+  function showRemaining(next){
+   clearTimeout(remainingTimer);
+   if(!current())return;
+   const seconds=Number(next.seconds)||0;
+   if(seconds===0){remaining.hidden=true;remaining.textContent='';return}
+   remaining.hidden=false;
+   if(next.state!=='running'){remaining.textContent='Countdown starts when this box runs.';return}
+   const deadline=Date.parse(next.deadlineAt||'');
+   const left=Number.isFinite(deadline)?Math.max(0,Math.floor((deadline-Date.now())/1000)):Math.max(0,Math.floor(Number(next.remainingSeconds)||0));
+   remaining.textContent=left>0?'Stops in '+formatDuration(left):'Stopping now…';
+   remainingTimer=setTimeout(()=>showRemaining(next),1000);
+  }
   function render(next){
    policy=next;
+   try{onPolicy&&onPolicy(policy)}catch{}
    const seconds=Number(policy.seconds)||0;
    showElapsed(policy);
+   showRemaining(policy);
    hours.value=String(seconds/3600);setPending(false);
    badge.textContent=seconds>0?'On':'Off';badge.dataset.enabled=String(seconds>0);
-   if(seconds===0){status.textContent='Run-time limit is off for this box.';return}
+   if(seconds===0){status.textContent='Run-time limit is off — this box will not stop on a countdown.';return}
    if(policy.state==='running'){
-    const left=Math.max(0,Math.ceil(Number(policy.remainingSeconds||0)/360)/10);
-    status.textContent='Current run: about '+left+' hours left before hibernation.';
-   }else status.textContent='Limit saved. The countdown starts when this box runs.';
+    status.textContent='Countdown active. Start countdown restarts it; +/- actions change this run only.';
+   }else status.textContent='Countdown saved. It starts when this box runs.';
   }
   async function load(){
    retry.hidden=true;setPending(true);status.textContent='Loading run-time limit…';
    try{const policy=await request();if(current())render(policy)}
-   catch(error){if(current()){badge.textContent='Unavailable';status.textContent=error.message;retry.hidden=false}}
+   catch(error){if(current()){clearTimeout(remainingTimer);remaining.hidden=true;badge.textContent='Unavailable';status.textContent=error.message;retry.hidden=false}}
   }
   save.addEventListener('click',async()=>{
    if(pending)return;
@@ -83,7 +101,7 @@ window.VMBoxRunBudgetPolicy = (() => {
     if(!current())return;
     render(updated);
     status.textContent=(action==='reset'?'Countdown reset. ':'Added '+seconds/3600+' hours. ')+status.textContent;
-   }catch(error){if(current()){policy=null;setPending(false);status.textContent=error.message;retry.hidden=false}}
+   }catch(error){if(current()){policy=null;clearTimeout(remainingTimer);remaining.hidden=true;setPending(false);status.textContent=error.message;retry.hidden=false}}
   }
   retry.addEventListener('click',()=>void load());
   void load();

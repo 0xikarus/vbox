@@ -61,7 +61,7 @@ configure_agent_trust() {
     chmod 600 "$tmp"
     mv -f "$tmp" "$claude_settings"
   else
-    echo "vmbox: warning: $claude_settings is not valid JSON; agent defaults were not changed" >&2
+    echo "vbox: warning: $claude_settings is not valid JSON; agent defaults were not changed" >&2
   fi
 
   if [[ ! -e "$claude_state" ]]; then
@@ -76,7 +76,7 @@ configure_agent_trust() {
     chmod 600 "$tmp"
     mv -f "$tmp" "$claude_state"
   else
-    echo "vmbox: warning: $claude_state is not valid JSON; Claude workspace trust was not changed" >&2
+    echo "vbox: warning: $claude_state is not valid JSON; Claude workspace trust was not changed" >&2
   fi
   chmod 600 "$codex_config" "$claude_settings" "$claude_state" 2>/dev/null || true
   own_as_workload "$codex_dir" "$claude_dir" "$codex_config" "$claude_settings" "$claude_state"
