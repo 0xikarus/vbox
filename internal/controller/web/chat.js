@@ -712,7 +712,7 @@
   return wrap;
  }
  function pairAvatarNode(pair){
-  const stack=document.createElement('span');stack.className='pair-avatar-stack';stack.setAttribute('aria-hidden','true');
+  const stack=document.createElement('span');stack.className='pair-avatar pair-avatar-stack';stack.setAttribute('aria-hidden','true');
   for(const [id,name] of [[pair.boxAId,pair.boxAName],[pair.boxBId,pair.boxBName]])stack.append(avatarNode(boxes.get(id)||{id,name,state:'running'},true,false));
   return stack;
  }
@@ -1176,6 +1176,7 @@
   const text=document.createElement('div');text.className='text';
   const body=message.text.startsWith('Forwarded from ')&&message.text.indexOf(':\n')>0?message.text.slice(message.text.indexOf(':\n')+2):message.text;
   renderRichText(text,body);
+  for(const pre of text.querySelectorAll('pre')){if(pre.querySelector('.code-copy'))continue;const copy=document.createElement('button');copy.type='button';copy.className='code-copy';copy.setAttribute('aria-label','Copy code');copy.title='Copy code';copy.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';copy.onclick=async()=>{try{await navigator.clipboard.writeText(pre.textContent.replace('Copy code',''));copy.classList.add('copied');setTimeout(()=>copy.classList.remove('copied'),1200)}catch{}};pre.append(copy)}
   {const spacer=document.createElement('span');spacer.className='meta-spacer';const last=text.lastElementChild;if(last&&/^(P|DIV|LI|BLOCKQUOTE|H[1-6]|SPAN)$/.test(last.tagName))last.append(spacer);else text.append(spacer)}
   row.append(text);
   const gallery=messageMediaGallery(message);
@@ -1506,7 +1507,7 @@
   $('#chat-header-name').textContent=box.name;
   const state=mk('span');state.className=box.state==='running'?'running':'';
   const agent=mk('span',(box.defaultAgent||'agent')+' · ');agent.className='chat-header-agent';
-  state.append(agent,document.createTextNode(box.state+(box.streaming?' · streaming…':box.processing?' · processing…':'')));
+  state.append(agent,document.createTextNode(box.state+((box.streaming||box.processing)?' · working':'')));
   $('#chat-header-state').replaceChildren(state);
   inputEl.placeholder='Message '+box.name+'…';
   const key=box.id;
@@ -2121,7 +2122,7 @@
   const livePing=boxViewerMetrics.get(box.id)?.ping;
   const waiting=!!lastUser&&(!lastAgent||new Date(lastUser.createdAt)>new Date(lastAgent.createdAt));
   const agent=box.defaultAgent||'shell';
-  const stateText=box.state+(box.streaming?' · agent streaming…':box.processing?' · agent processing…':'');
+  const stateText=box.state+((box.streaming||box.processing)?' · working':'');
   $('#inspect-title').textContent=box.name;
   $('#inspect-header-state').textContent=stateText;
   $('#inspect-header-state').className=stateClass(box.state);
