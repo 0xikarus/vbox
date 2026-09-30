@@ -30,7 +30,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 	case "list", "ls":
 		jsonOutput := asJSON
 		if len(args) > 2 || (len(args) == 2 && !jsonOutput) {
-			return fmt.Errorf("usage: vmbox boxes [list] [--json]")
+			return fmt.Errorf("usage: vbox boxes [list] [--json]")
 		}
 		var boxes []v1.LogicalBox
 		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes", nil, &boxes, nil); err != nil {
@@ -50,7 +50,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return nil
 	case "status":
 		if len(args) != 2 && !(len(args) == 3 && args[2] == "--json") {
-			return fmt.Errorf("usage: vmbox boxes status NAME")
+			return fmt.Errorf("usage: vbox boxes status NAME")
 		}
 		var status json.RawMessage
 		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/logical-boxes/"+url.PathEscape(args[1])+"/status", nil, &status, nil); err != nil {
@@ -69,7 +69,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return a.logicalBoxOutput(box, asJSON)
 	case "contacts":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox boxes contacts NAME [--allow CONTACT | --block CONTACT | --inherit CONTACT | --protect | --unprotect] [--two-way] [--json]")
+			return fmt.Errorf("usage: vbox boxes contacts NAME [--allow CONTACT | --block CONTACT | --inherit CONTACT | --protect | --unprotect] [--two-way] [--json]")
 		}
 		name := args[1]
 		fs := flag.NewFlagSet("contacts", flag.ContinueOnError)
@@ -166,13 +166,13 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return nil
 	case "create", "new":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: vmbox new NAME [--pool TYPE/ALIAS] [--disk GiB] [--region ID] [--role NAME]... [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
+			return fmt.Errorf("usage: vbox new NAME [--pool TYPE/ALIAS] [--disk GiB] [--region ID] [--role NAME]... [--detach|--hibernate] [--no-dialog] [--start-cli COMMAND]")
 		}
 		fs := flag.NewFlagSet("new", flag.ContinueOnError)
 		fs.SetOutput(a.Err)
 		disk := fs.Int64("disk", 10, "persistent workspace size in GiB")
 		region := fs.String("region", "", "preferred region")
-		pool := fs.String("pool", "", "worker pool TYPE/ALIAS; see vmbox pools list")
+		pool := fs.String("pool", "", "worker pool TYPE/ALIAS; see vbox pools list")
 		var roleRefs []string
 		fs.Func("role", "native role name or id; repeat to assign several roles", func(value string) error {
 			value = strings.TrimSpace(value)
@@ -289,7 +289,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		} else if args[0] == "open" && len(args) == 3 && (args[2] == "codex" || args[2] == "claude" || args[2] == "shell") {
 			agent = args[2]
 		} else if len(args) != 2 {
-			return fmt.Errorf("usage: vmbox boxes %s NAME", args[0])
+			return fmt.Errorf("usage: vbox boxes %s NAME", args[0])
 		}
 		if args[0] == "open" {
 			if a.IsTerminal == nil || !a.IsTerminal() {
@@ -326,7 +326,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		return a.providerOutput(allocation, asJSON)
 	case "hibernate":
 		if len(args) != 2 {
-			return fmt.Errorf("usage: vmbox hibernate NAME")
+			return fmt.Errorf("usage: vbox hibernate NAME")
 		}
 		var box v1.LogicalBox
 		status, err := a.request(ctx, c, token, http.MethodPost, "/v1/logical-boxes/"+url.PathEscape(args[1])+"/hibernate", map[string]any{}, &box, nil)
@@ -334,18 +334,18 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 			return err
 		}
 		if status == http.StatusAccepted {
-			fmt.Fprintf(a.Err, "vmbox: hibernate accepted for %q; volume %s (%s) is retained\n", box.Name, box.VolumeName, box.VolumeID)
-			fmt.Fprintf(a.Err, "vmbox: progress continues after this CLI exits; check with: vmbox status %s\n", box.Name)
+			fmt.Fprintf(a.Err, "vbox: hibernate accepted for %q; volume %s (%s) is retained\n", box.Name, box.VolumeName, box.VolumeID)
+			fmt.Fprintf(a.Err, "vbox: progress continues after this CLI exits; check with: vbox status %s\n", box.Name)
 			return nil
 		}
-		fmt.Fprintf(a.Err, "vmbox: hibernated %q; volume %s (%s) was retained and its compute slot was freed\n", box.Name, box.VolumeName, box.VolumeID)
+		fmt.Fprintf(a.Err, "vbox: hibernated %q; volume %s (%s) was retained and its compute slot was freed\n", box.Name, box.VolumeName, box.VolumeID)
 		return nil
 	case "delete", "delete-volume":
 		if a.IsTerminal == nil || !a.IsTerminal() {
 			return fmt.Errorf("volume deletion requires an interactive confirmation; nothing deleted")
 		}
 		if len(args) != 2 {
-			return fmt.Errorf("usage: vmbox delete BOX")
+			return fmt.Errorf("usage: vbox delete BOX")
 		}
 		box, err := a.controllerLogicalBox(ctx, c, token, args[1])
 		if err != nil {
@@ -358,7 +358,7 @@ func (a *App) controllerBoxes(ctx context.Context, c config.Context, token strin
 		}
 		confirmation, ok := readLineWithTimeout(ctx, bufio.NewReader(a.In), timeout)
 		if !ok || strings.TrimSpace(confirmation) != box.Name {
-			fmt.Fprintln(a.Err, "vmbox: deletion cancelled; logical box and volume were kept")
+			fmt.Fprintln(a.Err, "vbox: deletion cancelled; logical box and volume were kept")
 			return nil
 		}
 		return a.requestVolumeDeletion(ctx, c, token, box)
@@ -514,7 +514,7 @@ func (a *App) refreshControllerWelcome(ctx context.Context, resolved v1.LogicalB
 	if metadata["vmboxDiskGiB"] != "" {
 		disk = metadata["vmboxDiskGiB"] + " GiB disk"
 	}
-	welcome := fmt.Sprintf("vmbox %s is ready\nWorker pool: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: %s  Compute slot: %s\nState: %s  Network: %s\nConnection: direct OpenSSH, resolved for this deployment\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vmbox %s | vmbox hibernate %s\n\n",
+	welcome := fmt.Sprintf("vbox %s is ready\nWorker pool: %s (controller)  Region: %s\nSpecs: %s / %s / %s\nWorkspace: %s  Compute slot: %s\nState: %s  Network: %s\nConnection: direct OpenSSH, resolved for this deployment\nCost: %s\nDetach safely: press Ctrl-a, release both keys, then press d\nUseful: vbox %s | vbox hibernate %s\n\n",
 		value("vmboxBoxName", resolved.BoxName), value("vmboxProvider", "managed"), value("vmboxRegion", "provider default"),
 		cpu, memory, disk,
 		value("vmboxWorkspace", "/data/workspace"), value("vmboxComputeSlot", "managed"),
@@ -563,17 +563,17 @@ func (a *App) postControllerInteractiveExit(ctx context.Context, c config.Contex
 		fmt.Fprintf(a.Err, "\nPERMANENT DELETION: logical box %q\nRailway volume: %s (ID: %s)\nAll workspace data will be permanently deleted. The compute service remains.\nType %s to confirm: ", fresh.Name, fresh.VolumeName, fresh.VolumeID, fresh.Name)
 		confirmation, confirmed := readLineWithTimeout(ctx, reader, timeout)
 		if !confirmed || strings.TrimSpace(confirmation) != fresh.Name {
-			fmt.Fprintln(a.Err, "vmbox: deletion cancelled; logical box and volume were kept")
+			fmt.Fprintln(a.Err, "vbox: deletion cancelled; logical box and volume were kept")
 			return nil
 		}
 		return a.requestVolumeDeletion(ctx, c, token, fresh)
 	default:
-		fmt.Fprintln(a.Err, "vmbox: unrecognized choice; keeping the box running")
+		fmt.Fprintln(a.Err, "vbox: unrecognized choice; keeping the box running")
 		return a.keepControllerRunning(box.Name)
 	}
 }
 
 func (a *App) keepControllerRunning(name string) error {
-	fmt.Fprintf(a.Err, "vmbox: leaving %q unchanged; connect with: vmbox %s\n", name, name)
+	fmt.Fprintf(a.Err, "vbox: leaving %q unchanged; connect with: vbox %s\n", name, name)
 	return nil
 }

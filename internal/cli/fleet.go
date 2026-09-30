@@ -30,7 +30,7 @@ func fleetQuery(c config.Context) string {
 func parseWorkerPool(value string) (string, string, error) {
 	providerName, alias, ok := strings.Cut(value, "/")
 	if !ok || providerName == "" || alias == "" || strings.Contains(alias, "/") {
-		return "", "", fmt.Errorf("worker pool must be TYPE/ALIAS; see vmbox pools list")
+		return "", "", fmt.Errorf("worker pool must be TYPE/ALIAS; see vbox pools list")
 	}
 	return providerName, alias, nil
 }
@@ -91,14 +91,14 @@ func (a *App) controllerFleet(ctx context.Context, c config.Context, token strin
 		}
 	}
 	if len(args) == 0 {
-		return fmt.Errorf("usage: vmbox fleet status|slots|slots set COUNT|location [set REGION] [--pool TYPE/ALIAS]")
+		return fmt.Errorf("usage: vbox fleet status|slots|slots set COUNT|location [set REGION] [--pool TYPE/ALIAS]")
 	}
 	switch args[0] {
 	case "location":
 		return a.controllerFleetLocation(ctx, c, token, args[1:])
 	case "status":
 		if len(args) > 2 || (len(args) == 2 && args[1] != "--json") {
-			return fmt.Errorf("usage: vmbox fleet status [--json] [--pool TYPE/ALIAS]")
+			return fmt.Errorf("usage: vbox fleet status [--json] [--pool TYPE/ALIAS]")
 		}
 		var status v1.FleetStatus
 		if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/fleet/status"+fleetQuery(c), nil, &status, nil); err != nil {
@@ -119,7 +119,7 @@ func (a *App) controllerFleet(ctx context.Context, c config.Context, token strin
 			return nil
 		}
 		if len(args) != 3 || args[1] != "set" {
-			return fmt.Errorf("usage: vmbox fleet slots set COUNT [--pool TYPE/ALIAS]")
+			return fmt.Errorf("usage: vbox fleet slots set COUNT [--pool TYPE/ALIAS]")
 		}
 		requested, err := parseFleetSlotCount(args[2], c.Provider, c.ProviderCredential)
 		if err != nil {
@@ -162,7 +162,7 @@ func writeFleetStatus(output interface{ Write([]byte) (int, error) }, status v1.
 				fmt.Fprintf(output, "Slot %d: %s\n", slot.Ordinal, tuiLabel(slot.FailureReason, 140))
 			}
 		}
-		fmt.Fprintln(output, "Full IDs and lease details: vmbox fleet status --json")
+		fmt.Fprintln(output, "Full IDs and lease details: vbox fleet status --json")
 	}
 	if len(status.DetachedLogicalBoxes) > 0 {
 		names := make([]string, 0, len(status.DetachedLogicalBoxes))

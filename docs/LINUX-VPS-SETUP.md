@@ -14,7 +14,7 @@ See [the isolation contract and limitations](SHARED-CONTAINERS.md).
 
 - A fresh Debian 13 VPS with root access, systemd, cgroup v2 and Docker support.
   Other distributions need equivalent packages and separate verification.
-- An existing vmbox controller and an owner login on your workstation.
+- An existing vbox controller and an owner login on your workstation.
 - Public inbound TCP 80 and 443, plus your SSH port; outbound DNS and HTTPS.
   Do not publish the Docker daemon or supervisor port 8081.
 - Access to this repository and a digest-pinned desktop worker image containing
@@ -84,7 +84,7 @@ not a replacement for the VPS's general ingress firewall.
 
 ## 3. Configure the worker without printing its secret
 
-On your **workstation**, `vmbox whoami --json` supplies your controller account ID.
+On your **workstation**, `vbox whoami --json` supplies your controller account ID.
 Only that ID belongs on the worker—not your controller login token, database
 credentials or another provider's management credentials.
 
@@ -178,7 +178,7 @@ are essential. See [Let's Encrypt's IP certificate instructions](https://letsenc
 
 ## 5. Register the pool from your workstation
 
-Verify `vmbox whoami --json` reports the intended account and owner role. Create
+Verify `vbox whoami --json` reports the intended account and owner role. Create
 a local **non-secret** JSON file `vps-provider.json` containing:
 
 ```json
@@ -200,8 +200,8 @@ assert target and not target.startswith("-") and alias and not alias.startswith(
 raw = subprocess.check_output(["ssh","-o","BatchMode=yes",target,"cat /etc/vmbox/isolated-worker.env"],text=True)
 values = dict(line.split("=",1) for line in raw.splitlines())
 env = dict(os.environ, VMBOX_VPS_SECRET=json.dumps({"token":values["VMBOX_SHARED_TOKEN"]}))
-subprocess.run(["vmbox","providers","create","shared-worker",alias,"--config-file",config,"--secret-env","VMBOX_VPS_SECRET"],env=env,check=True)
-subprocess.run(["vmbox","providers","validate","shared-worker",alias],check=True)
+subprocess.run(["vbox","providers","create","shared-worker",alias,"--config-file",config,"--secret-env","VMBOX_VPS_SECRET"],env=env,check=True)
+subprocess.run(["vbox","providers","validate","shared-worker",alias],check=True)
 '
 ```
 

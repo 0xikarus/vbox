@@ -20,7 +20,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-go build -o "$work_dir/vmbox" "$repo/cmd/vmbox"
+go build -o "$work_dir/vbox" "$repo/cmd/vbox"
 go build -o "$work_dir/vmbox-controller" "$repo/cmd/vmbox-controller"
 image="${VMBOX_E2E_IMAGE:-vmbox:e2e}"
 image_id="$(docker image inspect --format '{{.Id}}' "$image")"
@@ -55,25 +55,25 @@ done
 curl -fsS "http://127.0.0.1:${listen_port}/healthz" >/dev/null
 
 config_path="$work_dir/config.json"
-VMBOX_CONFIG="$config_path" "$work_dir/vmbox" context add e2e \
+VMBOX_CONFIG="$config_path" "$work_dir/vbox" context add e2e \
   --provider docker --docker-context default \
   --controller "http://127.0.0.1:${listen_port}" --account e2e \
   --provider-credential local --image "$image_id" >/dev/null
 VMBOX_CONFIG="$config_path" VMBOX_CONTROLLER_TOKEN="$controller_token" \
   VMBOX_E2E_PROVIDER_SECRET='{"scope":"local"}' \
-  "$work_dir/vmbox" credentials set docker local \
+  "$work_dir/vbox" credentials set docker local \
   --secret-env VMBOX_E2E_PROVIDER_SECRET \
   --config "{\"context\":\"default\",\"image\":\"$image_id\"}" >/dev/null
 
 accepted="$(VMBOX_CONFIG="$config_path" VMBOX_CONTROLLER_TOKEN="$controller_token" \
-  "$work_dir/vmbox" new "$box_name" --detach -- \
+  "$work_dir/vbox" new "$box_name" --detach -- \
   printf '%s' 'controller exact argv: $HOME; $(false)')"
 run_id="$(awk '/^accepted / {print $2}' <<<"$accepted")"
 [[ -n "$run_id" ]]
 state=""
 for _ in $(seq 1 90); do
   status="$(VMBOX_CONFIG="$config_path" VMBOX_CONTROLLER_TOKEN="$controller_token" \
-    "$work_dir/vmbox" status "$run_id" 2>/dev/null)"
+    "$work_dir/vbox" status "$run_id" 2>/dev/null)"
   state="$(jq -r .state <<<"$status")"
   [[ "$state" == succeeded || "$state" == failed ]] && break
   sleep 1
@@ -84,6 +84,6 @@ if [[ "$state" != succeeded ]]; then
 fi
 [[ "$(jq -r .lastActivity <<<"$status")" == 'controller exact argv: $HOME; $(false)' ]]
 VMBOX_CONFIG="$config_path" VMBOX_CONTROLLER_TOKEN="$controller_token" \
-  "$work_dir/vmbox" clean "$run_id" --yes >/dev/null
+  "$work_dir/vbox" clean "$run_id" --yes >/dev/null
 ! docker container inspect "vmbox-$box_name" >/dev/null 2>&1
 echo 'controller Docker/PostgreSQL E2E passed'

@@ -57,7 +57,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 			return err
 		}
 		if len(providers) == 0 {
-			return fmt.Errorf("no worker pool configured; run vmbox pools create first")
+			return fmt.Errorf("no worker pool configured; run vbox pools create first")
 		}
 		var defaults v1.FleetConfig
 		status, err := a.request(ctx, c, token, http.MethodGet, "/v1/controller-defaults", nil, &defaults, nil)
@@ -93,7 +93,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 		}
 		if request.Provider != "" {
 			if _, ok := providerChoices[request.Provider+" / "+request.ProviderCredential]; !ok {
-				return fmt.Errorf("worker pool %s/%s is not configured; see vmbox pools list", request.Provider, request.ProviderCredential)
+				return fmt.Errorf("worker pool %s/%s is not configured; see vbox pools list", request.Provider, request.ProviderCredential)
 			}
 		}
 		fields = append(fields, disk)
@@ -148,7 +148,7 @@ func (a *App) createWorkspace(ctx context.Context, c config.Context, token strin
 		progress = func(message string) { emit(meter.render(message)) }
 		a.creationProgress = progress
 		if ambiguous {
-			return fmt.Errorf("creation outcome unconfirmed; cancel and inspect vmbox boxes status %s before retrying", request.Name)
+			return fmt.Errorf("creation outcome unconfirmed; cancel and inspect vbox boxes status %s before retrying", request.Name)
 		}
 		if dialog {
 			request.Tools = selectedTools(tools)

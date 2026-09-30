@@ -706,7 +706,7 @@ func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (pre
 	for _, selected := range prepared.setup.ApplicationProfiles {
 		profile, err := components.ProfileAt(selected.Application, selected.Path)
 		if err != nil {
-			fmt.Fprintf(a.Err, "vmbox: saved application profile missing; skipped: %s (%v)\n", selected.Path, err)
+			fmt.Fprintf(a.Err, "vbox: saved application profile missing; skipped: %s (%v)\n", selected.Path, err)
 			continue
 		}
 		prepared.applications = append(prepared.applications, selected.Application)
@@ -724,7 +724,7 @@ func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (pre
 	}
 	available, missing := components.ValidateInstructions(prepared.setup.Instructions)
 	for _, path := range missing {
-		fmt.Fprintf(a.Err, "vmbox: Markdown instruction file missing; skipped: %s\n", path)
+		fmt.Fprintf(a.Err, "vbox: Markdown instruction file missing; skipped: %s\n", path)
 	}
 	if len(available) > 0 {
 		var combined bytes.Buffer
@@ -747,7 +747,7 @@ func (a *App) prepareSetup(ctx context.Context, setup config.CreationSetup) (pre
 		credential := prepared.setup.GitHub
 		result, err := a.Runner.Run(ctx, []string{"gh", "auth", "token", "--hostname", credential.Host, "--user", credential.User}, nil, nil, nil)
 		if err != nil || result.ExitCode != 0 || len(bytes.TrimSpace(result.Stdout)) == 0 {
-			fmt.Fprintf(a.Err, "vmbox: selected GitHub credential is unavailable; skipped: %s@%s\n", credential.User, credential.Host)
+			fmt.Fprintf(a.Err, "vbox: selected GitHub credential is unavailable; skipped: %s@%s\n", credential.User, credential.Host)
 		} else {
 			prepared.githubToken = strings.TrimSpace(string(result.Stdout))
 			prepared.githubName, prepared.githubEmail = a.githubIdentity(ctx, *credential)
@@ -801,10 +801,10 @@ func (a *App) uploadPrepared(ctx context.Context, p provider.Provider, name stri
 
 func (a *App) uploadPreparedWith(ctx context.Context, name string, prepared preparedSetup, execute setupExec) error {
 	if len(prepared.uploads) > 0 {
-		fmt.Fprintf(a.Err, "vmbox: syncing %d selected agent/instruction file(s)\n", len(prepared.uploads))
+		fmt.Fprintf(a.Err, "vbox: syncing %d selected agent/instruction file(s)\n", len(prepared.uploads))
 		request := boxruntime.SyncRequest{Files: make([]boxruntime.SyncFile, 0, len(prepared.uploads))}
 		for index, item := range prepared.uploads {
-			fmt.Fprintf(a.Err, "vmbox: batching file %d/%d: %s\n", index+1, len(prepared.uploads), item.path)
+			fmt.Fprintf(a.Err, "vbox: batching file %d/%d: %s\n", index+1, len(prepared.uploads), item.path)
 			request.Files = append(request.Files, boxruntime.SyncFile{Path: item.path, Mode: item.mode, Data: item.data})
 		}
 		payload, err := json.Marshal(request)
@@ -827,12 +827,12 @@ func (a *App) uploadPreparedWith(ctx context.Context, name string, prepared prep
 	setupRequest := boxruntime.SetupRequest{Workspace: prepared.setup.Workspace, Applications: append([]string(nil), prepared.applications...)}
 	if prepared.githubToken != "" && prepared.setup.GitHub != nil {
 		credential := prepared.setup.GitHub
-		fmt.Fprintf(a.Err, "vmbox: syncing GitHub credential for %s@%s\n", credential.User, credential.Host)
+		fmt.Fprintf(a.Err, "vbox: syncing GitHub credential for %s@%s\n", credential.User, credential.Host)
 		setupRequest.GitHub = &boxruntime.GitHubSetup{Host: credential.Host, User: credential.User, Protocol: credential.Protocol, Token: prepared.githubToken, Name: prepared.githubName, Email: prepared.githubEmail}
 	}
-	fmt.Fprintf(a.Err, "vmbox: configuring agent trust for %s\n", prepared.setup.Workspace)
+	fmt.Fprintf(a.Err, "vbox: configuring agent trust for %s\n", prepared.setup.Workspace)
 	for _, application := range uniqueVerifiableApplications(prepared.applications) {
-		fmt.Fprintf(a.Err, "vmbox: verifying %s authentication inside %q\n", application, name)
+		fmt.Fprintf(a.Err, "vbox: verifying %s authentication inside %q\n", application, name)
 	}
 	payload, err := json.Marshal(setupRequest)
 	if err != nil {
@@ -855,9 +855,9 @@ func (a *App) uploadPreparedWith(ctx context.Context, name string, prepared prep
 		if err != nil || verification.ExitCode != 0 {
 			return fmt.Errorf("verify GitHub authentication as workload user inside %q", name)
 		}
-		fmt.Fprintf(a.Err, "vmbox: GitHub credential is ready\n")
+		fmt.Fprintf(a.Err, "vbox: GitHub credential is ready\n")
 	}
-	fmt.Fprintf(a.Err, "vmbox: agent trust is ready\n")
+	fmt.Fprintf(a.Err, "vbox: agent trust is ready\n")
 	a.reportApplicationAuthentication(prepared.applications, setupResult.Authentication)
 	return nil
 }
@@ -879,7 +879,7 @@ func (a *App) ensureBootstrap(ctx context.Context, p provider.Provider, name str
 		selection = "core runtime only"
 	}
 	started := time.Now()
-	fmt.Fprintf(a.Err, "vmbox: bootstrapping %q (%s); first install may take a few minutes\n", name, selection)
+	fmt.Fprintf(a.Err, "vbox: bootstrapping %q (%s); first install may take a few minutes\n", name, selection)
 	done := make(chan error, 1)
 	go func() {
 		done <- bootstrapper.Bootstrap(ctx, name, request)
@@ -896,10 +896,10 @@ func (a *App) ensureBootstrap(ctx context.Context, p provider.Provider, name str
 			if err != nil {
 				return fmt.Errorf("bootstrap box %q: %w", name, err)
 			}
-			fmt.Fprintf(a.Err, "vmbox: runtime and tools are ready in %q (%s)\n", name, elapsedLabel(time.Since(started)))
+			fmt.Fprintf(a.Err, "vbox: runtime and tools are ready in %q (%s)\n", name, elapsedLabel(time.Since(started)))
 			return nil
 		case <-ticker.C:
-			fmt.Fprintf(a.Err, "vmbox: still bootstrapping %q (%s elapsed)\n", name, elapsedLabel(time.Since(started)))
+			fmt.Fprintf(a.Err, "vbox: still bootstrapping %q (%s elapsed)\n", name, elapsedLabel(time.Since(started)))
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -961,11 +961,11 @@ func welcome(box provider.Box, contextName, cost string) []byte {
 	if box.Storage != nil {
 		storage = fmt.Sprintf("%d GiB at %s", box.Storage.SizeGiB, box.Storage.MountPath)
 	}
-	return []byte(fmt.Sprintf("vmbox %s is ready\nProvider: %s (%s)  Region: %s\nSpecs: %.2g CPU / %d MiB RAM / %s\nConnection: %s  Workspace: /data/workspace  State: %s\nCost: %s\nDetach: press Ctrl-a, release both keys, then press d\nUseful: vmbox status %s | vmbox stop %s | vmbox cost %s\n\n", box.Name, box.Provider, contextName, box.Region, box.Resources.CPU, box.Resources.MemoryMiB, storage, connection, box.State, cost, box.Name, box.Name, box.Name))
+	return []byte(fmt.Sprintf("vbox %s is ready\nProvider: %s (%s)  Region: %s\nSpecs: %.2g CPU / %d MiB RAM / %s\nConnection: %s  Workspace: /data/workspace  State: %s\nCost: %s\nDetach: press Ctrl-a, release both keys, then press d\nUseful: vbox status %s | vbox stop %s | vbox cost %s\n\n", box.Name, box.Provider, contextName, box.Region, box.Resources.CPU, box.Resources.MemoryMiB, storage, connection, box.State, cost, box.Name, box.Name, box.Name))
 }
 
 func (a *App) uploadWelcome(ctx context.Context, p provider.Provider, box provider.Box, contextName string) error {
-	cost := "unavailable; use vmbox cost " + box.Name
+	cost := "unavailable; use vbox cost " + box.Name
 	if usage, err := p.Usage(ctx, box.Name); err == nil {
 		if usage.Cost.Available {
 			cost = fmt.Sprintf("%.4f %s accrued", usage.Cost.Accrued, usage.Cost.Currency)

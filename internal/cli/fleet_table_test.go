@@ -19,7 +19,7 @@ func TestFleetTableKeepsIdentifiersCompact(t *testing.T) {
 	var output bytes.Buffer
 	writeFleetStatus(&output, status)
 	text := output.String()
-	for _, want := range []string{"01287a75…", "f58c993d…", "europe-west4", "web-proof-0907", "—", "vmbox fleet status --json"} {
+	for _, want := range []string{"01287a75…", "f58c993d…", "europe-west4", "web-proof-0907", "—", "vbox fleet status --json"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %s", want, text)
 		}

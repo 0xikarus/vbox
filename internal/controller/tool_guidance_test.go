@@ -79,7 +79,7 @@ func TestComposeInstructionMarkdownPreservesPresetAndBounds(t *testing.T) {
 
 func TestManagedChatConventionsStayFocusedOnVmboxCalls(t *testing.T) {
 	got, err := composeChatConventions("# Owner preset\n")
-	if err != nil || !strings.HasPrefix(got, "# Owner preset\n\n## vmbox chat\n") {
+	if err != nil || !strings.HasPrefix(got, "# Owner preset\n\n## vbox chat\n") {
 		t.Fatalf("compose: %v %q", err, got)
 	}
 	for _, example := range []string{

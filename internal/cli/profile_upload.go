@@ -16,7 +16,7 @@ type uploadEntry struct {
 
 func (a *App) uploadProfilesDialog(ctx context.Context, c config.Context, token string) error {
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return fmt.Errorf("interactive upload needs a terminal; use vmbox profiles save APPLICATION NAME --from SOURCE")
+		return fmt.Errorf("interactive upload needs a terminal; use vbox profiles save APPLICATION NAME --from SOURCE")
 	}
 	var saved []v1.LoginProfile
 	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/login-profiles", nil, &saved, nil); err != nil {

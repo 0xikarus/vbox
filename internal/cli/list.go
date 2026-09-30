@@ -33,7 +33,7 @@ func writeBoxList(output io.Writer, boxes []provider.Box) error {
 		return err
 	}
 	for _, box := range boxes {
-		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\tstandalone\tvmbox %s\n",
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\tstandalone\tvbox %s\n",
 			box.Name, box.State, valueOrDash(box.Region), cpuLabel(box.Resources.CPU), memoryLabel(box.Resources.MemoryMiB), diskLabel(box.Resources.DiskGiB), box.Name); err != nil {
 			return err
 		}
@@ -41,7 +41,7 @@ func writeBoxList(output io.Writer, boxes []provider.Box) error {
 	if err := table.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(output, "\nPower down: vmbox stop NAME    Delete: vmbox clean NAME --yes\nDetach tmux: Ctrl-a, release both keys, then d    JSON: vmbox ls --json\n")
+	_, err := fmt.Fprint(output, "\nPower down: vbox stop NAME    Delete: vbox clean NAME --yes\nDetach tmux: Ctrl-a, release both keys, then d    JSON: vbox ls --json\n")
 	return err
 }
 
@@ -61,9 +61,9 @@ func writeRunList(output io.Writer, runs []v1.Run) error {
 		if providerName == "" {
 			providerName = run.Request.Provider
 		}
-		action := "vmbox status " + run.ID
+		action := "vbox status " + run.ID
 		if run.Request.Box != "" {
-			action = "vmbox " + run.Request.Box
+			action = "vbox " + run.Request.Box
 		}
 		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			name, run.State, valueOrDash(providerName), valueOrDash(run.Request.Region), cpuLabel(run.Request.Resources.CPU), memoryLabel(run.Request.Resources.MemoryMiB), diskLabel(run.Request.Resources.DiskGiB), run.ID, action); err != nil {
@@ -73,7 +73,7 @@ func writeRunList(output io.Writer, runs []v1.Run) error {
 	if err := table.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(output, "\nResume selector: vmbox resume    JSON: vmbox ls --json\n")
+	_, err := fmt.Fprint(output, "\nResume selector: vbox resume    JSON: vbox ls --json\n")
 	return err
 }
 
@@ -115,7 +115,7 @@ func writeInventoryList(output io.Writer, inventory v1.BoxInventory) error {
 		if box.SlotID != "" {
 			compute = "assigned"
 		}
-		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\tcontroller\tvmbox %s\n", box.Name, box.State, valueOrDash(box.Provider), valueOrDash(box.VolumeName), compute, box.Name); err != nil {
+		if _, err := fmt.Fprintf(table, "%s\t%s\t%s\t%s\t%s\tcontroller\tvbox %s\n", box.Name, box.State, valueOrDash(box.Provider), valueOrDash(box.VolumeName), compute, box.Name); err != nil {
 			return err
 		}
 	}
@@ -131,7 +131,7 @@ func writeInventoryList(output io.Writer, inventory v1.BoxInventory) error {
 	if err := table.Flush(); err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(output, "\nController boxes persist independently from fleet slots. External services are listed for visibility only.\nOpen a box: vmbox NAME    Free fleet slots: vmbox fleet status    JSON: vmbox ls --json\n")
+	_, err := fmt.Fprint(output, "\nController boxes persist independently from fleet slots. External services are listed for visibility only.\nOpen a box: vbox NAME    Free fleet slots: vbox fleet status    JSON: vbox ls --json\n")
 	return err
 }
 

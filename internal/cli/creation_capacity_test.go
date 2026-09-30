@@ -18,10 +18,10 @@ func TestCreationCapacityGuidance(t *testing.T) {
 		fleet        v1.FleetStatus
 		region, want string
 	}{
-		{"zero", v1.FleetStatus{}, "", "vmbox fleet slots set 1"},
+		{"zero", v1.FleetStatus{}, "", "vbox fleet slots set 1"},
 		{"starting", v1.FleetStatus{DesiredSlots: 2, ActualSlots: 1}, "", "still starting"},
 		{"unhealthy", v1.FleetStatus{DesiredSlots: 2, ActualSlots: 2, UnhealthySlots: 2}, "", "unhealthy or stopped"},
-		{"busy", v1.FleetStatus{DesiredSlots: 2, ActualSlots: 2, OccupiedSlots: 2}, "", "vmbox hibernate BOX"},
+		{"busy", v1.FleetStatus{DesiredSlots: 2, ActualSlots: 2, OccupiedSlots: 2}, "", "vbox hibernate BOX"},
 		{"region", v1.FleetStatus{DesiredSlots: 2, ActualSlots: 2, FreeSlots: 2}, "eu", "selected location eu"},
 		{"race", v1.FleetStatus{DesiredSlots: 2, ActualSlots: 2, FreeSlots: 2}, "", "capacity may have changed"},
 	} {
@@ -51,14 +51,14 @@ func TestCreationCapacityChecksSelectedProviderAndPreservesFailure(t *testing.T)
 }
 
 func TestFormStatusWrapsActionableErrors(t *testing.T) {
-	message := "Creation paused\nRun: vmbox fleet slots set 1\nThen retry Create."
+	message := "Creation paused\nRun: vbox fleet slots set 1\nThen retry Create."
 	lines := formStatusLines(message, 20)
 	for _, line := range lines {
 		if len([]rune(line)) > 20 {
 			t.Fatal(line)
 		}
 	}
-	if !strings.Contains(strings.Join(lines, " "), "vmbox fleet slots set 1") {
+	if !strings.Contains(strings.Join(lines, " "), "vbox fleet slots set 1") {
 		t.Fatal(lines)
 	}
 }

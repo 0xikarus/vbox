@@ -48,7 +48,7 @@ func (a *App) controllerSessions(ctx context.Context, c config.Context, token st
 		return err
 	}
 	if len(args) < 1 || len(args) > 2 || (len(args) == 2 && args[1] != "--json") {
-		return fmt.Errorf("usage: vmbox sessions BOX [--json]")
+		return fmt.Errorf("usage: vbox sessions BOX [--json]")
 	}
 	inv, err := a.sessionInventory(ctx, c, token, args[0])
 	if err != nil {
@@ -70,7 +70,7 @@ func (a *App) attachNative(ctx context.Context, c config.Context, token string, 
 
 func (a *App) attachRemembered(ctx context.Context, c config.Context, token string, box v1.LogicalBox, name string, expected *v1.Session, remember bool) error {
 	if a.IsTerminal == nil || !a.IsTerminal() {
-		return fmt.Errorf("attachment requires a terminal; use vmbox sessions or task --json")
+		return fmt.Errorf("attachment requires a terminal; use vbox sessions or task --json")
 	}
 	inv, err := a.sessionInventory(ctx, c, token, box.ID)
 	if err != nil {
@@ -139,7 +139,7 @@ func (a *App) attachRemembered(ctx context.Context, c config.Context, token stri
 		return err
 	}
 	if result.ExitCode != 0 {
-		return fmt.Errorf("terminal exited %d; input was not replayed; inspect/reconnect with vmbox %s --session %s", result.ExitCode, shellQuote(box.Name), shellQuote(selected.Name))
+		return fmt.Errorf("terminal exited %d; input was not replayed; inspect/reconnect with vbox %s --session %s", result.ExitCode, shellQuote(box.Name), shellQuote(selected.Name))
 	}
 	return a.postControllerInteractiveExit(ctx, c, token, box)
 }

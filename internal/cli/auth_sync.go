@@ -176,10 +176,10 @@ func (a *App) uploadSelectedApplicationProfiles(ctx context.Context, name string
 
 func (a *App) uploadSelectedAuthentication(ctx context.Context, name string, setup config.CreationSetup, execute setupExec) error {
 	for _, profile := range setup.ApplicationProfiles {
-		fmt.Fprintf(a.Err, "vmbox: selected %s profile %s\n", profile.Application, profile.Path)
+		fmt.Fprintf(a.Err, "vbox: selected %s profile %s\n", profile.Application, profile.Path)
 	}
 	if setup.GitHub != nil {
-		fmt.Fprintf(a.Err, "vmbox: selected GitHub credential %s@%s (%s)\n", setup.GitHub.User, setup.GitHub.Host, setup.GitHub.Protocol)
+		fmt.Fprintf(a.Err, "vbox: selected GitHub credential %s@%s (%s)\n", setup.GitHub.User, setup.GitHub.Host, setup.GitHub.Protocol)
 	}
 	prepared, err := a.prepareSetup(ctx, setup)
 	if err != nil {

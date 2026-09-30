@@ -20,9 +20,9 @@ func TestLogicalBoxWelcomeAlwaysContainsManagedIdentityAndDetails(t *testing.T) 
 	}
 	welcome := string(logicalBoxWelcome(assignment, actual))
 	for _, expected := range []string{
-		"vmbox research is ready", "Provider: railway (controller)", "Region: europe-west4-drams3a",
+		"vbox research is ready", "Provider: railway (controller)", "Region: europe-west4-drams3a",
 		"2 CPU", "4096 MiB RAM", "30 GiB disk", "Volume: research-data", "Compute slot: fleet-slot-2",
-		"direct OpenSSH", "vmbox hibernate research",
+		"direct OpenSSH", "vbox hibernate research",
 	} {
 		if !strings.Contains(welcome, expected) {
 			t.Fatalf("welcome omitted %q: %s", expected, welcome)

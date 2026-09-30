@@ -51,16 +51,16 @@ cd vmbox-service
 ./install.sh
 ```
 
-The installer places `vmbox` in `~/.local/bin`. Open a new terminal if needed, then connect with the token supplied by the controller owner:
+The installer places `vbox` in `~/.local/bin` and a `vmbox` compatibility symlink. Open a new terminal if needed, then connect with the token supplied by the controller owner:
 
 ```bash
-vmbox connect https://YOUR-CONTROLLER
-vmbox profiles upload
-vmbox new work
-vmbox work
+vbox connect https://YOUR-CONTROLLER
+vbox profiles upload
+vbox new work
+vbox work
 ```
 
-`vmbox profiles upload` imports Codex, Claude, OpenCode, or GitHub credentials into encrypted saved profiles. Existing boxes receive profile changes when you reapply the profile. Run `vmbox help` for all commands. `vmbox desktop work` needs a local VNC viewer; the browser desktop does not.
+`vbox profiles upload` imports Codex, Claude, OpenCode, or GitHub credentials into encrypted saved profiles. Existing boxes receive profile changes when you reapply the profile. Run `vbox help` for all commands. `vbox desktop work` needs a local VNC viewer; the browser desktop does not.
 
 ## Security and limits
 

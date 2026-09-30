@@ -16,7 +16,7 @@ func (a *App) requestVolumeDeletion(ctx context.Context, c config.Context, token
 		return err
 	}
 	if status == http.StatusAccepted {
-		fmt.Fprintf(a.Err, "%s · deletion queued; continues in background. Check: vmbox status %s\n", tuiLabel(box.Name, 100), tuiLabel(box.Name, 100))
+		fmt.Fprintf(a.Err, "%s · deletion queued; continues in background. Check: vbox status %s\n", tuiLabel(box.Name, 100), tuiLabel(box.Name, 100))
 	} else {
 		fmt.Fprintf(a.Err, "%s · deletion completed; fleet size unchanged\n", tuiLabel(box.Name, 100))
 	}
