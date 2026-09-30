@@ -2162,7 +2162,7 @@ messagesEl.addEventListener('click',event=>{if(!coarsePointer())return;if(event.
   function previewRows(){
    if(!newBoxModal.hidden&&previewCard){
     const f=createForm.elements,model=String(f.agentModel?.value||'').trim();
-    const rows=[['Name',f.name.value.trim()||'—'],['Agent',f.defaultAgent.selectedOptions[0]?.textContent||f.defaultAgent.value]];
+    const rows=[['Agent',f.defaultAgent.selectedOptions[0]?.textContent||f.defaultAgent.value]];
     const profile=f.loginProfile?.selectedOptions[0];
     if(f.loginProfile&&!f.loginProfile.hidden&&profile?.value)rows.push(['Profile',profile.textContent]);
     if(model)rows.push(['Model',model]);
@@ -2911,21 +2911,33 @@ let usagePending=null,usageGeneration=0;
   value.className=count?'on':'off';return cell;
  }
  function permissionBoxes(){return [...boxes.values()].sort((a,b)=>a.name.localeCompare(b.name)||a.id.localeCompare(b.id))}
+ function policyChip(kind,policy){
+  const chip=mk('span');chip.className='role-perm-chip';const label={contacts:'Contacts',computer:'Computer',passwords:'Passwords',admin:'Admin',create:'Create'}[kind];
+  if(!policy||policy.error){chip.dataset.state='unknown';chip.append(mk('span',label),mk('b','unavailable'));return chip}
+  const cap=policy.capabilities||{},allowed=new Set(cap.mcpTools?.enabled?cap.mcpTools.allowedTools||[]:[]);
+  let on=false,partial=false;
+  if(kind==='contacts')on=!!cap.allContacts?.enabled;
+  else if(kind==='create')on=!!cap.createAgentBox?.enabled&&allowed.has('create_agent_box');
+  else{const group=summaryToolGroups[kind],count=group.filter(tool=>allowed.has(tool)).length;on=count>0;partial=count>0&&count<group.length}
+  chip.dataset.state=on?(partial?'partial':'on'):'off';
+  chip.append(mk('span',label),mk('b',on?(partial?'some':'\u2713'):'\u2013'));
+  return chip;
+ }
  function renderPermissionBoxes(){
   const root=$('#role-assignments');if(!root)return;root.replaceChildren();
   const query=($('#role-box-search')?.value||'').trim().toLocaleLowerCase(),values=permissionBoxes().filter(box=>!query||box.name.toLocaleLowerCase().includes(query));
   if(!values.length){root.append(mk('p',query?'No boxes match this search.':'No boxes available.'));return}
-  const header=mk('div');header.className='role-matrix-head';for(const label of ['Box / agent','Contacts','Computer','Passwords','Admin','Create',''])header.append(mk('span',label));root.append(header);
-  const list=mk('div');list.className='role-assignment-list';
+  const list=mk('div');list.className='role-perm-list';
   for(const box of values){
-   const card=mk('article');card.className='role-assignment-card';card.dataset.state=box.state;card.dataset.roleBoxId=box.id;
-   const summary=mk('div');summary.className='role-assignment-summary';
-   const mark=mk('span',(box.name||'?').slice(0,1).toUpperCase());mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');
-   const identity=mk('div');identity.className='role-assignment-identity';identity.append(mk('strong',box.name));const meta=mk('div');meta.className='role-box-meta';meta.append(Object.assign(mk('span',box.defaultAgent||'agent'),{className:'role-agent-badge'}),Object.assign(mk('span',box.state),{className:'role-state-badge'}));identity.append(meta);
-   const who=mk('div');who.className='role-box-identity';who.append(mark,identity);summary.append(who);
-   for(const kind of ['contacts','computer','passwords','admin','create'])summary.append(policySummaryCell(kind,policySummaries.get(box.id)));
+   const row=mk('article');row.className='role-perm-row';row.dataset.state=box.state;row.dataset.roleBoxId=box.id;
+   const head=mk('div');head.className='role-perm-head';
+   const mark=mk('span');mark.className='role-box-mark';mark.setAttribute('aria-hidden','true');mark.innerHTML='<span class="role-box-mascot">'+mascotMiniSVG(box.id)+'</span>';
+   const identity=mk('div');identity.className='role-assignment-identity';identity.append(mk('strong',box.name));const meta=mk('div');meta.className='role-box-meta';meta.append(mk('span',(box.defaultAgent||'agent')+' \u00b7 '+box.state));identity.append(meta);
+   const who=mk('div');who.className='role-box-identity';who.append(mark,identity);
    const manage=mk('button','Edit');manage.type='button';manage.className='role-assignment-toggle';manage.setAttribute('aria-label','Edit permissions for '+box.name);manage.onclick=()=>void openBoxPolicyEditor(box.id);
-   summary.append(manage);card.append(summary);list.append(card);
+   head.append(who,manage);
+   const chips=mk('div');chips.className='role-perm-chips';for(const kind of ['contacts','computer','passwords','admin','create'])chips.append(policyChip(kind,policySummaries.get(box.id)));
+   row.append(head,chips);list.append(row);
   }
   root.append(list);
  }
@@ -2942,7 +2954,7 @@ let usagePending=null,usageGeneration=0;
     if(epoch===policySummaryEpoch&&!$('#roles-modal').hidden)renderPermissionBoxes();
    }
   }));
-  if(epoch===policySummaryEpoch&&!$('#roles-modal').hidden){const failures=queue.filter(box=>policySummaries.get(box.id)?.error).length;$('#role-status').textContent=failures?failures+' policy summaries are unavailable. Select Edit to retry.':'Select Edit for individual tools and limits.'}
+  if(epoch===policySummaryEpoch&&!$('#roles-modal').hidden){const failures=queue.filter(box=>policySummaries.get(box.id)?.error).length,status=$('#role-status');status.replaceChildren();if(failures){const note=mk('span',failures===1?'1 policy summary is unavailable.':' '+failures+' policy summaries are unavailable.');note.className='role-status-note';const retry=mk('button','Retry');retry.type='button';retry.className='notice-retry';retry.onclick=()=>void loadPermissionSummaries();status.append(note,retry)}else status.textContent='Select Edit for individual tools and limits.'}
  }
  async function openPermissionsModal(){
   if(!owner)return;closeSheets();$('#roles-modal').hidden=false;$('#role-box-search').value='';$('#role-status').textContent='Loading box permissions…';await loadBoxes(true);renderPermissionBoxes();void loadPermissionSummaries();
@@ -2984,15 +2996,22 @@ let usagePending=null,usageGeneration=0;
  }
  function renderPresetList(){
   const root=$('#preset-list');if(!root)return;root.replaceChildren();
-  if(!instructionPresets.presets.length){root.append(mk('p','No presets.'));return}
-  const list=mk('ul');list.className='preset-list';
+  if(!instructionPresets.presets.length){root.append(mk('p','No presets yet. Use + to add one.'));return}
+  const list=mk('div');list.className='preset-list';
   for(const preset of instructionPresets.presets){
-   const item=mk('li');item.append(mk('span',preset.name+' · r'+preset.revision+(preset.default?' · default':'')));
-   const actions=mk('span');actions.className='preset-actions';
-   const edit=mk('button','Edit');edit.type='button';edit.onclick=()=>void editPreset(preset.name);
+   const row=mk('article');row.className='preset-row';row.dataset.presetName=preset.name;
+   const main=mk('div');main.className='preset-main';
+   const title=mk('div');title.className='preset-title';title.append(mk('strong',preset.name));
+   if(preset.default){const pill=mk('span','Default');pill.className='pill';title.append(pill)}
+   title.append(mk('small','r'+preset.revision));
+   main.append(title);
+   const actions=mk('div');actions.className='preset-actions';
+   const edit=mk('button','Edit');edit.type='button';edit.className='vb-secondary';edit.onclick=()=>void editPreset(preset.name);
+   const more=mk('details');more.className='row-overflow';const summary=mk('summary');summary.setAttribute('aria-label','More for '+preset.name);summary.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';const menu=mk('div');menu.className='row-overflow-menu';
    const setDefault=mk('button',preset.default?'Clear default':'Set default');setDefault.type='button';setDefault.onclick=()=>void setDefaultPreset(preset.default?'':preset.name);
-   const remove=mk('button','Delete');remove.type='button';remove.onclick=()=>void deletePreset(preset);
-   actions.append(edit,setDefault,remove);item.append(actions);list.append(item);
+   const remove=mk('button','Delete');remove.type='button';remove.className='danger';remove.onclick=()=>void deletePreset(preset);
+   menu.append(setDefault,remove);more.append(summary,menu);actions.append(edit,more);
+   row.append(main,actions);list.append(row);
   }
   root.append(list);
  }
@@ -3003,9 +3022,10 @@ let usagePending=null,usageGeneration=0;
   try{applyInstructionPresets(await api('/v1/instruction-presets'))}catch(e){status.textContent=e.message}
  }
  $('#presets-toggle').onclick=()=>void openPresetsModal();
+ $('#preset-new')?.addEventListener('click',()=>{const editor=$('#preset-editor'),label=$('#preset-editor-label'),form=$('#preset-form');if(editor)editor.open=true;if(label)label.textContent='New preset';if(form){form.reset();$('#preset-preview').hidden=true}const f=form?.elements.name;if(f)f.focus()});
  async function editPreset(name){
   const status=$('#preset-status');
-  try{const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));const form=$('#preset-form');form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.'}
+  try{const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));const form=$('#preset-form'),editor=$('#preset-editor'),label=$('#preset-editor-label');form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;if(editor)editor.open=true;if(label)label.textContent='Edit · '+name;status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.'}
   catch(e){status.textContent=e.message}
  }
  async function setDefaultPreset(name){

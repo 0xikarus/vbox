@@ -2125,3 +2125,76 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .commands-card #command-form .primary{background:var(--vb-ink);border-color:var(--vb-ink);color:var(--vb-bg);border-radius:var(--r-control);padding:.5rem .9rem}
 .commands-card #command-form .linkbtn{background:var(--vb-surface);border:1px solid var(--vb-line-strong);color:var(--vb-ink);border-radius:var(--r-control)}
 .commands-card .command-help{background:var(--vb-bg-soft);color:var(--vb-ink-soft);border:1px solid var(--vb-line)}
+
+/* primary is black, never coral (modal scope) */
+.modal .card .primary,.sheet-card .primary,.commands-card .primary,.roles-card .primary,.role-editor-card .primary{background:var(--vb-ink)!important;border-color:var(--vb-ink)!important;color:var(--vb-bg)!important}
+.vb-secondary{padding:.5rem .85rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-ink);font-weight:600;cursor:pointer}
+.vb-secondary:hover{background:var(--vb-surface-2)}
+.linkbtn{background:var(--vb-surface);border:1px solid var(--vb-line-strong);color:var(--vb-ink);border-radius:var(--r-control)}
+
+/* instruction presets */
+#presets-modal .preset-list{display:flex;flex-direction:column;gap:0;margin:.2rem 0 .8rem}
+#presets-modal .preset-row{display:flex;align-items:center;gap:1rem;padding:.7rem .1rem;border-bottom:1px solid var(--vb-line)}
+#presets-modal .preset-row:first-child{border-top:1px solid var(--vb-line)}
+#presets-modal .preset-main{flex:1;min-width:0}
+#presets-modal .preset-title{display:flex;align-items:center;gap:.5rem}
+#presets-modal .preset-title strong{font-size:.9rem;color:var(--vb-ink)}
+#presets-modal .preset-title small{margin-left:.2rem;color:var(--vb-ink-faint);font-size:.72rem}
+#presets-modal .pill{display:inline-flex;padding:.08rem .42rem;border-radius:var(--r-pill);background:var(--vb-bg-soft);border:1px solid var(--vb-line);color:var(--vb-ink-soft);font-size:.64rem;font-weight:700}
+#presets-modal .preset-actions{display:flex;align-items:center;gap:.4rem;flex:none}
+#presets-modal .row-overflow{position:relative}
+#presets-modal .row-overflow summary{list-style:none;display:grid;place-items:center;width:2rem;height:2rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-ink);cursor:pointer}
+#presets-modal .row-overflow summary::-webkit-details-marker,#presets-modal .row-overflow summary::marker{display:none;content:''}
+#presets-modal .row-overflow summary svg{width:1rem;height:1rem}
+#presets-modal .row-overflow-menu{position:absolute;top:calc(100% + 5px);right:0;z-index:30;display:none;flex-direction:column;min-width:11rem;padding:.3rem;background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg)}
+#presets-modal .row-overflow[open] .row-overflow-menu{display:flex}
+#presets-modal .row-overflow-menu button{display:flex;width:100%;padding:.5rem .6rem;border:0;background:none;border-radius:var(--r-control);color:var(--vb-ink);font:inherit;font-size:.8rem;text-align:left;cursor:pointer}
+#presets-modal .row-overflow-menu button:hover{background:var(--vb-surface-2)}
+#presets-modal .row-overflow-menu button.danger{color:var(--vb-danger-text)}
+#presets-modal .preset-editor{border:0;border-top:1px solid var(--vb-line);margin:.6rem 0 0;padding:.7rem 0 0}
+#presets-modal .preset-editor>summary{cursor:pointer;font-weight:650;color:var(--vb-ink);font-size:.88rem;padding:.2rem 0}
+#presets-modal .preset-field{display:grid;gap:.3rem;width:100%;margin:.6rem 0 0;font-weight:600;color:var(--vb-ink-soft);font-size:.78rem}
+#presets-modal .preset-field input,#presets-modal .preset-field textarea{width:100%;background:var(--vb-bg-soft);border:1px solid var(--vb-line-strong);border-radius:var(--r-control);color:var(--vb-ink);padding:.55rem .7rem}
+#presets-modal .preset-field textarea{font-family:var(--vb-mono);min-height:9rem;resize:vertical}
+
+/* agent permissions list */
+#roles-modal .role-toolbar{margin:.3rem 0 .6rem}
+#roles-modal .role-perm-list{display:flex;flex-direction:column}
+#roles-modal .role-perm-row{padding:.75rem .1rem;border-bottom:1px solid var(--vb-line)}
+#roles-modal .role-perm-head{display:flex;align-items:center;gap:.75rem}
+#roles-modal .role-box-identity{display:flex;align-items:center;gap:.65rem;flex:1;min-width:0}
+#roles-modal .role-box-mark{position:relative;width:2.4rem;height:2.4rem;flex:none}
+#roles-modal .role-box-mascot{position:absolute;inset:0}
+#roles-modal .role-box-mascot svg{width:100%;height:100%;display:block}
+#roles-modal .role-assignment-identity strong{font-size:.92rem;color:var(--vb-ink)}
+#roles-modal .role-box-meta span{color:var(--vb-ink-faint);font-size:.76rem}
+#roles-modal .role-perm-chips{display:flex;flex-wrap:wrap;gap:.4rem;margin:.55rem 0 0 3rem}
+#roles-modal .role-perm-chip{display:inline-flex;align-items:center;gap:.35rem;padding:.22rem .55rem;border:1px solid var(--vb-line);border-radius:var(--r-pill);background:var(--vb-bg-soft);color:var(--vb-ink-soft);font-size:.72rem;font-weight:600}
+#roles-modal .role-perm-chip b{font-weight:800}
+#roles-modal .role-perm-chip[data-state="on"] b{color:var(--vb-ok-text)}
+#roles-modal .role-perm-chip[data-state="partial"] b{color:var(--vb-warn-text)}
+#roles-modal .role-perm-chip[data-state="off"] b{color:var(--vb-ink-faint)}
+#roles-modal .role-perm-chip[data-state="unknown"]{opacity:.7}
+#role-status{display:flex;align-items:center;gap:.5rem}
+.role-status-note{color:var(--vb-ink-soft);font-size:.78rem}
+
+/* commands nits */
+.commands-card .command-editor-heading span{display:none}
+.commands-card #command-filter{background:var(--vb-bg-soft);border:1px solid var(--vb-line-strong);color:var(--vb-ink);border-radius:var(--r-control)}
+.commands-card #command-filter:focus{outline:none;box-shadow:0 0 0 2px color-mix(in srgb,var(--vb-ink) 35%,transparent)}
+.commands-card #command-list .command-row,.commands-card #command-list button{background:none!important;border:0!important;border-bottom:1px solid var(--vb-line)!important;border-radius:0!important;color:var(--vb-ink)}
+.commands-card #command-list .command-row.on,.commands-card #command-list button.on{background:var(--vb-bg-soft)!important}
+.commands-card .command-row strong{font-family:var(--vb-mono);color:var(--vb-ink)}
+.commands-card .command-row small{color:var(--vb-ink-faint)}
+.commands-card .command-tip,.commands-card #command-editor-help{background:none;border:0;padding:0;color:var(--vb-ink-faint);font-size:.76rem}
+.commands-card #command-use{background:var(--vb-surface);border:1px solid var(--vb-line-strong);color:var(--vb-ink);border-radius:var(--r-control);padding:.5rem .85rem;font-weight:600}
+.commands-card #command-delete{background:none;border:0;color:var(--vb-danger-text);font-weight:600}
+.commands-card #command-actions,.commands-card .command-actions{display:flex;align-items:center;gap:.5rem;justify-content:flex-end}
+.commands-card #command-delete{margin-right:auto}
+
+/* new box header padding + drop empty preview rows */
+#new-box-card>header{padding:.95rem 1.2rem!important}
+#new-box-card .preview-row:first-child{border-top:0}
+
+#presets-modal .row-overflow summary::before{display:none!important}
+#new-box-card #create-box input[name="agentModel"],#new-box-card .model-picker-open{background:var(--vb-bg-soft)!important;background-image:none!important;box-shadow:none!important;border:1px solid var(--vb-line-strong)!important;color:var(--vb-ink)!important}

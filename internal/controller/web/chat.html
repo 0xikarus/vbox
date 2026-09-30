@@ -282,15 +282,19 @@
 <div id="presets-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="presets-modal"></div>
  <section class="sheet-card" role="dialog" aria-modal="true">
-  <header><strong>Instruction presets</strong><span class="spacer"></span><button type="button" data-close="presets-modal" aria-label="Close">×</button></header>
+  <header><strong>Instruction presets</strong><span class="spacer"></span><button type="button" id="preset-new" aria-label="New preset" title="New preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" data-close="presets-modal" aria-label="Close">×</button></header>
+  <p class="hint">Reusable instructions you can apply to any box.</p>
   <div id="preset-list"></div>
-  <form id="preset-form">
-   <label>Name <input name="name" required maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="code-reviewer" autocomplete="off"></label>
-   <label>Markdown <textarea name="markdown" rows="5" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
-   <div class="preset-actions"><button type="submit" class="primary">Save</button><button type="button" id="preset-upload">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle">Preview</button></div>
-  </form>
-  <div id="preset-preview" class="md-preview" hidden></div>
-  <p id="preset-status" role="status"></p>
+  <details id="preset-editor" class="preset-editor" open>
+   <summary id="preset-editor-label">New preset</summary>
+   <form id="preset-form">
+    <label class="preset-field">Name <input name="name" required maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="code-reviewer" autocomplete="off"></label>
+    <label class="preset-field">Markdown <textarea name="markdown" rows="8" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
+    <div class="form-actions"><button type="button" id="preset-upload" class="linkbtn">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle" class="linkbtn">Preview</button><button type="submit" class="primary">Save</button></div>
+   </form>
+   <div id="preset-preview" class="md-preview" hidden></div>
+   <p id="preset-status" role="status"></p>
+  </details>
  </section></div>
 
 <div id="commands-modal" class="sheet" hidden>
