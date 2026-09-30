@@ -112,13 +112,13 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   assert.ok(fit.overflowX<=1,'mobile details must not overflow horizontally');
   await p.$eval('#inspect-close',el=>el.click());
 
-  // Swipe in from the left edge to pull the chat list back out.
+  // A rightward swipe anywhere in the transcript pulls the chat list back out.
   assert.equal(await p.evaluate(()=>document.querySelector('#chat-app').classList.contains('in-chat')),true);
-  await p.touchscreen.touchStart(12,420);
+  await p.touchscreen.touchStart(120,420);
   await new Promise(r=>setTimeout(r,60));
-  await p.touchscreen.touchMove(80,424);
+  await p.touchscreen.touchMove(200,424);
   await new Promise(r=>setTimeout(r,60));
-  await p.touchscreen.touchMove(150,428);
+  await p.touchscreen.touchMove(275,428);
   await p.touchscreen.touchEnd();
   await new Promise(r=>setTimeout(r,300));
   await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')===false);

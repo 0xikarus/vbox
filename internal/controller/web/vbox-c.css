@@ -2388,11 +2388,19 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg:has(.swipe-reply-hint),#thread-messages .msg:has(.swipe-reply-hint){touch-action:pan-y;--swipe-x:0px;--swipe-progress:0;transform:translateX(var(--swipe-x))}
 #chat-messages .msg.swiping,#thread-messages .msg.swiping{animation:none;transition:none}
 #chat-messages .msg.swipe-returning,#thread-messages .msg.swipe-returning{animation:none;transition:transform .24s cubic-bezier(.2,1.4,.45,1)}
-#chat-messages .msg .swipe-reply-hint,#thread-messages .msg .swipe-reply-hint{position:absolute;left:.45rem;top:50%;width:2rem;height:2rem;display:grid;place-items:center;border-radius:50%;background:var(--vb-surface);border:1px solid var(--vb-line);box-shadow:0 2px 9px var(--vb-swatch-0002);color:var(--vb-ink-soft);opacity:var(--swipe-progress);pointer-events:none;z-index:-1;transform:translate(calc(-1 * var(--swipe-x)),-50%) scale(var(--swipe-scale,.65));transition:opacity .08s}
+#chat-messages .msg .swipe-reply-hint,#thread-messages .msg .swipe-reply-hint{position:absolute;right:.45rem;top:50%;width:2rem;height:2rem;display:grid;place-items:center;border-radius:50%;background:var(--vb-surface);border:1px solid var(--vb-line);box-shadow:0 2px 9px var(--vb-swatch-0002);color:var(--vb-ink-soft);opacity:var(--swipe-progress);pointer-events:none;z-index:-1;transform:translate(calc(-1 * var(--swipe-x)),-50%) scale(var(--swipe-scale,.65));transition:opacity .08s,transform .08s}
 #chat-messages .msg .swipe-reply-hint svg,#thread-messages .msg .swipe-reply-hint svg{width:1rem;height:1rem}
 #chat-messages .msg.swiping .swipe-reply-hint,#thread-messages .msg.swiping .swipe-reply-hint{color:var(--vb-accent)}
 #chat-messages .msg pre,#thread-messages .msg pre{touch-action:auto}
 @media(prefers-reduced-motion:reduce){#chat-messages .msg.swipe-returning,#thread-messages .msg.swipe-returning,#chat-messages .msg .swipe-reply-hint,#thread-messages .msg .swipe-reply-hint{transition:none}}
+
+@media(max-width:600px){
+ #chat-app.in-chat.back-swiping #chat-main,#chat-app.in-chat.back-returning #chat-main{transform:translateX(var(--back-swipe-x,0px))}
+ #chat-app.in-chat.back-swiping #chat-main,#chat-app.back-swiping #chat-list{transition:none}
+ #chat-app.in-chat.back-returning #chat-main,#chat-app.back-returning #chat-list,#chat-app.back-completing #chat-list{transition:transform .24s cubic-bezier(.2,.8,.2,1)}
+ #chat-app.back-swiping #chat-list,#chat-app.back-returning #chat-list{transform:translateX(var(--back-list-x,0px))}
+}
+@media(max-width:600px) and (prefers-reduced-motion:reduce){#chat-app.in-chat.back-returning #chat-main,#chat-app.back-returning #chat-list,#chat-app.back-completing #chat-list{transition:none}}
 
 /* Details hero: one contained live screen with a full-strength mascot. */
 #inspect-screen .inspect-screen-frame{cursor:pointer}

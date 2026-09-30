@@ -1290,13 +1290,13 @@
   row.addEventListener('pointermove',event=>{
    if(!gesture||event.pointerId!==gesture.id)return;
    const dx=event.clientX-gesture.x,dy=event.clientY-gesture.y;
-   if(!gesture.axis){if(Math.abs(dx)<10&&Math.abs(dy)<10)return;gesture.axis=dx>10&&Math.abs(dx)>Math.abs(dy)?'reply':'scroll'}
+   if(!gesture.axis){if(Math.abs(dx)<10&&Math.abs(dy)<10)return;gesture.axis=dx< -10&&Math.abs(dx)>Math.abs(dy)?'reply':'scroll'}
    if(gesture.axis!=='reply')return;
    if(event.cancelable)event.preventDefault();
-   const travel=Math.min(72,Math.max(0,dx)*.8),ready=travel>=56;
-   row.classList.add('swiping');row.style.setProperty('--swipe-x',travel+'px');row.style.setProperty('--swipe-progress',String(Math.min(1,travel/56)));
-   row.style.setProperty('--swipe-scale',String(.65+.35*Math.min(1,travel/56)));
-   if(ready&&!gesture.ready)try{navigator.vibrate?.(10)}catch{}
+   const travel=Math.min(72,Math.max(0,-dx)*.8),ready=travel>=64;
+   row.classList.add('swiping');row.style.setProperty('--swipe-x',reduced()?'0px':-travel+'px');row.style.setProperty('--swipe-progress',String(reduced()?(ready?1:0):Math.min(1,travel/64)));
+   row.style.setProperty('--swipe-scale',String(ready?1.12:.65+.35*Math.min(1,travel/64)));
+   if(ready&&!gesture.ready)try{navigator.vibrate?.(8)}catch{}
    gesture.ready=ready;
   },{passive:false});
   function release(event){
@@ -2060,23 +2060,69 @@
   }
  };
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
- // Swipe in from the left edge on a phone to pull the chat list back out.
- let listSwipe=null;
- appEl.addEventListener('touchstart',event=>{
-  if(event.touches.length!==1)return;
-  const touch=event.touches[0];
-  listSwipe=touch.clientX<=48?{x:touch.clientX,y:touch.clientY}:null;
- },{passive:true});
- appEl.addEventListener('touchmove',event=>{
-  if(!listSwipe)return;
-  const touch=event.touches[0];if(!touch)return;
-  if(touch.clientX-listSwipe.x>60&&Math.abs(touch.clientY-listSwipe.y)<50){
-   listSwipe=null;
-   if(appEl.classList.contains('in-chat')){appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)}
+ // The transcript tracks a rightward back gesture. The list moves at 30% of
+ // the chat's distance, so it is visible beneath the page while dragging.
+ let backSwipe=null,backSettleTimer=0;
+ const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+ function resetBackSwipe(completed=false){
+  const moved=appEl.classList.contains('back-swiping');
+  appEl.classList.remove('back-swiping');
+  if(!moved)return;
+  clearTimeout(backSettleTimer);
+  if(completed){
+   appEl.classList.add('back-completing');
+   appEl.style.setProperty('--back-list-x','0px');
+   $('#chat-back').click();
+  }else if(!reducedMotion()){
+   appEl.classList.add('back-returning');
+   requestAnimationFrame(()=>{appEl.style.setProperty('--back-swipe-x','0px');appEl.style.setProperty('--back-list-x','0px')});
   }
+  backSettleTimer=setTimeout(()=>{
+   appEl.classList.remove('back-returning','back-completing');
+   appEl.style.removeProperty('--back-swipe-x');appEl.style.removeProperty('--back-list-x');
+  },reducedMotion()?0:270);
+ }
+ function canStartBackSwipe(target){
+  for(let node=target;node&&node!==messagesEl;node=node.parentElement){
+   const style=getComputedStyle(node);
+   if(node.scrollWidth>node.clientWidth+2&&/auto|scroll/.test(style.overflowX)&&node.scrollLeft>1)return false;
+  }
+  return true;
+ }
+ messagesEl.addEventListener('touchstart',event=>{
+  if(event.touches.length!==1||innerWidth>600||!appEl.classList.contains('in-chat')||!canStartBackSwipe(event.target))return;
+  const touch=event.touches[0];
+  backSwipe={x:touch.clientX,y:touch.clientY,lastX:touch.clientX,lastAt:performance.now(),axis:'',started:performance.now()};
  },{passive:true});
- appEl.addEventListener('touchend',()=>{listSwipe=null},{passive:true});
- appEl.addEventListener('touchcancel',()=>{listSwipe=null},{passive:true});
+ messagesEl.addEventListener('touchmove',event=>{
+  if(!backSwipe||event.touches.length!==1)return;
+  const touch=event.touches[0],dx=touch.clientX-backSwipe.x,dy=touch.clientY-backSwipe.y;
+  if(!backSwipe.axis){
+   if(performance.now()-backSwipe.started>450||document.querySelector('.msg-actions-menu:not([hidden])')){backSwipe=null;return}
+   if(dx>10&&dx>1.5*Math.abs(dy))backSwipe.axis='back';
+   else if(Math.abs(dy)>10||dx< -10){backSwipe=null;return}
+   else return;
+  }
+  if(event.cancelable)event.preventDefault();
+  const width=appEl.clientWidth,travel=Math.min(width,Math.max(0,dx));
+  backSwipe.lastX=touch.clientX;backSwipe.lastAt=performance.now();backSwipe.travel=travel;
+  if(reducedMotion())return;
+  appEl.classList.add('back-swiping');
+  appEl.style.setProperty('--back-swipe-x',travel+'px');
+  appEl.style.setProperty('--back-list-x',(-width*.3*(1-travel/width))+'px');
+ },{passive:false});
+ function finishBackSwipe(event){
+  if(!backSwipe)return;
+  const gesture=backSwipe;backSwipe=null;
+  if(gesture.axis!=='back')return;
+  const touch=event.changedTouches?.[0],dx=touch?touch.clientX-gesture.x:gesture.travel||0;
+  const elapsed=Math.max(1,performance.now()-gesture.started);
+  const completed=event.type==='touchend'&&(dx>=appEl.clientWidth*.35||(dx>50&&dx/elapsed>.65));
+  if(reducedMotion()){if(completed)$('#chat-back').click();return}
+  resetBackSwipe(completed);
+ }
+ messagesEl.addEventListener('touchend',finishBackSwipe,{passive:true});
+ messagesEl.addEventListener('touchcancel',finishBackSwipe,{passive:true});
  addEventListener('hashchange',()=>{
   const params=new URLSearchParams(location.hash.slice(1)),pair=params.get('pair');
   if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair)void openPair(match);return}
