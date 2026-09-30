@@ -106,6 +106,8 @@ test('saved slash commands stay in drafts until send, mentions send IDs, and sto
   await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts[0].text,'Review this change and list two risks. Include tests.');
   await page.type('#chat-input','Before /review. Keep /missing and https://example.test/review intact.');
+  let sendState=await page.$eval('#send',button=>({disabled:button.disabled,title:button.title}));
+  assert.equal(sendState.disabled,false,'Send should be ready for a typed message: '+sendState.title);
   await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(posts[1].text,'Before Review this change and list two risks.. Keep /missing and https://example.test/review intact.');
   await page.type('#chat-input','Please coordinate with @rev');
@@ -114,6 +116,8 @@ test('saved slash commands stay in drafts until send, mentions send IDs, and sto
   assert.equal(await page.$eval('#chat-input',el=>el.value),'Please coordinate with @reviewer ');
   assert.equal(posts.length,2,'unsent mention must not create a message');
   assert.equal(contactWrites.length,0,'unsent mention must not alter contacts');
+  sendState=await page.$eval('#send',button=>({disabled:button.disabled,title:button.title}));
+  assert.equal(sendState.disabled,false,'Send should be ready after selecting a mention: '+sendState.title);
   await page.click('#send');await page.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.deepEqual(posts[2].mentionedBoxIds,['reviewer']);
   await page.click('[data-box-id=sleeping]');
