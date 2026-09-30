@@ -2475,3 +2475,26 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:var(--vb-bubble-out-icon-bg)!important;color:var(--vb-bubble-out-icon-hover)!important}
 /* workspace card headings: subtle 1px divider instead of the default bright h2 rule */
 .workspace-body .side-card>h2{border-bottom:1px solid var(--vb-line);padding-bottom:.55rem}
+
+/* ══ polish batch: menu slot, grid picker, workspace side ═══════════════ */
+/* menu sheet: logo title + status pill pinned far right, refresh left of it */
+#chat-menu-sheet .menu-card>header .brand .brand-logo{display:block;height:1.3rem;width:auto}
+#chat-menu-sheet .menu-card>header .brand .brand-logo-on-dark{display:none!important}
+@media(prefers-color-scheme:dark){
+  #chat-menu-sheet .menu-card>header .brand .brand-logo-on-light{display:none!important}
+  #chat-menu-sheet .menu-card>header .brand .brand-logo-on-dark{display:block!important}
+}
+#chat-menu-sheet .menu-row{grid-template-columns:auto minmax(0,1fr) auto!important}
+#chat-menu-sheet .menu-row-slot{justify-content:flex-end;min-width:5.6rem;gap:.35rem}
+#chat-menu-sheet .menu-row-slot .menu-row-check{order:1}
+#chat-menu-sheet .menu-row-slot .menu-pill{order:2;min-width:3.6rem}
+/* grid: chevron hugs the picker's right edge; picker fits its content */
+#tiles .tile-title-field{flex:0 1 auto!important;min-width:0;max-width:100%}
+#tiles .tile-title-field .tile-title-select{flex:0 1 auto!important;width:auto!important;min-width:6rem;max-width:100%}
+#tiles .tile-title-field::after{right:.55rem}
+/* workspace: side panel grows/scrolls instead of clipping the Power card */
+.workspace-body .workspace-side{max-height:none;overflow:visible;padding-bottom:.5rem}
+/* menu slot: chat.css `.menu-links button{width:100%}` was collapsing the slot */
+#chat-menu-sheet .menu-row-slot{display:inline-flex!important;flex:none;align-items:center}
+#chat-menu-sheet .menu-row-slot .menu-pill{width:auto!important;flex:none}
+#chat-menu-sheet .menu-row-slot .menu-row-check{width:2rem!important;height:2rem!important;flex:none}
