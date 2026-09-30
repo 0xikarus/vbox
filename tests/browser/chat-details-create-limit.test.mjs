@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','app.css','markdown.js','model-picker.js','box-create-limit.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js','box-create-limit.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
 test('chat details edits one box creation limit without changing its other permissions',async()=>{
  const box={id:'builder',name:'Builder',state:'running',defaultAgent:'claude'};
@@ -38,9 +38,10 @@ test('chat details edits one box creation limit without changing its other permi
  try{
   const page=await browser.newPage();await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');await page.click('#chat-info');
+  await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='2 total');
   await page.$eval('#inspect-create-limit input',input=>{input.value='5';input.dispatchEvent(new Event('input',{bubbles:true}))});
-  await page.click('#inspect-create-limit .idle-policy-controls button');
+  await page.$eval('#inspect-create-limit .idle-policy-controls button',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='5 total');
   assert.equal(updates.length,1);
   assert.equal(updates[0].id,'builder');

@@ -12,6 +12,7 @@ const motionJS=await readFile('internal/controller/web/motion.js','utf8');
 const mascotJS=await readFile('internal/controller/web/mascot.js','utf8');
 const mascotCSS=await readFile('internal/controller/web/mascot.css','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
+const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
@@ -41,6 +42,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   if(path==='/mascot.js'){res.setHeader('Content-Type','text/javascript');return res.end(mascotJS)}
   if(path==='/mascot.css'){res.setHeader('Content-Type','text/css');return res.end(mascotCSS)}
   if(path==='/chat.css'){res.setHeader('Content-Type','text/css');return res.end(css)}
+  if(path==='/vbox-c.css'){res.setHeader('Content-Type','text/css');return res.end(vboxCSS)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
@@ -70,7 +72,7 @@ test('composer drafts persist, attachments inspect, and the shell is dark',async
   assert.equal(await p.$('#chat-companion'),null,'conversation header mascot removed');
 
   // add-box lives in the list header and never overlaps the composer's send
-  assert.equal(await p.$eval('#new-box',el=>!!el.closest('#chat-list-head')),true);
+  assert.equal(await p.$eval('#new-box',el=>!!el.closest('#chat-filter-row')),true);
   const overlap=await p.evaluate(()=>{const a=document.querySelector('#new-box').getBoundingClientRect(),b=document.querySelector('#send').getBoundingClientRect();return !(a.right<b.left||a.left>b.right||a.bottom<b.top||a.top>b.bottom)});
   assert.equal(overlap,false,'the add-box button must not overlap send');
 

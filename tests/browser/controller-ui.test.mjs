@@ -16,9 +16,9 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
-   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':'text/html');
+   res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.png')?'image/png':file.endsWith('.woff2')?'font/woff2':'text/html');
    return res.end(await readFile(resolve(root,file)));
   }
   res.setHeader('Content-Type','application/json');
@@ -94,7 +94,7 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.goto(base+'/#boxes');await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('railway-worker-01'));
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'boxes');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / boxes');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / boxes');
  assert.equal(await page.title(),'vbox / boxes');
  assert.equal(await page.$eval('#providers',section=>getComputedStyle(section).display),'none');
  await page.click('[aria-label="Details for box helper ü"]');
@@ -110,7 +110,7 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.click('.workspace-links a[href="#providers"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='providers');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'providers');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / providers');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / providers');
  assert.equal(await page.title(),'vbox / providers');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
  await page.waitForSelector('.provider-card');
@@ -123,7 +123,7 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#profile-tree .profile-app[data-application="github"]');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'profiles');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / profiles');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / profiles');
  assert.equal(await page.title(),'vbox / profiles');
  assert.equal(await page.$eval('.workspace-links a[href="#profiles"]',link=>link.getAttribute('aria-current')),'page');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
@@ -186,18 +186,19 @@ test('a registry catalog outage keeps saved version choices available',async()=>
 test('secondary management sections and box workspaces use the same page navbar',async()=>{
  const page=await browser.newPage();
  await page.goto(base+'/#roles');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / permissions');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / permissions');
  assert.equal(await page.title(),'vbox / permissions');
  assert.equal(await page.$eval('.manage-subnav a[href="#roles"]',link=>link.getAttribute('aria-current')),'page');
  for(const [section,label] of [['instructions','instructions'],['fleet','capacity'],['notifications','notifications']]){
   await page.evaluate(value=>{location.hash=value},section);
   await page.waitForFunction(expected=>document.querySelector('#manage-page-label').textContent===expected,{},label);
-  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / '+label);
+  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / '+label);
   assert.equal(await page.title(),'vbox / '+label);
  }
  await page.goto(base+'/boxes/box-1');
- assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.textContent.trim()),'vbox / workspace');
- assert.deepEqual(await page.$$eval('.workspace-top .workspace-links a',links=>links.map(link=>link.textContent)),['Chats','Grid','Boxes','Providers','Profiles']);
+ assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.querySelector('.brand-logo').alt+' '+brand.querySelector('.brand-suffix').textContent.trim()),'vbox / workspace');
+ assert.equal(await page.$$eval('.workspace-top .workspace-links a',links=>links.length),0,'workspace uses the shared shell without the legacy top nav');
+ assert.equal(await page.$eval('.workspace-top #logout',button=>getComputedStyle(button).display!=='none'),true,'workspace keeps a log-out action');
  await page.setViewport({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.close();
@@ -526,7 +527,7 @@ test('rows and the create form lay out in reading order without overlapping valu
  assert.equal(layout.stateStacked,true);
  assert.ok(layout.labelGaps.length&&layout.labelGaps.every(gap=>gap>=8),'tool labels need visible separation: '+layout.labelGaps);
  assert.equal(layout.overflowing,0);
- assert.deepEqual(layout.legends,['1 · box','2 · logins','3 · tools','4 · instructions']);
+ assert.deepEqual(layout.legends,['1 · Box','2 · Logins','3 · Tools','4 · Instructions']);
  assert.equal(layout.actionBelowGroups,true);
  await page.close();
 });
@@ -548,9 +549,10 @@ test('box actions follow state: no resume while creating, resume on failure',asy
  await page.waitForSelector('[data-box-id="creating"]');
  const buttons=id=>page.$$eval(`[data-box-id="${id}"] td:last-child button`,nodes=>nodes.map(n=>({aria:n.getAttribute('aria-label'),disabled:n.disabled})));
  // Delete remains available during creation so a stuck box can be cancelled.
- assert.deepEqual(await buttons('creating'),[{aria:'Details for box building',disabled:false},{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false}]);
- assert.deepEqual(await buttons('broke'),[{aria:'Details for box broken',disabled:false},{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false}]);
- assert.deepEqual(await buttons('sleepy'),[{aria:'Details for box sleepy',disabled:false},{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false}]);
+ // The redesign folds the row actions behind a "More actions" overflow menu.
+ assert.deepEqual(await buttons('creating'),[{aria:'Details for box building',disabled:false},{aria:'More actions for building',disabled:false},{aria:'Delete box building',disabled:false},{aria:'Instructions for box building',disabled:false},{aria:'Credentials for box building',disabled:false},{aria:'Manage permissions for box building',disabled:false}]);
+ assert.deepEqual(await buttons('broke'),[{aria:'Details for box broken',disabled:false},{aria:'More actions for broken',disabled:false},{aria:'Delete box broken',disabled:false},{aria:'Resume box broken',disabled:false},{aria:'Instructions for box broken',disabled:false},{aria:'Credentials for box broken',disabled:false},{aria:'Manage permissions for box broken',disabled:false}]);
+ assert.deepEqual(await buttons('sleepy'),[{aria:'Details for box sleepy',disabled:false},{aria:'More actions for sleepy',disabled:false},{aria:'Delete box sleepy',disabled:false},{aria:'Resume box sleepy',disabled:false},{aria:'Instructions for box sleepy',disabled:false},{aria:'Credentials for box sleepy',disabled:false},{aria:'Manage permissions for box sleepy',disabled:false}]);
  assert.match(await page.$eval('[data-box-id="broke"] td:nth-child(2)',n=>n.textContent),/provider refused the volume/);
  await page.waitForFunction(()=>window.boxReads>=2,{timeout:8000});
  await page.close();
@@ -723,7 +725,7 @@ test('fleet locations load on demand and preserve occupied fleets on rejection',
    return original(path,options);
   };
  });
- await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#capacity table');
+ await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#capacity .slot-grid');
  assert.equal(await page.$eval('#location-form',e=>e.hidden),true);
  await page.click('#fleet-location summary');await page.click('#load-locations');await page.waitForSelector('#location-form:not([hidden])');
  assert.equal(await page.$eval('#location-form select',e=>e.value),'eu');
@@ -736,9 +738,9 @@ test('fleet locations load on demand and preserve occupied fleets on rejection',
 test('instruction presets preview safely, bound size, and apply explicitly to boxes',async()=>{
  const page=await browser.newPage();
  await page.goto(base);await page.type('#login input','fixture');await page.click('#login button');
- await page.waitForSelector('#instruction-list table');
+ await page.waitForSelector('#instruction-list .preset-list');
  assert.match(await page.$eval('#instruction-list',element=>element.textContent),/general/);
- assert.match(await page.$eval('#instruction-list',element=>element.textContent),/default/);
+ assert.match(await page.$eval('#instruction-list',element=>element.textContent),/Default/);
  // The creation form offers automatic, none, every preset, and a custom copy.
  await page.evaluate(()=>{document.querySelector('#create-instructions-editor').open=true});
  assert.deepEqual(await page.$$eval('#create-instructions option',nodes=>nodes.map(node=>node.value)),['auto','none','__concise__','general','custom']);

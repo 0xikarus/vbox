@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>vbox · design kitchen</title>
+<link rel="stylesheet" href="/fonts.css">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/controller.css">
+<link rel="stylesheet" href="/manager-theme.css">
+<link rel="stylesheet" href="/vbox-c.css">
+<link rel="stylesheet" href="/design-kitchen.css">
+</head>
+<body>
+
+<div class="kit-head">
+ <h1>Design kitchen</h1>
+ <p>Every control in the vbox Studio system, in its default, hover, focus, disabled, error and loading states.</p>
+</div>
+
+<section class="kit-group">
+ <h2>Buttons</h2>
+ <p>Primary, secondary, ghost, danger and icon-only. Sizes sm / md.</p>
+ <div class="kit-row">
+  <button class="primary">Primary</button>
+  <button class="vb-secondary">Secondary</button>
+  <button class="vb-ghost">Ghost</button>
+  <button class="vb-danger">Danger</button>
+  <button class="vb-icon" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
+ </div>
+ <div class="kit-row">
+  <button class="primary kit-sm">Primary sm</button>
+  <button class="vb-secondary kit-sm">Secondary sm</button>
+  <button class="vb-ghost is-hover">Ghost hover</button>
+  <button class="vb-secondary is-focus">Secondary focus</button>
+  <button class="vb-secondary is-disabled">Disabled</button>
+  <button class="primary is-loading">Saving</button>
+ </div>
+</section>
+
+<section class="kit-group">
+ <h2>Text &amp; number</h2>
+ <p>Hover and focus rings, no native number spinners, explicit error state.</p>
+ <div class="kit-row">
+  <div class="kit-field"><span class="kit-label">Default</span><input type="text" placeholder="my-box"></div>
+  <div class="kit-field"><span class="kit-label">Hover</span><input type="text" class="is-hover" value="my-box"></div>
+  <div class="kit-field"><span class="kit-label">Focus</span><input type="text" class="is-focus" value="my-box"></div>
+  <div class="kit-field"><span class="kit-label">Disabled</span><input type="text" value="my-box" disabled></div>
+  <div class="kit-field"><span class="kit-label">Error</span><input type="text" class="is-error" value="my box" aria-invalid="true"></div>
+ </div>
+ <div class="kit-row">
+  <div class="kit-field"><span class="kit-label">Number</span><input type="number" value="10" min="1"></div>
+  <div class="kit-field"><span class="kit-label">Search</span><input type="search" placeholder="Filter boxes by name"></div>
+  <div class="kit-field"><span class="kit-label">Textarea</span><textarea rows="3" placeholder="Describe the task…"></textarea></div>
+ </div>
+ <div class="kit-row">
+  <span class="vb-error"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Name must start with a letter.</span>
+ </div>
+</section>
+
+<section class="kit-group">
+ <h2>Select</h2>
+ <p>Custom chevron via <code>appearance:none</code>; no native control remains.</p>
+ <div class="kit-row">
+  <div class="kit-field"><span class="kit-label">Default</span><select><option>claude</option><option>codex</option><option>opencode</option></select></div>
+  <div class="kit-field"><span class="kit-label">Focus</span><select class="is-focus"><option>claude</option><option>codex</option></select></div>
+  <div class="kit-field"><span class="kit-label">Disabled</span><select disabled><option>claude</option></select></div>
+ </div>
+</section>
+
+<section class="kit-group">
+ <h2>Checkbox, radio, switch</h2>
+ <p>Custom-drawn marks; the switch is used for permission toggles.</p>
+ <div class="kit-row">
+  <label class="kit-check"><input type="checkbox" checked> <span>Checked</span></label>
+  <label class="kit-check"><input type="checkbox"> <span>Unchecked</span></label>
+  <label class="kit-check"><input type="checkbox" class="is-focus"> <span>Focus</span></label>
+  <label class="kit-check"><input type="radio" name="r" checked> <span>Radio</span></label>
+  <label class="kit-check"><input type="radio" name="r"> <span>Radio 2</span></label>
+  <label class="kit-check"><input type="checkbox" class="vb-switch" checked> <span>Switch on</span></label>
+  <label class="kit-check"><input type="checkbox" class="vb-switch"> <span>Switch off</span></label>
+ </div>
+</section>
+
+<section class="kit-group">
+ <h2>Segmented control</h2>
+ <div class="kit-row">
+  <div class="vb-segmented" role="group" aria-label="View">
+   <button type="button" aria-pressed="true">Boxes</button>
+   <button type="button" aria-pressed="false">Providers</button>
+   <button type="button" aria-pressed="false">Profiles</button>
+  </div>
+ </div>
+</section>
+
+<section class="kit-group">
+ <h2>Disclosure &amp; details</h2>
+ <div class="kit-row kit-stack">
+  <details open><summary>Automatic placement</summary><p class="hint">Uses available capacity in the least occupied pool.</p></details>
+  <details><summary>Add custom tooling</summary><p class="hint">Install commands run inside the box before work starts.</p></details>
+ </div>
+</section>
+
+<section class="kit-group">
+ <h2>Menu, tooltip, toast</h2>
+ <div class="kit-row">
+  <div class="workspace-nav-panel kit-static"><a href="#">Chats</a><a href="#">Grid</a><button type="button">Log out</button></div>
+  <span class="vb-tooltip">Hover to preview</span>
+  <div class="toast kit-static">Permissions saved and synced.</div>
+ </div>
+</section>
+
+<section class="kit-group">
+ <h2>Card, dialog, sheet</h2>
+ <div class="kit-row">
+  <section class="card kit-dialog">
+   <header><strong>Instructions</strong><span class="hint">general · revision 2</span></header>
+   <label class="field">Preset <select><option>general</option></select></label>
+   <label class="field">Markdown <textarea rows="3"># Reviewer
+- Answer with bullet points</textarea></label>
+   <div class="form-actions"><button type="button" class="primary">Apply instructions</button><button type="button" class="vb-ghost">Cancel</button></div>
+  </section>
+ </div>
+</section>
+
+</body>
+</html>

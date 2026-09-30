@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 const usage={profiles:[{application:'claude',name:'work',boxes:['Builder'],observedAt:'2026-09-24T03:00:00Z',checkedAt:'2026-09-24T03:01:00Z',snapshot:{windows:[
  {name:'session',usedPercent:25,resetsAt:'2026-09-24T04:00:00Z'},
  {name:'weekly_all',usedPercent:90,resetsAt:'2026-09-30T00:00:00Z'}
@@ -50,16 +50,16 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.waitForFunction(()=>!document.querySelector('#usage-toggle').hidden&&document.querySelector('#usage-list').textContent.includes('claude · work'));
   assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
   assert.match(await page.$eval('#usage-toggle',element=>element.title),/all saved profiles/);
-  await page.click('#usage-toggle');
-  await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% remaining'));
+  await page.click('#chat-menu');await page.click('#usage-toggle');
+  await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% left'));
   if(screenshotDir){await mkdir(screenshotDir,{recursive:true});await page.screenshot({path:screenshotDir+'/usage-overview-desktop.png'})}
   const text=await page.$eval('#usage-list',element=>element.textContent);
-  assert.match(text,/10% remaining/);
+  assert.match(text,/10% left/);
   assert.match(text,/60 USD remaining/);
   assert.match(text,/Available balances: USD 12/);
-  assert.match(text,/remaining requests unavailable/);
-  assert.match(text,/No running box · Source: saved profile/);
-  assert.deepEqual(await page.$$eval('.usage-track',tracks=>tracks.map(track=>track.getAttribute('aria-valuenow'))),['75','10','80','60']);
+  assert.match(text,/Rate caps/);
+  assert.match(await page.$$eval('.usage-checked',els=>els.map(e=>e.title).join(' | ')),/Source: saved profile/);
+  assert.deepEqual(await page.$$eval('.usage-bar[role=progressbar]',tracks=>tracks.map(track=>track.getAttribute('aria-valuenow'))),['75','10','80','60']);
   await page.click('#usage-modal button[data-close]');
   await page.click('#new-box');
   await page.waitForFunction(()=>document.querySelectorAll('.create-profile-option').length===3&&document.querySelector('.create-profile-list').textContent.includes('10% left'));
@@ -75,17 +75,18 @@ test('usage shows remaining capacity and Conversations width can be resized and 
 
   await page.click('#chat-entries [data-box-id="writer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('80% left'));
-  assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg path[d="M12 18h6"]'),text:element.textContent.trim()})),{next:'chat-usage',label:'Open desktop and TMUX controls',icon:true,text:''});
+  assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg'),text:element.textContent.trim()})),{next:'chat-terminal',label:'Desktop',icon:true,text:'Desktop'});
   assert.match(await page.$eval('#chat-usage',element=>element.getAttribute('aria-label')),/claude personal usage: 80% remaining/);
   assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage','navbar opens all profiles without a percentage');
+  await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
-  assert.match(await page.$eval('#usage-list',element=>element.textContent),/80% remaining/);
+  assert.match(await page.$eval('#usage-list',element=>element.textContent),/80% left/);
   assert.doesNotMatch(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="builder"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('10% left'));
-  await page.click('#usage-toggle');
+  await page.click('#chat-menu');await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/Profile usage limits/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
   await page.click('#usage-refresh');
@@ -134,10 +135,12 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.$eval('#chat-usage',element=>element.hidden),false,'the selected chat usage is visible on a phone');
   assert.notEqual(await page.$eval('#chat-control',element=>getComputedStyle(element).display),'none','computer icon stays available before usage on a phone');
   assert.equal(await page.$eval('#chat-header-state',element=>element.innerText.trim()),'running','mobile keeps the box state readable');
+  await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
   assert.doesNotMatch(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   await page.click('#usage-modal button[data-close]');
+  await page.evaluate(()=>{const i=document.querySelector('#inspect');if(i&&!i.hidden)document.querySelector('#inspect-close').click()});
   await page.click('#chat-back');
   await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   await new Promise(resolve=>setTimeout(resolve,350));
@@ -150,7 +153,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'new box profile list fits mobile width');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/create-profiles-mobile.png'});
   await page.click('#new-box-close');
-  await page.click('#usage-toggle');
+  await page.click('#chat-menu');await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/usage-overview-mobile.png'});
@@ -167,7 +170,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-back');
   await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   await new Promise(resolve=>setTimeout(resolve,350));
-  await page.click('#usage-toggle');
+  await page.click('#chat-menu');await page.click('#usage-toggle');
   assert.equal(await page.$eval('#usage-modal .usage-card',card=>card.scrollWidth<=card.clientWidth+1),true,'usage overview fits a narrow phone');
   await page.click('#usage-modal button[data-close]');
   await page.click('#new-box');

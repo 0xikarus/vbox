@@ -10,6 +10,7 @@ const motionJS=await readFile('internal/controller/web/motion.js','utf8');
 const mascotJS=await readFile('internal/controller/web/mascot.js','utf8');
 const mascotCSS=await readFile('internal/controller/web/mascot.css','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
+const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const loginCSS=await readFile('internal/controller/web/login.css','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
@@ -41,6 +42,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/chat.css'){res.setHeader('Content-Type','text/css');return res.end(css)}
+  if(path==='/vbox-c.css'){res.setHeader('Content-Type','text/css');return res.end(vboxCSS)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/login.css'){res.setHeader('Content-Type','text/css');return res.end(loginCSS)}
   if(!path.startsWith('/v1/'))return res.end();
@@ -118,7 +120,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-app').hidden);
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
-  await p.click('#usage-toggle');
+  await p.click('#chat-menu');await p.click('#usage-toggle');
   await p.waitForFunction(()=>document.querySelector('#usage-list').textContent.includes('claude · personal'));
   await p.click('#usage-refresh');
   await p.waitForFunction(()=>document.querySelector('#usage-status').textContent==='Usage updated.');

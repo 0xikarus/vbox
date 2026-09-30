@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 const box={id:'mcp-fixture',name:'MCP fixture',state:'running',defaultAgent:'codex'};
 const at=index=>new Date(Date.UTC(2026,8,30,10,index)).toISOString();
 const message=(id,direction,text,index)=>({id,direction,text,state:'delivered',createdAt:at(index),updatedAt:at(index)});

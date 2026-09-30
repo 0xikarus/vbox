@@ -10,6 +10,7 @@ const motionJS=await readFile('internal/controller/web/motion.js','utf8');
 const mascotJS=await readFile('internal/controller/web/mascot.js','utf8');
 const mascotCSS=await readFile('internal/controller/web/mascot.css','utf8');
 const css=await readFile('internal/controller/web/chat.css','utf8');
+const vboxCSS=await readFile('internal/controller/web/vbox-c.css','utf8');
 const appcss=await readFile('internal/controller/web/app.css','utf8');
 const markdownJS=await readFile('internal/controller/web/markdown.js','utf8');
 const modelPickerJS=await readFile('internal/controller/web/model-picker.js','utf8');
@@ -35,6 +36,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   if(path==='/mascot.js'){res.setHeader('Content-Type','text/javascript');return res.end(mascotJS)}
   if(path==='/mascot.css'){res.setHeader('Content-Type','text/css');return res.end(mascotCSS)}
   if(path==='/chat.css'){res.setHeader('Content-Type','text/css');return res.end(css)}
+  if(path==='/vbox-c.css'){res.setHeader('Content-Type','text/css');return res.end(vboxCSS)}
   if(path==='/app.css'){res.setHeader('Content-Type','text/css');return res.end(appcss)}
   if(path==='/markdown.js'){res.setHeader('Content-Type','text/javascript');return res.end(markdownJS)}
   if(path==='/model-picker.js'){res.setHeader('Content-Type','text/javascript');return res.end(modelPickerJS)}
@@ -85,7 +87,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.waitForFunction(()=>!document.querySelector('.msg.processing'),{timeout:5000});
 
   // The message chevron lives in the bottom metadata row.
-  assert.equal(await p.$eval('.msg.user .msg-more',el=>el.parentElement.parentElement.classList.contains('meta')),true);
+  assert.equal(await p.$eval('.msg.user .msg-more',el=>!!el.closest('.msg-actions')),true);
   const morePoint=await p.$eval('.msg.user .msg-more',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
   await p.touchscreen.tap(morePoint.x,morePoint.y);
   await p.waitForFunction(()=>!document.querySelector('.msg-actions-menu').hidden);
@@ -95,8 +97,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.waitForFunction(()=>document.querySelector('.msg-actions-menu').hidden);
 
   // The details drawer must fit one column on a phone.
-  await p.click('#chat-more');
-  await p.click('#chat-more-menu [data-action="details"]');
+  await p.click('#chat-info');
   await p.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await p.waitForFunction(()=>!!document.querySelector('#inspect-contacts'));
   await p.evaluate(()=>{document.activeElement?.blur()});

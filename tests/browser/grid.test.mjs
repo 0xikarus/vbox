@@ -41,7 +41,7 @@ after(async()=>{await browser?.close();for(const c of children){try{process.kill
 async function pageReady(){const p=await browser.newPage();await p.evaluateOnNewDocument(()=>{let cls;window.testTerminals=[];Object.defineProperty(window,'Terminal',{configurable:true,get:()=>cls,set:value=>{cls=class extends value{constructor(...args){super(...args);window.testTerminals.push(this)}}}})});await p.setViewport({width:1500,height:1100});await p.goto(base+'/grid');await p.waitForSelector('.tile select option[value=box4]');return p;}
 test('four real tmux terminals, isolated input, layouts and viewer-only disconnect',async()=>{
  const p=await pageReady(),errors=[];p.on('pageerror',e=>errors.push(e.message));assert.equal(await p.$$('.tile').then(x=>x.length),4);
- assert.deepEqual(await p.$$eval('.tile header label:first-child select',xs=>xs.map(x=>x.value)),['box1','box2','box3','box4']);
+ assert.deepEqual(await p.$$eval('.tile header .tile-title-select',xs=>xs.map(x=>x.value)),['box1','box2','box3','box4']);
  await p.waitForFunction(()=>[...document.querySelectorAll('.terminal-panel .viewer-overlay')].every(n=>n.textContent.includes('Connected')));
  await p.waitForFunction(()=>[...document.querySelectorAll('.terminal-panel .connection-badge')].every(n=>/^Live · \d+ ms$/.test(n.textContent)));
  for(let i=1;i<=4;i++){
@@ -60,7 +60,7 @@ test('four real tmux terminals, isolated input, layouts and viewer-only disconne
  await p.select('#layout select[name=rows]','2');await p.select('#layout select[name=columns]','3');await p.$eval('#layout',f=>f.requestSubmit());assert.equal(await p.$$('.tile').then(x=>x.length),6);
  await p.select('#layout select[name=columns]','1');await p.select('#layout select[name=rows]','1');await p.$eval('#layout',f=>f.requestSubmit());assert.equal(await p.$$('.tile').then(x=>x.length),1);
  assert.equal(tmux('list-sessions','-F','#{session_name}').trim().split('\n').length,4);
- await p.$eval('.tile header button:last-child',b=>b.click());assert.equal(tmux('list-sessions','-F','#{session_name}').trim().split('\n').length,4);
+ await p.$eval('.tile header > button:last-of-type',b=>b.click());assert.equal(tmux('list-sessions','-F','#{session_name}').trim().split('\n').length,4);
  assert.equal(calls.filter(c=>c.method!=='GET').length,0);assert.deepEqual(errors,[]);await p.close();
 });
 test('clipboard buttons use the real browser clipboard and a real tmux shell',async()=>{
@@ -91,7 +91,7 @@ test('clipboard buttons use the real browser clipboard and a real tmux shell',as
 });
 test('delayed selection cannot attach stale box; sleeping boxes never resume; mobile stacks',async()=>{
  const p=await pageReady();await p.waitForFunction(()=>[...document.querySelectorAll('.terminal-panel .viewer-overlay')].every(n=>n.textContent.includes('Connected')));await p.select('#layout select[name=columns]','1');await p.select('#layout select[name=rows]','1');await p.$eval('#layout',f=>f.requestSubmit());delayFirst=true;const first=connections.length;
- const selector='.tile:first-child header label:first-child select';await p.select(selector,'box1');await p.select(selector,'box2');
+ const selector='.tile:first-child header .tile-title-select';await p.select(selector,'box1');await p.select(selector,'box2');
  await p.waitForFunction(()=>document.querySelector('.terminal-panel .viewer-overlay').textContent.includes('Connected'));await new Promise(r=>setTimeout(r,600));
  assert.deepEqual(connections.slice(first),['box2']);
  await p.select(selector,'sleeping');assert.match(await p.$eval('.tile p',n=>n.textContent),/hibernated/);

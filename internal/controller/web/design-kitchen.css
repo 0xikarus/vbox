@@ -1,0 +1,46 @@
+/* vbox design kitchen — layout + forced-state helpers. External CSS only so it
+   satisfies the production CSP (style-src 'self'). */
+*{box-sizing:border-box}
+body{
+  max-width:none;margin:0;padding:2.5rem clamp(1rem,4vw,3rem) 4rem;
+  background:var(--vb-bg);color:var(--vb-ink);font-family:var(--vb-font);
+  font-size:14px;line-height:1.5;text-transform:none
+}
+.kit-head{max-width:74rem;margin:0 auto 2rem}
+.kit-head h1{margin:0;font-size:1.9rem;font-weight:760;letter-spacing:-.03em}
+.kit-head p{margin:.3rem 0 0;color:var(--vb-ink-soft)}
+.kit-group{max-width:74rem;margin:0 auto 2.4rem}
+.kit-group>h2{margin:0 0 .2rem;font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--vb-ink-faint);font-weight:700;border:0;padding:0}
+.kit-group>p{margin:.1rem 0 1rem;color:var(--vb-ink-soft);font-size:.82rem}
+.kit-row{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;padding:1rem;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-surface)}
+.kit-row+.kit-row{margin-top:.75rem}
+.kit-cell{display:flex;flex-direction:column;gap:.4rem;min-width:11rem}
+.kit-label{font-size:.68rem;letter-spacing:.06em;text-transform:uppercase;color:var(--vb-ink-faint);font-weight:700}
+.kit-field{display:flex;flex-direction:column;gap:.4rem}
+.kit-field .kit-label{order:-1}
+
+/* forced states (hover/focus are otherwise not expressible without inline style) */
+.is-hover{border-color:var(--vb-ink-faint)!important}
+button.is-hover,.vb-icon.is-hover,.vb-secondary.is-hover,.vb-ghost.is-hover{background:var(--vb-surface-2)!important}
+.vb-danger.is-hover{background:var(--vb-danger)!important;color:#fff!important}
+.is-focus{border-color:var(--vb-focus-border)!important;outline:none!important;box-shadow:var(--vb-ring)!important}
+.vb-switch.is-focus,input[type=checkbox].is-focus,input[type=radio].is-focus{border-color:var(--vb-focus-border)!important;box-shadow:var(--vb-ring)!important}
+.is-disabled{opacity:.5;pointer-events:none}
+.kit-tag{font-size:.66rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--vb-ink-faint)}
+
+/* kitchen-only layout resets */
+.kit-check{display:inline-flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--vb-ink)}
+.kit-check input[type=checkbox]:not(.vb-switch),.kit-check input[type=radio]{flex:none}
+.kit-static{position:static!important}
+.kit-stack{flex-direction:column;align-items:stretch}
+.kit-stack details{padding:.4rem 0;border-bottom:1px solid var(--vb-line)}
+.kit-stack details:last-child{border-bottom:0}
+.kit-dialog{position:relative;width:min(34rem,100%);max-height:none;display:block}
+.kit-dialog header{display:flex;align-items:baseline;gap:.6rem}
+.kit-dialog header .hint{margin-left:auto}
+.kit-row button.kit-sm{padding:.32rem .72rem;font-size:.78rem;min-height:2rem}
+
+/* menu / toast spacing in the kitchen */
+.workspace-nav-panel{display:flex;flex-direction:column;gap:.15rem}
+.workspace-nav-panel a,.workspace-nav-panel button{display:flex;width:100%}
+.toast{display:inline-flex;align-items:center;max-width:18rem;padding:.45rem .9rem;white-space:normal}

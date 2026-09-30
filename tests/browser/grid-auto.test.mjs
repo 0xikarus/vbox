@@ -37,7 +37,7 @@ test('Grid shows desktop above TMUX and replaces boxes only when both viewers dr
   await p.waitForFunction(()=>connections.length===11);
   assert.equal(await p.$$('.tile').then(x=>x.length),6);
   assert.deepEqual(await p.evaluate(()=>{const result={};for(const c of connections)(result[c.id]??=[]).push(c.kind);for(const kinds of Object.values(result))kinds.sort();return result}),Object.fromEntries(Array.from({length:6},(_,i)=>['b'+i,i===1?['terminal']:['desktop','terminal']])));
-  assert.equal(await p.$eval('.tile:first-child',tile=>tile.querySelector('.tile-controls').getBoundingClientRect().bottom<=tile.querySelector('header').getBoundingClientRect().top),true,'viewer controls should sit above the box and session selectors');
+  assert.equal(await p.$eval('.tile:first-child',tile=>{const header=tile.querySelector('header'),controls=header.querySelector('.tile-controls'),box=tile.querySelector('.tile-title-select'),session=tile.querySelector('.tile-session-select');const overlaps=(a,b)=>!(a.right<=b.left||a.left>=b.right||a.bottom<=b.top||a.top>=b.bottom);const c=controls.getBoundingClientRect();return header.contains(controls)&&!overlaps(c,box.getBoundingClientRect())&&!overlaps(c,session.getBoundingClientRect())}),true,'viewer controls live in the tile header without covering the box and session selectors');
   assert.equal(await p.$eval('.tile:first-child .desktop-control-menu',menu=>menu.hidden),false);
   assert.equal(await p.$eval('.tile:nth-child(2) .desktop-control-menu',menu=>menu.hidden),true);
   assert.deepEqual(await p.$eval('.tile:first-child',tile=>[tile.querySelector('.desktop-panel .viewer-overlay').hidden,tile.querySelector('.terminal-panel .viewer-overlay').hidden]),[true,true],'viewer labels should disappear after both streams connect');
@@ -48,8 +48,8 @@ test('Grid shows desktop above TMUX and replaces boxes only when both viewers dr
   await p.setViewport({width:390,height:844});
   assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
   await p.setViewport({width:1400,height:900});
-  await p.$eval('.tile:first-child header label:nth-child(2) select',select=>select.add(new Option('alternate','alternate')));
-  await p.select('.tile:first-child header label:nth-child(2) select','alternate');
+  await p.$eval('.tile:first-child header .tile-session-select',select=>select.add(new Option('alternate','alternate')));
+  await p.select('.tile:first-child header .tile-session-select','alternate');
   await p.waitForFunction(()=>connections.filter(c=>c.id==='b0'&&c.kind==='terminal').length===2);
   assert.equal(await p.evaluate(()=>connections.find(c=>c.id==='b0'&&c.kind==='desktop').closed),false,'changing TMUX sessions must leave Desktop attached');
   await p.select('#layout select[name=columns]','1');await p.select('#layout select[name=rows]','1');await p.$eval('#layout',f=>f.requestSubmit());
@@ -96,13 +96,13 @@ test('grid tiles only offer actions the box state allows',async()=>{
   });
   await p.goto('http://127.0.0.1:'+server.address().port+'/grid');
   await p.waitForFunction(()=>document.querySelectorAll('.tile').length>=2);
-  const action=sel=>p.$eval(sel,e=>({hidden:e.hidden,disabled:e.disabled,text:e.textContent}));
-  await p.select('.tile:nth-child(2) header label:first-of-type select','sleep');
-  await p.waitForFunction(()=>document.querySelector('.tile:nth-child(2) header button:first-of-type').textContent==='Resume');
-  assert.deepEqual(await action('.tile:nth-child(2) header button:first-of-type'),{hidden:false,disabled:false,text:'Resume'});
-  await p.select('.tile:nth-child(2) header label:first-of-type select','build');
-  await p.waitForFunction(()=>document.querySelector('.tile:nth-child(2) header button:first-of-type').hidden);
-  assert.deepEqual(await action('.tile:nth-child(2) header button:first-of-type'),{hidden:true,disabled:true,text:'Resume'});
+  const action=sel=>p.$eval(sel,e=>({hidden:e.hidden,disabled:e.disabled,label:e.getAttribute('aria-label')}));
+  await p.select('.tile:nth-child(2) header .tile-title-select','sleep');
+  await p.waitForFunction(()=>document.querySelector('.tile:nth-child(2) header > button:first-of-type').getAttribute('aria-label')==='Resume');
+  assert.deepEqual(await action('.tile:nth-child(2) header > button:first-of-type'),{hidden:false,disabled:false,label:'Resume'});
+  await p.select('.tile:nth-child(2) header .tile-title-select','build');
+  await p.waitForFunction(()=>document.querySelector('.tile:nth-child(2) header > button:first-of-type').hidden);
+  assert.deepEqual(await action('.tile:nth-child(2) header > button:first-of-type'),{hidden:true,disabled:true,label:'Resume'});
   assert(!calls.some(([,url])=>url.includes('/allocate')));
  }finally{await browser.close();await new Promise(r=>server.close(r))}
 });

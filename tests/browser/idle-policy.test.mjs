@@ -5,7 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const root='internal/controller/web/';
-const names=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css','idle-policy.js','idle-policy.css'];
+const names=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-c.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css','idle-policy.js','idle-policy.css'];
 const assets=Object.fromEntries(await Promise.all(names.map(async name=>[name,await readFile(root+name)])));
 let seconds=14400;
 let resumeSeconds=14400;
@@ -33,7 +33,8 @@ if(screenshotDir)await mkdir(screenshotDir,{recursive:true});
 async function openDetails(page){
  await page.goto(base+'/chat#box=builder');
  await page.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
- await page.evaluate(()=>document.querySelector('#chat-info').click());
+ await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
+ await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
  await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-switch input:not(:disabled)'));
 }
 try{
@@ -41,17 +42,17 @@ try{
   const page=await browser.newPage();await page.setViewport({width:1320,height:850});await openDetails(page);
   assert.equal(await page.$eval('#inspect-idle-policy .idle-policy-switch input',el=>el.checked),true);
   await page.$eval('#inspect-idle-policy input[type=number]',el=>el.value='6');
-  await page.click('#inspect-idle-policy .idle-policy-controls button');
+  await page.$eval('#inspect-idle-policy .idle-policy-controls button',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-status').textContent.includes('6 idle hours'));
   assert.equal(seconds,21600);
-  await page.click('#inspect-idle-policy .idle-policy-switch input');
+  await page.$eval('#inspect-idle-policy .idle-policy-switch input',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-badge').textContent==='Off');
   assert.equal(seconds,0);
-  await page.click('#inspect-idle-policy .idle-policy-switch input');
+  await page.$eval('#inspect-idle-policy .idle-policy-switch input',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-badge').textContent==='On' && !document.querySelector('#inspect-idle-policy .idle-policy-switch input').disabled);
   assert.deepEqual(writes,[21600,0,21600]);
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/idle-policy-desktop.png'});
-  await page.click('#inspect-idle-policy .idle-policy-switch input');
+  await page.$eval('#inspect-idle-policy .idle-policy-switch input',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-badge').textContent==='Off' && !document.querySelector('#inspect-idle-policy .idle-policy-switch input').disabled);
   await page.close();
  });
@@ -60,7 +61,7 @@ try{
   await page.goto(base+'/chat');await page.evaluate(()=>localStorage.removeItem('vmbox.idleHours.builder'));
   await openDetails(page);
   assert.equal(await page.$eval('#inspect-idle-policy input[type=number]',el=>el.value),'6','the box retains its interval across browsers');
-  await page.click('#inspect-idle-policy .idle-policy-switch input');
+  await page.$eval('#inspect-idle-policy .idle-policy-switch input',e=>e.click());
   await page.waitForFunction(()=>document.querySelector('#inspect-idle-policy .idle-policy-badge').textContent==='On' && !document.querySelector('#inspect-idle-policy .idle-policy-switch input').disabled);
   assert.equal(seconds,21600);
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/idle-policy-mobile.png'});
