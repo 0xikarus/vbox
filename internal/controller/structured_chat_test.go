@@ -18,6 +18,24 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 )
 
+func TestReplyNotifiesOwnerOnlyForOwnerChat(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		target v1.BoxMessage
+		want   bool
+	}{
+		{name: "owner message", target: v1.BoxMessage{Direction: "user"}, want: true},
+		{name: "box contact", target: v1.BoxMessage{Direction: "box", SenderBoxID: "other-box"}, want: false},
+		{name: "legacy box contact without sender", target: v1.BoxMessage{Direction: "box"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := replyNotifiesOwner(test.target); got != test.want {
+				t.Fatalf("replyNotifiesOwner(%+v) = %v, want %v", test.target, got, test.want)
+			}
+		})
+	}
+}
+
 func TestSaveContactImagesCreatesBoundedAttachmentReferences(t *testing.T) {
 	store, mock := testStore(t)
 	pixel, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC")

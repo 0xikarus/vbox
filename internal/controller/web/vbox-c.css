@@ -411,8 +411,8 @@ form#login button:hover{background:var(--vb-swatch-000);border-color:var(--vb-sw
 /* 5 · quieter sidebar rows */
 .row-state{display:none}
 .agent-badge{background:none;border:0;padding:0;color:var(--vb-ink-faint);font-weight:500;font-size:.72rem}
-#chat-entries .unread-note{display:none}
-#chat-entries .unread{font-size:0;min-width:0;width:.62rem;height:.62rem;padding:0;border-radius:var(--r-pill);background:var(--vb-accent)}
+#chat-entries .unread{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-width:18px;height:18px;padding:0 5px;border-radius:var(--r-pill);background:var(--vb-ink);color:var(--vb-bg);font-size:12px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums}
+#chat-entries li[data-pair-key] .unread{background:var(--vb-surface-2);color:var(--vb-ink-soft)}
 #chat-entries .unread[hidden]{display:none}
 .chat-meta time{color:var(--vb-ink-faint);font-weight:500}
 .chat-meta time.recent{color:var(--vb-ink);font-weight:650}
@@ -1450,7 +1450,6 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-entries .pin-mark{display:inline-flex;flex:none;width:.82rem;height:.82rem;color:var(--vb-accent-text)}
 #chat-entries .pin-mark[hidden]{display:none}
 #chat-entries .pin-mark svg{width:100%;height:100%}
-#chat-entries .unread-note{display:none}
 .pair-avatar-stack{position:relative;width:2.7rem;height:2.7rem;flex:none;display:block;background:none}
 .pair-avatar-stack .avatar{position:absolute;width:1.85rem;height:1.85rem;border-radius:var(--r-control);background:var(--vb-bg-soft);overflow:visible}
 .pair-avatar-stack .avatar:first-child{left:0;top:0;z-index:1}

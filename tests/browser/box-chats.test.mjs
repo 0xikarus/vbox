@@ -8,7 +8,7 @@ const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const illustration=id=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#142433"/><rect x="24" y="24" width="592" height="352" rx="16" fill="${id==='image-3'?'#294b48':'#244060'}" stroke="#8cb8df"/><text x="50" y="85" fill="#f3f8ff" font-family="sans-serif" font-size="28" font-weight="bold">${id==='image-1'?'Build output · 1':id==='image-2'?'Build output · 2':'Review result'}</text><path d="M90 205h460" stroke="#9bc8ec" stroke-width="7"/><g fill="#eaf3ff" font-family="sans-serif" font-size="23"><text x="68" y="175">Source</text><text x="274" y="175">Build</text><text x="472" y="175">Review</text></g><circle cx="95" cy="205" r="19" fill="#94c5ee"/><circle cx="320" cy="205" r="19" fill="#94c5ee"/><circle cx="545" cy="205" r="19" fill="#94c5ee"/></svg>`);
 
-async function withChat(fn,{pairDelay=0,pairMessages=null}={}){
+async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null}={}){
  let sidebarLayout=null;
  const server=http.createServer(async(request,response)=>{
   const path=request.url.split('?')[0];
@@ -33,7 +33,10 @@ async function withChat(fn,{pairDelay=0,pairMessages=null}={}){
    {id:'m2',senderBoxId:b,recipientBoxId:a,direction:'box',text:'The review is ready',state:'delivered',createdAt:now,updatedAt:now,images:[{id:'image-3',number:1,mediaType:'image/png'}]}
    ]));
   }
-  if(path==='/v1/logical-boxes/'+a+'/messages')return response.end(JSON.stringify([{id:'owner-1',direction:'agent',text:'Owner chat is here',state:'delivered',createdAt:now,updatedAt:now}]));
+  if(path==='/v1/logical-boxes/'+a+'/messages'){
+   const limit=Number(new URL(request.url,'http://fixture').searchParams.get('limit'))||500;
+   return response.end(JSON.stringify((boxMessages||[{id:'owner-1',direction:'agent',text:'Owner chat is here',state:'delivered',createdAt:now,updatedAt:now}]).slice(-limit)));
+  }
   if(path==='/v1/tool-presets')return response.end('[]');
   if(path==='/v1/chat-commands')return response.end('[]');
   if(path==='/v1/push/vapid-key'){response.statusCode=404;return response.end('{}')}
@@ -86,6 +89,50 @@ test('owner and box conversations share the Chats list and transcript',async()=>
  });
 });
 
+test('unread badges count replies but exclude MCP activity and system lines',async()=>{
+ const boxMessages=[
+  ...['First reply','MCP · get_contacts','MCP · chat_message','MCP · heartbeat','Status changed','Second reply','Unsent note'].map((text,index)=>({
+   id:'unread-'+index,direction:index===1||index===2||index===3||index===4?'system':index===6?'user':'agent',
+   text,state:index===6?'silent':'delivered',createdAt:new Date(Date.now()-(7-index)*1000).toISOString(),updatedAt:new Date(Date.now()-(7-index)*1000).toISOString()
+  })),
+  {id:'unread-pending',direction:'agent',text:'Reply still pending',state:'pending',createdAt:now,updatedAt:now}
+ ];
+ const pairNow=Date.now();
+ const pairMessages=[
+  {id:'pair-1',senderBoxId:a,recipientBoxId:b,direction:'box',text:'First direct message',state:'delivered',createdAt:new Date(pairNow-4000).toISOString(),updatedAt:new Date(pairNow-4000).toISOString()},
+  {id:'pair-mcp',senderBoxId:b,recipientBoxId:a,direction:'agent',text:'MCP · chat_message',state:'delivered',createdAt:new Date(pairNow-3000).toISOString(),updatedAt:new Date(pairNow-3000).toISOString()},
+  {id:'pair-system',senderBoxId:b,recipientBoxId:a,direction:'system',text:'Status changed',state:'delivered',createdAt:new Date(pairNow-2000).toISOString(),updatedAt:new Date(pairNow-2000).toISOString()},
+  {id:'pair-2',senderBoxId:b,recipientBoxId:a,direction:'box',text:'Second direct message',state:'delivered',createdAt:new Date(pairNow).toISOString(),updatedAt:new Date(pairNow).toISOString()}
+ ];
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:1100,height:760});
+  await page.goto(base+'/chat');
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.textContent==='2'&&document.querySelector('[data-pair-key] .unread')?.textContent==='2',{},a);
+  assert.equal(await page.$eval('#chat-back-count',badge=>badge.textContent),'2','pair activity does not raise the owner alert total');
+  assert.equal(await page.$eval('[data-box-id="'+a+'"] .unread',badge=>badge.getAttribute('aria-label')),'2 unread');
+  await page.click('[data-box-id="'+a+'"] .chat-meta');
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.hidden&&document.querySelector('#chat-back-count')?.hidden,{},a);
+  await page.click('[data-pair-key] .chat-meta');
+  await page.waitForFunction(()=>document.querySelector('[data-pair-key] .unread')?.hidden&&document.querySelector('#chat-back-count')?.hidden);
+  await page.close();
+ },{boxMessages,pairMessages});
+});
+
+test('unread box badges expand history and cap display at 99+',async()=>{
+ const boxMessages=Array.from({length:105},(_,index)=>({
+  id:'long-'+index,direction:'agent',text:'Reply '+index,state:'delivered',
+  createdAt:new Date(Date.now()-(105-index)*1000).toISOString(),updatedAt:new Date(Date.now()-(105-index)*1000).toISOString()
+ }));
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:1100,height:760});
+  await page.goto(base+'/chat');
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.textContent==='99+',{},a);
+  assert.equal(await page.$eval('[data-box-id="'+a+'"] .chat-meta',button=>button.getAttribute('aria-label')),'Open chat with Builder · 105 unread');
+  assert.equal(await page.$eval('#chat-back-count',badge=>badge.textContent),'99+');
+  await page.close();
+ },{boxMessages});
+});
+
 test('box conversation media gallery supports mobile swipes within one message',async()=>{
  await withChat(async(browser,base)=>{
   const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
@@ -129,13 +176,13 @@ test('box conversations open at the latest message on desktop and mobile',async(
   await desktop.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');
   pairMessages.push({id:'pair-new',senderBoxId:b,recipientBoxId:a,direction:'box',text:'A NEW BOX REPLY',state:'delivered',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
   await desktop.click('#refresh');
-  await desktop.waitForFunction(()=>!document.querySelector('[data-pair-key] .unread-note').hidden);
+  await desktop.waitForFunction(()=>document.querySelector('[data-pair-key] .unread')?.textContent==='1');
   await desktop.screenshot({path:'/tmp/vmbox-pair-note-desktop.png'});
   await desktop.click('[data-pair-key] .chat-meta');
   await desktop.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===37);
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await desktop.$eval('#chat-messages',bottom)<3,'returning to a box conversation starts at its newest message');
-  assert.equal(await desktop.$eval('[data-pair-key] .unread-note',note=>note.hidden),true,'opening the newest pair message clears its left-list note');
+  assert.equal(await desktop.$eval('[data-pair-key] .unread',badge=>badge.hidden),true,'opening the newest pair message clears its left-list badge');
 
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
@@ -147,7 +194,7 @@ test('box conversations open at the latest message on desktop and mobile',async(
   await mobile.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   pairMessages.push({id:'pair-new-mobile',senderBoxId:a,recipientBoxId:b,direction:'box',text:'NEW BOX REPLY ON MOBILE',state:'delivered',createdAt:new Date(Date.now()+1000).toISOString(),updatedAt:new Date(Date.now()+1000).toISOString()});
   await mobile.click('#refresh');
-  await mobile.waitForFunction(()=>!document.querySelector('[data-pair-key] .unread-note').hidden);
+  await mobile.waitForFunction(()=>document.querySelector('[data-pair-key] .unread')?.textContent==='1');
   await new Promise(resolve=>setTimeout(resolve,350));
   await mobile.screenshot({path:'/tmp/vmbox-pair-note-mobile.png'});
   await mobile.close();await desktop.close();
@@ -233,7 +280,7 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
    target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
    row.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));
   });
-  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='2');
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='3');
   assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'2');
   await page.click('[data-box-id="'+b+'"]',{button:'right'});
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
@@ -241,13 +288,13 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   await page.click('#row-menu .row-submenu-toggle');
   await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='Projects').click());
   assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'3');
-  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'2');
+  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'3');
   await page.click('.chat-folder-toggle');
   assert.equal(await page.$('[data-box-id="'+a+'"]'),null);
   assert.equal(await page.$('[data-pair-key]'),null);
-  assert.equal(await page.$eval('.chat-folder .unread',badge=>badge.textContent),'2','collapsed groups keep their unread indicator');
+  assert.equal(await page.$eval('.chat-folder .unread',badge=>badge.textContent),'3','collapsed groups keep their unread indicator');
   await page.reload();
-  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='2');
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='3');
   assert.equal(await page.$eval('.chat-folder-toggle',button=>button.getAttribute('aria-expanded')),'false');
   await page.type('#chat-filter','Projects');
   await page.waitForSelector('[data-pair-key]');
@@ -291,7 +338,7 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   await mobile.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Mobile');
   await mobile.click('.chat-folder-toggle');
   assert.equal(await mobile.$('[data-pair-key]'),null);
-  assert.equal(await mobile.$eval('.chat-folder .unread',badge=>badge.textContent),'1');
+  assert.equal(await mobile.$eval('.chat-folder .unread',badge=>badge.textContent),'2');
   await mobile.close();
  });
 });
