@@ -261,7 +261,7 @@ test('chat details drawer edits the per-box contact graph',async()=>{
   assert.equal(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) input[name=mcpTools]',inputs=>inputs.every(input=>input.checked)),true);
   await p.$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=computer_use]) .role-capability-options',element=>element.open=false);
   await p.click('#role-editor-form .mcp-tool-group-toggle[value=admin_work]');
-  assert.deepEqual(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) input[name=mcpTools]',inputs=>inputs.map(input=>input.value)),['list_agent_boxes','get_agent_box','get_agent_box_screenshot','create_agent_box','set_agent_box_tags','restart_agent_box','wake_agent_box','delete_agent_box']);
+  assert.deepEqual(await p.$$eval('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) input[name=mcpTools]',inputs=>inputs.map(input=>input.value)),['list_agent_boxes','get_agent_box','get_agent_box_screenshot','create_agent_box','set_agent_box_tags','set_agent_box_run_budget','restart_agent_box','wake_agent_box','delete_agent_box']);
   assert.equal(await p.$eval('#role-editor-form input[name=mcpTools][value=wake_agent_box]',input=>input.checked&&input.disabled),true,'restart includes wake permission');
   await p.click('#role-editor-form .mcp-tool-group:has(.mcp-tool-group-toggle[value=admin_work]) .role-capability-options summary');
   await (await p.$('#role-editor-form .role-capability:has(.mcp-tool-options)')).screenshot({path:'docs/chat-ui/screenshots/chat-permission-mcp-tools.png'});

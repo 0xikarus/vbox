@@ -12,7 +12,7 @@ Restart=on-failure
 RestartSec=5
 UMask=0077
 MemoryMax=512M
-TasksMax=256
+TasksMax=2048
 TimeoutStopSec=30
 
 [Install]
