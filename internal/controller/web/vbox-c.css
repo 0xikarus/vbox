@@ -2412,3 +2412,38 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #create-card:not([open])>.create-card-summary{padding-bottom:1rem}
 #create-card[open]>.create-card-summary{border-bottom:1px solid var(--vb-line);margin-bottom:.9rem}
 #create-card>.create-card-summary:focus-visible{outline:2px solid color-mix(in srgb,var(--vb-ink) 55%,transparent);outline-offset:2px;border-radius:var(--r-control)}
+
+/* ══ chat sidebar header: Messenger/WhatsApp-style ══════════════════════ */
+#chat-list #chat-sidebar-head{display:flex;align-items:center;gap:.5rem;flex:none;padding:.9rem .75rem .35rem}
+.chat-sidebar-title{margin:0;font-size:20px;line-height:1.2;font-weight:600;letter-spacing:-.02em;color:var(--vb-ink);flex:1;min-width:0}
+.chat-sidebar-actions{display:inline-flex;align-items:center;gap:.2rem;flex:none}
+#chat-list #new-box,#chat-list #new-chat-group{
+  width:32px!important;height:32px!important;min-height:32px!important;min-width:32px!important;
+  padding:0!important;flex:none;display:grid;place-items:center;
+  background:transparent!important;border:0!important;border-radius:var(--r-control)!important;
+  color:var(--vb-ink-soft)!important;font-size:0!important;font-weight:400!important;cursor:pointer
+}
+#chat-list #new-box svg,#chat-list #new-chat-group svg{width:1.05rem;height:1.05rem;display:block}
+#chat-list #new-box:hover,#chat-list #new-chat-group:hover{background:color-mix(in srgb,var(--vb-ink) 7%,transparent)!important;color:var(--vb-ink)!important}
+#chat-list #new-box:active,#chat-list #new-chat-group:active{transform:scale(.94)}
+/* groups are created from the row context menu; keep the trigger in the DOM
+   for tests/handlers but visually hidden */
+#chat-list #new-chat-group.sr-only{position:absolute!important;width:1px!important;height:1px!important;min-width:1px!important;min-height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0 0 0 0)!important;border:0!important;background:none!important;color:transparent!important}
+#chat-list #chat-filter-row{
+  position:relative;display:flex;align-items:center;gap:.5rem;flex:none;
+  margin:0 .75rem .4rem;padding:0 .75rem;height:36px;min-height:36px;
+  background:color-mix(in srgb,var(--vb-ink) 6%,transparent);border:1px solid transparent;border-radius:var(--r-pill)
+}
+#chat-list #chat-filter-row:focus-within{background:var(--vb-surface);border-color:var(--vb-line-strong)}
+.chat-search-icon{width:1rem;height:1rem;flex:none;color:var(--vb-ink-faint)}
+#chat-list #chat-filter{
+  flex:1;min-width:0;height:100%;margin:0;padding:0;
+  border:0!important;background:transparent!important;border-radius:0!important;box-shadow:none!important;
+  color:var(--vb-ink);font-size:.86rem;outline:none
+}
+#chat-list #chat-filter::placeholder{color:var(--vb-ink-faint)}
+#chat-list #chat-filter::-webkit-search-cancel-button{-webkit-appearance:none;display:none}
+@media (max-width:899px){
+  #chat-list #chat-sidebar-head{padding:.7rem .75rem .25rem}
+  #chat-list #chat-filter-row{margin:0 .75rem .35rem}
+}
