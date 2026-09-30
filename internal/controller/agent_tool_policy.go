@@ -53,7 +53,7 @@ func toolCapabilityAllows(name string, capabilities v1.AgentRoleCapabilities) bo
 		return capabilities.ManageAgentBoxes.Inspect
 	case "set_agent_box_tags":
 		return capabilities.ManageAgentBoxes.Tag
-	case "restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context":
+	case "set_agent_box_run_budget", "restart_agent_box", "wake_agent_box", "clear_agent_box_context", "compact_agent_box_context":
 		return capabilities.ManageAgentBoxes.Restart
 	case "delete_agent_box":
 		return capabilities.ManageAgentBoxes.Delete
