@@ -1054,7 +1054,7 @@
  }
  const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
  const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
- const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Other chats'));
+ const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Chats'));
  const groupNodes=new Map();
  const knownChatKey=key=>key.startsWith('box:')?boxes.has(key.slice(4)):key.startsWith('pair:')?pairs.has(key.slice(5)):false;
  const draggedChatKey=event=>event.dataTransfer?.getData('application/x-vmbox-chat')||'';
@@ -3066,6 +3066,7 @@ function renderUsage(data){
    row.append(bar);
    const value=mk('span',remaining===null?'\u2014':usageNumber(remaining)+'% left');value.className='usage-row-value';
    if(remaining!==null&&remaining<=10)value.classList.add('low');
+   row.append(value);
    row.title=(typeof window.usedPercent==='number'?usageNumber(window.usedPercent)+'% used':'Usage unavailable')+(window.resetsAt?' · Resets '+usageDate(window.resetsAt):'');
    card.append(row);
   }

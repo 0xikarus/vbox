@@ -166,6 +166,8 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 .msg-parent{display:block;width:100%;border:0;border-left:3px solid var(--accent);border-radius:var(--radius-sm);background:color-mix(in srgb,var(--surface) 72%,transparent);color:var(--ink-soft);padding:.35rem .45rem;margin:0 0 .35rem;text-align:left;font:inherit;font-size:.76rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
 .agent-origin{display:block;margin-bottom:.3rem;color:var(--muted);font-size:.72rem;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
 .msg-thread{border:0;background:none;color:var(--accent-text);font:inherit;font-size:.7rem;font-weight:800;cursor:pointer;padding:.1rem .25rem;margin-right:auto}
+.msg.agent.pair-left,.msg.pair-left{align-self:flex-start}
+.msg.agent.pair-right,.msg.pair-right{align-self:flex-end}
 .msg.user{align-self:flex-end;background:var(--bubble-out);border-bottom-right-radius:var(--radius-sm)}
 .msg.agent{align-self:flex-start;border-bottom-left-radius:var(--radius-sm)}
 .msg.note{align-self:center;background:var(--accent-soft);color:var(--ink);font-size:.8rem;

@@ -56,7 +56,7 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   assert.equal(await page.$$eval('#chat-entries [data-pair-key]',rows=>rows.length),1);
   assert.equal(await page.$eval('#chat-header-name',element=>element.textContent),'Builder ↔ Reviewer');
   assert.deepEqual(await page.$$eval('#chat-messages .agent-origin',elements=>elements.map(element=>element.textContent)),['Builder','Reviewer']);
-  assert.deepEqual(await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>element.classList.contains('user')?'right':'left')),['left','right']);
+  assert.deepEqual(await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>element.classList.contains('pair-right')?'right':'left')),['left','right']);
   const sides=await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>({left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right})));
   assert.ok(sides[0].left<sides[1].left&&sides[0].right<sides[1].right,'each box should have its own side');
   assert.equal(await page.$eval('#chat-messages img',image=>image.naturalWidth),640);

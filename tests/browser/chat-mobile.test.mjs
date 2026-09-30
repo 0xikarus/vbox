@@ -79,7 +79,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.waitForFunction(()=>!document.querySelector('.msg.processing'),{timeout:5000});
 
   // The message chevron lives in the bottom metadata row.
-  assert.equal(await p.$eval('.msg.user .msg-more',el=>el.parentElement.parentElement.classList.contains('meta')),true);
+  assert.equal(await p.$eval('.msg.user .msg-more',el=>!!el.closest('.msg-actions')),true);
   const morePoint=await p.$eval('.msg.user .msg-more',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
   await p.touchscreen.tap(morePoint.x,morePoint.y);
   await p.waitForFunction(()=>!document.querySelector('.msg-actions-menu').hidden);

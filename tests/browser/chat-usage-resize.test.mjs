@@ -170,7 +170,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-back');
   await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   await new Promise(resolve=>setTimeout(resolve,350));
-  await page.click('#usage-toggle');
+  await page.click('#chat-menu');await page.click('#usage-toggle');
   assert.equal(await page.$eval('#usage-modal .usage-card',card=>card.scrollWidth<=card.clientWidth+1),true,'usage overview fits a narrow phone');
   await page.click('#usage-modal button[data-close]');
   await page.click('#new-box');
