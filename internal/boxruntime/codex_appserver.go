@@ -267,18 +267,16 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 // Only a definitive pre-acceptance error falls back to the native queue.
 // Other failures are ambiguous and must be reconciled by exact message ID.
 func codexSubmitVisibleInput(ctx context.Context, client *codexClient, thread, messageID, text string, images []string) error {
-	result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
-	if codexQueueMethodUnavailable(err, "thread/turns/list") || codexUnmaterializedThread(err) {
+	latest, err := codexLatestTurn(ctx, client, thread)
+	if codexQueueMethodUnavailable(err, "thread/turns/list") {
 		return codexQueueInput(ctx, client, thread, messageID, text, images)
 	}
 	if err != nil {
 		return err
 	}
-	turns, _ := result["data"].([]any)
-	if len(turns) == 0 {
+	if latest == nil {
 		return codexQueueInput(ctx, client, thread, messageID, text, images)
 	}
-	latest, _ := turns[0].(map[string]any)
 	if latest["status"] != "inProgress" {
 		return codexQueueInput(ctx, client, thread, messageID, text, images)
 	}
@@ -337,26 +335,15 @@ func waitForCodexVisibleThread(ctx context.Context, client *codexClient, root, s
 // already has one in progress. The queue itself preserves submission order.
 func codexStartQueuedIfIdle(ctx context.Context, client *codexClient, thread string) error {
 	active := func() (bool, error) {
-		result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
+		latest, err := codexLatestTurn(ctx, client, thread)
 		if err != nil {
 			return false, err
 		}
-		turns, _ := result["data"].([]any)
-		if len(turns) == 0 {
-			return false, nil
-		}
-		latest, _ := turns[0].(map[string]any)
-		return latest["status"] == "inProgress", nil
+		return latest != nil && latest["status"] == "inProgress", nil
 	}
 	busy, err := active()
 	if codexQueueMethodUnavailable(err, "thread/turns/list") {
 		return nil
-	}
-	if codexUnmaterializedThread(err) {
-		// The visible TUI's fresh zero-turn thread is not persisted yet.
-		// Its first queued input must start before turns can be listed.
-		err = nil
-		busy = false
 	}
 	if err != nil || busy {
 		return err
@@ -388,6 +375,38 @@ func codexStartQueuedIfIdle(ctx context.Context, client *codexClient, thread str
 		return err
 	}
 	return nil
+}
+
+// Some Codex releases accept thread/turns/list but return a server-side
+// "list_turns is not supported yet" error. thread/read still exposes the
+// visible thread's turns, including the active turn needed for steering.
+func codexLatestTurn(ctx context.Context, client *codexClient, thread string) (map[string]any, error) {
+	result, err := client.call(ctx, "thread/turns/list", map[string]any{"threadId": thread, "limit": 1, "sortDirection": "desc"})
+	if codexUnmaterializedThread(err) {
+		return nil, nil
+	}
+	if err != nil && strings.Contains(err.Error(), "list_turns is not supported yet") {
+		result, err = client.call(ctx, "thread/read", map[string]any{"threadId": thread, "includeTurns": true})
+		if err != nil {
+			return nil, err
+		}
+		threadData, _ := result["thread"].(map[string]any)
+		turns, _ := threadData["turns"].([]any)
+		if len(turns) == 0 {
+			return nil, nil
+		}
+		latest, _ := turns[len(turns)-1].(map[string]any)
+		return latest, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	turns, _ := result["data"].([]any)
+	if len(turns) == 0 {
+		return nil, nil
+	}
+	latest, _ := turns[0].(map[string]any)
+	return latest, nil
 }
 
 func codexQueueMethodUnavailable(err error, method string) bool {
