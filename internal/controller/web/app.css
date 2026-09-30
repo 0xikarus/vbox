@@ -1,15 +1,15 @@
 *{box-sizing:border-box}
-body{max-width:80rem;margin:0 auto;padding:0 14px 60px;background:var(--vb-swatch-fff);color:var(--vb-swatch-0b0b0b);font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+body{max-width:80rem;margin:0 auto;padding:0 14px 60px;background:var(--vb-swatch-fff);color:var(--vb-swatch-0b0b0b);font:var(--vb-type-px-13)/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
 a{color:var(--vb-swatch-03c);text-decoration:underline}a:hover{color:var(--vb-swatch-c00)}
-h1{font-size:18px;margin:14px 0 4px}h2{font-size:14px;border-bottom:1px solid var(--vb-swatch-ddd);margin:22px 0 6px;padding-bottom:3px}
-code{font:inherit;background:var(--vb-swatch-f4f4f4)}pre{font-size:11.5px;color:var(--vb-swatch-52514e);white-space:pre-wrap;overflow-wrap:anywhere}
+h1{font-size:var(--vb-type-px-18);margin:14px 0 4px}h2{font-size:var(--vb-type-px-14);border-bottom:1px solid var(--vb-swatch-ddd);margin:22px 0 6px;padding-bottom:3px}
+code{font:inherit;background:var(--vb-swatch-f4f4f4)}pre{font-size:var(--vb-type-px-11-5);color:var(--vb-swatch-52514e);white-space:pre-wrap;overflow-wrap:anywhere}
 [hidden]{display:none!important}
 .topbar{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--vb-swatch-0b0b0b)}
 .topbar .brand{font-weight:700}.topbar nav{display:flex;flex-wrap:wrap;gap:4px 10px}
 .topbar a{color:var(--vb-swatch-52514e);text-decoration:none}.topbar a:hover{color:var(--vb-swatch-c00)}
 details{margin:8px 0}summary{cursor:pointer}details>details{margin-left:12px}
 form{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:flex-end;margin:10px 0}
-label{display:inline-block;font-size:11px;color:var(--vb-swatch-898781)}
+label{display:inline-block;font-size:var(--vb-type-px-11);color:var(--vb-swatch-898781)}
 label>input,label>select,label>textarea{display:block;margin-top:2px}
 input,select,textarea,button{box-sizing:border-box;font:inherit;color:var(--vb-swatch-111);background:var(--vb-swatch-fff);border:1px solid var(--vb-swatch-e2e2e2);padding:2px 4px;max-width:100%}
 textarea{width:32rem;max-width:100%}button{cursor:pointer}
