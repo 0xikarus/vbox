@@ -2936,8 +2936,10 @@ let usagePending=null,usageGeneration=0;
    const who=mk('div');who.className='role-box-identity';who.append(mark,identity);
    const manage=mk('button','Edit');manage.type='button';manage.className='role-assignment-toggle';manage.setAttribute('aria-label','Edit permissions for '+box.name);manage.onclick=()=>void openBoxPolicyEditor(box.id);
    head.append(who,manage);
-   const chips=mk('div');chips.className='role-perm-chips';for(const kind of ['contacts','computer','passwords','admin','create'])chips.append(policyChip(kind,policySummaries.get(box.id)));
-   row.append(head,chips);list.append(row);
+   const policy=policySummaries.get(box.id);
+   if(!policy||policy.error){const line=mk('p','Policy unavailable');line.className='role-perm-unavailable';row.append(head,line)}
+   else{const chips=mk('div');chips.className='role-perm-chips';for(const kind of ['contacts','computer','passwords','admin','create'])chips.append(policyChip(kind,policy));row.append(head,chips)}
+   list.append(row);
   }
   root.append(list);
  }
@@ -2994,39 +2996,61 @@ let usagePending=null,usageGeneration=0;
   instructionPresets=list&&Array.isArray(list.presets)?list:{defaultName:'',presets:[]};
   presetBodyCache.clear();renderCreateInstructionChoice();renderPresetList();
  }
+ let selectedPresetName='';
+ function presetFilterText(){return ($('#preset-filter')?.value||'').trim().toLocaleLowerCase()}
+ function updatePresetControls(){
+  const preset=instructionPresets.presets.find(p=>p.name===selectedPresetName);
+  const label=$('#preset-editor-label'),dflt=$('#preset-default-toggle'),del=$('#preset-delete');
+  if(label)label.textContent=selectedPresetName?('Edit '+selectedPresetName):'New preset';
+  if(dflt){dflt.textContent=preset?.default?'Clear default':'Set as default';dflt.hidden=!selectedPresetName}
+  if(del)del.hidden=!selectedPresetName;
+ }
  function renderPresetList(){
   const root=$('#preset-list');if(!root)return;root.replaceChildren();
-  if(!instructionPresets.presets.length){root.append(mk('p','No presets yet. Use + to add one.'));return}
+  const q=presetFilterText(),all=instructionPresets.presets;
+  const count=$('#preset-count');if(count)count.textContent=all.length+' saved';
+  const presets=all.filter(p=>!q||p.name.toLocaleLowerCase().includes(q));
+  if(!presets.length){root.append(mk('p',q?'No presets match.':'No presets yet. Use + to add one.'));return}
   const list=mk('div');list.className='preset-list';
-  for(const preset of instructionPresets.presets){
-   const row=mk('article');row.className='preset-row';row.dataset.presetName=preset.name;
+  for(const preset of presets){
+   const row=mk('button');row.type='button';row.className='preset-row'+(preset.name===selectedPresetName?' on':'');row.dataset.presetName=preset.name;
    const main=mk('div');main.className='preset-main';
    const title=mk('div');title.className='preset-title';title.append(mk('strong',preset.name));
    if(preset.default){const pill=mk('span','Default');pill.className='pill';title.append(pill)}
-   title.append(mk('small','r'+preset.revision));
-   main.append(title);
-   const actions=mk('div');actions.className='preset-actions';
-   const edit=mk('button','Edit');edit.type='button';edit.className='vb-secondary';edit.onclick=()=>void editPreset(preset.name);
-   const more=mk('details');more.className='row-overflow';const summary=mk('summary');summary.setAttribute('aria-label','More for '+preset.name);summary.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>';const menu=mk('div');menu.className='row-overflow-menu';
-   const setDefault=mk('button',preset.default?'Clear default':'Set default');setDefault.type='button';setDefault.onclick=()=>void setDefaultPreset(preset.default?'':preset.name);
-   const remove=mk('button','Delete');remove.type='button';remove.className='danger';remove.onclick=()=>void deletePreset(preset);
-   menu.append(setDefault,remove);more.append(summary,menu);actions.append(edit,more);
-   row.append(main,actions);list.append(row);
+   const meta=mk('small',[(preset.revision?'r'+preset.revision:''),(preset.sizeBytes?preset.sizeBytes+' B':'')].filter(Boolean).join(' · '));
+   main.append(title,meta);row.append(main);row.onclick=()=>void editPreset(preset.name);list.append(row);
   }
   root.append(list);
  }
  async function openPresetsModal(){
   closeSheets();
   const status=$('#preset-status');status.textContent='';
-  $('#presets-modal').hidden=false;
+  $('#presets-modal').hidden=false;$('.presets-card')?.classList.remove('show-editor');
   try{applyInstructionPresets(await api('/v1/instruction-presets'))}catch(e){status.textContent=e.message}
  }
+ function startNewPreset(){
+  selectedPresetName='';renderPresetList();updatePresetControls();
+  const form=$('#preset-form');if(form){form.reset();const prev=$('#preset-preview');if(prev)prev.hidden=true;const ta=form.elements.markdown;if(ta)ta.hidden=false}
+  document.querySelector('.presets-card')?.classList.add('show-editor');
+  const f=form?.elements.name;if(f)f.focus();
+ }
  $('#presets-toggle').onclick=()=>void openPresetsModal();
- $('#preset-new')?.addEventListener('click',()=>{const editor=$('#preset-editor'),label=$('#preset-editor-label'),form=$('#preset-form');if(editor)editor.open=true;if(label)label.textContent='New preset';if(form){form.reset();$('#preset-preview').hidden=true}const f=form?.elements.name;if(f)f.focus()});
+ $('#preset-new')?.addEventListener('click',startNewPreset);
+ $('#preset-new-bottom')?.addEventListener('click',startNewPreset);
+ $('#preset-filter')?.addEventListener('input',renderPresetList);
+ $('#preset-editor-back')?.addEventListener('click',()=>document.querySelector('.presets-card')?.classList.remove('show-editor'));
+ $('#preset-delete')?.addEventListener('click',()=>{const preset=instructionPresets.presets.find(p=>p.name===selectedPresetName);if(preset)void deletePreset(preset)});
+ $('#preset-default-toggle')?.addEventListener('click',()=>{const preset=instructionPresets.presets.find(p=>p.name===selectedPresetName);if(preset)void setDefaultPreset(preset.default?'':preset.name)});
  async function editPreset(name){
   const status=$('#preset-status');
-  try{const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));const form=$('#preset-form'),editor=$('#preset-editor'),label=$('#preset-editor-label');form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;if(editor)editor.open=true;if(label)label.textContent='Edit · '+name;status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.'}
-  catch(e){status.textContent=e.message}
+  try{
+   const value=await api('/v1/instruction-presets/'+encodeURIComponent(name));
+   const form=$('#preset-form');form.elements.name.value=value.preset.name;form.elements.markdown.value=value.preset.markdown;
+   selectedPresetName=name;renderPresetList();updatePresetControls();
+   const prev=$('#preset-preview');if(prev)prev.hidden=true;form.elements.markdown.hidden=false;
+   document.querySelector('.presets-card')?.classList.add('show-editor');
+   status.textContent='Editing '+name+' (r'+value.preset.revision+'). Saving updates future selections only; existing boxes keep their snapshot.';
+  }catch(e){status.textContent=e.message}
  }
  async function setDefaultPreset(name){
   const status=$('#preset-status');
@@ -3036,7 +3060,7 @@ let usagePending=null,usageGeneration=0;
  async function deletePreset(preset){
   if(!confirm('Delete instruction preset "'+preset.name+'"? Boxes that copied it keep their snapshot.'))return;
   const status=$('#preset-status');
-  try{await api('/v1/instruction-presets/'+encodeURIComponent(preset.name),'DELETE');status.textContent='Preset deleted. Existing boxes keep their snapshot.';await openPresetsModal()}
+  try{await api('/v1/instruction-presets/'+encodeURIComponent(preset.name),'DELETE');status.textContent='Preset deleted. Existing boxes keep their snapshot.';selectedPresetName='';await openPresetsModal()}
   catch(e){status.textContent=e.message}
  }
  $('#preset-upload').onclick=()=>$('#preset-file').click();
@@ -3048,13 +3072,13 @@ let usagePending=null,usageGeneration=0;
    if(file.size>65536)throw Error('Markdown files are limited to 64 KiB.');
    let text;try{text=new TextDecoder('utf-8',{fatal:true}).decode(new Uint8Array(await file.arrayBuffer()))}catch{throw Error('The file must be valid UTF-8 text.')}
    if(text.includes('\u0000'))throw Error('The file must not contain NUL bytes.');
-   const form=$('#preset-form');form.elements.markdown.value=text;if(!form.elements.name.value)form.elements.name.value=file.name.replace(/\.(md|markdown)$/i,'').slice(0,64);
+   const form=$('#preset-form');form.elements.markdown.value=text;form.elements.markdown.hidden=false;if(!form.elements.name.value)form.elements.name.value=file.name.replace(/\.(md|markdown)$/i,'').slice(0,64);
    status.textContent='Loaded '+file.name+'. Name the preset and save.';
   }catch(e){status.textContent=e.message}
   input.value='';
  });
- $('#preset-preview-toggle').onclick=()=>{const preview=$('#preset-preview'),text=$('#preset-form').elements.markdown.value;if(preview.hidden){mdPreview(preview,text)}preview.hidden=!preview.hidden};
- $('#preset-form').onsubmit=async event=>{
+ $('#preset-preview-toggle').onclick=()=>{const preview=$('#preset-preview'),area=$('#preset-form').elements.markdown,text=area.value;if(preview.hidden){mdPreview(preview,text);preview.hidden=false;area.hidden=true}else{preview.hidden=true;area.hidden=false}};
+$('#preset-form').onsubmit=async event=>{
   event.preventDefault();
   const f=event.target.elements,name=f.name.value.trim(),markdown=f.markdown.value,status=$('#preset-status');
   try{

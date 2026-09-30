@@ -281,20 +281,25 @@
 
 <div id="presets-modal" class="sheet" hidden>
  <div class="sheet-backdrop" data-close="presets-modal"></div>
- <section class="sheet-card" role="dialog" aria-modal="true">
+ <section class="sheet-card presets-card" role="dialog" aria-modal="true">
   <header><strong>Instruction presets</strong><span class="spacer"></span><button type="button" id="preset-new" aria-label="New preset" title="New preset"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg></button><button type="button" data-close="presets-modal" aria-label="Close">×</button></header>
-  <p class="hint">Reusable instructions you can apply to any box.</p>
-  <div id="preset-list"></div>
-  <details id="preset-editor" class="preset-editor" open>
-   <summary id="preset-editor-label">New preset</summary>
-   <form id="preset-form">
+  <div class="commands-layout presets-layout">
+   <div class="commands-list-pane">
+    <div class="commands-list-heading"><strong>Your presets</strong><span id="preset-count">0 saved</span></div>
+    <input id="preset-filter" type="search" placeholder="Search presets…" aria-label="Search presets" autocomplete="off">
+    <div id="preset-list" role="group" aria-label="Instruction presets"></div>
+    <button id="preset-new-bottom" type="button" class="vb-secondary">+ New preset</button>
+   </div>
+   <form id="preset-form" class="preset-editor">
+    <button type="button" id="preset-editor-back" class="preset-back" aria-label="Back to presets">‹ Presets</button>
+    <div class="command-editor-heading"><h3 id="preset-editor-label">New preset</h3></div>
     <label class="preset-field">Name <input name="name" required maxlength="64" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" placeholder="code-reviewer" autocomplete="off"></label>
-    <label class="preset-field">Markdown <textarea name="markdown" rows="8" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
-    <div class="form-actions"><button type="button" id="preset-upload" class="linkbtn">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle" class="linkbtn">Preview</button><button type="submit" class="primary">Save</button></div>
+    <label class="preset-field preset-markdown-field">Markdown <textarea name="markdown" rows="10" maxlength="65536" placeholder="# Reviewer&#10;- Answer with bullet points"></textarea></label>
+    <div id="preset-preview" class="md-preview" hidden></div>
+    <div class="form-actions"><button type="button" id="preset-delete" class="linkbtn danger">Delete</button><button type="button" id="preset-default-toggle" class="linkbtn">Set as default</button><button type="button" id="preset-upload" class="linkbtn">Upload .md</button><input id="preset-file" type="file" accept=".md,.markdown,text/markdown,text/plain" hidden><button type="button" id="preset-preview-toggle" class="linkbtn">Preview</button><button type="submit" class="primary">Save</button></div>
    </form>
-   <div id="preset-preview" class="md-preview" hidden></div>
-   <p id="preset-status" role="status"></p>
-  </details>
+  </div>
+  <p id="preset-status" role="status"></p>
  </section></div>
 
 <div id="commands-modal" class="sheet" hidden>
