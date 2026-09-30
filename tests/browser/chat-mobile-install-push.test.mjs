@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const root='internal/controller/web/';
-const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile(root+name)])));
+const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile(root+name)])));
 const puts=[],deletes=[];
 const server=http.createServer(async(req,res)=>{
  const path=new URL(req.url,'http://local').pathname;

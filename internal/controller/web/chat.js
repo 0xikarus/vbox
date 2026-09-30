@@ -2710,7 +2710,7 @@
   const prompt=installPrompt;installPrompt=null;
   try{
    await prompt.prompt();const choice=await prompt.userChoice;
-   installStatus.textContent=choice.outcome==='accepted'?'Installing vmbox…':'You can install later from the Chrome menu.';
+   installStatus.textContent=choice.outcome==='accepted'?'Installing vbox…':'You can install later from the Chrome menu.';
   }catch{installStatus.textContent='In Chrome, open the ⋮ menu and choose Install app.'}
   installStatus.hidden=false;
  };

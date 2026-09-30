@@ -659,6 +659,6 @@ func DecodeInterruptedPane(value string, destination io.Writer) error {
 	if pane.Log != "" {
 		fmt.Fprintf(destination, "[vmbox] Saved scrollback: %s\n", pane.Log)
 	}
-	fmt.Fprintln(destination, "[vmbox] Restart it explicitly when ready; vmbox never re-runs arbitrary commands.")
+	fmt.Fprintln(destination, "[vmbox] Restart it explicitly when ready; vbox never re-runs arbitrary commands.")
 	return nil
 }

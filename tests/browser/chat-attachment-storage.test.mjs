@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const assetNames=['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js','run-budget-policy.js','idle-policy.css'];
+const assetNames=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','app.css','markdown.js','model-picker.js','run-budget-policy.js','idle-policy.css'];
 const assets=Object.fromEntries(await Promise.all(assetNames.map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 
 test('box details reports attachment use and clears delivered media after confirmation',async()=>{

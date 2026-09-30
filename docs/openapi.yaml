@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: vmbox controller API
+  title: vbox controller API
   version: v1alpha2
   description: Repository-neutral box, run, event, question, lifecycle, cost, quota, and notification contracts.
 servers:

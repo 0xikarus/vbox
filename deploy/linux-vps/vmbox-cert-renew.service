@@ -1,5 +1,5 @@
 [Unit]
-Description=Renew vmbox worker HTTPS certificate
+Description=Renew vbox worker HTTPS certificate
 After=network-online.target nginx.service
 Wants=network-online.target
 

@@ -267,7 +267,7 @@ function manageView(){
  const view=['boxes','providers','profiles'].includes(section)?section:'all';
  document.body.dataset.manageView=view;
  $('#manage-page-label').textContent=page;
- document.title='vmbox / '+page;
+ document.title='vbox / '+page;
  document.querySelectorAll('.workspace-links a,.manage-subnav a').forEach(link=>{
   if(link.getAttribute('href')==='#'+section&&section)link.setAttribute('aria-current','page');
   else link.removeAttribute('aria-current');

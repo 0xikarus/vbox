@@ -5,7 +5,7 @@ import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const root='internal/controller/web/';
-const names=['chat.html','chat.js','chat.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css','idle-policy.js','idle-policy.css'];
+const names=['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','app.css','markdown.js','model-picker.js','ai-helper.js','ai-helper.css','idle-policy.js','idle-policy.css'];
 const assets=Object.fromEntries(await Promise.all(names.map(async name=>[name,await readFile(root+name)])));
 let seconds=14400;
 let resumeSeconds=14400;

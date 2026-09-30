@@ -94,8 +94,8 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.goto(base+'/#boxes');await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForFunction(()=>document.querySelector('.box-placement')?.textContent.includes('railway-worker-01'));
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'boxes');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / boxes');
- assert.equal(await page.title(),'vmbox / boxes');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / boxes');
+ assert.equal(await page.title(),'vbox / boxes');
  assert.equal(await page.$eval('#providers',section=>getComputedStyle(section).display),'none');
  await page.click('[aria-label="Details for box helper ü"]');
  assert.equal(await page.$eval('#box-detail',drawer=>drawer.hidden),false);
@@ -110,8 +110,8 @@ test('management views expose box placement and keep details easy to close',asyn
  await page.click('.workspace-links a[href="#providers"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='providers');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'providers');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / providers');
- assert.equal(await page.title(),'vmbox / providers');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / providers');
+ assert.equal(await page.title(),'vbox / providers');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
  await page.waitForSelector('.provider-card');
  await page.setViewport({width:390,height:844});
@@ -123,8 +123,8 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');
  await page.waitForSelector('#profile-tree .profile-app[data-application="github"]');
  assert.equal(await page.$eval('body',body=>body.dataset.manageView),'profiles');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / profiles');
- assert.equal(await page.title(),'vmbox / profiles');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / profiles');
+ assert.equal(await page.title(),'vbox / profiles');
  assert.equal(await page.$eval('.workspace-links a[href="#profiles"]',link=>link.getAttribute('aria-current')),'page');
  assert.equal(await page.$eval('#boxes',section=>getComputedStyle(section).display),'none');
  assert.equal(await page.$eval('#profile-summary',summary=>summary.textContent),'5 saved profiles · Team');
@@ -186,17 +186,17 @@ test('a registry catalog outage keeps saved version choices available',async()=>
 test('secondary management sections and box workspaces use the same page navbar',async()=>{
  const page=await browser.newPage();
  await page.goto(base+'/#roles');
- assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / permissions');
- assert.equal(await page.title(),'vmbox / permissions');
+ assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / permissions');
+ assert.equal(await page.title(),'vbox / permissions');
  assert.equal(await page.$eval('.manage-subnav a[href="#roles"]',link=>link.getAttribute('aria-current')),'page');
  for(const [section,label] of [['instructions','instructions'],['fleet','capacity'],['notifications','notifications']]){
   await page.evaluate(value=>{location.hash=value},section);
   await page.waitForFunction(expected=>document.querySelector('#manage-page-label').textContent===expected,{},label);
-  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vmbox / '+label);
-  assert.equal(await page.title(),'vmbox / '+label);
+  assert.equal(await page.$eval('.manage-top .brand',brand=>brand.textContent.trim()),'vbox / '+label);
+  assert.equal(await page.title(),'vbox / '+label);
  }
  await page.goto(base+'/boxes/box-1');
- assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.textContent.trim()),'vmbox / workspace');
+ assert.equal(await page.$eval('.workspace-top .brand',brand=>brand.textContent.trim()),'vbox / workspace');
  assert.deepEqual(await page.$$eval('.workspace-top .workspace-links a',links=>links.map(link=>link.textContent)),['Chats','Grid','Boxes','Providers','Profiles']);
  await page.setViewport({width:390,height:844});
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
