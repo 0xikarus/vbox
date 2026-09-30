@@ -1284,13 +1284,16 @@
    const selection=getSelection();if(selection&&!selection.isCollapsed)return;
    for(let node=event.target;node&&node!==row;node=node.parentElement)if(node.scrollWidth>node.clientWidth+2&&getComputedStyle(node).overflowX!=='visible')return;
    clearTimeout(settleTimer);row.classList.remove('swipe-returning');
-   gesture={id:event.pointerId,x:event.clientX,y:event.clientY,axis:'',ready:false};
+  gesture={id:event.pointerId,x:event.clientX,y:event.clientY,axis:'',ready:false};
    row.setPointerCapture?.(event.pointerId);
   },{passive:true});
   row.addEventListener('pointermove',event=>{
-   if(!gesture||event.pointerId!==gesture.id)return;
+  if(!gesture||event.pointerId!==gesture.id)return;
    const dx=event.clientX-gesture.x,dy=event.clientY-gesture.y;
-   if(!gesture.axis){if(Math.abs(dx)<10&&Math.abs(dy)<10)return;gesture.axis=dx< -10&&Math.abs(dx)>Math.abs(dy)?'reply':'scroll'}
+   if(!gesture.axis){
+    if(Math.abs(dx)<=10&&Math.abs(dy)<=10)return;
+    gesture.axis=dx< -10&&Math.abs(dx)>Math.abs(dy)?'reply':'scroll';
+   }
    if(gesture.axis!=='reply')return;
    if(event.cancelable)event.preventDefault();
    const travel=Math.min(72,Math.max(0,-dx)*.8),ready=travel>=64;

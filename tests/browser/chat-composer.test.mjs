@@ -291,12 +291,12 @@ test('touch swipe left replies to the chosen message, while right and vertical s
   const p=await browser.newPage();await p.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
   await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-messages .msg.agent');
   const client=await p.createCDPSession();
-  async function swipe(selector,dx,dy,atEnd){
+  async function swipe(selector,dx,dy,atEnd,steps=5){
    const rect=await p.$eval(selector,element=>element.querySelector('.text').getBoundingClientRect().toJSON());
    const x=Math.round(rect.right-35),y=Math.round(rect.top+Math.min(rect.height/2,22));
    await client.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
-   for(let step=1;step<=5;step++){
-    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:Math.round(x+dx*step/5),y:Math.round(y+dy*step/5),id:1}]});
+   for(let step=1;step<=steps;step++){
+    await client.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:Math.round(x+dx*step/steps),y:Math.round(y+dy*step/steps),id:1}]});
     await new Promise(resolve=>setTimeout(resolve,16));
    }
    if(atEnd)await atEnd();
@@ -304,11 +304,11 @@ test('touch swipe left replies to the chosen message, while right and vertical s
   }
   await swipe('#chat-messages .msg.user',-35,0);
   assert.equal(await p.$eval('#reply-preview',node=>node.hidden),true,'a short swipe leaves the composer alone');
-  await swipe('#chat-messages .msg.agent',-100,0,async()=>{
+  await swipe('#chat-messages .msg.agent',-115,0,async()=>{
    const state=await p.$eval('#chat-messages .msg.agent',node=>({shift:new DOMMatrix(getComputedStyle(node).transform).m41,hint:Number(getComputedStyle(node.querySelector('.swipe-reply-hint')).opacity)}));
    assert.ok(state.shift<=-64&&state.shift>=-72,`the bubble follows the finger left with resistance (${state.shift}px)`);
    assert.ok(state.hint>.8,'the reply glyph appears behind the bubble on the right');
-  });
+  },12);
   await p.waitForFunction(()=>!document.querySelector('#reply-preview').hidden);
   assert.match(await p.$eval('#reply-preview-text',node=>node.textContent),/verification suite is green/,'the reply targets the swiped message');
   assert.equal(await p.evaluate(()=>document.activeElement?.id),'chat-input','the existing reply action focuses the composer');
