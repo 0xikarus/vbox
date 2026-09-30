@@ -2616,18 +2616,20 @@
    $('#inspect-contact-role').textContent='Configured directly on this box';
    $('#inspect-tags').textContent=(tagResult.tags||[]).join(', ')||'None';
    $('#inspect-protection-label').textContent=inspectProtected?'Protected — agents cannot see or message this box':'Not protected';
-   $('#inspect-toggle-protection').textContent=inspectProtected?'Remove protection':'Protect box';
+   $('#inspect-toggle-protection').setAttribute('aria-checked',String(inspectProtected));
+   $('#inspect-toggle-protection').setAttribute('aria-label',inspectProtected?'Remove protection':'Protect box');
    renderInspectContacts(box);
-   status.textContent='Add only the boxes this agent should contact directly. All contacts is managed in this box’s MCP permissions; protected boxes remain hidden.';
+   status.textContent='';
   }catch(e){status.textContent=e.message}
  }
  function maybeLoadInspectContacts(box){
-  if(!owner){inspectContacts.hidden=true;inspectContactsFor='';inspectContactCache=null;return}
-  inspectContacts.hidden=false;
+  if(!owner){inspectContacts.hidden=true;$('#inspect-access').hidden=true;inspectContactsFor='';inspectContactCache=null;return}
+  inspectContacts.hidden=false;$('#inspect-access').hidden=false;
   if(inspectContactsFor===box.id)return;
   inspectContactsFor=box.id;inspectContactCache=null;$('#inspect-contact-picker').hidden=true;$('#inspect-add-contact').setAttribute('aria-expanded','false');$('#inspect-contact-search').value='';void loadInspectContacts(box);
  }
  $('#inspect-add-contact').onclick=()=>{const picker=$('#inspect-contact-picker'),open=picker.hidden;picker.hidden=!open;$('#inspect-add-contact').setAttribute('aria-expanded',String(open));if(open)$('#inspect-contact-search').focus()};
+ $('#inspect-contact-permissions').onclick=()=>$('#inspect-edit-roles').click();
  $('#inspect-contact-search').addEventListener('input',()=>{const box=boxes.get(selected);if(box)renderInspectContacts(box)});
  $('#inspect-toggle-protection').onclick=async()=>{const box=boxes.get(selected);if(!box)return;try{await api(boxPath(box.id)+'/protection','PUT',{}, {protected:!inspectProtected});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};
  $('#inspect-edit-tags').onclick=async()=>{const box=boxes.get(selected);if(!box)return;const current=$('#inspect-tags').textContent==='None'?'':$('#inspect-tags').textContent;const value=prompt('Labels for '+box.name+' (comma separated)',current);if(value===null)return;try{await api(boxPath(box.id)+'/tags','PUT',{}, {tags:value.split(',').map(tag=>tag.trim()).filter(Boolean)});await loadInspectContacts(box)}catch(e){$('#inspect-contact-status').textContent=e.message}};

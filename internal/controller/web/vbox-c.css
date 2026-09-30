@@ -2642,3 +2642,24 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
  /* noVNC sets canvas margin inline; this override anchors portrait viewing to the header. */
  #takeover-screen:not(.is-terminal) canvas{margin:0 auto !important}
 }
+
+/* Details: direct contacts and access settings have separate, clear homes. */
+#inspect-summary>#inspect-access{box-sizing:border-box;margin-top:12px;padding:0;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-bg-soft);text-align:left}
+#inspect-access[hidden]{display:none}
+#inspect-summary>#inspect-access>summary{display:grid;grid-template-columns:1.1rem minmax(0,1fr) 1rem;align-items:center;gap:.6rem;min-height:3.1rem;padding:.85rem .9rem}
+#inspect-summary>#inspect-access>summary h3{justify-self:start;text-align:left}
+#inspect-access .inspect-access-rows{padding:0 12px 8px;border-top:1px solid var(--vb-line)}
+#inspect-access .inspect-access-row{box-sizing:border-box;display:flex;align-items:center;gap:12px;width:100%;min-height:60px;margin:0;padding:10px 4px;border:0;border-bottom:1px solid var(--vb-line);border-radius:0;background:transparent;color:var(--vb-ink);text-align:left;font:inherit}
+#inspect-access .inspect-access-row:last-child{border-bottom:0}
+#inspect-access button.inspect-access-row{cursor:pointer}
+#inspect-access button.inspect-access-row:hover{background:var(--vb-surface-2)}
+#inspect-access .inspect-access-row>svg{width:20px;height:20px;flex:none;color:var(--vb-ink-soft)}
+#inspect-access .inspect-access-row>svg.inspect-access-chevron{width:16px;height:16px;margin-left:auto;color:var(--vb-ink-faint)}
+#inspect-access .inspect-access-copy{display:flex;flex:1;flex-direction:column;gap:3px;min-width:0}
+#inspect-access .inspect-access-copy strong{color:var(--vb-ink);font-size:14px;font-weight:650}
+#inspect-access .inspect-access-copy small{overflow:hidden;color:var(--vb-ink-soft);font-size:12px;line-height:1.3;text-overflow:ellipsis;white-space:nowrap}
+#inspect-toggle-protection{box-sizing:border-box;position:relative;flex:none;width:40px;height:24px;margin-left:auto;padding:0;border:0;border-radius:var(--r-pill);background:var(--vb-line-strong);cursor:pointer}
+#inspect-toggle-protection[aria-checked="true"]{background:var(--vb-ink)}
+#inspect-toggle-protection span{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--vb-surface);box-shadow:var(--vb-shadow);transition:transform var(--vb-motion-fast) var(--vb-motion-ease)}
+#inspect-toggle-protection[aria-checked="true"] span{transform:translateX(16px)}
+#inspect-contacts .inspect-lede button{display:inline;margin:0;padding:0;border:0;background:none;color:var(--vb-accent-text);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer}
