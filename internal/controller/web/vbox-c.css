@@ -2076,3 +2076,52 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #usage-list{margin-top:0!important}
 .usage-profile:first-child .usage-profile-head{padding-top:.15rem}
 #usage-modal .hint{margin:.1rem 0 .35rem}
+
+/* ══ unified modal pattern ══════════════════════════════════════════════ */
+.modal .card,.sheet-card,.commands-card,.roles-card,.role-editor-card,.menu-card,#new-box-card,#delete-box-card,#takeover-card,#media-viewer-card,.model-picker-dialog{
+  background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg);padding:1rem;overflow:hidden
+}
+.modal .card>header,.sheet-card>header,.commands-card>header,.roles-card>header,.role-editor-card>header,#new-box-card>header,#takeover-card>header,#media-viewer-card>header,.model-picker-dialog>header{
+  display:flex;align-items:center;gap:.6rem;padding:0 0 .7rem;margin:0 0 .2rem;border-bottom:1px solid var(--vb-line)
+}
+.modal .card>header strong,.sheet-card>header strong,.commands-card>header strong,.roles-card>header strong,.role-editor-card>header strong,#new-box-card>header strong,#takeover-card>header strong,#media-viewer-card>header strong,.model-picker-dialog>header strong,#usage-title,#box-instructions-title,#box-credentials-title,#role-editor-title{
+  font-size:1.06rem;font-weight:660;color:var(--vb-ink);letter-spacing:-.01em
+}
+.modal .card>header button,.sheet-card>header button,.commands-card>header button{width:2rem;height:2rem;display:grid;place-items:center;padding:0;border:0;border-radius:var(--r-pill);background:var(--vb-surface-2);color:var(--vb-ink);cursor:pointer}
+.modal .card>header button:hover,.sheet-card>header button:hover{background:var(--vb-line)}
+.modal .card .form-actions,.sheet-card .form-actions,.commands-card .form-actions,.role-editor-card .form-actions{display:flex;justify-content:flex-end;gap:.5rem;margin:1rem 0 0;padding:0}
+.modal .card .form-actions .primary,.sheet-card .form-actions .primary,.role-editor-card .form-actions .primary{padding:.55rem 1rem;border:1px solid var(--vb-ink);border-radius:var(--r-control);background:var(--vb-ink);color:var(--vb-bg);font-weight:650;cursor:pointer}
+.modal .card .form-actions .linkbtn,.sheet-card .form-actions .linkbtn,.role-editor-card .form-actions .linkbtn{order:-1;padding:.55rem 1rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-ink);font-weight:600;cursor:pointer}
+/* flat sections: no nested grey cards inside modals */
+.sheet-card .group,.sheet-card .role-capabilities,.sheet-card .role-capability,.sheet-card .provider-capacity,.modal .card .group,.modal .card .role-capability,.role-editor-card .role-capability,.ai-settings-dialog .ai-settings-card{
+  background:transparent;border:0;border-radius:0;box-shadow:none;padding:0
+}
+.sheet-card .group>legend,.modal .card fieldset>legend,.role-editor-card legend{position:static;background:none;border:0;padding:0;margin:0 0 .5rem;font-size:.72rem;font-weight:750;letter-spacing:.08em;text-transform:uppercase;color:var(--vb-ink-faint);width:auto;float:none}
+.sheet-card label,.modal .card label,.role-editor-card label{font-size:.8rem;color:var(--vb-ink-soft)}
+.sheet-card input,.sheet-card select,.sheet-card textarea,.modal .card input,.modal .card select,.modal .card textarea{background:var(--vb-bg-soft);border:1px solid var(--vb-line-strong);border-radius:var(--r-control);color:var(--vb-ink);padding:.55rem .7rem}
+.modal .card details,.sheet-card details{border-top:1px solid var(--vb-line);padding-top:.5rem}
+.modal .card details:first-of-type,.sheet-card details:first-of-type{border-top:0}
+/* mobile bottom sheet with grab handle */
+@media(max-width:640px){
+ .sheet .sheet-card{border-radius:var(--r-surface) var(--r-surface) 0 0}
+ .sheet-card::before,.roles-card::before,.commands-card::before{content:'';display:block;width:2.4rem;height:.28rem;margin:.1rem auto .2rem;border-radius:var(--r-pill);background:var(--vb-line-strong)}
+}
+
+/* commands sheet: light tokens */
+.commands-card{background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface)}
+.commands-card .commands-header{border-bottom:1px solid var(--vb-line);padding:.9rem 1.05rem}
+.commands-card .commands-header p{color:var(--vb-ink-faint)}
+.commands-card .commands-list-pane{border-right:1px solid var(--vb-line);padding:.9rem}
+.commands-card .commands-list{padding:0}
+.commands-card .command-row,.commands-card .commands-list button{background:var(--vb-bg-soft);border:1px solid transparent;border-radius:var(--r-control);color:var(--vb-ink)}
+.commands-card .command-row:hover,.commands-card .commands-list button:hover{background:var(--vb-surface-2)}
+.commands-card .command-row.on{background:var(--vb-surface-2);border-color:var(--vb-line-strong)}
+.commands-card .command-row strong{color:var(--vb-accent-text)}
+.commands-card .command-row small,.commands-card .commands-list-heading span{color:var(--vb-ink-faint)}
+.commands-card .command-editor-pane{padding:1rem}
+.commands-card #command-form textarea{background:var(--vb-bg-soft);border:1px solid var(--vb-line-strong);color:var(--vb-ink);border-radius:var(--r-control)}
+.commands-card #command-form .command-name-field{border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-bg-soft)}
+.commands-card #command-form .command-name-field input{color:var(--vb-ink)}
+.commands-card #command-form .primary{background:var(--vb-ink);border-color:var(--vb-ink);color:var(--vb-bg);border-radius:var(--r-control);padding:.5rem .9rem}
+.commands-card #command-form .linkbtn{background:var(--vb-surface);border:1px solid var(--vb-line-strong);color:var(--vb-ink);border-radius:var(--r-control)}
+.commands-card .command-help{background:var(--vb-bg-soft);color:var(--vb-ink-soft);border:1px solid var(--vb-line)}
