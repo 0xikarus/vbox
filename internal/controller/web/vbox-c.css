@@ -19,8 +19,8 @@
   --vb-elevated:#ffffff;
 
   --vb-ink:#111114;
-  --vb-ink-soft:#6b6b73;
-  --vb-ink-faint:#9a9aa2;
+  --vb-ink-soft:#5b5b63;
+  --vb-ink-faint:#686872;
 
   --vb-line:#ededef;
   --vb-line-strong:#e1e1e4;
@@ -68,8 +68,8 @@
     --vb-elevated:#1a1b21;
 
     --vb-ink:#f3f3f5;
-    --vb-ink-soft:#a0a0aa;
-    --vb-ink-faint:#6f6f79;
+    --vb-ink-soft:#a8a8b0;
+    --vb-ink-faint:#9a9aa2;
 
     --vb-line:#26272e;
     --vb-line-strong:#33343c;
@@ -2461,3 +2461,17 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
   padding-right:2.1rem!important
 }
 .usage-row-value.muted{min-width:0;max-width:11rem;white-space:normal;line-height:1.2}
+
+/* ══ item 8 · dark mode contrast, outgoing chevron, subtle dividers ═════ */
+/* secondary text ≥4.5:1, secondary icons ≥3:1 on the theme surfaces */
+:root{--vb-ink-soft:#5b5b63;--vb-ink-faint:#686872}
+@media(prefers-color-scheme:dark){:root{--vb-ink-soft:#b3b3bc;--vb-ink-faint:#9a9aa2}}
+/* chevron on the (white) outgoing bubble needs a dark icon in dark mode */
+:root{--vb-bubble-out-icon:rgba(255,255,255,.78);--vb-bubble-out-icon-hover:#fff;--vb-bubble-out-icon-bg:rgba(255,255,255,.18)}
+@media(prefers-color-scheme:dark){
+  :root{--vb-bubble-out-icon:rgba(17,17,20,.62);--vb-bubble-out-icon-hover:#111114;--vb-bubble-out-icon-bg:rgba(17,17,20,.12)}
+}
+.msg.user .msg-more{color:var(--vb-bubble-out-icon)!important}
+.msg.user .msg-more:hover,.msg.user .msg-more[aria-expanded="true"]{background:var(--vb-bubble-out-icon-bg)!important;color:var(--vb-bubble-out-icon-hover)!important}
+/* workspace card headings: subtle 1px divider instead of the default bright h2 rule */
+.workspace-body .side-card>h2{border-bottom:1px solid var(--vb-line);padding-bottom:.55rem}
