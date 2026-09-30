@@ -2258,3 +2258,50 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg.pair-right{align-self:flex-end}
 #chat-messages .msg.pair-left .msg-avatar{margin-right:.45rem}
 #chat-messages .msg.pair-right .msg-avatar{order:2;margin-left:.45rem}
+
+/* ══ merge-regression fixes (rebased) ══════════════════════════════════ */
+/* legacy palette tokens follow the Studio tokens (author !important beats the
+   inline theme variables chat.js sets), so light/dark stay consistent */
+:root{
+ --bg:var(--vb-bg)!important;--bg2:var(--vb-bg-soft)!important;--surface:var(--vb-surface)!important;--surface2:var(--vb-surface-2)!important;
+ --ink:var(--vb-ink)!important;--ink-soft:var(--vb-ink-soft)!important;--line:var(--vb-line)!important;
+ --accent:var(--vb-accent)!important;--accent-text:var(--vb-accent-text)!important;--accent-ink:var(--vb-accent-ink)!important;--accent-soft:var(--vb-accent-soft)!important;
+ --pop:var(--vb-pop)!important;--bubble-out:var(--vb-bubble-out)!important;--bubble-in:var(--vb-bubble-in)!important;--bubble-in-ink:var(--vb-ink)!important;
+ --danger:var(--vb-danger)!important;--danger-text:var(--vb-danger-text)!important;--warn:var(--vb-warn)!important;--warn-text:var(--vb-warn-text)!important;--ok:var(--vb-ok)!important;--ok-text:var(--vb-ok-text)!important;
+}
+/* 1 · sidebar names ink */
+#chat-entries .chat-meta .name,#chat-entries .name{color:var(--vb-ink)!important}
+#chat-entries .chat-meta .preview{color:var(--vb-ink-soft)!important}
+#chat-entries .chat-meta time{color:var(--vb-ink-faint)!important}
+/* 2 · group header like a section label */
+#chat-entries li.chat-folder{background:none!important;border:0!important;border-bottom:1px solid var(--vb-line)!important;border-radius:0!important;margin:0!important;padding:0!important}
+#chat-entries li.chat-folder:hover{background:none!important}
+.chat-folder-toggle{padding:.55rem .6rem!important;color:var(--vb-ink-faint)!important;font-size:.63rem!important;font-weight:750!important;letter-spacing:.09em;text-transform:uppercase;gap:.45rem}
+.chat-folder-arrow{color:var(--vb-ink-faint)!important;width:.75rem!important}
+.chat-folder-count{color:var(--vb-ink-faint)!important;font-weight:700}
+.chat-folder-menu{color:var(--vb-ink-faint)!important;font-size:1rem!important}
+/* 3 · pair rows: two overlapping tiles (screen look) */
+#chat-entries .pair-avatar{position:relative!important;width:2.7rem!important;height:2.7rem!important;background:none!important;color:transparent!important;font-size:0!important;line-height:0}
+#chat-entries .pair-avatar::before,#chat-entries .pair-avatar::after{content:'';position:absolute;width:1.85rem;height:1.85rem;border-radius:var(--r-control);border:1px solid var(--vb-line);box-shadow:var(--vb-shadow)}
+#chat-entries .pair-avatar::before{left:0;top:0;background:linear-gradient(135deg,#26313f,#0e1116)}
+#chat-entries .pair-avatar::after{right:0;bottom:0;background:linear-gradient(135deg,var(--vb-accent),var(--vb-accent-hover))}
+/* 4 · MCP activity quiet pill */
+.mcp-call-toggle{color:var(--vb-ink-faint)!important;font-weight:650}
+.mcp-call-toggle::before,.mcp-call-toggle::after{background:var(--vb-line)!important}
+.mcp-call-toggle:hover,.mcp-call-toggle:focus-visible{color:var(--vb-ink)!important}
+.mcp-call-count{background:var(--vb-bg-soft)!important;border:1px solid var(--vb-line)!important;color:var(--vb-ink-soft)!important}
+.mcp-call-failures{color:var(--vb-warn-text)!important}
+/* 5 · reserved corner for the action chevron so it never overlaps text/tail */
+#chat-messages .msg{position:relative}
+#chat-messages .msg:has(.msg-actions){padding-top:1.05rem!important}
+#chat-messages .msg .msg-actions{position:absolute!important;top:.2rem!important;right:.45rem!important;margin:0!important;z-index:2}
+#chat-messages .msg.user .msg-actions{right:.5rem!important}
+/* 6 · header subline muted; dot carries colour */
+.chat-header-identity #chat-header-state{color:var(--vb-ink-soft)!important}
+.chat-header-identity #chat-header-state::before{display:inline-block!important;content:''!important;width:.45rem;height:.45rem;border-radius:var(--r-pill);background:var(--vb-ink-faint);flex:none}
+.chat-header-identity #chat-header-state.running::before{background:var(--vb-ok)}
+/* 7 · + Group is a quiet secondary */
+#new-chat-group{background:var(--vb-surface)!important;border:1px solid var(--vb-line-strong)!important;color:var(--vb-ink)!important;border-radius:var(--r-control)!important;font-weight:600!important}
+#new-chat-group:hover{background:var(--vb-surface-2)!important}
+.chat-header-identity #chat-header-state,.chat-header-identity #chat-header-state *{color:var(--vb-ink-soft)!important}
+.chat-header-identity #chat-header-state .running::after{content:none!important}
