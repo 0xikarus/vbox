@@ -88,11 +88,11 @@
      <span class="spacer"></span>
      <button id="inspect-close" type="button" aria-label="Close details"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12"/><path d="m18 6-12 12"/></svg></button>
     </header>
+    <div id="inspect-body">
      <div id="inspect-screen" class="inspect-screen" aria-label="Desktop preview">
       <div class="inspect-screen-frame"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg><span id="inspect-screen-off">Desktop off</span><img id="inspect-screen-image" alt="" hidden><div id="inspect-screen-live" aria-hidden="true"></div><div id="inspect-screen-live-chip" hidden>Live</div><div id="inspect-screen-hint" hidden></div><div id="inspect-avatar" aria-hidden="true"></div></div>
       <span id="inspect-screen-title" class="inspect-screen-title">Screen</span>
      </div>
-     <div id="inspect-body">
       <section id="inspect-summary" aria-label="Box overview">
        <div id="inspect-hero">
         <h2 id="inspect-name">—</h2>
@@ -143,25 +143,16 @@
         <input id="inspect-contact-search" type="search" placeholder="Search boxes…" aria-label="Search boxes to add as contacts">
         <ul id="inspect-contact-options"></ul>
        </div>
-       <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> in its MCP permissions makes every eligible box available instead.</p>
-       <div class="contact-policy">
-        <div class="contact-policy-card">
-         <span class="policy-label">MCP access</span>
-         <strong id="inspect-contact-role">Configured per box</strong>
-        <button id="inspect-edit-roles" type="button">Edit permissions</button>
-        </div>
-        <div class="contact-policy-card">
-         <span class="policy-label">Labels</span>
-         <strong id="inspect-tags">None</strong>
-         <button id="inspect-edit-tags" type="button">Edit labels</button>
-        </div>
-        <div class="contact-policy-card">
-         <span class="policy-label">Visibility</span>
-         <span id="inspect-protection-label">Protection unknown</span>
-         <button id="inspect-toggle-protection" type="button">Protect box</button>
-        </div>
-       </div>
+       <p class="inspect-lede">Choose this box's direct contacts. <strong>All contacts</strong> makes every eligible box available; change it in <button id="inspect-contact-permissions" type="button">Permissions</button>.</p>
        <p id="inspect-contact-status" role="status"></p>
+      </div>
+     </details>
+     <details id="inspect-access" class="inspect-block inspect-fold" data-fold="access" hidden>
+      <summary><svg class="row-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg><h3>Access</h3><svg class="row-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></summary>
+      <div class="inspect-access-rows">
+       <button id="inspect-edit-roles" class="inspect-access-row" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg><span class="inspect-access-copy"><strong>Permissions</strong><small>MCP access · <span id="inspect-contact-role">Configured per box</span></small></span><svg class="inspect-access-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+       <button id="inspect-edit-tags" class="inspect-access-row" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13 12 21 3 12V3h9l8 8a1.4 1.4 0 0 1 0 2Z"/><circle cx="7.5" cy="7.5" r="1"/></svg><span class="inspect-access-copy"><strong>Labels</strong><small id="inspect-tags">None</small></span><svg class="inspect-access-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button>
+       <div class="inspect-access-row"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg><span class="inspect-access-copy"><strong>Protection</strong><small id="inspect-protection-label">Protection unknown</small></span><button id="inspect-toggle-protection" type="button" role="switch" aria-checked="false" aria-label="Protect box"><span aria-hidden="true"></span></button></div>
       </div>
      </details>
       </section>
