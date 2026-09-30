@@ -93,10 +93,10 @@
    comet(){return Promise.resolve()}
    destroy(){if(this.dead)return;this.dead=true;this.svg.remove()}
   }
-  global.VBoxMascot={Mascot:StaticMascot,svg:staticSvg,miniSVG:(seed,mood='idle')=>staticSvg(seed,mood,true),setReducedMotion:()=>{},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
+  global.VBoxMascot={Mascot:StaticMascot,svg:staticSvg,miniSVG:(seed,mood='idle')=>staticSvg(seed,mood,true),setReducedMotion:()=>{},setGesturePaused:()=>{},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
   return;
  }
- const active=new Set();let forcedReduce=false;
+ const active=new Set();let forcedReduce=false,gesturePauseCount=0;
  const reduce=matchMedia('(prefers-reduced-motion: reduce)');
  const observer=typeof IntersectionObserver==='undefined'?null:new IntersectionObserver(entries=>{for(const entry of entries){const mascot=entry.target.__vboxMascot;if(mascot){mascot.visible=entry.isIntersecting;mascot.updateVisibility()}}});
  // Chat re-renders temporary avatars. Release their timers and Motion controls
@@ -119,8 +119,17 @@
  window.addEventListener('mouseout',e=>{if(!e.relatedTarget)releasePointer()},{passive:true});
  window.addEventListener('blur',releasePointer);
  let morphClock=0;
- function syncMorphClock(){let running=false;if(!quiet())for(const mascot of active)if(!mascot.dead&&mascot.visible){running=true;break}if(running&&!morphClock)morphClock=requestAnimationFrame(morphFrame);else if(!running&&morphClock){cancelAnimationFrame(morphClock);morphClock=0}}
- function morphFrame(now){morphClock=0;if(quiet())return;for(const mascot of active)if(mascot.visible&&!mascot.dead)mascot.frame(now);syncMorphClock()}
+ function syncMorphClock(){let running=false;if(!quiet()&&!gesturePauseCount)for(const mascot of active)if(!mascot.dead&&mascot.visible){running=true;break}if(running&&!morphClock)morphClock=requestAnimationFrame(morphFrame);else if(!running&&morphClock){cancelAnimationFrame(morphClock);morphClock=0}}
+ function morphFrame(now){morphClock=0;if(quiet()||gesturePauseCount)return;for(const mascot of active)if(mascot.visible&&!mascot.dead)mascot.frame(now);syncMorphClock()}
+ function setGesturePaused(paused){
+  gesturePauseCount=Math.max(0,gesturePauseCount+(paused?1:-1));
+  if(paused&&gesturePauseCount===1){
+   for(const mascot of active)for(const control of mascot.controls)control.pause?.();
+  }else if(!paused&&!gesturePauseCount){
+   for(const mascot of active){mascot.lastFrame=performance.now();for(const control of mascot.controls)control.play?.()}
+  }
+  syncMorphClock();
+ }
  document.addEventListener('visibilitychange',()=>{for(const mascot of active)mascot.updateVisibility()});
  reduce.addEventListener?.('change',()=>{if(reduce.matches)releasePointer();for(const mascot of active)mascot.updateVisibility()});
  class Mascot{
@@ -495,5 +504,5 @@
   render(instant){if(instant){this.stopControls();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58)}}
   destroy(){if(this.dead)return;this.dead=true;this.token++;this.stopControls();this.clearTimers();clearTimeout(this.blinkTimer);clearTimeout(this.glanceTimer);clearTimeout(this.expressionTimer);clearTimeout(this.gestureTimer);this.blinkTimer=this.glanceTimer=this.expressionTimer=this.gestureTimer=null;observer?.unobserve(this.svg);active.delete(this);syncMorphClock();this.svg.remove()}
  }
- global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;if(forcedReduce)releasePointer();for(const mascot of active)mascot.updateVisibility()},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
+ global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;if(forcedReduce)releasePointer();for(const mascot of active)mascot.updateVisibility()},setGesturePaused,traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
 })(window);

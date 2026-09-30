@@ -9,6 +9,22 @@
  let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
  const scrollMemory=new Map(),followMemory=new Map();
  let restoringTranscript=false;
+ // Polling may update data during a touch gesture, but replacing rows while a
+ // finger is moving interrupts compositor transforms. Paint once after release.
+ let activeHorizontalGestures=0,pendingRows=false,pendingMessages=null,pendingPair=null,gestureRenderTimer=0;
+ function beginHorizontalGesture(){clearTimeout(gestureRenderTimer);activeHorizontalGestures++;window.VBoxMascot?.setGesturePaused?.(true)}
+ function endHorizontalGesture(){
+  if(activeHorizontalGestures>0){activeHorizontalGestures--;window.VBoxMascot?.setGesturePaused?.(false)}
+  if(activeHorizontalGestures)return;
+  gestureRenderTimer=setTimeout(()=>{
+   if(activeHorizontalGestures)return;
+   const box=pendingMessages,pair=pendingPair,rows=pendingRows;
+   pendingMessages=null;pendingPair=null;pendingRows=false;
+   if(box&&box.id===selected)renderMessages(box);
+   if(pair&&pairs.get(selectedPair)===pair)renderPairMessages(pair);
+   if(rows)renderRows();
+  },230);
+ }
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
  let pendingKey='',pendingFingerprint='',replyingTo=null;
@@ -1045,6 +1061,7 @@
   return row;
  }
  function renderRows(){
+  if(activeHorizontalGestures){pendingRows=true;return}
   const filter=filterEl.value.trim().toLowerCase();
   const matchesGroup=key=>groupForChat(key)?.name.toLowerCase().includes(filter);
   const list=[...boxes.values()].filter(b=>!filter||b.name.toLowerCase().includes(filter)||matchesGroup(pinKey('box',b.id)));
@@ -1338,12 +1355,20 @@
  function bindSwipeReply(row,message){
   const hint=document.createElement('span');hint.className='swipe-reply-hint';hint.setAttribute('aria-hidden','true');hint.append(lucide('reply'));row.append(hint);
   const reduced=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
-  let gesture=null,settleTimer=0;
+  let gesture=null,settleTimer=0,frame=0;
+  function paint(){
+   frame=0;
+   if(!gesture||gesture.axis!=='reply')return;
+   const travel=gesture.reduced?0:gesture.travel,progress=gesture.reduced?(gesture.ready?1:0):Math.min(1,gesture.travel/64);
+   row.style.transform=`translate3d(${-travel}px,0,0)`;
+   hint.style.transform=`translate3d(${travel}px,-50%,0) scale(${gesture.ready?1.12:.65+.35*progress})`;
+   hint.style.opacity=String(progress);
+  }
   function settle(){
-   clearTimeout(settleTimer);row.classList.remove('swiping');row.classList.toggle('swipe-returning',!reduced());
-   row.style.setProperty('--swipe-x','0px');row.style.setProperty('--swipe-progress','0');
-   row.style.setProperty('--swipe-scale','.65');
-   settleTimer=setTimeout(()=>{row.classList.remove('swipe-returning');row.style.removeProperty('--swipe-x');row.style.removeProperty('--swipe-progress');row.style.removeProperty('--swipe-scale')},reduced()?0:260);
+   cancelAnimationFrame(frame);frame=0;clearTimeout(settleTimer);
+   row.classList.remove('swiping');row.classList.toggle('swipe-returning',!reduced());
+   row.style.transform='translate3d(0,0,0)';hint.style.transform='translate3d(0,-50%,0) scale(.65)';hint.style.opacity='0';
+   settleTimer=setTimeout(()=>{row.classList.remove('swipe-returning');row.style.removeProperty('transform');hint.style.removeProperty('transform');hint.style.removeProperty('opacity')},reduced()?0:230);
   }
   row.addEventListener('pointerdown',event=>{
    if(event.pointerType!=='touch'&&event.pointerType!=='pen'||!event.isPrimary||event.button!==0)return;
@@ -1351,7 +1376,7 @@
    const selection=getSelection();if(selection&&!selection.isCollapsed)return;
    for(let node=event.target;node&&node!==row;node=node.parentElement)if(node.scrollWidth>node.clientWidth+2&&getComputedStyle(node).overflowX!=='visible')return;
    clearTimeout(settleTimer);row.classList.remove('swipe-returning');
-  gesture={id:event.pointerId,x:event.clientX,y:event.clientY,axis:'',ready:false};
+   gesture={id:event.pointerId,x:event.clientX,y:event.clientY,axis:'',ready:false,travel:0,reduced:reduced()};
    row.setPointerCapture?.(event.pointerId);
   },{passive:true});
   row.addEventListener('pointermove',event=>{
@@ -1360,20 +1385,22 @@
    if(!gesture.axis){
     if(Math.abs(dx)<=10&&Math.abs(dy)<=10)return;
     gesture.axis=dx< -10&&Math.abs(dx)>Math.abs(dy)?'reply':'scroll';
+    if(gesture.axis==='reply'){row.classList.add('swiping');beginHorizontalGesture()}
    }
    if(gesture.axis!=='reply')return;
    if(event.cancelable)event.preventDefault();
    const travel=Math.min(72,Math.max(0,-dx)*.8),ready=travel>=64;
-   row.classList.add('swiping');row.style.setProperty('--swipe-x',reduced()?'0px':-travel+'px');row.style.setProperty('--swipe-progress',String(reduced()?(ready?1:0):Math.min(1,travel/64)));
-   row.style.setProperty('--swipe-scale',String(ready?1.12:.65+.35*Math.min(1,travel/64)));
+   gesture.travel=travel;
    if(ready&&!gesture.ready)try{navigator.vibrate?.(8)}catch{}
    gesture.ready=ready;
+   if(!frame)frame=requestAnimationFrame(paint);
   },{passive:false});
   function release(event){
    if(!gesture||event.pointerId!==gesture.id)return;
    const ready=event.type==='pointerup'&&gesture.axis==='reply'&&gesture.ready;
    if(gesture.axis==='reply')row._swipeUntil=Date.now()+500;
-   gesture=null;settle();
+   const active=gesture.axis==='reply';gesture=null;
+   if(active){settle();endHorizontalGesture()}
    if(ready){closeAllMsgActions();setReply(message)}
   }
   row.addEventListener('pointerup',release,{passive:true});
@@ -1506,6 +1533,7 @@
  const paintedMessages=new Map();
  function messageKey(message){return message.id||[message.direction,message.createdAt,message.text].join('|')}
  function renderMessages(box){
+  if(activeHorizontalGestures){pendingMessages=box;return}
   if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
   const follow=stickToBottom;
@@ -1765,6 +1793,7 @@
   if(owner&&box.state==='running'&&['codex','claude','opencode'].includes(box.defaultAgent))void refreshAgentResume(box);
  }
  function renderPairMessages(pair){
+  if(activeHorizontalGestures){pendingPair=pair;return}
   const follow=stickToBottom;
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=pairKey(pair);
   let day='',prevSender='';
@@ -2132,25 +2161,37 @@
  $('#chat-back').onclick=()=>{appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
  // The transcript tracks a rightward back gesture. The list moves at 30% of
  // the chat's distance, so it is visible beneath the page while dragging.
- let backSwipe=null,backSettleTimer=0;
+ let backSwipe=null,backSettleTimer=0,backFrame=0;
+ const backMain=$('#chat-main'),backList=$('#chat-list');
  const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
+ function paintBackSwipe(){
+  backFrame=0;
+  if(!backSwipe||backSwipe.axis!=='back'||backSwipe.reduced)return;
+  const travel=backSwipe.travel,width=backSwipe.width;
+  backMain.style.transform=`translate3d(${travel}px,0,0)`;
+  backList.style.transform=`translate3d(${-width*.3*(1-travel/width)}px,0,0)`;
+ }
  function resetBackSwipe(completed=false){
+  cancelAnimationFrame(backFrame);backFrame=0;
   const moved=appEl.classList.contains('back-swiping');
   appEl.classList.remove('back-swiping');
   if(!moved)return;
   clearTimeout(backSettleTimer);
   if(completed){
    appEl.classList.add('back-completing');
-   appEl.style.setProperty('--back-list-x','0px');
+   // The transcript must clear the list immediately so its rows are tappable
+   // during the final parallax transition.
+   backMain.style.transform=`translate3d(${appEl.clientWidth}px,0,0)`;
+   backList.style.transform='translate3d(0,0,0)';
    $('#chat-back').click();
   }else if(!reducedMotion()){
    appEl.classList.add('back-returning');
-   requestAnimationFrame(()=>{appEl.style.setProperty('--back-swipe-x','0px');appEl.style.setProperty('--back-list-x','0px')});
+   requestAnimationFrame(()=>{backMain.style.transform='translate3d(0,0,0)';backList.style.transform='translate3d(0,0,0)'});
   }
   backSettleTimer=setTimeout(()=>{
    appEl.classList.remove('back-returning','back-completing');
-   appEl.style.removeProperty('--back-swipe-x');appEl.style.removeProperty('--back-list-x');
-  },reducedMotion()?0:270);
+   backMain.style.removeProperty('transform');backList.style.removeProperty('transform');
+  },reducedMotion()?0:230);
  }
  function canStartBackSwipe(target){
   for(let node=target;node&&node!==messagesEl;node=node.parentElement){
@@ -2162,24 +2203,20 @@
  messagesEl.addEventListener('touchstart',event=>{
   if(event.touches.length!==1||innerWidth>600||!appEl.classList.contains('in-chat')||!canStartBackSwipe(event.target))return;
   const touch=event.touches[0];
-  backSwipe={x:touch.clientX,y:touch.clientY,lastX:touch.clientX,lastAt:performance.now(),axis:'',started:performance.now()};
+  backSwipe={x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now()};
  },{passive:true});
  messagesEl.addEventListener('touchmove',event=>{
   if(!backSwipe||event.touches.length!==1)return;
   const touch=event.touches[0],dx=touch.clientX-backSwipe.x,dy=touch.clientY-backSwipe.y;
   if(!backSwipe.axis){
-   if(performance.now()-backSwipe.started>450||document.querySelector('.msg-actions-menu:not([hidden])')){backSwipe=null;return}
-   if(dx>10&&dx>1.5*Math.abs(dy))backSwipe.axis='back';
+   if(document.querySelector('.msg-actions-menu:not([hidden])')){backSwipe=null;return}
+   if(dx>10&&dx>1.5*Math.abs(dy)){backSwipe.axis='back';appEl.classList.add('back-swiping');beginHorizontalGesture()}
    else if(Math.abs(dy)>10||dx< -10){backSwipe=null;return}
    else return;
   }
   if(event.cancelable)event.preventDefault();
-  const width=appEl.clientWidth,travel=Math.min(width,Math.max(0,dx));
-  backSwipe.lastX=touch.clientX;backSwipe.lastAt=performance.now();backSwipe.travel=travel;
-  if(reducedMotion())return;
-  appEl.classList.add('back-swiping');
-  appEl.style.setProperty('--back-swipe-x',travel+'px');
-  appEl.style.setProperty('--back-list-x',(-width*.3*(1-travel/width))+'px');
+  backSwipe.travel=Math.min(backSwipe.width,Math.max(0,dx));
+  if(!backSwipe.reduced&&!backFrame)backFrame=requestAnimationFrame(paintBackSwipe);
  },{passive:false});
  function finishBackSwipe(event){
   if(!backSwipe)return;
@@ -2187,9 +2224,9 @@
   if(gesture.axis!=='back')return;
   const touch=event.changedTouches?.[0],dx=touch?touch.clientX-gesture.x:gesture.travel||0;
   const elapsed=Math.max(1,performance.now()-gesture.started);
-  const completed=event.type==='touchend'&&(dx>=appEl.clientWidth*.35||(dx>50&&dx/elapsed>.65));
-  if(reducedMotion()){if(completed)$('#chat-back').click();return}
-  resetBackSwipe(completed);
+  const completed=event.type==='touchend'&&(dx>=gesture.width*.35||(dx>50&&dx/elapsed>.65));
+  if(gesture.reduced){appEl.classList.remove('back-swiping');if(completed)$('#chat-back').click();endHorizontalGesture();return}
+  resetBackSwipe(completed);endHorizontalGesture();
  }
  messagesEl.addEventListener('touchend',finishBackSwipe,{passive:true});
  messagesEl.addEventListener('touchcancel',finishBackSwipe,{passive:true});

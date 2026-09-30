@@ -14,19 +14,42 @@
   card.dataset.sheetScrollReady='true';
   // A downward drag on the header may dismiss a sheet only at the top. The
   // content itself remains a native, vertically scrollable touch surface.
-  let start=null;
+  // Manage uses the stricter CSP; it gets native sheet scrolling without any
+  // script-driven transform or inline style attribute.
+  if(!document.querySelector('#chat-shell'))return;
+  let drag=null,dragFrame=0,settleTimer=0;
   header.addEventListener('touchstart',event=>{
-   if(event.touches.length!==1||event.target.closest('button,a,input'))return;
-   start=body.scrollTop<1?event.touches[0].clientY:null;
+   if(innerWidth>640||event.touches.length!==1||event.target.closest('button,a,input')||body.scrollTop>1)return;
+   clearTimeout(settleTimer);card.classList.remove('sheet-drag-returning');
+   drag={x:event.touches[0].clientX,y:event.touches[0].clientY,distance:0,axis:'',reduced:matchMedia('(prefers-reduced-motion: reduce)').matches};
   },{passive:true});
+  header.addEventListener('touchmove',event=>{
+   if(!drag||event.touches.length!==1)return;
+   const dx=event.touches[0].clientX-drag.x,dy=event.touches[0].clientY-drag.y;
+   if(!drag.axis){
+    if(Math.abs(dx)<10&&Math.abs(dy)<10)return;
+    drag.axis=dy>10&&dy>Math.abs(dx)?'down':'other';
+    if(drag.axis==='down')card.classList.add('sheet-dragging');
+   }
+   if(drag.axis!=='down')return;
+   if(event.cancelable)event.preventDefault();
+   drag.distance=Math.min(220,Math.max(0,dy)*.72);
+   if(!drag.reduced&&!dragFrame)dragFrame=requestAnimationFrame(()=>{dragFrame=0;if(drag)card.style.transform=`translate3d(0,${drag.distance}px,0)`});
+  },{passive:false});
   header.addEventListener('touchend',event=>{
-   if(start===null)return;
-   const distance=event.changedTouches[0].clientY-start;start=null;
-   if(distance<90||body.scrollTop>1)return;
-   const close=header.querySelector('[data-close],button[aria-label^="Close"]');
-   close?.click();
+   if(!drag)return;
+   const distance=event.changedTouches[0].clientY-drag.y,active=drag.axis==='down';drag=null;
+   cancelAnimationFrame(dragFrame);dragFrame=0;card.classList.remove('sheet-dragging');
+   if(!active)return;
+   if(distance>90&&body.scrollTop<1){
+    card.style.removeProperty('transform');
+    header.querySelector('[data-close],button[aria-label^="Close"]')?.click();
+   }else{
+    card.classList.add('sheet-drag-returning');card.style.transform='translate3d(0,0,0)';
+    settleTimer=setTimeout(()=>{card.classList.remove('sheet-drag-returning');card.style.removeProperty('transform')},230);
+   }
   },{passive:true});
-  header.addEventListener('touchcancel',()=>{start=null},{passive:true});
+  header.addEventListener('touchcancel',()=>{drag=null;cancelAnimationFrame(dragFrame);dragFrame=0;card.classList.remove('sheet-dragging');card.style.removeProperty('transform')},{passive:true});
  }
  function decorate(frame,body){
   if(frame.dataset.sheetScrollReady)return;

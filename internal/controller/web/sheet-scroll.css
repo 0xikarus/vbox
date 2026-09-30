@@ -10,6 +10,9 @@
 .sheet-scroll-frame::after{bottom:0;background:linear-gradient(to top,var(--vb-elevated),transparent)}
 .sheet-scroll-frame.sheet-has-above::before,.sheet-scroll-frame.sheet-has-below::after{opacity:1}
 .sheet-scroll-inspect{display:contents}
+.sheet-dragging{transition:none;will-change:transform}
+.sheet-drag-returning{transition:transform .22s var(--vb-ease)}
+@media(prefers-reduced-motion:reduce){.sheet-drag-returning{transition:none}}
 @media(max-width:640px){
  .sheet-card,.modal .card,.model-picker-dialog,#delete-box-card{display:flex;flex-direction:column;max-height:calc(100dvh - max(80px,env(safe-area-inset-top)));overflow:hidden}
  .sheet-card>header,.modal .card>header,.model-picker-dialog>.model-picker-header,#delete-box-card>header{position:relative;z-index:2;flex:none;background:var(--vb-elevated)}
