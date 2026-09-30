@@ -7,8 +7,14 @@ CREATE TABLE IF NOT EXISTS chat_sidebar_layouts (
   account_id uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
   groups_json jsonb NOT NULL DEFAULT '[]'::jsonb,
   members_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  mutes_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  pins_json jsonb NOT NULL DEFAULT '[]'::jsonb,
+  sections_json jsonb NOT NULL DEFAULT '{}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE chat_sidebar_layouts ADD COLUMN IF NOT EXISTS mutes_json jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE chat_sidebar_layouts ADD COLUMN IF NOT EXISTS pins_json jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE chat_sidebar_layouts ADD COLUMN IF NOT EXISTS sections_json jsonb NOT NULL DEFAULT '{}'::jsonb;
 CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),

@@ -8,7 +8,7 @@ const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.
 const a='11111111-1111-4111-8111-111111111111',b='22222222-2222-4222-8222-222222222222',pairKey=a+'/'+b,now=new Date().toISOString();
 const illustration=id=>Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#142433"/><rect x="24" y="24" width="592" height="352" rx="16" fill="${id==='image-3'?'#294b48':'#244060'}" stroke="#8cb8df"/><text x="50" y="85" fill="#f3f8ff" font-family="sans-serif" font-size="28" font-weight="bold">${id==='image-1'?'Build output · 1':id==='image-2'?'Build output · 2':'Review result'}</text><path d="M90 205h460" stroke="#9bc8ec" stroke-width="7"/><g fill="#eaf3ff" font-family="sans-serif" font-size="23"><text x="68" y="175">Source</text><text x="274" y="175">Build</text><text x="472" y="175">Review</text></g><circle cx="95" cy="205" r="19" fill="#94c5ee"/><circle cx="320" cy="205" r="19" fill="#94c5ee"/><circle cx="545" cy="205" r="19" fill="#94c5ee"/></svg>`);
 
-async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null}={}){
+async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null,boxMessagesB=null}={}){
  let sidebarLayout=null;
  const server=http.createServer(async(request,response)=>{
   const path=request.url.split('?')[0];
@@ -37,6 +37,7 @@ async function withChat(fn,{pairDelay=0,pairMessages=null,boxMessages=null}={}){
    const limit=Number(new URL(request.url,'http://fixture').searchParams.get('limit'))||500;
    return response.end(JSON.stringify((boxMessages||[{id:'owner-1',direction:'agent',text:'Owner chat is here',state:'delivered',createdAt:now,updatedAt:now}]).slice(-limit)));
   }
+  if(path==='/v1/logical-boxes/'+b+'/messages')return response.end(JSON.stringify(boxMessagesB||[]));
   if(path==='/v1/tool-presets')return response.end('[]');
   if(path==='/v1/chat-commands')return response.end('[]');
   if(path==='/v1/push/vapid-key'){response.statusCode=404;return response.end('{}')}
@@ -209,16 +210,16 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   assert.equal(await desktop.$('#chat-entries .chat-pin'),null,'rows do not show a permanent pin control');
   await desktop.click('[data-box-id="'+b+'"]',{button:'right'});
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
-  assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Pin chat');
-  await desktop.click('#row-menu button:first-child');
+  assert.equal(await desktop.$eval('#row-menu > button',button=>button.textContent),'Pin chat');
+  await desktop.click('#row-menu > button');
   await desktop.click('[data-pair-key]',{button:'right'});
   await desktop.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
-  await desktop.click('#row-menu button:first-child');
+  await desktop.click('#row-menu > button');
   assert.equal(new URL(desktop.url()).hash,'#box='+a,'pinning from a context menu must not navigate away from the open chat');
-  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.className==='conversation-group'||item.className==='conversation-divider'?item.textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Chats','box:'+a]);
-  assert.equal(await desktop.$eval('#chat-entries .conversation-divider',item=>item.getAttribute('role')),'separator');
+  assert.deepEqual(await desktop.$$eval('#chat-entries li',items=>items.map(item=>item.dataset.section?item.querySelector('.section-toggle span:nth-child(2)').textContent:item.dataset.boxId?'box:'+item.dataset.boxId:'pair:'+item.dataset.pairKey)),['Pinned','box:'+b,'pair:'+pairKey,'Chats','box:'+a]);
+  assert.equal(await desktop.$eval('#chat-entries .conversation-divider',item=>item.dataset.section),'boxes');
   await desktop.click('[data-pair-key]',{button:'right'});
-  assert.equal(await desktop.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
+  assert.equal(await desktop.$eval('#row-menu > button',button=>button.textContent),'Unpin chat');
   await desktop.click('#chat-filter-row');
   await desktop.waitForFunction(()=>document.querySelector('#row-menu').hidden);
   await desktop.screenshot({path:'/tmp/vmbox-chat-pins-desktop.png'});
@@ -228,7 +229,7 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
   await desktop.waitForSelector('#chat-entries .conversation-divider');
   await desktop.reload();
   await desktop.waitForSelector('[data-pair-key]');
-  assert.equal(await desktop.$eval('#chat-entries li:first-child',item=>item.textContent),'Pinned','pins survive refresh');
+  assert.equal(await desktop.$eval('#chat-entries li:first-child .section-toggle span:nth-child(2)',item=>item.textContent),'Pinned','pins survive refresh');
 
   const mobile=await browser.newPage();await mobile.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await mobile.goto(base+'/chat');
@@ -243,10 +244,10 @@ test('box and Box ↔ Box conversations can be pinned, reordered, and unpinned o
    await mobile.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   };
   await hold('[data-pair-key]');
-  assert.equal(await mobile.$eval('#row-menu button:first-child',button=>button.textContent),'Unpin chat');
-  await mobile.click('#row-menu button:first-child');
+  assert.equal(await mobile.$eval('#row-menu > button',button=>button.textContent),'Unpin chat');
+  await mobile.click('#row-menu > button');
   await hold('[data-box-id="'+b+'"]');
-  await mobile.click('#row-menu button:first-child');
+  await mobile.click('#row-menu > button');
   assert.equal(await mobile.$('#chat-entries .conversation-group:first-child'),null,'the Pinned section disappears when empty');
   assert.equal(await mobile.$eval('[data-pair-key]',row=>row.textContent.includes('Builder ↔ Reviewer')),true);
   await mobile.close();await desktop.close();
@@ -264,8 +265,8 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.textContent==='1',{},a);
   await page.click('[data-box-id="'+a+'"]',{button:'right'});
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
-  assert.equal(await page.$eval('#row-menu .row-submenu-toggle',button=>button.textContent),'Add to Group›');
-  await page.click('#row-menu .row-submenu-toggle');
+  assert.ok(await page.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.some(button=>button.textContent==='Add to Group›')));
+  await page.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Add to Group›').click());
   await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New group…').click());
   await page.waitForSelector('#chat-group-dialog[open]');
   await page.type('#chat-group-name','Projects');
@@ -280,21 +281,21 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
    target.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
    row.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));
   });
-  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='3');
-  assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'2');
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='1');
+  assert.match(await page.$eval('.chat-folder-toggle',node=>node.getAttribute('aria-label')),/2 chats/);
   await page.click('[data-box-id="'+b+'"]',{button:'right'});
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   assert.equal(await page.$$eval('#row-menu > button',buttons=>buttons.filter(button=>button.textContent.startsWith('Move to ')).length),0,'groups stay inside one submenu');
-  await page.click('#row-menu .row-submenu-toggle');
+  await page.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Add to Group›').click());
   await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='Projects').click());
-  assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'3');
-  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'3');
+  assert.match(await page.$eval('.chat-folder-toggle',node=>node.getAttribute('aria-label')),/3 chats/);
+  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'1');
   await page.click('.chat-folder-toggle');
   assert.equal(await page.$('[data-box-id="'+a+'"]'),null);
   assert.equal(await page.$('[data-pair-key]'),null);
-  assert.equal(await page.$eval('.chat-folder .unread',badge=>badge.textContent),'3','collapsed groups keep their unread indicator');
+  assert.equal(await page.$eval('.chat-folder .unread',badge=>badge.textContent),'1','collapsed groups keep their unmuted unread indicator');
   await page.reload();
-  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='3');
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='1');
   assert.equal(await page.$eval('.chat-folder-toggle',button=>button.getAttribute('aria-expanded')),'false');
   await page.type('#chat-filter','Projects');
   await page.waitForSelector('[data-pair-key]');
@@ -305,8 +306,10 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   await page.click('[data-box-id="'+a+'"]',{button:'right'});
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Pin chat').click());
-  assert.equal(await page.$eval('#chat-entries li:first-child',node=>node.textContent),'Pinned');
-  assert.equal(await page.$eval('.chat-folder-count',node=>node.textContent),'2','pinning removes the chat from its group');
+  assert.equal(await page.$eval('#chat-entries li:first-child .section-toggle span:nth-child(2)',node=>node.textContent),'Pinned');
+  assert.match(await page.$eval('.chat-folder-toggle',node=>node.getAttribute('aria-label')),/2 chats/,'pinning removes the chat from its group');
+  assert.equal(await page.$eval('.chat-folder .unread',node=>node.textContent),'2','a group with only pair unread shows the quiet total');
+  assert.equal(await page.$eval('.chat-folder .unread',node=>node.classList.contains('muted')),true);
   await page.click('.chat-folder-menu');
   await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
   await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Rename group…').click());
@@ -331,7 +334,7 @@ test('chat groups combine unread indicators, accept dragged chats, and persist c
   await new Promise(resolve=>setTimeout(resolve,650));
   await mobile.touchscreen.touchEnd();
   await mobile.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
-  await mobile.click('#row-menu .row-submenu-toggle');
+  await mobile.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Add to Group›').click());
   await mobile.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New group…').click());
   await mobile.type('#chat-group-name','Mobile');
   await mobile.click('#chat-group-form button[type=submit]');
@@ -365,15 +368,15 @@ test('chat groups sync across browser profiles',async()=>{
   await other.waitForFunction(()=>document.querySelector('.chat-folder-name')?.textContent==='Shared projects');
   await other.click('[data-box-id="'+a+'"]',{button:'right'});
   await other.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
-  await other.click('#row-menu .row-submenu-toggle');
+  await other.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Add to Group›').click());
   await other.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='Shared projects').click());
-  await other.waitForFunction(()=>document.querySelector('.chat-folder-count')?.textContent==='1');
+  await other.waitForFunction(()=>document.querySelector('.chat-folder-toggle')?.getAttribute('aria-label')?.includes('1 chats'));
   await other.waitForFunction(async()=>{
    const response=await fetch('/v1/chat-sidebar-layout');
    return !!(await response.json()).members['box:11111111-1111-4111-8111-111111111111'];
   });
   await page.reload();
-  await page.waitForFunction(()=>document.querySelector('.chat-folder-count')?.textContent==='1');
+  await page.waitForFunction(()=>document.querySelector('.chat-folder-toggle')?.getAttribute('aria-label')?.includes('1 chats'));
   assert.equal(savedLayout().members['box:'+a],savedLayout().groups[0].id);
   other.once('dialog',dialog=>dialog.accept());
   await other.click('.chat-folder-menu');
@@ -403,6 +406,89 @@ test('chat groups migrate from browser storage when the account has no saved lay
   assert.equal(savedLayout().groups[0].name,'Existing work');
   await page.close();
  });
+});
+
+test('long-press group mute greys unread badges and excludes them from the back count',async()=>{
+ const boxMessagesB=[1,2].map(index=>({id:'mute-'+index,direction:'agent',text:'Review '+index,state:'delivered',createdAt:new Date(Date.now()-index*1000).toISOString(),updatedAt:now}));
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  await page.goto(base+'/chat');
+  await page.waitForSelector('[data-box-id="'+b+'"]');
+  await page.$eval('#new-chat-group',button=>button.click());
+  await page.type('#chat-group-name','Review');await page.click('#chat-group-form button[type=submit]');
+  await page.waitForSelector('.chat-folder');
+  await page.$eval('[data-box-id="'+b+'"]',row=>{
+   const transfer=new DataTransfer();row.dispatchEvent(new DragEvent('dragstart',{bubbles:true,dataTransfer:transfer}));
+   const group=document.querySelector('.chat-folder');group.dispatchEvent(new DragEvent('dragover',{bubbles:true,cancelable:true,dataTransfer:transfer}));group.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:transfer}));
+   row.dispatchEvent(new DragEvent('dragend',{bubbles:true,dataTransfer:transfer}));
+  });
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .unread')?.textContent==='2');
+  assert.equal(await page.$eval('#chat-back-count',node=>node.textContent),'3');
+  const point=await page.$eval('.chat-folder',node=>{const r=node.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
+  await page.touchscreen.touchStart(point.x,point.y);await new Promise(resolve=>setTimeout(resolve,520));await page.touchscreen.touchEnd();
+  await page.waitForFunction(()=>!document.querySelector('#row-menu').hidden);
+  assert.equal(await page.$eval('#row-menu',node=>node.classList.contains('touch-mode')),true);
+  assert.equal(await page.$eval('#row-menu .row-menu-heading',node=>node.textContent),'Review');
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Mute›').click());
+  await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='1 hour').click());
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .mute-bell')?.hidden===false);
+  assert.equal(await page.$eval('.chat-folder .unread',node=>node.classList.contains('muted')),true);
+  assert.equal(await page.$eval('[data-box-id="'+b+'"] .unread',node=>node.classList.contains('muted')),true);
+  await page.waitForFunction(async()=>!!(await (await fetch('/v1/chat-sidebar-layout')).json()).mutes?.['group:'+document.querySelector('.chat-folder').dataset.groupId]);
+  await page.reload();await page.waitForFunction(()=>document.querySelector('.chat-folder .mute-bell')?.hidden===false);
+  await page.click('[data-box-id="'+a+'"]');
+  await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
+  assert.equal(await page.$eval('#chat-back-count',node=>node.hidden),true);
+  assert.ok(new Date(Object.values(savedLayout().mutes)[0]).getTime()>Date.now());
+  await page.click('#chat-back');
+  await page.$eval('.chat-folder-menu',button=>button.click());
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Unmute').click());
+  await page.waitForFunction(()=>document.querySelector('.chat-folder .mute-bell')?.hidden===true);
+  await page.click('[data-box-id="'+a+'"]');
+  await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
+  assert.equal(await page.$eval('#chat-back-count',node=>node.textContent),'2');
+  await page.click('#chat-back');
+  await page.$eval('[data-pair-key]',row=>row.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:80,clientY:300})));
+  assert.equal(await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Always muted')?.disabled),true);
+  await page.close();
+ },{boxMessagesB});
+});
+
+test('individual and Chats section mutes persist and suppress navigation alerts',async()=>{
+ const boxMessagesB=[{id:'section-reply',direction:'agent',text:'Status ready',state:'delivered',createdAt:now,updatedAt:now}];
+ await withChat(async(browser,base,savedLayout)=>{
+  const page=await browser.newPage();await page.setViewport({width:1200,height:800});await page.goto(base+'/chat#box='+a);
+  await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .unread')?.textContent==='1',{},b);
+  await page.click('[data-box-id="'+b+'"]',{button:'right'});
+  await page.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Mute›').click());
+  await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='Always').click());
+  assert.equal(await page.$eval('[data-box-id="'+b+'"] .unread',node=>node.classList.contains('muted')),true);
+  assert.equal(await page.$eval('#chat-back-count',node=>node.hidden),true);
+  assert.equal(await page.$eval('[data-section="boxes"] .unread',node=>node.textContent),'1','the only unread chat remains in the section total');
+  assert.equal(await page.$eval('[data-section="boxes"] .unread',node=>node.classList.contains('muted')),true,'an all-muted section total is grey');
+  assert.equal(savedLayout().mutes['box:'+b],null);
+  await page.reload();await page.waitForFunction(id=>document.querySelector('[data-box-id="'+id+'"] .mute-bell')?.hidden===false,{},b);
+  await page.click('[data-box-id="'+b+'"]',{button:'right'});
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Unmute').click());
+  await page.waitForFunction(()=>document.querySelector('#chat-back-count')?.textContent==='1');
+  assert.equal(await page.$eval('[data-section="boxes"] .unread',node=>node.classList.contains('muted')),false,'the unmuted section total is black');
+  await page.$eval('[data-section="boxes"] .section-menu',node=>node.click());
+  await page.$$eval('#row-menu .row-submenu-toggle',buttons=>buttons.find(button=>button.textContent==='Mute›').click());
+  await page.$$eval('#row-menu .row-submenu button',buttons=>buttons.find(button=>button.textContent==='1 week').click());
+  assert.equal(await page.$eval('[data-section="boxes"] .mute-bell',node=>node.hidden),false);
+  assert.equal(await page.$eval('[data-box-id="'+b+'"] .unread',node=>node.classList.contains('muted')),true);
+  assert.equal(await page.$eval('#chat-back-count',node=>node.hidden),true);
+  assert.equal(await page.$eval('[data-section="boxes"] .unread',node=>node.classList.contains('muted')),true,'an all-muted section shows a grey total');
+  assert.ok(new Date(savedLayout().mutes['section:boxes']).getTime()>Date.now());
+  await page.$eval('[data-section="boxes"] .section-menu',node=>node.click());
+  await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='Collapse').click());
+  assert.equal(await page.$('[data-box-id="'+b+'"]'),null,'collapsed section hides its rows');
+  await page.reload();
+  await page.waitForFunction(()=>document.querySelector('[data-section="boxes"] .section-toggle')?.getAttribute('aria-expanded')==='false');
+  await page.click('[data-section="boxes"] .section-toggle');
+  await page.waitForSelector('[data-box-id="'+b+'"]');
+  await page.close();
+ },{boxMessagesB});
 });
 
 test('old box conversation links open the unified mobile chat',async()=>{

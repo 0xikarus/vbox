@@ -25,12 +25,18 @@
  let groupStorageKey='';
  const chatGroups=[];
  const chatGroupMembers=new Map();
+ const chatMutes=new Map();
+ const sectionCollapsed={pinned:false,boxes:false,pairs:false};
  let groupSaveQueue=Promise.resolve();
- const groupLayout=()=>({groups:chatGroups,members:Object.fromEntries(chatGroupMembers)});
+ const groupLayout=()=>({groups:chatGroups,members:Object.fromEntries(chatGroupMembers),mutes:Object.fromEntries(chatMutes),pins:[...pins],sections:sectionCollapsed});
  function applyChatGroups(saved){
   chatGroups.splice(0,chatGroups.length,...(Array.isArray(saved.groups)?saved.groups.filter(group=>group&&typeof group.id==='string'&&typeof group.name==='string').map(group=>({id:group.id,name:group.name.slice(0,48),collapsed:!!group.collapsed})):[]));
   chatGroupMembers.clear();
   for(const [key,id] of Object.entries(saved.members&&typeof saved.members==='object'?saved.members:{}))if(typeof id==='string'&&chatGroups.some(group=>group.id===id))chatGroupMembers.set(key,id);
+  chatMutes.clear();
+  for(const [key,until] of Object.entries(saved.mutes&&typeof saved.mutes==='object'?saved.mutes:{}))if(until===null||typeof until==='string')chatMutes.set(key,until);
+  for(const key of Object.keys(sectionCollapsed))sectionCollapsed[key]=!!saved.sections?.[key];
+  if(Array.isArray(saved.pins)){pins.clear();for(const key of saved.pins)if(typeof key==='string')pins.add(key);savePins()}
   let pinsChanged=false;
   for(const key of chatGroupMembers.keys())if(pins.delete(key))pinsChanged=true;
   if(pinsChanged)savePins();
@@ -43,14 +49,29 @@
   try{
    const remote=await api('/v1/chat-sidebar-layout');
    if(local.dirty||(!remote.exists&&(local.groups?.length||Object.keys(local.members||{}).length))){
-    const migrated=await api('/v1/chat-sidebar-layout','PUT',{}, {groups:local.groups||[],members:local.members||{}});
+    const migrated=await api('/v1/chat-sidebar-layout','PUT',{}, {groups:local.groups||[],members:local.members||{},mutes:local.mutes??remote.mutes??{},pins:local.pins??(remote.pins?.length?remote.pins:[...pins]),sections:local.sections??remote.sections??{}});
     saved=migrated;
+   }else if(!local.pinsMigrated&&pins.size&&(!remote.pins||!remote.pins.length)){
+    saved=await api('/v1/chat-sidebar-layout','PUT',{}, {groups:remote.groups||[],members:remote.members||{},mutes:remote.mutes||{},pins:[...pins],sections:remote.sections||{}});
    }else saved=remote;
-   try{localStorage.setItem(groupStorageKey,JSON.stringify({...saved,dirty:false}))}catch{}
+   try{localStorage.setItem(groupStorageKey,JSON.stringify({...saved,dirty:false,pinsMigrated:true}))}catch{}
   }catch(e){if(local.dirty||local.groups?.length)toast('Chat groups could not be synced. They are saved in this browser.');else console.warn('Could not load chat groups:',e)}
   applyChatGroups(saved);
  }
  const groupForChat=key=>chatGroups.find(group=>group.id===chatGroupMembers.get(key));
+ const activeMute=key=>chatMutes.has(key)&&(chatMutes.get(key)===null||new Date(chatMutes.get(key)).getTime()>Date.now());
+ function isChatMuted(key){
+  if(key.startsWith('pair:'))return true;
+  if(activeMute(key))return true;
+  const group=groupForChat(key);
+  return group?activeMute('group:'+group.id):activeMute(pins.has(key)?'section:pinned':'section:boxes');
+ }
+ function setChatMute(key,minutes){
+  if(key==='section:pairs'||key.startsWith('pair:'))return;
+  if(minutes===false)chatMutes.delete(key);
+  else chatMutes.set(key,minutes===null?null:new Date(Date.now()+minutes*60000).toISOString());
+  saveChatGroups();renderRows();
+ }
  function saveChatGroups(){
   const key=groupStorageKey,layout=JSON.parse(JSON.stringify(groupLayout()));
   try{localStorage.setItem(key,JSON.stringify({...layout,dirty:true}))}catch{}
@@ -59,21 +80,22 @@
    try{
     await api('/v1/chat-sidebar-layout','PUT',{},layout);
     const current=localStorage.getItem(key);
-    if(current){const backup=JSON.parse(current);if(JSON.stringify({groups:backup.groups,members:backup.members})===JSON.stringify(layout))localStorage.setItem(key,JSON.stringify({...layout,dirty:false}))}
+    if(current){const backup=JSON.parse(current);if(JSON.stringify({groups:backup.groups,members:backup.members,mutes:backup.mutes,pins:backup.pins,sections:backup.sections})===JSON.stringify(layout))localStorage.setItem(key,JSON.stringify({...layout,dirty:false,pinsMigrated:true}))}
    }catch{toast('Chat groups could not be synced. They are saved in this browser.')}
   });
  }
  function savePins(){try{localStorage.setItem('vmboxChatPins',JSON.stringify([...pins]))}catch{}}
  function togglePin(key){
   if(pins.has(key))pins.delete(key);else{pins.add(key);if(chatGroupMembers.delete(key))saveChatGroups()}
-  savePins();
+  savePins();saveChatGroups();
   renderRows();
  }
  function moveChatToGroup(key,id){
   const group=chatGroups.find(group=>group.id===id);
   if(!group)return;
-  chatGroupMembers.set(key,id);group.collapsed=false;saveChatGroups();
+  chatGroupMembers.set(key,id);group.collapsed=false;
   if(pins.delete(key))savePins();
+  saveChatGroups();
   renderRows();
  }
  function removeChatFromGroup(key){if(chatGroupMembers.delete(key)){saveChatGroups();renderRows()}}
@@ -882,13 +904,13 @@
   hideTvPreview();
  },{passive:true});
  // A touch-friendly context menu: hold a chat row instead of right-clicking.
- function bindLongPress(element,handler){
+ function bindLongPress(element,handler,delay=500){
   let timer=0,startX=0,startY=0,fired=false;
   const cancel=()=>{clearTimeout(timer);timer=0};
   element.addEventListener('touchstart',event=>{
    if(event.touches.length!==1)return;
    const touch=event.touches[0];startX=touch.clientX;startY=touch.clientY;fired=false;
-   cancel();timer=setTimeout(()=>{fired=true;handler(touch.clientX,touch.clientY)},500);
+   cancel();timer=setTimeout(()=>{fired=true;handler(touch.clientX,touch.clientY)},delay);
   },{passive:true});
   element.addEventListener('touchmove',event=>{const touch=event.touches[0];if(!touch)return;if(Math.abs(touch.clientX-startX)>12||Math.abs(touch.clientY-startY)>12)cancel()},{passive:true});
   element.addEventListener('touchend',event=>{cancel();if(fired){fired=false;event.preventDefault();event.stopPropagation()}},{passive:false});
@@ -947,9 +969,9 @@
   const last=pair.messages?.at(-1)?.createdAt||pair.lastAt;
   if(last&&new Date(last).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0)){seenPairs[pairKey(pair)]=last;saveSeenPairs()}
  }
- const pairGroup=mk('li','Box conversations');pairGroup.className='conversation-group';
- const pinnedGroup=mk('li','Pinned');pinnedGroup.className='conversation-group';
- const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';unpinnedDivider.setAttribute('role','separator');unpinnedDivider.setAttribute('aria-label','Other chats');unpinnedDivider.append(mk('span','Chats'));
+ const pairGroup=mk('li');pairGroup.className='conversation-group';
+ const pinnedGroup=mk('li');pinnedGroup.className='conversation-group';
+ const unpinnedDivider=mk('li');unpinnedDivider.className='conversation-divider';
  const groupNodes=new Map();
  const knownChatKey=key=>key.startsWith('box:')?boxes.has(key.slice(4)):key.startsWith('pair:')?pairs.has(key.slice(5)):false;
  const draggedChatKey=event=>event.dataTransfer?.getData('application/x-vmbox-chat')||'';
@@ -963,35 +985,63 @@
   target.addEventListener('dragleave',event=>{if(!target.contains(event.relatedTarget))target.classList.remove('drop-target')});
   target.addEventListener('drop',event=>{target.classList.remove('drop-target');const key=draggedChatKey(event);if(!knownChatKey(key))return;event.preventDefault();move(key)});
  }
- function moveChatToPinned(key){if(chatGroupMembers.delete(key))saveChatGroups();if(!pins.has(key)){pins.add(key);savePins()}renderRows()}
- function moveChatToOther(key){if(chatGroupMembers.delete(key))saveChatGroups();if(pins.delete(key))savePins();renderRows()}
+ function moveChatToPinned(key){if(chatGroupMembers.delete(key))saveChatGroups();if(!pins.has(key)){pins.add(key);savePins();saveChatGroups()}renderRows()}
+ function moveChatToOther(key){if(chatGroupMembers.delete(key))saveChatGroups();if(pins.delete(key)){savePins();saveChatGroups()}renderRows()}
+ function bindPressFeedback(row){
+  row.addEventListener('touchstart',()=>row.classList.add('pressing'),{passive:true});
+  for(const event of ['touchend','touchcancel'])row.addEventListener(event,()=>row.classList.remove('pressing'),{passive:true});
+  row.addEventListener('touchmove',()=>row.classList.remove('pressing'),{passive:true});
+ }
+ function sectionHeader(row,id,label,unread,alertUnread=unread){
+  if(!row.dataset.section){
+   row.dataset.section=id;
+   const toggle=document.createElement('button');toggle.type='button';toggle.className='section-toggle';
+   toggle.append(mk('span','▾'),mk('span',label));
+   const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));toggle.append(bell);
+   const badge=document.createElement('span');badge.className='unread';toggle.append(badge);
+   toggle.onclick=()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()};
+   const menu=document.createElement('button');menu.type='button';menu.className='section-menu header-menu-button';menu.textContent='⋯';menu.setAttribute('aria-label','Actions for '+label);
+   menu.onclick=event=>{event.stopPropagation();const rect=menu.getBoundingClientRect();openSectionMenu(id,{x:rect.right,y:rect.bottom})};
+   row.oncontextmenu=event=>{event.preventDefault();openSectionMenu(id,{x:event.clientX,y:event.clientY})};
+   bindLongPress(row,(x,y)=>openSectionMenu(id,{x,y}),450);bindPressFeedback(row);
+   row.replaceChildren(toggle,menu);
+  }
+  const toggle=row.querySelector('.section-toggle'),muted=id==='pairs'||activeMute('section:'+id);
+  toggle.firstChild.textContent=sectionCollapsed[id]?'▸':'▾';
+  toggle.setAttribute('aria-expanded',String(!sectionCollapsed[id]));
+  toggle.setAttribute('aria-label',label+', '+unread+' unread, '+(muted?'muted, ':'')+(sectionCollapsed[id]?'collapsed':'expanded'));
+  row.querySelector('.mute-bell').hidden=!muted;
+  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(alertUnread||unread);badge.setAttribute('aria-label',unread+' unread'+(alertUnread&&alertUnread!==unread?', '+alertUnread+' unmuted':''));
+  badge.classList.toggle('muted',!alertUnread);
+  return row;
+ }
  bindChatDrop(pinnedGroup,moveChatToPinned);
  bindChatDrop(unpinnedDivider,moveChatToOther);
  document.addEventListener('dragend',()=>document.querySelectorAll('.drop-target').forEach(node=>node.classList.remove('drop-target')));
- function groupHeader(group,count,unread){
+ function groupHeader(group,count,unread,alertUnread=unread){
   let row=groupNodes.get(group.id);
   if(!row){
    row=document.createElement('li');row.className='chat-folder';row.dataset.groupId=group.id;
    const toggle=document.createElement('button');toggle.type='button';toggle.className='chat-folder-toggle';
    const arrow=mk('span','▸');arrow.className='chat-folder-arrow';arrow.setAttribute('aria-hidden','true');
    const name=mk('span',group.name);name.className='chat-folder-name';
-   const amount=mk('span');amount.className='chat-folder-count';
    const badge=mk('span');badge.className='unread';badge.hidden=true;
-   toggle.append(arrow,name,amount,badge);toggle.onclick=()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()};
-   const menu=document.createElement('button');menu.type='button';menu.className='chat-folder-menu';menu.textContent='⋯';menu.setAttribute('aria-label','Group actions for '+group.name);
+   toggle.append(arrow,name,badge);toggle.onclick=()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()};
+   const menu=document.createElement('button');menu.type='button';menu.className='chat-folder-menu header-menu-button';menu.textContent='⋯';menu.setAttribute('aria-label','Group actions for '+group.name);
    menu.onclick=event=>{event.stopPropagation();const rect=menu.getBoundingClientRect();openGroupMenu(group.id,{x:rect.right,y:rect.bottom})};
    row.oncontextmenu=event=>{event.preventDefault();openGroupMenu(group.id,{x:event.clientX,y:event.clientY})};
-   bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openGroupMenu(group.id,{x,y})});
+   bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openGroupMenu(group.id,{x,y})},450);bindPressFeedback(row);
    bindChatDrop(row,key=>moveChatToGroup(key,group.id));
    row.append(toggle,menu);groupNodes.set(group.id,row);
   }
   row.querySelector('.chat-folder-name').textContent=group.name;
   row.querySelector('.chat-folder-menu').setAttribute('aria-label','Group actions for '+group.name);
-  row.querySelector('.chat-folder-count').textContent=String(count);
   row.querySelector('.chat-folder-arrow').textContent=group.collapsed?'▸':'▾';
   const toggle=row.querySelector('.chat-folder-toggle');toggle.setAttribute('aria-expanded',String(!group.collapsed));
   toggle.setAttribute('aria-label',group.name+', '+count+' chats, '+unread+' new messages, '+(group.collapsed?'collapsed':'expanded'));
-  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(unread);badge.setAttribute('aria-label',unread+' unread');
+  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(alertUnread||unread);badge.setAttribute('aria-label',unread+' unread'+(alertUnread&&alertUnread!==unread?', '+alertUnread+' unmuted':''));
+  const muted=activeMute('group:'+group.id);badge.classList.toggle('muted',!alertUnread);
+  let bell=row.querySelector('.mute-bell');if(!bell){bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));row.querySelector('.chat-folder-toggle').insertBefore(bell,badge)}bell.hidden=!muted;
   return row;
  }
  function renderRows(){
@@ -1008,7 +1058,7 @@
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{x:event.clientX,y:event.clientY})};
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
-    const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
+    const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,bell,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
     meta.append(r1,r2);row.append(meta);
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
@@ -1029,9 +1079,10 @@
    }
    else{const avatar=avatarNode(box,false,true);if(oldAvatar)oldAvatar.replaceWith(avatar);else row.prepend(avatar)}
    const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
-   row.querySelector('time').classList.toggle('recent',!!box.unread);
+   const muted=isChatMuted(pinKey('box',box.id));row.querySelector('.mute-bell').hidden=!muted;
+   row.querySelector('time').classList.toggle('recent',!!box.unread&&!muted);
    const preview=row.querySelector('.preview'),nextPreview=box.streaming?'typing…':box.processing?'processing…':previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
-   const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=unreadLabel(box.unread);unread.setAttribute('aria-label',box.unread+' unread');
+   const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=unreadLabel(box.unread);unread.setAttribute('aria-label',box.unread+' unread');unread.classList.toggle('muted',muted);
    row.querySelector('.chat-meta').setAttribute('aria-label','Open chat with '+box.name+(box.unread?' · '+box.unread+' unread':''));
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
@@ -1046,17 +1097,18 @@
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{x:event.clientX,y:event.clientY})};
     const avatar=pairAvatarNode(pair);
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
-    const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
+    const first=document.createElement('div');first.className='row1';const bell=document.createElement('span');bell.className='mute-bell';bell.append(lucide('bell-off'));first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),bell,document.createElement('time'));first.firstChild.className='name';
     const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';const unread=mk('span');unread.className='unread';unread.hidden=true;second.append(badge,preview,unread);
     meta.append(first,second);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
    }
    const name=pair.boxAName+' ↔ '+pair.boxBName;
    row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
+   row.querySelector('.mute-bell').hidden=false;
    row.classList.toggle('active',key===selectedPair);
    for(const id of [pair.boxAId,pair.boxBId])if(boxes.has(id))syncAvatarMascot(row.querySelector('[data-avatar="'+id+'"]'),boxes.get(id));
    row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
    row.querySelector('.preview').textContent=pair.lastText?plainPreview(pair.lastText):'No messages yet';
-   const count=pairUnreadCount(pair),unread=row.querySelector('.unread');unread.hidden=!count;unread.textContent=unreadLabel(count);unread.setAttribute('aria-label',count+' unread');
+   const count=pairUnreadCount(pair),unread=row.querySelector('.unread');unread.hidden=!count;unread.textContent=unreadLabel(count);unread.setAttribute('aria-label',count+' unread');unread.classList.add('muted');
    row.querySelector('.chat-meta').setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName+(count?' · '+count+' unread':''));
    row.querySelector('time').classList.toggle('recent',!!count);
   }
@@ -1067,7 +1119,12 @@
   const otherBoxes=list.filter(box=>ungrouped(pinKey('box',box.id))).map(box=>rows.get(box.id));
   const otherPairs=pairList.filter(pair=>ungrouped(pinKey('pair',pairKey(pair)))).map(pair=>pairRows.get(pairKey(pair)));
   const desired=[];
-  if(pinnedBoxes.length||pinnedPairs.length)desired.push(pinnedGroup,...pinnedBoxes,...pinnedPairs);
+  if(pinnedBoxes.length||pinnedPairs.length){
+   const unread=pinnedBoxes.reduce((sum,row)=>sum+(boxes.get(row.dataset.boxId)?.unread||0),0)+pinnedPairs.reduce((sum,row)=>sum+pairUnreadCount(pairs.get(row.dataset.pairKey)),0);
+   const alertUnread=pinnedBoxes.reduce((sum,row)=>sum+(isChatMuted(pinKey('box',row.dataset.boxId))?0:boxes.get(row.dataset.boxId)?.unread||0),0);
+   desired.push(sectionHeader(pinnedGroup,'pinned','Pinned',unread,alertUnread));
+   if(!sectionCollapsed.pinned||filter)desired.push(...pinnedBoxes,...pinnedPairs);
+  }
   for(const group of chatGroups){
    const members=list.filter(box=>chatGroupMembers.get(pinKey('box',box.id))===group.id).map(box=>rows.get(box.id));
    const memberPairs=pairList.filter(pair=>chatGroupMembers.get(pinKey('pair',pairKey(pair)))===group.id).map(pair=>pairRows.get(pairKey(pair)));
@@ -1075,12 +1132,21 @@
    const groupBoxes=[...boxes.values()].filter(box=>chatGroupMembers.get(pinKey('box',box.id))===group.id);
    const groupPairs=owner?[...pairs.values()].filter(pair=>chatGroupMembers.get(pinKey('pair',pairKey(pair)))===group.id):[];
    const unread=groupBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+groupPairs.reduce((sum,pair)=>sum+pairUnreadCount(pair),0);
-   desired.push(groupHeader(group,groupBoxes.length+groupPairs.length,unread));
+   const alertUnread=groupBoxes.reduce((sum,box)=>sum+(isChatMuted(pinKey('box',box.id))?0:box.unread||0),0);
+   desired.push(groupHeader(group,groupBoxes.length+groupPairs.length,unread,alertUnread));
    if(!group.collapsed||filter)desired.push(...members,...memberPairs);
   }
-  if((pinnedBoxes.length||pinnedPairs.length||chatGroups.length)&&(otherBoxes.length||otherPairs.length))desired.push(unpinnedDivider);
-  desired.push(...otherBoxes);
-  if(otherPairs.length)desired.push(pairGroup,...otherPairs);
+  if(otherBoxes.length){
+   const unread=otherBoxes.reduce((sum,row)=>sum+(boxes.get(row.dataset.boxId)?.unread||0),0);
+   const alertUnread=otherBoxes.reduce((sum,row)=>sum+(isChatMuted(pinKey('box',row.dataset.boxId))?0:boxes.get(row.dataset.boxId)?.unread||0),0);
+   desired.push(sectionHeader(unpinnedDivider,'boxes','Chats',unread,alertUnread));
+   if(!sectionCollapsed.boxes||filter)desired.push(...otherBoxes);
+  }
+  if(otherPairs.length){
+   const unread=otherPairs.reduce((sum,row)=>sum+pairUnreadCount(pairs.get(row.dataset.pairKey)),0);
+   desired.push(sectionHeader(pairGroup,'pairs','Box conversations',unread,0));
+   if(!sectionCollapsed.pairs||filter)desired.push(...otherPairs);
+  }
   const emptyEl=$('#chat-list-empty'),isEmpty=desired.length===0;emptyEl.hidden=!isEmpty;
   if(isEmpty){const q=String(filterEl?.value||'').trim(),title=emptyEl.querySelector('strong'),hint=emptyEl.querySelector('.hint'),cta=$('#empty-list-new-box');
    if(q){if(title)title.textContent='No chats match \u201c'+q+'\u201d';if(hint)hint.textContent='Try a different name.';if(cta){cta.textContent='Clear search';cta.dataset.action='clear'}}
@@ -1088,7 +1154,7 @@
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
   // Pair badges describe unread transcript entries. Box conversations are
   // permanently quiet, so they never contribute to navigation alerts.
-  const otherUnread=[...boxes.values()].reduce((count,box)=>count+(box.id===selected?0:box.unread||0),0);
+  const otherUnread=[...boxes.values()].reduce((count,box)=>count+(box.id===selected||isChatMuted(pinKey('box',box.id))?0:box.unread||0),0);
   const backCount=$('#chat-back-count');backCount.hidden=!otherUnread;backCount.textContent=unreadLabel(otherUnread);
   $('#chat-back').setAttribute('aria-label','Back to chat list'+(otherUnread?' · '+otherUnread+' unread in other chats':''));
  }
@@ -1106,6 +1172,7 @@
   alert:[['path',{d:'m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3'}],['path',{d:'M12 9v4'}],['path',{d:'M12 17h.01'}]],
   help:[['circle',{cx:'12',cy:'12',r:'10'}],['path',{d:'M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3'}],['path',{d:'M12 17h.01'}]],
   'chevron-down':[['path',{d:'m6 9 6 6 6-6'}]],
+  'bell-off':[['path',{d:'M10.6 3.2A6 6 0 0 1 18 9v4l2 3H7'}],['path',{d:'M4.9 4.9A6 6 0 0 0 6 9v4l-2 3h12'}],['path',{d:'M10 20h4'}],['path',{d:'M2 2l20 20'}]],
   'message-square':[['path',{d:'M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z'}]],
   camera:[['path',{d:'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3z'}],['circle',{cx:'12',cy:'13',r:'3'}]],
   users:[['path',{d:'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2'}],['circle',{cx:'9',cy:'7',r:'4'}],['path',{d:'M22 21v-2a4 4 0 0 0-3-3.87'}],['path',{d:'M16 3.13a4 4 0 0 1 0 7.75'}]],
@@ -2809,6 +2876,7 @@
  const canWakeBox=box=>box&&['hibernated','detached','failed'].includes(box.state);
  function closeRowMenu(){rowMenu.hidden=true;rowMenu.replaceChildren();rowMenu.classList.remove('touch-mode');menuBackdrop.hidden=true}
  function positionRowMenu(point){
+  if(rowMenu.classList.contains('touch-mode')){rowMenu.style.left='';rowMenu.style.top='';rowMenu.style.maxWidth='';rowMenu.style.maxHeight='';return}
   const viewport=window.visualViewport,pad=8;
   const minX=(viewport?.offsetLeft||0)+pad,maxX=(viewport?.offsetLeft||0)+(viewport?.width||innerWidth)-pad;
   const minY=(viewport?.offsetTop||0)+pad,maxY=(viewport?.offsetTop||0)+(viewport?.height||innerHeight)-pad;
@@ -2819,21 +2887,31 @@
   rowMenu.style.left=left+'px';rowMenu.style.top=top+'px';
  }
  const IC={pin:'<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 4h6l-3 3 3 3h-2l-2 7-5-5-4 4-1-1 4-4-5-5 7-2z"/></svg>',info:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>',wake:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></svg>',moon:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',restart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>',trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>',folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>'};
- function showActionMenu(items,point){
+ const bellOffIcon='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.6 3.2A6 6 0 0 1 18 9v4l2 3H7M4.9 4.9A6 6 0 0 0 6 9v4l-2 3h12M10 20h4M2 2l20 20"/></svg>';
+ const menuIcons={
+  bell:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 9 7 7 7-7"/></svg>',
+  up:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="m5 15 7-7 7 7"/></svg>',
+  pencil:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+  clock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+ };
+ function showActionMenu(items,point,title=''){
   rowMenu.replaceChildren();
+  if(title){const heading=document.createElement('div');heading.className='row-menu-heading';const handle=document.createElement('span');handle.className='row-menu-handle';handle.setAttribute('aria-hidden','true');const name=document.createElement('span');name.textContent=title;heading.append(handle,name);rowMenu.append(heading)}
   let lastDanger=false;
   for(const item of items){
    const danger=item[2]==='danger';
    if(danger&&!lastDanger){const sep=document.createElement('div');sep.className='menu-sep';rowMenu.append(sep)}
    lastDanger=danger;
    const b=document.createElement('button');b.type='button';b.setAttribute('role','menuitem');
+   b.disabled=!!item[5];
    if(danger)b.className='danger';
    b.innerHTML=(item[4]?'<span class="menu-icon">'+item[4]+'</span>':'')+'<span>'+item[0]+'</span>';
    if(item[3]){
     b.classList.add('row-submenu-toggle');b.setAttribute('aria-haspopup','menu');b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls','row-group-options');
     const arrow=mk('span','›');arrow.className='row-submenu-arrow';arrow.setAttribute('aria-hidden','true');b.append(arrow);
     const submenu=document.createElement('div');submenu.id='row-group-options';submenu.className='row-submenu';submenu.setAttribute('role','menu');submenu.hidden=true;
-    for(const [label,action] of item[3]){const option=document.createElement('button');option.type='button';option.setAttribute('role','menuitem');option.textContent=label;option.onclick=()=>{closeRowMenu();action()};submenu.append(option)}
+    for(const [label,action] of item[3]){const option=document.createElement('button');option.type='button';option.setAttribute('role','menuitem');const icon=document.createElement('span');icon.className='menu-icon';icon.innerHTML=item[0]==='Mute'?menuIcons.clock:IC.folder;option.append(icon,document.createTextNode(label));option.onclick=()=>{closeRowMenu();action()};submenu.append(option)}
     b.onclick=()=>{submenu.hidden=!submenu.hidden;b.setAttribute('aria-expanded',String(!submenu.hidden));positionRowMenu(point)};
     rowMenu.append(b,submenu);
    }else{b.onclick=()=>{closeRowMenu();item[1]()};rowMenu.append(b)}
@@ -2845,10 +2923,16 @@
   if(touch)try{navigator.vibrate?.(10)}catch{}
   positionRowMenu(point);
  }
+ const muteDurationOptions=key=>[['1 hour',()=>setChatMute(key,60)],['8 hours',()=>setChatMute(key,480)],['1 week',()=>setChatMute(key,10080)],['Always',()=>setChatMute(key,null)]];
+ function muteMenuItem(key){
+  if(key==='section:pairs'||key.startsWith('pair:'))return ['Always muted',()=>{},null,null,bellOffIcon,true];
+  return activeMute(key)?['Unmute',()=>setChatMute(key,false),null,null,menuIcons.bell]:['Mute',null,null,muteDurationOptions(key),bellOffIcon];
+ }
  function openRowMenu({box,pair},point){
   const key=box?pinKey('box',box.id):pinKey('pair',pairKey(pair));
   const items=[
    [pins.has(key)?'Unpin chat':'Pin chat',()=>togglePin(key),null,null,IC.pin],
+   muteMenuItem(key),
   ];
   const current=groupForChat(key);
   const groups=[];
@@ -2862,20 +2946,28 @@
    if(box.state==='running')items.push(['Hibernate box',()=>void hibernateBox(box),null,null,IC.moon],['Restart box…',()=>void restartBox(box),null,null,IC.restart]);
    items.push(['Delete box…',()=>openDeleteModal(box),'danger',null,IC.trash]);
   }
-  showActionMenu(items,point);
+  showActionMenu(items,point,box?box.name:pair.boxAName+' ↔ '+pair.boxBName);
  }
  function openGroupMenu(id,point){
   const group=chatGroups.find(group=>group.id===id);if(!group)return;
   showActionMenu([
-   [group.collapsed?'Expand group':'Collapse group',()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()}],
-   ['Rename group…',()=>openGroupDialog(group)],
+   muteMenuItem('group:'+id),
+   [group.collapsed?'Expand group':'Collapse group',()=>{group.collapsed=!group.collapsed;saveChatGroups();renderRows()},null,null,group.collapsed?menuIcons.down:menuIcons.up],
+   ['Rename group…',()=>openGroupDialog(group),null,null,menuIcons.pencil],
    ['Delete group…',()=>{
     if(!confirm('Delete group "'+group.name+'"? Its chats will move to Other chats.'))return;
     chatGroups.splice(chatGroups.indexOf(group),1);
     for(const [key,groupId] of chatGroupMembers)if(groupId===id)chatGroupMembers.delete(key);
+    chatMutes.delete('group:'+id);
     groupNodes.delete(id);saveChatGroups();renderRows();
-   },'danger'],
-  ],point);
+   },'danger',null,IC.trash],
+  ],point,group.name);
+ }
+ function openSectionMenu(id,point){
+  showActionMenu([
+   muteMenuItem('section:'+id),
+   [sectionCollapsed[id]?'Expand':'Collapse',()=>{sectionCollapsed[id]=!sectionCollapsed[id];saveChatGroups();renderRows()},null,null,sectionCollapsed[id]?menuIcons.down:menuIcons.up],
+  ],point,id==='pinned'?'Pinned':id==='boxes'?'Chats':'Box conversations');
  }
  menuBackdrop.onclick=closeRowMenu;
  document.addEventListener('click',event=>{if(!rowMenu.hidden&&!rowMenu.contains(event.target))closeRowMenu()});

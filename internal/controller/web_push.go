@@ -322,6 +322,14 @@ func (s *Server) pushAgentReply(ctx context.Context, accountID string, task v1.B
 	if s.Store == nil || s.Store.DB == nil || text == "" {
 		return
 	}
+	muted, err := s.isBoxPushMuted(ctx, accountID, task.LogicalBoxID)
+	if err != nil {
+		s.Logger.Warn("could not check chat mute before push", "error", err)
+		return
+	}
+	if muted {
+		return
+	}
 	probe := v1.BoxMessage{Text: text}
 	decodeBoxMessageQuestion(&probe)
 	s.pushAccountNotification(accountID, map[string]string{"title": task.BoxName, "body": probe.Text, "box": task.LogicalBoxID, "url": "/chat#box=" + task.LogicalBoxID})
