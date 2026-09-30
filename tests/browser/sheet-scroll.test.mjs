@@ -56,6 +56,24 @@ test('mobile menu and Permissions sheets scroll natively with a visible position
   await page.evaluate(()=>{document.querySelector('.mcp-tool-options').open=false});
   await page.waitForFunction(()=>!document.querySelector('#role-editor-modal .sheet-scroll-frame').classList.contains('sheet-can-scroll'));
   assert.equal((await permissions()).indicator,'none');
+  await page.evaluate(()=>{
+   document.querySelector('#role-editor-modal').hidden=true;
+   const input=document.createElement('textarea');document.body.append(input);
+   const helper=window.VMBoxAIHelper.attach({input});
+   helper.button.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true}));
+  });
+  await page.waitForSelector('.ai-prompt-dialog[open]');
+  const prompt=await page.$eval('.ai-prompt-dialog',dialog=>({bottom:dialog.getBoundingClientRect().bottom,width:dialog.getBoundingClientRect().width,primary:getComputedStyle(dialog.querySelector('.primary')).backgroundColor,ink:getComputedStyle(document.body).color,body:!!dialog.querySelector('.sheet-scroll-body')}));
+  assert.equal(prompt.bottom,844);assert.equal(prompt.width,390);assert.equal(prompt.body,true);
+  assert.equal(prompt.primary,prompt.ink,'primary uses the shared ink token');
+  await page.evaluate(()=>{
+   document.querySelector('.ai-prompt-dialog').close();
+   const input=document.createElement('input');document.body.append(input);
+   window.VMBoxModelPicker.create(input).open();
+  });
+  await page.waitForSelector('.model-picker-dialog[open]');
+  assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('model-picker-search')),false,'touch model picker does not open the keyboard');
+  assert.equal(await page.$eval('.model-picker-dialog',dialog=>Math.round(dialog.getBoundingClientRect().bottom)),844);
   assert.deepEqual(errors,[]);
   await page.close();
  }finally{await browser.close();server.close()}

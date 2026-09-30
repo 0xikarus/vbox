@@ -15,7 +15,7 @@ window.VMBoxAIHelper = (() => {
   const browse=document.createElement('button');browse.type='button';browse.textContent='Choose';browse.setAttribute('aria-haspopup','dialog');browse.title='Choose an OpenRouter model';
   const note=document.createElement('small');note.className='ai-model-note';note.textContent=optional?'Use the helper model, or choose a model for this prompt.':'Choose from OpenRouter models or enter an exact ID.';
   row.append(input,browse);label.append(row,note);
-  const picker=document.createElement('dialog');picker.className='ai-model-dialog';picker.setAttribute('aria-label','Choose OpenRouter model');
+  const picker=document.createElement('dialog');picker.className='ai-model-dialog vb-sheet-dialog';picker.setAttribute('aria-label','Choose OpenRouter model');
   const header=document.createElement('header');
   const title=document.createElement('h2');title.textContent='Choose model';
   const close=document.createElement('button');close.type='button';close.className='ai-model-close';close.textContent='×';close.setAttribute('aria-label','Close model picker');close.onclick=()=>picker.close();header.append(title,close);
@@ -25,7 +25,8 @@ window.VMBoxAIHelper = (() => {
   const custom=document.createElement('div');custom.className='ai-model-custom';
   const exact=document.createElement('input');exact.type='text';exact.maxLength=200;exact.required=true;exact.pattern='[A-Za-z0-9][A-Za-z0-9._:/~-]{0,199}';exact.spellcheck=false;exact.autocomplete='off';exact.placeholder='Exact model ID';exact.setAttribute('aria-label','Exact OpenRouter model ID');
   const useExact=document.createElement('button');useExact.type='button';useExact.textContent='Use ID';custom.append(exact,useExact);
-  picker.append(header,search,summary,results,custom);document.body.append(picker);
+  const frame=document.createElement('div');frame.className='sheet-scroll-frame';const body=document.createElement('div');body.className='sheet-scroll-body';
+  body.append(search,summary,results,custom);frame.append(body);picker.append(header,frame);document.body.append(picker);
   let version=0,models=[],loading=false,loadError='';
   const select=id=>{input.value=id;input.dispatchEvent(new Event('change',{bubbles:true}));picker.close()};
   function render() {
@@ -43,7 +44,7 @@ window.VMBoxAIHelper = (() => {
    }
    summary.textContent=loading?'Loading OpenRouter models…':loadError?loadError+' · exact IDs still work':models.length?`${matches.length+(showDefault?1:0)} matching choices${matches.length>80?' · showing first 80':''}`:'No catalog loaded · exact IDs still work';
   }
-  browse.onclick=()=>{search.value='';exact.value='';render();picker.showModal();search.focus()};
+  browse.onclick=()=>{search.value='';exact.value='';render();picker.showModal();if(!matchMedia('(pointer:coarse)').matches)search.focus()};
   input.onclick=()=>browse.click();
   search.oninput=render;
   exact.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();useExact.click()}};
@@ -65,18 +66,22 @@ window.VMBoxAIHelper = (() => {
   return {label,input,load,destroy(){version++;if(picker.open)picker.close();picker.remove()}};
  }
  function editPrompt(kind, run) {
-  const dialog=document.createElement('dialog');dialog.className='ai-prompt-dialog';
-  const form=document.createElement('form');form.method='dialog';
+  const dialog=document.createElement('dialog');dialog.className='ai-prompt-dialog vb-sheet-dialog';
+  const form=document.createElement('form');form.method='dialog';form.className='vb-sheet-form';
   const title=document.createElement('h2');title.textContent='AI writing prompt';
+  const header=document.createElement('header');header.className='vb-sheet-header';
+  const close=document.createElement('button');close.type='button';close.textContent='×';close.setAttribute('aria-label','Close AI writing prompt');close.onclick=()=>dialog.close();header.append(title,close);
+  const frame=document.createElement('div');frame.className='sheet-scroll-frame';
+  const body=document.createElement('div');body.className='sheet-scroll-body';
   const hint=document.createElement('p');hint.textContent='Edit how the wand rewrites this '+(kind==='chat'?'message':'Markdown')+'. The draft is only replaced after the result returns.';
   const label=document.createElement('label');label.textContent='Prompt';
   const textarea=document.createElement('textarea');textarea.rows=5;textarea.maxLength=2000;textarea.required=true;textarea.value=currentPrompt(kind);label.append(textarea);
   const model=modelControl({value:currentModel(kind),optional:true});
-  const actions=document.createElement('div');actions.className='ai-prompt-actions';
+  const actions=document.createElement('footer');actions.className='ai-prompt-actions vb-sheet-footer';
   const reset=document.createElement('button');reset.type='button';reset.textContent='Reset';reset.onclick=()=>{textarea.value=defaults[kind];model.input.value='';textarea.focus()};
   const cancel=document.createElement('button');cancel.type='button';cancel.textContent='Cancel';cancel.onclick=()=>dialog.close();
   const save=document.createElement('button');save.type='submit';save.className='primary';save.textContent='Save & improve';
-  actions.append(reset,cancel,save);form.append(title,hint,label,model.label,actions);dialog.append(form);document.body.append(dialog);
+  actions.append(reset,cancel,save);body.append(hint,label,model.label);frame.append(body);form.append(header,frame,actions);dialog.append(form);document.body.append(dialog);
   const cleanup=()=>{model.destroy();dialog.remove()};dialog.addEventListener('close',cleanup,{once:true});
   form.addEventListener('submit',event=>{
    event.preventDefault();if(!textarea.reportValidity())return;
@@ -86,7 +91,7 @@ window.VMBoxAIHelper = (() => {
    try{localStorage.setItem('vmbox.aiModel.'+kind,selectedModel)}catch{}
    dialog.close();run(instruction,selectedModel);
   });
-  dialog.showModal();void model.load();textarea.focus();textarea.select();
+  dialog.showModal();void model.load();if(!matchMedia('(pointer:coarse)').matches){textarea.focus();textarea.select()}else textarea.blur();
  }
  async function visualPreview(attachment) {
   const video=attachment.kind==='video';
@@ -158,8 +163,8 @@ window.VMBoxAIHelper = (() => {
   return {button,run};
  }
  async function openSettings() {
-  const dialog=document.createElement('dialog');dialog.className='ai-settings-dialog';
-  dialog.innerHTML='<form><header><span class="ai-settings-mark" aria-hidden="true">✦</span><div><h2>AI writing helper</h2><p>OpenRouter key and model for the writing wand</p></div><button class="ai-settings-close" type="button" aria-label="Close settings">×</button></header><p class="ai-settings-copy">Your saved key is shown here for the owner and stored encrypted on the controller.</p><p class="ai-settings-state" role="status">Loading setting…</p><label class="ai-import-label">Import from OpenCode profile<select name="profile"><option value="">Select a saved OpenCode profile…</option></select></label><label>OpenRouter API key<span class="ai-key-row"><input name="key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your OpenRouter key" required><button type="button" class="ai-key-visibility" aria-label="Show API key" aria-pressed="false">Show</button></span></label><p class="ai-settings-hint">You can select a model after importing a profile. The key is copied only when you save.</p><div class="ai-model-slot"></div><div class="ai-settings-actions"><button class="ai-settings-remove" type="button" hidden>Remove key</button><span></span><button class="ai-settings-cancel" type="button">Cancel</button><button class="ai-settings-save" type="submit">Save key and model</button></div></form>';
+  const dialog=document.createElement('dialog');dialog.className='ai-settings-dialog vb-sheet-dialog';
+  dialog.innerHTML='<form class="vb-sheet-form"><header class="vb-sheet-header"><span class="ai-settings-mark" aria-hidden="true">✦</span><div><h2>AI writing helper</h2><p>OpenRouter key and model for the writing wand</p></div><button class="ai-settings-close" type="button" aria-label="Close settings">×</button></header><div class="sheet-scroll-frame"><div class="sheet-scroll-body"><p class="ai-settings-copy">Your saved key is shown here for the owner and stored encrypted on the controller.</p><p class="ai-settings-state" role="status">Loading setting…</p><label class="ai-import-label">Import from OpenCode profile<select name="profile"><option value="">Select a saved OpenCode profile…</option></select></label><label>OpenRouter API key<span class="ai-key-row"><input name="key" type="password" autocomplete="new-password" spellcheck="false" placeholder="Paste your OpenRouter key" required><button type="button" class="ai-key-visibility" aria-label="Show API key" aria-pressed="false">Show</button></span></label><p class="ai-settings-hint">You can select a model after importing a profile. The key is copied only when you save.</p><div class="ai-model-slot"></div></div></div><div class="ai-settings-actions vb-sheet-footer"><button class="ai-settings-remove" type="button" hidden>Remove key</button><span></span><button class="ai-settings-cancel" type="button">Cancel</button><button class="ai-settings-save" type="submit">Save key and model</button></div></form>';
   document.body.append(dialog);
   const form=dialog.querySelector('form'),key=form.elements.key,profile=form.elements.profile,state=dialog.querySelector('.ai-settings-state'),remove=dialog.querySelector('.ai-settings-remove'),save=dialog.querySelector('.ai-settings-save');
   const model=modelControl({value:'openrouter/auto'});dialog.querySelector('.ai-model-slot').append(model.label);

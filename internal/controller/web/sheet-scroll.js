@@ -1,7 +1,7 @@
 // Shared mobile sheet scrolling, including a persistent scroll cue. SVG geometry
 // is updated through attributes so this also works with the index page CSP.
 (()=>{
- const selector='.sheet-card,.modal .card,.model-picker-dialog';
+ const selector='.sheet-card,.modal .card,.model-picker-dialog,#delete-box-card';
  function mount(card){
   if(card.dataset.sheetScrollReady)return;
   const header=card.querySelector(':scope > header,:scope > .model-picker-header');
