@@ -973,16 +973,9 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .chat-folder-toggle .unread{margin-left:auto}
 .chat-folder-menu{flex:none;padding:.28rem .45rem;border-radius:var(--radius-sm);font-size:var(--vb-type-rem-1-1);line-height:1}
 .chat-folder-menu:hover{background:var(--surface)}
-#chat-group-dialog{box-sizing:border-box;width:min(24rem,calc(100vw - 2rem));border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:var(--ink);box-shadow:var(--shadow-pop);padding:1.2rem}
-#chat-group-dialog::backdrop{background:rgba(0,0,0,.65)}
-#chat-group-dialog form{display:flex;flex-direction:column;gap:.7rem}
-#chat-group-dialog h2{margin:0;font-size:var(--vb-type-rem-1-1)}
-#chat-group-dialog p{margin:0;color:var(--ink-soft);font-size:var(--vb-type-rem-0-8)}
-#chat-group-dialog label{font-size:var(--vb-type-rem-0-8);font-weight:700}
-#chat-group-name{box-sizing:border-box;width:100%;border:1px solid var(--line);border-radius:var(--radius-sm);padding:.6rem .7rem;background:var(--surface2);color:var(--ink);font:inherit}
-.chat-group-form-actions{display:flex;justify-content:flex-end;gap:.5rem;margin-top:.4rem}
-.chat-group-form-actions button{border:1px solid var(--line);border-radius:var(--radius-sm);padding:.55rem .75rem;background:var(--surface2);color:var(--ink);font:inherit;cursor:pointer}
-.chat-group-form-actions button[type=submit]{background:var(--accent);color:var(--accent-ink)}
+#chat-group-dialog{width:min(24rem,calc(100vw - 2rem))}
+#chat-group-dialog .sheet-scroll-body{display:grid;gap:12px}
+#chat-group-dialog .sheet-scroll-body p{margin:0;font-size:var(--vb-type-px-13)}
 #chat-entries .avatar{width:2.75rem;height:2.75rem;border-radius:var(--r-control)}
 #chat-entries .avatar .dot{width:.7rem;height:.7rem;border-color:var(--surface)}
 .chat-meta .name{font-size:var(--vb-type-rem-0-87);font-weight:720}

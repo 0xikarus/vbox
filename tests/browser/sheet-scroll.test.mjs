@@ -28,7 +28,7 @@ test('mobile menu and Permissions sheets scroll natively with a visible position
  try{
   const page=await browser.newPage();
   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
-  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));page.on('console',message=>{if(/Content Security Policy/i.test(message.text()))errors.push(message.text())});
   await page.goto(`http://127.0.0.1:${server.address().port}/chat`,{waitUntil:'networkidle0'});
   await page.waitForSelector('#chat-menu-sheet .sheet-scroll-body');
   await page.evaluate(()=>document.querySelector('#chat-menu-sheet').hidden=false);
@@ -74,6 +74,9 @@ test('mobile menu and Permissions sheets scroll natively with a visible position
   await page.waitForSelector('.model-picker-dialog[open]');
   assert.equal(await page.evaluate(()=>document.activeElement?.classList.contains('model-picker-search')),false,'touch model picker does not open the keyboard');
   assert.equal(await page.$eval('.model-picker-dialog',dialog=>Math.round(dialog.getBoundingClientRect().bottom)),844);
+  await page.evaluate(()=>{document.querySelector('.model-picker-dialog').close();document.querySelector('#chat-group-dialog').showModal()});
+  assert.equal(await page.$eval('#chat-group-dialog',dialog=>Math.round(dialog.getBoundingClientRect().bottom)),844,'group editor shares the mobile bottom-sheet surface');
+  assert.equal(await page.$eval('#chat-group-dialog .sheet-scroll-body',body=>getComputedStyle(body).overflowY),'auto');
   assert.deepEqual(errors,[]);
   await page.close();
  }finally{await browser.close();server.close()}

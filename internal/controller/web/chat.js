@@ -2920,6 +2920,7 @@
  }
  $('#new-chat-group').onclick=()=>openGroupDialog();
  $('#chat-group-cancel').onclick=()=>groupDialog.close();
+ $('#chat-group-close').onclick=()=>groupDialog.close();
  groupForm.onsubmit=event=>{
   event.preventDefault();const name=groupName.value.trim();
   const duplicate=chatGroups.some(group=>group.id!==editingGroupId&&group.name.toLowerCase()===name.toLowerCase());
