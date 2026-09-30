@@ -2070,3 +2070,9 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .workspace-usage-window>span{flex:0 0 38%;color:var(--vb-ink-soft);font-size:.78rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .workspace-usage-window>strong{flex:0 0 auto;min-width:4.4rem;text-align:right;font-variant-numeric:tabular-nums;font-weight:650;font-size:.8rem}
 .workspace-usage-window>p{margin:.2rem .1rem;color:var(--vb-ink-faint);font-size:.74rem}
+
+/* tighter gap between the intro and the first usage profile */
+#usage-status:empty{display:none}
+#usage-list{margin-top:0!important}
+.usage-profile:first-child .usage-profile-head{padding-top:.15rem}
+#usage-modal .hint{margin:.1rem 0 .35rem}

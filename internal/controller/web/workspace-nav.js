@@ -37,7 +37,7 @@ window.VMBoxWorkspaceNav=(()=>{
       const percent=Number.isFinite(window.usedPercent)?Math.max(0,Math.min(100,100-window.usedPercent)):null;
       const row=document.createElement('div');row.className='workspace-usage-window';
       if(percent!==null)row.dataset.level=percent>30?'ok':percent>=10?'warn':'low';
-      const label=document.createElement('span');let text=shortNames[window.name]||window.name||'Limit';const dur=duration(window.durationMinutes);if(dur)text+=' · '+dur;else if(window.scope)text+=' · '+window.scope;label.textContent=text;
+      const label=document.createElement('span');const raw=window.name||'';let text=shortNames[raw]||(/^[a-z]+$/.test(raw)?raw.charAt(0).toUpperCase()+raw.slice(1):raw)||'Limit';const dur=duration(window.durationMinutes);if(dur)text+=' · '+dur;else if(window.scope)text+=' · '+window.scope;label.textContent=text;
       const bar=document.createElement('span');bar.className='usage-bar';
       if(percent!==null){const fill=document.createElement('i');fill.style.width=percent+'%';bar.append(fill)}else bar.classList.add('usage-bar-empty');
       const remaining=document.createElement('strong');remaining.textContent=percent!==null?format(percent)+'% left':'—';if(percent!==null&&percent<=10)remaining.classList.add('low');

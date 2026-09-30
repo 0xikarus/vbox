@@ -2704,7 +2704,7 @@ function usageAgo(value){if(!value)return 'unknown';const d=new Date(value);if(N
  }
  function appLogo(app){const icons={claude:'/harness-claude.svg',codex:'/harness-codex.svg',opencode:'/harness-opencode-light.svg'};if(icons[app])return '<img src="'+icons[app]+'" alt="">';return '<span class="usage-logo-letter">'+String(app||'?').slice(0,1).toUpperCase()+'</span>'}
 function friendlyDuration(minutes){if(!minutes)return'';return minutes>=1440?Math.round(minutes/1440)+'d':minutes>=60?Math.round(minutes/60)+'h':minutes+' min'}
-function usageShortLabel(window){const names={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};let label=names[window.name]||window.name||'Limit';const duration=friendlyDuration(window.durationMinutes);if(duration)label+=' · '+duration;else if(window.scope&&window.scope!==label)label+=' · '+window.scope;return label}
+function usageShortLabel(window){const names={session:'Session',weekly_all:'Week',weekly_scoped:'Week',primary:'Primary',secondary:'Secondary'};const raw=window.name||'';const pretty=names[raw]||(/^[a-z]+$/.test(raw)?raw.charAt(0).toUpperCase()+raw.slice(1):raw)||'Limit';let label=pretty;const duration=friendlyDuration(window.durationMinutes);if(duration)label+=' · '+duration;else if(window.scope&&window.scope!==label)label+=' · '+window.scope;return label}
 function usageLevel(remaining){return remaining===null?'none':remaining>30?'ok':remaining>=10?'warn':'low'}
 function renderUsage(data){
  const root=$('#usage-list');root.replaceChildren();
