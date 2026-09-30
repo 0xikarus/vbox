@@ -2221,6 +2221,7 @@
  const lastMessage=(messages,direction)=>[...messages].reverse().find(m=>m.direction===direction);
  const stateClass=state=>state==='running'?'ok':state==='starting'?'warn':'alert';
  const importedProfileLabel=ref=>[ref.application,ref.name,ref.model,ref.reasoningEffort].filter(Boolean).join(' · ');
+ const shortRuntimeId=value=>{const text=String(value);return text.length>20?text.slice(0,8)+'…'+text.slice(-6):text};
  const fillRows=(target,rows)=>{
   target.replaceChildren();
   for(const [dt,dd,cls,copy] of rows){
@@ -2229,7 +2230,12 @@
    if(Array.isArray(dd)){d.classList.add('profile-lines');for(const line of dd){const span=document.createElement('span');span.textContent=line;span.title=line;d.append(span)}}
    else d.textContent=dd;
    if(cls)d.classList.add(cls);
-   if(copy){d.classList.add('copy-value');d.title=copy+' · tap to copy';d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label','Copy full '+dt.toLowerCase());const write=async()=>{try{await navigator.clipboard.writeText(copy);toast(dt+' copied.')}catch{toast('Copy is unavailable here.')}};d.onclick=write;d.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write()}}}
+   if(copy){
+    const value=d.textContent,visible=dt==='Slot'&&value.includes(' · ')?value.split(' · ')[0]+' · '+shortRuntimeId(value.split(' · ').slice(1).join(' · ')):shortRuntimeId(value);
+    d.replaceChildren();const label=document.createElement('span');label.className='copy-value-text';label.textContent=visible;
+    const icon=document.createElementNS('http://www.w3.org/2000/svg','svg');icon.setAttribute('viewBox','0 0 24 24');icon.setAttribute('fill','none');icon.setAttribute('stroke','currentColor');icon.setAttribute('stroke-width','1.9');icon.setAttribute('stroke-linecap','round');icon.setAttribute('stroke-linejoin','round');icon.setAttribute('aria-hidden','true');icon.innerHTML='<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>';
+    d.append(label,icon);d.classList.add('copy-value');d.title=copy+' · tap to copy';d.tabIndex=0;d.setAttribute('role','button');d.setAttribute('aria-label','Copy full '+dt.toLowerCase());const write=async()=>{try{await navigator.clipboard.writeText(copy);toast('Copied')}catch{toast('Copy is unavailable here.')}};d.onclick=write;d.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();void write()}}
+   }
    row.append(t,d);target.append(row);
   }
  };
@@ -2245,7 +2251,7 @@
   void api('/v1/fleet/host-resources?'+hostQuery).then(host=>{
    if(root.dataset.boxId!==box.id||root.dataset.generation!==String(box.assignmentGeneration))return;
    const fmt=bytes=>(bytes/(1024**3)).toFixed(1)+' GiB';
-   availability.textContent='Worker available now · RAM '+fmt(host.memoryAvailableBytes)+' / '+fmt(host.memoryTotalBytes)+' · swap '+fmt(host.swapFreeBytes)+' / '+fmt(host.swapTotalBytes);
+   availability.textContent='Worker available now · RAM '+fmt(host.memoryAvailableBytes)+' available of '+fmt(host.memoryTotalBytes)+' · swap '+fmt(host.swapFreeBytes)+' free of '+fmt(host.swapTotalBytes);
    if(host.observedAt)availability.title='Measured '+new Date(host.observedAt).toLocaleString();
   }).catch(()=>{if(root.dataset.boxId===box.id)availability.textContent='Worker availability unavailable.'});
   const load=async()=>{

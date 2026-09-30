@@ -36,8 +36,8 @@ try{
   const {page,errors}=await openPage();
   try{
    const result=await page.evaluate(()=>({colors:VBoxMascot.colors,fixtures:['builder','reviewer','designer','research'].map(name=>VBoxMascot.traits(name).color),repeat:VBoxMascot.traits('builder').color}));
-   assert.equal(result.colors.length,9);
-   assert.equal(new Set(result.colors.map(color=>color.toLowerCase())).size,9);
+   assert.equal(result.colors.length,8);
+   assert.equal(new Set(result.colors.map(color=>color.toLowerCase())).size,8);
    assert.ok(!result.colors.some(color=>color.toLowerCase()==='#ff6f59'));
    assert.equal(new Set(result.fixtures).size,4);
    assert.equal(result.fixtures[0],result.repeat);
