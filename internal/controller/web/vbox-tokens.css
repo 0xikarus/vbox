@@ -109,7 +109,81 @@
 :root{
   --vb-space-4:4px;--vb-space-8:8px;--vb-space-12:12px;--vb-space-16:16px;--vb-space-24:24px;
   --vb-gutter:12px;
-  --vb-type-xs:.68rem;--vb-type-sm:.78rem;--vb-type-base:.9rem;--vb-type-lg:1.16rem;--vb-type-xl:1.5rem;
+  --vb-text-scale:1;
+  --vb-type-xs:var(--vb-type-rem-0-68);--vb-type-sm:var(--vb-type-rem-0-78);--vb-type-base:var(--vb-type-rem-0-9);--vb-type-lg:var(--vb-type-rem-1-16);--vb-type-xl:var(--vb-type-rem-1-5);
+  --vb-type-chat-body:var(--vb-type-px-15-5);
+  --vb-type-icon:15px;
+  /* Exact type steps preserve existing desktop typography while all pages share one scale. */
+  --vb-type-px-10:calc(10px * var(--vb-text-scale));
+  --vb-type-px-11:calc(11px * var(--vb-text-scale));
+  --vb-type-px-11-5:calc(11.5px * var(--vb-text-scale));
+  --vb-type-px-12:calc(12px * var(--vb-text-scale));
+  --vb-type-px-13:calc(13px * var(--vb-text-scale));
+  --vb-type-px-14:calc(14px * var(--vb-text-scale));
+  --vb-type-px-14-5:calc(14.5px * var(--vb-text-scale));
+  --vb-type-px-15:calc(15px * var(--vb-text-scale));
+  --vb-type-px-15-5:calc(15.5px * var(--vb-text-scale));
+  --vb-type-px-16:calc(16px * var(--vb-text-scale));
+  --vb-type-px-18:calc(18px * var(--vb-text-scale));
+  --vb-type-px-20:calc(20px * var(--vb-text-scale));
+  --vb-type-px-24:calc(24px * var(--vb-text-scale));
+  --vb-type-px-28:calc(28px * var(--vb-text-scale));
+  --vb-type-rem-0-57:calc(.57rem * var(--vb-text-scale));
+  --vb-type-rem-0-59:calc(.59rem * var(--vb-text-scale));
+  --vb-type-rem-0-6:calc(.6rem * var(--vb-text-scale));
+  --vb-type-rem-0-61:calc(.61rem * var(--vb-text-scale));
+  --vb-type-rem-0-62:calc(.62rem * var(--vb-text-scale));
+  --vb-type-rem-0-63:calc(.63rem * var(--vb-text-scale));
+  --vb-type-rem-0-64:calc(.64rem * var(--vb-text-scale));
+  --vb-type-rem-0-65:calc(.65rem * var(--vb-text-scale));
+  --vb-type-rem-0-66:calc(.66rem * var(--vb-text-scale));
+  --vb-type-rem-0-67:calc(.67rem * var(--vb-text-scale));
+  --vb-type-rem-0-68:calc(.68rem * var(--vb-text-scale));
+  --vb-type-rem-0-69:calc(.69rem * var(--vb-text-scale));
+  --vb-type-rem-0-7:calc(.7rem * var(--vb-text-scale));
+  --vb-type-rem-0-71:calc(.71rem * var(--vb-text-scale));
+  --vb-type-rem-0-72:calc(.72rem * var(--vb-text-scale));
+  --vb-type-rem-0-73:calc(.73rem * var(--vb-text-scale));
+  --vb-type-rem-0-74:calc(.74rem * var(--vb-text-scale));
+  --vb-type-rem-0-75:calc(.75rem * var(--vb-text-scale));
+  --vb-type-rem-0-76:calc(.76rem * var(--vb-text-scale));
+  --vb-type-rem-0-77:calc(.77rem * var(--vb-text-scale));
+  --vb-type-rem-0-78:calc(.78rem * var(--vb-text-scale));
+  --vb-type-rem-0-79:calc(.79rem * var(--vb-text-scale));
+  --vb-type-rem-0-8:calc(.8rem * var(--vb-text-scale));
+  --vb-type-rem-0-81:calc(.81rem * var(--vb-text-scale));
+  --vb-type-rem-0-82:calc(.82rem * var(--vb-text-scale));
+  --vb-type-rem-0-83:calc(.83rem * var(--vb-text-scale));
+  --vb-type-rem-0-84:calc(.84rem * var(--vb-text-scale));
+  --vb-type-rem-0-85:calc(.85rem * var(--vb-text-scale));
+  --vb-type-rem-0-86:calc(.86rem * var(--vb-text-scale));
+  --vb-type-rem-0-87:calc(.87rem * var(--vb-text-scale));
+  --vb-type-rem-0-88:calc(.88rem * var(--vb-text-scale));
+  --vb-type-rem-0-9:calc(.9rem * var(--vb-text-scale));
+  --vb-type-rem-0-92:calc(.92rem * var(--vb-text-scale));
+  --vb-type-rem-0-93:calc(.93rem * var(--vb-text-scale));
+  --vb-type-rem-0-95:calc(.95rem * var(--vb-text-scale));
+  --vb-type-rem-0-96:calc(.96rem * var(--vb-text-scale));
+  --vb-type-rem-0-98:calc(.98rem * var(--vb-text-scale));
+  --vb-type-rem-1:calc(1rem * var(--vb-text-scale));
+  --vb-type-rem-1-02:calc(1.02rem * var(--vb-text-scale));
+  --vb-type-rem-1-05:calc(1.05rem * var(--vb-text-scale));
+  --vb-type-rem-1-06:calc(1.06rem * var(--vb-text-scale));
+  --vb-type-rem-1-1:calc(1.1rem * var(--vb-text-scale));
+  --vb-type-rem-1-12:calc(1.12rem * var(--vb-text-scale));
+  --vb-type-rem-1-15:calc(1.15rem * var(--vb-text-scale));
+  --vb-type-rem-1-16:calc(1.16rem * var(--vb-text-scale));
+  --vb-type-rem-1-2:calc(1.2rem * var(--vb-text-scale));
+  --vb-type-rem-1-25:calc(1.25rem * var(--vb-text-scale));
+  --vb-type-rem-1-3:calc(1.3rem * var(--vb-text-scale));
+  --vb-type-rem-1-32:calc(1.32rem * var(--vb-text-scale));
+  --vb-type-rem-1-35:calc(1.35rem * var(--vb-text-scale));
+  --vb-type-rem-1-4:calc(1.4rem * var(--vb-text-scale));
+  --vb-type-rem-1-45:calc(1.45rem * var(--vb-text-scale));
+  --vb-type-rem-1-5:calc(1.5rem * var(--vb-text-scale));
+  --vb-type-rem-1-6:calc(1.6rem * var(--vb-text-scale));
+  --vb-type-rem-1-7:calc(1.7rem * var(--vb-text-scale));
+  --vb-type-rem-1-9:calc(1.9rem * var(--vb-text-scale));
   --vb-motion-fast:150ms;--vb-motion-normal:300ms;--vb-motion-wake:440ms;
   --vb-motion-ease:cubic-bezier(.2,.6,.2,1);--vb-motion-spring:cubic-bezier(.2,.9,.1,1);
   --vb-primary:var(--vb-ink);--vb-primary-ink:var(--vb-bg);
@@ -122,6 +196,11 @@
   --vb-ease:var(--vb-motion-ease);--vb-t:var(--vb-motion-fast);
   --vb-bubble-out-icon:rgba(255,255,255,.78);--vb-bubble-out-icon-hover:#fff;--vb-bubble-out-icon-bg:rgba(255,255,255,.18);
 }
+@media(max-width:600px){:root:not([data-text-size]){--vb-text-scale:.9}}
+:root[data-text-size="small"]{--vb-text-scale:.9}
+:root[data-text-size="medium"]{--vb-text-scale:1}
+:root[data-text-size="large"]{--vb-text-scale:1.12}
+:root[data-text-size="xl"]{--vb-text-scale:1.25}
 @media(prefers-color-scheme:dark){:root{
   --vb-code-ink:#e6e6ea;
   --vb-bubble-out-icon:rgba(17,17,20,.62);--vb-bubble-out-icon-hover:#111114;--vb-bubble-out-icon-bg:rgba(17,17,20,.12);

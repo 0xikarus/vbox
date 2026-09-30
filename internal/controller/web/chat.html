@@ -7,7 +7,7 @@
 <meta name="theme-color" content="">
 <link rel="icon" href="/favicon.svg">
 <link rel="manifest" href="/manifest.json">
-<link rel="stylesheet" href="/vbox-tokens.css"><link rel="stylesheet" href="/fonts.css">
+<script src="/text-size.js"></script><link rel="stylesheet" href="/vbox-tokens.css"><link rel="stylesheet" href="/fonts.css">
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/xterm.css">
 <link rel="stylesheet" href="/chat.css">
@@ -398,6 +398,8 @@
    <button id="presets-toggle" type="button" hidden title="Instruction presets"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l4 4v14H7z"/><path d="M14 3v4h4"/><path d="M9.5 12h5M9.5 15h5"/></svg>Instructions</button>
    <button id="commands-toggle" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 8 5 12l4 4"/><path d="m15 8 4 4-4 4"/></svg>Commands</button>
    <button id="ai-settings-toggle" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/><path d="m6 6 2.5 2.5M15.5 15.5 18 18M18 6l-2.5 2.5M8.5 15.5 6 18"/></svg>AI writing helper</button>
+   <p class="menu-group-label">Appearance</p>
+   <div class="menu-row text-size-row"><span class="text-size-icon" aria-hidden="true">Aa</span><span class="menu-row-text"><span class="menu-row-title">Text size</span><small class="menu-row-sub">This device</small></span><span id="text-size-controls" role="group" aria-label="Text size"><button type="button" data-size="small" aria-label="Small text" title="Small">S</button><button type="button" data-size="medium" aria-label="Medium text" title="Medium">M</button><button type="button" data-size="large" aria-label="Large text" title="Large">L</button><button type="button" data-size="xl" aria-label="Extra large text" title="Extra large">XL</button></span></div>
    <p class="menu-group-label">Notifications</p>
    <div class="menu-row"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg><span class="menu-row-text"><span class="menu-row-title">Notifications</span><small id="push-status" class="menu-row-sub" role="status">Enable alerts for new replies</small></span><span class="menu-row-slot"><button id="push-toggle" class="menu-pill" type="button" hidden aria-label="Enable notifications">Off</button><button id="push-check" class="menu-row-check" type="button" hidden aria-label="Check notification permission" title="Check notification permission"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button></span></div>
    <button id="install-app" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/></svg>Install Android app</button>
