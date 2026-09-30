@@ -264,7 +264,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize!important;user-select:
 #chat-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:.3rem;background:color-mix(in srgb,var(--bg) 88%,transparent);z-index:9;text-align:center;
   color:var(--accent-text);font-size:.85rem;font-weight:700}
-#chat-loading img{width:11rem;height:10rem}
+#chat-loading img{width:min(13rem,55vw);height:auto;aspect-ratio:260/250}
 
 /* ── details drawer, expanding under the viewed chat header ──────────── */
 #inspect{flex:none;min-height:0;max-height:min(72vh,46rem);background:var(--bg2);z-index:6;
