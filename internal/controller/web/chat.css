@@ -990,7 +990,6 @@ body:has(.sheet:not([hidden])) .msg-actions{visibility:hidden}
 .chat-meta time{font-size:.69rem}
 .chat-meta .preview{font-size:.75rem}
 .chat-meta .row2{gap:.25rem;margin-top:.15rem}
-#chat-entries .unread-note{display:block;margin-top:.18rem;color:var(--accent-text);font-size:.68rem;font-weight:750;letter-spacing:.01em}
 #chat-entries li.conversation-group:hover{background:none}
 .row-state,.agent-badge{font-size:.59rem;padding:.07rem .3rem;border-radius:var(--r-control)}
 .unread{min-width:1.15rem;border-radius:var(--r-pill);font-size:.65rem}

@@ -898,7 +898,14 @@
 
  /* ---------- chat list ---------- */
  const fmtTime=value=>{const d=new Date(value),now=new Date(),sameDay=d.toDateString()===now.toDateString();if(sameDay)return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});const yesterday=new Date(now);yesterday.setDate(now.getDate()-1);if(d.toDateString()===yesterday.toDateString())return 'Yesterday';return d.toLocaleDateString([],{day:'2-digit',month:'2-digit',year:'numeric'})};
- const isMCPActivity=message=>message.direction==='system'&&message.text.startsWith('MCP · ');
+ const isMCPActivity=message=>message.direction==='system'&&String(message.text||'').startsWith('MCP · ');
+ // Only replies from another participant can ask for the owner's attention.
+ // Pair transcripts use "box" for direct messages and "agent" for replies.
+ const countsAsUnread=message=>!!message&&['agent','box','contact'].includes(message.direction)
+  &&!String(message.text||'').startsWith('MCP · ')
+  &&!['silent','note','pending','queued','delivering','failed'].includes(message.state);
+ const unreadSince=(messages,marker)=>messages.filter(message=>countsAsUnread(message)&&new Date(message.createdAt).getTime()>marker).length;
+ const unreadLabel=count=>count>99?'99+':String(count);
  function summarize(id){
   const box=boxes.get(id);if(!box)return;
   const ms=box.messages||[];
@@ -914,7 +921,7 @@
   // currently in flight in this page. Persisted state takes over after it lands.
   box.processing=agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy));
   const marker=seen[id]?new Date(seen[id]).getTime():0;
-  box.unread=ms.filter(m=>m.direction!=='user'&&!isMCPActivity(m)&&new Date(m.createdAt).getTime()>marker).length;
+  box.unread=unreadSince(ms,marker);
  }
  function previewText(m){
   if(!m)return 'No messages yet';
@@ -933,10 +940,10 @@
    .replace(/\s+/g,' ').trim();
  }
  const pairKey=pair=>pair.boxAId+'/'+pair.boxBId;
- const pairHasUnread=pair=>!!pair.lastAt&&new Date(pair.lastAt).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0);
+ const pairUnreadCount=pair=>unreadSince(pair.countMessages||[],seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0);
  const conversationVisible=()=>!$('#chat-conversation').hidden&&(matchMedia('(min-width:900px)').matches||appEl.classList.contains('in-chat'));
- function applyPairSeen(pair){
-  if(!pair||!stickToBottom||!conversationVisible())return;
+ function applyPairSeen(pair,force=false){
+  if(!pair||(!force&&(!stickToBottom||!conversationVisible())))return;
   const last=pair.messages?.at(-1)?.createdAt||pair.lastAt;
   if(last&&new Date(last).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0)){seenPairs[pairKey(pair)]=last;saveSeenPairs()}
  }
@@ -984,7 +991,7 @@
   row.querySelector('.chat-folder-arrow').textContent=group.collapsed?'▸':'▾';
   const toggle=row.querySelector('.chat-folder-toggle');toggle.setAttribute('aria-expanded',String(!group.collapsed));
   toggle.setAttribute('aria-label',group.name+', '+count+' chats, '+unread+' new messages, '+(group.collapsed?'collapsed':'expanded'));
-  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unread>99?'99+':String(unread);
+  const badge=row.querySelector('.unread');badge.hidden=!unread;badge.textContent=unreadLabel(unread);badge.setAttribute('aria-label',unread+' unread');
   return row;
  }
  function renderRows(){
@@ -1003,8 +1010,7 @@
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
     const r1=document.createElement('div');r1.className='row1';const name=document.createElement('span');name.className='name';name.textContent=box.name;const state=document.createElement('span');state.className='row-state';const time=document.createElement('time');r1.append(name,time);
     const r2=document.createElement('div');r2.className='row2';const badge=document.createElement('span');badge.className='agent-badge';badge.textContent=box.defaultAgent||'agent';const preview=document.createElement('span');preview.className='preview';const unread=document.createElement('span');unread.className='unread';unread.hidden=true;r2.append(state,badge,preview,unread);
-    const note=mk('span','New messages');note.className='unread-note';note.hidden=true;
-    meta.append(r1,r2,note);row.append(meta);
+    meta.append(r1,r2);row.append(meta);
     row.onclick=()=>{location.hash='box='+box.id;openBox(box.id)};
     rows.set(box.id,row);
    }
@@ -1025,8 +1031,8 @@
    const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
    row.querySelector('time').classList.toggle('recent',!!box.unread);
    const preview=row.querySelector('.preview'),nextPreview=box.streaming?'typing…':box.processing?'processing…':previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
-   const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=box.unread>99?'99+':box.unread;
-   const note=row.querySelector('.unread-note');note.hidden=!box.unread;note.textContent=box.unread===1?'New message':'New messages';
+   const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=unreadLabel(box.unread);unread.setAttribute('aria-label',box.unread+' unread');
+   row.querySelector('.chat-meta').setAttribute('aria-label','Open chat with '+box.name+(box.unread?' · '+box.unread+' unread':''));
   }
   for(const [id,row] of rows){if(!boxes.has(id)){row.remove();rows.delete(id)}}
   const pairList=owner?[...pairs.values()].filter(pair=>!filter||(pair.boxAName+' '+pair.boxBName).toLowerCase().includes(filter)||matchesGroup(pinKey('pair',pairKey(pair)))):[];
@@ -1041,18 +1047,18 @@
     const avatar=pairAvatarNode(pair);
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
     const first=document.createElement('div');first.className='row1';first.append(mk('span',pair.boxAName+' ↔ '+pair.boxBName),document.createElement('time'));first.firstChild.className='name';
-    const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';second.append(badge,preview);
-    const note=mk('span','New messages');note.className='unread-note';note.hidden=true;
-    meta.append(first,second,note);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
+    const second=document.createElement('div');second.className='row2';const badge=mk('span','Box ↔ Box');badge.className='agent-badge';const preview=mk('span');preview.className='preview';const unread=mk('span');unread.className='unread';unread.hidden=true;second.append(badge,preview,unread);
+    meta.append(first,second);row.append(avatar,meta);row.onclick=()=>{location.hash='pair='+encodeURIComponent(key);void openPair(key)};pairRows.set(key,row);
    }
    const name=pair.boxAName+' ↔ '+pair.boxBName;
    row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
-   row.querySelector('.chat-meta').setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName);
    row.classList.toggle('active',key===selectedPair);
    for(const id of [pair.boxAId,pair.boxBId])if(boxes.has(id))syncAvatarMascot(row.querySelector('[data-avatar="'+id+'"]'),boxes.get(id));
    row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
    row.querySelector('.preview').textContent=pair.lastText?plainPreview(pair.lastText):'No messages yet';
-   row.querySelector('.unread-note').hidden=!pairHasUnread(pair);
+   const count=pairUnreadCount(pair),unread=row.querySelector('.unread');unread.hidden=!count;unread.textContent=unreadLabel(count);unread.setAttribute('aria-label',count+' unread');
+   row.querySelector('.chat-meta').setAttribute('aria-label','Open box conversation between '+pair.boxAName+' and '+pair.boxBName+(count?' · '+count+' unread':''));
+   row.querySelector('time').classList.toggle('recent',!!count);
   }
   for(const [key,row] of pairRows)if(!pairs.has(key)){row.remove();pairRows.delete(key)}
   const ungrouped=key=>!pins.has(key)&&!groupForChat(key);
@@ -1068,7 +1074,7 @@
    if(filter&&!members.length&&!memberPairs.length&&!group.name.toLowerCase().includes(filter))continue;
    const groupBoxes=[...boxes.values()].filter(box=>chatGroupMembers.get(pinKey('box',box.id))===group.id);
    const groupPairs=owner?[...pairs.values()].filter(pair=>chatGroupMembers.get(pinKey('pair',pairKey(pair)))===group.id):[];
-   const unread=groupBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+groupPairs.filter(pairHasUnread).length;
+   const unread=groupBoxes.reduce((sum,box)=>sum+(box.unread||0),0)+groupPairs.reduce((sum,pair)=>sum+pairUnreadCount(pair),0);
    desired.push(groupHeader(group,groupBoxes.length+groupPairs.length,unread));
    if(!group.collapsed||filter)desired.push(...members,...memberPairs);
   }
@@ -1080,9 +1086,10 @@
    if(q){if(title)title.textContent='No chats match \u201c'+q+'\u201d';if(hint)hint.textContent='Try a different name.';if(cta){cta.textContent='Clear search';cta.dataset.action='clear'}}
    else{if(title)title.textContent='No conversations yet';if(hint)hint.textContent='Create your first box to start chatting.';if(cta){cta.textContent='New box';cta.dataset.action='new'}}}
   if(desired.length!==listEl.children.length||desired.some((row,index)=>listEl.children[index]!==row))listEl.replaceChildren(...desired);
-  const otherUnread=[...boxes.values()].reduce((count,box)=>count+(box.id===selected?0:box.unread||0),0)
-   +(owner?[...pairs.values()].filter(pair=>pairKey(pair)!==selectedPair&&pairHasUnread(pair)).length:0);
-  const backCount=$('#chat-back-count');backCount.hidden=!otherUnread;backCount.textContent=otherUnread>99?'99+':String(otherUnread);
+  // Pair badges describe unread transcript entries. Box conversations are
+  // permanently quiet, so they never contribute to navigation alerts.
+  const otherUnread=[...boxes.values()].reduce((count,box)=>count+(box.id===selected?0:box.unread||0),0);
+  const backCount=$('#chat-back-count');backCount.hidden=!otherUnread;backCount.textContent=unreadLabel(otherUnread);
   $('#chat-back').setAttribute('aria-label','Back to chat list'+(otherUnread?' · '+otherUnread+' unread in other chats':''));
  }
 
@@ -1565,6 +1572,24 @@
   const alive=new Set();
   for(const value of values){const key=pairKey(value);alive.add(key);pairs.set(key,Object.assign(pairs.get(key)||{messages:[]},value))}
   for(const key of pairs.keys())if(!alive.has(key))pairs.delete(key);
+  // The list endpoint has only the latest message. Fetch active unread pair
+  // transcripts to show the same exact count as owner chats, four at a time.
+  const pending=values.map(value=>pairs.get(pairKey(value))).filter(pair=>
+   new Date(pair.lastAt).getTime()>(seenPairs[pairKey(pair)]?new Date(seenPairs[pairKey(pair)]).getTime():0)
+   &&(pair.countedAt!==pair.lastAt||pair.countMessages?.some(message=>['pending','queued','delivering'].includes(message.state)))
+   &&pair.countingAt!==pair.lastAt);
+  for(const pair of pending)pair.countingAt=pair.lastAt;
+  let next=0;
+  void Promise.all(Array.from({length:Math.min(4,pending.length)},async()=>{
+   while(next<pending.length){
+    const pair=pending[next++],lastAt=pair.lastAt;
+    try{
+     const messages=await api('/v1/box-conversations/'+encodeURIComponent(pair.boxAId)+'/'+encodeURIComponent(pair.boxBId)+'/messages');
+     if(pair.lastAt===lastAt&&Array.isArray(messages)){pair.countMessages=messages;pair.countedAt=lastAt;renderRows()}
+    }catch(error){console.warn('Could not count box conversation messages:',error)}
+    finally{if(pair.countingAt===lastAt)pair.countingAt=''}
+   }
+  }));
   if(selectedPair&&!pairs.has(selectedPair)){
    selectedPair='';restoringTranscript=false;newMessagesBtn.hidden=true;lastSignature='';viewEpoch++;appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;
   }
@@ -1574,7 +1599,12 @@
    if(id===selected)return;// open conversation refreshes itself
    const previousFetch=previewFetched.get(id)||0;
    if(!force&&Date.now()-previousFetch<30000)return;
-   const history=await chatHistory(boxPath(id)+'/messages?limit=20');
+   let history=await chatHistory(boxPath(id)+'/messages?limit=20');
+   const marker=seen[id]?new Date(seen[id]).getTime():0;
+   // Usually the latest 20 messages cover the unread range. Expand only when
+   // all 20 are newer than the seen marker, so the badge can reach 99+.
+   if(history.messages?.length===20&&new Date(history.messages[0].createdAt).getTime()>marker)
+    history=await chatHistory(boxPath(id)+'/messages?limit=500');
    const box=boxes.get(id);
    // The box may have been opened while the preview was in flight. Keep its
    // full transcript, but refresh the newest messages so previously opened
@@ -1597,7 +1627,7 @@
  function applySeen(id){
   const box=boxes.get(id);if(!box)return;
   if(id===selected&&(!stickToBottom||!conversationVisible())){summarize(id);return}
-  const last=(box.messages||[]).filter(m=>m.direction!=='user'&&!isMCPActivity(m)).pop();
+  const last=(box.messages||[]).filter(countsAsUnread).pop();
   if(last&&new Date(last.createdAt).getTime()>(seen[id]?new Date(seen[id]).getTime():0)){seen[id]=last.createdAt;saveSeen()}
   summarize(id);
  }
@@ -1646,7 +1676,7 @@
   applyBusyState(box,history);
   const latest=history.messages||[];
   const known=box.historyLoaded?new Set((box.messages||[]).map(message=>message.id)):null;
-  const hasNewReply=known&&latest.some(message=>message.direction!=='user'&&!isMCPActivity(message)&&!known.has(message.id));
+  const hasNewReply=known&&latest.some(message=>countsAsUnread(message)&&!known.has(message.id));
   if(box.historyLoaded){
    const merged=new Map((box.messages||[]).map(message=>[message.id,message]));
    for(const message of latest)merged.set(message.id,message);
@@ -1694,6 +1724,7 @@
   pair.messages=Array.isArray(messages)?messages:[];
   const last=pair.messages.at(-1);
   if(last){pair.lastAt=last.createdAt;pair.lastText=last.text}
+  pair.countMessages=pair.messages;pair.countedAt=pair.lastAt;
   const signature=pair.messages.map(message=>message.id+message.updatedAt+message.state).join('|');
   if(force||signature!==lastSignature){lastSignature=signature;renderPairMessages(pair)}
   if(known.size&&pair.messages.some(message=>!known.has(message.id))&&!stickToBottom)newMessagesBtn.hidden=false;
@@ -1719,6 +1750,8 @@
   if(epoch===viewEpoch&&selectedPair===key)requestAnimationFrame(()=>{
    if(epoch!==viewEpoch||selectedPair!==key)return;
    scrollMessagesToBottom();
+   applyPairSeen(pair,true);
+   renderRows();
    restoringTranscript=false;
   });
  }

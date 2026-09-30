@@ -88,7 +88,7 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await new Promise(resolve=>setTimeout(resolve,200));
   assert.ok(await page.$eval('#chat-messages',element=>element.scrollTop)<20,'new output must not yank a reader away from older messages');
   assert.equal(await page.$eval('#chat-new-messages',button=>button.hidden),false,'new output is discoverable while reading older messages');
-  assert.equal(await page.$eval('[data-box-id="builder"] .unread-note',note=>note.hidden),false,'the left list notes unread replies even in the active chat');
+  assert.equal(await page.$eval('[data-box-id="builder"] .unread',badge=>badge.textContent),'1','the left list counts unread replies even in the active chat');
   await page.screenshot({path:'/tmp/vmbox-new-message-desktop.png'});
   await page.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
   await new Promise(resolve=>setTimeout(resolve,300)); // let the mobile layout settle
@@ -103,9 +103,10 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   await page.click('#chat-new-messages');
   assert.ok(await page.$eval('#chat-messages',atBottom)<3,'the new message control jumps to the latest reply');
   assert.equal(await page.$eval('#chat-new-messages',button=>button.hidden),true);
-  assert.equal(await page.$eval('[data-box-id="builder"] .unread-note',note=>note.hidden),true,'the left note clears after jumping to the new reply');
+  assert.equal(await page.$eval('[data-box-id="builder"] .unread',badge=>badge.hidden),true,'the left badge clears after jumping to the new reply');
 
   await page.setViewport({width:900,height:620,deviceScaleFactor:1,isMobile:false,hasTouch:false});
+  await page.waitForSelector('[data-box-id="observer"] .chat-meta');
   await page.click('[data-box-id="observer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Observer');
   await page.click('[data-box-id="builder"] .chat-meta');

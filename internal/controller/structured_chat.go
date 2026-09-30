@@ -290,16 +290,16 @@ func (s *Server) applyChatEvent(ctx context.Context, prov provider.Provider, ser
 	if err := s.Store.SetBoxTaskIdleForMessage(ctx, accountID, task.ID, activityMessageID); err != nil {
 		return "", false, err
 	}
-	if target.Direction == "box" && target.SenderBoxID != "" {
-		targetName, _ := s.Store.contactBoxName(ctx, accountID, target.SenderBoxID)
-		if targetName == "" {
-			targetName = "Agent box"
-		}
-		s.pushContactMessage(accountID, task.LogicalBoxID, task.BoxName, target.SenderBoxID, targetName, text)
-	} else {
+	if replyNotifiesOwner(target) {
 		s.pushAgentReply(ctx, accountID, task, text)
 	}
 	return replyTo, true, nil
+}
+
+// Replies to a box contact belong only to the read-only box conversation.
+// The account owner is notified only for replies in their own box chat.
+func replyNotifiesOwner(target v1.BoxMessage) bool {
+	return target.Direction != "box"
 }
 
 func (s *Server) pullStructuredAgentReply(ctx context.Context, prov provider.Provider, serviceID, accountID string, task v1.BoxTask, request v1.BoxMessage) (bool, error) {
@@ -413,11 +413,6 @@ func (s *Server) routeContactMessage(ctx context.Context, accountID string, task
 		return "", "", fmt.Errorf("contact delivery deferred: %w", err)
 	}
 	_, _ = s.Store.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'box_contact.message','logical_box',$3,jsonb_build_object('sender_box_id',$4::text,'event_id',$5::text))`, accountID, ownerID, targetID, task.LogicalBoxID, event.ID)
-	senderName := task.BoxName
-	if senderName == "" {
-		senderName = "Agent box"
-	}
-	s.pushContactMessage(accountID, task.LogicalBoxID, senderName, targetID, targetName, text)
 	return result.Message.ID, "", nil
 }
 
