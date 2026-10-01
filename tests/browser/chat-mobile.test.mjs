@@ -26,7 +26,7 @@ const thumbnail=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADEl
 // and the details drawer must fit a phone.
 test('mobile gestures: long-press menu, tap preview, swipe list, fitting details',async()=>{
  const now=new Date(Date.now()-11*60*1000).toISOString();
- let busy=true;
+ let busy=true,desktopEnabled=true;
  const boxes=[{id:'builder',name:'builder',state:'running',defaultAgent:'claude',provider:'railway',role:'worker',volumeName:'v1'},{id:'reviewer',name:'reviewer',state:'running',defaultAgent:'codex',provider:'railway',role:'worker',volumeName:'v2'}];
  const messages=[{id:'u1',direction:'user',state:'delivered',text:'Please work on this.',createdAt:now,updatedAt:now}];
  const server=http.createServer((req,res)=>{
@@ -47,6 +47,7 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(boxes))}
   if(path==='/v1/tool-presets'){res.setHeader('Content-Type','application/json');return res.end('[]')}
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
+  if(path.endsWith('/desktop')){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({enabled:desktopEnabled}))}
   if(path.endsWith('/desktop/screenshot')){res.setHeader('Content-Type','image/png');return res.end(thumbnail)}
   if(path.endsWith('/desktop/replay')){res.setHeader('Content-Type','application/json');return res.end('[]')}
   if(path==='/v1/logical-boxes/builder/messages'){
@@ -73,6 +74,10 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
   await p.waitForFunction(()=>{const el=document.querySelector('.msg.processing .tv-button');if(!el)return false;const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth});
+  assert.equal(await p.$eval('.msg.processing .tv-button',button=>button.hidden),false,'desktop action is visible in the processing bubble');
+  await p.evaluate(()=>{window.processingDesktopButton=document.querySelector('.msg.processing .tv-button')});
+  await p.$eval('#refresh',button=>button.click());
+  assert.equal(await p.evaluate(()=>window.processingDesktopButton===document.querySelector('.msg.processing .tv-button')),true,'processing desktop action survives a transcript refresh');
   await new Promise(resolve=>setTimeout(resolve,450)); // let the slide-in transition settle before tapping
 
   // Tap the processing bubble's TV button: the preview opens, and long-press on
@@ -85,13 +90,14 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.touchscreen.tap(6,240);
   await p.waitForFunction(()=>document.querySelector('.tv-preview').hidden);
   busy=false;
-  await p.click('#refresh');
+  await p.$eval('#refresh',button=>button.click());
   await p.waitForFunction(()=>!document.querySelector('.msg.processing'),{timeout:5000});
 
-  // The message chevron lives in the bottom metadata row.
-  assert.equal(await p.$eval('.msg.user .msg-more',el=>!!el.closest('.msg-actions')),true);
-  const morePoint=await p.$eval('.msg.user .msg-more',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
-  await p.touchscreen.tap(morePoint.x,morePoint.y);
+  // Touch hides the hover action pill; a long press opens message actions.
+  const morePoint=await p.$eval('.msg.user',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
+  await p.touchscreen.touchStart(morePoint.x,morePoint.y);
+  await new Promise(resolve=>setTimeout(resolve,550));
+  await p.touchscreen.touchEnd();
   await p.waitForFunction(()=>!document.querySelector('.msg-actions-menu').hidden);
   assert.equal(await p.$eval('.msg-actions-menu',el=>['Copy','Forward…'].every(label=>el.textContent.includes(label))),true,'message actions expose Copy and Forward');
   await p.screenshot({path:screenshotDir+'/mobile-chat-message-actions.png'});
@@ -133,13 +139,13 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.screenshot({path:screenshotDir+'/mobile-chat-row-menu.png'});
   assert.equal(await p.$eval('#row-menu',el=>el.textContent.includes('Show details')),true,'long-press opens the row context menu');
   const mobileMenu=await p.$eval('#row-menu',el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
-  assert.ok(Math.abs(mobileMenu.left-rowPoint.x)<=10 && Math.abs(mobileMenu.top-rowPoint.y)<=10,'mobile menu starts at the hold point');
+  assert.ok(mobileMenu.left>=0&&mobileMenu.right<=390&&mobileMenu.top>=0&&mobileMenu.bottom<=844,'mobile action sheet fits the viewport');
 
-  // Near the screen edges, place the menu above and to the left of the point.
+  // An edge press must keep the action sheet inside the viewport.
   const edgePoint=await p.evaluate(()=>({x:innerWidth-12,y:innerHeight-12}));
   await p.evaluate(({x,y})=>{document.querySelector('[data-box-id="reviewer"]').dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:x,clientY:y}))},edgePoint);
   const edgeMenu=await p.$eval('#row-menu',el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom}});
-  assert.ok(Math.abs(edgeMenu.right-edgePoint.x)<=10 && Math.abs(edgeMenu.bottom-edgePoint.y)<=10,'menu flips at the screen edge');
+  assert.ok(edgeMenu.right<=390&&edgeMenu.bottom<=844,'menu stays on screen at the edge');
   assert.ok(edgeMenu.left>=0&&edgeMenu.top>=0,'menu stays in the viewport');
 
   await p.close();
@@ -153,5 +159,11 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   assert.ok(Math.abs(desktopMenu.left-desktopPoint.x)<=10&&Math.abs(desktopMenu.top-desktopPoint.y)<=10,'desktop menu starts at the right-click point');
   await desktop.screenshot({path:screenshotDir+'/desktop-chat-row-menu.png'});
   await desktop.close();
+  busy=true;desktopEnabled=false;
+  const off=await browser.newPage();await off.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  await off.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
+  await off.waitForSelector('.msg.processing .tv-button');
+  assert.equal(await off.$eval('.msg.processing .tv-button',button=>button.hidden),true,'no desktop action is shown when desktop is off');
+  await off.close();
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });
