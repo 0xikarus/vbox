@@ -70,11 +70,13 @@ test('pair hero stays pinned above a long transcript while it scrolls',async()=>
      const list=document.querySelector('#chat-messages').getBoundingClientRect(),hero=document.querySelector('.pair-hero').getBoundingClientRect(),tile=document.querySelector('.pair-tile').getBoundingClientRect();
      const hit=document.elementFromPoint(tile.left+tile.width/2,tile.top+tile.height/2);
      const strip=document.elementFromPoint(list.left+4,hero.top+hero.height/2);
-     return {scrolled:document.querySelector('#chat-messages').scrollTop>0,heroTop:hero.top-list.top,heroBottom:hero.bottom-list.top,tileHit:!!hit?.closest('.pair-tile'),stripCovered:!strip?.closest('.pair-msg')};
+     const topHit=document.elementFromPoint(list.left+list.width/2,list.top+2);const box=document.querySelector('#chat-messages');return {noSideScroll:box.scrollWidth<=box.clientWidth+1&&document.documentElement.scrollWidth<=innerWidth+1,topCovered:!!topHit?.closest('.pair-hero'),scrolled:document.querySelector('#chat-messages').scrollTop>0,heroTop:hero.top-list.top,heroBottom:hero.bottom-list.top,tileHit:!!hit?.closest('.pair-tile'),stripCovered:!strip?.closest('.pair-msg')};
     });
     assert.ok(state.scrolled,'transcript is scrolled ('+where+')');
     assert.ok(state.heroTop>=-1&&state.heroTop<=13&&state.heroBottom>100,'tiles stay pinned at the top of the transcript ('+viewport.width+'px, '+where+'): '+JSON.stringify(state));
     assert.ok(state.tileHit,'messages do not paint over the tiles ('+viewport.width+'px, '+where+')');
+    assert.ok(state.noSideScroll,'the cover strip adds no horizontal scroll ('+viewport.width+'px)');
+    assert.ok(state.topCovered,'no message shows in a gap above the tiles ('+viewport.width+'px, '+where+')');
     assert.ok(state.stripCovered,'messages scroll under the hero strip, not beside it ('+viewport.width+'px, '+where+')');
    }
    await page.close();
