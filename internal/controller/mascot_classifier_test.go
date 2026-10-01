@@ -46,20 +46,6 @@ func TestClassifyMascotText(t *testing.T) {
 	}
 }
 
-func TestMascotTranscriptEvidenceFiltersUserAndCode(t *testing.T) {
-	sample := "user: Please fix the error\nassistant: I am inspecting it.\nassistant: ```text\nassistant: error: demonstration\nassistant: ```\nassistant: I am checking the patch."
-	evidence := mascotTranscriptEvidence(sample)
-	if strings.Contains(evidence, "Please fix") || strings.Contains(evidence, "demonstration") {
-		t.Fatalf("transcript context leaked into evidence: %q", evidence)
-	}
-	if got := classifyMascotText(evidence); got.Activity != "working" {
-		t.Fatalf("got %+v from %q", got, evidence)
-	}
-	if got := classifyMascotText(mascotTranscriptEvidence("assistant: Tests passed.\ntool: Running tool")); got.Activity != "working" {
-		t.Fatalf("active native tool got %+v", got)
-	}
-}
-
 func TestMascotModelHeldoutExamples(t *testing.T) {
 	file, err := os.Open("../../scripts/mascot-data/holdout.tsv")
 	if err != nil {
@@ -93,7 +79,9 @@ func TestMascotObservationScopesSessionAndStoresOnlyState(t *testing.T) {
 		WithArgs("account-a", "box-a", "codex-chat", "angry", "idle").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	server := chatTestServer(store)
-	request := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/mascot-observation", bytes.NewBufferString(`{"session":"codex-chat","text":"error: build failed"}`))
+	// The controller classifies the supplied text itself, including a caller's
+	// source-specific prefix. The box MCP strips those prefixes before sending.
+	request := httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/mascot-observation", bytes.NewBufferString(`{"session":"codex-chat","text":"user: error: build failed"}`))
 	request.SetPathValue("id", "box-a")
 	response := httptest.NewRecorder()
 	server.mascotObservationHandler(response, request, Principal{AccountID: "account-a", Role: "desktop-agent", Subject: "desktop-box:box-a"})
@@ -108,12 +96,12 @@ func TestMascotObservationScopesSessionAndStoresOnlyState(t *testing.T) {
 func TestMascotStateExpiresAndFollowsActiveTask(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectQuery(`SELECT mascot_mood,mascot_activity,mascot_observed_at FROM box_tasks`).WithArgs("account-a", "box-a").
-		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", time.Now().Add(-time.Minute)))
+		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", time.Now().Add(-41*time.Second)))
 	if _, fresh, err := store.boxMascotState(context.Background(), "account-a", "box-a"); err != nil || fresh {
 		t.Fatalf("expired state: fresh=%t err=%v", fresh, err)
 	}
 	mock.ExpectQuery(`SELECT mascot_mood,mascot_activity,mascot_observed_at FROM box_tasks`).WithArgs("account-a", "box-a").
-		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", time.Now()))
+		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", time.Now().Add(-39*time.Second)))
 	state, fresh, err := store.boxMascotState(context.Background(), "account-a", "box-a")
 	if err != nil || !fresh || state.Mood != "happy" {
 		t.Fatalf("fresh state: %+v fresh=%t err=%v", state, fresh, err)

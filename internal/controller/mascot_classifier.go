@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/0xikarus/vmbox-service/internal/mascotclass"
@@ -44,41 +43,6 @@ func classifyMascotText(sample string) MascotState {
 	}
 }
 
-// The box sender labels native message roles. Filter structural transcript
-// context before passing text to the generic classifier.
-func mascotTranscriptEvidence(sample string) string {
-	lines := strings.Split(sample, "\n")
-	if len(lines) > 80 {
-		lines = lines[len(lines)-80:]
-	}
-	retained := make([]string, 0, len(lines))
-	insideFence := false
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
-		if line == "" {
-			continue
-		}
-		// User requests provide context, not the agent's current state.
-		if strings.HasPrefix(line, "user: ") {
-			continue
-		}
-		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool: ")
-		// Code examples and echoed commands are not status reports.
-		if strings.HasPrefix(line, "```") {
-			insideFence = !insideFence
-			continue
-		}
-		if insideFence || strings.HasPrefix(line, "$ ") || strings.HasPrefix(line, "> ") {
-			continue
-		}
-		retained = append(retained, line)
-	}
-	for left, right := 0, len(retained)-1; left < right; left, right = left+1, right-1 {
-		retained[left], retained[right] = retained[right], retained[left]
-	}
-	return strings.Join(retained, "\n")
-}
-
 func (s *Server) mascotObservationHandler(w http.ResponseWriter, r *http.Request, p Principal) {
 	var request struct {
 		Session string `json:"session"`
@@ -88,7 +52,7 @@ func (s *Server) mascotObservationHandler(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, fmt.Errorf("valid session and bounded text required"))
 		return
 	}
-	state := classifyMascotText(mascotTranscriptEvidence(request.Text))
+	state := classifyMascotText(request.Text)
 	result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE box_tasks SET mascot_mood=$4,mascot_activity=$5,mascot_observed_at=now()
 		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'`, p.AccountID, r.PathValue("id"), request.Session, state.Mood, state.Activity)
 	if err != nil {

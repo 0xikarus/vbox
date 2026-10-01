@@ -28,7 +28,8 @@ func mascotClientAgent(name string) string {
 }
 
 func sendMascotHeartbeat(ctx context.Context, assignment, home, session, agent, previous string) (string, error) {
-	text, err := mascotNativeSample(ctx, home, session, agent)
+	sample, err := mascotNativeSample(ctx, home, session, agent)
+	text := mascotTranscriptEvidence(sample)
 	if err != nil || text == "" {
 		return previous, err
 	}
@@ -41,6 +42,41 @@ func sendMascotHeartbeat(ctx context.Context, assignment, home, session, agent, 
 		return previous, err
 	}
 	return text, nil
+}
+
+// Native transcript roles are specific to box harnesses. Send only agent
+// activity text so the controller can classify arbitrary supplied text.
+func mascotTranscriptEvidence(sample string) string {
+	lines := strings.Split(sample, "\n")
+	if len(lines) > 80 {
+		lines = lines[len(lines)-80:]
+	}
+	retained := make([]string, 0, len(lines))
+	insideFence := false
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		// User requests provide context, not the agent's current state.
+		if strings.HasPrefix(line, "user: ") {
+			continue
+		}
+		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool: ")
+		// Code examples and echoed commands are not status reports.
+		if strings.HasPrefix(line, "```") {
+			insideFence = !insideFence
+			continue
+		}
+		if insideFence || strings.HasPrefix(line, "$ ") || strings.HasPrefix(line, "> ") {
+			continue
+		}
+		retained = append(retained, line)
+	}
+	for left, right := 0, len(retained)-1; left < right; left, right = left+1, right-1 {
+		retained[left], retained[right] = retained[right], retained[left]
+	}
+	return strings.Join(retained, "\n")
 }
 
 // MCP clients may scrub the child's environment. Codex's app server still

@@ -3,9 +3,10 @@
 The classifier accepts arbitrary text, with or without transcript role labels.
 It considers the newest 8 KiB and weights the latest eight sentences most
 heavily. The box MCP sender currently supplies native conversation text; its
-adapter removes user requests and fenced code before calling the generic
-classifier. The controller stores mood, activity, and observation time; it
-does not store the excerpt.
+adapter removes user requests and fenced code before sending the excerpt.
+The controller classifies the received text directly and stores mood,
+activity, and observation time; it does not store the excerpt. A stored mood
+expires 40 seconds after the last observation.
 
 ## Model and labels
 

@@ -25,6 +25,20 @@ func TestMascotClientAgent(t *testing.T) {
 	}
 }
 
+func TestMascotTranscriptEvidenceFiltersUserAndCode(t *testing.T) {
+	sample := "user: Please fix the error\nassistant: I am inspecting it.\nassistant: ```text\nassistant: error: demonstration\nassistant: ```\nassistant: I am checking the patch."
+	evidence := mascotTranscriptEvidence(sample)
+	if strings.Contains(evidence, "Please fix") || strings.Contains(evidence, "demonstration") || strings.Contains(evidence, "assistant:") {
+		t.Fatalf("transcript context leaked into evidence: %q", evidence)
+	}
+	if evidence != "I am inspecting it.\nI am checking the patch." {
+		t.Fatalf("unexpected evidence: %q", evidence)
+	}
+	if got := mascotTranscriptEvidence("assistant: Tests passed.\ntool: Running tool"); got != "Tests passed.\nRunning tool" {
+		t.Fatalf("active native tool evidence: %q", got)
+	}
+}
+
 func TestMascotMCPSessionUsesBoxBindingWithoutTmux(t *testing.T) {
 	t.Setenv("VMBOX_CHAT_SESSION", "claude-managed")
 	session, err := mascotMCPSession("claude")
@@ -129,7 +143,7 @@ func TestMascotHeartbeatSendsNativeExcerptToController(t *testing.T) {
 			t.Errorf("bad route or auth: %s", r.URL.Path)
 		}
 		var request struct{ Session, Text string }
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Session != "codex-managed" || !strings.Contains(request.Text, "assistant: Fixed the build") || len(request.Text) > mascotSampleBytes {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Session != "codex-managed" || !strings.Contains(request.Text, "Fixed the build") || strings.Contains(request.Text, "user:") || strings.Contains(request.Text, "assistant:") || len(request.Text) > mascotSampleBytes {
 			t.Errorf("bad heartbeat: %+v, %v", request, err)
 		}
 		_, _ = w.Write([]byte(`{"mood":"happy","activity":"idle"}`))
@@ -205,7 +219,7 @@ func TestDesktopMCPAutomaticallySendsMascotHeartbeatWithoutToolCall(t *testing.T
 	}
 	select {
 	case text := <-received:
-		if !strings.HasPrefix(text, "codex-managed\n") || !strings.Contains(text, "assistant: Fixed the build") {
+		if !strings.HasPrefix(text, "codex-managed\n") || !strings.Contains(text, "Fixed the build") || strings.Contains(text, "user:") || strings.Contains(text, "assistant:") {
 			t.Fatalf("unexpected heartbeat: %q", text)
 		}
 	case <-time.After(5 * time.Second):
