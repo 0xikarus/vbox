@@ -387,7 +387,7 @@ func TestStartTmuxTaskAcceptsClaudeTrustBeforeDeliveringPrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	joined := strings.Join(calls, "\n")
-	if !strings.Contains(joined, "new-session -d -s claude-ready -c /data/workspace -- env DISABLE_AUTOUPDATER=1 claude --add-dir /data/home/.local/share/vmbox/chat --channels server:vmbox-desktop") {
+	if !strings.Contains(joined, "new-session -d -s claude-ready -c /data/workspace -- env DISABLE_AUTOUPDATER=1 claude --add-dir /data/home/.local/share/vmbox/chat --dangerously-load-development-channels server:vmbox-desktop") {
 		t.Fatalf("managed Claude task did not disable background self-update: %v", calls)
 	}
 	channel := strings.Index(joined, "send-keys -t claude-ready Enter")
