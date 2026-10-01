@@ -69,7 +69,7 @@ func mascotTranscriptEvidence(sample string) string {
 			continue
 		}
 		if tool, ok := strings.CutPrefix(line, "tool: "); ok {
-			retained = append(retained, tool)
+			retained = append(retained, "tool: "+tool)
 			continue
 		}
 		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool-output: ")
@@ -87,6 +87,11 @@ func mascotTranscriptEvidence(sample string) string {
 		retained[left], retained[right] = retained[right], retained[left]
 	}
 	return strings.Join(retained, "\n")
+}
+
+// MascotTranscriptEvidence applies the heartbeat's agent-only line filter.
+func MascotTranscriptEvidence(sample string) string {
+	return mascotTranscriptEvidence(sample)
 }
 
 // MCP clients may scrub the child's environment. Codex's app server still

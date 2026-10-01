@@ -187,6 +187,11 @@ func mascotToolLabel(name string, raw json.RawMessage) string {
 	}
 }
 
+// MascotToolLabel returns a short, argument-free activity for transcript data.
+func MascotToolLabel(name string, raw json.RawMessage) string {
+	return mascotToolLabel(name, raw)
+}
+
 func mascotClipToolLabel(label string) string {
 	runes := []rune(label)
 	// The transcript line includes the six-character "tool: " prefix.

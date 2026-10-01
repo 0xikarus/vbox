@@ -1,0 +1,43 @@
+package activityphrase
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestCandidatesFindOpenVocabularyActivities(t *testing.T) {
+	text := "assistant: I'm fixing the mobile swipe bug and checking tests.\n" +
+		"assistant: Now review the terminal layout, then ship it.\n" +
+		"tool: Running go test\n" +
+		"assistant: Reading the last log.\n" +
+		"Running tool"
+	got := Candidates(text)
+	wants := []string{"Fixing the mobile swipe bug", "Checking tests", "Review the terminal layout", "Running go test", "Reading the last log", "Running tool"}
+	for _, want := range wants {
+		found := false
+		for _, candidate := range got {
+			if candidate.Text == want {
+				found = true
+				if strings.HasPrefix(want, "Running") && !candidate.Tool {
+					t.Errorf("tool candidate lost its marker: %+v", candidate)
+				}
+			}
+		}
+		if !found {
+			t.Errorf("missing %q in %+v", want, got)
+		}
+	}
+}
+
+func TestCandidatesUseLatestLinesAndWordBoundary(t *testing.T) {
+	text := "Fixing an old problem\n" + strings.Repeat("Waiting for the next step\n", 12) + "tool: Editing extraordinarilylongfilename.go"
+	got := Candidates(text)
+	for _, candidate := range got {
+		if strings.Contains(candidate.Text, "old problem") || len([]rune(candidate.Text)) > 32 {
+			t.Fatalf("candidate escaped latest lines or length limit: %+v", candidate)
+		}
+	}
+	if len(got) == 0 || got[len(got)-1].Text != "Editing" || !got[len(got)-1].Tool || got[len(got)-1].Recency != 0 {
+		t.Fatalf("latest tool candidate: %+v", got)
+	}
+}

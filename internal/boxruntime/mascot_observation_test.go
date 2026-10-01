@@ -34,13 +34,13 @@ func TestMascotTranscriptEvidenceFiltersUserAndCode(t *testing.T) {
 	if evidence != "I am inspecting it.\nI am checking the patch." {
 		t.Fatalf("unexpected evidence: %q", evidence)
 	}
-	if got := mascotTranscriptEvidence("assistant: Tests passed.\ntool: Running tool"); got != "Tests passed.\nRunning tool" {
+	if got := mascotTranscriptEvidence("assistant: Tests passed.\ntool: Running tool"); got != "Tests passed.\ntool: Running tool" {
 		t.Fatalf("active native tool evidence: %q", got)
 	}
-	if got := mascotTranscriptEvidence("assistant: ```sh\nassistant: $ export TOKEN=abc\ntool: Running go test\nassistant: ```"); got != "Running go test" {
+	if got := mascotTranscriptEvidence("assistant: ```sh\nassistant: $ export TOKEN=abc\ntool: Running go test\nassistant: ```"); got != "tool: Running go test" {
 		t.Fatalf("tool activity inside code fence was lost: %q", got)
 	}
-	if got := mascotTranscriptEvidence("tool-output: $ export TOKEN=abc\ntool: Running export"); got != "Running export" {
+	if got := mascotTranscriptEvidence("tool-output: $ export TOKEN=abc\ntool: Running export"); got != "tool: Running export" {
 		t.Fatalf("tool output was mistaken for safe activity: %q", got)
 	}
 }
