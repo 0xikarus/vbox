@@ -241,7 +241,7 @@
   if(r.status===401){showLogin('Please log in to the controller.');throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   const rawBusy=r.headers.get('X-Vmbox-Agent-Busy');
-  return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||'',mascotMood:r.headers.get('X-Vmbox-Mascot-Mood')||'',mascotActivity:r.headers.get('X-Vmbox-Mascot-Activity')||''};
+  return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||'',mascotMood:r.headers.get('X-Vmbox-Mascot-Mood')||'',mascotActivity:r.headers.get('X-Vmbox-Mascot-Activity')||'',mascotObservedAt:r.headers.get('X-Vmbox-Mascot-Observed-At')||''};
  }
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
@@ -333,6 +333,42 @@
   if(box.unread)return ['happy','surprised','unread'];
   return box.state==='running'?['idle',null,'idle']:['waking','surprised','starting'];
  }
+ const mascotTooltip=document.createElement('div');mascotTooltip.id='mascot-mood-tooltip';mascotTooltip.setAttribute('role','tooltip');mascotTooltip.hidden=true;document.body.append(mascotTooltip);
+ let mascotTooltipTarget=null,mascotTooltipTimer=0,mascotTooltipTick=0,mascotTooltipHide=0;
+ function mascotMoodLabel(box){
+  const activity=box.mascotActivity;
+  const state=activity==='working'?'Working':activity==='waiting'?'Waiting':box.mascotMood||boxMascotPose(box)[0];
+  return state.charAt(0).toUpperCase()+state.slice(1);
+ }
+ function mascotMoodText(box,live=false){
+  const observed=Date.parse(box.mascotObservedAt||'');
+  const age=Date.now()-observed;
+  return mascotMoodLabel(box)+' · '+(Number.isFinite(observed)&&age<=40000?(live?'mood updated '+Math.max(0,Math.floor(age/1000))+' s ago':'mood updated recently'):'no fresh observation');
+ }
+ function positionMascotTooltip(target){
+  const rect=target.getBoundingClientRect(),tip=mascotTooltip.getBoundingClientRect();
+  const left=Math.min(innerWidth-tip.width-8,Math.max(8,rect.left+rect.width/2-tip.width/2));
+  const top=rect.top-tip.height-8>=8?rect.top-tip.height-8:rect.bottom+8;
+  mascotTooltip.style.left=Math.max(8,left)+'px';mascotTooltip.style.top=Math.min(innerHeight-tip.height-8,top)+'px';
+ }
+ function hideMascotTooltip(){clearTimeout(mascotTooltipTimer);clearTimeout(mascotTooltipHide);clearInterval(mascotTooltipTick);mascotTooltipTarget=null;mascotTooltip.hidden=true}
+ function showMascotTooltip(target){
+  hideMascotTooltip();hideTvPreview();mascotTooltipTarget=target;
+  const update=()=>{if(!target.isConnected){hideMascotTooltip();return}const box=boxes.get(target.dataset.mascotBox)||{id:target.dataset.mascotBox};refreshMascotTooltipLabel(target,box);mascotTooltip.textContent=mascotMoodText(box,true);positionMascotTooltip(target)};
+  mascotTooltip.hidden=false;update();mascotTooltipTick=setInterval(update,1000);
+ }
+ function refreshMascotTooltipLabel(host,box){const label=mascotMoodText(box);if(host.getAttribute('aria-label')!==label)host.setAttribute('aria-label',label)}
+ function bindMascotTooltip(host,box){
+  host.dataset.mascotBox=box.id;refreshMascotTooltipLabel(host,box);
+  host.setAttribute('role','img');host.querySelector('svg')?.setAttribute('aria-hidden','true');
+  if(host.dataset.mascotTooltipBound)return;
+  host.dataset.mascotTooltipBound='true';
+  host.addEventListener('mouseenter',()=>{if(!coarsePointer())mascotTooltipTimer=setTimeout(()=>showMascotTooltip(host),300)});
+  host.addEventListener('mouseleave',()=>{if(mascotTooltipTarget===host||mascotTooltipTimer)hideMascotTooltip()});
+  host.addEventListener('click',event=>{if(!coarsePointer())return;event.stopPropagation();showMascotTooltip(host);mascotTooltipHide=setTimeout(hideMascotTooltip,2000)});
+ }
+ addEventListener('scroll',()=>{if(!coarsePointer())hideMascotTooltip()},true);addEventListener('resize',hideMascotTooltip);
+ setInterval(()=>{for(const host of document.querySelectorAll('[data-mascot-tooltip-bound]'))refreshMascotTooltipLabel(host,boxes.get(host.dataset.mascotBox)||{id:host.dataset.mascotBox})},1000);
  function messageMascotPose(box,busyDots=false){return busyDots?['working','focused','busy']:boxMascotPose(box)}
  function messageMascotKey(box,busyDots=false){return [box.id,...messageMascotPose(box,busyDots)].join('|')}
  // Reuses a still-matching avatar from the previous render so its animation keeps running.
@@ -359,6 +395,7 @@
   if(mascot.state!==mood||mascot.expression!==expression||mascot.signal!==signal)mascot.jump(mood,expression,signal);
   avatar.dataset.state=box.state;
   avatar.querySelector('.dot')?.classList.toggle('running',box.state==='running');
+  const host=avatar.querySelector('.avatar-mascot');if(host&&avatar.closest('.pair-avatar')===null)bindMascotTooltip(host,box);
  }
  const accountMascots=[];
  function refreshAccountMascots(){
@@ -784,10 +821,10 @@
   else img.removeAttribute('src');
   syncInspectHero(box);
  }
- function avatarNode(box,small,preview){
+ function avatarNode(box,small,preview,tooltip=true){
   const wrap=document.createElement('span');wrap.className='avatar'+(small?' small':'');
   wrap.dataset.avatar=box.id;wrap.dataset.state=box.state;
-  const base=document.createElement('span');base.className='avatar-mascot';new Mascot(base,box.id);const [mood,expression,signal]=boxMascotPose(box),mascot=base.querySelector('svg').__vboxMascot;if(mood!=='idle'||expression)mascot.jump(mood,expression,signal);
+  const base=document.createElement('span');base.className='avatar-mascot';new Mascot(base,box.id);const [mood,expression,signal]=boxMascotPose(box),mascot=base.querySelector('svg').__vboxMascot;if(mood!=='idle'||expression)mascot.jump(mood,expression,signal);if(tooltip)bindMascotTooltip(base,box);
   wrap.append(base);
   const initials=document.createElement('span');initials.className='initials';initials.hidden=true;initials.textContent=(box.name||'?').trim().slice(0,2).toUpperCase();wrap.append(initials);
   let cached=avatarCache.get(box.id);
@@ -799,7 +836,7 @@
    wrap.classList.add('preview-trigger');wrap.tabIndex=0;wrap.setAttribute('role','button');
    wrap.title='Hover to preview; click for Desktop/TMUX control';wrap.setAttribute('aria-label','Preview '+box.name+' desktop and open Desktop or TMUX control');
    const currentBox=()=>boxes.get(box.id)||box;
-   wrap.onmouseenter=()=>showTvPreview(wrap,currentBox());wrap.onmouseleave=scheduleHideTvPreview;
+   wrap.onmouseenter=()=>{if(!coarsePointer())showTvPreview(wrap,currentBox())};wrap.onmouseleave=scheduleHideTvPreview;
    wrap.onfocus=()=>{if(!coarsePointer())showTvPreview(wrap,currentBox())};wrap.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
    wrap.onclick=event=>{event.stopPropagation();const box=currentBox();if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(wrap,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
    wrap.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();void openBoxControl(currentBox(),'desktop')}};
@@ -1801,6 +1838,7 @@
  function applyBusyState(box,history){
   box.mascotMood=history.mascotMood||'';
   box.mascotActivity=history.mascotActivity||'';
+  box.mascotObservedAt=history.mascotObservedAt||'';
   if(history.busy===null){delete box.agentBusy;delete box.agentBusySince;return}
   box.agentBusy=history.busy;box.agentBusySince=history.busySince||'';
  }
@@ -2677,7 +2715,7 @@ function pairTileStatus(tile,mode,label){
   $('#inspect-title').textContent=box.name;
   $('#inspect-header-state').textContent=stateText;
   $('#inspect-header-state').className=stateClass(box.state);
-  {const hero=$('#inspect-avatar'),live=hero.firstElementChild,next=reuseMessageMascot(live,box,'inspect-hero-mascot',false);if(next!==live)hero.replaceChildren(next)}
+  {const hero=$('#inspect-avatar'),live=hero.firstElementChild,next=reuseMessageMascot(live,box,'inspect-hero-mascot',false);if(next!==live)hero.replaceChildren(next);next.removeAttribute('aria-hidden');bindMascotTooltip(next,box)}
   renderInspectScreen(box);
   $('#inspect-name').textContent=box.name;
   $('#inspect-subtitle').textContent=stateText;

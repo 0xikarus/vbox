@@ -455,6 +455,7 @@ test('new boxes can be created into a group or Pinned from the section menus',as
   await page.click('[data-section="boxes"] .section-menu');await page.$$eval('#row-menu button',buttons=>buttons.find(button=>button.textContent==='New box here').click());
   await page.type('#create-box input[name=name]','boxes-created');await page.click('#create-box-submit');
   await page.waitForFunction(()=>document.querySelector('#new-box-modal').hidden);
+  await page.waitForSelector('[data-box-id="created-3"]');
   assert.equal(savedLayout().members['box:created-3'],undefined);
   assert.equal(savedLayout().pins.includes('box:created-3'),false);
 

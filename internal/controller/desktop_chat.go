@@ -123,12 +123,22 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 			w.Header().Set("X-Vmbox-Agent-Busy-Since", updatedAt.UTC().Format(time.RFC3339Nano))
 		}
 	}
-	if mascot, fresh, mascotErr := s.Store.boxMascotState(r.Context(), p.AccountID, box.ID); mascotErr == nil && fresh {
-		w.Header().Set("X-Vmbox-Mascot-Mood", mascot.Mood)
-		w.Header().Set("X-Vmbox-Mascot-Activity", mascot.Activity)
+	if mascot, fresh, mascotErr := s.Store.boxMascotState(r.Context(), p.AccountID, box.ID); mascotErr == nil {
+		setMascotResponseHeaders(w, mascot, fresh)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, values)
+}
+
+func setMascotResponseHeaders(w http.ResponseWriter, mascot MascotState, fresh bool) {
+	if !fresh {
+		return
+	}
+	w.Header().Set("X-Vmbox-Mascot-Mood", mascot.Mood)
+	w.Header().Set("X-Vmbox-Mascot-Activity", mascot.Activity)
+	if mascot.ObservedAt != nil {
+		w.Header().Set("X-Vmbox-Mascot-Observed-At", mascot.ObservedAt.UTC().Format(time.RFC3339Nano))
+	}
 }
 
 // agentBusyHandler accepts activity only for the box bound to the worker's

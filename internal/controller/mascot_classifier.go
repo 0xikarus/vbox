@@ -12,11 +12,12 @@ import (
 	"github.com/0xikarus/vmbox-service/internal/mascotclass"
 )
 
-// MascotState contains only the derived state. The controller treats sampled
-// transcript text as untrusted input and does not persist it.
+// MascotState contains the derived state and its observation time. The
+// controller treats sampled transcript text as untrusted input and does not persist it.
 type MascotState struct {
-	Mood     string `json:"mood"`
-	Activity string `json:"activity"`
+	Mood       string     `json:"mood"`
+	Activity   string     `json:"activity"`
+	ObservedAt *time.Time `json:"observedAt,omitempty"`
 }
 
 //go:embed mascot_model.bin
@@ -81,5 +82,6 @@ func (s *Store) boxMascotState(ctx context.Context, accountID, boxID string) (Ma
 	if !mood.Valid || !activity.Valid || !observed.Valid || time.Since(observed.Time) > 40*time.Second {
 		return MascotState{}, false, nil
 	}
-	return MascotState{Mood: mood.String, Activity: activity.String}, true, nil
+	stamp := observed.Time.UTC()
+	return MascotState{Mood: mood.String, Activity: activity.String, ObservedAt: &stamp}, true, nil
 }
