@@ -45,6 +45,8 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   if(!path.startsWith('/v1/'))return res.end('');
   if(path==='/v1/whoami'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({role:'owner'}))}
   if(path==='/v1/grid-boxes'||path==='/v1/logical-boxes'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify(boxes))}
+  if(path==='/v1/box-conversations'){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify([{boxAId:'builder',boxBId:'reviewer',boxAName:'builder',boxBName:'reviewer',lastAt:now,lastText:'Pair note'}]))}
+  if(path==='/v1/box-conversations/builder/reviewer/messages'){res.setHeader('Content-Type','application/json');return res.end('[]')}
   if(path==='/v1/tool-presets'){res.setHeader('Content-Type','application/json');return res.end('[]')}
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path.endsWith('/desktop')){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({enabled:desktopEnabled}))}
@@ -135,6 +137,78 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')===false);
   await p.screenshot({path:screenshotDir+'/mobile-chat-swipe-list.png'});
 
+  const listWidth=await p.$eval('#chat-list',el=>el.getBoundingClientRect().width);
+  assert.ok(Math.abs(listWidth-390)<1,'the list fills the phone after swiping back');
+  assert.equal(await p.evaluate(()=>location.hash),'');
+  const rowB=await p.$eval('[data-box-id="reviewer"]',el=>{const r=el.getBoundingClientRect();return {x:r.right-8,y:r.top+r.height/2}});
+  await p.touchscreen.touchStart(382,700);
+  await p.touchscreen.touchMove(368,610);
+  await p.touchscreen.touchEnd();
+  assert.equal(await p.$eval('#chat-app',el=>el.classList.contains('in-chat')),false,'vertical list scroll does not navigate');
+  await p.touchscreen.touchStart(rowB.x,rowB.y);
+  await p.touchscreen.touchMove(rowB.x-35,rowB.y+2);
+  await new Promise(r=>setTimeout(r,140));
+  await p.touchscreen.touchEnd();
+  await new Promise(r=>setTimeout(r,280));
+  assert.equal(await p.$eval('#chat-app',el=>el.classList.contains('in-chat')),false,'short row swipe snaps back');
+  assert.equal(await p.evaluate(()=>location.hash),'','snap-back does not change the URL');
+  assert.equal(await p.$eval('#chat-header-name',el=>el.textContent),'builder','snap-back keeps the previous chat selected');
+  assert.equal(await p.$eval('[data-box-id="reviewer"]',el=>el.classList.contains('pressing')),false,'row highlight clears after snap-back');
+
+  // Outside a row, the forward swipe returns to the last selected chat.
+  await p.touchscreen.touchStart(382,700);
+  await p.touchscreen.touchMove(210,700);
+  await new Promise(r=>setTimeout(r,70));
+  const midList=await p.$eval('#chat-main',el=>el.getBoundingClientRect().left);
+  assert.ok(midList>100&&midList<390,'the chat pane follows the forward drag');
+  await p.screenshot({path:screenshotDir+'/mobile-chat-forward-mid-light.png'});
+  await p.touchscreen.touchEnd();
+  await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')&&location.hash==='#box=builder');
+  await new Promise(r=>setTimeout(r,260));
+  assert.equal(await p.$eval('#chat-header-name',el=>el.textContent),'builder');
+  await p.$eval('#chat-back',el=>el.click());
+  await new Promise(r=>setTimeout(r,280));
+
+  // A row drag selects that row as soon as it locks horizontally.
+  await p.touchscreen.touchStart(rowB.x,rowB.y);
+  await p.touchscreen.touchMove(rowB.x-185,rowB.y);
+  await new Promise(r=>setTimeout(r,80));
+  assert.equal(await p.$eval('#chat-header-name',el=>el.textContent),'reviewer','row B content appears during the drag');
+  await p.touchscreen.touchEnd();
+  await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')&&location.hash==='#box=reviewer');
+  await new Promise(r=>setTimeout(r,260));
+  assert.equal(await p.$eval('[data-box-id="reviewer"]',el=>el.classList.contains('pressing')),false,'row highlight clears after opening');
+  await p.$eval('#chat-back',el=>el.click());
+  await new Promise(r=>setTimeout(r,280));
+  await p.emulateMediaFeatures([{name:'prefers-color-scheme',value:'dark'}]);
+  await p.touchscreen.touchStart(382,700);
+  await p.touchscreen.touchMove(205,700);
+  await new Promise(r=>setTimeout(r,70));
+  await p.screenshot({path:screenshotDir+'/mobile-chat-forward-mid-dark.png'});
+  await p.touchscreen.touchEnd();
+  await p.waitForFunction(()=>location.hash==='#box=reviewer');
+  await new Promise(r=>setTimeout(r,260));
+  await p.$eval('#chat-back',el=>el.click());
+  await p.emulateMediaFeatures([{name:'prefers-color-scheme',value:'light'}]);
+  await new Promise(r=>setTimeout(r,280));
+
+  const pairPoint=await p.$eval('[data-pair-key="builder/reviewer"]',el=>{const r=el.getBoundingClientRect();return {x:r.right-8,y:r.top+r.height/2}});
+  await p.touchscreen.touchStart(pairPoint.x,pairPoint.y);
+  await p.touchscreen.touchMove(pairPoint.x-180,pairPoint.y);
+  await p.touchscreen.touchEnd();
+  await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')&&location.hash==='#pair=builder%2Freviewer');
+  assert.match(await p.$eval('#chat-header-name',el=>el.textContent),/builder.*reviewer/,'pair row opens its own transcript');
+  await p.$eval('#chat-back',el=>el.click());
+  await new Promise(r=>setTimeout(r,280));
+  await p.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'reduce'}]);
+  await p.touchscreen.touchStart(382,700);
+  await p.touchscreen.touchMove(205,700);
+  assert.ok((await p.$eval('#chat-main',el=>el.getBoundingClientRect().left))>=389,'reduced motion has no drag animation');
+  await p.touchscreen.touchEnd();
+  await p.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')&&location.hash==='#pair=builder%2Freviewer');
+  await p.$eval('#chat-back',el=>el.click());
+  await p.emulateMediaFeatures([{name:'prefers-reduced-motion',value:'no-preference'}]);
+
   // Long-press a row to open the context menu.
   const rowPoint=await p.$eval('[data-box-id="reviewer"]',el=>{const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}});
   await p.touchscreen.touchStart(rowPoint.x,rowPoint.y);
@@ -154,6 +228,20 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   assert.ok(edgeMenu.left>=0&&edgeMenu.top>=0,'menu stays in the viewport');
 
   await p.close();
+  const empty=await browser.newPage();await empty.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  await empty.goto('http://127.0.0.1:'+server.address().port+'/chat');
+  await empty.waitForSelector('[data-box-id="reviewer"]');
+  await empty.touchscreen.touchStart(382,700);
+  await empty.touchscreen.touchMove(190,700);
+  await empty.touchscreen.touchEnd();
+  assert.equal(await empty.$eval('#chat-app',el=>el.classList.contains('in-chat')),false,'empty-area swipe has no target without a prior chat');
+  assert.equal(await empty.evaluate(()=>location.hash),'');
+  const freshRow=await empty.$eval('[data-box-id="reviewer"]',el=>{const r=el.getBoundingClientRect();return {x:r.right-8,y:r.top+r.height/2}});
+  await empty.touchscreen.touchStart(freshRow.x,freshRow.y);
+  await empty.touchscreen.touchMove(freshRow.x-180,freshRow.y);
+  await empty.touchscreen.touchEnd();
+  await empty.waitForFunction(()=>location.hash==='#box=reviewer');
+  await empty.close();
   const desktop=await browser.newPage();await desktop.setViewport({width:1280,height:800});
   await desktop.goto('http://127.0.0.1:'+server.address().port+'/chat');
   await desktop.waitForSelector('[data-box-id="reviewer"]');

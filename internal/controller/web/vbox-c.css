@@ -2460,10 +2460,10 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 @media(prefers-reduced-motion:reduce){#chat-messages .msg.swipe-returning,#thread-messages .msg.swipe-returning,#chat-messages .msg .swipe-reply-hint,#thread-messages .msg .swipe-reply-hint{transition:none}}
 
 @media(max-width:600px){
- #chat-app.in-chat.back-swiping #chat-main,#chat-app.in-chat.back-swiping #chat-list{transition:none;will-change:transform}
- #chat-app.in-chat.back-returning #chat-main,#chat-app.back-returning #chat-list,#chat-app.back-completing #chat-list{transition:transform .22s var(--vb-ease)}
+ #chat-app.nav-swiping #chat-main,#chat-app.nav-swiping #chat-list{transition:none;will-change:transform}
+ #chat-app.nav-returning #chat-main,#chat-app.nav-returning #chat-list,#chat-app.nav-completing #chat-main,#chat-app.nav-completing #chat-list{transition:transform .22s var(--vb-ease)}
 }
-@media(max-width:600px) and (prefers-reduced-motion:reduce){#chat-main,#chat-app.in-chat.back-returning #chat-main,#chat-app.back-returning #chat-list,#chat-app.back-completing #chat-list{transition:none}}
+@media(max-width:600px) and (prefers-reduced-motion:reduce){#chat-main,#chat-app.nav-returning #chat-main,#chat-app.nav-returning #chat-list,#chat-app.nav-completing #chat-main,#chat-app.nav-completing #chat-list{transition:none}}
 
 /* Details hero: one contained live screen with a full-strength mascot. */
 #inspect-screen .inspect-screen-frame{cursor:pointer}

@@ -1182,6 +1182,7 @@
    if(!row){
     row=document.createElement('li');row.dataset.boxId=box.id;
     bindChatDrag(row,pinKey('box',box.id));
+    bindPressFeedback(row);
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({box},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({box},{x:event.clientX,y:event.clientY})};
     const meta=document.createElement('button');meta.type='button';meta.className='chat-meta';meta.setAttribute('aria-label','Open chat with '+box.name);
@@ -1220,6 +1221,7 @@
    if(!row){
     row=document.createElement('li');row.dataset.pairKey=key;
     bindChatDrag(row,pinKey('pair',key));
+    bindPressFeedback(row);
     bindLongPress(row,(x,y)=>{if(rowMenu.hidden)openRowMenu({pair},{x,y})});
     row.oncontextmenu=event=>{event.preventDefault();openRowMenu({pair},{x:event.clientX,y:event.clientY})};
     const avatar=pairAvatarNode(pair);
@@ -2426,77 +2428,121 @@ function pairTileStatus(tile,mode,label){
   }
  };
  $('#chat-back').onclick=()=>{void flushReadMarkers();appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
- // The transcript tracks a rightward back gesture. The list moves at 30% of
+ // Both directions share one drag and settle path. The list moves at 30% of
  // the chat's distance, so it is visible beneath the page while dragging.
- let backSwipe=null,backSettleTimer=0,backFrame=0;
- const backMain=$('#chat-main'),backList=$('#chat-list');
+ let navSwipe=null,navSettleTimer=0,navFrame=0,suppressNavClickUntil=0;
+ const navMain=$('#chat-main'),navList=$('#chat-list');
  const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
- function paintBackSwipe(){
-  backFrame=0;
-  if(!backSwipe||backSwipe.axis!=='back'||backSwipe.reduced)return;
-  const travel=backSwipe.travel,width=backSwipe.width;
-  backMain.style.transform=`translate3d(${travel}px,0,0)`;
-  backList.style.transform=`translate3d(${-width*.3*(1-travel/width)}px,0,0)`;
+ function paintNavSwipe(){
+  navFrame=0;
+  if(!navSwipe||navSwipe.axis!=='navigate'||navSwipe.reduced)return;
+  const {travel,width,direction}=navSwipe;
+  navMain.style.transform=`translate3d(${direction==='back'?travel:width-travel}px,0,0)`;
+  navList.style.transform=`translate3d(${direction==='back'?-width*.3*(1-travel/width):-travel*.3}px,0,0)`;
  }
- function resetBackSwipe(completed=false){
-  cancelAnimationFrame(backFrame);backFrame=0;
-  const moved=appEl.classList.contains('back-swiping');
-  appEl.classList.remove('back-swiping');
-  if(!moved)return;
-  clearTimeout(backSettleTimer);
-  if(completed){
-   appEl.classList.add('back-completing');
-   // The transcript must clear the list immediately so its rows are tappable
-   // during the final parallax transition.
-   backMain.style.transform=`translate3d(${appEl.clientWidth}px,0,0)`;
-   backList.style.transform='translate3d(0,0,0)';
-   $('#chat-back').click();
-  }else if(!reducedMotion()){
-   appEl.classList.add('back-returning');
-   requestAnimationFrame(()=>{backMain.style.transform='translate3d(0,0,0)';backList.style.transform='translate3d(0,0,0)'});
+ function selectedChatHash(){
+  if(selectedPair&&pairs.has(selectedPair))return '#pair='+encodeURIComponent(selectedPair);
+  if(selected&&boxes.has(selected))return '#box='+encodeURIComponent(selected);
+  return '';
+ }
+ function swipeTarget(row){
+  if(row?.dataset.boxId&&boxes.has(row.dataset.boxId))return {box:row.dataset.boxId,pair:''};
+  if(row?.dataset.pairKey&&pairs.has(row.dataset.pairKey))return {box:'',pair:row.dataset.pairKey};
+  return null;
+ }
+ function showSwipeTarget(target){
+  if(target.pair){if(selectedPair!==target.pair)void openPair(target.pair)}
+  else if(target.box&&selected!==target.box)void openBox(target.box);
+ }
+ function restoreSwipeSelection(target){
+  if(target?.pair&&pairs.has(target.pair)){void openPair(target.pair);return}
+  if(target?.box&&boxes.has(target.box)){void openBox(target.box);return}
+  selected='';selectedPair='';viewEpoch++;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);renderResourceCard();
+  $('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;renderRows();
+ }
+ function finishNavSwipe(event){
+  if(!navSwipe)return;
+  const gesture=navSwipe;navSwipe=null;
+  if(gesture.axis!=='navigate')return;
+  cancelAnimationFrame(navFrame);navFrame=0;
+  const touch=event.changedTouches?.[0],distance=touch?(touch.clientX-gesture.x)*(gesture.direction==='back'?1:-1):gesture.travel;
+  const elapsed=Math.max(1,performance.now()-gesture.started);
+  const completed=event.type==='touchend'&&(distance>=gesture.width*.35||(distance>50&&distance/elapsed>.65));
+  suppressNavClickUntil=Date.now()+500;
+  gesture.row?.classList.remove('pressing');
+  appEl.classList.remove('nav-swiping');
+  if(gesture.direction==='forward'&&!completed&&gesture.target)restoreSwipeSelection(gesture.previous);
+  if(gesture.reduced){
+   if(gesture.direction==='back'){if(completed)$('#chat-back').click()}
+   else if(completed){appEl.classList.add('in-chat');history.replaceState(null,'',location.pathname+selectedChatHash())}
+   else appEl.classList.remove('in-chat');
+   navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
+   endHorizontalGesture();return;
   }
-  backSettleTimer=setTimeout(()=>{
-   appEl.classList.remove('back-returning','back-completing');
-   backMain.style.removeProperty('transform');backList.style.removeProperty('transform');
-  },reducedMotion()?0:230);
+  clearTimeout(navSettleTimer);
+  appEl.classList.add(completed?'nav-completing':'nav-returning');
+  if(completed&&gesture.direction==='back')$('#chat-back').click();
+  if(completed&&gesture.direction==='forward')history.replaceState(null,'',location.pathname+selectedChatHash());
+  requestAnimationFrame(()=>{
+   navMain.style.transform=`translate3d(${completed?(gesture.direction==='back'?gesture.width:0):(gesture.direction==='back'?0:gesture.width)}px,0,0)`;
+   navList.style.transform=`translate3d(${completed?(gesture.direction==='back'?0:-gesture.width*.3):(gesture.direction==='back'?-gesture.width*.3:0)}px,0,0)`;
+  });
+  navSettleTimer=setTimeout(()=>{
+   if(gesture.direction==='forward'&&!completed)appEl.classList.remove('in-chat');
+   appEl.classList.remove('nav-returning','nav-completing');
+   navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
+  },230);
+  endHorizontalGesture();
  }
- function canStartBackSwipe(target){
-  for(let node=target;node&&node!==messagesEl;node=node.parentElement){
+ function canStartNavSwipe(target,root,direction){
+  if(direction==='forward'&&!target.closest?.('li[data-box-id],li[data-pair-key]')&&target.closest?.('button,a,input,textarea,select,[role="slider"]'))return false;
+  for(let node=target;node&&node!==root;node=node.parentElement){
    const style=getComputedStyle(node);
-   if(node.scrollWidth>node.clientWidth+2&&/auto|scroll/.test(style.overflowX)&&node.scrollLeft>1)return false;
+   if(node.scrollWidth>node.clientWidth+2&&/auto|scroll/.test(style.overflowX)&&(direction==='forward'||node.scrollLeft>1))return false;
   }
   return true;
  }
- messagesEl.addEventListener('touchstart',event=>{
-  if(event.touches.length!==1||innerWidth>600||!appEl.classList.contains('in-chat')||!canStartBackSwipe(event.target))return;
+ function startNavSwipe(event,direction){
+  const root=direction==='back'?messagesEl:navList;
+  const row=direction==='forward'?event.target.closest?.('li[data-box-id],li[data-pair-key]'):null;
+  const target=swipeTarget(row);
+  if(event.touches.length!==1||innerWidth>600||direction==='back'&&!appEl.classList.contains('in-chat')||direction==='forward'&&(appEl.classList.contains('in-chat')||!target&&!selectedChatHash())||!canStartNavSwipe(event.target,root,direction))return;
   const touch=event.touches[0];
-  backSwipe={x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now()};
- },{passive:true});
- messagesEl.addEventListener('touchmove',event=>{
-  if(!backSwipe||event.touches.length!==1)return;
-  const touch=event.touches[0],dx=touch.clientX-backSwipe.x,dy=touch.clientY-backSwipe.y;
-  if(!backSwipe.axis){
-   if(document.querySelector('.msg-actions-menu:not([hidden])')){backSwipe=null;return}
-   if(dx>10&&dx>1.5*Math.abs(dy)){backSwipe.axis='back';appEl.classList.add('back-swiping');beginHorizontalGesture()}
-   else if(Math.abs(dy)>10||dx< -10){backSwipe=null;return}
+  if(direction==='forward'&&touch.clientX<innerWidth-24)return;
+  clearTimeout(navSettleTimer);appEl.classList.remove('nav-returning','nav-completing');navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
+  navSwipe={direction,x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now(),row,target,previous:{box:selected,pair:selectedPair}};
+ }
+ function moveNavSwipe(event,direction){
+  if(!navSwipe||navSwipe.direction!==direction||event.touches.length!==1)return;
+  const touch=event.touches[0],dx=(touch.clientX-navSwipe.x)*(direction==='back'?1:-1),dy=touch.clientY-navSwipe.y;
+  if(!navSwipe.axis){
+   if(document.querySelector('.msg-actions-menu:not([hidden]),#row-menu:not([hidden])')){navSwipe=null;return}
+   if(dx>10&&dx>1.5*Math.abs(dy)){
+    navSwipe.axis='navigate';
+    if(direction==='forward'){
+     suppressNavClickUntil=Date.now()+500;
+     navMain.style.transform=`translate3d(${navSwipe.width}px,0,0)`;
+     if(navSwipe.target)showSwipeTarget(navSwipe.target);
+     appEl.classList.add('in-chat');
+    }
+    appEl.classList.add('nav-swiping');beginHorizontalGesture();
+   }
+   else if(Math.abs(dy)>10||dx< -10){navSwipe=null;return}
    else return;
   }
   if(event.cancelable)event.preventDefault();
-  backSwipe.travel=Math.min(backSwipe.width,Math.max(0,dx));
-  if(!backSwipe.reduced&&!backFrame)backFrame=requestAnimationFrame(paintBackSwipe);
- },{passive:false});
- function finishBackSwipe(event){
-  if(!backSwipe)return;
-  const gesture=backSwipe;backSwipe=null;
-  if(gesture.axis!=='back')return;
-  const touch=event.changedTouches?.[0],dx=touch?touch.clientX-gesture.x:gesture.travel||0;
-  const elapsed=Math.max(1,performance.now()-gesture.started);
-  const completed=event.type==='touchend'&&(dx>=gesture.width*.35||(dx>50&&dx/elapsed>.65));
-  if(gesture.reduced){appEl.classList.remove('back-swiping');if(completed)$('#chat-back').click();endHorizontalGesture();return}
-  resetBackSwipe(completed);endHorizontalGesture();
+  navSwipe.travel=Math.min(navSwipe.width,Math.max(0,dx));
+  if(!navSwipe.reduced&&!navFrame)navFrame=requestAnimationFrame(paintNavSwipe);
  }
- messagesEl.addEventListener('touchend',finishBackSwipe,{passive:true});
- messagesEl.addEventListener('touchcancel',finishBackSwipe,{passive:true});
+ messagesEl.addEventListener('touchstart',event=>startNavSwipe(event,'back'),{passive:true});
+ messagesEl.addEventListener('touchmove',event=>moveNavSwipe(event,'back'),{passive:false});
+ messagesEl.addEventListener('touchend',finishNavSwipe,{passive:true});
+ messagesEl.addEventListener('touchcancel',finishNavSwipe,{passive:true});
+ navList.addEventListener('touchstart',event=>startNavSwipe(event,'forward'),{passive:true});
+ navList.addEventListener('touchmove',event=>moveNavSwipe(event,'forward'),{passive:false});
+ navList.addEventListener('touchend',finishNavSwipe,{passive:true});
+ navList.addEventListener('touchcancel',finishNavSwipe,{passive:true});
+ navList.addEventListener('click',event=>{if(Date.now()<suppressNavClickUntil&&(event.pointerType==='touch'||event.sourceCapabilities?.firesTouchEvents)){event.preventDefault();event.stopPropagation()}},true);
  addEventListener('hashchange',()=>{
   const params=new URLSearchParams(location.hash.slice(1)),pair=params.get('pair');
   if(pair){const match=[...pairs.keys()].find(key=>key===pair||key.split('/').reverse().join('/')===pair);if(match&&match!==selectedPair)void openPair(match);return}
