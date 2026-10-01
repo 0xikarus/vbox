@@ -66,6 +66,12 @@ The controller polls about every 30 minutes; owners can request an immediate
 refresh through the POST endpoint. The cached owner view never wakes a box and
 identifies the result source.
 
+Shared-worker resource usage comes from the worker's cgroup when it has a
+finite memory limit (for example, Railway); otherwise it uses host memory
+counters. The Providers page skips usage requests for pools with no active
+worker. An older supervisor that lacks `host-resources` must be upgraded
+before its usage can be shown.
+
 Dedicated Railway workers can use an authenticated worker agent for terminal,
 desktop, file and runtime traffic. Railway APIs and SSH remain infrastructure
 and bootstrap paths. An enrolled worker that is offline does not fall back to
@@ -187,7 +193,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   session probes do not exhaust its systemd task limit.
 - Agent-initiated `create_agent_box` inserts reciprocal direct-contact grants
   and contact events in the same transaction as the new logical box. An
-  idempotent retry observes the existing grants. The delegated
+  idempotent retry observes the existing grants. It also adds the child to
+  the creator's Chat sidebar group; an ungrouped creator gets a new group
+  containing both boxes. Sidebar groups are labels, not contact grants.
+  `get_contacts` includes the caller's and each visible contact's cached
+  profile usage when available. Remaining percentages use the lowest active
+  usage window; stale or missing measurements are reported as such. The delegated
   `wake_agent_box` tool is available with the restart permission. It queues or
   allocates another hibernated, unprotected box without restarting a running
   one, and requires exact-name confirmation plus an idempotency key. The

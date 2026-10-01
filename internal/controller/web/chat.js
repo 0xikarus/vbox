@@ -111,6 +111,12 @@
   }catch(e){if(local.dirty||local.groups?.length)toast('Chat groups could not be synced. They are saved in this browser.');else console.warn('Could not load chat groups:',e)}
   applyChatGroups(saved);
  }
+ async function refreshChatGroupsForNewBox(){
+  await groupSaveQueue.catch(()=>{});
+  const remote=await api('/v1/chat-sidebar-layout');
+  applyChatGroups(remote);
+  try{localStorage.setItem(groupStorageKey,JSON.stringify({...remote,dirty:false,pinsMigrated:true}))}catch{}
+ }
  const groupForChat=key=>chatGroups.find(group=>group.id===chatGroupMembers.get(key));
  const activeMute=key=>chatMutes.has(key)&&(chatMutes.get(key)===null||new Date(chatMutes.get(key)).getTime()>Date.now());
  function isChatMuted(key){
@@ -1705,6 +1711,7 @@
  }
  async function fetchBoxes(force){
   const values=await api('/v1/logical-boxes');
+  const hasNewBox=owner&&(values||[]).some(box=>!boxes.has(box.id));
   const current=new Map();const alive=new Set();
   for(const b of values||[]){const old=boxes.get(b.id);alive.add(b.id);if(old&&(old.state!==b.state||old.assignmentGeneration!==b.assignmentGeneration)){resumeChecks.delete(b.id);old.resumeCandidate=null;old.resumeCheckPending=false}current.set(b.id,Object.assign(old||{messages:[],historyLoaded:false,hasOlder:false,historyLoading:false},b))}
   for(const id of [...boxes.keys()])if(!alive.has(id)){
@@ -1715,6 +1722,7 @@
   for(const [id,b] of current)boxes.set(id,b);
   if(selected&&!boxes.has(selected)){selected='';restoringTranscript=false;newMessagesBtn.hidden=true;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';appEl.classList.remove('in-chat');$('#chat-conversation').hidden=true;$('#chat-empty').hidden=false}
   await loadPreviews(force);
+  if(hasNewBox)try{await refreshChatGroupsForNewBox()}catch(e){console.warn('Could not refresh chat groups for new box:',e)}
   if(owner)try{await loadPairs()}catch(e){if(selectedPair)statusEl.textContent='Could not refresh box conversations: '+e.message}
   if(selected)applySeen(selected);
   renderRows();
@@ -2515,7 +2523,8 @@
   void api('/v1/fleet/host-resources?'+hostQuery).then(host=>{
    if(root.dataset.boxId!==box.id||root.dataset.generation!==String(box.assignmentGeneration))return;
    const fmt=bytes=>(bytes/(1024**3)).toFixed(1)+' GiB';
-   availability.textContent='Worker available now · RAM '+fmt(host.memoryAvailableBytes)+' available of '+fmt(host.memoryTotalBytes)+' · swap '+fmt(host.swapFreeBytes)+' free of '+fmt(host.swapTotalBytes);
+   const swap=host.swapUnlimited?'unlimited':host.swapLimitKnown===false?'limit unavailable':fmt(host.swapFreeBytes)+' free of '+fmt(host.swapTotalBytes);
+   availability.textContent='Worker available now · RAM '+fmt(host.memoryAvailableBytes)+' available of '+fmt(host.memoryTotalBytes)+' · swap '+swap;
    if(host.observedAt)availability.title='Measured '+new Date(host.observedAt).toLocaleString();
   }).catch(()=>{if(root.dataset.boxId===box.id)availability.textContent='Worker availability unavailable.'});
   const load=async()=>{

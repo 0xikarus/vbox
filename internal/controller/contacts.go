@@ -543,5 +543,10 @@ func (s *Server) agentContactsHandler(w http.ResponseWriter, r *http.Request, p 
 		writeError(w, http.StatusConflict, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"contacts": values})
+	selfUsage, err := s.contactUsage(r.Context(), p.AccountID, r.PathValue("id"), values)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("contact usage unavailable"))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"contacts": values, "usage": selfUsage})
 }

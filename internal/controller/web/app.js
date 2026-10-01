@@ -247,20 +247,22 @@ function renderProviders(providers){
   const capacity=node('div');capacity.className='provider-capacity';
   if(fleet?.error)capacity.append(node('span','Capacity unavailable: '+fleet.error));
   else for(const [label,value] of [['Workers',provider.provider==='shared-worker'?(fleet?.slots?.length?1:0):(fleet?.slots?.length??'—')],['Slots',fleet?.actualSlots??'—'],['Occupied',fleet?.occupiedSlots??'—'],['Free',fleet?.freeSlots??'—']]){const stat=node('span');stat.append(node('small',label),node('strong',String(value)));capacity.append(stat)}
-  if(provider.provider==='shared-worker'){
+  if(provider.provider==='shared-worker'&&fleet?.slots?.length){
    const host=fleet?.hostResources,fmt=bytes=>(bytes/(1024**3)).toFixed(1)+' GiB';
    if(host?.memoryTotalBytes){
-    for(const [label,used,total] of [['Host RAM',host.memoryTotalBytes-host.memoryAvailableBytes,host.memoryTotalBytes],['Host swap',host.swapTotalBytes-host.swapFreeBytes,host.swapTotalBytes]]){
-     const stat=node('span');stat.append(node('small',label+' used'),node('strong',total?fmt(used)+' / '+fmt(total):'No swap configured'));
+    const scope=host.scope==='cgroup'?'Worker':'Host';
+    for(const [label,used,total,description] of [[scope+' RAM',host.memoryTotalBytes-host.memoryAvailableBytes,host.memoryTotalBytes,''],[scope+' swap',host.swapTotalBytes-host.swapFreeBytes,host.swapTotalBytes,host.swapUnlimited?'Unlimited':host.swapLimitKnown===false?'Limit unavailable':'No swap configured']]){
+     const stat=node('span');stat.append(node('small',label+' used'),node('strong',total?fmt(used)+' / '+fmt(total):description));
      if(host.observedAt)stat.title='Observed '+new Date(host.observedAt).toLocaleString();
-     if(total&&used/total>=.85){stat.title='Host memory pressure is high';stat.classList.add('alert')}
+     if(total&&used/total>=.85){stat.title=label+' pressure is high';stat.classList.add('alert')}
      capacity.append(stat);
     }
-   }else if(fleet?.hostError)capacity.append(node('span','Host usage unavailable: '+fleet.hostError));
+   }else if(fleet?.hostError){const notice=node('p','Usage unavailable: '+fleet.hostError);notice.className='provider-capacity-notice';capacity.append(notice)}
+  }else if(provider.provider==='shared-worker'&&!fleet?.error){const notice=node('p','No active worker in this pool.');notice.className='provider-capacity-notice';capacity.append(notice);
   }
   const actions=node('div');actions.className='provider-actions';
   actions.append(button('Edit',()=>{const form=$('#provider').elements;form.provider.value=provider.provider;form.alias.value=provider.name;form.config.value=JSON.stringify(provider.config||{},null,2);form.secret.value='';form.revision.value=provider.updatedAt;$('#provider-editor').open=true;$('#provider-editor').scrollIntoView({block:'start'});form.config.focus()}),button('Validate',async()=>{const result=await api(pp(provider.provider,provider.name)+'/validate','POST',{});$('#provider-result').textContent=(result.valid?'Validation passed. ':'Validation failed. ')+'Checked: '+(result.checked||[]).join(', ')+'. Not checked: '+(result.unchecked||[]).join(', ')}));
-  if(provider.provider==='shared-worker')actions.append(button('Refresh usage',async()=>{const target={provider:provider.provider,providerCredential:provider.name||''};const usage=await api('/v1/fleet/host-resources?'+new URLSearchParams(target));const snapshot=fleetSnapshots.find(item=>item.provider===target.provider&&item.providerCredential===target.providerCredential);if(snapshot){snapshot.hostResources=usage;snapshot.hostError='';renderProviders(providers)}}));
+  if(provider.provider==='shared-worker'&&fleet?.slots?.length)actions.append(button('Refresh usage',async()=>{const target={provider:provider.provider,providerCredential:provider.name||''};const snapshot=fleetSnapshots.find(item=>item.provider===target.provider&&item.providerCredential===target.providerCredential);try{const usage=await api('/v1/fleet/host-resources?'+new URLSearchParams(target));if(snapshot){snapshot.hostResources=usage;snapshot.hostError=''}}catch(err){if(snapshot){snapshot.hostResources=null;snapshot.hostError=err.message}}if(snapshot)renderProviders(providers)}));
   if(!isDefault)actions.append(button('Use as default',async()=>{await api('/v1/controller-defaults','PUT',{provider:provider.provider,providerCredential:provider.name});await refresh()}));
   const details=node('details');details.append(node('summary','Configuration'),dataTable(['Setting','Value'],Object.entries(provider.config||{}).map(([key,value])=>[key,typeof value==='object'?JSON.stringify(value):String(value)])));
   card.append(heading,capacity,actions,details);root.append(card);
@@ -507,7 +509,7 @@ async function refresh(){
  workspaceNav?.setOwner(identity.role==='owner');
  renderPermissionBoxes(boxes);
  renderPoolChoices(providers);
- const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{const fleet=await api('/v1/fleet/status?'+new URLSearchParams(target));let hostResources=null,hostError='';if(provider.provider==='shared-worker')try{hostResources=await api('/v1/fleet/host-resources?'+new URLSearchParams(target))}catch(err){hostError=err.message}return {...fleet,...target,hostResources,hostError}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
+ const fleets=await Promise.all(providers.map(async provider=>{const target={provider:provider.provider,providerCredential:provider.name||''};try{const fleet=await api('/v1/fleet/status?'+new URLSearchParams(target));let hostResources=null,hostError='';if(provider.provider==='shared-worker'&&fleet.slots?.length)try{hostResources=await api('/v1/fleet/host-resources?'+new URLSearchParams(target))}catch(err){hostError=err.message}return {...fleet,...target,hostResources,hostError}}catch(err){return {...target,error:err.message}}}));if(version!==epoch)return;fleetSnapshots=fleets;updateBoxPlacements(boxes);
  const chosenTools=new Set([...$('#create-tools').querySelectorAll('input:checked')].map(i=>i.value));$('#create-tools').replaceChildren(node('legend','Optional tools'));
  for(const preset of toolPresets){if(preset.id==='desktop')continue;const label=node('label'),input=node('input');input.type='checkbox';input.value=preset.id;input.checked=chosenTools.has(preset.id);label.title=preset.version+' — '+preset.description;label.append(input,document.createTextNode(preset.name));$('#create-tools').append(label)}
  renderProfiles(identity,profiles);
