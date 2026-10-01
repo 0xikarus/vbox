@@ -77,7 +77,7 @@ func TestMascotModelHeldoutExamples(t *testing.T) {
 func TestMascotObservationScopesSessionAndStoresOnlyState(t *testing.T) {
 	store, mock := testStore(t)
 	mock.ExpectExec(`UPDATE box_tasks SET mascot_mood`).
-		WithArgs("account-a", "box-a", "codex-chat", "angry", "idle").
+		WithArgs("account-a", "box-a", "codex-chat", "angry", "idle", "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	server := chatTestServer(store)
 	// The controller classifies the supplied text itself, including a caller's

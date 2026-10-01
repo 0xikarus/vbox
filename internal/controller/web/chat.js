@@ -5,7 +5,7 @@
  const boxes=new Map(),rows=new Map(),pairs=new Map(),pairRows=new Map(),imageURLs=new Map(),imagePreviewURLs=new Map(),imagePending=new Map(),answeredQuestions=new Set(),pendingSends=new Map();
  let imageGeneration=0;
  const resumeChecks=new Map();
- let selected='',selectedPair='',owner=false,boxTimer,msgTimer,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
+ let selected='',selectedPair='',owner=false,boxTimer,msgTimer,activityTimer,activityPending=null,activityGeneration=0,filterTimer,pushTimer,usageTimer,usageManualTimer,usageManualBaseline=null,usageManualStarted=0,lastSignature='',stickToBottom=true,viewEpoch=0;
  let usageProfiles=[],usageLoaded=false,selectedUsageProfile=null,chatUsageRequest=0,usageScope=null;
  const scrollMemory=new Map(),followMemory=new Map();
  let restoringTranscript=false;
@@ -1063,7 +1063,7 @@
   const box=boxes.get(id);if(!box)return;
   const ms=box.messages||[];
   box.last=ms.findLast(m=>!isMCPActivity(m));
-  box.streaming=ms.some(m=>m.state==='streaming');
+  box.streaming=box.state==='running'&&ms.some(m=>m.state==='streaming');
   const agent=(box.defaultAgent||'').toLowerCase();
   const last=box.last;
   const pending=pendingSends.get(id);
@@ -1072,7 +1072,7 @@
   const inferredBusy=last&&last.direction==='user'&&last.state==='delivered'&&Date.now()-new Date(last.updatedAt||last.createdAt).getTime()<10*60*1000;
   // A controller value from the previous poll must not suppress a send that is
   // currently in flight in this page. Persisted state takes over after it lands.
-  box.processing=agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy));
+  box.processing=box.state==='running'&&agent!=='shell'&&!box.streaming&&(pendingBusy||(box.agentBusy===undefined?inferredBusy:box.agentBusy));
   const marker=seen[id]?new Date(seen[id]).getTime():0;
   box.unread=unreadSince(ms,marker);
  }
@@ -1208,7 +1208,7 @@
    const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
    const muted=isChatMuted(pinKey('box',box.id));row.querySelector('.mute-bell').hidden=!muted;
    row.querySelector('time').classList.toggle('recent',!!box.unread&&!muted);
-   const preview=row.querySelector('.preview'),nextPreview=box.streaming?'typing…':box.processing?'processing…':previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
+   const preview=row.querySelector('.preview'),nextPreview=box.streaming?'typing…':box.processing?(box.activityPhrase||'working…'):previewText(box.last);if(preview.textContent!==nextPreview)preview.textContent=nextPreview;preview.classList.toggle('streaming',!!box.streaming&&!box.processing);preview.classList.toggle('processing',!!box.processing&&!box.streaming);
    const unread=row.querySelector('.unread');unread.hidden=!box.unread;unread.textContent=unreadLabel(box.unread);unread.setAttribute('aria-label',box.unread+' unread');unread.classList.toggle('muted',muted);
    row.querySelector('.chat-meta').setAttribute('aria-label','Open chat with '+box.name+(box.unread?' · '+box.unread+' unread':''));
   }
@@ -1696,11 +1696,13 @@
   }
   if(box.processing&&!box.streaming){
    const t=document.createElement('div');t.className='msg agent processing';
-   t.setAttribute('aria-label',box.name+' is working');
    const mini=reuseMessageMascot(liveAvatars.get('processing'),box,'msg-avatar processing-avatar processing-mascot',true);
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
-   const label=document.createElement('span');label.className='typing-label sr-only';label.textContent='agent is processing…';
+   const phrase=box.activityPhrase||'';
+   const label=document.createElement('span');label.className='typing-label sr-only';label.textContent=phrase||'agent is processing…';
+   let indicator=dots;
+   if(phrase){indicator=document.createElement('span');indicator.className='typing-phrase';indicator.setAttribute('aria-hidden','true');const words=document.createElement('span');words.className='typing-phrase-text';words.textContent=phrase;const ellipsis=document.createElement('span');ellipsis.className='typing-ellipsis';ellipsis.textContent='…';indicator.append(words,ellipsis)}
    const tv=liveProcessingButton||document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Preview desktop';tv.setAttribute('aria-label','Preview desktop');
    if(!liveProcessingButton)tv.append(tvIcon());
    tv.hidden=!processingDesktopEnabled(box);
@@ -1709,7 +1711,7 @@
    tv.onfocus=()=>{if(!coarsePointer())showTvPreview(tv,box)};
    tv.onblur=()=>{if(!coarsePointer())scheduleHideTvPreview()};
    tv.onclick=()=>{if(coarsePointer()){if(tvPreviewEl.hidden||tvPreviewBox!==box.id)showTvPreview(tv,box);else hideTvPreview();return}void openBoxControl(box,'desktop')};
-   t.prepend(mini);t.append(dots,label,tv);paint(t,'processing');messagesEl.append(t);
+   t.prepend(mini);t.append(indicator,label,tv);paint(t,'processing');messagesEl.append(t);
   }
   {const msgNodes=[...messagesEl.querySelectorAll('.msg')];
    msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('user')===m.classList.contains('user');const tail=!same;m.classList.toggle('tail',tail);if(tail&&m.classList.contains('agent')&&!m.classList.contains('processing')&&!m.querySelector('.msg-avatar'))m.prepend(reuseMessageMascot(liveAvatars.get(m.dataset.key),box,'msg-avatar',false))});}
@@ -1836,11 +1838,39 @@
   }));
  }
  function applyBusyState(box,history){
+  if(box.activityBatchAt&&Date.now()-box.activityBatchAt<10000)return;
+  box.activityPhrase='';
   box.mascotMood=history.mascotMood||'';
   box.mascotActivity=history.mascotActivity||'';
   box.mascotObservedAt=history.mascotObservedAt||'';
   if(history.busy===null){delete box.agentBusy;delete box.agentBusySince;return}
   box.agentBusy=history.busy;box.agentBusySince=history.busySince||'';
+ }
+ async function refreshBoxActivity(){
+  if(document.hidden||appEl.hidden)return;
+  if(activityPending)return activityPending;
+  const generation=activityGeneration;
+  const pending=(async()=>{
+   const values=await api('/v1/box-activity');
+   if(!Array.isArray(values)||generation!==activityGeneration||document.hidden||appEl.hidden)return;
+   const selectedBox=boxes.get(selected);
+   const before=selectedBox?[selectedBox.processing,selectedBox.agentBusy,selectedBox.agentBusySince,selectedBox.activityPhrase,selectedBox.mascotMood,selectedBox.mascotActivity].join('|'):'';
+   const receivedAt=Date.now();
+   for(const value of values){
+    const box=boxes.get(value.boxId);if(!box)continue;
+    box.agentBusy=!!value.busy;box.agentBusySince=value.busySince||'';
+    box.mascotMood=value.mood||'';box.mascotActivity=value.activity||'';box.mascotObservedAt=value.observedAt||'';
+    box.activityPhrase=typeof value.phrase==='string'?value.phrase:'';
+    box.activityBatchAt=receivedAt;summarize(box.id);
+   }
+   renderRows();
+   if(selectedBox){
+    const after=[selectedBox.processing,selectedBox.agentBusy,selectedBox.agentBusySince,selectedBox.activityPhrase,selectedBox.mascotMood,selectedBox.mascotActivity].join('|');
+    if(before!==after){renderHeader();renderInspect();renderMessages(selectedBox)}
+   }
+  })().catch(()=>{});
+  activityPending=pending;
+  try{await pending}finally{if(activityPending===pending)activityPending=null}
  }
  function applySeen(id){
   const box=boxes.get(id);if(!box)return;
@@ -1850,12 +1880,17 @@
   summarize(id);
  }
  let headerAvatarKey='';
+ function boxActivitySubtitle(box){
+  const agent=box.defaultAgent||'agent';
+  if(box.state!=='running')return agent+' · '+(box.state==='hibernated'?'hibernated':'stopped');
+  const active=box.streaming||box.processing||box.agentBusy;
+  return agent+' · '+(active?(box.activityPhrase||'working'):'idle');
+ }
  function renderHeader(){
   const box=boxes.get(selected);if(!box)return;
   $('#chat-header-name').textContent=box.name;
   const state=mk('span');state.className=box.state==='running'?'running':'';
-  const agent=mk('span',(box.defaultAgent||'agent')+' · ');agent.className='chat-header-agent';
-  state.append(agent,document.createTextNode(box.state+((box.streaming||box.processing)?' · working':'')));
+  state.textContent=boxActivitySubtitle(box);
   $('#chat-header-state').replaceChildren(state);
   inputEl.placeholder='Message '+box.name+'…';
   const key=box.id;
@@ -2713,12 +2748,12 @@ function pairTileStatus(tile,mode,label){
   const workerCopy=workerName==='Unknown worker'||workerName==='Loading…'?'':workerName;
   const stateText=box.state+((box.streaming||box.processing)?' · working':'');
   $('#inspect-title').textContent=box.name;
-  $('#inspect-header-state').textContent=stateText;
+  $('#inspect-header-state').textContent=boxActivitySubtitle(box);
   $('#inspect-header-state').className=stateClass(box.state);
   {const hero=$('#inspect-avatar'),live=hero.firstElementChild,next=reuseMessageMascot(live,box,'inspect-hero-mascot',false);if(next!==live)hero.replaceChildren(next);next.removeAttribute('aria-hidden');bindMascotTooltip(next,box)}
   renderInspectScreen(box);
   $('#inspect-name').textContent=box.name;
-  $('#inspect-subtitle').textContent=stateText;
+  $('#inspect-subtitle').textContent=boxActivitySubtitle(box);
   const badges=$('#inspect-badges');badges.replaceChildren();
   const badge=(text,cls)=>{const b=document.createElement('span');b.className='inspect-badge'+(cls?' '+cls:'');b.textContent=text;badges.append(b)};
   badge(box.state,stateClass(box.state));
@@ -3510,12 +3545,15 @@ function pairTileStatus(tile,mode,label){
   clearTimeout(boxTimer);clearTimeout(msgTimer);
   boxTimer=setTimeout(tickBoxes,30000);
   msgTimer=setTimeout(tickMessages,3000);
+  scheduleActivity(0);
  }
+ function scheduleActivity(delay=5000){clearTimeout(activityTimer);if(!document.hidden&&!appEl.hidden)activityTimer=setTimeout(tickActivity,delay)}
+ async function tickActivity(){const generation=activityGeneration;await refreshBoxActivity();if(generation===activityGeneration)scheduleActivity()}
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(document.hidden){stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
- $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
+ $('#refresh').onclick=async()=>{try{await loadBoxes(true);await refreshBoxActivity();if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
  /* ---------- auth ---------- */
  function showLogin(message=''){$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
@@ -3526,8 +3564,8 @@ function pairTileStatus(tile,mode,label){
  };
  $('#logout').onclick=async()=>{
   await flushReadMarkers();clearInterval(readSyncTimer);
-  groupStorageKey='';
-  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
+  groupStorageKey='';activityGeneration++;activityPending=null;
+  clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   await disablePushSubscription();
   $('#usage-modal').hidden=true;
   usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
@@ -3569,7 +3607,7 @@ function pairTileStatus(tile,mode,label){
  }
  addEventListener('pagehide',()=>{
   if(pendingReadMarkers.size)try{void fetch('/v1/chat-read-markers',{method:'PUT',credentials:'same-origin',keepalive:true,headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(pendingReadMarkers))})}catch{}
-  clearInterval(readSyncTimer);clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)
+  activityGeneration++;clearInterval(readSyncTimer);clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);clearInterval(usageManualTimer);releaseImageURLs();for(const drafts of attachmentDrafts.values())for(const draft of drafts)URL.revokeObjectURL(draft.url)
  });
  document.addEventListener('visibilitychange',()=>{if(document.hidden)void flushReadMarkers()});
 

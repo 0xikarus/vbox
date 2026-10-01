@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/0xikarus/vmbox-service/internal/mascotclass"
 )
@@ -54,8 +56,17 @@ func (s *Server) mascotObservationHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 	state := classifyMascotText(request.Text)
-	result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE box_tasks SET mascot_mood=$4,mascot_activity=$5,mascot_observed_at=now()
-		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'`, p.AccountID, r.PathValue("id"), request.Session, state.Mood, state.Activity)
+	phrase := strings.TrimSpace(strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, activityPhrase(request.Text)))
+	if runes := []rune(phrase); len(runes) > 48 {
+		phrase = string(runes[:48])
+	}
+	result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE box_tasks SET mascot_mood=$4,mascot_activity=$5,mascot_observed_at=now(),mascot_phrase=$6
+		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'`, p.AccountID, r.PathValue("id"), request.Session, state.Mood, state.Activity, phrase)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("mascot state unavailable"))
 		return

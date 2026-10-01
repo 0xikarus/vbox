@@ -244,6 +244,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/contacts", s.owner(s.boxContactsHandler))
 	mux.HandleFunc("GET /v1/chat-commands", s.owner(s.chatCommandsHandler))
 	mux.HandleFunc("GET /v1/chat-sidebar-layout", s.auth(s.chatSidebarLayoutHandler))
+	mux.HandleFunc("GET /v1/box-activity", s.auth(s.boxActivityHandler))
 	mux.HandleFunc("PUT /v1/chat-sidebar-layout", s.auth(s.chatSidebarLayoutHandler))
 	mux.HandleFunc("GET /v1/chat-read-markers", s.auth(s.chatReadMarkersHandler))
 	mux.HandleFunc("PUT /v1/chat-read-markers", s.auth(s.chatReadMarkersHandler))

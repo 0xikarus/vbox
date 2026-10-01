@@ -139,7 +139,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.notEqual(await page.$eval('#chat-header-desktop',element=>getComputedStyle(element).display),'none','desktop action stays available beside usage on a phone');
   assert.equal(await page.$eval('#chat-header-terminal',element=>getComputedStyle(element).display),'none','terminal action is hidden in the mobile header');
   assert.equal(await page.$eval('#chat-usage .chat-usage-left',element=>getComputedStyle(element).display),'none','the mobile chip shows only the ring and percent');
-  assert.equal(await page.$eval('#chat-header-state',element=>element.innerText.trim()),'running','mobile keeps the box state readable');
+  assert.equal(await page.$eval('#chat-header-state',element=>element.innerText.trim()),'claude · idle','mobile keeps the activity subtitle readable');
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
   assert.doesNotMatch(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);

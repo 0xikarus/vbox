@@ -98,6 +98,7 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 .chat-meta .row2{display:flex;align-items:center;gap:.4rem;margin-top:.1rem}
 .chat-meta .preview{font-size:var(--vb-type-rem-0-9);color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
 .chat-meta .preview.streaming,.chat-meta .preview.processing{color:var(--accent-text);font-style:italic}
+.chat-meta .preview.processing{color:var(--vb-ink-soft)}
 .unread{flex:none;background:var(--accent);color:var(--accent-ink);font-size:var(--vb-type-rem-0-72);font-weight:800;
   border-radius:var(--radius-sm);min-width:1.3rem;text-align:center;padding:.08rem .38rem}
 .agent-badge{flex:none;font-size:var(--vb-type-rem-0-68);color:var(--accent-text);background:var(--accent-soft);
@@ -361,6 +362,10 @@ body.chat-resizing,body.chat-resizing *{cursor:col-resize;user-select:none}
 .typing-dots span:nth-child(2){animation-delay:.18s}
 .typing-dots span:nth-child(3){animation-delay:.36s}
 @keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.55}30%{transform:translateY(-.22rem);opacity:1}}
+.msg.processing .typing-phrase{display:inline-flex;align-items:center;min-width:0;max-width:min(30ch,calc(100vw - 150px));color:var(--vb-ink-soft);font-size:13px;line-height:1.3}
+.msg.processing .typing-phrase-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msg.processing .typing-ellipsis{flex:none;animation:activity-ellipsis 1s ease-in-out infinite alternate}
+@keyframes activity-ellipsis{from{opacity:.25}to{opacity:1}}
 
 /* ── TV preview (processing screenshot / live view / replay) ─────────── */
 .msg.processing .tv-button{display:inline-flex;align-items:center;justify-content:center;background:none;border:0;
