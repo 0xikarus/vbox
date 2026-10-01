@@ -34,6 +34,24 @@ var activityNonVerbs = map[string]bool{
 	"ready": true, "current": true, "recent": true, "latest": true,
 }
 
+var activityImperativeVerbs = map[string]bool{
+	"add": true, "analyze": true, "apply": true, "ask": true, "browse": true,
+	"build": true, "check": true, "clean": true, "collect": true, "commit": true,
+	"compare": true, "continue": true, "create": true, "debug": true, "delete": true,
+	"describe": true, "download": true, "edit": true, "evaluate": true, "extract": true,
+	"fetch": true, "find": true, "fix": true, "generate": true, "get": true,
+	"handle": true, "implement": true, "inspect": true, "install": true, "keep": true,
+	"label": true, "list": true, "load": true, "look": true, "make": true,
+	"merge": true, "normalize": true, "open": true, "parse": true, "patch": true,
+	"prepare": true, "protect": true, "push": true, "read": true, "rebase": true,
+	"remove": true, "render": true, "repair": true, "replace": true, "report": true,
+	"rerun": true, "review": true, "run": true, "save": true, "scan": true,
+	"search": true, "send": true, "set": true, "show": true, "start": true,
+	"stop": true, "summarize": true, "test": true, "train": true, "try": true,
+	"update": true, "upload": true, "use": true, "validate": true, "verify": true,
+	"view": true, "wait": true, "write": true,
+}
+
 // Candidates finds short verb phrases in the latest twelve agent lines. Tool
 // activity lines are candidates on their own, including the old Running tool
 // heartbeat used by workers that have not yet updated.
@@ -68,7 +86,7 @@ func Candidates(text string) []Candidate {
 				words := activityWords.FindAllString(segment, -1)
 				for i, word := range words {
 					lower := strings.ToLower(word)
-					imperative := i == 0 && !activityNonVerbs[lower]
+					imperative := i == 0 && activityImperativeVerbs[lower]
 					if i == 1 && (strings.EqualFold(words[0], "Now") || strings.EqualFold(words[0], "Please")) {
 						imperative = true
 					}
