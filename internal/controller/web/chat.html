@@ -23,6 +23,7 @@
  <button id="chat-menu" class="workspace-nav-menu" type="button" aria-label="Open menu" title="Menu" aria-haspopup="dialog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></button>
  <strong class="brand"><img class="brand-logo brand-logo-on-light" src="/vbox-logo.png" alt="vbox"><img class="brand-logo brand-logo-on-dark" src="/vbox-logo-dark.png" alt=""><span class="brand-suffix">/ chats</span></strong>
  <span class="spacer"></span>
+ <button id="usage-toggle" class="workspace-nav-usage" type="button" hidden title="Usage limits for all saved profiles" aria-label="Usage limits for all saved profiles"></button>
  <button id="refresh" class="workspace-nav-refresh" type="button" title="Refresh chats" aria-label="Refresh chats"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg></button>
 </header>
 
@@ -210,7 +211,7 @@
      <label>Disk (GiB) <input name="disk" type="number" min="1" max="1024" value="10"></label>
      <div id="create-memory-settings" hidden><label>RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label>Swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label></div>
      <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
-     <p id="create-pool-status" class="hint" hidden></p>
+     <details id="create-pool-status" class="hint" hidden><summary></summary><p></p></details>
     </fieldset>
     <fieldset class="nb-step"><legend>2 · Logins</legend><div id="profile-choices" class="profiles"></div></fieldset>
     <fieldset class="nb-step"><legend>3 · Tools</legend><fieldset id="create-tools" class="tools"></fieldset><details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details></fieldset>
@@ -225,7 +226,7 @@
     <p class="preview-note" id="create-preview-note">Prices come from the provider catalog; pool status refreshes live.</p>
    </aside>
   </div>
-  <footer class="new-box-footer"><p id="new-box-status" role="status"></p><button type="button" id="new-box-cancel" class="vb-ghost">Cancel</button><button id="create-box-submit" type="submit" form="create-box">Create and start box</button></footer>
+  <footer class="new-box-footer"><div class="new-box-footer-text"><p id="new-box-summary"></p><p id="new-box-status" role="status"></p></div><button type="button" id="new-box-cancel" class="vb-ghost">Cancel</button><button id="create-box-submit" type="submit" form="create-box">Create and start box</button></footer>
  </section>
 </div>
 
@@ -405,7 +406,6 @@
    <button id="install-app" type="button" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/></svg>Install Android app</button>
    <p id="install-status" class="menu-status" role="status" hidden></p>
    <p class="menu-group-label">Account</p>
-   <button id="usage-toggle" class="menu-usage" type="button" hidden title="Usage limits for all saved profiles"><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V5"/><path d="M4 19h16"/><path d="M8 16v-5"/><path d="M13 16V8"/><path d="M18 16v-9"/></svg>Usage</button>
    <button id="logout" type="button" class="menu-logout" hidden><svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>Log out</button>
   </div>
  </section>
@@ -470,7 +470,7 @@
 <script src="/box-create-limit.js" defer></script>
 <script src="/motion.js" defer></script>
 <script src="/mascot.js" defer></script>
-<script src="/chat.js" defer></script>
-<script src="/sheet-scroll.js" defer></script>
+<script src="/workspace-nav.js" defer></script>
+<script src="/chat.js" defer></script><script src="/sheet-scroll.js" defer></script>
 </body>
 </html>

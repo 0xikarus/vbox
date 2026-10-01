@@ -75,6 +75,11 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
   await p.waitForFunction(()=>{const el=document.querySelector('.msg.processing .tv-button');if(!el)return false;const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth});
   assert.equal(await p.$eval('.msg.processing .tv-button',button=>button.hidden),false,'desktop action is visible in the processing bubble');
+  const alignment=await p.$eval('.msg.processing',row=>{const dots=row.querySelector('.typing-dots').getBoundingClientRect(),button=row.querySelector('.tv-button').getBoundingClientRect(),bubble=row.getBoundingClientRect();const visibleHeight=bubble.height;row.querySelector('.tv-button').hidden=true;const hiddenHeight=row.getBoundingClientRect().height;row.querySelector('.tv-button').hidden=false;return {centerOffset:Math.abs((dots.top+dots.height/2)-(button.top+button.height/2)),gap:button.left-dots.right,buttonHeight:button.height,visibleHeight,hiddenHeight}});
+  assert.ok(alignment.centerOffset<=1,`monitor centers on the dots (${alignment.centerOffset}px)`);
+  assert.ok(Math.abs(alignment.gap-8)<=1,`monitor stays 8px after the dots (${alignment.gap}px)`);
+  assert.equal(alignment.buttonHeight,28);
+  assert.equal(alignment.visibleHeight,alignment.hiddenHeight,'the monitor does not make the bubble taller');
   await p.evaluate(()=>{window.processingDesktopButton=document.querySelector('.msg.processing .tv-button')});
   await p.$eval('#refresh',button=>button.click());
   assert.equal(await p.evaluate(()=>window.processingDesktopButton===document.querySelector('.msg.processing .tv-button')),true,'processing desktop action survives a transcript refresh');

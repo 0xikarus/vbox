@@ -139,7 +139,7 @@ table.markets tr.row:hover{background:var(--vb-swatch-fafafa)}
 .role-capability{border:1px solid var(--vb-swatch-e2e2e2);margin:9px 0;padding:9px;background:var(--vb-swatch-fafafa)}
 .role-capability:has(> .role-capability-toggle input[name=requestMoreTimeEnabled]),.role-capability:has(> .role-capability-toggle input[name=queueFollowupEnabled]),.role-capability:has(> .role-capability-toggle input[name=createAgentBoxEnabled]),.role-capability:has(> .role-capability-toggle input[name=createEmailAddressEnabled]),.role-capability:has(> .role-capability-toggle input[name=sharedChatsEnabled]){display:none}
 .role-capability-toggle{display:flex!important;align-items:center;justify-content:space-between;gap:10px;margin:0!important}.role-capability-toggle>span{display:grid}.role-capability-toggle small{font-size:var(--vb-type-px-12);font-weight:400;color:var(--vb-swatch-6b6864)}
-.role-capability input[type=checkbox],.role-inline input[type=checkbox],.role-shared input[type=checkbox]{width:auto!important;margin:0}
+.role-capability input[type=checkbox],.role-inline input[type=checkbox],.role-shared input[type=checkbox]{margin:0}
 .role-capability-options{margin:7px 0 0;border-top:1px solid var(--vb-swatch-e2e2e2);padding-top:7px}
 .role-capability-options[hidden]{display:none}
 .role-capability-options>summary{cursor:pointer;color:var(--vb-swatch-315da8);font-size:var(--vb-type-px-12);font-weight:700}.role-capability-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:7px}.role-capability-options label{margin:0!important}
