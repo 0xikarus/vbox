@@ -711,7 +711,7 @@ func (a *App) usageFull() {
   vbox updates [BOX] [--json]
   vbox updates ack BOX --session NAME --revision REV
   vbox boxes update BOX --default-agent AGENT
-  vbox pools list|schema|show|create|update|validate|default
+  vbox pools list|schema|show|create|update|validate|default|worker
   vbox fleet status|slots|slots set COUNT [--pool TYPE/ALIAS]
   vbox allocate|hibernate|delete BOX
   vbox connect URL [--token-env ENV]

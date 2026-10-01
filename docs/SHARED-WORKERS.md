@@ -18,16 +18,48 @@ Configure:
 
 - `VMBOX_WORKER_MODE=shared`: select the supervisor at container startup.
 - `VMBOX_SHARED_ACCOUNT_ID`: the controller account UUID.
-- `VMBOX_SHARED_SLOTS`: physical worker capacity, explicitly 1–32.
+- `VMBOX_SHARED_SLOTS`: optional starting slot count, 1–32 (default 1). It only
+  seeds the first start; afterwards slots are changed from the controller.
 - `VMBOX_SHARED_TOKEN`: a randomly generated secret of at least 32 characters.
 - `PORT`: HTTP listener port, default 8080; publish through HTTPS.
 - `VMBOX_SHARED_ROOT`: optional absolute data root, default `/data`.
 
-Register a controller provider credential with provider `shared-worker`, a unique
+Register the worker from the controller's Providers page (**Add provider** →
+Shared worker: its URL and token), or with provider `shared-worker`, a unique
 alias for this physical worker, config `{"endpoint":"https://WORKER_HOST"}`, and
-secret `{"token":"WORKER_TOKEN"}`. Set the alias's fleet desired slot count to N,
-not exceeding the worker capacity. Do not register the same host under multiple
-aliases. The worker must not receive the controller database or another
+secret `{"token":"WORKER_TOKEN"}`. Do not register the same host under multiple
+aliases.
+
+## Changing slots and box size remotely
+
+Once registered, nothing on the host needs editing. Open **Worker settings** on
+the provider's card, or use `vbox pools worker shared-worker ALIAS`:
+
+```sh
+vbox pools worker shared-worker my-vps                     # show specs and settings
+vbox pools worker shared-worker my-vps --slots 5 --box-memory 3 --box-cpu 1.5
+```
+
+The worker reports its machine: CPUs, RAM, swap, disk and isolation tier.
+Every value is bounded by that machine and applied live, without a restart:
+
+- **Slots** is one number for both the worker's capacity and the controller's
+  desired slots. It ranges from the boxes currently on the worker up to one slot
+  per GiB of RAM (at most 32). Lowering it retires free slots first; occupied
+  slots are never evicted, so hibernate or delete boxes to go lower.
+- **New box size** (container isolation only) sets the default CPU (0.5 steps),
+  RAM and swap for boxes created afterwards, each at most the machine's own.
+  Existing boxes keep their limits; change one from its RAM and swap panel.
+- Slots × default RAM may exceed the machine's RAM. That overcommit is allowed
+  and shown as a warning: it is fine while boxes stay light, but under load they
+  compete for memory and swap.
+
+Settings persist in the worker's state under `/data/.shared-worker` and win over
+`VMBOX_SHARED_SLOTS` on later starts (the worker logs when it ignores the
+variable). Isolation mode, data root, listener, image and token remain host
+configuration. A worker built before remote settings keeps its startup slot count
+and the original 1 CPU, 1–8 GiB RAM, 0–4 GiB swap limits; the controller reports
+that it needs an upgrade. The worker must not receive the controller database or another
 provider's management credentials.
 
 On startup, retained workspace identities are validated and their Unix accounts
@@ -42,8 +74,8 @@ resurrected, and a fresh managed agent can be started when reconnecting.
 The controller manages logical slot and directory IDs through this provider;
 they are separate from another provider's service or volume IDs. Deleting a box
 deletes only its directory, not the worker or permanent volume. Creating boxes,
-hibernating, resuming and changing desired slots within configured capacity do
-not redeploy the physical worker. Additional physical workers currently require
+hibernating, resuming and changing slots or box defaults do not redeploy the
+physical worker. Additional physical workers currently require
 separate provisioning and aliases; automatic host scale-out is not implemented.
 New shared slot names include the controller slot UUID so the same ordinal on
 different hosts cannot collide. Existing shared slot identities are preserved.

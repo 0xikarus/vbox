@@ -65,6 +65,9 @@ func (a *App) controllerProviders(ctx context.Context, c config.Context, token s
 		}
 		return a.providerOutput(value, jsonOutput)
 	}
+	if args[0] == "worker" {
+		return a.providerWorker(ctx, c, token, args[1:], jsonOutput)
+	}
 	var out any
 	if args[0] == "list" || args[0] == "schema" {
 		if len(args) > 2 || (len(args) == 2 && args[1] != "--json") {
@@ -241,4 +244,78 @@ func sortedSummaryKeys(value map[string]any) []string {
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// providerWorker shows or changes a worker pool's slots and default box size.
+// Without flags it only reads; changes are bounded by the worker's machine.
+func (a *App) providerWorker(ctx context.Context, c config.Context, token string, args []string, jsonOutput bool) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: pools worker TYPE ALIAS [--slots N] [--box-cpu CPUS] [--box-memory GIB] [--box-swap GIB]")
+	}
+	fs := flag.NewFlagSet("pools worker", flag.ContinueOnError)
+	fs.SetOutput(a.Err)
+	slots := fs.Int("slots", 0, "slots on this worker (sets worker capacity and desired slots)")
+	cpu := fs.Float64("box-cpu", 0, "default CPUs for new boxes")
+	memory := fs.Int64("box-memory", 0, "default RAM GiB for new boxes")
+	swap := fs.Int64("box-swap", -1, "default swap GiB for new boxes")
+	fs.BoolVar(&jsonOutput, "json", jsonOutput, "JSON output")
+	if err := fs.Parse(args[2:]); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("unexpected worker pool argument")
+	}
+	query := url.Values{"provider": {args[0]}, "providerCredential": {args[1]}}
+	var pool struct {
+		Supported bool   `json:"supported"`
+		Reason    string `json:"reason"`
+		Worker    *struct {
+			Settings struct {
+				Revision    uint64          `json:"revision"`
+				Slots       int             `json:"slots"`
+				BoxDefaults json.RawMessage `json:"boxDefaults"`
+			} `json:"settings"`
+		} `json:"worker"`
+	}
+	var shown any
+	if _, err := a.request(ctx, c, token, http.MethodGet, "/v1/fleet/worker?"+query.Encode(), nil, &shown, nil); err != nil {
+		return err
+	}
+	if *slots == 0 && *cpu == 0 && *memory == 0 && *swap < 0 {
+		return a.providerOutput(shown, jsonOutput)
+	}
+	data, _ := json.Marshal(shown)
+	if err := json.Unmarshal(data, &pool); err != nil {
+		return err
+	}
+	if !pool.Supported || pool.Worker == nil {
+		return fmt.Errorf("worker settings unavailable: %s", pool.Reason)
+	}
+	settings := pool.Worker.Settings
+	var defaults struct {
+		CPU       float64 `json:"cpu"`
+		MemoryMiB int64   `json:"memoryMiB"`
+		SwapMiB   int64   `json:"swapMiB"`
+	}
+	if err := json.Unmarshal(settings.BoxDefaults, &defaults); err != nil {
+		return err
+	}
+	if *slots != 0 {
+		settings.Slots = *slots
+	}
+	if *cpu != 0 {
+		defaults.CPU = *cpu
+	}
+	if *memory != 0 {
+		defaults.MemoryMiB = *memory * 1024
+	}
+	if *swap >= 0 {
+		defaults.SwapMiB = *swap * 1024
+	}
+	request := map[string]any{"provider": args[0], "providerCredential": args[1], "revision": settings.Revision, "slots": settings.Slots, "boxDefaults": defaults}
+	var out any
+	if _, err := a.request(ctx, c, token, http.MethodPut, "/v1/fleet/worker", request, &out, nil); err != nil {
+		return err
+	}
+	return a.providerOutput(out, jsonOutput)
 }

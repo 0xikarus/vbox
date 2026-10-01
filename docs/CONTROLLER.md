@@ -50,6 +50,7 @@ vbox providers schema
 vbox providers list
 vbox pools create
 vbox pools default
+vbox pools worker shared-worker ALIAS --slots N
 vbox fleet status
 ```
 
