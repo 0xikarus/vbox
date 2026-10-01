@@ -550,6 +550,67 @@ func TestClaudeChannelDoesNotResendWhileBusyOnSameConnection(t *testing.T) {
 	}
 }
 
+func TestClaudeChannelRecoversAfterTemporaryTmuxOutage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "claude-recover")
+	if err := StoreChatInbound(home, "claude-recover", ChatInbound{ID: "message-1", Text: "after outage"}); err != nil {
+		t.Fatal(err)
+	}
+	previousCurrent, previousInterval := claudeChannelCurrent, claudeChannelPollInterval
+	var current atomic.Bool
+	var checks atomic.Int32
+	claudeChannelCurrent = func(context.Context, string) bool {
+		checks.Add(1)
+		return current.Load()
+	}
+	claudeChannelPollInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		claudeChannelCurrent, claudeChannelPollInterval = previousCurrent, previousInterval
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notifications := make(chan map[string]any, 2)
+	done := make(chan struct{})
+	go func() {
+		serveClaudeChannel(ctx, func(value any) error {
+			notifications <- value.(map[string]any)
+			return nil
+		})
+		close(done)
+	}()
+	deadline := time.After(time.Second)
+	for checks.Load() < 4 {
+		select {
+		case <-deadline:
+			t.Fatal("channel stopped checking tmux during the outage")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if owners, err := claudeChannelOwners(home, "claude-recover"); err != nil || len(owners) != 0 {
+		t.Fatalf("channel advertised readiness during outage: owners=%v error=%v", owners, err)
+	}
+	current.Store(true)
+	select {
+	case notification := <-notifications:
+		if notification["method"] != "notifications/claude/channel" {
+			t.Fatalf("unexpected notification: %v", notification)
+		}
+		params := notification["params"].(map[string]any)
+		if params["content"] != "after outage" {
+			t.Fatalf("wrong message after recovery: %v", params)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending message was not emitted after tmux recovered")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("channel did not stop after cancellation")
+	}
+}
+
 func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

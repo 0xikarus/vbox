@@ -385,6 +385,8 @@ func watchDesktopToolPolicy(ctx context.Context, assignment string, resolve desk
 	}
 }
 
+var claudeChannelPollInterval = 500 * time.Millisecond
+
 func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 	session, err := chatSession(ctx)
 	if err != nil {
@@ -405,20 +407,19 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 	}
 	ready := claudeChannelReadyPath(home, session, owner)
 	defer os.Remove(ready)
-	ticker := time.NewTicker(500 * time.Millisecond)
+	ticker := time.NewTicker(claudeChannelPollInterval)
 	defer ticker.Stop()
 	// A successful write to this live Claude channel can remain queued in the
 	// client until its current turn finishes. Its transcript receipt may therefore
 	// appear much later. Emit each inbox event once per MCP connection; a new
 	// connection after a TUI restart gets a fresh map and can retry it.
 	sent := map[string]bool{}
-	missingPane := 0
 	for {
 		if !claudeChannelCurrent(ctx, session) {
-			missingPane++
-			if missingPane >= 3 {
-				return
-			}
+			// A brief tmux/worker interruption does not close Claude's MCP
+			// connection. Keep polling so this same connection can resume
+			// delivery when the pane becomes reachable again.
+			_ = os.Remove(ready)
 			select {
 			case <-ctx.Done():
 				return
@@ -426,10 +427,16 @@ func serveClaudeChannel(ctx context.Context, encode func(any) error) {
 				continue
 			}
 		}
-		missingPane = 0
 		marker, _ := json.Marshal(map[string]any{"owner": owner, "pid": os.Getpid(), "sessionId": claudeConversationID})
 		if writeTextAtomic(ready, string(marker), 0600) != nil {
-			return
+			// A temporary workspace I/O failure must not permanently detach
+			// a still-running Claude MCP connection from Chat.
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				continue
+			}
 		}
 		if events, err := pendingChatInbound(home, session); err == nil {
 			emitted := false
