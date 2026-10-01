@@ -19,5 +19,8 @@ var activityRanker = func() activityphrase.Ranker {
 
 // activityPhrase summarizes the latest agent action from bounded evidence.
 func activityPhrase(text string) string {
+	if label := activityphrase.LatestToolLabel(text); label != "" {
+		return label
+	}
 	return activityRanker.Best(activityphrase.Candidates(text))
 }

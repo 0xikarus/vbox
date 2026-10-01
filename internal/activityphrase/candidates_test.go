@@ -55,3 +55,13 @@ func TestCandidatesSummarizeConsecutiveScreenshots(t *testing.T) {
 		t.Fatalf("screenshot sequence: %+v", got)
 	}
 }
+
+func TestLatestToolLabelIsVerbatim(t *testing.T) {
+	text := "assistant: I am editing the panel.\ntool: Editing chat.js"
+	if got := LatestToolLabel(text); got != "Editing chat.js" {
+		t.Fatalf("latest tool label = %q", got)
+	}
+	if got := LatestToolLabel(text + "\nassistant: Checking the result."); got != "" {
+		t.Fatalf("older tool label overrode newer prose: %q", got)
+	}
+}

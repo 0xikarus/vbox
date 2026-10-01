@@ -17,6 +17,23 @@ type Candidate struct {
 var activityWords = regexp.MustCompile(`[\pL][\pL\pN'’-]*`)
 var activityImageTool = regexp.MustCompile(`(?i)^tool: Reading [^\s]+\.(?:png|jpe?g|gif|webp)$`)
 
+// LatestToolLabel preserves a harness label verbatim when it is the newest
+// evidence line. The model only needs to judge agent prose.
+func LatestToolLabel(text string) string {
+	lines := strings.Split(strings.TrimSpace(text), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	latest := strings.TrimSpace(lines[len(lines)-1])
+	if label, ok := strings.CutPrefix(latest, "tool: "); ok {
+		return label
+	}
+	if latest == "Running tool" { // Older workers did not prefix tool activity.
+		return latest
+	}
+	return ""
+}
+
 var activityStops = map[string]bool{
 	"a": true, "an": true, "and": true, "but": true, "or": true, "then": true,
 	"because": true, "while": true, "so": true, "with": true, "without": true,

@@ -204,46 +204,49 @@ func trainRanker(paths inputPaths, labels, out string, epochs int, check bool) e
 		return examples
 	}
 	model := activityphrase.Train(toExamples(training), epochs)
+	// Calibrate on the requested held-out 20%: among all score cutoffs, choose
+	// the one with the widest coverage whose returned phrases are at least 80%
+	// overlapping with the teacher phrase. Tool labels bypass this ranker.
 	type scoredRow struct {
-		row   labeledSnippet
-		index int
 		score float32
+		hit   bool
 	}
-	var scoredValidation []scoredRow
-	var thresholds []float32
-	for _, row := range validation {
-		index, score := model.Top(row.Candidates)
-		scoredValidation = append(scoredValidation, scoredRow{row, index, score})
-		thresholds = append(thresholds, score)
-	}
-	sort.Slice(thresholds, func(i, j int) bool { return thresholds[i] < thresholds[j] })
-	thresholds = append([]float32{thresholds[0] - 1}, thresholds...)
-	thresholds = append(thresholds, thresholds[len(thresholds)-1]+1)
-	bestValidation := -1
-	for _, threshold := range thresholds {
-		correct := 0
-		for _, scored := range scoredValidation {
-			if phraseHitPrediction(scored.row, scored.index, scored.score, threshold) {
-				correct++
-			}
-		}
-		if correct > bestValidation {
-			bestValidation = correct
-			model.Threshold = threshold
-		}
-	}
-	var topOneHits, exactMatches int
+	var scored []scoredRow
+	var toolCount, toolHits int
 	for _, row := range heldout {
-		if phraseHit(model, row, model.Threshold) {
-			topOneHits++
+		if label := activityphrase.LatestToolLabel(row.Text); label != "" {
+			toolCount++
+			if activityphrase.TokenOverlap(label, row.Phrase) >= .6 {
+				toolHits++
+			}
+			continue
 		}
-		if model.Best(row.Candidates) == row.Phrase {
-			exactMatches++
+		index, score := model.Top(row.Candidates)
+		if index >= 0 {
+			scored = append(scored, scoredRow{score, activityphrase.TokenOverlap(row.Candidates[index].Text, row.Phrase) >= .6})
 		}
+	}
+	sort.Slice(scored, func(i, j int) bool { return scored[i].score > scored[j].score })
+	var hits, accepted, selectedHits int
+	model.Threshold = 1e30 // A zero-coverage model is preferable to a false claim of precision.
+	for i := 0; i < len(scored); {
+		j := i
+		for j < len(scored) && scored[j].score == scored[i].score {
+			if scored[j].hit {
+				hits++
+			}
+			j++
+		}
+		if hits*5 >= j*4 && j > accepted {
+			accepted, selectedHits = j, hits
+			model.Threshold = scored[i].score
+		}
+		i = j
 	}
 	fmt.Printf("labeled: %d, train: %d, validation: %d, held-out: %d\n", len(rows), len(training), len(validation), len(heldout))
 	fmt.Printf("candidate recall at 0.6 overlap: %d/%d; span recall: %d/%d\n", phraseRecall, phraseCount, spanRecall, spanCount)
-	fmt.Printf("held-out top-1 overlap hit: %d/%d; exact phrase: %d/%d; threshold: %.3f\n", topOneHits, len(heldout), exactMatches, len(heldout), model.Threshold)
+	fmt.Printf("held-out ranker precision@threshold: %d/%d; coverage: %d/%d; threshold: %.3f\n", selectedHits, accepted, accepted, len(heldout)-toolCount, model.Threshold)
+	fmt.Printf("held-out direct tool labels: %d/%d overlap; total returned coverage: %d/%d\n", toolHits, toolCount, accepted+toolCount, len(heldout))
 	artifact := model.Encode()
 	if check {
 		current, err := os.ReadFile(out)
@@ -257,16 +260,4 @@ func trainRanker(paths inputPaths, labels, out string, epochs int, check bool) e
 	}
 	fmt.Printf("model: %d bytes\n", len(artifact))
 	return nil
-}
-
-func phraseHit(model activityphrase.Ranker, row labeledSnippet, threshold float32) bool {
-	index, score := model.Top(row.Candidates)
-	return phraseHitPrediction(row, index, score, threshold)
-}
-
-func phraseHitPrediction(row labeledSnippet, index int, score, threshold float32) bool {
-	if index < 0 || score < threshold {
-		return row.Best == -1 && row.Span == ""
-	}
-	return activityphrase.TokenOverlap(activityphrase.Normalize(row.Candidates[index].Text), row.Phrase) >= .6
 }
