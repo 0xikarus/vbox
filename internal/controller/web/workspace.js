@@ -5,8 +5,9 @@ let closeTerminal=()=>{},terminalAttached=false,terminalBusy=null;
 let closeDesktop=()=>{},desktopBusy=false,desktopAttached=false;
 let refreshDesktopPreview=()=>{};
 let selectedWorkspaceView='',workspaceRole='',managedSession='';
+const workspaceUsage=window.VMBoxWorkspaceNav?.init({usageId:'workspace-usage'});
 const workspaceMascot=window.VBoxMascot?.Mascot?new window.VBoxMascot.Mascot($('.workspace-avatar-mascot'),boxID):null;
-function showLogin(message=''){$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
+function showLogin(message=''){workspaceUsage?.setOwner(false);$('#login').hidden=false;$('#login-error').textContent=message;$('#login-token').focus()}
 
 let boxSummary=null,controllerPing=null,statsTimer,statsGeneration=0;
 const viewerStats={desktop:{state:'disconnected',ping:null},terminal:{state:'disconnected'}};
@@ -266,8 +267,8 @@ async function connect(resume=false){
  }catch(e){if(version===epoch)$('#error').textContent=e.message}finally{busy=false;$('#connect').disabled=false}
 }
 $('#connect').onclick=()=>void connect(true);
-$('#login').onsubmit=async e=>{e.preventDefault();$('#login-error').textContent='';try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;$('#error').textContent='';await connect(false)}catch(e){showLogin(e.message)}};
-$('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');$('#workspace').hidden=true;$('#status').textContent='Logged out. The box was not stopped.';showLogin()}catch(e){$('#error').textContent=e.message}};
+$('#login').onsubmit=async e=>{e.preventDefault();$('#login-error').textContent='';try{await api('/v1/browser-session','POST',{}, {Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();workspaceRole=(await api('/v1/whoami')).role;workspaceUsage?.setOwner(workspaceRole==='owner');$('#login').hidden=true;$('#error').textContent='';await connect(false)}catch(e){showLogin(e.message)}};
+$('#logout').onclick=async()=>{epoch++;stopStats();closeTerminal();closeDesktop();try{await api('/v1/browser-session','DELETE');workspaceUsage?.setOwner(false);$('#workspace').hidden=true;$('#status').textContent='Logged out. The box was not stopped.';showLogin()}catch(e){$('#error').textContent=e.message}};
 $('#hibernate').onclick=async()=>{
  if(busy||!confirm('Hibernate this box? Running processes will stop; workspace files are retained.'))return;
  const version=++epoch;stopStats();closeTerminal();closeDesktop();allocation=null;allocationKey=crypto.randomUUID();selectedWorkspaceView='';$('#terminal-screen').replaceChildren();busy=true;
@@ -286,7 +287,7 @@ $('#delete-box').onclick=async()=>{
  catch(e){if(version===epoch){deletePending=false;$('#delete-box').disabled=false;$('#error').textContent=e.message}}
 };
 window.addEventListener('pagehide',()=>{epoch++;stopStats();closeTerminal();closeDesktop()});
-(async()=>{try{workspaceRole=(await api('/v1/whoami')).role;$('#login').hidden=true;await connect(false)}catch(e){showLogin(e.message==='Please log in to the controller.'?'':e.message)}})();
+(async()=>{try{workspaceRole=(await api('/v1/whoami')).role;workspaceUsage?.setOwner(workspaceRole==='owner');$('#login').hidden=true;await connect(false)}catch(e){showLogin(e.message==='Please log in to the controller.'?'':e.message)}})();
 
 {
  const logs=$('#worker-logs'),button=$('#load-worker-logs'),status=$('#worker-log-status'),output=$('#worker-log-output');

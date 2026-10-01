@@ -4,7 +4,7 @@ import http from 'node:http';
 import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
-const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
+const files=Object.fromEntries(await Promise.all(['chat.html','chat.js','workspace-nav.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
 const usage={profiles:[{application:'claude',name:'work',boxes:['Builder'],observedAt:'2026-09-24T03:00:00Z',checkedAt:'2026-09-24T03:01:00Z',snapshot:{windows:[
  {name:'session',usedPercent:25,resetsAt:'2026-09-24T04:00:00Z'},
  {name:'weekly_all',usedPercent:90,resetsAt:'2026-09-30T00:00:00Z'}
@@ -48,9 +48,10 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   const page=await browser.newPage();await page.setViewport({width:1200,height:800});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat');
   await page.waitForFunction(()=>!document.querySelector('#usage-toggle').hidden&&document.querySelector('#usage-list').textContent.includes('claude · work'));
-  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
+  assert.equal(await page.$eval('#usage-toggle .workspace-usage-percent',element=>element.textContent),'10%');
+  assert.equal(await page.evaluate(()=>!!document.querySelector('#chat-menu-sheet #usage-toggle')),false,'Usage no longer appears in the menu');
   assert.match(await page.$eval('#usage-toggle',element=>element.title),/all saved profiles/);
-  await page.click('#chat-menu');await page.click('#usage-toggle');
+  await page.click('#usage-toggle');
   await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% left'));
   if(screenshotDir){await mkdir(screenshotDir,{recursive:true});await page.screenshot({path:screenshotDir+'/usage-overview-desktop.png'})}
   const text=await page.$eval('#usage-list',element=>element.textContent);
@@ -79,7 +80,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.$eval('#chat-header-terminal',element=>element.getAttribute('aria-label')),'Open terminal');
   assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg'),text:element.textContent.trim()})),{next:'chat-terminal',label:'Desktop',icon:true,text:'Desktop'});
   assert.match(await page.$eval('#chat-usage',element=>element.getAttribute('aria-label')),/claude personal usage: 80% remaining/);
-  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage','navbar opens all profiles without a percentage');
+  assert.equal(await page.$eval('#usage-toggle .workspace-usage-percent',element=>element.textContent),'10%','topbar shows the lowest remaining window');
   await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
@@ -88,14 +89,14 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="builder"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('10% left'));
-  await page.click('#chat-menu');await page.click('#usage-toggle');
+  await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/Profile usage limits/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
   await page.click('#usage-refresh');
   await page.waitForFunction(()=>document.querySelector('#usage-status')?.textContent.includes('Usage updated.'));
   assert.equal(manualRefreshes,1,'manual refresh still checks saved profiles');
   assert.equal(await page.$eval('#usage-refresh',element=>element.disabled),false);
-  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
+  assert.equal(await page.$eval('#usage-toggle .workspace-usage-percent',element=>element.textContent),'10%');
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="shell"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Terminal');
@@ -156,7 +157,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'new box profile list fits mobile width');
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/create-profiles-mobile.png'});
   await page.click('#new-box-close');
-  await page.click('#chat-menu');await page.click('#usage-toggle');
+  await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · work/);
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
   if(screenshotDir)await page.screenshot({path:screenshotDir+'/usage-overview-mobile.png'});
@@ -173,7 +174,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.click('#chat-back');
   await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
   await new Promise(resolve=>setTimeout(resolve,350));
-  await page.click('#chat-menu');await page.click('#usage-toggle');
+  await page.click('#usage-toggle');
   assert.equal(await page.$eval('#usage-modal .usage-card',card=>card.scrollWidth<=card.clientWidth+1),true,'usage overview fits a narrow phone');
   await page.click('#usage-modal button[data-close]');
   await page.click('#new-box');

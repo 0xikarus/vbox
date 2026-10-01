@@ -3351,7 +3351,7 @@
   await disablePushSubscription();
   $('#usage-modal').hidden=true;
   usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
-  $('#usage-toggle').hidden=true;$('#usage-toggle').textContent='Usage';$('#chat-usage').hidden=true;owner=false;
+  $('#usage-toggle').hidden=true;$('#chat-usage').hidden=true;owner=false;
   closeTakeover();
   inspectOpen=false;inspect.hidden=true;stopInspectHero();clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
@@ -3370,7 +3370,7 @@
   try{
    const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');await loadReadMarkers();
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
-   $('#usage-toggle').hidden=!owner;
+   $('#usage-toggle').hidden=true;
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
    $('#ai-settings-toggle').hidden=!owner;
@@ -3432,7 +3432,8 @@ function usageLevel(remaining){return remaining===null?'none':remaining>30?'ok':
 function renderUsage(data){
  const root=$('#usage-list');root.replaceChildren();
  const profiles=Array.isArray(data?.profiles)?data.profiles:[];
- usageProfiles=profiles;
+  usageProfiles=profiles;
+  window.VMBoxWorkspaceNav?.updateUsagePill($('#usage-toggle'),profiles,owner);
  if(data?.loaded)usageLoaded=true;
  profileUsageLoadError=false;renderCreateProfileUsage();
  renderChatUsage();
