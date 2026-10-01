@@ -76,7 +76,8 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   assert.equal(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
   assert.equal(await page.$('#chat-messages .msg-actions'),null,'read-only messages have no reply controls');
   const messageRows=await page.$$('#chat-messages .msg');
-  await (await messageRows[0].$('.media-button')).click();
+  await page.$eval('#chat-messages',element=>{element.scrollTop=element.scrollHeight});
+  await page.$eval('#chat-messages .msg .media-button',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#media-viewer').hidden);
   assert.equal(await page.$eval('#media-annotate',button=>button.hidden),true,'read-only box conversations have no reply action');
   assert.equal(await page.$eval('#media-viewer-count',element=>element.textContent),'1 / 2');

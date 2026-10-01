@@ -2022,7 +2022,7 @@ function pairTileStatus(tile,mode,label){
    const button=document.createElement('button');button.type='button';button.className='pair-tile';button.dataset.pairTileBox=id;button.setAttribute('aria-label','Open '+name+' control');
    const screen=document.createElement('div');screen.className='pair-tile-screen';screen.setAttribute('aria-hidden','true');
    const placeholder=document.createElement('span');placeholder.className='pair-tile-placeholder';placeholder.textContent='Connecting…';
-   const mascotWrap=document.createElement('span');mascotWrap.className='pair-tile-mascot';mascotWrap.append(reuseMessageMascot(null,box,'pair-hero-mascot',false));
+   const mascotWrap=document.createElement('span');mascotWrap.className='pair-tile-mascot';mascotWrap.append(reuseMessageMascot(null,box,'pair-hero-mascot',false));bindMascotTooltip(mascotWrap,box);
    const label=document.createElement('span');label.className='pair-tile-label';
    const tileName=document.createElement('span');tileName.className='pair-tile-name';tileName.textContent=name;
    const dot=document.createElement('span');dot.className='pair-tile-dot';dot.setAttribute('aria-hidden','true');

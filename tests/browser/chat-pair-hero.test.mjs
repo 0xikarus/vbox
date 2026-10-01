@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {mkdir,readFile} from 'node:fs/promises';
 import {resolve,extname} from 'node:path';
 import puppeteer from 'puppeteer-core';
 
@@ -136,6 +136,10 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   await page.waitForFunction(()=>document.querySelector('.pair-hero')===window.pairHeroBefore);
   assert.equal(await page.evaluate(()=>document.querySelector('.pair-msg .msg-avatar')===window.pairMascotBefore),true,'polling reuses the live message mascot');
   assert.equal(await page.evaluate(()=>window.fakeDesktop.filter(viewer=>!viewer.closed).length+window.fakeTerminal.filter(viewer=>!viewer.closed).length),2);
+  assert.equal(await page.$$eval('.pair-tile-mascot',nodes=>nodes.every(node=>node.getAttribute('aria-label')?.includes('no fresh observation'))),true);
+  await page.click('.pair-tile-mascot');
+  await page.waitForSelector('#mascot-mood-tooltip:not([hidden])');
+  assert.equal(await page.$eval('#takeover',node=>node.hidden),true,'tapping a tile mascot shows its tooltip without opening takeover');
   await page.$eval('.pair-tile[data-mode="tmux"]',node=>node.click());
   await page.waitForFunction(()=>!document.querySelector('#takeover').hidden);
   assert.equal(await page.$eval('#takeover-title',node=>node.textContent),'Reviewer');
@@ -160,6 +164,18 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   await page.waitForFunction((index,cols)=>window.terminalSockets[index].frames.some(frame=>'cols'in frame&&frame.cols!==cols),{},workspaceSocket,beforeResize.cols);
   assert.deepEqual(await page.evaluate(()=>window.terminalSockets.filter(socket=>socket.viewOnly).flatMap(socket=>socket.frames).filter(frame=>'cols'in frame||'rows'in frame)),[],'view-only tiles never send resize while Workspace does');
   await page.evaluate(()=>window.closeWorkspaceTestTerminal());
+  if(process.env.VMBOX_CAPTURE_DIR){
+   await page.evaluate(()=>window.workspaceTestRoot.remove());
+   await mkdir(process.env.VMBOX_CAPTURE_DIR,{recursive:true});
+   for(const width of [390,1440])for(const theme of ['light','dark']){
+   await page.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});
+   await page.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+    if(width===390)await page.$eval('.pair-tile-mascot',node=>node.click());
+    else await page.hover('.pair-tile-mascot');
+    await page.waitForSelector('#mascot-mood-tooltip:not([hidden])');
+    await page.screenshot({path:`${process.env.VMBOX_CAPTURE_DIR}/pair-hero-${width}-${theme}.png`});
+   }
+  }
   desktopA=false;
   await page.close();
  }finally{await browser.close();await new Promise(done=>server.close(done))}
