@@ -180,8 +180,12 @@ func (s *Server) refreshFleetSlotImages(ctx context.Context, accountID string, s
 }
 
 func (s *Server) ensureFleetSlot(ctx context.Context, accountID string, slot v1.ComputeSlot, prov provider.Provider) (v1.ComputeSlot, error) {
-	if err := s.Store.SetComputeSlotState(ctx, accountID, slot.ID, v1.FleetSlotStarting, ""); err != nil {
+	result, err := s.Store.DB.ExecContext(ctx, `UPDATE compute_slots SET state='starting',failure_reason=NULL,updated_at=now() WHERE account_id=$1 AND id=$2 AND EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.account_id=compute_slots.account_id AND pc.provider=compute_slots.provider AND pc.name=compute_slots.provider_credential AND NOT pc.deleting FOR SHARE)`, accountID, slot.ID)
+	if err != nil {
 		return slot, err
+	}
+	if changed, _ := result.RowsAffected(); changed != 1 {
+		return slot, fmt.Errorf("provider pool is unavailable or deleting")
 	}
 	box, err := prov.Create(ctx, provider.CreateRequest{
 		Name: fleetProviderSlotName(accountID, slot), Image: s.DefaultImage, Region: slot.Region,

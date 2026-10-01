@@ -669,19 +669,6 @@ func (s *Store) ProviderCredential(ctx context.Context, accountID, providerName,
 	return values[0], nil
 }
 
-func (s *Store) DeleteProviderCredential(ctx context.Context, p Principal, providerName, name string) error {
-	result, err := s.DB.ExecContext(ctx, `DELETE FROM provider_credentials WHERE account_id=$1 AND provider=$2 AND name=$3`, p.AccountID, providerName, name)
-	if err != nil {
-		return err
-	}
-	count, _ := result.RowsAffected()
-	if count != 1 {
-		return fmt.Errorf("provider credential not found")
-	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail) VALUES($1,$2,'provider_credential.delete','provider_credential',$3,jsonb_build_object('provider',$4::text,'name',$5::text))`, p.AccountID, p.UserID, providerName+":"+name, providerName, name)
-	return nil
-}
-
 func (s *Store) ListNotifications(ctx context.Context, accountID string, decrypt bool) ([]DecryptedNotification, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT id::text,account_id::text,kind,name,encrypted_secret,config,allowed_users,allowed_chats,enabled,created_at,updated_at FROM notification_destinations WHERE account_id=$1 ORDER BY kind,name`, accountID)
 	if err != nil {

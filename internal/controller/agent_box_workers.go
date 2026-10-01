@@ -27,7 +27,7 @@ func (s *Store) availableAgentBoxWorkers(ctx context.Context, accountID, preferr
 		FROM compute_slots s
 		JOIN provider_credentials pc ON pc.account_id=s.account_id AND pc.provider=s.provider AND pc.name=s.provider_credential
 		JOIN fleet_settings f ON f.account_id=s.account_id AND f.provider=s.provider AND f.provider_credential=s.provider_credential
-		WHERE s.account_id=$1 AND s.ordinal<=f.compute_box_slots AND s.state='free' AND s.health='healthy'
+		WHERE s.account_id=$1 AND s.ordinal<=f.compute_box_slots AND s.state='free' AND s.health='healthy' AND NOT pc.deleting
 		AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id)
 		ORDER BY CASE WHEN s.provider=$2 AND s.provider_credential=$3 THEN 0 ELSE 1 END,s.provider,s.provider_credential,s.ordinal,s.id`, accountID, preferredProvider, preferredCredential)
 	if err != nil {

@@ -370,6 +370,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/provider-credentials/{provider}/{name}/validate", s.owner(s.providerValidateHandler))
 	mux.HandleFunc("PUT /v1/provider-credentials/{provider}/{name}", s.owner(s.putProviderCredential))
 	mux.HandleFunc("DELETE /v1/provider-credentials/{provider}/{name}", s.owner(s.deleteProviderCredential))
+	mux.HandleFunc("GET /v1/provider-credentials/{provider}/{name}/delete-plan", s.owner(s.providerCredentialDeletePlan))
 	mux.HandleFunc("GET /v1/notifications", s.owner(s.listNotifications))
 	mux.HandleFunc("PUT /v1/notifications/{kind}/{name}", s.owner(s.putNotification))
 	mux.HandleFunc("POST /v1/notifications/{kind}/{name}/test", s.owner(s.testNotification))
@@ -1015,10 +1016,6 @@ func (s *Server) putProviderCredential(w http.ResponseWriter, r *http.Request, p
 		return
 	}
 	writeJSON(w, 200, value)
-}
-
-func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request, p Principal) {
-	writeError(w, http.StatusConflict, fmt.Errorf("provider deletion requires an explicit resource/default migration; no credentials deleted"))
 }
 
 func (s *Server) listNotifications(w http.ResponseWriter, r *http.Request, p Principal) {
