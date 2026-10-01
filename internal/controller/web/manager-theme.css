@@ -49,6 +49,20 @@ table.markets tr.row:hover{background:var(--vb-swatch-243243)}
 body[data-manage-view="boxes"] .manage-content>section:not(#boxes),body[data-manage-view="providers"] .manage-content>section:not(#providers),body[data-manage-view="profiles"] .manage-content>section:not(#profiles),body[data-manage-view="roles"] .manage-content>section:not(#roles),body[data-manage-view="instructions"] .manage-content>section:not(#instructions),body[data-manage-view="fleet"] .manage-content>section:not(#fleet),body[data-manage-view="notifications"] .manage-content>section:not(#notifications){display:none}
 #profile-summary{margin:.25rem 0 .85rem;color:var(--vb-swatch-91a0b3);font-size:var(--vb-type-rem-0-78)}
 #profile-search{width:100%}
+.profile-login-card{width:min(38rem,calc(100vw - 2rem));max-height:88vh;overflow:auto}
+#profile-login-form{display:block}
+.profile-login-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem;margin:.8rem 0;width:100%}
+.profile-login-fields .field{display:grid;gap:.25rem;min-width:0}
+.profile-login-fields input,.profile-login-fields select{box-sizing:border-box;width:100%;min-width:0}
+.profile-login-replace{display:flex;align-items:center;gap:.4rem;margin:.8rem 0}
+#profile-login-progress{padding:.7rem 0}
+#profile-login-terminal{height:13rem;min-width:0;padding:.4rem;background:#151b26;border:1px solid var(--vb-swatch-3a4b5e);border-radius:var(--r-control);overflow:hidden}
+#profile-login-url{display:inline-block;margin:.35rem 0;overflow-wrap:anywhere}
+#profile-login-device-code{font-size:1.3rem;letter-spacing:.1em;user-select:all}
+#profile-login-code-form{display:flex;align-items:end;gap:.6rem;flex-wrap:wrap;margin:.8rem 0}
+#profile-login-verify{order:0}
+#profile-login-submit{order:1}
+@media(max-width:600px){.profile-login-fields{grid-template-columns:minmax(0,1fr)}}
 #profile-tree{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}
 .profile-app{min-width:0;overflow:hidden;border:1px solid var(--vb-swatch-2b3848);border-radius:var(--r-surface);background:var(--vb-swatch-1a2230)}
 .profile-app-head{display:flex;align-items:center;gap:.7rem;padding:.85rem .95rem;border-bottom:1px solid var(--vb-swatch-2b3848)}
