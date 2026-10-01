@@ -18,9 +18,12 @@ func TestBoxActivityReturnsOneScopedBatchAndExpiresState(t *testing.T) {
 		WithArgs("account-a", "user", "user-a").
 		WillReturnRows(sqlmock.NewRows(columns).
 			AddRow("box-fresh", true, now.Add(-5*time.Second), "happy", "working", "Editing chat.js", now.Add(-5*time.Second), now.Add(-5*time.Second)).
-			AddRow("box-old-mood", true, now.Add(-2*time.Minute), "angry", "working", "Running tests", now.Add(-2*time.Minute), now.Add(-3*time.Minute)).
+			AddRow("box-old-mood", true, now.Add(-2*time.Minute), "angry", "working", "Running tests", now.Add(-2*time.Minute), now.Add(-2*time.Minute)).
 			AddRow("box-old-phrase", true, now.Add(-11*time.Minute), "happy", "working", "Old phrase", now.Add(-11*time.Minute), now.Add(-11*time.Minute)).
 			AddRow("box-idle", false, now.Add(-5*time.Second), "idle", "idle", "Old idle phrase", now.Add(-5*time.Second), now.Add(-3*time.Minute)).
+			// A phrase was produced three minutes ago; the latest observation
+			// was unsure five seconds ago. Details retains the phrase, but the
+			// list must return to "working…".
 			AddRow("box-empty-run", true, now.Add(-5*time.Second), "idle", "working", "Last good phrase", now.Add(-5*time.Second), now.Add(-3*time.Minute)).
 			AddRow("box-unknown", nil, nil, nil, nil, nil, nil, nil).
 			AddRow("box-hibernated", nil, nil, nil, nil, nil, nil, nil))
@@ -42,7 +45,7 @@ func TestBoxActivityReturnsOneScopedBatchAndExpiresState(t *testing.T) {
 	if activities[2].Phrase != "" || activities[2].Mood != "" || activities[2].ObservedAt != nil || activities[2].LastPhrase != "Old phrase" || activities[2].LastPhraseAt == nil {
 		t.Fatalf("expired phrase: %+v", activities[2])
 	}
-	if activities[3].Busy == nil || *activities[3].Busy || activities[3].Phrase != "" || activities[3].LastPhrase != "Old idle phrase" || activities[4].Phrase != "Last good phrase" || activities[4].LastPhraseAt == nil || activities[4].LastObservedAt == nil || !activities[4].LastPhraseAt.Before(*activities[4].LastObservedAt) || activities[5].Busy != nil || activities[6].Busy != nil || activities[6].Mood != "" {
+	if activities[3].Busy == nil || *activities[3].Busy || activities[3].Phrase != "" || activities[3].LastPhrase != "Old idle phrase" || activities[4].Phrase != "" || activities[4].LastPhrase != "Last good phrase" || activities[4].LastPhraseAt == nil || activities[4].LastObservedAt == nil || !activities[4].LastPhraseAt.Before(*activities[4].LastObservedAt) || activities[5].Busy != nil || activities[6].Busy != nil || activities[6].Mood != "" {
 		t.Fatalf("idle, empty-run, unknown, or hibernated activity leaked: %+v %+v %+v %+v", activities[3], activities[4], activities[5], activities[6])
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

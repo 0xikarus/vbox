@@ -73,7 +73,9 @@ func (s *Server) boxActivityHandler(w http.ResponseWriter, r *http.Request, p Pr
 			stamp := phraseAt.Time.UTC()
 			value.LastPhraseAt = &stamp
 			value.LastPhrase = phrase.String
-			if value.Busy != nil && *value.Busy && now.Sub(phraseAt.Time) <= 10*time.Minute {
+			// The list and chat show only the current observation's phrase. A
+			// later unsure run retains LastPhrase for Details without replaying it.
+			if observed.Valid && value.Busy != nil && *value.Busy && !phraseAt.Time.Before(observed.Time) && now.Sub(observed.Time) <= 10*time.Minute {
 				value.Phrase = phrase.String
 			}
 		}
