@@ -123,7 +123,7 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		locationFilter += fmt.Sprintf(" AND s.id::text=$%d", len(queryArgs)+1)
 		queryArgs = append(queryArgs, request.SlotID)
 	}
-	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy'"+locationFilter+" AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", queryArgs...))
+	slot, err := scanComputeSlot(tx.QueryRowContext(ctx, computeSlotSelect+" WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.account_id=s.account_id AND pc.provider=s.provider AND pc.name=s.provider_credential AND NOT pc.deleting FOR SHARE)"+locationFilter+" AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id) ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1", queryArgs...))
 	if errors.Is(err, sql.ErrNoRows) {
 		if request.SlotID != "" {
 			return creation, fmt.Errorf("selected worker slot is no longer available")

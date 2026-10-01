@@ -59,7 +59,12 @@ dialog.providers-dialog .vb-sheet-header .providers-refresh:disabled{opacity:.55
 .providers-table td.is-warning{color:var(--vb-warn-text);font-weight:700}
 .providers-table td.is-danger{color:var(--vb-danger-text);font-weight:700}
 .providers-table .providers-row-error{margin:7px 0 0;color:var(--vb-danger-text);font-size:var(--vb-type-px-12)}
-.providers-actions-space{min-width:40px}
+.providers-actions-space{min-width:78px}
+.providers-actions-space button,.provider-delete-dialog .danger{border:1px solid var(--vb-danger-text);border-radius:var(--r-control);background:var(--vb-danger-soft);color:var(--vb-danger-text);padding:6px 10px;font:600 var(--vb-type-px-13)/1.3 var(--vb-font);white-space:nowrap;cursor:pointer}
+.provider-delete-dialog .danger{background:var(--vb-danger-text);color:var(--vb-bg)}
+.provider-delete-dialog .danger:disabled{opacity:.45;cursor:default}
+.provider-delete-dialog .provider-delete-blockers{color:var(--vb-danger-text)}
+.provider-delete-dialog .sheet-scroll-body{overflow-y:auto}
 @media(max-width:600px){
  .vb-sheet-dialog.providers-dialog[open]{width:100%}
  .providers-dialog .vb-sheet-header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px}
@@ -75,7 +80,7 @@ dialog.providers-dialog .vb-sheet-header .providers-refresh:disabled{opacity:.55
  .providers-table .providers-identity strong{display:inline;margin-right:8px}.providers-table .providers-identity small{display:inline}
  .providers-table .providers-default{margin:0 0 0 8px}
  .providers-table td[data-label="Observed"]{grid-column:1/-1;border-top:1px solid var(--vb-line)}
- .providers-table .providers-actions-space{display:none}
+ .providers-table .providers-actions-space{grid-column:1/-1;display:block;border-top:1px solid var(--vb-line)}
 }
 @media(max-width:740px){
  #chat-top.workspace-top,.topbar.grid-top.workspace-top,.topbar.manage-top.workspace-top{flex-wrap:wrap;gap:.4rem;min-height:3.2rem;padding:.3rem .55rem}

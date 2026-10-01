@@ -91,7 +91,7 @@ func (s *Store) UpsertLogicalBox(ctx context.Context, p Principal, box v1.Logica
 	if !validAgent(box.DefaultAgent) {
 		return box, fmt.Errorf("default agent must be codex, claude, opencode, or shell")
 	}
-	err := s.DB.QueryRowContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,state,volume_id,volume_name) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(account_id,name) DO UPDATE SET updated_at=now() WHERE logical_boxes.volume_id=excluded.volume_id AND logical_boxes.provider=excluded.provider AND logical_boxes.owner_user_id=excluded.owner_user_id RETURNING id::text,owner_user_id::text,state,created_at,updated_at`, box.ID, p.AccountID, box.OwnerUserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.State, box.VolumeID, box.VolumeName).Scan(&box.ID, &box.OwnerUserID, &box.State, &box.CreatedAt, &box.UpdatedAt)
+	err := s.DB.QueryRowContext(ctx, `INSERT INTO logical_boxes(id,account_id,owner_user_id,name,provider,provider_credential,default_agent,state,volume_id,volume_name) SELECT $1,$2,$3,$4,$5,$6,$7,$8,$9,$10 WHERE EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.account_id=$2 AND pc.provider=$5 AND pc.name=$6 AND NOT pc.deleting FOR SHARE) ON CONFLICT(account_id,name) DO UPDATE SET updated_at=now() WHERE logical_boxes.volume_id=excluded.volume_id AND logical_boxes.provider=excluded.provider AND logical_boxes.owner_user_id=excluded.owner_user_id RETURNING id::text,owner_user_id::text,state,created_at,updated_at`, box.ID, p.AccountID, box.OwnerUserID, box.Name, box.Provider, box.ProviderCredential, box.DefaultAgent, box.State, box.VolumeID, box.VolumeName).Scan(&box.ID, &box.OwnerUserID, &box.State, &box.CreatedAt, &box.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return box, fmt.Errorf("logical box ownership or volume identity does not match the existing record")
 	}
@@ -309,7 +309,7 @@ func (s *Store) reserveAllocation(ctx context.Context, p Principal, logicalBox, 
 		slotFilter = " AND s.id::text=$5"
 		slotArgs = append(slotArgs, preferredSlotID)
 	}
-	row := tx.QueryRowContext(ctx, computeSlotSelect+` WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND EXISTS (SELECT 1 FROM logical_boxes location WHERE location.id=$4 AND location.account_id=$1 AND (COALESCE(location.metadata->>'region','')='' OR location.metadata->>'region'=s.region)) AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id)`+slotFilter+` ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1`, slotArgs...)
+	row := tx.QueryRowContext(ctx, computeSlotSelect+` WHERE s.account_id=$1 AND s.provider=$2 AND s.provider_credential=$3 AND s.state='free' AND s.health='healthy' AND EXISTS (SELECT 1 FROM provider_credentials pc WHERE pc.account_id=s.account_id AND pc.provider=s.provider AND pc.name=s.provider_credential AND NOT pc.deleting FOR SHARE) AND EXISTS (SELECT 1 FROM logical_boxes location WHERE location.id=$4 AND location.account_id=$1 AND (COALESCE(location.metadata->>'region','')='' OR location.metadata->>'region'=s.region)) AND NOT EXISTS (SELECT 1 FROM logical_boxes assigned WHERE assigned.slot_id=s.id)`+slotFilter+` ORDER BY s.ordinal FOR UPDATE OF s SKIP LOCKED LIMIT 1`, slotArgs...)
 	slot, slotErr := scanComputeSlot(row)
 	if errors.Is(slotErr, sql.ErrNoRows) {
 		if preferredSlotID != "" {

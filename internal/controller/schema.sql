@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id, provider, name)
 );
+ALTER TABLE provider_credentials ADD COLUMN IF NOT EXISTS deleting boolean NOT NULL DEFAULT false;
 CREATE TABLE IF NOT EXISTS login_profiles (
   account_id uuid NOT NULL REFERENCES accounts(id),
   application text NOT NULL CHECK (application IN ('claude', 'codex')),
