@@ -2100,7 +2100,7 @@ function pairTileStatus(tile,mode,label){
   const pair=pairs.get(key);if(!pair)return;
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
-  selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);closeResourceEditor();renderResourceCard();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
+  selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);clearInspectMemory();renderResourceCard();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   // Box-to-box chats are read-only activity logs: opening one starts at its
@@ -2175,7 +2175,7 @@ function pairTileStatus(tile,mode,label){
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
-  if(selected!==id)cancelReply();closeResourceEditor();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceCard();scheduleResources(0);lastSignature='';hideComposerPicker();
+  if(selected!==id)cancelReply();clearInspectMemory();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceCard();scheduleResources(0);lastSignature='';hideComposerPicker();
   selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
@@ -2760,6 +2760,18 @@ function pairTileStatus(tile,mode,label){
    row.append(t,d);target.append(row);
   }
  };
+ function renderPowerSummary(){
+  const summary=$('#inspect-power-summary');if(!selected||!owner)return;
+  const idle=$('#inspect-idle-policy'),budget=$('#inspect-run-budget-policy');
+  const idleBadge=idle.dataset.idleBox===selected?idle.querySelector('.idle-policy-badge'):null;
+  const budgetBadge=budget.dataset.budgetKey?.startsWith(selected+'|')?budget.querySelector('.idle-policy-badge'):null;
+  const hours=value=>{const number=Number(value);return Number.isFinite(number)?String(number):'—'};
+  const idleText=idleBadge?.textContent==='On'?'Hibernate after '+hours(idle.querySelector('input[type=number]')?.value)+' h':idleBadge?.textContent==='Off'?'Hibernate off':idleBadge?.textContent==='Unavailable'?'Hibernation unavailable':'Hibernation loading…';
+  const budgetText=budgetBadge?.textContent==='On'?'Run limit '+hours(budget.querySelector('input[type=number]')?.value)+' h':budgetBadge?.textContent==='Off'?'No run limit':budgetBadge?.textContent==='Unavailable'?'Run limit unavailable':'Run limit loading…';
+  const box=boxes.get(selected),resources=resourceSnapshot?.id===selected?resourceSnapshot.data?.resources:null;
+  const memoryGiB=Number(resources?.memoryMiB)/1024||Number(box?.memoryGiB)||0;
+  summary.textContent=[idleText,budgetText,memoryGiB?'RAM '+hours(memoryGiB)+' GB':'RAM —'].join(' · ');
+ }
  function mountInspectMemory(box,force=false){
   const root=$('#inspect-memory-settings');
   if(!owner||box.provider!=='shared-worker'||box.state!=='running'){root.hidden=true;root.dataset.boxId='';root.replaceChildren();return}
@@ -2860,6 +2872,7 @@ function pairTileStatus(tile,mode,label){
     ['Account',usage?storageSize(usage.accountBytes)+' / '+storageSize(usage.limitBytes):'Loading…'],
     ['Unused uploads',usage?storageSize(usage.unusedBytes||0)+' · '+(usage.unusedCount||0)+' files':'Loading…'],
    ]);
+   $('#inspect-attachment-empty').hidden=!usage||!!usage.error||Number(usage.boxCount)>0;
    $('#inspect-clear-attachments').disabled=!usage||!!usage.error||!usage.clearableCount;
   }
   const quick=$('#inspect-quick-actions');quick.replaceChildren();
@@ -2882,12 +2895,15 @@ function pairTileStatus(tile,mode,label){
   if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box','refresh-cw',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end','power',()=>void restartBox(box),true);
   renderResourceCard();
+  const power=$('#inspect-power');power.hidden=!owner;
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
   if(owner)window.VMBoxRunBudgetPolicy?.mount(budgetRoot,{boxId:box.id,state:box.state,assignmentGeneration:box.assignmentGeneration,
    request:seconds=>api(boxPath(box.id)+'/run-budget-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds}),
    adjust:(action,seconds,expectedDeadlineAt)=>api(boxPath(box.id)+'/run-budget-policy/adjust','POST',{},{action,seconds,expectedDeadlineAt})});
+  if(owner&&power.open&&!document.hidden)mountInspectMemory(box);
+  renderPowerSummary();
   const limitRoot=$('#inspect-create-limit');
   if(owner)window.VMBoxCreateLimit?.mount(limitRoot,{boxId:box.id,request:body=>api(boxPath(box.id)+'/agent-policy',body?'PUT':'GET',{},body),onSaved:policy=>{policySummaries.set(box.id,policy);if(!$('#roles-modal').hidden)renderPermissionBoxes()}});
   else limitRoot.hidden=true;
@@ -2921,7 +2937,7 @@ function pairTileStatus(tile,mode,label){
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;renderInspect();void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;closeResourceEditor();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;clearInspectMemory();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#chat-header-open')?.addEventListener('click',()=>$('#chat-info').click());
  $('#chat-terminal')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('tmux',b.id)});
  $('#inspect-screen')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('desktop',b.id)});
@@ -2946,6 +2962,11 @@ function pairTileStatus(tile,mode,label){
   if(key in foldState)node.open=!!foldState[key];
   node.addEventListener('toggle',()=>{foldState[key]=node.open;try{localStorage.setItem(foldKey,JSON.stringify(foldState))}catch{}});
  });
+ $('#inspect-power').addEventListener('toggle',()=>{if($('#inspect-power').open&&inspectOpen&&selected&&!document.hidden)mountInspectMemory(boxes.get(selected))});
+ const powerObserver=new MutationObserver(records=>{
+  if(records.some(record=>record.target===record.target.closest?.('#inspect-idle-policy,#inspect-run-budget-policy')||record.target.parentElement?.closest?.('.idle-policy-badge,.idle-policy-status')||record.target.closest?.('.idle-policy-badge,.idle-policy-status')))renderPowerSummary();
+ });
+ for(const id of ['#inspect-idle-policy','#inspect-run-budget-policy'])powerObserver.observe($(id),{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['data-enabled']});
 
  /* ---------- inspect drawer: per-box contact graph (owner) ---------- */
  const inspectContacts=$('#inspect-contacts');
@@ -3629,7 +3650,7 @@ function pairTileStatus(tile,mode,label){
  async function tickResources(){await refreshBoxResources();scheduleResources()}
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);clearTimeout(resourceTimer);closeResourceEditor();stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();scheduleResources(0);if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);clearTimeout(resourceTimer);clearInspectMemory();stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();scheduleResources(0);if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);await refreshBoxActivity();if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
@@ -3642,7 +3663,7 @@ function pairTileStatus(tile,mode,label){
  };
  $('#logout').onclick=async()=>{
   await flushReadMarkers();clearInterval(readSyncTimer);
-  groupStorageKey='';activityGeneration++;activityPending=null;resourceRequest++;resourceSnapshot=null;closeResourceEditor();
+  groupStorageKey='';activityGeneration++;activityPending=null;resourceRequest++;resourceSnapshot=null;clearInspectMemory();
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(resourceTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   await disablePushSubscription();
   $('#usage-modal').hidden=true;
@@ -3691,9 +3712,9 @@ function pairTileStatus(tile,mode,label){
  document.addEventListener('visibilitychange',()=>{if(document.hidden)void flushReadMarkers()});
 
  /* ---------- imported profile usage ---------- */
- const memoryRoot=$('#inspect-memory-settings'),resourceEditor=$('#inspect-resource-editor');
+ const memoryRoot=$('#inspect-memory-settings');
  const resourceGiB=bytes=>{const value=bytes/(1024**3);return Number.isInteger(value)?String(value):value.toFixed(1)};
- function closeResourceEditor(){resourceEditor.hidden=true;memoryRoot.hidden=true;memoryRoot.dataset.boxId='';memoryRoot.replaceChildren()}
+ function clearInspectMemory(){memoryRoot.hidden=true;memoryRoot.dataset.boxId='';memoryRoot.replaceChildren()}
  function resourceMetric(data,kind){
   const resources=data?.resources||{};
   const total=kind==='ram'?Number(resources.memoryMiB||0)*1024**2:kind==='swap'?Number(resources.swapMiB||0)*1024**2:Number.isFinite(data?.diskTotalBytes)?data.diskTotalBytes:Number(resources.diskGiB||0)*1024**3;
@@ -3725,8 +3746,8 @@ function pairTileStatus(tile,mode,label){
  }
  $('#inspect-resources-adjust').onclick=()=>{
   const box=boxes.get(selected);if(!box)return;
-  if(!resourceEditor.hidden){closeResourceEditor();return}
-  resourceEditor.append(memoryRoot);resourceEditor.hidden=false;mountInspectMemory(box,true);
+  const fold=$('#inspect-power');fold.open=true;mountInspectMemory(box);
+  requestAnimationFrame(()=>{memoryRoot.scrollIntoView({block:'nearest'});memoryRoot.focus({preventScroll:true})});
  };
  async function refreshBoxResources(){
   const box=boxes.get(selected);
@@ -3735,9 +3756,9 @@ function pairTileStatus(tile,mode,label){
   try{
    const data=await api(boxPath(id)+'/resources');
    if(request!==resourceRequest||selected!==id||!inspectOpen||document.hidden||!owner)return;
-   resourceSnapshot={id,data};renderResourceCard();
+   resourceSnapshot={id,data};renderResourceCard();renderPowerSummary();
   }catch{
-   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceCard()}
+   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceCard();renderPowerSummary()}
   }
  }
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
