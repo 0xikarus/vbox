@@ -781,12 +781,17 @@
  const AVATAR_OK_TTL=60000,AVATAR_RETRY_TTL=8000;
  const avatarFresh=(cached,state)=>!!cached&&cached.state===state&&Date.now()-cached.at<=(cached.ttl||AVATAR_OK_TTL);
  function avatarRefresh(box){
-  if(box.state!=='running'){avatarCache.set(box.id,{url:null,state:box.state,at:Date.now(),ttl:AVATAR_RETRY_TTL});return}
+  if(box.state!=='running'){
+   const old=avatarCache.get(box.id);if(old?.url)URL.revokeObjectURL(old.url);
+   avatarCache.set(box.id,{url:null,state:box.state,at:Date.now(),ttl:AVATAR_RETRY_TTL});
+   refreshAvatarNodes(box);return
+  }
   if(avatarPending.has(box.id))return;
   avatarPending.add(box.id);
   fetch(boxPath(box.id)+'/desktop/screenshot?thumbnail=true',{credentials:'same-origin',signal:AbortSignal.timeout(15000)})
    .then(r=>{if(!r.ok||!r.headers.get('Content-Type')?.startsWith('image/'))throw Error('No desktop thumbnail');return r.blob()})
    .then(b=>{
+    if(box.state!=='running')return;
     const old=avatarCache.get(box.id);if(old?.url)URL.revokeObjectURL(old.url);
     avatarCache.set(box.id,{url:URL.createObjectURL(b),state:'running',at:Date.now(),ttl:AVATAR_OK_TTL});
    })
@@ -802,9 +807,9 @@
  function refreshAvatarNodes(box){
   const cached=avatarCache.get(box.id);
   document.querySelectorAll('[data-avatar="'+box.id+'"]').forEach(node=>{
-   if(node.dataset.state!==box.state)return;
+   node.dataset.state=box.state;
    let img=node.querySelector('img');
-   if(cached?.url){if(!img){img=document.createElement('img');img.alt='';node.prepend(img)}if(img.src!==cached.url){img.onerror=()=>avatarImageFailed(box,cached.url);img.src=cached.url}}
+   if(box.state==='running'&&cached?.state==='running'&&cached.url){if(!img){img=document.createElement('img');img.alt='';node.prepend(img)}if(img.src!==cached.url){img.onerror=()=>avatarImageFailed(box,cached.url);img.src=cached.url}}
    else img?.remove();
   });
   renderInspectScreen(box);
@@ -830,7 +835,7 @@
   let cached=avatarCache.get(box.id);
   if(!avatarFresh(cached,box.state))avatarRefresh(box);
   cached=avatarCache.get(box.id);
-  if(cached?.state===box.state&&cached.url){const img=document.createElement('img');img.alt='';img.onerror=()=>avatarImageFailed(box,cached.url);img.src=cached.url;wrap.prepend(img)}
+  if(box.state==='running'&&cached?.state===box.state&&cached.url){const img=document.createElement('img');img.alt='';img.onerror=()=>avatarImageFailed(box,cached.url);img.src=cached.url;wrap.prepend(img)}
   const dot=document.createElement('span');dot.className='dot'+(box.state==='running'?' running':'');wrap.append(dot);
   if(preview&&box.state==='running'){
    wrap.classList.add('preview-trigger');wrap.tabIndex=0;wrap.setAttribute('role','button');
@@ -1204,6 +1209,7 @@
     // Keep the node (its hover wiring and live preview), but still retry a
     // thumbnail that is stale or failed while the desktop was starting.
     if(!avatarFresh(avatarCache.get(box.id),box.state))avatarRefresh(box);
+    if(oldAvatar.dataset.state!==box.state)refreshAvatarNodes(box);
    }
    else{const avatar=avatarNode(box,false,true);if(oldAvatar)oldAvatar.replaceWith(avatar);else row.prepend(avatar)}
    const time=row.querySelector('time'),nextTime=box.last?fmtTime(box.last.createdAt):'';if(time.textContent!==nextTime)time.textContent=nextTime;
@@ -1887,6 +1893,7 @@
   summarize(id);
  }
  let headerAvatarKey='';
+ const interruptPending=new Set();
  function boxActivitySubtitle(box){
   const agent=box.defaultAgent||'agent';
   if(box.state!=='running')return agent+' · '+(box.state==='hibernated'?'hibernated':'stopped');
@@ -1894,7 +1901,10 @@
   return agent+' · '+(active?(box.activityPhrase||'working'):'idle');
  }
  function renderHeader(){
-  const box=boxes.get(selected);if(!box)return;
+  const box=boxes.get(selected);if(!box){$('#chat-composer').classList.remove('is-processing');return}
+  const processing=box.state==='running'&&(box.processing||box.streaming);
+  $('#chat-composer').classList.toggle('is-processing',processing);
+  $('#chat-interrupt').disabled=!processing||interruptPending.has(box.id);
   $('#chat-header-name').textContent=box.name;
   const state=mk('span');state.className=box.state==='running'?'running':'';
   state.textContent=boxActivitySubtitle(box);
@@ -1902,7 +1912,7 @@
   inputEl.placeholder='Message '+box.name+'…';
   const key=box.id;
   if(key!==headerAvatarKey){headerAvatarKey=key;const avatar=avatarNode(box,false,true,false),mascot=avatar.querySelector('.avatar-mascot');mascot.setAttribute('role','img');refreshMascotTooltipLabel(mascot,box);$('#chat-header-avatar').replaceChildren(avatar)}
-  else syncAvatarMascot($('#chat-header-avatar .avatar'),box);
+  else{syncAvatarMascot($('#chat-header-avatar .avatar'),box);refreshAvatarNodes(box)}
   $('#chat-wake').hidden=!canWakeBox(box);
   $('#chat-wake').disabled=wakingBoxes.has(box.id);
   $('#chat-clear-context').disabled=box.state!=='running'||(box.defaultAgent||'shell')==='shell';
@@ -2105,6 +2115,7 @@ function pairTileStatus(tile,mode,label){
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
   selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);clearInspectMemory();renderResourceCard();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
+  $('#chat-composer').classList.remove('is-processing');$('#chat-interrupt').disabled=true;
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   // Box-to-box chats are read-only activity logs: opening one starts at its
@@ -2637,13 +2648,14 @@ function pairTileStatus(tile,mode,label){
  $('#chat-interrupt').onclick=async()=>{
   const box=boxes.get(selected);if(!box)return;
   if(box.state!=='running'){statusEl.textContent=box.name+' is '+box.state+'; resume it from the workspace first.';return}
-  const btn=$('#chat-interrupt');btn.disabled=true;
+  if(interruptPending.has(box.id))return;
+  interruptPending.add(box.id);renderHeader();
   try{
    const s=await api(boxPath(box.id)+'/sessions/interactive','POST',{},{agent:box.defaultAgent||'shell',reuseExisting:true});
    await api(boxPath(box.id)+'/terminal/input?session='+encodeURIComponent(s.session),'POST',{'Idempotency-Key':crypto.randomUUID()},{keys:[(box.defaultAgent||'shell')==='shell'?'C-c':'Escape']});
    toast('Interrupt sent — your queued message comes next.');
   }catch(e){statusEl.textContent=e.message}
-  finally{btn.disabled=false}
+  finally{interruptPending.delete(box.id);renderHeader()}
  };
 
  /* ---------- clear agent context ---------- */
