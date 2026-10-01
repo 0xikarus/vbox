@@ -49,8 +49,7 @@ test('mascot freshness tooltip updates, expires, and leaves mobile row navigatio
    if(mobile){
     await page.$eval('#chat-back',el=>el.click());
     await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
-    await page.click(row);
-    await page.waitForSelector('#mascot-mood-tooltip:not([hidden])');
+    assert.equal(await page.$eval(row,el=>{el.click();return document.querySelector('#mascot-mood-tooltip').hidden}),false,'mascot tap shows the short-lived tooltip');
     assert.equal(await page.$eval('#chat-app',el=>el.classList.contains('in-chat')),false,'mascot tap must not open chat');
    }else{
     await page.hover(row);
