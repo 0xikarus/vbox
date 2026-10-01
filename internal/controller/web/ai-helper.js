@@ -91,7 +91,9 @@ window.VMBoxAIHelper = (() => {
    try{localStorage.setItem('vmbox.aiModel.'+kind,selectedModel)}catch{}
    dialog.close();run(instruction,selectedModel);
   });
-  dialog.showModal();void model.load();if(!matchMedia('(pointer:coarse)').matches){textarea.focus();textarea.select()}else textarea.blur();
+  const coarse=matchMedia('(pointer:coarse)').matches;
+  if(coarse){dialog.tabIndex=-1;dialog.autofocus=true}
+  dialog.showModal();void model.load();if(!coarse){textarea.focus();textarea.select()}else requestAnimationFrame(()=>{if(dialog.open)dialog.focus({preventScroll:true})});
  }
  async function visualPreview(attachment) {
   const video=attachment.kind==='video';
