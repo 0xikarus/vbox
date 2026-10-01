@@ -611,7 +611,7 @@ func TestClaudeChannelRecoversAfterTemporaryTmuxOutage(t *testing.T) {
 	}
 }
 
-func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
+func TestDesktopMCPRejectsOversizedChatBeforeControllerDelivery(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "codex-long-reply")
@@ -643,14 +643,43 @@ func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
 		t.Fatalf("invalid MCP response %q: %v", output.String(), err)
 	}
 	if _, failed := response["error"]; failed {
-		t.Fatalf("maximum-size chat reply was rejected: %v", response)
+		t.Fatalf("oversized chat should receive a tool result: %v", response)
 	}
-	event, found, err := PullChatEvent(home, "codex-long-reply")
-	if err != nil || !found {
-		t.Fatalf("long chat event unavailable: found=%t err=%v", found, err)
+	result, ok := response["result"].(map[string]any)
+	if !ok || result["isError"] != true {
+		t.Fatalf("oversized chat was accepted: %v", response)
 	}
-	if event.Text != text {
-		t.Fatalf("stored reply has %d bytes, want %d", len(event.Text), len(text))
+	if _, found, err := PullChatEvent(home, "codex-long-reply"); err != nil || found {
+		t.Fatalf("oversized chat was written to local outbox: found=%t err=%v", found, err)
+	}
+}
+
+func TestDesktopMCPMessageCharacterLimit(t *testing.T) {
+	if err := validateDesktopMCPMessageLength(strings.Repeat("界", 2000)); err != nil {
+		t.Fatalf("2000 Unicode characters rejected: %v", err)
+	}
+	if err := validateDesktopMCPMessageLength(strings.Repeat("界", 2001)); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+		t.Fatalf("2001 Unicode characters accepted: %v", err)
+	}
+	for _, args := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"owner message", map[string]any{"text": strings.Repeat("x", 2001)}},
+		{"contact message", map[string]any{"contact": "another-box", "text": strings.Repeat("x", 2001)}},
+	} {
+		encoded, _ := json.Marshal(args.body)
+		if _, err := callDesktopTool(context.Background(), "invalid", "chat_message", encoded); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+			t.Errorf("%s was not rejected on box: %v", args.name, err)
+		}
+	}
+	encoded, _ := json.Marshal(map[string]any{"question": strings.Repeat("x", 1999), "choices": []string{"yes", "no"}})
+	if _, err := callDesktopTool(context.Background(), "invalid", "chat_ask", encoded); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+		t.Errorf("oversized question was not rejected on box: %v", err)
+	}
+	encoded, _ = json.Marshal(map[string]any{"contact": "another-box", "question": strings.Repeat("x", 1997), "choices": []string{"yes"}})
+	if _, err := callDesktopTool(context.Background(), "invalid", "chat_ask", encoded); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+		t.Errorf("formatted contact question was not rejected on box: %v", err)
 	}
 }
 

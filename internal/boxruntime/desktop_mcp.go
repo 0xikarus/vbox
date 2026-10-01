@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 	"github.com/0xikarus/vmbox-service/internal/secrets"
@@ -30,10 +31,18 @@ type desktopMCPRequest struct {
 	Params  json.RawMessage `json:"params"`
 }
 
-// A chat_message accepts 100,000 bytes of text. JSON escaping can expand that
-// substantially, so the stdio frame limit must be larger than the tool's text
-// limit or valid long replies make Scanner stop without a protocol response.
+const maxDesktopMCPMessageCharacters = 2000
+
+// Keep enough room for JSON escaping and attachment paths; oversized chat text
+// receives a normal tool error instead of stopping the MCP scanner.
 const maxDesktopMCPRequestBytes = 1 << 20
+
+func validateDesktopMCPMessageLength(message string) error {
+	if utf8.RuneCountInString(message) > maxDesktopMCPMessageCharacters {
+		return fmt.Errorf("message exceeds %d characters; shorten or split it before retrying", maxDesktopMCPMessageCharacters)
+	}
+	return nil
+}
 
 func desktopMCPTools() []map[string]any {
 	integer := map[string]any{"type": "integer", "minimum": 0}
@@ -63,8 +72,8 @@ func desktopMCPTools() []map[string]any {
 		makeTool("compact_agent_box_context", "Request /compact in another running, unprotected agent box's existing conversation. The target must be idle; this preserves its thread and workspace. The response confirms that compaction was requested, not that summarization has finished. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("delete_agent_box", "Permanently delete another, unprotected agent box. confirmation must exactly match the target box name. Reuse idempotencyKey when retrying.", map[string]any{"box": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "confirmation": map[string]any{"type": "string", "minLength": 1, "maxLength": 100}, "idempotencyKey": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "box", "confirmation", "idempotencyKey"),
 		makeTool("set_busy", "Report whether this agent is actively working. Submitted chat messages set busy automatically and chat_message/chat_ask clear it automatically; call this only to override activity outside that normal request/reply flow.", map[string]any{"busy": map[string]any{"type": "boolean"}}, "busy"),
-		makeTool("chat_message", "Send a message to the vbox Agent chat. For the account owner, pass text and optionally replyTo; OMIT contact entirely. replyTo is the chat message reference, never a box contact. Call this once for each completed response, including any image files the user should receive. To send to another box, pass contact as a compact id or exact box name returned by get_contacts. To reply to an incoming contact message, pass its From-Box-ID as contact and omit replyTo. Image files are supported for both owner and contact messages.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": 100000}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
-		makeTool("chat_ask", "Ask the user to choose one or more options in vbox Agent chat when their decision is required. replyTo is optional; without it the question is delivered on its own. Pass a compact id or exact box name returned by get_contacts to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": 4000}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
+		makeTool("chat_message", "Send a message of at most 2000 characters to the vbox Agent chat. For the account owner, pass text and optionally replyTo; OMIT contact entirely. replyTo is the chat message reference, never a box contact. Call this once for each completed response, including any image files the user should receive. To send to another box, pass contact as a compact id or exact box name returned by get_contacts. To reply to an incoming contact message, pass its From-Box-ID as contact and omit replyTo. Image files are supported for both owner and contact messages.", map[string]any{"text": map[string]any{"type": "string", "minLength": 1, "maxLength": maxDesktopMCPMessageCharacters}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "files": map[string]any{"type": "array", "maxItems": 8, "items": map[string]any{"type": "string"}}}, "text"),
+		makeTool("chat_ask", "Ask the user to choose one or more options in vbox Agent chat when their decision is required. The question and all choices together must fit within 2000 characters. replyTo is optional; without it the question is delivered on its own. Pass a compact id or exact box name returned by get_contacts to ask another box's agent instead of the owner.", map[string]any{"question": map[string]any{"type": "string", "minLength": 1, "maxLength": maxDesktopMCPMessageCharacters}, "choices": map[string]any{"type": "array", "minItems": 1, "maxItems": 20, "items": map[string]any{"type": "string", "minLength": 1, "maxLength": 500}}, "multiple": map[string]any{"type": "boolean"}, "replyTo": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}, "contact": map[string]any{"type": "string", "minLength": 1, "maxLength": 128}}, "question", "choices"),
 		makeTool("secret_request", "Request an existing account password privately from the user for the focused HTTPS password field. Never generate a substitute. Call again to check readiness.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
 		makeTool("generate_password", "Generate and securely store a password for a new account on the focused HTTPS password field's origin. Never use this for an existing account's credential.", map[string]any{"length": map[string]any{"type": "integer", "minimum": 16, "maximum": 128}, "alphabet": map[string]any{"type": "string", "minLength": 32, "maxLength": 94}, "key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}, "purpose": map[string]any{"type": "string", "enum": []string{"new_account_password"}}}, "key", "purpose"),
 		makeTool("type_secret", "Fill the focused password field using an existing secret reference. Does not reveal the password, generate a new one, or submit the form.", map[string]any{"key": map[string]any{"type": "string", "minLength": 1, "maxLength": 64}}, "key"),
@@ -857,8 +866,11 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 			Text    string   `json:"text"`
 			Files   []string `json:"files"`
 		}
-		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Text) == "" || len(request.Text) > 100_000 {
+		if json.Unmarshal(args, &request) != nil || strings.TrimSpace(request.Text) == "" {
 			return nil, fmt.Errorf("provide response text")
+		}
+		if err := validateDesktopMCPMessageLength(request.Text); err != nil {
+			return nil, err
 		}
 		if request.ReplyTo != "" {
 			if err := validateTmuxToken("replyTo", request.ReplyTo); err != nil {
@@ -913,20 +925,30 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 				return nil, fmt.Errorf("invalid choice")
 			}
 		}
+		questionLength := utf8.RuneCountInString(request.Question)
+		for _, choice := range request.Choices {
+			questionLength += utf8.RuneCountInString(choice)
+		}
+		if questionLength > maxDesktopMCPMessageCharacters {
+			return nil, fmt.Errorf("message exceeds %d characters; shorten the question or choices before retrying", maxDesktopMCPMessageCharacters)
+		}
 		if request.Contact != "" {
-			if err := validateContactRef(request.Contact); err != nil {
-				return nil, err
-			}
-			contact, err := resolveContact(ctx, assignment, request.Contact)
-			if err != nil {
-				return nil, err
-			}
 			text := request.Question + "\n\nChoices:"
 			for _, choice := range request.Choices {
 				text += "\n- " + choice
 			}
 			if request.Multiple {
 				text += "\n\nOne or more choices may be selected."
+			}
+			if err := validateDesktopMCPMessageLength(text); err != nil {
+				return nil, err
+			}
+			if err := validateContactRef(request.Contact); err != nil {
+				return nil, err
+			}
+			contact, err := resolveContact(ctx, assignment, request.Contact)
+			if err != nil {
+				return nil, err
 			}
 			confirmation, err := sendDesktopContactEvent(ctx, assignment, ChatEvent{Kind: "contact", Contact: contact, Text: text})
 			if err != nil {

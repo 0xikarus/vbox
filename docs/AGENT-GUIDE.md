@@ -213,6 +213,10 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   `internal/controller/agent_box_creation.go`,
   `internal/controller/fleet_create_store.go`,
   `internal/controller/agent_box_management.go`.
+- The on-box `chat_message` and `chat_ask` MCP tools reject messages over 2,000
+  Unicode characters before contact lookup or controller delivery. For
+  `chat_ask`, the question and choices share that limit; contact questions also
+  count the rendered choice labels.
 - The chat PWA is mobile-first: a single-column app shell with push navigation
   on phones and a two-pane view from 900px. It ships a dark, Discord-like
   palette; a hex seed still shapes the seeded emoji mascot, the corner radii and
