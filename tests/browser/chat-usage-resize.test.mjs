@@ -48,9 +48,9 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   const page=await browser.newPage();await page.setViewport({width:1200,height:800});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat');
   await page.waitForFunction(()=>!document.querySelector('#usage-toggle').hidden&&document.querySelector('#usage-list').textContent.includes('claude · work'));
-  assert.equal(await page.$eval('#usage-toggle .workspace-usage-percent',element=>element.textContent),'10%');
+  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
   assert.equal(await page.evaluate(()=>!!document.querySelector('#chat-menu-sheet #usage-toggle')),false,'Usage no longer appears in the menu');
-  assert.match(await page.$eval('#usage-toggle',element=>element.title),/all saved profiles/);
+  assert.equal(await page.$eval('#usage-toggle',element=>element.title),'Usage');
   await page.click('#usage-toggle');
   await page.waitForFunction(()=>document.querySelector('#usage-list')?.textContent.includes('75% left'));
   if(screenshotDir){await mkdir(screenshotDir,{recursive:true});await page.screenshot({path:screenshotDir+'/usage-overview-desktop.png'})}
@@ -80,7 +80,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   assert.equal(await page.$eval('#chat-header-terminal',element=>element.getAttribute('aria-label')),'Open terminal');
   assert.deepEqual(await page.$eval('#chat-control',element=>({next:element.nextElementSibling?.id,label:element.getAttribute('aria-label'),icon:!!element.querySelector('svg'),text:element.textContent.trim()})),{next:'chat-terminal',label:'Desktop',icon:true,text:'Desktop'});
   assert.match(await page.$eval('#chat-usage',element=>element.getAttribute('aria-label')),/claude personal usage: 80% remaining/);
-  assert.equal(await page.$eval('#usage-toggle .workspace-usage-percent',element=>element.textContent),'10%','topbar shows the lowest remaining window');
+  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage','topbar shows no per-profile value');
   await page.evaluate(()=>{if(document.querySelector('#inspect').hidden)document.querySelector('#chat-info').click()});
   await page.click('#chat-usage');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/claude · personal/);
@@ -96,7 +96,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.waitForFunction(()=>document.querySelector('#usage-status')?.textContent.includes('Usage updated.'));
   assert.equal(manualRefreshes,1,'manual refresh still checks saved profiles');
   assert.equal(await page.$eval('#usage-refresh',element=>element.disabled),false);
-  assert.equal(await page.$eval('#usage-toggle .workspace-usage-percent',element=>element.textContent),'10%');
+  assert.equal(await page.$eval('#usage-toggle',element=>element.textContent),'Usage');
   await page.click('#usage-modal button[data-close]');
   await page.click('#chat-entries [data-box-id="shell"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Terminal');
