@@ -31,6 +31,7 @@ window.openWorkspaceTerminal=(box,session,onStatus,options={})=>{
 
 test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the selected box',async()=>{
  let desktopA=true;
+ let activityMood='angry';
  const server=http.createServer(async(req,res)=>{
   const path=req.url.split('?')[0];
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(await readFile(resolve(web,'chat.html')))}
@@ -39,6 +40,7 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   if(path.startsWith('/v1/')){
    res.setHeader('Content-Type','application/json');
    if(path==='/v1/whoami')return res.end('{"role":"owner","accountId":"acct"}');
+   if(path==='/v1/box-activity')return res.end(JSON.stringify([{boxId:a,mood:activityMood,activity:'working',observedAt:new Date().toISOString()}]));
    if(path==='/v1/logical-boxes'||path==='/v1/grid-boxes')return res.end(JSON.stringify(boxes));
    if(path==='/v1/chat-sidebar-layout')return res.end('{"exists":true,"groups":[],"members":{}}');
    if(path==='/v1/box-conversations')return res.end(JSON.stringify([{boxAId:a,boxBId:b,boxAName:'Builder',boxBName:'Reviewer',lastAt:now,lastText:'Review ready'}]));
@@ -70,6 +72,16 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   assert.deepEqual(await page.$$eval('.pair-tile',nodes=>nodes.map(node=>node.dataset.mode)),['desktop','tmux']);
   assert.deepEqual(await page.evaluate(()=>[window.fakeDesktop[0].viewOnly,window.fakeTerminal[0].viewOnly]),[true,true]);
   await page.waitForFunction(()=>window.terminalSockets.length===1&&window.terminalSockets[0].readyState===1);
+  const pairMood=()=>page.evaluate(id=>{
+   const pose=selector=>document.querySelector(selector)?.dataset.pose||'';
+   return [pose('#chat-entries [data-pair-mascot-box="'+id+'"]'),pose('#chat-header-avatar [data-pair-mascot-box="'+id+'"]'),pose('[data-pair-tile-box="'+id+'"] .pair-hero-mascot')];
+  },a);
+  await page.waitForFunction(id=>['#chat-entries [data-pair-mascot-box="'+id+'"]','#chat-header-avatar [data-pair-mascot-box="'+id+'"]','[data-pair-tile-box="'+id+'"] .pair-hero-mascot'].every(selector=>document.querySelector(selector)?.dataset.pose?.includes('angry')),{},a);
+  assert.equal((await pairMood()).every(pose=>pose.includes('angry')),true,'batch mood reaches list, header, and hero mascots');
+  activityMood='happy';
+  await page.waitForFunction(id=>['#chat-entries [data-pair-mascot-box="'+id+'"]','#chat-header-avatar [data-pair-mascot-box="'+id+'"]','[data-pair-tile-box="'+id+'"] .pair-hero-mascot'].every(selector=>document.querySelector(selector)?.dataset.pose?.includes('happy')),{timeout:6500},a);
+  assert.equal((await pairMood()).every(pose=>pose.includes('happy')),true,'the next batch poll updates all three pair mascots');
+  assert.match(await page.$eval('[data-pair-tile-box="'+a+'"] .pair-tile-mascot',node=>node.getAttribute('aria-label')),/^Happy · mood updated recently$/);
   const sizeFrames=()=>page.evaluate(()=>window.terminalSockets.flatMap(socket=>socket.frames).filter(frame=>'cols'in frame||'rows'in frame));
   assert.deepEqual(await sizeFrames(),[],'pair tile sends no terminal size on connect');
   const terminalCrop=await page.$eval('.pair-tile[data-mode="tmux"] .pair-tile-screen',screen=>{
@@ -136,7 +148,7 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   await page.waitForFunction(()=>document.querySelector('.pair-hero')===window.pairHeroBefore);
   assert.equal(await page.evaluate(()=>document.querySelector('.pair-msg .msg-avatar')===window.pairMascotBefore),true,'polling reuses the live message mascot');
   assert.equal(await page.evaluate(()=>window.fakeDesktop.filter(viewer=>!viewer.closed).length+window.fakeTerminal.filter(viewer=>!viewer.closed).length),2);
-  assert.equal(await page.$$eval('.pair-tile-mascot',nodes=>nodes.every(node=>node.getAttribute('aria-label')?.includes('no fresh observation'))),true);
+  assert.equal(await page.$$eval('.pair-tile-mascot',nodes=>nodes.every(node=>!!node.getAttribute('aria-label'))),true);
   await page.click('.pair-tile-mascot');
   await page.waitForSelector('#mascot-mood-tooltip:not([hidden])');
   assert.equal(await page.$eval('#takeover',node=>node.hidden),true,'tapping a tile mascot shows its tooltip without opening takeover');

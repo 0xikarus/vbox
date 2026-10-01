@@ -42,7 +42,7 @@ test('controller classification drives the chat mascot and expires cleanly',asyn
   mood='happy';
   await page.$eval('#refresh',el=>el.click());
   await page.waitForFunction(()=>document.querySelector('[data-box-id="builder"] .avatar-mascot svg')?.dataset.mood==='happy',{timeout:8000});
-  activity='working';
+  mood='';activity='working';
   await page.$eval('#refresh',el=>el.click());
   await page.waitForFunction(()=>document.querySelector('[data-box-id="builder"] .avatar-mascot svg')?.dataset.mood==='working',{timeout:8000});
   mood='';activity='';

@@ -2783,6 +2783,7 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 /* Pair conversations: the two view-only screens stay pinned above the transcript while it scrolls.
    The hero spans the transcript's padding box so its opaque strip hides messages beside and above it. */
 #chat-messages .pair-hero{--pair-pad:12px;position:sticky;top:calc(-1 * var(--pair-pad));z-index:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-self:stretch;width:auto;margin:calc(-1 * var(--pair-pad)) calc(-1 * var(--pair-pad)) 0;padding:var(--pair-pad) max(var(--pair-pad),calc((100% - 776px) / 2)) 8px;flex:none;background:var(--vb-bg)}
+#chat-conversation.pair-view #chat-messages{scroll-padding-top:calc(var(--pair-hero-h, 0px) + 8px)}
 @media(min-width:601px){#chat-messages .pair-hero{--pair-pad:16px}}
 #chat-conversation.pair-view #chat-messages::before{display:none}
 #chat-messages .pair-tile{position:relative;display:grid;grid-template-rows:minmax(0,1fr) 24px;min-width:0;width:100%;aspect-ratio:16/10;max-height:240px;overflow:hidden;padding:0;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-swatch-0b0b0d);color:var(--vb-swatch-fff);text-align:left;cursor:pointer}

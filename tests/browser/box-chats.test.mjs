@@ -76,8 +76,7 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   assert.equal(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
   assert.equal(await page.$('#chat-messages .msg-actions'),null,'read-only messages have no reply controls');
   const messageRows=await page.$$('#chat-messages .msg');
-  await page.$eval('#chat-messages',element=>{element.scrollTop=element.scrollHeight});
-  await page.$eval('#chat-messages .msg .media-button',button=>button.click());
+  await (await messageRows[0].$('.media-button')).click();
   await page.waitForFunction(()=>!document.querySelector('#media-viewer').hidden);
   assert.equal(await page.$eval('#media-annotate',button=>button.hidden),true,'read-only box conversations have no reply action');
   assert.equal(await page.$eval('#media-viewer-count',element=>element.textContent),'1 / 2');
@@ -98,6 +97,29 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   assert.equal(await page.$eval('#chat-composer',element=>getComputedStyle(element).display),'none');
   await page.close();
  });
+});
+
+test('pair messages scroll into view below the sticky hero and media opens by click',async()=>{
+ const pairMessages=Array.from({length:36},(_,index)=>({
+  id:'scroll-'+index,senderBoxId:index%2?a:b,recipientBoxId:index%2?b:a,direction:'box',
+  text:'Discussion '+index+' '+('details '.repeat(10)),state:'delivered',
+  createdAt:new Date(Date.now()-(36-index)*60000).toISOString(),updatedAt:new Date(Date.now()-(36-index)*60000).toISOString(),
+  ...(index===18?{images:[{id:'image-1',number:1,mediaType:'image/png'}]}:{})
+ }));
+ await withChat(async(browser,base)=>{
+  const page=await browser.newPage();await page.setViewport({width:1100,height:760});
+  await page.goto(base+'/chat#pair='+encodeURIComponent(pairKey));
+  await page.waitForFunction(()=>document.querySelectorAll('#chat-messages .msg').length===36);
+  await page.$$eval('#chat-messages .msg',rows=>rows[18].scrollIntoView({block:'start'}));
+  const geometry=await page.evaluate(()=>{
+   const row=[...document.querySelectorAll('#chat-messages .msg')][18],hero=document.querySelector('.pair-hero');
+   return {rowTop:row.getBoundingClientRect().top,heroBottom:hero.getBoundingClientRect().bottom};
+  });
+  assert.ok(geometry.rowTop>=geometry.heroBottom,'scrollIntoView places the message below the pinned tiles');
+  await (await (await page.$$('#chat-messages .msg'))[18].$('.media-button')).click();
+  await page.waitForFunction(()=>!document.querySelector('#media-viewer').hidden,{timeout:3000});
+  await page.close();
+ },{pairMessages});
 });
 
 test('unread badges count replies but exclude MCP activity and system lines',async()=>{

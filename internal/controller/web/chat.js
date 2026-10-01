@@ -323,10 +323,10 @@
   if(box.state==='hibernated')return ['sleeping','sleeping','sleeping'];
   if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','failed'];
   if(box.mascotActivity==='waiting')return ['waiting','surprised','asking'];
-  if(box.mascotActivity==='working')return ['working','focused','busy'];
   if(box.mascotMood==='angry')return ['angry','error','failed'];
   if(box.mascotMood==='laughing')return ['laughing',null,'idle'];
   if(box.mascotMood==='happy')return ['happy','happy','idle'];
+  if(box.mascotActivity==='working')return ['working','focused','busy'];
   if(box.mascotMood==='idle')return ['idle',null,'idle'];
   const lastQuestion=[...(box.messages||[])].reverse().find(message=>message.direction!=='user'&&message.question&&!questionAnswered(box,message));
   if(lastQuestion)return ['waiting','surprised','asking'];
@@ -337,8 +337,7 @@
  const mascotTooltip=document.createElement('div');mascotTooltip.id='mascot-mood-tooltip';mascotTooltip.setAttribute('role','tooltip');mascotTooltip.hidden=true;document.body.append(mascotTooltip);
  let mascotTooltipTarget=null,mascotTooltipTimer=0,mascotTooltipTick=0,mascotTooltipHide=0;
  function mascotMoodLabel(box){
-  const activity=box.mascotActivity;
-  const state=activity==='working'?'Working':activity==='waiting'?'Waiting':box.mascotMood||boxMascotPose(box)[0];
+  const state=boxMascotPose(box)[0];
   return state.charAt(0).toUpperCase()+state.slice(1);
  }
  function mascotMoodText(box,live=false){
@@ -1866,6 +1865,7 @@
     box.activityBatchAt=receivedAt;summarize(box.id);
    }
    renderRows();
+   if(selectedPair){const pair=pairs.get(selectedPair);if(pair){syncPairAvatar($('#chat-header-avatar .pair-avatar-stack'),pair);syncPairHeroMascots(pair)}}
    if(selectedBox){
     const after=[selectedBox.processing,selectedBox.agentBusy,selectedBox.agentBusySince,selectedBox.activityPhrase,selectedBox.mascotMood,selectedBox.mascotActivity].join('|');
     if(before!==after){renderHeader();renderInspect();renderMessages(selectedBox)}
@@ -1954,6 +1954,8 @@
  function stopPairHero(){
   pairHeroEpoch++;
   if(!pairHero)return;
+  pairHero.observer.disconnect();
+  messagesEl.style.removeProperty('--pair-hero-h');
   for(const tile of pairHero.tiles){tile.dispose?.();tile.dispose=null;tile.screen.replaceChildren();tile.controls.replaceChildren()}
   pairHero.node.remove();pairHero=null;
  }
@@ -2016,7 +2018,8 @@ function pairTileStatus(tile,mode,label){
   if(pairHero?.key===key&&pairHero.stateKey===stateKey)return pairHero.node;
   stopPairHero();
   const node=document.createElement('section');node.className='pair-hero';node.setAttribute('aria-label','Live views of '+pair.boxAName+' and '+pair.boxBName);
-  const hero={key,stateKey,node,tiles:[],epoch:++pairHeroEpoch};pairHero=hero;
+  const observer=new ResizeObserver(()=>{if(pairHero?.node===node)messagesEl.style.setProperty('--pair-hero-h',node.getBoundingClientRect().height+'px')});
+  const hero={key,stateKey,node,tiles:[],observer,epoch:++pairHeroEpoch};pairHero=hero;
   for(const [id,name] of [[pair.boxAId,pair.boxAName],[pair.boxBId,pair.boxBName]]){
    const box=boxes.get(id)||{id,name,state:'running'};
    const button=document.createElement('button');button.type='button';button.className='pair-tile';button.dataset.pairTileBox=id;button.setAttribute('aria-label','Open '+name+' control');
@@ -2034,7 +2037,18 @@ function pairTileStatus(tile,mode,label){
    hero.tiles.push(tile);node.append(button);
    void connectPairTile(hero,tile,box);
   }
+  observer.observe(node);
   return node;
+ }
+ function syncPairHeroMascots(pair){
+  if(pairHero?.key!==pairKey(pair))return;
+  for(const [id,name] of [[pair.boxAId,pair.boxAName],[pair.boxBId,pair.boxBName]]){
+   const wrap=pairHero.node.querySelector('[data-pair-tile-box="'+id+'"] .pair-tile-mascot');
+   if(!wrap)continue;
+   const box=boxes.get(id)||{id,name,state:'running'},live=wrap.firstElementChild,next=reuseMessageMascot(live,box,'pair-hero-mascot',false);
+   if(next!==live)wrap.replaceChildren(next);
+   refreshMascotTooltipLabel(wrap,box);
+  }
  }
  function renderPairMessages(pair){
   if(activeHorizontalGestures){pendingPair=pair;return}
