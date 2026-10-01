@@ -2594,6 +2594,9 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-header .chat-header-identity #chat-header-name{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chat-header #chat-usage{display:inline-flex;align-items:center;justify-content:center;gap:4px;flex:none;width:auto;min-width:0;height:32px;min-height:32px;padding:0 10px;border:0;border-radius:var(--r-pill);background:var(--vb-surface-2);color:var(--vb-ink);font:600 var(--vb-type-px-12)/1 var(--vb-font);font-variant-numeric:tabular-nums;white-space:nowrap}
 #chat-header #chat-usage[hidden]{display:none}
+#chat-header #chat-usage.usage-none{color:var(--vb-ink-soft);cursor:default}
+#chat-header #chat-usage.usage-none:hover{background:transparent}
+#chat-header #chat-usage.usage-none .chat-usage-ring,#chat-header #chat-usage.usage-none .chat-usage-left{display:none}
 #chat-header #chat-usage.usage-low{color:var(--vb-ink)}
 #chat-header #chat-usage:hover{background:var(--vb-line)}
 #chat-header .chat-usage-ring{width:16px;height:16px;flex:none;color:var(--vb-ok);transform:rotate(-90deg)}
@@ -2777,8 +2780,10 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-messages .msg:has(> .msg-parent){padding-top:39px}
 #chat-messages .msg > .msg-parent{position:absolute;inset:0 0 auto;width:100%;height:32px;margin:0;padding:7px 11px;border-radius:8px 8px 0 0}
 
-/* Pair conversations: the two view-only screens stay pinned above the transcript while it scrolls. */
-#chat-messages .pair-hero{position:sticky;top:-12px;z-index:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-self:center;width:min(100%,776px);margin:-12px 0 0;padding:12px 0 8px;flex:none;background:var(--vb-bg);box-shadow:0 0 0 100vmax var(--vb-bg);clip-path:inset(0 -100vmax)}
+/* Pair conversations: the two view-only screens stay pinned above the transcript while it scrolls.
+   The hero spans the transcript's padding box so its opaque strip hides messages beside and above it. */
+#chat-messages .pair-hero{--pair-pad:12px;position:sticky;top:calc(-1 * var(--pair-pad));z-index:3;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;align-self:stretch;width:auto;margin:calc(-1 * var(--pair-pad)) calc(-1 * var(--pair-pad)) 0;padding:var(--pair-pad) max(var(--pair-pad),calc((100% - 776px) / 2)) 8px;flex:none;background:var(--vb-bg)}
+@media(min-width:601px){#chat-messages .pair-hero{--pair-pad:16px}}
 #chat-conversation.pair-view #chat-messages::before{display:none}
 #chat-messages .pair-tile{position:relative;display:grid;grid-template-rows:minmax(0,1fr) 24px;min-width:0;width:100%;aspect-ratio:16/10;max-height:240px;overflow:hidden;padding:0;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-swatch-0b0b0d);color:var(--vb-swatch-fff);text-align:left;cursor:pointer}
 #chat-messages .pair-tile:hover{border-color:var(--vb-line-strong)}

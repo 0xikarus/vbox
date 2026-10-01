@@ -3587,8 +3587,18 @@ function pairTileStatus(tile,mode,label){
   const ref=selectedUsageProfile;
   const profile=ref?usageProfiles.find(item=>item.application===ref.application&&item.name===ref.name):null;
   const lowest=lowestRemaining(profile);
-  button.hidden=!owner||!selected||!ref||!usageLoaded||lowest===null;
+  const agentBox=['claude','codex','opencode'].includes(boxes.get(selected)?.defaultAgent);
+  button.hidden=!owner||!selected||!usageLoaded||(!ref&&!agentBox);
   if(button.hidden)return;
+  // A deleted or never-linked profile still gets a visible state instead of a silently missing chip.
+  const noData=!ref||!profile||lowest===null;
+  button.classList.toggle('usage-none',noData);if(noData)button.setAttribute('aria-disabled','true');else button.removeAttribute('aria-disabled');
+  if(noData){
+   button.querySelector('.chat-usage-value').textContent='No usage data';
+   const reason=!ref?'No login profile is linked to this box':!profile?'Profile '+ref.application+' · '+ref.name+' no longer exists':ref.application+' · '+ref.name+' reports no usage windows';
+   button.setAttribute('aria-label','Usage: no data. '+reason);button.title=reason;button.classList.remove('usage-low');
+   return;
+  }
   button.querySelector('.chat-usage-value').textContent=usageNumber(lowest)+'%';
   button.querySelector('.chat-usage-ring-value').setAttribute('stroke-dasharray',lowest+' 100');
   button.setAttribute('aria-label',ref.application+' '+ref.name+' usage: '+(lowest===null?'remaining unavailable':usageNumber(lowest)+'% remaining'));
@@ -3703,7 +3713,7 @@ let usagePending=null,usageGeneration=0;
   finally{if(!usageManualBaseline)button.disabled=false}
  }
  $('#usage-toggle').onclick=()=>{if(!owner)return;usageScope=null;renderUsage({profiles:usageProfiles});closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
- $('#chat-usage').onclick=()=>{if(!owner||!selectedUsageProfile)return;usageScope={...selectedUsageProfile};renderUsage({profiles:usageProfiles});closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
+ $('#chat-usage').onclick=()=>{if(!owner||!selectedUsageProfile||$('#chat-usage').classList.contains('usage-none'))return;usageScope={...selectedUsageProfile};renderUsage({profiles:usageProfiles});closeSheets();$('#usage-modal').hidden=false;void refreshUsage()};
  $('#usage-refresh').onclick=()=>void requestUsageRefresh();
  document.querySelectorAll('#usage-modal [data-close]').forEach(el=>el.addEventListener('click',stopManualUsageRefresh));
  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshUsage()});
