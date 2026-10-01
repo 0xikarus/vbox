@@ -15,7 +15,7 @@ import (
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
 
-var ErrAmbiguousMessage = errors.New("message delivery is ambiguous and will not be replayed automatically")
+var ErrAmbiguousMessage = errors.New("message delivery is ambiguous")
 
 const taskAgentEnvironment = "VMBOX_TASK_AGENT"
 
