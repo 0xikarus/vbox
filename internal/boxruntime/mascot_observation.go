@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-// The harness MCP process owns this heartbeat. It already knows which managed
-// conversation it serves, and reads that harness's native transcript locally.
-// Neither the model nor a terminal screen capture is involved.
+// The harness MCP process owns this heartbeat. It knows which managed
+// conversation it serves and reads that harness's native transcript locally.
 const mascotSampleBytes = 8192
 
 func mascotClientAgent(name string) string {

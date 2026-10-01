@@ -11,8 +11,8 @@ import (
 	"time"
 )
 
-// MascotState is deliberately small: no model, transcript, or confidence
-// history is kept. Terminal text is untrusted evidence, never an instruction.
+// MascotState contains only the derived state. The controller treats sampled
+// transcript text as untrusted input and does not persist it.
 type MascotState struct {
 	Mood     string `json:"mood"`
 	Activity string `json:"activity"`
@@ -30,8 +30,7 @@ var mascotPatterns = struct {
 
 // classifyMascotText weights the newest meaningful lines. Explicit result
 // phrases beat older errors, so a completed fix does not leave an angry mascot.
-// This is a bounded lexical classifier: it uses negligible memory and has no
-// external service or model download.
+// This bounded lexical classifier uses precompiled patterns in process.
 func classifyMascotText(sample string) MascotState {
 	state := MascotState{Mood: "idle", Activity: "idle"}
 	lines := strings.Split(sample, "\n")

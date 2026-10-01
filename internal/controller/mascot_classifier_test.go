@@ -5,6 +5,9 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -73,9 +76,51 @@ func TestMascotStateExpiresAndFollowsActiveTask(t *testing.T) {
 }
 
 func BenchmarkClassifyMascotText(b *testing.B) {
-	sample := strings.Repeat("assistant: Inspecting the repository and running checks.\n", 100) + "assistant: Fixed the issue. Tests passed."
+	sample := strings.Repeat("user: Please inspect the error.\nassistant: Inspecting the repository and running checks.\n", 120)
+	sample = sample[len(sample)-8192:]
 	b.ReportAllocs()
+	b.StopTimer()
+	runtime.GC()
+	var before runtime.MemStats
+	runtime.ReadMemStats(&before)
+	baseRSS := mascotBenchmarkProcessMiB("VmRSS:")
+	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		_ = classifyMascotText(sample)
 	}
+	b.StopTimer()
+	peakRSS := mascotBenchmarkProcessMiB("VmHWM:")
+	runtime.GC()
+	var after runtime.MemStats
+	runtime.ReadMemStats(&after)
+	b.ReportMetric(float64(len(sample)), "sample_B")
+	b.ReportMetric(float64(before.HeapAlloc)/(1<<20), "heap_base_MiB")
+	b.ReportMetric(float64(after.HeapAlloc)/(1<<20), "heap_after_MiB")
+	if baseRSS > 0 {
+		b.ReportMetric(baseRSS, "rss_base_MiB")
+		b.ReportMetric(peakRSS, "rss_peak_MiB")
+	}
+}
+
+// Linux reports process resident memory in KiB. This includes the Go runtime,
+// controller package initialization, and the classifier's allocations.
+func mascotBenchmarkProcessMiB(field string) float64 {
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if !strings.HasPrefix(line, field) {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) != 3 || parts[2] != "kB" {
+			return 0
+		}
+		kib, err := strconv.ParseUint(parts[1], 10, 64)
+		if err == nil {
+			return float64(kib) / 1024
+		}
+	}
+	return 0
 }

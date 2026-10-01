@@ -252,7 +252,7 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   on the active task. Chat history returns fresh state in response headers; after 40 seconds
   without a heartbeat, the UI falls back to chat activity and lifecycle state.
   The MCP sender reads native conversation text and does not capture tmux output.
-  There is no `setMood` MCP tool. Entry points:
+  Entry points:
   `internal/boxruntime/mascot_observation.go`, `mascot_transcript.go`,
   `internal/controller/mascot_classifier.go`, `web/chat.js`.
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
