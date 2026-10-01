@@ -33,6 +33,11 @@ curated examples, not a measurement on real production transcripts; accuracy
 in use may differ. Add reviewed, de-identified examples from real transcripts
 before treating either score as a production quality estimate.
 
+The two holdout misses are a progress sentence about checks underway that the
+model marked angry, and a stalled release that it marked happy. They show why
+new real transcript examples and a fresh holdout set matter when improving the
+model.
+
 ## Reproduce
 
 From the repository root:
