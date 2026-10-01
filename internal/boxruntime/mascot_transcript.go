@@ -18,20 +18,48 @@ import (
 // clipMascotSample keeps roughly the last 500-2000 tokens, without splitting a
 // UTF-8 rune. The controller never receives a full native transcript.
 func clipMascotSample(text string) string {
-	value := []byte(strings.TrimSpace(text))
-	if len(value) > mascotSampleBytes {
-		value = value[len(value)-mascotSampleBytes:]
-		for len(value) > 0 && value[0]&0xc0 == 0x80 {
-			value = value[1:]
+	text = strings.TrimSpace(text)
+	if len(text) <= mascotSampleBytes {
+		return text
+	}
+	// Reserve space for the last three agent prose lines before taking the
+	// newest tool-heavy tail. Otherwise a burst of tool calls erases the prose
+	// needed to interpret mood and activity.
+	var prose []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.HasPrefix(line, "assistant: ") {
+			prose = append(prose, line)
 		}
 	}
-	return strings.TrimSpace(string(value))
+	if len(prose) > 3 {
+		prose = prose[len(prose)-3:]
+	}
+	reserve := 0
+	for _, line := range prose {
+		reserve += len(line) + 1
+	}
+	budget := mascotSampleBytes - reserve
+	if budget < mascotSampleBytes/2 {
+		budget = mascotSampleBytes / 2
+	}
+	tail := text[len(text)-budget:]
+	if cut := strings.IndexByte(tail, '\n'); cut >= 0 {
+		tail = tail[cut+1:]
+	}
+	var retained []string
+	for _, line := range prose {
+		if !strings.Contains(tail, line) {
+			retained = append(retained, line)
+		}
+	}
+	retained = append(retained, tail)
+	return strings.TrimSpace(strings.Join(retained, "\n"))
 }
 
 func mascotNativeSample(ctx context.Context, home, session, agent string) (string, error) {
 	switch agent {
 	case "codex":
-		id, err := os.ReadFile(codexThreadFile(WorkspaceRoot(), session))
+		id, err := os.ReadFile(codexThreadFile(New("").Root, session))
 		if err != nil || !processID.MatchString(strings.TrimSpace(string(id))) {
 			return "", fmt.Errorf("active Codex conversation unavailable")
 		}
@@ -235,38 +263,138 @@ func mascotToolBasename(value string) string {
 }
 
 func mascotCommandActivity(command string) string {
-	words := strings.Fields(command)
-	if len(words) == 0 {
-		return "command"
-	}
-	first := mascotSafeToolWord(path.Base(strings.ReplaceAll(words[0], "\\", "/")))
-	if first == "" {
-		return "command"
-	}
-	switch strings.ToLower(first) {
-	case "cd", "echo", "sleep", "cat", "ls", "pwd", "true", "test":
-		return ""
-	}
-	known := map[string]map[string]bool{
-		"go":    {"test": true, "build": true, "vet": true, "run": true, "fmt": true, "mod": true, "generate": true},
-		"npm":   {"run": true, "test": true, "install": true, "ci": true, "build": true},
-		"pnpm":  {"run": true, "test": true, "install": true, "build": true},
-		"yarn":  {"run": true, "test": true, "install": true, "build": true},
-		"bun":   {"run": true, "test": true, "install": true, "build": true},
-		"cargo": {"test": true, "build": true, "check": true, "fmt": true},
-		"git":   {"status": true, "diff": true, "log": true, "fetch": true, "pull": true, "push": true, "rebase": true, "commit": true},
-	}
-	activity := first
-	if len(words) > 1 && known[strings.ToLower(first)][words[1]] {
-		activity += " " + words[1]
-		if len(words) > 2 && (first == "npm" || first == "pnpm" || first == "yarn" || first == "bun") && words[1] == "run" {
-			switch words[2] {
-			case "build", "test", "lint", "check", "typecheck", "format", "dev", "start":
-				activity += " " + words[2]
-			}
+	for _, segment := range mascotShellSegments(command) {
+		if activity := mascotMeaningfulCommand(strings.Fields(segment)); activity != "" {
+			return activity
 		}
 	}
-	return activity
+	return "command"
+}
+
+func mascotShellSegments(command string) []string {
+	var segments []string
+	start, quote, escaped := 0, rune(0), false
+	for i, char := range command {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if char == '\\' && quote != '\'' {
+			escaped = true
+			continue
+		}
+		if quote != 0 {
+			if char == quote {
+				quote = 0
+			}
+			continue
+		}
+		if char == '\'' || char == '"' {
+			quote = char
+			continue
+		}
+		if char == ';' || char == '&' || char == '|' || char == '\n' {
+			segments = append(segments, command[start:i])
+			start = i + len(string(char))
+		}
+	}
+	return append(segments, command[start:])
+}
+
+func mascotAssignment(word string) bool {
+	name, _, ok := strings.Cut(word, "=")
+	if !ok || name == "" {
+		return false
+	}
+	for i, char := range name {
+		if char != '_' && (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (i == 0 || char < '0' || char > '9') {
+			return false
+		}
+	}
+	return true
+}
+
+func mascotMeaningfulCommand(words []string) string {
+	for len(words) > 0 {
+		first := strings.ToLower(path.Base(strings.ReplaceAll(words[0], "\\", "/")))
+		if mascotAssignment(words[0]) {
+			words = words[1:]
+			continue
+		}
+		switch first {
+		case "cd", "echo", "sleep", "cat", "ls", "pwd", "true", "test":
+			return ""
+		case "export":
+			words = words[1:]
+			for len(words) > 0 && mascotAssignment(words[0]) {
+				words = words[1:]
+			}
+			continue
+		case "env":
+			words = words[1:]
+			for len(words) > 0 && (mascotAssignment(words[0]) || strings.HasPrefix(words[0], "-")) {
+				if words[0] == "-u" && len(words) > 1 {
+					words = words[2:]
+				} else {
+					words = words[1:]
+				}
+			}
+			continue
+		case "timeout":
+			words = words[1:]
+			for len(words) > 0 && strings.HasPrefix(words[0], "-") {
+				words = words[1:]
+			}
+			if len(words) > 0 { // Duration, not part of the command label.
+				words = words[1:]
+			}
+			continue
+		case "sudo", "nice", "time":
+			words = words[1:]
+			for len(words) > 0 && strings.HasPrefix(words[0], "-") {
+				option := words[0]
+				words = words[1:]
+				if (option == "-u" || option == "-g" || option == "-n") && len(words) > 0 {
+					words = words[1:]
+				}
+			}
+			continue
+		}
+		first = mascotSafeToolWord(first)
+		if first == "" {
+			return ""
+		}
+		if first == "node" && len(words) > 1 && (words[1] == "--test" || strings.HasPrefix(words[1], "--test=")) {
+			return "node tests"
+		}
+		if first == "gh" && len(words) > 2 && words[1] == "pr" {
+			switch words[2] {
+			case "merge", "create", "view", "checks", "list":
+				return "gh pr " + words[2]
+			}
+		}
+		known := map[string]map[string]bool{
+			"go":    {"test": true, "build": true, "vet": true, "run": true, "fmt": true, "mod": true, "generate": true},
+			"npm":   {"run": true, "test": true, "install": true, "ci": true, "build": true},
+			"pnpm":  {"run": true, "test": true, "install": true, "build": true},
+			"yarn":  {"run": true, "test": true, "install": true, "build": true},
+			"bun":   {"run": true, "test": true, "install": true, "build": true},
+			"cargo": {"test": true, "build": true, "check": true, "fmt": true},
+			"git":   {"status": true, "diff": true, "log": true, "fetch": true, "pull": true, "push": true, "rebase": true, "commit": true},
+		}
+		activity := first
+		if len(words) > 1 && known[strings.ToLower(first)][words[1]] {
+			activity += " " + words[1]
+			if len(words) > 2 && (first == "npm" || first == "pnpm" || first == "yarn" || first == "bun") && words[1] == "run" {
+				switch words[2] {
+				case "build", "test", "lint", "check", "typecheck", "format", "dev", "start":
+					activity += " " + words[2]
+				}
+			}
+		}
+		return activity
+	}
+	return ""
 }
 
 func mascotClaudeToolActivities(raw json.RawMessage) []string {
