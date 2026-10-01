@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"Please check the build."}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I found the failing build.\nI am updating the test.\nI will rerun it now."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"S=private; export PATH=/private/bin; cd /private/work && go test ./..."}}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"S=private; export PATH=/private/bin; cd /private/work && go test ./..."}}]}}

@@ -1,0 +1,5 @@
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Please check the browser suite."}]}}
+{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"I am checking mobile gestures.\nThe browser suite is next.\nI will inspect the result."}]}}
+{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"timeout 300 node --test tests/browser/chat-mobile.test.mjs\"}"}}
+{"type":"response_item","payload":{"type":"function_call_output","output":"$ export TOKEN=private\nAuthorization: Bearer private"}}
+{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"timeout 300 node --test tests/browser/chat-mobile.test.mjs\"}"}}

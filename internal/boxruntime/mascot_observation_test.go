@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestMascotClientAgent(t *testing.T) {
@@ -77,8 +78,9 @@ func writeMascotCodexFixture(t *testing.T, home, root, session, id string) {
 func TestMascotReadsActiveCodexAndClaudeTranscripts(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()
 	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
+	t.Setenv("VMBOX_RUNTIME_DIR", t.TempDir())
 	id := "01234567-89ab-cdef-0123-456789abcdef"
-	writeMascotCodexFixture(t, home, root, "codex-managed", id)
+	writeMascotCodexFixture(t, home, New("").Root, "codex-managed", id)
 	text, err := mascotNativeSample(context.Background(), home, "codex-managed", "codex")
 	if err != nil || !strings.Contains(text, "assistant: Fixed the build. All tests passed.") || !strings.Contains(text, "user: Please fix the error") || !strings.Contains(text, "tool: Running go test") {
 		t.Fatalf("Codex sample=%q err=%v", text, err)
@@ -103,6 +105,22 @@ func TestMascotReadsActiveCodexAndClaudeTranscripts(t *testing.T) {
 	}
 }
 
+func TestMascotCodexReadsOnlyRuntimeThreadFile(t *testing.T) {
+	home, workspaceRoot, runtimeRoot := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("VMBOX_WORKSPACE_ROOT", workspaceRoot)
+	t.Setenv("VMBOX_RUNTIME_DIR", runtimeRoot)
+	id := "01234567-89ab-cdef-0123-456789abcdef"
+	writeMascotCodexFixture(t, home, workspaceRoot, "codex-managed", id)
+	if _, err := mascotNativeSample(context.Background(), home, "codex-managed", "codex"); err == nil {
+		t.Fatal("Codex sample accepted a thread file under the workspace root")
+	}
+	writeMascotCodexFixture(t, home, New("").Root, "codex-managed", id)
+	text, err := mascotNativeSample(context.Background(), home, "codex-managed", "codex")
+	if err != nil || !strings.Contains(text, "assistant: Fixed the build") {
+		t.Fatalf("Codex runtime thread sample=%q err=%v", text, err)
+	}
+}
+
 func TestMascotReadsVisibleOpenCodeBridgeWithoutTmux(t *testing.T) {
 	home, err := os.MkdirTemp("/tmp", "vbm-mascot-")
 	if err != nil {
@@ -118,11 +136,15 @@ func TestMascotReadsVisibleOpenCodeBridgeWithoutTmux(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fixture, err := os.ReadFile("testdata/mascot_opencode.json")
+	if err != nil {
+		t.Fatal(err)
+	}
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/mascot-transcript" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
-		_, _ = w.Write([]byte(`{"instance":"visible-one","text":"assistant: Tests passed."}`))
+		_, _ = w.Write(fixture)
 	})}
 	go server.Serve(listener)
 	defer server.Close()
@@ -131,7 +153,7 @@ func TestMascotReadsVisibleOpenCodeBridgeWithoutTmux(t *testing.T) {
 		t.Fatal(err)
 	}
 	text, err := mascotNativeSample(context.Background(), home, "opencode-managed", "opencode")
-	if err != nil || text != "assistant: Tests passed." {
+	if err != nil || mascotTranscriptEvidence(text) != "I am reviewing the app.\nI found the mobile issue.\nI will update the view.\ntool: Running node tests" {
 		t.Fatalf("OpenCode sample=%q err=%v", text, err)
 	}
 }
@@ -141,7 +163,8 @@ func TestMascotHeartbeatSendsNativeExcerptToController(t *testing.T) {
 	home, root := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
-	writeMascotCodexFixture(t, home, root, "codex-managed", id)
+	t.Setenv("VMBOX_RUNTIME_DIR", t.TempDir())
+	writeMascotCodexFixture(t, home, New("").Root, "codex-managed", id)
 	var requests atomic.Int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requests.Add(1)
@@ -187,8 +210,9 @@ func TestDesktopMCPAutomaticallySendsMascotHeartbeatWithoutToolCall(t *testing.T
 	home, root := t.TempDir(), t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_WORKSPACE_ROOT", root)
+	t.Setenv("VMBOX_RUNTIME_DIR", t.TempDir())
 	t.Setenv("VMBOX_CHAT_SESSION", "codex-managed")
-	writeMascotCodexFixture(t, home, root, "codex-managed", id)
+	writeMascotCodexFixture(t, home, New("").Root, "codex-managed", id)
 	received := make(chan string, 1)
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/agent-desktop/mascot-observation" {
@@ -245,5 +269,17 @@ func TestDesktopMCPAutomaticallySendsMascotHeartbeatWithoutToolCall(t *testing.T
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("MCP process did not stop")
+	}
+}
+
+func TestMascotEvidenceStaysWithinControllerLimit(t *testing.T) {
+	paragraph := "assistant: " + strings.Repeat("ä word ", 900) + "\n"
+	sample := strings.Repeat(paragraph, 3) + strings.Repeat("tool: Running go test\ntool: Editing a.go\n", 600)
+	evidence := mascotTranscriptEvidence(clipMascotSample(sample))
+	if len(evidence) > mascotSampleBytes || !utf8.ValidString(evidence) {
+		t.Fatalf("evidence is %d bytes (limit %d), valid UTF-8 %t", len(evidence), mascotSampleBytes, utf8.ValidString(evidence))
+	}
+	if strings.Count(evidence, "word") == 0 || !strings.HasSuffix(evidence, "tool: Editing a.go") {
+		t.Fatalf("evidence lost prose or the newest tool line: %q", evidence[len(evidence)-200:])
 	}
 }

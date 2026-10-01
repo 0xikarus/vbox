@@ -53,14 +53,16 @@ func sendMascotHeartbeat(ctx context.Context, assignment, home, session, agent s
 // Native transcript roles are specific to box harnesses. Send only agent
 // activity text so the controller can classify arbitrary supplied text.
 func mascotTranscriptEvidence(sample string) string {
-	lines := strings.Split(sample, "\n")
-	if len(lines) > 80 {
-		lines = lines[len(lines)-80:]
+	type evidenceLine struct {
+		text     string
+		prose    bool
+		tool     bool
+		required bool
 	}
-	retained := make([]string, 0, len(lines))
+	var accepted []evidenceLine
 	insideFence := false
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
+	for _, raw := range strings.Split(sample, "\n") {
+		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
 		}
@@ -69,10 +71,13 @@ func mascotTranscriptEvidence(sample string) string {
 			continue
 		}
 		if tool, ok := strings.CutPrefix(line, "tool: "); ok {
-			retained = append(retained, "tool: "+tool)
+			accepted = append(accepted, evidenceLine{text: "tool: " + tool, tool: true})
 			continue
 		}
-		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool-output: ")
+		if strings.HasPrefix(line, "tool-output: ") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "assistant: ")
 		// Code examples and echoed commands are not status reports.
 		if strings.HasPrefix(line, "```") {
 			insideFence = !insideFence
@@ -81,12 +86,54 @@ func mascotTranscriptEvidence(sample string) string {
 		if insideFence || strings.HasPrefix(line, "$ ") || strings.HasPrefix(line, "> ") {
 			continue
 		}
+		accepted = append(accepted, evidenceLine{text: clipEvidenceLine(line), prose: true})
+	}
+	proseNeeded := 3
+	for i := len(accepted) - 1; i >= 0 && proseNeeded > 0; i-- {
+		if accepted[i].prose {
+			accepted[i].required = true
+			proseNeeded--
+		}
+	}
+	start := len(accepted) - 80
+	if start < 0 {
+		start = 0
+	}
+	retained := make([]evidenceLine, 0, len(accepted)-start+3)
+	for i, line := range accepted {
+		if i < start && !line.required {
+			continue
+		}
+		if line.tool && len(retained) > 0 && retained[len(retained)-1].tool && retained[len(retained)-1].text == line.text {
+			continue
+		}
 		retained = append(retained, line)
 	}
-	for left, right := 0, len(retained)-1; left < right; left, right = left+1, right-1 {
-		retained[left], retained[right] = retained[right], retained[left]
+	length := func() int {
+		total := 0
+		for _, line := range retained {
+			total += len(line.text) + 1
+		}
+		return total
 	}
-	return strings.Join(retained, "\n")
+	for length() > mascotSampleBytes {
+		removed := false
+		for i, line := range retained {
+			if !line.required {
+				retained = append(retained[:i], retained[i+1:]...)
+				removed = true
+				break
+			}
+		}
+		if !removed {
+			break
+		}
+	}
+	lines := make([]string, 0, len(retained))
+	for _, line := range retained {
+		lines = append(lines, line.text)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // MascotTranscriptEvidence applies the heartbeat's agent-only line filter.
@@ -142,4 +189,19 @@ func runMascotHeartbeat(ctx context.Context, assignment, agent string) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// The controller accepts at most mascotSampleBytes of evidence, and the last
+// three prose lines are always kept. Clip a single very long paragraph to its
+// newest part so those required lines can never push the request over the limit.
+func clipEvidenceLine(line string) string {
+	const limit = mascotSampleBytes / 4
+	if len(line) <= limit {
+		return line
+	}
+	line = line[len(line)-limit:]
+	for len(line) > 0 && line[0]&0xc0 == 0x80 {
+		line = line[1:]
+	}
+	return line
 }
