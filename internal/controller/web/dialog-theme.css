@@ -1,12 +1,12 @@
 /* The writing dialogs share the same surface, field and footer language as the
    product sheets. Their content scrolls while the actions stay reachable. */
 .vb-sheet-dialog{box-sizing:border-box;width:min(34rem,calc(100vw - 2rem));max-height:min(88dvh,46rem);padding:0;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-elevated);color:var(--vb-ink);box-shadow:var(--vb-shadow-lg);overflow:hidden}
-.vb-sheet-dialog::backdrop{background:color-mix(in srgb,var(--vb-ink) 58%,transparent)}
-.vb-sheet-dialog .vb-sheet-form,.vb-sheet-dialog.ai-model-dialog[open]{display:flex;flex-direction:column;min-height:0;max-height:inherit}
-.vb-sheet-dialog .vb-sheet-header,.vb-sheet-dialog.ai-model-dialog>header{position:relative;z-index:2;display:flex;align-items:center;gap:12px;flex:none;min-height:56px;margin:0;padding:12px 16px;border-bottom:1px solid var(--vb-line);background:var(--vb-elevated)}
+.vb-sheet-dialog::backdrop{background:var(--vb-modal-backdrop)}
+.vb-sheet-dialog .vb-sheet-form,.vb-sheet-dialog.ai-model-dialog[open]{display:flex;flex-direction:column;align-items:stretch;min-height:0;max-height:inherit;margin:0}
+.vb-sheet-dialog .vb-sheet-header,.vb-sheet-dialog.ai-model-dialog>header{position:relative;z-index:2;display:flex;align-items:center;gap:12px;flex:none;box-sizing:border-box;width:100%;min-height:56px;margin:0;padding:12px 16px;border-bottom:1px solid var(--vb-line);background:var(--vb-elevated)}
 .vb-sheet-dialog .vb-sheet-header h2,.vb-sheet-dialog.ai-model-dialog h2{flex:1;margin:0;color:var(--vb-ink);font-size:var(--vb-type-px-17);font-weight:660}
 .vb-sheet-dialog .vb-sheet-header button,.vb-sheet-dialog.ai-model-dialog .ai-model-close{display:grid;place-items:center;flex:none;width:36px;height:36px;padding:0;border:0;border-radius:var(--r-control);background:transparent;color:var(--vb-ink-soft);font-size:24px;cursor:pointer}
-.vb-sheet-dialog .sheet-scroll-frame{min-height:0}
+.vb-sheet-dialog .sheet-scroll-frame{width:100%;min-height:0}
 .vb-sheet-dialog .sheet-scroll-body{padding:16px}
 .vb-sheet-dialog .sheet-scroll-body p{color:var(--vb-ink-soft)}
 .vb-sheet-dialog label{display:block;width:100%;margin:0 0 14px;color:var(--vb-ink);font-size:var(--vb-type-px-14);font-weight:600}
@@ -15,7 +15,7 @@
 .vb-sheet-dialog .ai-model-row input{margin-top:0}
 .vb-sheet-dialog .ai-model-row input,.vb-sheet-dialog .ai-model-custom input{border-color:var(--vb-line-strong);background:var(--vb-bg-soft);color:var(--vb-ink)}
 .vb-sheet-dialog .ai-model-row button,.vb-sheet-dialog .ai-model-custom button,.vb-sheet-dialog .vb-sheet-footer button{min-height:40px;padding:8px 12px;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-ink);font:inherit;font-weight:600;cursor:pointer}
-.vb-sheet-dialog .vb-sheet-footer{position:relative;z-index:2;display:flex;align-items:center;gap:8px;flex:none;margin:0;padding:12px 16px;border-top:1px solid var(--vb-line);background:var(--vb-elevated)}
+.vb-sheet-dialog .vb-sheet-footer{position:relative;z-index:2;display:flex;align-items:center;gap:8px;flex:none;box-sizing:border-box;width:100%;margin:0;padding:12px 16px;border-top:1px solid var(--vb-line);background:var(--vb-elevated)}
 .vb-sheet-dialog .vb-sheet-footer button:first-child{margin-right:auto;border-color:transparent;background:transparent}
 .vb-sheet-dialog .vb-sheet-footer .primary,.vb-sheet-dialog .ai-model-custom button{border-color:var(--vb-ink);background:var(--vb-ink);color:var(--vb-bg)}
 .vb-sheet-dialog .ai-model-note,.vb-sheet-dialog .ai-model-summary,.vb-sheet-dialog .ai-model-option small{color:var(--vb-ink-soft)}

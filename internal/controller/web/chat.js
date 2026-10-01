@@ -25,6 +25,7 @@
    if(rows)renderRows();
   },230);
  }
+ window.VBoxChatGesture={begin:beginHorizontalGesture,end:endHorizontalGesture};
  const previewFetched=new Map();let boxesPending=null;
  const attachmentDrafts=new Map();
  let pendingKey='',pendingFingerprint='',replyingTo=null;

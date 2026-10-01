@@ -29,7 +29,7 @@
    if(!drag.axis){
     if(Math.abs(dx)<10&&Math.abs(dy)<10)return;
     drag.axis=dy>10&&dy>Math.abs(dx)?'down':'other';
-    if(drag.axis==='down')card.classList.add('sheet-dragging');
+    if(drag.axis==='down'){card.classList.add('sheet-dragging');window.VBoxChatGesture?.begin?.()}
    }
    if(drag.axis!=='down')return;
    if(event.cancelable)event.preventDefault();
@@ -41,6 +41,7 @@
    const distance=event.changedTouches[0].clientY-drag.y,active=drag.axis==='down';drag=null;
    cancelAnimationFrame(dragFrame);dragFrame=0;card.classList.remove('sheet-dragging');
    if(!active)return;
+   window.VBoxChatGesture?.end?.();
    if(distance>90&&body.scrollTop<1){
     card.style.removeProperty('transform');
     header.querySelector('[data-close],button[aria-label^="Close"]')?.click();
@@ -49,7 +50,7 @@
     settleTimer=setTimeout(()=>{card.classList.remove('sheet-drag-returning');card.style.removeProperty('transform')},230);
    }
   },{passive:true});
-  header.addEventListener('touchcancel',()=>{drag=null;cancelAnimationFrame(dragFrame);dragFrame=0;card.classList.remove('sheet-dragging');card.style.removeProperty('transform')},{passive:true});
+  header.addEventListener('touchcancel',()=>{if(drag?.axis==='down')window.VBoxChatGesture?.end?.();drag=null;cancelAnimationFrame(dragFrame);dragFrame=0;card.classList.remove('sheet-dragging');card.style.removeProperty('transform')},{passive:true});
  }
  function decorate(frame,body){
   if(frame.dataset.sheetScrollReady)return;

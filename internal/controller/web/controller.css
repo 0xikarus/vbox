@@ -39,7 +39,7 @@ button.primary{padding:4px 12px}
 .model-picker-open{width:100%;text-align:left;background:var(--vb-surface);border:1px solid var(--vb-line-strong);padding:6px 9px;cursor:pointer;overflow-wrap:anywhere}
 .model-picker-open:disabled{cursor:default;opacity:.55}
 .model-picker-dialog{box-sizing:border-box;width:min(36rem,calc(100vw - 2rem));max-height:min(80vh,42rem);padding:16px;border:1px solid var(--vb-line);background:var(--vb-elevated);color:var(--vb-ink);box-shadow:var(--vb-shadow-lg)}
-.model-picker-dialog::backdrop{background:color-mix(in srgb,var(--vb-ink) 58%,transparent)}
+.model-picker-dialog::backdrop{background:var(--vb-modal-backdrop)}
 .model-picker-header{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .model-picker-title{margin:0;font-size:var(--vb-type-px-18)}
 .model-picker-close{border:0;background:transparent;font-size:var(--vb-type-px-24);cursor:pointer}

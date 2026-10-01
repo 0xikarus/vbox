@@ -35,8 +35,15 @@ test('mobile menu and Permissions sheets scroll natively with a visible position
   await page.waitForFunction(()=>document.querySelector('#chat-menu-sheet .sheet-scroll-frame').classList.contains('sheet-can-scroll'));
   const menu=async()=>page.$eval('#chat-menu-sheet .sheet-scroll-body',el=>({top:el.scrollTop,client:el.clientHeight,total:el.scrollHeight,headerTop:el.closest('.sheet-card').querySelector('header').getBoundingClientRect().top,indicator:getComputedStyle(el.parentElement.querySelector('.sheet-scroll-indicator')).display,above:el.parentElement.classList.contains('sheet-has-above'),below:el.parentElement.classList.contains('sheet-has-below')}));
   const atTop=await menu();assert.ok(atTop.total>atTop.client+20);assert.equal(atTop.indicator,'block');assert.equal(atTop.above,false);assert.equal(atTop.below,true);
+  const headerY=await page.$eval('#chat-menu-sheet header',header=>Math.round(header.getBoundingClientRect().top+18));
+  await page.touchscreen.touchStart(195,headerY);await page.touchscreen.touchMove(195,headerY+50);
+  await page.waitForFunction(()=>new DOMMatrix(getComputedStyle(document.querySelector('#chat-menu-sheet .sheet-card')).transform).m42>15,{timeout:1000});
+  await page.touchscreen.touchEnd();
+  assert.equal(await page.$eval('#chat-menu-sheet',sheet=>sheet.hidden),false,'a short drag springs back without dismissing the sheet');
+  await page.waitForFunction(()=>Math.abs(new DOMMatrix(getComputedStyle(document.querySelector('#chat-menu-sheet .sheet-card')).transform).m42)<.5);
+  const steadyTop=(await menu()).headerTop;
   await page.mouse.move(200,600);await page.mouse.wheel({deltaY:280});await page.waitForFunction(()=>document.querySelector('#chat-menu-sheet .sheet-scroll-body').scrollTop>10);
-  const afterWheel=await menu();assert.equal(afterWheel.headerTop,atTop.headerTop);assert.equal(afterWheel.above,true);
+  const afterWheel=await menu();assert.ok(Math.abs(afterWheel.headerTop-steadyTop)<1,'the header stays fixed while the body scrolls');assert.equal(afterWheel.above,true);
   await page.evaluate(()=>{const body=document.querySelector('#chat-menu-sheet .sheet-scroll-body');body.scrollTop=0});
   await page.touchscreen.touchStart(180,620);for(const y of [590,560,530,500,470])await page.touchscreen.touchMove(180,y);await page.touchscreen.touchEnd();
   assert.ok((await menu()).top>0,'touch panning moves the sheet body');

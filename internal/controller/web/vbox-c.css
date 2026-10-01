@@ -329,7 +329,7 @@ form#login button:hover{background:var(--vb-swatch-000);border-color:var(--vb-sw
 
 /* usage dialog */
 .workspace-usage-dialog{border:1px solid var(--vb-line);background:var(--vb-elevated);color:var(--vb-ink);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg)}
-.workspace-usage-dialog::backdrop{background:rgba(17,17,20,.4)}
+.workspace-usage-dialog::backdrop{background:var(--vb-modal-backdrop)}
 .workspace-usage-dialog h2{color:var(--vb-ink)}
 .workspace-usage-dialog p{color:var(--vb-ink-soft)}
 .workspace-usage-profile{background:var(--vb-bg-soft);border-color:var(--vb-line)}
@@ -685,7 +685,7 @@ details>summary::before{content:'';flex:none;width:.9rem;height:.9rem;background
 details[open]>summary::before{transform:rotate(90deg)}
 
 /* dialogs, menus, toasts, tooltips */
-dialog::backdrop,.model-picker-dialog::backdrop{background:color-mix(in srgb,var(--vb-ink) 45%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+dialog::backdrop,.model-picker-dialog::backdrop{background:var(--vb-modal-backdrop);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 .sheet-backdrop,.modal .backdrop,#new-box-backdrop,#delete-box-backdrop,#takeover-backdrop{background:color-mix(in srgb,var(--vb-ink) 45%,transparent);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
 #inspect-backdrop:not([hidden]){background:color-mix(in srgb,var(--vb-ink) 35%,transparent);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px)}
 .sheet-card,#new-box-card,#delete-box-card,#takeover-card{border-radius:var(--r-surface)}

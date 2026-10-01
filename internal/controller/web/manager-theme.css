@@ -95,7 +95,7 @@ body[data-manage-view="boxes"] .manage-content>section:not(#boxes),body[data-man
 .box-detail-actions a:hover,.box-detail-actions button:hover{background:var(--vb-swatch-263749);border-color:var(--vb-swatch-8fb8f5)}
 .box-detail-error{padding:.6rem;background:var(--vb-swatch-3b2630);color:var(--vb-swatch-ffadb5)}
 .modal{z-index:70}
-.modal .backdrop{background:color-mix(in srgb,var(--vb-ink) 58%,transparent)}
+.modal .backdrop{background:var(--vb-modal-backdrop)}
 .modal .card,.model-picker-dialog{background:var(--vb-elevated);border-color:var(--vb-line);color:var(--vb-ink);border-radius:var(--r-surface)}
 .modal .card input,.modal .card select,.modal .card textarea{background:var(--vb-bg-soft);border-color:var(--vb-line-strong);color:var(--vb-ink)}
 .modal .card .hint,.role-capability-toggle small{color:var(--vb-ink-soft)}
