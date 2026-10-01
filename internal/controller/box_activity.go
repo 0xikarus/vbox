@@ -9,7 +9,7 @@ import (
 
 type boxActivity struct {
 	BoxID      string     `json:"boxId"`
-	Busy       bool       `json:"busy"`
+	Busy       *bool      `json:"busy"`
 	BusySince  *time.Time `json:"busySince,omitempty"`
 	Mood       string     `json:"mood,omitempty"`
 	Activity   string     `json:"activity,omitempty"`
@@ -45,7 +45,9 @@ func (s *Server) boxActivityHandler(w http.ResponseWriter, r *http.Request, p Pr
 			writeError(w, http.StatusInternalServerError, fmt.Errorf("box activity unavailable"))
 			return
 		}
-		value.Busy = busy.Valid && busy.Bool
+		if busy.Valid {
+			value.Busy = &busy.Bool
+		}
 		if busySince.Valid {
 			stamp := busySince.Time.UTC()
 			value.BusySince = &stamp
@@ -58,7 +60,7 @@ func (s *Server) boxActivityHandler(w http.ResponseWriter, r *http.Request, p Pr
 				value.Mood = mood.String
 				value.Activity = activity.String
 			}
-			if value.Busy && age <= 10*time.Minute {
+			if value.Busy != nil && *value.Busy && age <= 10*time.Minute {
 				value.Phrase = phrase.String
 			}
 		}

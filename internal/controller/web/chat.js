@@ -1858,7 +1858,8 @@
    const receivedAt=Date.now();
    for(const value of values){
     const box=boxes.get(value.boxId);if(!box)continue;
-    box.agentBusy=!!value.busy;box.agentBusySince=value.busySince||'';
+    if(value.busy===null||value.busy===undefined){delete box.agentBusy;delete box.agentBusySince}
+    else{box.agentBusy=!!value.busy;box.agentBusySince=value.busySince||''}
     box.mascotMood=value.mood||'';box.mascotActivity=value.activity||'';box.mascotObservedAt=value.observedAt||'';
     box.activityPhrase=typeof value.phrase==='string'?value.phrase:'';
     box.activityBatchAt=receivedAt;summarize(box.id);
