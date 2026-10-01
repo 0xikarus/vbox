@@ -3370,7 +3370,7 @@
   try{
    const who=await api('/v1/whoami');usageGeneration++;owner=who.role==='owner';await loadChatGroups(who.accountId||'default');await loadReadMarkers();
    document.querySelectorAll('[data-owner-nav]').forEach(link=>link.hidden=!owner);
-   $('#usage-toggle').hidden=true;
+   window.VMBoxWorkspaceNav?.updateUsagePill($('#usage-toggle'),null,owner);
    $('#presets-toggle').hidden=!owner;
    $('#commands-toggle').hidden=!owner;
    $('#ai-settings-toggle').hidden=!owner;
