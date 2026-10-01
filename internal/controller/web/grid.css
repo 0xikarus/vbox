@@ -60,7 +60,6 @@ a{color:var(--vb-swatch-aaceff)}
  .workspace-links{order:2;flex:0 0 100%;overflow-x:auto}
  .workspace-links a{padding:.38rem .55rem}
  .grid-heading{align-items:start;flex-direction:column;gap:.45rem}
- #tiles{grid-template-columns:minmax(0,1fr)}
  .tile .desktop-screen{height:max(12rem,35vh)}
  .tile .terminal-screen{height:max(10rem,28vh)}
  .tile select{max-width:70vw}

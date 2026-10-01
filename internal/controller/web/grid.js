@@ -1,6 +1,10 @@
 'use strict';
 (()=>{
  const $=s=>document.querySelector(s),tiles=[];let boxes=[],epoch=0,timer,automaticLayout=true;const unavailable=new Map();
+ const columnsKey='vmboxGridColumns',columnsSelect=$('#layout').elements.columns;
+ let savedColumns=null;
+ try{const value=Number(localStorage.getItem(columnsKey));if(Number.isInteger(value)&&value>=1&&value<=4)savedColumns=value}catch{}
+ columnsSelect.value=String(savedColumns|| (matchMedia('(max-width:599px)').matches?1:2));
  const workspaceNav=window.VMBoxWorkspaceNav?.init({menuId:'grid-menu',panelId:'grid-menu-panel',usageId:'grid-usage',providersId:'grid-providers'});
  const node=(tag,text)=>{const e=document.createElement(tag);if(text)e.textContent=text;return e};
  const ICON={
@@ -106,7 +110,8 @@
  function layout(){const form=$('#layout'),columns=Number(form.elements.columns.value),rows=automaticLayout?Math.max(1,Math.ceil(boxes.filter(b=>b.state==='running').length/columns)):Number(form.elements.rows.value);while(tiles.length>columns*rows){const t=tiles.pop();t.disconnect();t.element.remove()}while(tiles.length<columns*rows)makeTile();$('#tiles').style.setProperty('--columns',columns);$('#tiles').style.setProperty('--rows',rows);tiles.forEach(picker);fill();}
  async function refresh(){clearTimeout(timer);const ticket=++epoch;try{const current=await api('/v1/grid-boxes');if(ticket!==epoch)return;boxes=current;$('#grid-count').textContent=boxes.filter(box=>box.state==='running').length+' running · '+boxes.length+' total';$('#error').textContent='';for(const t of tiles){const selected=t.box.value,b=boxes.find(b=>b.id===selected);if(selected&&(!b||b.state!=='running')){t.disconnect();t.box.value='';t.session.replaceChildren();t.status.textContent=b?b.state+' · not connected.':'Box removed or no longer interactive.';}picker(t)}if(automaticLayout)layout();else fill()}catch(e){if(ticket===epoch)$('#error').textContent=e.message}finally{if(ticket===epoch&&!$('#grid-app').hidden)timer=setTimeout(refresh,15000)}}
  async function enter(initial=false){try{const who=await api('/v1/whoami');workspaceNav?.setOwner(who.role==='owner');$('#login').hidden=true;$('#login-error').textContent='';$('#error').textContent='';$('#logout').hidden=false;$('#grid-app').hidden=false;if(!tiles.length)layout();await refresh()}catch(e){workspaceNav?.setOwner(false);showLogin(initial&&e.message==='Please log in again.'?'':e.message)}}
- $('#layout').onsubmit=e=>{e.preventDefault();automaticLayout=$('#layout').elements.rows.value==='auto';layout()};$('#refresh').onclick=refresh;
+ $('#layout').onsubmit=e=>{e.preventDefault();automaticLayout=$('#layout').elements.rows.value==='auto';savedColumns=Number(columnsSelect.value);try{localStorage.setItem(columnsKey,String(savedColumns))}catch{}layout()};$('#refresh').onclick=refresh;
+ addEventListener('resize',()=>{if(savedColumns!==null)return;const next=String(matchMedia('(max-width:599px)').matches?1:2);if(columnsSelect.value!==next){columnsSelect.value=next;if(!$('#grid-app').hidden)layout()}});
  $('#login').onsubmit=async e=>{e.preventDefault();$('#login-error').textContent='';try{await api('/v1/browser-session','POST',{Authorization:'Bearer '+e.target.elements.token.value});e.target.reset();await enter()}catch(err){showLogin(err.message)}};
  $('#logout').onclick=async()=>{workspaceNav?.closeMenu();stop();try{await api('/v1/browser-session','DELETE');workspaceNav?.setOwner(false);$('#grid-app').hidden=true;$('#logout').hidden=true;showLogin()}catch(e){$('#error').textContent=e.message}};
  window.addEventListener('pagehide',stop);enter(true);
