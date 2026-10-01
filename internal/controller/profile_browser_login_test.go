@@ -58,6 +58,65 @@ func TestProfileLoginSessionShowsOnlyValidatedStatus(t *testing.T) {
 	}
 }
 
+func TestCodexBrowserCallbackChecksStateAndForwardsOnlyLoopback(t *testing.T) {
+	if !validCodexBrowserCallbackURL("http://localhost:1455/auth/callback") || validCodexBrowserCallbackURL("http://localhost.evil.test:1455/auth/callback") {
+		t.Fatal("localhost callback allow-list is incorrect")
+	}
+	server := NewServer(nil, nil)
+	owner := Principal{AccountID: "account-a", UserID: "owner-a"}
+	session := &profileLoginSession{id: "synthetic", owner: owner, app: "codex", flow: "browser", status: "starting", expires: time.Now().Add(time.Minute)}
+	session.ingest([]byte("https://auth.openai.com/oauth/authorize?state=synthetic-state&redirect_uri=http%3A%2F%2F127.0.0.1%3A1455%2Fauth%2Fcallback\r\n"))
+	if session.view().Status != "waiting" {
+		t.Fatal("browser login did not reach waiting state")
+	}
+	master, slave, err := pty.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer master.Close()
+	defer slave.Close()
+	session.pty = master
+	server.profileLogins.sessions[session.id] = session
+	forwarded := 0
+	server.profileLogins.callbackHTTP = &http.Client{Transport: modelRoundTrip(func(r *http.Request) (*http.Response, error) {
+		forwarded++
+		if r.Method != http.MethodGet || r.URL.Host != "127.0.0.1:1455" || r.URL.Path != "/auth/callback" || r.URL.Query().Get("state") != "synthetic-state" || r.URL.Query().Get("code") != "synthetic-code" {
+			t.Error("callback was forwarded to an unexpected destination")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader("ok")), Header: make(http.Header)}, nil
+	})}
+	call := func(principal Principal, callback string) int {
+		r := httptest.NewRequest(http.MethodPost, "/v1/login-profiles/browser/synthetic/callback", strings.NewReader(fmt.Sprintf(`{"url":%q}`, callback)))
+		r.SetPathValue("id", session.id)
+		w := httptest.NewRecorder()
+		server.browserProfileLoginCallback(w, r, principal)
+		return w.Code
+	}
+	good := "http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=synthetic-state"
+	for _, bad := range []string{
+		"http://evil.test/auth/callback?code=synthetic-code&state=synthetic-state",
+		"http://127.0.0.1:1456/auth/callback?code=synthetic-code&state=synthetic-state",
+		"http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=wrong-state",
+		"http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=synthetic-state&next=evil",
+	} {
+		if status := call(owner, bad); status < 400 {
+			t.Fatalf("accepted invalid callback: %d", status)
+		}
+	}
+	if status := call(Principal{AccountID: owner.AccountID, UserID: "other"}, good); status != 404 {
+		t.Fatalf("foreign owner got %d", status)
+	}
+	if forwarded != 0 {
+		t.Fatal("rejected callback was forwarded")
+	}
+	if status := call(owner, good); status != 200 {
+		t.Fatalf("valid callback got %d", status)
+	}
+	if forwarded != 1 {
+		t.Fatalf("forwarded %d callbacks", forwarded)
+	}
+}
+
 func TestBrowserLoginSyntheticCodexSavesAndDeletesWorkspace(t *testing.T) {
 	store, mock := testStore(t)
 	var err error

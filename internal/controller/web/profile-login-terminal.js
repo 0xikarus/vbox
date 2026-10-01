@@ -3,7 +3,7 @@
 // A visible terminal for one fixed login command. This is not a general shell.
 window.openProfileLoginTerminal=function(id,root){
  root.replaceChildren();
- const terminal=new Terminal({cursorBlink:true,fontSize:13,scrollback:500,convertEol:false,theme:{background:'#151b26',foreground:'#e7edf6'}});
+ const terminal=new Terminal({cursorBlink:true,fontSize:14,scrollback:500,convertEol:false,theme:{background:'#151b26',foreground:'#f3f6fa',black:'#e7edf6',brightBlack:'#b8c5d7',blue:'#91b9fa',brightBlue:'#b8d2ff',magenta:'#e9b6f7',brightMagenta:'#f1d0fa'}});
  const fit=new FitAddon.FitAddon();terminal.loadAddon(fit);terminal.open(root);fit.fit();
  const observer=new ResizeObserver(()=>fit.fit());observer.observe(root);
  let socket,closed=false,retries=0,retryTimer=0;

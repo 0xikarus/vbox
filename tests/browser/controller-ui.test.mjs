@@ -7,6 +7,7 @@ import puppeteer from 'puppeteer-core';
 
 const root=resolve('internal/controller/web'),requests=[];
 let server,browser,base;
+let browserLoginFlow='device';
 const revision='2026-09-05T12:00:00Z';
 const runStartedAt=new Date(Date.now()-65000).toISOString();
 let fixtureRoles=[],fixtureBoxRoleIds=[],fixturePolicy={capabilities:{requestMoreTime:{maxExtensionMinutes:0,maxTotalMinutes:0},queueFollowup:{maxPending:0},createAgentBox:{maxBoxes:0,maxDiskGiB:0},createEmailAddress:{maxAddresses:0}}};
@@ -51,8 +52,9 @@ before(async()=>{
   if(path==='/v1/ai/openrouter'&&req.method==='GET')return res.end(JSON.stringify({configured:false,model:'openrouter/auto'}));
   if(req.method==='POST'&&path==='/v1/login-profiles/api-key/verify')return res.end(JSON.stringify({models:['openrouter/synthetic-model']}));
   if(req.method==='POST'&&path==='/v1/login-profiles/api-key'){res.statusCode=201;return res.end(JSON.stringify({application:body.application,name:body.name,model:body.model,createdAt:revision}))}
-  if(req.method==='POST'&&path==='/v1/login-profiles/browser'){res.statusCode=202;return res.end(JSON.stringify({id:'synthetic-login',status:'starting',expiresAt:revision}))}
-  if(req.method==='GET'&&path==='/v1/login-profiles/browser/synthetic-login')return res.end(JSON.stringify({id:'synthetic-login',status:'waiting',url:'https://auth.openai.com/codex/device',code:'ABCD-EFGH',expiresAt:revision}));
+  if(req.method==='POST'&&path==='/v1/login-profiles/browser'){browserLoginFlow=body.flow;res.statusCode=202;return res.end(JSON.stringify({id:'synthetic-login',status:'starting',expiresAt:revision}))}
+  if(req.method==='GET'&&path==='/v1/login-profiles/browser/synthetic-login')return res.end(JSON.stringify({id:'synthetic-login',status:'waiting',url:browserLoginFlow==='browser'?'https://auth.openai.com/oauth/authorize?state=synthetic':'https://auth.openai.com/codex/device',code:browserLoginFlow==='browser'?'':'ABCD-EFGH',expiresAt:revision}));
+  if(req.method==='POST'&&path==='/v1/login-profiles/browser/synthetic-login/callback')return res.end(JSON.stringify({id:'synthetic-login',status:'waiting',expiresAt:revision}));
   if(req.method==='DELETE'&&path==='/v1/login-profiles/browser/synthetic-login')return res.end(JSON.stringify({id:'synthetic-login',status:'canceled',expiresAt:revision}));
   if(req.method==='GET' && path==='/v1/login-profiles/claude/personal/models')return res.end(JSON.stringify({source:'Claude Code catalog',models:['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'].map(id=>({id,label:id}))}));
   if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash',reasoning:false},{id:'openrouter/google/gemini-test',label:'Gemini test',reasoning:true}]}));
@@ -181,6 +183,25 @@ test('Profiles shows the Codex device code and cancels its terminal session',asy
  await page.waitForFunction(()=>document.querySelector('#profile-login-status')?.textContent==='Login canceled.');
  assert.equal(requests.some(item=>item.path==='/v1/login-profiles/browser/synthetic-login'&&item.method==='DELETE'),true);
  await page.close();
+});
+test('Profiles offers ChatGPT browser link and callback',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
+ await page.click('#profile-new');await page.type('#profile-login-form input[name=name]','synthetic-browser-link');
+ await page.select('#profile-login-form select[name=flow]','browser');
+ await page.evaluate(()=>{const Original=window.Terminal;window.Terminal=class extends Original{constructor(options){super(options);window.syntheticLoginTerminal=this}}});
+ await page.click('#profile-login-submit');
+ await page.waitForFunction(()=>document.querySelector('#profile-login-callback-form')?.hidden===false);
+ assert.equal(requests.findLast(item=>item.path==='/v1/login-profiles/browser'&&item.method==='POST')?.body.flow,'browser');
+ assert.match(await page.$eval('#profile-login-url',link=>link.href),/^https:\/\/auth\.openai\.com\/oauth\/authorize/);
+ assert.equal(await page.$eval('#profile-login-terminal',element=>getComputedStyle(element).color),'rgb(243, 246, 250)');
+ assert.equal(await page.evaluate(()=>window.syntheticLoginTerminal.options.theme.black),'#e7edf6');
+ if(process.env.VMBOX_AI_SCREENSHOTS){await page.evaluate(()=>window.syntheticLoginTerminal.write('\x1b[30mSynthetic login text and link\x1b[0m\r\n'));await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/profile-login-contrast.png'})}
+ await page.type('#profile-login-callback-form input[name=url]','http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=synthetic');
+ await page.click('#profile-login-callback-form button');
+ await page.waitForFunction(()=>document.querySelector('#profile-login-status')?.textContent==='Callback sent. Waiting for Codex…');
+ assert.equal(requests.findLast(item=>item.path==='/v1/login-profiles/browser/synthetic-login/callback')?.body.url,'http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=synthetic');
+ await page.click('#profile-login-cancel');await page.close();
 });
 test('harness version dropdowns offer image, latest, and published releases',async()=>{
  const page=await browser.newPage();

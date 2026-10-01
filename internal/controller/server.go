@@ -335,6 +335,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/login-profiles/browser/{id}", s.owner(s.browserProfileLoginStatus))
 	mux.HandleFunc("GET /v1/login-profiles/browser/{id}/terminal", s.owner(s.browserProfileLoginTerminal))
 	mux.HandleFunc("POST /v1/login-profiles/browser/{id}/code", s.owner(s.browserProfileLoginCode))
+	mux.HandleFunc("POST /v1/login-profiles/browser/{id}/callback", s.owner(s.browserProfileLoginCallback))
 	mux.HandleFunc("DELETE /v1/login-profiles/browser/{id}", s.owner(s.cancelBrowserProfileLogin))
 	mux.HandleFunc("POST /v1/login-profiles/api-key/verify", s.owner(s.verifyProfileAPIKey))
 	mux.HandleFunc("POST /v1/login-profiles/api-key", s.owner(s.saveProfileAPIKey))

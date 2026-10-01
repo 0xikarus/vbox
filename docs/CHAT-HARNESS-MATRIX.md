@@ -89,17 +89,17 @@ running agent process does not reload them automatically.
 | Browser/terminal output | Managed tmux is the live presentation. Chat bubbles come from structured MCP events, not terminal scraping | Same | Same |
 | Box-local scripts | Authenticated HTTP façade exposes the allowed tools and `POST /prompt` for a running conversation | Same | Same |
 
-The server defines **26 possible tools**, and the current controller policy
-always includes the six basic tools:
+The server exposes the following tool groups. The controller policy always
+includes the basic tools:
 
 | Group | Tool names |
 | --- | --- |
-| Basic chat/history/budget (6) | `get_contacts`, `get_run_budget`, `get_thread_history`, `set_busy`, `chat_message`, `chat_ask` |
-| Box management (11) | `list_agent_boxes`, `get_agent_box`, `create_agent_box`, `get_agent_box_configs`, `get_available_workers`, `set_agent_box_tags`, `restart_agent_box`, `wake_agent_box`, `clear_agent_box_context`, `compact_agent_box_context`, `delete_agent_box` |
+| Basic chat/history/budget | `get_contacts`, `get_run_budget`, `get_thread_history`, `set_busy`, `chat_message`, `chat_ask`, `multicall` |
+| Box management | `list_agent_boxes`, `get_agent_box`, `get_agent_box_screenshot`, `create_agent_box`, `get_agent_box_configs`, `get_available_workers`, `set_agent_box_tags`, `set_agent_box_run_budget`, `restart_agent_box`, `wake_agent_box`, `clear_agent_box_context`, `compact_agent_box_context`, `delete_agent_box` |
 | Secrets (3) | `secret_request`, `generate_password`, `type_secret` |
 | Computer (8) | `take_screenshot`, `capture_window`, `move_mouse`, `click_mouse`, `drag_mouse`, `scroll_mouse`, `type_text`, `press_keys` |
 
-The other 20 tools require an owner-managed allow-list and applicable role
+The optional tools require an owner-managed allow-list and applicable role
 capability. The list and each call are checked against current policy; MCP
 clients can receive a tool-list change notification. The box-local HTTP façade
 uses the same policy and a private bearer token. `chat_message` may link to an
