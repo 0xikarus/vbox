@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestMascotClientAgent(t *testing.T) {
@@ -268,5 +269,17 @@ func TestDesktopMCPAutomaticallySendsMascotHeartbeatWithoutToolCall(t *testing.T
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("MCP process did not stop")
+	}
+}
+
+func TestMascotEvidenceStaysWithinControllerLimit(t *testing.T) {
+	paragraph := "assistant: " + strings.Repeat("ä word ", 900) + "\n"
+	sample := strings.Repeat(paragraph, 3) + strings.Repeat("tool: Running go test\ntool: Editing a.go\n", 600)
+	evidence := mascotTranscriptEvidence(clipMascotSample(sample))
+	if len(evidence) > mascotSampleBytes || !utf8.ValidString(evidence) {
+		t.Fatalf("evidence is %d bytes (limit %d), valid UTF-8 %t", len(evidence), mascotSampleBytes, utf8.ValidString(evidence))
+	}
+	if strings.Count(evidence, "word") == 0 || !strings.HasSuffix(evidence, "tool: Editing a.go") {
+		t.Fatalf("evidence lost prose or the newest tool line: %q", evidence[len(evidence)-200:])
 	}
 }

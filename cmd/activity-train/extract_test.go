@@ -47,7 +47,7 @@ func TestExtractSnippetsFromCodexAndClaude(t *testing.T) {
 		}
 		for _, candidate := range sample.Candidates {
 			foundEdit = foundEdit || candidate == "Editing config.go"
-			foundExport = foundExport || candidate == "Running export"
+			foundExport = foundExport || candidate == "Running curl"
 		}
 	}
 	if err := scanner.Err(); err != nil {

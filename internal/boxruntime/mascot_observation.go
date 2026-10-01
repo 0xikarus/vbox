@@ -86,7 +86,7 @@ func mascotTranscriptEvidence(sample string) string {
 		if insideFence || strings.HasPrefix(line, "$ ") || strings.HasPrefix(line, "> ") {
 			continue
 		}
-		accepted = append(accepted, evidenceLine{text: line, prose: true})
+		accepted = append(accepted, evidenceLine{text: clipEvidenceLine(line), prose: true})
 	}
 	proseNeeded := 3
 	for i := len(accepted) - 1; i >= 0 && proseNeeded > 0; i-- {
@@ -189,4 +189,19 @@ func runMascotHeartbeat(ctx context.Context, assignment, agent string) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// The controller accepts at most mascotSampleBytes of evidence, and the last
+// three prose lines are always kept. Clip a single very long paragraph to its
+// newest part so those required lines can never push the request over the limit.
+func clipEvidenceLine(line string) string {
+	const limit = mascotSampleBytes / 4
+	if len(line) <= limit {
+		return line
+	}
+	line = line[len(line)-limit:]
+	for len(line) > 0 && line[0]&0xc0 == 0x80 {
+		line = line[1:]
+	}
+	return line
 }
