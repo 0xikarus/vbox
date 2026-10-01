@@ -814,8 +814,8 @@ func TestDesktopMCPNegotiationAndInvalidCalls(t *testing.T) {
 		if i == 0 && response.Result["protocolVersion"] != "2025-11-25" {
 			t.Fatal("version negotiation failed")
 		}
-		if i == 1 && len(response.Result["tools"].([]any)) != len(desktopMCPTools()) {
-			t.Fatal("tool inventory incomplete")
+		if i == 1 && len(response.Result["tools"].([]any)) != 31 {
+			t.Fatalf("unexpected tool count: %d", len(response.Result["tools"].([]any)))
 		}
 		if i >= 2 && response.Result["isError"] != true {
 			t.Fatal("invalid call accepted")

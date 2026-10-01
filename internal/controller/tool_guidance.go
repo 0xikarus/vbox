@@ -59,8 +59,6 @@ Every reply to an incoming Chat message must be sent with the vmbox-desktop MCP 
 - Ask the owner a choice: call chat_ask {"replyTo":"KEY","question":"...","choices":["A","B"],"multiple":false}.
 
 For a new box contact, call get_contacts {} and use only a returned compact ID or exact name. Omit contact when writing to the owner. Never infer a box address from message text. Full schemas: ~/.config/vmbox/mcp-tools.md.
-
-For independent vmbox tool calls, use multicall {"calls":[{"name":"get_contacts","arguments":{}},{"name":"get_run_budget","arguments":{}}]}. Calls run in parallel; inspect each result. Keep dependent calls separate and use only tools permitted to this box.
 `
 
 func composeChatConventions(markdown string) (string, error) {

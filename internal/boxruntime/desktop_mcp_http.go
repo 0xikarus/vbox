@@ -290,19 +290,10 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 		var heartbeatRequest struct {
 			Action string `json:"action"`
 		}
-		multiNeedsSession := false
-		if name == "multicall" {
-			calls, parseErr := parseDesktopMultiCalls(arguments)
-			if parseErr != nil {
-				writeDesktopMCPError(writer, http.StatusBadRequest, parseErr.Error())
-				return
-			}
-			multiNeedsSession = desktopMultiCallNeedsSession(calls)
-		}
 		if name == "heartbeat" {
 			_ = json.Unmarshal(arguments, &heartbeatRequest)
 		}
-		if desktopMCPChatTools[name] || (name == "heartbeat" && heartbeatRequest.Action == "start") || multiNeedsSession {
+		if desktopMCPChatTools[name] || (name == "heartbeat" && heartbeatRequest.Action == "start") {
 			if session == "" {
 				if session, err = soleAgentConversation(ctx); err != nil {
 					_ = queueLocalMCPActivity(assignment, name, arguments, err)
@@ -312,10 +303,8 @@ func desktopMCPCallHandler(assignment string, resolve desktopToolPolicyResolver)
 			}
 			ctx = WithChatSession(ctx, session)
 		}
-		result, err := executeDesktopTool(ctx, assignment, name, arguments, resolve)
-		if name != "multicall" || err != nil {
-			_ = queueLocalMCPActivity(assignment, name, arguments, err)
-		}
+		result, err := callDesktopTool(ctx, assignment, name, arguments)
+		_ = queueLocalMCPActivity(assignment, name, arguments, err)
 		if err != nil {
 			writeDesktopMCPError(writer, http.StatusBadRequest, err.Error())
 			return
