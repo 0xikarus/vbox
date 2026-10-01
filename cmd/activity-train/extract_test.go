@@ -66,3 +66,19 @@ func TestAnonymizeActivityRemovesCredentialsAndLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestConfiguredProfileNameIsRedacted(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	config := filepath.Join(home, ".config", "vmbox", "profiles.json")
+	if err := os.MkdirAll(filepath.Dir(config), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, []byte(`{"profileName":"horsebox"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	text := anonymizeActivityWithPatterns("Checking horsebox", identifierPatterns(configuredIdentifiers()))
+	if strings.Contains(text, "horsebox") {
+		t.Fatalf("profile identifier leaked: %q", text)
+	}
+}

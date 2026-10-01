@@ -30,12 +30,32 @@ var (
 	activityKeyValue  = regexp.MustCompile(`(?i)\b(?:token|secret|password|passwd|api[_-]?key|authorization)\s*[:=]\s*[^\s,;]+`)
 	activityKeyIs     = regexp.MustCompile(`(?i)\b(?:token|secret|password|api[_-]?key)\s+is\s+[^\s,;]+`)
 	activityBearer    = regexp.MustCompile(`(?i)\bBearer\s+[^\s,;]+`)
-	activityLongToken = regexp.MustCompile(`\b[A-Za-z0-9_\-]{24,}\b`)
+	activityLongToken = regexp.MustCompile(`\b[A-Za-z0-9_\-]{16,}\b`)
 	activityKeyPrefix = regexp.MustCompile(`(?i)\b(?:sk-[A-Za-z0-9_\-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|AKIA[A-Z0-9]{16})\b`)
 	activityPath      = regexp.MustCompile(`(?:/[A-Za-z0-9._\-]+){2,}`)
 )
 
 func anonymizeActivity(text string) string {
+	return anonymizeActivityWithPatterns(text, nil)
+}
+
+func identifierPatterns(identifiers []string) []*regexp.Regexp {
+	seen := make(map[string]bool)
+	var patterns []*regexp.Regexp
+	for _, identifier := range identifiers {
+		identifier = strings.TrimSpace(identifier)
+		if len([]rune(identifier)) >= 6 && !seen[strings.ToLower(identifier)] {
+			seen[strings.ToLower(identifier)] = true
+			patterns = append(patterns, regexp.MustCompile(`(?i)`+regexp.QuoteMeta(identifier)))
+		}
+	}
+	return patterns
+}
+
+func anonymizeActivityWithPatterns(text string, identifiers []*regexp.Regexp) string {
+	for _, identifier := range identifiers {
+		text = identifier.ReplaceAllString(text, "[redacted]")
+	}
 	text = activityURL.ReplaceAllString(text, "[url]")
 	text = activityEmail.ReplaceAllString(text, "[email]")
 	text = activityAuth.ReplaceAllString(text, "[redacted]")
@@ -46,6 +66,52 @@ func anonymizeActivity(text string) string {
 	text = activityLongToken.ReplaceAllString(text, "[redacted]")
 	text = activityPath.ReplaceAllString(text, "[path]")
 	return text
+}
+
+func configuredIdentifiers() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	root := filepath.Join(home, ".config", "vmbox")
+	var identifiers []string
+	_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry == nil || entry.IsDir() || !strings.HasSuffix(path, ".json") {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil || info.Size() > 1<<20 {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var content any
+		if json.Unmarshal(data, &content) != nil {
+			return nil
+		}
+		var visit func(any)
+		visit = func(value any) {
+			switch typed := value.(type) {
+			case map[string]any:
+				for key, child := range typed {
+					lower := strings.ToLower(key)
+					if name, ok := child.(string); ok && (strings.Contains(lower, "profile") || strings.Contains(lower, "account") || lower == "name" || lower == "username" || lower == "displayname") {
+						identifiers = append(identifiers, name)
+					}
+					visit(child)
+				}
+			case []any:
+				for _, child := range typed {
+					visit(child)
+				}
+			}
+		}
+		visit(content)
+		return nil
+	})
+	return identifiers
 }
 
 func jsonlPaths(inputs []string) ([]string, error) {
@@ -267,7 +333,7 @@ func emitAssistant(text string, emit func(string)) {
 	}
 }
 
-func extractSnippets(codex, claude inputPaths, out string, limit int) (int, error) {
+func extractSnippets(codex, claude inputPaths, out string, limit int, additionalRedactions ...string) (int, error) {
 	codexPaths, err := jsonlPaths(codex)
 	if err != nil {
 		return 0, err
@@ -280,6 +346,7 @@ func extractSnippets(codex, claude inputPaths, out string, limit int) (int, erro
 		return 0, fmt.Errorf("no Codex or Claude JSONL files found")
 	}
 	random := rand.New(rand.NewSource(20261001))
+	redactions := identifierPatterns(append(configuredIdentifiers(), additionalRedactions...))
 	seen := make(map[string]bool)
 	var selected []snippet
 	count := 0
@@ -294,7 +361,7 @@ func extractSnippets(codex, claude inputPaths, out string, limit int) (int, erro
 				start = 0
 			}
 			text := boxruntime.MascotTranscriptEvidence(strings.Join((*history)[start:], "\n"))
-			text = anonymizeActivity(text)
+			text = anonymizeActivityWithPatterns(text, redactions)
 			if text == "" || len(text) > 2400 {
 				continue
 			}

@@ -41,3 +41,10 @@ func TestCandidatesUseLatestLinesAndWordBoundary(t *testing.T) {
 		t.Fatalf("latest tool candidate: %+v", got)
 	}
 }
+
+func TestCandidatesSkipNonActions(t *testing.T) {
+	got := Candidates("Starting point for the proposal.\nNot in the mascot code.\nNow update the runtime.")
+	if len(got) != 1 || got[0].Text != "Update the runtime" {
+		t.Fatalf("non-actions became candidates: %+v", got)
+	}
+}

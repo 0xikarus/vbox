@@ -129,6 +129,11 @@ func mascotContentText(raw json.RawMessage) string {
 }
 
 func mascotToolLabel(name string, raw json.RawMessage) string {
+	if strings.Contains(name, "__") {
+		name = name[strings.LastIndex(name, "__")+2:]
+	} else if strings.Contains(name, ".") {
+		name = name[strings.LastIndex(name, ".")+1:]
+	}
 	var encoded string
 	if json.Unmarshal(raw, &encoded) == nil {
 		raw = json.RawMessage(encoded)

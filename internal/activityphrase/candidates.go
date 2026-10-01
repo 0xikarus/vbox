@@ -28,6 +28,10 @@ var activityNonVerbs = map[string]bool{
 	"this": true, "that": true, "these": true, "those": true, "there": true,
 	"here": true, "my": true, "your": true, "our": true, "their": true,
 	"yes": true, "no": true, "thanks": true, "okay": true, "ok": true,
+	"not": true, "only": true, "still": true, "maybe": true, "also": true,
+	"just": true, "now": true, "next": true, "first": true, "last": true,
+	"new": true, "good": true, "bad": true, "great": true, "done": true,
+	"ready": true, "current": true, "recent": true, "latest": true,
 }
 
 // Candidates finds short verb phrases in the latest twelve agent lines. Tool
@@ -82,6 +86,9 @@ func Candidates(text string) []Candidate {
 					if len(phrase) < 2 {
 						continue
 					}
+					if strings.EqualFold(phrase[0], "Starting") && strings.EqualFold(phrase[1], "point") {
+						continue
+					}
 					if normalized := normalizeActivity(strings.Join(phrase, " ")); normalized != "" {
 						result = append(result, Candidate{Text: normalized, Line: lineIndex, Recency: len(lines) - 1 - lineIndex})
 					}
@@ -123,3 +130,6 @@ func normalizeActivity(value string) string {
 	result[0] = unicode.ToUpper(result[0])
 	return string(result)
 }
+
+// Normalize turns a phrase or teacher span into its short display form.
+func Normalize(value string) string { return normalizeActivity(value) }

@@ -26,6 +26,7 @@ func TestMascotNativeToolActivities(t *testing.T) {
 		{"web search", "web_search", "WebSearch", "Searching the web", map[string]string{"query": "secret"}},
 		{"web fetch", "web_fetch", "WebFetch", "Searching the web", map[string]string{"url": "https://example.test/token=abc"}},
 		{"other", "TaskTool", "TaskTool", "Using TaskTool", map[string]string{"prompt": "private data"}},
+		{"namespaced MCP", "mcp__vmbox-desktop__chat_message", "mcp__vmbox-desktop__chat_message", "Using chat_message", map[string]string{"text": "private data"}},
 		{"secret command", "exec_command", "Bash", "Running export", map[string]string{"cmd": "export TOKEN=abc && curl -H 'Authorization: Bearer secret' https://example.test", "command": "export TOKEN=abc && curl -H 'Authorization: Bearer secret' https://example.test"}},
 	}
 	const id = "01234567-89ab-cdef-0123-456789abcdef"
