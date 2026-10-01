@@ -26,6 +26,8 @@ type Workspace struct {
 	SizeGiB   int64          `json:"sizeGiB"`
 	MemoryGiB int64          `json:"memoryGiB,omitempty"`
 	SwapGiB   *int64         `json:"swapGiB,omitempty"`
+	// CPU is the container CPU limit; zero means the original fixed 1 CPU.
+	CPU float64 `json:"cpu,omitempty"`
 }
 
 type Slot struct {
@@ -43,6 +45,9 @@ type State struct {
 	NextUID    int                  `json:"nextUid"`
 	Slots      map[string]Slot      `json:"slots"`
 	Workspaces map[string]Workspace `json:"workspaces"`
+	// Settings are owner-tunable through the controller. They are seeded once
+	// from the startup capacity and are authoritative afterwards.
+	Settings *provider.WorkerSettings `json:"settings,omitempty"`
 }
 
 type Runtime interface {
@@ -56,12 +61,13 @@ type Store struct {
 	diskMu      sync.Mutex
 	diskCache   map[string]diskObservation
 	Root        string
-	Capacity    int
 	Incarnation string
 	Runtime     Runtime
-	state       State
-	lock        *os.File
-	failure     error
+	// Specs reads the machine's specs; tests replace it.
+	Specs   func() (provider.WorkerSpecs, error)
+	state   State
+	lock    *os.File
+	failure error
 }
 
 type diskObservation struct {
@@ -80,11 +86,14 @@ func NewID() string {
 	return hex.EncodeToString(value[:])
 }
 
+// Open opens the data root. capacity seeds the slot count the first time the
+// worker starts (zero selects one slot); persisted settings win afterwards.
 func Open(root, account string, capacity int, runtime Runtime) (*Store, error) {
-	if !filepath.IsAbs(root) || filepath.Clean(root) != root || root == "/" || account == "" || capacity < 1 || capacity > 32 || runtime == nil {
-		return nil, errors.New("shared worker requires an absolute data root, account, runtime and 1–32 slots")
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root || root == "/" || account == "" || capacity < 0 || capacity > maxWorkerSlots || runtime == nil {
+		return nil, fmt.Errorf("shared worker requires an absolute data root, account, runtime and at most %d slots", maxWorkerSlots)
 	}
-	store := &Store{Root: root, Capacity: capacity, Runtime: runtime, Incarnation: NewID()}
+	store := &Store{Root: root, Runtime: runtime, Incarnation: NewID()}
+	store.Specs = func() (provider.WorkerSpecs, error) { return MachineSpecs(root) }
 	if err := os.MkdirAll(filepath.Join(root, ".shared-worker"), 0700); err != nil {
 		return nil, err
 	}
@@ -114,6 +123,7 @@ func Open(root, account string, capacity int, runtime Runtime) (*Store, error) {
 	data, err := os.ReadFile(store.statePath())
 	if errors.Is(err, os.ErrNotExist) {
 		store.state = State{HostID: NewID(), AccountID: account, NextUID: 30000, Slots: map[string]Slot{}, Workspaces: map[string]Workspace{}}
+		store.state.Settings = seedSettings(capacity, 0)
 		if err := store.save(); err != nil {
 			return nil, err
 		}
@@ -126,7 +136,16 @@ func Open(root, account string, capacity int, runtime Runtime) (*Store, error) {
 	if err = json.Unmarshal(data, &store.state); err != nil {
 		return nil, errors.New("invalid shared worker state")
 	}
-	if store.state.AccountID != account || store.state.HostID == "" || store.state.NextUID < 30000 || store.state.Slots == nil || store.state.Workspaces == nil || len(store.state.Slots) > capacity {
+	if store.state.Settings == nil {
+		if capacity != 0 && len(store.state.Slots) > capacity {
+			return nil, errors.New("shared worker identity or capacity does not match retained state")
+		}
+		store.state.Settings = seedSettings(capacity, len(store.state.Slots))
+		if err := store.save(); err != nil {
+			return nil, err
+		}
+	}
+	if store.state.AccountID != account || store.state.HostID == "" || store.state.NextUID < 30000 || store.state.Slots == nil || store.state.Workspaces == nil || len(store.state.Slots) > store.state.Settings.Slots {
 		return nil, errors.New("shared worker identity or capacity does not match retained state")
 	}
 	identities := map[int]bool{}
@@ -286,7 +305,7 @@ func (s *Store) ResourceLimits(ctx context.Context, id string) (provider.Resourc
 	if err != nil {
 		return provider.Resources{}, err
 	}
-	resources := provider.Resources{CPU: 1, MemoryMiB: memoryGiB * 1024, SwapMiB: swapGiB * 1024, DiskGiB: w.SizeGiB}
+	resources := provider.Resources{CPU: containerCPU(w), MemoryMiB: memoryGiB * 1024, SwapMiB: swapGiB * 1024, DiskGiB: w.SizeGiB}
 	current, err := linux.Container.inspect(ctx, w)
 	if err != nil {
 		return provider.Resources{}, err
@@ -296,6 +315,9 @@ func (s *Store) ResourceLimits(ctx context.Context, id string) (provider.Resourc
 	}
 	resources.MemoryMiB = current.HostConfig.Memory >> 20
 	resources.SwapMiB = (current.HostConfig.MemorySwap - current.HostConfig.Memory) >> 20
+	if current.HostConfig.NanoCpus > 0 {
+		resources.CPU = float64(current.HostConfig.NanoCpus) / 1e9
+	}
 	return resources, nil
 }
 
@@ -306,8 +328,12 @@ func (s *Store) SetResourceLimits(ctx context.Context, id string, resources prov
 	if !ok || linux.Container == nil {
 		return provider.ErrUnsupported
 	}
-	if resources.CPU != 1 || resources.MemoryMiB%1024 != 0 || resources.MemoryMiB < 1024 || resources.MemoryMiB > 8192 || resources.SwapMiB%1024 != 0 || resources.SwapMiB < 0 || resources.SwapMiB > 4096 {
-		return errors.New("container CPU is fixed at 1; memory must be 1–8 GiB and swap 0–4 GiB")
+	limits, err := s.limits()
+	if err != nil {
+		return err
+	}
+	if err := checkBoxLimits(provider.BoxLimits{CPU: resources.CPU, MemoryMiB: resources.MemoryMiB, SwapMiB: resources.SwapMiB}, limits); err != nil {
+		return err
 	}
 	slot, exists := s.state.Slots[id]
 	if !exists || slot.WorkspaceID == "" || slot.State != provider.StateRunning {
@@ -315,10 +341,10 @@ func (s *Store) SetResourceLimits(ctx context.Context, id string, resources prov
 	}
 	w := s.state.Workspaces[slot.WorkspaceID]
 	old := w
-	w.MemoryGiB = resources.MemoryMiB / 1024
+	w.CPU, w.MemoryGiB = resources.CPU, resources.MemoryMiB/1024
 	swap := resources.SwapMiB / 1024
 	w.SwapGiB = &swap
-	if err := linux.Container.UpdateMemory(ctx, w); err != nil {
+	if err := linux.Container.UpdateLimits(ctx, w); err != nil {
 		return err
 	}
 	s.state.Workspaces[w.ID] = w
@@ -347,7 +373,7 @@ func (s *Store) Create(req provider.CreateRequest) (provider.Box, error) {
 		}
 		return s.box(slot), nil
 	}
-	if len(s.state.Slots) >= s.Capacity {
+	if len(s.state.Slots) >= s.state.Settings.Slots {
 		return provider.Box{}, errors.New("shared worker slot capacity reached")
 	}
 	slot := Slot{Identity: NewID(), Name: req.Name, Owner: req.Owner, State: provider.StateRunning, Revision: 1}
@@ -423,17 +449,16 @@ func (s *Store) CreateStorage(ctx context.Context, id string, owner provider.Own
 		return provider.Storage{}, errors.New("shared workspace identity capacity reached")
 	}
 	workspace := Workspace{ID: NewID(), Owner: owner, UID: s.state.NextUID, Display: s.state.NextUID - 29000, SizeGiB: resources.DiskGiB}
-	if resources.MemoryMiB != 0 || resources.SwapMiB != 0 {
-		linux, ok := s.Runtime.(*LinuxRuntime)
-		if !ok || linux.Container == nil {
-			return provider.Storage{}, errors.New("per-box memory and swap limits require container isolation")
+	if linux, ok := s.Runtime.(*LinuxRuntime); ok && linux.Container != nil {
+		limits, err := s.newBoxLimits(resources)
+		if err != nil {
+			return provider.Storage{}, err
 		}
-		if resources.MemoryMiB%1024 != 0 || resources.MemoryMiB < 1024 || resources.MemoryMiB > 8192 || resources.SwapMiB%1024 != 0 || resources.SwapMiB < 0 || resources.SwapMiB > 4096 {
-			return provider.Storage{}, errors.New("memory must be 1–8 GiB and swap 0–4 GiB")
-		}
-		workspace.MemoryGiB = resources.MemoryMiB / 1024
-		swap := resources.SwapMiB / 1024
+		workspace.CPU, workspace.MemoryGiB = limits.CPU, limits.MemoryMiB/1024
+		swap := limits.SwapMiB / 1024
 		workspace.SwapGiB = &swap
+	} else if resources.MemoryMiB != 0 || resources.SwapMiB != 0 {
+		return provider.Storage{}, errors.New("per-box memory and swap limits require container isolation")
 	}
 	s.state.NextUID++
 	s.state.Workspaces[workspace.ID] = workspace

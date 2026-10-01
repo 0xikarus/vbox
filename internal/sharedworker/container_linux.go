@@ -78,7 +78,7 @@ type containerInspect struct {
 		Pid     int
 	}
 	Config     struct{ Labels map[string]string }
-	HostConfig struct{ Memory, MemorySwap int64 }
+	HostConfig struct{ Memory, MemorySwap, NanoCpus int64 }
 }
 
 func (r *ContainerRuntime) inspect(ctx context.Context, w Workspace) (*containerInspect, error) {
@@ -166,10 +166,8 @@ func (r *ContainerRuntime) Prepare(ctx context.Context, w Workspace) error {
 		// workspaces retain host-side customization except the old no-swap
 		// policy, which is upgraded in place.
 		explicit := w.MemoryGiB != 0 || w.SwapGiB != nil
-		if (explicit && (existing.HostConfig.Memory != memoryGiB<<30 || existing.HostConfig.MemorySwap != (memoryGiB+swapGiB)<<30)) || (!explicit && existing.HostConfig.Memory == 2<<30 && existing.HostConfig.MemorySwap == 2<<30) {
-			// Docker 26 requires the memory limit alongside --memory-swap even
-			// when that limit is already set on the running container.
-			if _, err = r.run(ctx, "update", "--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), r.name(w)); err != nil {
+		if (explicit && (existing.HostConfig.Memory != memoryGiB<<30 || existing.HostConfig.MemorySwap != (memoryGiB+swapGiB)<<30)) || (!explicit && existing.HostConfig.Memory == 2<<30 && existing.HostConfig.MemorySwap == 2<<30) || (w.CPU != 0 && existing.HostConfig.NanoCpus != int64(w.CPU*1e9)) {
+			if _, err = r.run(ctx, r.updateArgs(w, memoryGiB, swapGiB)...); err != nil {
 				return err
 			}
 		}
@@ -241,7 +239,7 @@ func (r *ContainerRuntime) createArgs(w Workspace) []string {
 	args := []string{"create", "--name", r.name(w), "--hostname", "box-" + w.ID[:12], "--label", "io.vmbox.workspace=" + w.ID, "--label", "io.vmbox.root=" + r.Root, "--label", "io.vmbox.policy=" + r.Image + ":v2-sudo",
 		"--network", r.name(w) + "-net", "--user", "0:0", "--cap-drop=ALL",
 		"--cap-add=CHOWN", "--cap-add=DAC_OVERRIDE", "--cap-add=FOWNER", "--cap-add=FSETID", "--cap-add=SETUID", "--cap-add=SETGID", "--cap-add=SETFCAP", "--cap-add=SYS_CHROOT", "--cap-add=KILL", "--cap-add=NET_BIND_SERVICE", "--cap-add=AUDIT_WRITE",
-		"--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), "--cpus", "1", "--pids-limit", "512", "--shm-size", "256m", "--restart", "no", "--no-healthcheck",
+		"--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), "--cpus", formatCPU(containerCPU(w)), "--pids-limit", "512", "--shm-size", "256m", "--restart", "no", "--no-healthcheck",
 		"--log-opt", "max-size=10m", "--log-opt", "max-file=2", "--workdir", "/",
 		"--mount", "type=bind,src=" + r.root(w) + ",dst=/data,bind-propagation=rprivate",
 		"--tmpfs", "/tmp:rw,nosuid,nodev,size=256m,mode=1777", "--tmpfs", "/var/tmp:rw,nosuid,nodev,size=128m,mode=1777", "--tmpfs", "/run:rw,nosuid,nodev,size=64m,mode=1777",
@@ -257,13 +255,31 @@ func containerMemoryLimits(w Workspace) (int64, int64, error) {
 	if w.SwapGiB != nil {
 		swapGiB = *w.SwapGiB
 	}
-	if memoryGiB < 1 || memoryGiB > 8 || swapGiB < 0 || swapGiB > 4 {
-		return 0, 0, errors.New("memory must be 1–8 GiB and swap 0–4 GiB")
+	// Upper bounds come from the machine and are checked when limits are set;
+	// a saved workspace must keep starting after the machine changes.
+	if memoryGiB < 1 || swapGiB < 0 {
+		return 0, 0, errors.New("memory must be at least 1 GiB and swap at least 0 GiB")
 	}
 	return memoryGiB, swapGiB, nil
 }
 
-func (r *ContainerRuntime) UpdateMemory(ctx context.Context, w Workspace) error {
+func containerCPU(w Workspace) float64 {
+	if w.CPU <= 0 {
+		return 1 // Workspaces created before configurable CPU had a fixed 1 CPU.
+	}
+	return w.CPU
+}
+
+func formatCPU(cpu float64) string { return strconv.FormatFloat(cpu, 'f', -1, 64) }
+
+func (r *ContainerRuntime) updateArgs(w Workspace, memoryGiB, swapGiB int64) []string {
+	// Docker 26 requires the memory limit alongside --memory-swap even when
+	// that limit is already set on the running container.
+	return []string{"update", "--cpus", formatCPU(containerCPU(w)), "--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), r.name(w)}
+}
+
+// UpdateLimits applies a running workspace's saved CPU, memory and swap live.
+func (r *ContainerRuntime) UpdateLimits(ctx context.Context, w Workspace) error {
 	memoryGiB, swapGiB, err := containerMemoryLimits(w)
 	if err != nil {
 		return err
@@ -275,7 +291,7 @@ func (r *ContainerRuntime) UpdateMemory(ctx context.Context, w Workspace) error 
 	if current == nil || !current.State.Running {
 		return errors.New("workspace container is not running")
 	}
-	_, err = r.run(ctx, "update", "--memory", fmt.Sprintf("%dg", memoryGiB), "--memory-swap", fmt.Sprintf("%dg", memoryGiB+swapGiB), r.name(w))
+	_, err = r.run(ctx, r.updateArgs(w, memoryGiB, swapGiB)...)
 	return err
 }
 

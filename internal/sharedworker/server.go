@@ -16,12 +16,13 @@ import (
 )
 
 type Request struct {
-	Operation string                 `json:"operation"`
-	ID        string                 `json:"id,omitempty"`
-	Create    provider.CreateRequest `json:"create,omitempty"`
-	Owner     provider.Owner         `json:"owner,omitempty"`
-	Resources provider.Resources     `json:"resources,omitempty"`
-	Storage   provider.Storage       `json:"storage,omitempty"`
+	Operation string                  `json:"operation"`
+	ID        string                  `json:"id,omitempty"`
+	Create    provider.CreateRequest  `json:"create,omitempty"`
+	Owner     provider.Owner          `json:"owner,omitempty"`
+	Resources provider.Resources      `json:"resources,omitempty"`
+	Storage   provider.Storage        `json:"storage,omitempty"`
+	Settings  provider.WorkerSettings `json:"settings,omitempty"`
 }
 
 type Response struct {
@@ -32,9 +33,14 @@ type Response struct {
 	ResourceUsage *provider.ResourceUsage `json:"resourceUsage,omitempty"`
 	HostResources *provider.HostResources `json:"hostResources,omitempty"`
 	Capacity      int                     `json:"capacity,omitempty"`
+	WorkerConfig  *provider.WorkerConfig  `json:"workerConfig,omitempty"`
 	Error         string                  `json:"error,omitempty"`
 	NotFound      bool                    `json:"notFound,omitempty"`
 }
+
+// ErrUnsupportedOperation is what a worker answers for an operation it does
+// not know. Its text is the wire contract with older controllers and workers.
+var ErrUnsupportedOperation = errors.New("unsupported shared worker operation")
 
 type Server struct {
 	Store       *Store
@@ -89,13 +95,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) dispatch(ctx context.Context, request Request) (response Response, err error) {
 	switch request.Operation {
 	case "validate":
-		response.Capacity = s.Store.Capacity
+		response.Capacity = s.Store.SlotCapacity()
 		err = s.Store.Health()
 	case "host-resources":
 		var resources provider.HostResources
 		resources, err = HostResources(filepath.Join(s.Store.Root, "workspaces"))
 		if err == nil {
 			response.HostResources = &resources
+		}
+	case "worker-config", "set-worker-settings":
+		var config provider.WorkerConfig
+		if request.Operation == "worker-config" {
+			config, err = s.Store.WorkerConfig()
+		} else {
+			config, err = s.Store.SetSettings(request.Settings)
+		}
+		if err == nil {
+			response.WorkerConfig = &config
 		}
 	case "create":
 		response.Box, err = s.Store.Create(request.Create)
@@ -145,7 +161,7 @@ func (s *Server) dispatch(ctx context.Context, request Request) (response Respon
 	case "set-resource-limits":
 		err = s.Store.SetResourceLimits(ctx, request.ID, request.Resources)
 	default:
-		err = errors.New("unsupported shared worker operation")
+		err = ErrUnsupportedOperation
 	}
 	return
 }
