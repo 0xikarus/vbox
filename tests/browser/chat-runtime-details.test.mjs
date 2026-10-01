@@ -29,6 +29,7 @@ test('chat details shows live elapsed runtime even with the run-time limit off',
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder'&&document.querySelector('#chat-loading').hidden);
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
+  await page.$eval('#inspect-power',fold=>{if(!fold.open)fold.querySelector('summary').click()});
   await page.waitForFunction(()=>/^Current run: \d+m \d+s$/.test(document.querySelector('#inspect-run-budget-policy .run-budget-elapsed')?.textContent||''));
   const before=await page.$eval('#inspect-run-budget-policy .run-budget-elapsed',el=>el.textContent);
   assert.match(before,/Current run: \d+m \d+s/);
@@ -74,6 +75,7 @@ test('owner can add time or reset the current countdown from chat details',async
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder'&&document.querySelector('#chat-loading').hidden);
   await page.$eval('#chat-info',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
+  await page.$eval('#inspect-power',fold=>{if(!fold.open)fold.querySelector('summary').click()});
   const button=caption=>'#inspect-run-budget-policy .run-budget-actions button';
   await page.waitForFunction(()=>[...document.querySelectorAll('#inspect-run-budget-policy .run-budget-actions button')].some(el=>el.textContent==='+4h'&&!el.disabled));
   await page.evaluate(selector=>[...document.querySelectorAll(selector)].find(el=>el.textContent==='+4h').click(),button());
