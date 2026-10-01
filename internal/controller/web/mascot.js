@@ -93,10 +93,10 @@
    comet(){return Promise.resolve()}
    destroy(){if(this.dead)return;this.dead=true;this.svg.remove()}
   }
-  global.VBoxMascot={Mascot:StaticMascot,svg:staticSvg,miniSVG:(seed,mood='idle')=>staticSvg(seed,mood,true),setReducedMotion:()=>{},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
+  global.VBoxMascot={Mascot:StaticMascot,svg:staticSvg,miniSVG:(seed,mood='idle')=>staticSvg(seed,mood,true),setReducedMotion:()=>{},setGesturePaused:()=>{},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
   return;
  }
- const active=new Set();let forcedReduce=false;
+ const active=new Set();let forcedReduce=false,gesturePauseCount=0;
  const reduce=matchMedia('(prefers-reduced-motion: reduce)');
  const observer=typeof IntersectionObserver==='undefined'?null:new IntersectionObserver(entries=>{for(const entry of entries){const mascot=entry.target.__vboxMascot;if(mascot){mascot.visible=entry.isIntersecting;mascot.updateVisibility()}}});
  // Chat re-renders temporary avatars. Release their timers and Motion controls
@@ -119,8 +119,17 @@
  window.addEventListener('mouseout',e=>{if(!e.relatedTarget)releasePointer()},{passive:true});
  window.addEventListener('blur',releasePointer);
  let morphClock=0;
- function syncMorphClock(){let running=false;if(!quiet())for(const mascot of active)if(!mascot.dead&&mascot.visible){running=true;break}if(running&&!morphClock)morphClock=requestAnimationFrame(morphFrame);else if(!running&&morphClock){cancelAnimationFrame(morphClock);morphClock=0}}
- function morphFrame(now){morphClock=0;if(quiet())return;for(const mascot of active)if(mascot.visible&&!mascot.dead)mascot.frame(now);syncMorphClock()}
+ function syncMorphClock(){let running=false;if(!quiet()&&!gesturePauseCount)for(const mascot of active)if(!mascot.dead&&mascot.visible){running=true;break}if(running&&!morphClock)morphClock=requestAnimationFrame(morphFrame);else if(!running&&morphClock){cancelAnimationFrame(morphClock);morphClock=0}}
+ function morphFrame(now){morphClock=0;if(quiet()||gesturePauseCount)return;for(const mascot of active)if(mascot.visible&&!mascot.dead)mascot.frame(now);syncMorphClock()}
+ function setGesturePaused(paused){
+  gesturePauseCount=Math.max(0,gesturePauseCount+(paused?1:-1));
+  if(paused&&gesturePauseCount===1){
+   for(const mascot of active)for(const control of mascot.controls)control.pause?.();
+  }else if(!paused&&!gesturePauseCount){
+   for(const mascot of active){mascot.lastFrame=performance.now();if(!quiet()&&mascot.visible)for(const control of mascot.controls)control.play?.()}
+  }
+  syncMorphClock();
+ }
  document.addEventListener('visibilitychange',()=>{for(const mascot of active)mascot.updateVisibility()});
  reduce.addEventListener?.('change',()=>{if(reduce.matches)releasePointer();for(const mascot of active)mascot.updateVisibility()});
  class Mascot{
@@ -136,7 +145,7 @@
    observer?.observe(this.svg);active.add(this);syncMorphClock();this.scheduleBlink();this.scheduleGlance();this.scheduleExpression();this.scheduleGesture();
   }
   transition(region,to,event,guard=()=>true){if(!guard())return false;const from=this.chart[region];if(from!==to){this.chart[region]=to;this.lastTransition={region,from,to,event,at:performance.now()}}return true}
-  track(control){this.controls.add(control);control.finished?.finally(()=>this.controls.delete(control)).catch(()=>{});return control}
+  track(control){this.controls.add(control);if(gesturePauseCount)control.pause?.();control.finished?.finally(()=>this.controls.delete(control)).catch(()=>{});return control}
   stopControls(){if(this.symbolPose)this.paintSymbolPose(this.symbolPose);if(this.cometPose)this.paintCometPose(this.cometPose);for(const control of this.controls)control.stop?.();this.controls.clear();this.symbolPose=null;this.cometPose=null;this.stemAnimating=false;this.bangWiggleActive=false}
   clearTimers(){for(const t of this.timers)clearTimeout(t);this.timers=[];clearTimeout(this.busyTimer);this.busyTimer=null;clearTimeout(this.expressionTimer);this.expressionTimer=null;clearTimeout(this.gestureTimer);this.gestureTimer=null}
   timer(fn,ms){const t=setTimeout(()=>{const index=this.timers.indexOf(t);if(index>=0)this.timers.splice(index,1);fn()},ms);this.timers.push(t);return t}
@@ -439,7 +448,7 @@
   send(evt){const next=MACHINE[this.state]?.[evt];return next?this.jump(next,MOOD_GLYPH[next]||null,null,evt):false}
   showExpression(expression){return this.jump(this.state,expression,this.signal)}
   jump(mood,expression=MOOD_GLYPH[mood]||null,signal=null,event=null){if(this.dead||!MOODS.includes(mood))return false;const next=signal||({working:'busy',waiting:'asking',happy:'unread',angry:'failed',sleeping:'sleeping',waking:'starting'}[mood]||'idle');if(this.cometActive){this.pendingPose=[mood,expression,next,event];return true}if(this.state===mood&&this.signal===next&&this.phase==='settled')return false;const old=this.signal,flowing=!quiet()&&this.phase==='settled'&&((old==='idle'&&next==='busy'&&this.busyMode==='ball')||(old==='busy'&&this.busyMode==='ball'&&next==='idle'));this.wideOnArrival=old==='busy'&&next==='idle';this.state=mood;this.expression=expression;this.signal=next;this.transition('body',next==='busy'?(this.busyMode==='dots'?'busy.dots':'busy.scan'):next==='sleeping'?'hibernated':next==='starting'?'waking':next,event||signal||mood,()=>!this.dead);this.svg.dataset.mood=mood;this.svg.dataset.signal=next;this.svg.setAttribute('aria-label',mood+' mascot');this.busyRemaining=this.busyInterval;if(flowing){this.resetBlink();this.updateFaceTransform();clearTimeout(this.busyTimer);this.busyTimer=null;this.setColor(mood);this.setEyes(this.wideOnArrival?'wide':'idle',null);if(this.wideOnArrival){this.wideOnArrival=false;this.timer(()=>{if(!this.dead&&this.signal==='idle')this.setEyes('idle',null)},850)}if(next==='busy')this.scheduleBusy()}else void this.startSignal();if(!((old==='asking'||old==='failed')&&this.stemProgress>0&&next!==old))this.transitionMotion(next==='sleeping'?'sleeping':next==='starting'?'waking':next==='failed'?'failed':next==='asking'?'bang':'pop');this.onMood?.(mood,this);return true}
-  updateVisibility(){if(this.dead)return;syncMorphClock();if(quiet()||!this.visible){this.pauseBusy();for(const c of this.controls)c.pause?.();clearTimeout(this.blinkTimer);this.blinkTimer=null;clearTimeout(this.expressionTimer);this.expressionTimer=null;clearTimeout(this.gestureTimer);this.gestureTimer=null;if(!this.visible||document.hidden){this.cursorActive=false;clearTimeout(this.glanceTimer);this.glanceTimer=null}if(quiet()){this.needsResume=true;this.stopControls();this.resetBlink();this.clearTimers();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58);this.phase='settled';if(reduce.matches||forcedReduce){this.bodyFollow=[0,0,0];this.bodyFollowVelocity=[0,0,0];this.gazeFollow.removeAttribute('transform')}}}else{if(this.needsResume){void this.startSignal();return}for(const c of this.controls)c.play?.();if(this.signal==='busy'&&this.phase==='settled')this.scheduleBusy();this.scheduleBlink();this.scheduleGlance();if(pointer.active)this.followPointer(pointer.x,pointer.y,pointer.type)}if((reduce.matches||forcedReduce)&&!document.hidden&&this.visible)this.scheduleGlance()}
+  updateVisibility(){if(this.dead)return;syncMorphClock();if(gesturePauseCount&&!quiet()){for(const c of this.controls)c.pause?.();return}if(quiet()||!this.visible){this.pauseBusy();for(const c of this.controls)c.pause?.();clearTimeout(this.blinkTimer);this.blinkTimer=null;clearTimeout(this.expressionTimer);this.expressionTimer=null;clearTimeout(this.gestureTimer);this.gestureTimer=null;if(!this.visible||document.hidden){this.cursorActive=false;clearTimeout(this.glanceTimer);this.glanceTimer=null}if(quiet()){this.needsResume=true;this.stopControls();this.resetBlink();this.clearTimers();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58);this.phase='settled';if(reduce.matches||forcedReduce){this.bodyFollow=[0,0,0];this.bodyFollowVelocity=[0,0,0];this.gazeFollow.removeAttribute('transform')}}}else{if(this.needsResume){void this.startSignal();return}for(const c of this.controls)c.play?.();if(this.signal==='busy'&&this.phase==='settled')this.scheduleBusy();this.scheduleBlink();this.scheduleGlance();if(pointer.active)this.followPointer(pointer.x,pointer.y,pointer.type)}if((reduce.matches||forcedReduce)&&!document.hidden&&this.visible)this.scheduleGlance()}
   blink(allowDouble=true,wink=false,second=false){
    if(this.dead||quiet()||!this.visible||this.phase!=='settled'||this.signal!=='idle'&&!['tall','wide'].includes(this.chart.eyes))return false;
    if(this.blinking||this.eyeMomentActive&&!['tall','wide'].includes(this.chart.eyes)||performance.now()<this.eyeMorphUntil||performance.now()<this.gazeUntil){
@@ -495,5 +504,5 @@
   render(instant){if(instant){this.stopControls();this.setPath(this.paths.home);this.resetDecor();this.setEyes(this.state,this.signal==='sleeping'?null:this.expression,true);if(this.signal==='sleeping')this.setSleepScale(.58)}}
   destroy(){if(this.dead)return;this.dead=true;this.token++;this.stopControls();this.clearTimers();clearTimeout(this.blinkTimer);clearTimeout(this.glanceTimer);clearTimeout(this.expressionTimer);clearTimeout(this.gestureTimer);this.blinkTimer=this.glanceTimer=this.expressionTimer=this.gestureTimer=null;observer?.unobserve(this.svg);active.delete(this);syncMorphClock();this.svg.remove()}
  }
- global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;if(forcedReduce)releasePointer();for(const mascot of active)mascot.updateVisibility()},traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
+ global.VBoxMascot={Mascot,svg,miniSVG:(seed,mood='idle',expression=MOOD_GLYPH[mood]||null)=>svg(seed,mood,true,{},expression),setReducedMotion:value=>{forcedReduce=!!value;if(forcedReduce)releasePointer();for(const mascot of active)mascot.updateVisibility()},setGesturePaused,traits,MACHINE,shapes:['circle'],colors:COLORS,moods:MOODS};
 })(window);

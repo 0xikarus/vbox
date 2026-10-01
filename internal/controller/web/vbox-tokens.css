@@ -17,6 +17,7 @@
   --vb-line:#ededef;
   --vb-line-strong:#e1e1e4;
   --vb-line-faint:#f2f2f3;
+  --vb-modal-backdrop:rgba(17,17,20,.45);
 
   --vb-accent:#ff6f59;
   --vb-accent-hover:#e85a45;
@@ -68,6 +69,7 @@
     --vb-line:#26272e;
     --vb-line-strong:#33343c;
     --vb-line-faint:#202128;
+    --vb-modal-backdrop:rgba(0,0,0,.68);
 
     --vb-accent:#ff7d68;
     --vb-accent-hover:#ff9482;
@@ -124,6 +126,7 @@
   --vb-type-px-15:calc(15px * var(--vb-text-scale));
   --vb-type-px-15-5:calc(15.5px * var(--vb-text-scale));
   --vb-type-px-16:calc(16px * var(--vb-text-scale));
+  --vb-type-px-17:calc(17px * var(--vb-text-scale));
   --vb-type-px-18:calc(18px * var(--vb-text-scale));
   --vb-type-px-20:calc(20px * var(--vb-text-scale));
   --vb-type-px-24:calc(24px * var(--vb-text-scale));
