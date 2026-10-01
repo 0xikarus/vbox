@@ -2467,7 +2467,7 @@ function pairTileStatus(tile,mode,label){
   cancelAnimationFrame(navFrame);navFrame=0;
   const touch=event.changedTouches?.[0],distance=touch?(touch.clientX-gesture.x)*(gesture.direction==='back'?1:-1):gesture.travel;
   const elapsed=Math.max(1,performance.now()-gesture.started);
-  const completed=event.type==='touchend'&&(distance>=gesture.width*.35||(distance>50&&distance/elapsed>.65));
+  const completed=event.type==='touchend'&&(distance>=gesture.width*.35||gesture.fastFlick||(distance>50&&distance/elapsed>.65));
   suppressNavClickUntil=Date.now()+500;
   gesture.row?.classList.remove('pressing');
   appEl.classList.remove('nav-swiping');
@@ -2508,7 +2508,7 @@ function pairTileStatus(tile,mode,label){
   const target=swipeTarget(row);
   if(event.touches.length!==1||innerWidth>600||direction==='back'&&!appEl.classList.contains('in-chat')||direction==='forward'&&(appEl.classList.contains('in-chat')||!target&&!selectedChatHash())||!canStartNavSwipe(event.target,root,direction))return;
   const touch=event.touches[0];
-  if(direction==='forward'&&touch.clientX<innerWidth-24)return;
+  if(direction==='forward'&&!row&&touch.clientX<innerWidth-24)return;
   clearTimeout(navSettleTimer);appEl.classList.remove('nav-returning','nav-completing');navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
   navSwipe={direction,x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now(),row,target,previous:{box:selected,pair:selectedPair}};
  }
@@ -2532,6 +2532,7 @@ function pairTileStatus(tile,mode,label){
   }
   if(event.cancelable)event.preventDefault();
   navSwipe.travel=Math.min(navSwipe.width,Math.max(0,dx));
+  navSwipe.fastFlick=direction==='forward'&&dx>50&&dx/Math.max(1,performance.now()-navSwipe.started)>.65;
   if(!navSwipe.reduced&&!navFrame)navFrame=requestAnimationFrame(paintNavSwipe);
  }
  messagesEl.addEventListener('touchstart',event=>startNavSwipe(event,'back'),{passive:true});

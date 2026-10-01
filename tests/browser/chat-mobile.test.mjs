@@ -145,6 +145,10 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await p.touchscreen.touchMove(368,610);
   await p.touchscreen.touchEnd();
   assert.equal(await p.$eval('#chat-app',el=>el.classList.contains('in-chat')),false,'vertical list scroll does not navigate');
+  await p.touchscreen.touchStart(120,rowB.y);
+  await p.touchscreen.touchMove(106,rowB.y+85);
+  await p.touchscreen.touchEnd();
+  assert.equal(await p.$eval('#chat-app',el=>el.classList.contains('in-chat')),false,'vertical scroll from a chat row does not navigate');
   await p.touchscreen.touchStart(rowB.x,rowB.y);
   await p.touchscreen.touchMove(rowB.x-35,rowB.y+2);
   await new Promise(r=>setTimeout(r,140));
@@ -170,8 +174,9 @@ test('mobile gestures: long-press menu, tap preview, swipe list, fitting details
   await new Promise(r=>setTimeout(r,280));
 
   // A row drag selects that row as soon as it locks horizontally.
-  await p.touchscreen.touchStart(rowB.x,rowB.y);
-  await p.touchscreen.touchMove(rowB.x-185,rowB.y);
+  const rowBCenter=await p.$eval('[data-box-id="reviewer"]',el=>{const r=el.getBoundingClientRect();return {x:120,y:r.top+r.height/2}});
+  await p.touchscreen.touchStart(rowBCenter.x,rowBCenter.y);
+  await p.touchscreen.touchMove(20,rowBCenter.y);
   await new Promise(r=>setTimeout(r,80));
   assert.equal(await p.$eval('#chat-header-name',el=>el.textContent),'reviewer','row B content appears during the drag');
   await p.touchscreen.touchEnd();
