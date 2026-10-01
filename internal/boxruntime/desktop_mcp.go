@@ -54,7 +54,7 @@ func desktopMCPTools() []map[string]any {
 		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
 	}
 	return []map[string]any{
-		makeTool("get_contacts", "List the boxes this box is permitted to message. Returns a compact id, exact box name, chat group, agent, state and whether messaging is allowed. Groups are owner-organized labels and do not grant access. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
+		makeTool("get_contacts", "List the boxes this box is permitted to message, with cached usage remaining for this box and each contact when available. Returns a compact id, exact box name, chat group, agent, state and whether messaging is allowed. Groups are owner-organized labels and do not grant access. Use either the returned id or exact name in chat_message or chat_ask. The controller enforces this list; you cannot message a box that is not returned here.", map[string]any{}),
 		makeTool("heartbeat", "Manage this box's local heartbeat. Use action=start with intervalMinutes (5–1440) and optional count (default 1) to schedule prompts; starting again replaces the timer. Use action=stop with no other arguments to stop it, even when the agent conversation has closed. A hibernated box cannot tick or wake itself; due ticks resume after an external wake. With count above 1, prompts include the ticks left after that prompt.", map[string]any{"action": map[string]any{"type": "string", "enum": []string{"start", "stop"}}, "intervalMinutes": map[string]any{"type": "integer", "minimum": 5, "maximum": 1440}, "count": map[string]any{"type": "integer", "minimum": 1, "maximum": 1000, "default": 1}}, "action"),
 		makeTool("get_run_budget", "Get this box's durable run-time budget. The countdown advances only while the box is allocated and is separate from desktop inactivity.", map[string]any{}),
 		makeTool("get_thread_history", "Read a paginated direct or shared-chat thread this box already has access to. Pass chatId for a shared-chat thread. A thread reference alone never grants access.", map[string]any{"threadId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "chatId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}, "limit": map[string]any{"type": "integer", "minimum": 1, "maximum": 100}, "before": map[string]any{"type": "string"}, "beforeId": map[string]any{"type": "string", "minLength": 36, "maxLength": 36}}, "threadId"),
@@ -97,7 +97,29 @@ func desktopContactLine(contact ContactSummary) string {
 	if contact.Group != "" {
 		group = strconv.Quote(contact.Group)
 	}
-	return fmt.Sprintf("- id %s | name %s | group %s | agent %s | %s | message %t", contact.ID, contact.Name, group, contact.Agent, state, contact.CanMessage)
+	line := fmt.Sprintf("- id %s | name %s | group %s | agent %s | %s | message %t", contact.ID, contact.Name, group, contact.Agent, state, contact.CanMessage)
+	if contact.Usage.Status != "" {
+		line += " | usage " + desktopContactUsage(contact.Usage)
+	}
+	return line
+}
+
+func desktopContactUsage(usage ContactUsage) string {
+	value := "unknown"
+	switch {
+	case usage.RemainingPercent != nil:
+		value = fmt.Sprintf("%.0f%% left", *usage.RemainingPercent)
+	case usage.RemainingAmount != nil:
+		value = fmt.Sprintf("%g %s left", *usage.RemainingAmount, usage.Unit)
+	case usage.Status == "stale":
+		value = "stale"
+	case usage.Status == "no_profile":
+		value = "no profile"
+	}
+	if usage.ObservedAt != nil {
+		value += " (as of " + usage.ObservedAt.UTC().Format(time.RFC3339) + ")"
+	}
+	return value
 }
 
 type desktopToolPolicyResolver func(context.Context, string) (map[string]bool, error)
@@ -598,18 +620,19 @@ func callDesktopTool(ctx context.Context, assignment, name string, args json.Raw
 		return desktopToolJSON(result)
 	}
 	if name == "get_contacts" {
-		contacts, err := DesktopContacts(ctx, assignment)
+		directory, err := DesktopContactDirectory(ctx, assignment)
 		if err != nil {
 			return nil, err
 		}
-		if len(contacts) == 0 {
-			return map[string]any{"content": []map[string]any{{"type": "text", "text": "No contacts are available. The account owner has not granted this box any contact permission."}}}, nil
+		message := "Your usage: " + desktopContactUsage(directory.Usage) + "\n"
+		if len(directory.Contacts) == 0 {
+			return map[string]any{"content": []map[string]any{{"type": "text", "text": message + "No contacts are available. The account owner has not granted this box any contact permission."}}}, nil
 		}
 		var lines []string
-		for _, contact := range contacts {
+		for _, contact := range directory.Contacts {
 			lines = append(lines, desktopContactLine(contact))
 		}
-		return map[string]any{"content": []map[string]any{{"type": "text", "text": "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
+		return map[string]any{"content": []map[string]any{{"type": "text", "text": message + "Contacts you may message:\n" + strings.Join(lines, "\n")}}}, nil
 	}
 	if name == "get_run_budget" {
 		var budget map[string]any

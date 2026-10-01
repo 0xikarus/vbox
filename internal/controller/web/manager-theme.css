@@ -71,6 +71,7 @@ body[data-manage-view="boxes"] .manage-content>section:not(#boxes),body[data-man
 .provider-capacity{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.35rem;margin:.9rem 0;padding:.65rem;border:1px solid var(--vb-swatch-2b3848);border-radius:var(--r-surface);background:var(--vb-swatch-202e3d)}
 .provider-capacity span{display:grid;gap:.1rem;min-width:0}.provider-capacity small{color:var(--vb-swatch-91a0b3);font-size:var(--vb-type-rem-0-62)}.provider-capacity strong{font-size:var(--vb-type-rem-0-9)}
 .provider-capacity span.alert strong{color:var(--vb-swatch-f5c46d)}
+.provider-capacity-notice{grid-column:1/-1;margin:0;color:var(--vb-swatch-91a0b3);font-size:var(--vb-type-rem-0-72);line-height:1.4;overflow-wrap:anywhere}
 .provider-actions{display:flex;flex-wrap:wrap;gap:.35rem}
 .provider-card details{margin-top:.85rem;padding-top:.6rem;border-top:1px solid var(--vb-swatch-2b3848)}
 .provider-card summary{color:var(--vb-swatch-aaceff);font-size:var(--vb-type-rem-0-75);font-weight:650;text-transform:none}

@@ -3,6 +3,7 @@ package boxruntime
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestValidateContactRefAcceptsBoxIdentities(t *testing.T) {
@@ -53,5 +54,14 @@ func TestDesktopContactLineShowsGroupWithoutBreakingRows(t *testing.T) {
 	line = desktopContactLine(ContactSummary{ID: "deadbeef", Name: "Builder", CanMessage: true})
 	if line != "- id deadbeef | name Builder | group none | agent  | unknown | message true" {
 		t.Fatalf("ungrouped contact line=%q", line)
+	}
+}
+
+func TestDesktopContactLineShowsCachedUsageWithObservationTime(t *testing.T) {
+	remaining := 23.0
+	observed := time.Date(2026, 10, 1, 4, 0, 0, 0, time.UTC)
+	line := desktopContactLine(ContactSummary{ID: "abcd1234", Name: "Worker", Agent: "claude", State: "running", CanMessage: true, Usage: ContactUsage{Status: "available", RemainingPercent: &remaining, ObservedAt: &observed}})
+	if !strings.Contains(line, "usage 23% left (as of 2026-10-01T04:00:00Z)") {
+		t.Fatalf("contact line=%q", line)
 	}
 }

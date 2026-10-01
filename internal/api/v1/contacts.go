@@ -39,4 +39,15 @@ type ContactEntry struct {
 	State      string             `json:"state,omitempty"`
 	CanMessage bool               `json:"canMessage"`
 	Reason     string             `json:"reason,omitempty"`
+	Usage      ContactUsage       `json:"usage"`
+}
+
+// ContactUsage is a cached subscription estimate. It is never a live quota
+// guarantee; observedAt lets callers judge how old the measurement is.
+type ContactUsage struct {
+	Status           string     `json:"status"`
+	RemainingPercent *float64   `json:"remainingPercent,omitempty"`
+	RemainingAmount  *float64   `json:"remainingAmount,omitempty"`
+	Unit             string     `json:"unit,omitempty"`
+	ObservedAt       *time.Time `json:"observedAt,omitempty"`
 }

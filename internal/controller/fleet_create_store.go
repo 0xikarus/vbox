@@ -169,6 +169,9 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		if err := putContactOverrideWithEvent(ctx, tx, p, box.ID, creatorBoxID, creatorName, "allow"); err != nil {
 			return creation, err
 		}
+		if err := addCreatedBoxToSidebarGroup(ctx, tx, p.AccountID, creatorBoxID, creatorName, box.ID); err != nil {
+			return creation, err
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO audit_log(account_id,user_id,action,target_type,target_id,detail)
 			VALUES($1,$2,'box_contact.agent_created','logical_box',$3,jsonb_build_object('creator_box_id',$4::text,'two_way',true))`, p.AccountID, p.UserID, box.ID, creatorBoxID); err != nil {
 			return creation, err

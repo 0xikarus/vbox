@@ -49,6 +49,9 @@ type HostResources struct {
 	MemoryAvailableBytes int64     `json:"memoryAvailableBytes"`
 	SwapTotalBytes       int64     `json:"swapTotalBytes"`
 	SwapFreeBytes        int64     `json:"swapFreeBytes"`
+	Scope                string    `json:"scope,omitempty"`
+	SwapLimitKnown       bool      `json:"swapLimitKnown,omitempty"`
+	SwapUnlimited        bool      `json:"swapUnlimited,omitempty"`
 	ObservedAt           time.Time `json:"observedAt"`
 }
 
