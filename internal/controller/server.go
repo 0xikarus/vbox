@@ -156,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /v1/logical-boxes/{id}/secrets/{key}/confirm", s.owner(s.confirmDesktopSecret))
 	mux.HandleFunc("GET /v1/agent-desktop/contacts", s.desktopAgentAuth(s.agentContactsHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/busy", s.desktopAgentAuth(s.agentBusyHandler))
+	mux.HandleFunc("POST /v1/agent-desktop/mascot-observation", s.desktopAgentAuth(s.mascotObservationHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/chat-ready", s.desktopAgentAuth(s.agentChatReadyHandler))
 	mux.HandleFunc("POST /v1/agent-desktop/tool-activity", s.desktopAgentAuth(s.agentToolActivityHandler))
 	mux.HandleFunc("GET /v1/agent-desktop/run-budget", s.desktopAgentAuth(s.agentRunBudgetHandler))

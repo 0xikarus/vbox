@@ -57,7 +57,7 @@ Dark mode also covers the Grid view for several boxes at once.
 
 ![Animated mascot showing a box working, typing, and replying](docs/assets/ui/mascot-chat.gif)
 
-The mascot shows when a box is busy, typing, or ready with a reply.
+The mascot shows when a box is busy, typing, or ready with a reply. For a running managed agent, the box also sends a small recent terminal text sample to the controller every 10 seconds. A lightweight controller classifier derives its mood and activity without an agent tool call; only the derived state is stored.
 
 ## How boxes work
 
