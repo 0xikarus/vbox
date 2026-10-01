@@ -3,12 +3,14 @@ package controller
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
+
+	"github.com/0xikarus/vmbox-service/internal/mascotclass"
 )
 
 // MascotState contains only the derived state. The controller treats sampled
@@ -18,45 +20,50 @@ type MascotState struct {
 	Activity string `json:"activity"`
 }
 
-var mascotPatterns = struct {
-	failure, success, laugh, waiting, work *regexp.Regexp
-}{
-	failure: regexp.MustCompile(`(?i)(?:^|\b)(?:error:|failed\b|failure\b|panic:|exception\b|fatal:|traceback\b|timed out\b|permission denied\b|cannot\b|unable to\b)`),
-	success: regexp.MustCompile(`(?i)(?:\btests? pass(?:ed)?\b|\bchecks? pass(?:ed)?\b|\bsuccess(?:ful(?:ly)?)?\b|\bcompleted\b|\bfinished\b|\bfixed\b|\bresolved\b|\bshipped\b|\bmerged\b|\blooks good\b)`),
-	laugh:   regexp.MustCompile(`(?i)(?:\bhaha(?:ha)*\b|\blol\b|\blmao\b|😂|🤣|\bthat's funny\b)`),
-	waiting: regexp.MustCompile(`(?i)(?:\bwaiting for (?:you|user|input|approval|confirmation)\b|\bplease (?:confirm|choose|approve|select)\b|\bneed your (?:input|approval|decision)\b|\bwhich (?:option|one)\b|\b(?:would you|could you|do you want|should I|shall I|can you)[^?\n]{0,120}\?)`),
-	work:    regexp.MustCompile(`(?i)(?:\bthinking\b|\bworking\b|\brunning\b|\bbuilding\b|\bcompiling\b|\bsearching\b|\bimplementing\b|\btesting\b|\bwriting\b|\banalyzing\b|\bprocessing\b|\binspecting\b|\breviewing\b|\bdebugging\b|\binvestigating\b|\bchecking\b|\bplanning\b)`),
+//go:embed mascot_model.bin
+var mascotModelBytes []byte
+
+var mascotModel = func() *mascotclass.Model {
+	model, err := mascotclass.Load(mascotModelBytes)
+	if err != nil {
+		panic(err)
+	}
+	return model
+}()
+
+// classifyMascotText is source-independent: bounded text in, mascot state out.
+func classifyMascotText(sample string) MascotState {
+	label := mascotModel.Classify(sample)
+	switch label {
+	case "working":
+		return MascotState{Mood: "idle", Activity: "working"}
+	case "waiting":
+		return MascotState{Mood: "waiting", Activity: "waiting"}
+	default:
+		return MascotState{Mood: label, Activity: "idle"}
+	}
 }
 
-// classifyMascotText weights the newest meaningful lines. Explicit result
-// phrases beat older errors, so a completed fix does not leave an angry mascot.
-// This bounded lexical classifier uses precompiled patterns in process.
-func classifyMascotText(sample string) MascotState {
-	state := MascotState{Mood: "idle", Activity: "idle"}
+// The box sender labels native message roles. Filter structural transcript
+// context before passing text to the generic classifier.
+func mascotTranscriptEvidence(sample string) string {
 	lines := strings.Split(sample, "\n")
 	if len(lines) > 80 {
 		lines = lines[len(lines)-80:]
 	}
-	var failure, success, laugh, waiting, work int
-	seen := 0
-	activeTool := false
+	retained := make([]string, 0, len(lines))
 	insideFence := false
-	for i := len(lines) - 1; i >= 0 && seen < 24; i-- {
+	for i := len(lines) - 1; i >= 0; i-- {
 		line := strings.TrimSpace(lines[i])
-		if line == "" || len(line) > 1000 {
+		if line == "" {
 			continue
 		}
-		// Native excerpts label roles. A user's request to fix an error is
-		// context, not evidence that the agent has failed.
+		// User requests provide context, not the agent's current state.
 		if strings.HasPrefix(line, "user: ") {
 			continue
 		}
-		if seen == 0 && line == "tool: Running tool" {
-			activeTool = true
-		}
 		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool: ")
-		// Code and command text often mention errors as examples. Let status and
-		// prose lines supply the evidence instead.
+		// Code examples and echoed commands are not status reports.
 		if strings.HasPrefix(line, "```") {
 			insideFence = !insideFence
 			continue
@@ -64,46 +71,12 @@ func classifyMascotText(sample string) MascotState {
 		if insideFence || strings.HasPrefix(line, "$ ") || strings.HasPrefix(line, "> ") {
 			continue
 		}
-		weight := 1
-		if seen < 6 {
-			weight = 3
-		} else if seen < 12 {
-			weight = 2
-		}
-		if mascotPatterns.failure.MatchString(line) {
-			failure += weight
-		}
-		if mascotPatterns.success.MatchString(line) {
-			success += weight
-		}
-		if mascotPatterns.laugh.MatchString(line) {
-			laugh += weight
-		}
-		if mascotPatterns.waiting.MatchString(line) {
-			waiting += weight
-		}
-		if mascotPatterns.work.MatchString(line) {
-			work += weight
-		}
-		seen++
+		retained = append(retained, line)
 	}
-	switch {
-	case waiting > 0 && waiting >= failure && waiting >= success:
-		state.Mood, state.Activity = "waiting", "waiting"
-	case laugh > 0 && laugh >= failure && laugh >= success:
-		state.Mood = "laughing"
-	case failure > success && failure > 0:
-		state.Mood = "angry"
-	case success > 0:
-		state.Mood = "happy"
+	for left, right := 0, len(retained)-1; left < right; left, right = left+1, right-1 {
+		retained[left], retained[right] = retained[right], retained[left]
 	}
-	if activeTool {
-		return MascotState{Mood: "idle", Activity: "working"}
-	}
-	if state.Activity == "idle" && work > 0 && work > success && work > failure {
-		state.Activity = "working"
-	}
-	return state
+	return strings.Join(retained, "\n")
 }
 
 func (s *Server) mascotObservationHandler(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -115,7 +88,7 @@ func (s *Server) mascotObservationHandler(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, fmt.Errorf("valid session and bounded text required"))
 		return
 	}
-	state := classifyMascotText(request.Text)
+	state := classifyMascotText(mascotTranscriptEvidence(request.Text))
 	result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE box_tasks SET mascot_mood=$4,mascot_activity=$5,mascot_observed_at=now()
 		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'`, p.AccountID, r.PathValue("id"), request.Session, state.Mood, state.Activity)
 	if err != nil {

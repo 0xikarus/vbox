@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"net/http"
@@ -26,11 +27,14 @@ func TestClassifyMascotText(t *testing.T) {
 		{"recovery", "error: compilation failed\nFixed the issue. All tests passed.", "happy", "idle"},
 		{"approval", "Please confirm which option to use", "waiting", "waiting"},
 		{"humor", "Haha, that was funny 😂", "laughing", "idle"},
-		{"quoted command", "$ echo 'error: fake'", "idle", "idle"},
-		{"code example", "assistant: Example:\nassistant: ```text\nassistant: error: demonstration\nassistant: ```\nassistant: The repository contains source files.", "idle", "idle"},
-		{"user request", "user: Please fix the error\nassistant: I am inspecting it.", "idle", "working"},
-		{"assistant question", "assistant: Would you like me to run the build?", "waiting", "waiting"},
-		{"active tool after success", "assistant: Tests passed.\ntool: Running tool", "idle", "working"},
+		{"humor emoji", "😂", "laughing", "idle"},
+		{"question", "Would you like me to run the build?", "waiting", "waiting"},
+		{"active tool", "Running tool", "idle", "working"},
+		{"paraphrased failure", "The type checker rejected the change.", "angry", "idle"},
+		{"paraphrased progress", "The validation task is underway.", "idle", "working"},
+		{"paraphrased completion", "The correction did the trick.", "happy", "idle"},
+		{"old failure followed by recovery", "The service crashed during startup. The repair worked and the app is healthy again.", "happy", "idle"},
+		{"long raw paragraph", strings.Repeat("This module contains configuration and route details. ", 25) + "The compiler rejected the change.", "angry", "idle"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -39,6 +43,47 @@ func TestClassifyMascotText(t *testing.T) {
 				t.Fatalf("got %+v, want %s/%s", got, tc.mood, tc.activity)
 			}
 		})
+	}
+}
+
+func TestMascotTranscriptEvidenceFiltersUserAndCode(t *testing.T) {
+	sample := "user: Please fix the error\nassistant: I am inspecting it.\nassistant: ```text\nassistant: error: demonstration\nassistant: ```\nassistant: I am checking the patch."
+	evidence := mascotTranscriptEvidence(sample)
+	if strings.Contains(evidence, "Please fix") || strings.Contains(evidence, "demonstration") {
+		t.Fatalf("transcript context leaked into evidence: %q", evidence)
+	}
+	if got := classifyMascotText(evidence); got.Activity != "working" {
+		t.Fatalf("got %+v from %q", got, evidence)
+	}
+	if got := classifyMascotText(mascotTranscriptEvidence("assistant: Tests passed.\ntool: Running tool")); got.Activity != "working" {
+		t.Fatalf("active native tool got %+v", got)
+	}
+}
+
+func TestMascotModelHeldoutExamples(t *testing.T) {
+	file, err := os.Open("../../scripts/mascot-data/holdout.tsv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	correct, total := 0, 0
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		label, sample, ok := strings.Cut(scanner.Text(), "\t")
+		if !ok {
+			t.Fatal("invalid held-out example")
+		}
+		predicted, _ := mascotModel.Predict(sample)
+		if predicted == label {
+			correct++
+		}
+		total++
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if total < 30 || correct*100 < total*90 {
+		t.Fatalf("held-out accuracy %d/%d is below 90%%", correct, total)
 	}
 }
 
@@ -76,7 +121,7 @@ func TestMascotStateExpiresAndFollowsActiveTask(t *testing.T) {
 }
 
 func BenchmarkClassifyMascotText(b *testing.B) {
-	sample := strings.Repeat("user: Please inspect the error.\nassistant: Inspecting the repository and running checks.\n", 120)
+	sample := strings.Repeat("I am tracing the request and checking the code. ", 200)
 	sample = sample[len(sample)-8192:]
 	b.ReportAllocs()
 	b.StopTimer()

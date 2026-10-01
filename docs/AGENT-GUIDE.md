@@ -248,13 +248,14 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   seconds. It reads the active native Codex, Claude, or OpenCode transcript,
   caps the recent text sample at 8 KiB, and posts it when the text changes
   through the assignment-scoped DesktopAgent route. The controller applies a
-  small lexical classifier and stores only mood, activity, and observation time
+  compact trained classifier and stores only mood, activity, and observation time
   on the active task. Chat history returns fresh state in response headers; after 40 seconds
   without a heartbeat, the UI falls back to chat activity and lifecycle state.
   The MCP sender reads native conversation text and does not capture tmux output.
   Entry points:
   `internal/boxruntime/mascot_observation.go`, `mascot_transcript.go`,
-  `internal/controller/mascot_classifier.go`, `web/chat.js`.
+  `internal/controller/mascot_classifier.go`, `web/chat.js`. Training and
+  evaluation are described in [the mascot classifier guide](MASCOT-CLASSIFIER.md).
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
   key carried in the envelope) answers one specific message. The box durably
   queues each MCP event and pushes text events through its scoped chat-ready
