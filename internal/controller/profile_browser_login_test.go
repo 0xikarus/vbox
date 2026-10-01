@@ -58,6 +58,18 @@ func TestProfileLoginSessionShowsOnlyValidatedStatus(t *testing.T) {
 	}
 }
 
+func TestClaudeLoginExtractsVisibleURLFromTerminalHyperlink(t *testing.T) {
+	link := "https://claude.com/cai/oauth/authorize?state=synthetic&client_id=synthetic"
+	session := &profileLoginSession{id: "synthetic", app: "claude", status: "starting"}
+	output := "Opening browser to sign in...\r\nIf the browser didn't open, visit: \x1b]8;;" + link + "\x1b\\" + link + "\x1b]8;;\x1b\\\r\n"
+	session.ingest([]byte(output[:len(output)/2]))
+	session.ingest([]byte(output[len(output)/2:]))
+	view := session.view()
+	if view.Status != "waiting" || view.URL != link {
+		t.Fatalf("Claude browser link was not extracted: status=%s validLink=%t", view.Status, view.URL == link)
+	}
+}
+
 func TestCodexBrowserCallbackChecksStateAndForwardsOnlyLoopback(t *testing.T) {
 	if !validCodexBrowserCallbackURL("http://localhost:1455/auth/callback") || validCodexBrowserCallbackURL("http://localhost.evil.test:1455/auth/callback") {
 		t.Fatal("localhost callback allow-list is incorrect")
@@ -93,11 +105,12 @@ func TestCodexBrowserCallbackChecksStateAndForwardsOnlyLoopback(t *testing.T) {
 		return w.Code
 	}
 	good := "http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=synthetic-state"
+	goodWithExtras := good + "&scope=openid%20profile&iss=https%3A%2F%2Fauth.openai.com"
 	for _, bad := range []string{
 		"http://evil.test/auth/callback?code=synthetic-code&state=synthetic-state",
 		"http://127.0.0.1:1456/auth/callback?code=synthetic-code&state=synthetic-state",
 		"http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=wrong-state",
-		"http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=synthetic-state&next=evil",
+		"http://127.0.0.1:1455/auth/callback?code=synthetic-code&state=synthetic-state&state=duplicate",
 	} {
 		if status := call(owner, bad); status < 400 {
 			t.Fatalf("accepted invalid callback: %d", status)
@@ -112,7 +125,10 @@ func TestCodexBrowserCallbackChecksStateAndForwardsOnlyLoopback(t *testing.T) {
 	if status := call(owner, good); status != 200 {
 		t.Fatalf("valid callback got %d", status)
 	}
-	if forwarded != 1 {
+	if status := call(owner, goodWithExtras); status != 200 {
+		t.Fatalf("valid callback with OAuth metadata got %d", status)
+	}
+	if forwarded != 2 {
 		t.Fatalf("forwarded %d callbacks", forwarded)
 	}
 }

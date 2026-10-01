@@ -1967,6 +1967,8 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .usage-notice{color:var(--vb-danger-text);font-size:var(--vb-type-rem-0-76);margin:.3rem .1rem}
 #usage-modal .usage-card{padding:.95rem 1.05rem 1.1rem}
 #usage-modal header{padding:0 0 .5rem}
+#usage-add-profile{display:inline-flex;align-items:center;justify-content:center;min-height:2rem;padding:0 .6rem;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-surface-2);color:var(--vb-ink);font-size:var(--vb-type-rem-0-78);font-weight:600;text-decoration:none;white-space:nowrap}
+#usage-add-profile:hover{background:var(--vb-line)}
 #usage-modal .hint{margin:.15rem 0 .5rem;font-size:var(--vb-type-rem-0-76)}
 #usage-modal #usage-list{max-height:min(64vh,34rem);overflow:auto}
 

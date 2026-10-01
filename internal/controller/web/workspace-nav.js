@@ -81,7 +81,8 @@ window.VMBoxWorkspaceNav=(()=>{
   if(!usage)return {setOwner(){},closeMenu(){}};
   const dialog=document.createElement('dialog');dialog.className='workspace-usage-dialog vb-sheet-dialog';dialog.setAttribute('aria-label','Profile usage limits');
   const header=document.createElement('header');header.className='vb-sheet-header';const title=document.createElement('h2');title.textContent='Profile usage limits';
-  const close=document.createElement('button');close.type='button';close.textContent='Close';close.onclick=()=>dialog.close();header.append(title,close);
+  const addProfile=document.createElement('a');addProfile.href='/?add-profile=1#profiles';addProfile.textContent='+ Add profile';addProfile.className='workspace-usage-add-profile';
+  const close=document.createElement('button');close.type='button';close.textContent='Close';close.onclick=()=>dialog.close();header.append(title,addProfile,close);
   const status=document.createElement('p');status.setAttribute('role','status');
   const list=document.createElement('div'),frame=document.createElement('div'),body=document.createElement('div');frame.className='sheet-scroll-frame';body.className='sheet-scroll-body';body.append(status,list);frame.append(body);dialog.append(header,frame);document.body.append(dialog);
   const closeMenu=()=>{if(!panel||!menu)return;panel.hidden=true;menu.setAttribute('aria-expanded','false')};
