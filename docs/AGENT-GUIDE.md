@@ -300,11 +300,6 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   the [local prompt API guide](LOCAL-AGENT-PROMPT.md) covers its contract and
   retry limits. The generated `~/.config/vmbox/mcp-tools.md` includes the
   request format for agents working inside the box.
-- `multicall` accepts 2–8 independent vmbox MCP calls and runs them in
-  parallel: `{"calls":[{"name":"get_contacts","arguments":{}},{"name":"get_run_budget","arguments":{}}]}`.
-  Each nested call still needs its own permission. Results appear in input
-  order with an individual error flag; inspect each one. Do not batch calls
-  that depend on an earlier result, and do not nest `multicall`.
 - The optional Lifecycle MCP tool `heartbeat` manages a single box-local timer
   in `~/.local/share/vmbox/heartbeat.json`. Call it with
   `{"action":"start","intervalMinutes":5,"count":2}` to schedule ticks, or
