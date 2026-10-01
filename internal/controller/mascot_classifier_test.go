@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -95,16 +96,41 @@ func TestMascotObservationScopesSessionAndStoresOnlyState(t *testing.T) {
 
 func TestMascotStateExpiresAndFollowsActiveTask(t *testing.T) {
 	store, mock := testStore(t)
+	expiredAt := time.Now().Add(-41 * time.Second)
 	mock.ExpectQuery(`SELECT mascot_mood,mascot_activity,mascot_observed_at FROM box_tasks`).WithArgs("account-a", "box-a").
-		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", time.Now().Add(-41*time.Second)))
-	if _, fresh, err := store.boxMascotState(context.Background(), "account-a", "box-a"); err != nil || fresh {
+		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", expiredAt))
+	expired, fresh, err := store.boxMascotState(context.Background(), "account-a", "box-a")
+	if err != nil || fresh || expired.ObservedAt != nil {
 		t.Fatalf("expired state: fresh=%t err=%v", fresh, err)
 	}
+	expiredResponse := httptest.NewRecorder()
+	setMascotResponseHeaders(expiredResponse, expired, fresh)
+	if got := expiredResponse.Header().Get("X-Vmbox-Mascot-Observed-At"); got != "" {
+		t.Fatalf("expired state exposed observation header %q", got)
+	}
+	if got := expiredResponse.Header().Get("X-Vmbox-Mascot-Mood"); got != "" {
+		t.Fatalf("expired state exposed mood header %q", got)
+	}
+	if body, err := json.Marshal(expired); err != nil || strings.Contains(string(body), "observedAt") {
+		t.Fatalf("expired state exposed observation field: %s err=%v", body, err)
+	}
+	freshAt := time.Now().Add(-2 * time.Second)
 	mock.ExpectQuery(`SELECT mascot_mood,mascot_activity,mascot_observed_at FROM box_tasks`).WithArgs("account-a", "box-a").
-		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", time.Now().Add(-39*time.Second)))
+		WillReturnRows(sqlmock.NewRows([]string{"mascot_mood", "mascot_activity", "mascot_observed_at"}).AddRow("happy", "idle", freshAt))
 	state, fresh, err := store.boxMascotState(context.Background(), "account-a", "box-a")
-	if err != nil || !fresh || state.Mood != "happy" {
+	if err != nil || !fresh || state.Mood != "happy" || state.ObservedAt == nil || !state.ObservedAt.Equal(freshAt) {
 		t.Fatalf("fresh state: %+v fresh=%t err=%v", state, fresh, err)
+	}
+	freshResponse := httptest.NewRecorder()
+	setMascotResponseHeaders(freshResponse, state, fresh)
+	if got := freshResponse.Header().Get("X-Vmbox-Mascot-Observed-At"); got != freshAt.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("fresh observation header %q, want %q", got, freshAt.UTC().Format(time.RFC3339Nano))
+	}
+	if got := freshResponse.Header().Get("X-Vmbox-Mascot-Mood"); got != "happy" {
+		t.Fatalf("fresh mood header %q, want happy", got)
+	}
+	if body, err := json.Marshal(state); err != nil || !strings.Contains(string(body), `"observedAt":"`+freshAt.UTC().Format(time.RFC3339Nano)+`"`) {
+		t.Fatalf("fresh observation field: %s err=%v", body, err)
 	}
 }
 

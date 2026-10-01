@@ -76,6 +76,7 @@ test('existing Instructions editor saves custom Markdown and can clear it',async
   await page.click('[data-box-id="reviewer"] .chat-meta');
   await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Reviewer');
   await page.click('#chat-info');
+  await page.waitForFunction(()=>[...document.querySelectorAll('#inspect-config-actions button')].some(button=>button.textContent==='Instructions…'));
   await page.$$eval('#inspect-config-actions button',buttons=>buttons.find(button=>button.textContent==='Instructions…').click());
   await page.waitForFunction(()=>document.querySelector('#box-instructions-effective')?.textContent.includes('Managed instructions for reviewer'));
   await page.select('#box-instructions-preset','custom');
