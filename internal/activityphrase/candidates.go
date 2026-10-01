@@ -25,12 +25,11 @@ func LatestToolLabel(text string) string {
 		return ""
 	}
 	latest := strings.TrimSpace(lines[len(lines)-1])
-	if label, ok := strings.CutPrefix(latest, "tool: "); ok {
+	if label, ok := strings.CutPrefix(latest, "tool: "); ok && label != "Running tool" {
 		return label
 	}
-	if latest == "Running tool" { // Older workers did not prefix tool activity.
-		return latest
-	}
+	// Older workers only report a generic "Running tool"; that says nothing a
+	// plain "working" state does not, so it is not shown as a phrase.
 	return ""
 }
 
