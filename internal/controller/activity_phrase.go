@@ -2,25 +2,111 @@ package controller
 
 import (
 	_ "embed"
+	"regexp"
+	"strings"
+	"unicode"
 
 	"github.com/0xikarus/vmbox-service/internal/activityphrase"
 )
 
-//go:embed activity_ranker.bin
-var activityRankerBytes []byte
+//go:embed activity_model.bin
+var activityModelBytes []byte
 
-var activityRanker = func() activityphrase.Ranker {
-	model, err := activityphrase.Decode(activityRankerBytes)
+var activityGenerator = func() *activityphrase.Generator {
+	model, err := activityphrase.LoadGenerator(activityModelBytes)
 	if err != nil {
 		panic(err)
 	}
 	return model
 }()
 
-// activityPhrase summarizes the latest agent action from bounded evidence.
+// Calibrated on 317 judged real model outputs from the v1 export: 7/70 shown
+// outputs were judged bad at this threshold. New generations need a new judge.
+const activityConfidenceThreshold = -0.525
+
+var activityFileWord = regexp.MustCompile(`(?i)^[^\s/]+\.(?:png|jpe?g|gif|webp|go|js|ts|py|md|json|css|html)$`)
+
+var activityContentStops = map[string]bool{"a": true, "an": true, "the": true, "and": true, "to": true, "for": true, "on": true, "in": true, "with": true, "of": true, "at": true, "from": true, "by": true}
+var activityFileVerbs = map[string]bool{
+	"editing": true, "reading": true, "reviewing": true, "opening": true,
+	"saving": true, "writing": true, "updating": true, "creating": true,
+	"checking": true, "merging": true, "renaming": true, "deleting": true,
+	"patching": true, "formatting": true, "comparing": true, "inspecting": true,
+	"fixing": true, "testing": true, "running": true,
+}
+var activityTrivialCommands = map[string]bool{"cd": true, "ls": true, "echo": true, "cat": true, "pwd": true, "sleep": true, "true": true, "test": true, "command": true, "tool": true}
+
+// activityPhrase prefers factual harness labels, then generates a short phrase
+// from bounded evidence. Low-confidence or invalid generations leave the UI's
+// working fallback.
 func activityPhrase(text string) string {
+	text = activityphrase.NormalizeEvidence(text)
+	if text == "" {
+		return ""
+	}
 	if label := activityphrase.LatestToolLabel(text); label != "" {
 		return label
 	}
-	return activityRanker.Best(activityphrase.Candidates(text))
+	phrase, confidence := activityGenerator.GenerateScored(text)
+	if confidence >= activityConfidenceThreshold && validActivityPhrase(phrase) {
+		return phrase
+	}
+	return ""
+}
+
+func validActivityPhrase(phrase string) bool {
+	words := strings.Fields(phrase)
+	if len(words) < 1 || len(words) > 5 || len([]rune(phrase)) > 32 {
+		return false
+	}
+	runes := []rune(phrase)
+	if !unicode.IsUpper(runes[0]) {
+		return false
+	}
+	if !strings.HasSuffix(strings.ToLower(words[0]), "ing") {
+		return false
+	}
+	if len(words) > 1 && strings.EqualFold(words[0], "Running") && activityTrivialCommands[strings.ToLower(words[1])] {
+		return false
+	}
+	if strings.EqualFold(phrase, "Using a tool") {
+		return false
+	}
+	if strings.EqualFold(words[0], "Holding") || strings.EqualFold(words[0], "Asking") || strings.EqualFold(words[0], "Waking") {
+		for _, word := range words[1:] {
+			if strings.EqualFold(word, "screenshots") {
+				return false
+			}
+		}
+	}
+	if len(words) > 1 && activityFileWord.MatchString(words[1]) && !activityFileVerbs[strings.ToLower(words[0])] {
+		return false
+	}
+	seen := make(map[string]bool, len(words))
+	for _, word := range words {
+		key := strings.ToLower(word)
+		if strings.ContainsAny(word, "<>\n\r") {
+			return false
+		}
+		if activityContentStops[key] {
+			continue
+		}
+		roots := []string{key}
+		if strings.HasSuffix(key, "ing") && len(key) > 5 {
+			stem := strings.TrimSuffix(key, "ing")
+			roots = append(roots, stem, stem+"e")
+			if len(stem) > 2 && stem[len(stem)-1] == stem[len(stem)-2] {
+				roots = append(roots, stem[:len(stem)-1])
+			}
+		}
+		for _, root := range roots {
+			if seen[root] {
+				return false
+			}
+		}
+		for _, root := range roots {
+			seen[root] = true
+		}
+	}
+	return true
 }

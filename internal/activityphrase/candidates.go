@@ -17,19 +17,21 @@ type Candidate struct {
 var activityWords = regexp.MustCompile(`[\pL][\pL\pN'’-]*`)
 var activityImageTool = regexp.MustCompile(`(?i)^tool: Reading [^\s]+\.(?:png|jpe?g|gif|webp)$`)
 
-// LatestToolLabel preserves a harness label verbatim when it is the newest
-// evidence line. The model only needs to judge agent prose.
+// LatestToolLabel preserves a specific harness label verbatim when it is the
+// newest evidence line. Generic "Using" labels leave the decision to the model.
 func LatestToolLabel(text string) string {
 	lines := strings.Split(strings.TrimSpace(text), "\n")
 	if len(lines) == 0 {
 		return ""
 	}
 	latest := strings.TrimSpace(lines[len(lines)-1])
-	if label, ok := strings.CutPrefix(latest, "tool: "); ok && label != "Running tool" {
-		return label
+	if label, ok := strings.CutPrefix(latest, "tool: "); ok {
+		for _, prefix := range []string{"Editing ", "Running ", "Reading ", "Reviewing ", "Messaging ", "Checking ", "Searching "} {
+			if strings.HasPrefix(label, prefix) && label != "Running tool" && label != "Running command" {
+				return label
+			}
+		}
 	}
-	// Older workers only report a generic "Running tool"; that says nothing a
-	// plain "working" state does not, so it is not shown as a phrase.
 	return ""
 }
 

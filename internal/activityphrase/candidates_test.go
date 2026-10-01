@@ -65,3 +65,16 @@ func TestLatestToolLabelIsVerbatim(t *testing.T) {
 		t.Fatalf("older tool label overrode newer prose: %q", got)
 	}
 }
+
+func TestLatestToolLabelLeavesGenericToolsToModel(t *testing.T) {
+	for _, label := range []string{"Using ToolSearch", "Using a tool", "Running tool", "Running command"} {
+		if got := LatestToolLabel("assistant: Checking the result.\ntool: " + label); got != "" {
+			t.Errorf("generic %q returned %q", label, got)
+		}
+	}
+	for _, label := range []string{"Editing chat.js", "Running go test", "Reading chat.js", "Reviewing screenshots", "Messaging a box", "Checking contacts", "Searching code"} {
+		if got := LatestToolLabel("tool: " + label); got != label {
+			t.Errorf("specific %q returned %q", label, got)
+		}
+	}
+}
