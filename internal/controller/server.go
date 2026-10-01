@@ -34,6 +34,7 @@ type Server struct {
 	MaxConcurrent        int
 	mu                   sync.Mutex
 	browserSessions      map[[32]byte]browserSession
+	profileLogins        *profileLoginManager
 	webStreams           int
 	replyWatches         map[string]struct{}
 	chatDrains           map[string]time.Time
@@ -95,7 +96,7 @@ func (s *Server) startBoxMessage(p Principal, task v1.BoxTask, message v1.BoxMes
 }
 
 func NewServer(store *Store, providers *provider.Registry) *Server {
-	return &Server{Store: store, Providers: providers, Logger: slog.Default(), MaxConcurrent: 10, replyWatches: make(map[string]struct{}), activeCreations: make(map[string]struct{})}
+	return &Server{Store: store, Providers: providers, Logger: slog.Default(), MaxConcurrent: 10, replyWatches: make(map[string]struct{}), activeCreations: make(map[string]struct{}), profileLogins: newProfileLoginManager()}
 }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
@@ -114,6 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /app.css", uiHandler("app.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /manager-theme.css", uiHandler("manager-theme.css", "text/css; charset=utf-8", false))
 	mux.HandleFunc("GET /app.js", uiHandler("app.js", "text/javascript; charset=utf-8", false))
+	mux.HandleFunc("GET /profile-login-terminal.js", uiHandler("profile-login-terminal.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /model-picker.js", uiHandler("model-picker.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /ai-helper.js", uiHandler("ai-helper.js", "text/javascript; charset=utf-8", false))
 	mux.HandleFunc("GET /ai-helper.css", uiHandler("ai-helper.css", "text/css; charset=utf-8", false))
@@ -328,6 +330,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /v1/users/{id}", s.owner(s.removeUser))
 	mux.HandleFunc("GET /v1/provider-credentials", s.owner(s.listProviderCredentials))
 	mux.HandleFunc("GET /v1/login-profiles", s.owner(s.listLoginProfiles))
+	mux.HandleFunc("POST /v1/login-profiles/browser", s.owner(s.startBrowserProfileLogin))
+	mux.HandleFunc("GET /v1/login-profiles/browser/{id}", s.owner(s.browserProfileLoginStatus))
+	mux.HandleFunc("GET /v1/login-profiles/browser/{id}/terminal", s.owner(s.browserProfileLoginTerminal))
+	mux.HandleFunc("POST /v1/login-profiles/browser/{id}/code", s.owner(s.browserProfileLoginCode))
+	mux.HandleFunc("DELETE /v1/login-profiles/browser/{id}", s.owner(s.cancelBrowserProfileLogin))
+	mux.HandleFunc("POST /v1/login-profiles/api-key/verify", s.owner(s.verifyProfileAPIKey))
+	mux.HandleFunc("POST /v1/login-profiles/api-key", s.owner(s.saveProfileAPIKey))
 	mux.HandleFunc("GET /v1/agent-cli-versions", s.owner(s.agentCLIVersionsHandler))
 	mux.HandleFunc("PUT /v1/agent-cli-versions", s.owner(s.agentCLIVersionsHandler))
 	mux.HandleFunc("GET /v1/agent-cli-versions/catalog/{agent}", s.owner(s.agentCLIVersionCatalogHandler))

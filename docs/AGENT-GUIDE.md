@@ -329,7 +329,12 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   lookups into one billing command; credentials without billing scope return an
   unavailable explanation instead of a fabricated estimate.
 - `process_tasks` cascade when a box is deleted. Never infer task success from SSH errors.
-- Login profiles are uploaded from the CLI. A box has at most one imported agent
+- Login profiles can be created in Manage → Profiles with a bounded, owner-scoped
+  browser login session for the official Codex and Claude CLIs or a verified
+  provider API key. The CLI upload path remains available. Browser login CLIs
+  run with a private temporary home and scrubbed environment; the terminal is
+  attached to that fixed login command, not a general shell. Saved credentials
+  use the same encrypted account profile store. A box has at most one imported agent
   profile, and its application authoritatively selects the managed harness.
   Replacing it uses the locked, integrity-checked transfer, removes portable
   credential/config files for other harnesses, fails stale chat tasks, kills only

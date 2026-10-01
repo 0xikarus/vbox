@@ -63,6 +63,24 @@ func (s *Server) getLoginProfileModels(w http.ResponseWriter, r *http.Request, p
 	ctx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
 	if application == "claude" {
+		var settings struct {
+			Env struct {
+				Key string `json:"ANTHROPIC_API_KEY"`
+			} `json:"env"`
+		}
+		if json.Unmarshal(profile.Files["settings.json"], &settings) == nil && settings.Env.Key != "" && len(profile.Files[".credentials.json"]) == 0 {
+			models, err := s.profileAPIKeyModels(ctx, profileAPIKeyRequest{Application: "claude", Provider: "anthropic", Key: settings.Env.Key})
+			if err != nil {
+				writeError(w, http.StatusBadGateway, fmt.Errorf("could not load Claude API models"))
+				return
+			}
+			choices := make([]profileModelChoice, 0, len(models))
+			for _, model := range models {
+				choices = append(choices, profileModelChoice{ID: model, Label: model})
+			}
+			writeJSON(w, http.StatusOK, profileModelCatalog{Source: "Anthropic API catalog", Models: choices})
+			return
+		}
 		client := s.HTTP
 		if client == nil {
 			client = http.DefaultClient

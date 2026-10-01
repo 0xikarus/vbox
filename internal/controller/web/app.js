@@ -456,6 +456,81 @@ function renderProfiles(identity,profiles){
  const choices=$('#profile-choices'),selected=choices.querySelector('select')?.value||'';choices.replaceChildren();
  renderCreationProfileChoices(choices,profiles,$('#create select[name="defaultAgent"]'),selected);
 }
+let profileLoginSessionID='',profileLoginTimer=0,profileLoginFromCreate=false,profileVerifiedKey='',profileLoginTerminalStop=null;
+const profileLoginForm=$('#profile-login-form');
+function profileLoginFields(){
+ const f=profileLoginForm.elements,app=f.application.value;
+ if(app==='opencode')f.method.value='api';
+ const apiMode=f.method.value==='api';
+ const providers=app==='opencode'?[['openrouter','OpenRouter'],['venice','Venice']]:app==='claude'?[['anthropic','Anthropic']]:[['openai','OpenAI']];
+ const previous=f.provider.value;f.provider.replaceChildren();for(const [value,label] of providers){const option=node('option',label);option.value=value;f.provider.append(option)}if(providers.some(([value])=>value===previous))f.provider.value=previous;
+ $('.profile-login-provider').hidden=!apiMode;$('.profile-login-key').hidden=!apiMode;$('.profile-login-model').hidden=!apiMode;$('.profile-login-email').hidden=apiMode||app!=='claude';
+ $('#profile-login-verify').hidden=!apiMode;$('#profile-login-submit').textContent=apiMode?'Save API profile':'Start browser login';
+ $('#profile-login-submit').disabled=apiMode;
+ $('#profile-login-method-note').textContent=apiMode?'API usage is billed by '+(app==='opencode'?f.provider.selectedOptions[0]?.textContent:app==='claude'?'Anthropic':'OpenAI')+'. Verify the key to choose an available model.':app==='codex'?'Codex uses the official device sign-in. Enable device login in your ChatGPT security or workspace settings, then enter the shown code in your browser.':'Claude Code opens its official sign-in page. If it asks for a browser code, paste that code here.';
+ profileVerifiedKey='';f.model.replaceChildren(new Option('Verify the key first',''));
+}
+function openProfileLogin(fromCreate=false){
+ profileLoginFromCreate=fromCreate;profileLoginForm.reset();$('#profile-login-progress').hidden=true;profileLoginForm.hidden=false;$('#profile-login-status').textContent='';$('#profile-login-form-status').textContent='';
+ if(fromCreate){const app=$('#create select[name="defaultAgent"]').value;if(['codex','claude','opencode'].includes(app))profileLoginForm.elements.application.value=app}
+ profileLoginFields();modalEl('profile-login-modal').hidden=false;profileLoginForm.elements.name.focus();
+}
+async function cancelProfileLogin(){
+ profileLoginTerminalStop?.();profileLoginTerminalStop=null;
+ clearTimeout(profileLoginTimer);const id=profileLoginSessionID;profileLoginSessionID='';
+ if(id)try{await api('/v1/login-profiles/browser/'+encodeURIComponent(id),'DELETE')}catch{}
+}
+function closeProfileLogin(){modalEl('profile-login-modal').hidden=true;profileLoginForm.elements.key.value='';profileVerifiedKey='';void cancelProfileLogin()}
+$('#profile-new').addEventListener('click',()=>openProfileLogin());
+$('#create-profile-open').addEventListener('click',()=>openProfileLogin(true));
+for(const name of ['application','method','provider'])profileLoginForm.elements[name].addEventListener('change',profileLoginFields);
+profileLoginForm.elements.key.addEventListener('input',()=>{profileVerifiedKey='';$('#profile-login-submit').disabled=true;profileLoginForm.elements.model.replaceChildren(new Option('Verify the key first',''))});
+$('#profile-login-verify').addEventListener('click',action(async()=>{
+ const f=profileLoginForm.elements,body={application:f.application.value,provider:f.provider.value,key:f.key.value};
+ $('#profile-login-form-status').textContent='Checking key and loading models…';
+ const response=await api('/v1/login-profiles/api-key/verify','POST',body);const models=response.models||[];
+ f.model.replaceChildren();for(const model of models){const option=node('option',model);option.value=model;f.model.append(option)}
+ profileVerifiedKey=[body.application,body.provider,body.key].join('\u0000');
+ $('#profile-login-submit').disabled=false;
+ $('#profile-login-form-status').textContent='Key verified. Choose a model and save.';
+}));
+profileLoginForm.addEventListener('submit',action(async event=>{
+ const f=event.currentTarget.elements,app=f.application.value,name=f.name.value.trim(),replaceExisting=f.replaceExisting.checked;
+ if(f.method.value==='api'){
+  if(profileVerifiedKey!==[app,f.provider.value,f.key.value].join('\u0000')||!f.model.value)throw Error('Verify the key and choose a model first.');
+  const profile=await api('/v1/login-profiles/api-key','POST',{application:app,provider:f.provider.value,name,key:f.key.value,model:f.model.value,replaceExisting});
+  f.key.value='';profileVerifiedKey='';modalEl('profile-login-modal').hidden=true;await refresh();selectNewProfile(profile);notice('Saved '+app+' profile '+name+'.');return;
+ }
+ const session=await api('/v1/login-profiles/browser','POST',{application:app,name,email:f.email.value.trim(),replaceExisting});
+ profileLoginSessionID=session.id;profileLoginForm.hidden=true;$('#profile-login-progress').hidden=false;renderProfileLoginStatus(session);
+ profileLoginTerminalStop=window.openProfileLoginTerminal(session.id,$('#profile-login-terminal'));pollProfileLogin();
+}));
+function selectNewProfile(profile){
+ if(!profileLoginFromCreate)return;
+ const select=$('#profile-choices select[name="loginProfile"]');if(!select)return;
+ const value=JSON.stringify({application:profile.application,name:profile.name});
+ if([...select.options].some(option=>option.value===value)){select.value=value;select.dispatchEvent(new Event('change'))}
+}
+function renderProfileLoginStatus(session){
+ $('#profile-login-status').textContent=session.message||({starting:'Starting isolated login…',waiting:'Finish sign-in in your browser.',saved:'Profile saved.',failed:'Login failed.',expired:'Login timed out.',canceled:'Login canceled.'}[session.status]||session.status);
+ const link=$('#profile-login-url');link.hidden=!session.url;if(session.url)link.href=session.url;else link.removeAttribute('href');
+ $('#profile-login-device').hidden=!session.code;$('#profile-login-device-code').textContent=session.code||'';
+ $('#profile-login-code-form').hidden=!(session.status==='waiting'&&profileLoginForm.elements.application.value==='claude');
+ $('#profile-login-cancel').hidden=['saved','failed','expired','canceled'].includes(session.status);
+ $('#profile-login-retry').hidden=!['failed','expired','canceled'].includes(session.status);
+}
+async function pollProfileLogin(){
+ const id=profileLoginSessionID;if(!id)return;
+ try{const state=await api('/v1/login-profiles/browser/'+encodeURIComponent(id));if(id!==profileLoginSessionID)return;renderProfileLoginStatus(state);
+  if(state.status==='saved'){profileLoginSessionID='';profileLoginTerminalStop?.();profileLoginTerminalStop=null;const profile={application:profileLoginForm.elements.application.value,name:profileLoginForm.elements.name.value.trim()};await refresh();selectNewProfile(profile);return}
+  if(['failed','expired','canceled'].includes(state.status)){profileLoginSessionID='';profileLoginTerminalStop?.();profileLoginTerminalStop=null;return}
+ }catch(err){$('#profile-login-status').textContent=err.message}
+ if(id===profileLoginSessionID)profileLoginTimer=setTimeout(pollProfileLogin,1500);
+}
+$('#profile-login-code-form').addEventListener('submit',action(async event=>{const code=event.currentTarget.elements.code.value;await api('/v1/login-profiles/browser/'+encodeURIComponent(profileLoginSessionID)+'/code','POST',{code});event.currentTarget.reset();$('#profile-login-status').textContent='Code sent. Waiting for Claude Code…'}));
+$('#profile-login-cancel').addEventListener('click',action(async()=>{await cancelProfileLogin();renderProfileLoginStatus({status:'canceled'})}));
+$('#profile-login-retry').addEventListener('click',()=>{profileLoginForm.hidden=false;$('#profile-login-progress').hidden=true;$('#profile-login-status').textContent='';profileLoginForm.elements.name.focus()});
+document.querySelectorAll('[data-close="profile-login-modal"]').forEach(element=>element.addEventListener('click',closeProfileLogin));
 const agentCLIChoices=['claude','codex','opencode'];
 function agentCLIVersionNewestFirst(left,right){
  const leftDash=left.indexOf('-'),rightDash=right.indexOf('-');

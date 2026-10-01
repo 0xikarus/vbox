@@ -16,7 +16,7 @@ before(async()=>{
   const chunks=[];for await(const chunk of req)chunks.push(chunk);
   const body=chunks.length?JSON.parse(Buffer.concat(chunks)):null;
   requests.push({path,method:req.method,body,revision:req.headers['if-match']});
-   if(['/','/app.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/mascot.css','/motion.js','/mascot.js','/vbox-tokens.css','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
+   if(['/','/app.js','/profile-login-terminal.js','/app.css','/controller.css','/manager-theme.css','/markdown.js','/model-picker.js','/ai-helper.js','/ai-helper.css','/run-budget-policy.js','/idle-policy.css','/box-create-limit.js','/workspace-nav.js','/workspace-nav.css','/login.css','/fonts.css','/mascot.css','/motion.js','/mascot.js','/vbox-tokens.css','/vbox-c.css','/vbox-logo.png','/vbox-logo-dark.png','/inter-latin-wght-normal.woff2','/favicon.ico','/workspace.js','/workspace-terminal.js','/workspace-desktop.js','/novnc.js','/workspace.css','/xterm.js','/xterm-fit.js','/xterm.css','/boxes/box-1'].includes(path)){
    const file=path==='/boxes/box-1'?'workspace.html':path==='/'?'index.html':path==='/favicon.ico'?'favicon.svg':path.slice(1);
    res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':file.endsWith('.svg')?'image/svg+xml':file.endsWith('.png')?'image/png':file.endsWith('.woff2')?'font/woff2':'text/html');
    return res.end(await readFile(resolve(root,file)));
@@ -49,6 +49,11 @@ before(async()=>{
   };
   if(req.method==='GET' && path in values)return res.end(JSON.stringify(values[path]));
   if(path==='/v1/ai/openrouter'&&req.method==='GET')return res.end(JSON.stringify({configured:false,model:'openrouter/auto'}));
+  if(req.method==='POST'&&path==='/v1/login-profiles/api-key/verify')return res.end(JSON.stringify({models:['openrouter/synthetic-model']}));
+  if(req.method==='POST'&&path==='/v1/login-profiles/api-key'){res.statusCode=201;return res.end(JSON.stringify({application:body.application,name:body.name,model:body.model,createdAt:revision}))}
+  if(req.method==='POST'&&path==='/v1/login-profiles/browser'){res.statusCode=202;return res.end(JSON.stringify({id:'synthetic-login',status:'starting',expiresAt:revision}))}
+  if(req.method==='GET'&&path==='/v1/login-profiles/browser/synthetic-login')return res.end(JSON.stringify({id:'synthetic-login',status:'waiting',url:'https://auth.openai.com/codex/device',code:'ABCD-EFGH',expiresAt:revision}));
+  if(req.method==='DELETE'&&path==='/v1/login-profiles/browser/synthetic-login')return res.end(JSON.stringify({id:'synthetic-login',status:'canceled',expiresAt:revision}));
   if(req.method==='GET' && path==='/v1/login-profiles/claude/personal/models')return res.end(JSON.stringify({source:'Claude Code catalog',models:['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'].map(id=>({id,label:id}))}));
   if(req.method==='GET' && path==='/v1/login-profiles/opencode/openrouter/models')return res.end(JSON.stringify({source:'OpenRouter live catalog',models:[{id:'openrouter/deepseek/deepseek-v4.1-flash',label:'DeepSeek Flash',reasoning:false},{id:'openrouter/google/gemini-test',label:'Gemini test',reasoning:true}]}));
   if(req.method==='GET' && path==='/v1/login-profiles/codex/personal-codex/models')return res.end(JSON.stringify({source:'Codex account catalog',models:[{id:'account-codex-model',label:'Account Codex Model',reasoning:true,reasoningEfforts:['low','ultra']}]}));
@@ -145,6 +150,36 @@ test('Profiles has its own view with saved agent and GitHub logins',async()=>{
  if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/ai-profiles-mobile.png'});
  await page.click('#manage-menu');await page.click('#manage-menu-panel a[href="#boxes"]');
  await page.waitForFunction(()=>document.body.dataset.manageView==='boxes');
+ await page.close();
+});
+test('Profiles creates an OpenCode API profile after key verification',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
+ await page.click('#profile-new');
+ assert.equal(await page.$eval('#profile-login-modal',modal=>modal.hidden),false);
+ await page.select('#profile-login-form select[name=application]','opencode');
+ if(process.env.VMBOX_AI_SCREENSHOTS)await page.screenshot({path:process.env.VMBOX_AI_SCREENSHOTS+'/profile-login-dialog.png'});
+ await page.type('#profile-login-form input[name=name]','synthetic-api');
+ await page.type('#profile-login-form input[name=key]','synthetic-key-12345');
+ await page.click('#profile-login-verify');
+ await page.waitForFunction(()=>document.querySelector('#profile-login-form select[name=model]')?.value==='openrouter/synthetic-model');
+ await page.click('#profile-login-submit');
+ await page.waitForFunction(()=>document.querySelector('#profile-login-modal')?.hidden===true);
+ const sent=requests.findLast(item=>item.path==='/v1/login-profiles/api-key'&&item.method==='POST');
+ assert.deepEqual({application:sent.body.application,provider:sent.body.provider,name:sent.body.name,model:sent.body.model},{application:'opencode',provider:'openrouter',name:'synthetic-api',model:'openrouter/synthetic-model'});
+ assert.equal(await page.$eval('#profile-login-form input[name=key]',input=>input.value),'');
+ await page.close();
+});
+test('Profiles shows the Codex device code and cancels its terminal session',async()=>{
+ const page=await browser.newPage();
+ await page.goto(base+'/#profiles');await page.type('#login input','fixture');await page.click('#login button');await page.waitForSelector('#app:not([hidden])');
+ await page.click('#profile-new');await page.type('#profile-login-form input[name=name]','synthetic-browser');
+ await page.click('#profile-login-submit');
+ await page.waitForFunction(()=>document.querySelector('#profile-login-device-code')?.textContent==='ABCD-EFGH');
+ assert.equal(await page.$eval('#profile-login-url',link=>link.href),'https://auth.openai.com/codex/device');
+ await page.click('#profile-login-cancel');
+ await page.waitForFunction(()=>document.querySelector('#profile-login-status')?.textContent==='Login canceled.');
+ assert.equal(requests.some(item=>item.path==='/v1/login-profiles/browser/synthetic-login'&&item.method==='DELETE'),true);
  await page.close();
 });
 test('harness version dropdowns offer image, latest, and published releases',async()=>{

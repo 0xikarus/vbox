@@ -92,7 +92,9 @@ vbox new work
 vbox work
 ```
 
-`vbox profiles upload` imports Codex, Claude, OpenCode, or GitHub credentials into encrypted saved profiles. Existing boxes receive profile changes when you reapply the profile. Run `vbox help` for all commands. `vbox desktop work` needs a local VNC viewer; the browser desktop does not.
+In **Manage → Profiles → Add profile**, owners can sign in to Codex or Claude Code through a temporary browser terminal, or verify an API key for Codex, Claude Code, OpenRouter, or Venice and select a model. Codex subscription login uses the official device code; device login must be enabled in ChatGPT security or workspace settings. API keys use provider API billing. The temporary login session is owner-scoped, expires after ten minutes, and saves only the validated credential files in the encrypted profile store. New boxes can select the profile immediately. Apply it to an existing box through **Credentials**; changing the saved profile alone does not update copied box credentials.
+
+`vbox profiles upload` also imports Codex, Claude, OpenCode, or GitHub credentials into encrypted saved profiles. Run `vbox help` for all commands. `vbox desktop work` needs a local VNC viewer; the browser desktop does not.
 
 ## Security and limits
 

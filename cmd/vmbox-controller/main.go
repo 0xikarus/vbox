@@ -95,6 +95,7 @@ func run() error {
 	}
 	registry := provider.NewRegistry()
 	server := controller.NewServer(store, registry)
+	defer server.CloseProfileLogins()
 	server.PublicURL = os.Getenv("VMBOX_CONTROLLER_URL")
 	server.EmailProvisionURL = os.Getenv("VMBOX_EMAIL_PROVISION_URL")
 	server.EmailProvisionToken = os.Getenv("VMBOX_EMAIL_PROVISION_TOKEN")

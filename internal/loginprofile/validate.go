@@ -58,6 +58,20 @@ func Validate(app string, files map[string][]byte, now time.Time) error {
 			return fmt.Errorf("GitHub credential is missing or invalid; run gh auth login and upload again")
 		}
 	case "claude":
+		// Claude Code also accepts ANTHROPIC_API_KEY from its user settings.
+		// Browser-created API profiles use this path; subscription profiles
+		// continue to use the CLI's OAuth credentials file.
+		if len(files[".credentials.json"]) == 0 {
+			var settings struct {
+				Env struct {
+					Key string `json:"ANTHROPIC_API_KEY"`
+				} `json:"env"`
+			}
+			if json.Unmarshal(files["settings.json"], &settings) == nil && strings.TrimSpace(settings.Env.Key) != "" {
+				return nil
+			}
+			return fmt.Errorf("Claude profile has no usable credentials")
+		}
 		var c struct {
 			OAuth struct {
 				Access  string `json:"accessToken"`
