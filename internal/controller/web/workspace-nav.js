@@ -130,7 +130,8 @@ window.VMBoxWorkspaceNav=(()=>{
    // The panel's width is measurable only after it is shown.
    panel.style.left=Math.max(8,Math.min(rect.left,innerWidth-panel.offsetWidth-8))+'px';
   };
-  if(menu&&panel){document.addEventListener('pointerdown',event=>{if(!panel.hidden&&!panel.contains(event.target)&&event.target!==menu)closeMenu()});
+  if(menu&&panel){panel.addEventListener('click',event=>{if(event.target.closest('a,[role="menuitem"]'))closeMenu()});
+  document.addEventListener('pointerdown',event=>{if(!panel.hidden&&!panel.contains(event.target)&&event.target!==menu)closeMenu()});
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){event.preventDefault();closeMenu();menu.focus()}})}
   const format=value=>new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value);
   let owner=false;
