@@ -288,8 +288,13 @@ ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS agent_busy_message_id uuid;
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_mood text;
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_activity text;
 ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_observed_at timestamptz;
+-- An activity summary only; the source transcript is never stored.
+ALTER TABLE box_tasks ADD COLUMN IF NOT EXISTS mascot_phrase text;
 CREATE INDEX IF NOT EXISTS box_tasks_reconcile_idx
   ON box_tasks(account_id,state,created_at,id);
+CREATE INDEX IF NOT EXISTS box_tasks_activity_idx
+  ON box_tasks(account_id,logical_box_id,created_at DESC,id DESC)
+  WHERE state='active' AND agent<>'shell';
 -- One-shot process execution is deliberately separate from historical
 -- interactive tasks. Process exit is not a claim about prompt completion.
 CREATE TABLE IF NOT EXISTS process_tasks (
