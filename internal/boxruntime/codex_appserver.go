@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"io/fs"
@@ -14,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/coder/websocket"
@@ -42,6 +44,51 @@ func codexThreadFile(root, session string) string {
 
 func codexResetPendingFile(root, session string) string {
 	return filepath.Join(root, "chat", "codex-reset-pending", session)
+}
+
+func codexMessageThreadFile(root, session, messageID string) string {
+	return filepath.Join(root, "messages", "codex-chat-submit-"+session+"-"+messageID+".thread")
+}
+
+func codexMessageRecoveryFile(root, session, messageID string) string {
+	return filepath.Join(root, "messages", "codex-chat-submit-"+session+"-"+messageID+".recovery")
+}
+
+func codexMessageRecoveryLockFile(root, session, messageID string) string {
+	return filepath.Join(root, "messages", "codex-chat-submit-"+session+"-"+messageID+".recovery.lock")
+}
+
+// Bind each delivery to the visible thread before submitting it. A later
+// /resume must not replay an uncertain message into another conversation.
+func bindCodexMessageThread(root, session, messageID, thread string) error {
+	path := codexMessageThreadFile(root, session, messageID)
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if os.IsExist(err) {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		if strings.TrimSpace(string(data)) != thread {
+			return fmt.Errorf("%w: Codex visible thread changed before message receipt", ErrAmbiguousMessage)
+		}
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err = file.WriteString(thread + "\n"); err == nil {
+		err = file.Sync()
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(path)
+	}
+	return err
 }
 
 // codexClient is one connection to a session's app server.
@@ -251,6 +298,9 @@ var CodexQueueMessage = func(ctx context.Context, session, root, workspace, mess
 	if err != nil {
 		return err
 	}
+	if err := bindCodexMessageThread(root, session, messageID, thread); err != nil {
+		return err
+	}
 	if err := codexSubmitVisibleInput(ctx, client, thread, messageID, text, images); err != nil {
 		return err
 	}
@@ -429,31 +479,145 @@ func codexUnmaterializedThread(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "thread/turns/list is unavailable before first user message")
 }
 
-// ConfirmCodexChat probes an earlier ambiguous handoff without submitting it
-// again. An idle native queue may be started, but its existing contents stay
-// in their original order and the receipt is confirmed only after consumption.
+// ConfirmCodexChat checks the exact native receipt. Once the original turn is
+// over, an unconsumed bound message may be recovered from its durable inbox.
 func ConfirmCodexChat(ctx context.Context, root, home, session, messageID string) (bool, error) {
 	client, err := dialCodexAppServer(ctx, session)
 	if err != nil {
 		return false, err
 	}
 	defer client.Close()
-	thread, err := CodexCurrentThread(ctx, client, root, session, WorkspaceDirectory())
+	visibleThread, err := CodexCurrentThread(ctx, client, root, session, WorkspaceDirectory())
 	if err != nil {
 		return false, err
 	}
-	accepted, err := codexUserItemPresent(ctx, client, thread, messageID, true)
-	if err != nil || !accepted {
-		if err == nil {
-			err = codexStartQueuedIfIdle(ctx, client, thread)
+	thread := visibleThread
+	if data, readErr := os.ReadFile(codexMessageThreadFile(root, session, messageID)); readErr == nil {
+		thread = strings.TrimSpace(string(data))
+		if thread == "" {
+			return false, fmt.Errorf("Codex message thread binding is empty")
 		}
+	} else if !os.IsNotExist(readErr) {
+		return false, readErr
+	}
+	if thread != visibleThread {
+		// The original thread need not still be loaded by the app server.
+		// Its rollout can confirm a receipt, but a thread switch can never
+		// authorize another submission.
+		accepted, err := codexUserItemInRollout(filepath.Join(home, ".codex", "sessions"), thread, messageID)
+		if err != nil || !accepted {
+			return false, err
+		}
+		return true, removeCodexInbox(home, session, messageID)
+	}
+	accepted, err := codexUserItemPresent(ctx, client, thread, messageID, true)
+	if err != nil {
 		return false, err
 	}
+	if accepted {
+		return true, removeCodexInbox(home, session, messageID)
+	}
+	return false, recoverUnconsumedCodexInbox(ctx, client, root, home, session, thread, messageID)
+}
+
+func removeCodexInbox(home, session, messageID string) error {
 	path := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, messageID+".json")
 	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return false, err
+		return err
 	}
-	return true, nil
+	return nil
+}
+
+func recoverUnconsumedCodexInbox(ctx context.Context, client *codexClient, root, home, session, thread, messageID string) error {
+	lockPath := codexMessageRecoveryLockFile(root, session, messageID)
+	if err := os.MkdirAll(filepath.Dir(lockPath), 0700); err != nil {
+		return err
+	}
+	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return err
+	}
+	defer lock.Close()
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) {
+			return nil // Another reconciler owns this message.
+		}
+		return err
+	}
+	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+
+	latest, err := codexLatestTurn(ctx, client, thread)
+	if err != nil {
+		return err
+	}
+	if latest != nil {
+		switch latest["status"] {
+		case "inProgress":
+			return nil // An accepted steer may still be waiting inside this turn.
+		case "completed", "interrupted", "failed":
+		default:
+			return fmt.Errorf("Codex latest turn has unknown status %q", latest["status"])
+		}
+	}
+	queue, err := client.call(ctx, "thread/queue/list", map[string]any{"threadId": thread, "limit": 1})
+	if codexQueueMethodUnavailable(err, "thread/queue/list") {
+		return nil // Without a queue listing, a second submission is unsafe.
+	}
+	if err != nil {
+		return err
+	}
+	entries, ok := queue["data"].([]any)
+	if !ok {
+		return fmt.Errorf("Codex queue listing is missing data")
+	}
+	if len(entries) > 0 {
+		return codexStartQueuedIfIdle(ctx, client, thread)
+	}
+	// Messages from older runtimes have no target-thread binding. They may
+	// already belong to another conversation and require manual inspection.
+	if _, err := os.Stat(codexMessageThreadFile(root, session, messageID)); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	path := filepath.Join(home, ".local", "share", "vmbox", "chat", "inbox", session, messageID+".json")
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if time.Since(info.ModTime()) < 90*time.Second {
+		return nil // Give the first submission time to appear natively.
+	}
+	if attempt, err := os.Stat(codexMessageRecoveryFile(root, session, messageID)); err == nil {
+		if time.Since(attempt.ModTime()) < 90*time.Second {
+			return nil // A recent replay may still be starting its native turn.
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	accepted, err := codexUserItemInRollout(filepath.Join(home, ".codex", "sessions"), thread, messageID)
+	if err != nil || accepted {
+		return err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var event chatInboundFile
+	if err := json.Unmarshal(data, &event); err != nil || event.ID != messageID {
+		return fmt.Errorf("invalid Codex inbox event for recovery")
+	}
+	if err := writeTextAtomic(codexMessageRecoveryFile(root, session, messageID), time.Now().UTC().Format(time.RFC3339Nano)+"\n", 0600); err != nil {
+		return err
+	}
+	if err := codexQueueInput(ctx, client, thread, event.ID, event.Text, event.Paths); err != nil {
+		return err
+	}
+	return codexStartQueuedIfIdle(ctx, client, thread)
 }
 
 var codexUserItemPollInterval = 250 * time.Millisecond

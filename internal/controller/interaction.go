@@ -345,9 +345,10 @@ func (s *Server) ReconcileBoxInteractionsNow(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-// Ambiguous native handoffs are probed by exact message ID. This operation
-// never submits a second prompt; the worker inspects the native Claude,
-// OpenCode, or Codex session before the controller advances checkmarks.
+// Ambiguous native handoffs are probed by exact message ID. The worker
+// inspects native Claude, OpenCode, or Codex state before the controller
+// advances checkmarks. Codex may recover a still-unconsumed, thread-bound
+// inbox message after its original turn has ended.
 func (s *Server) reconcileNativeMessageReceipts(ctx context.Context) error {
 	messages, err := s.Store.AmbiguousActiveBoxMessages(ctx)
 	if err != nil {

@@ -1,0 +1,60 @@
+/* A single native scroll region below each sheet header. The SVG track and
+   edge fades are decorations; they never intercept touch or wheel input. */
+.sheet-scroll-frame{position:relative;display:flex;flex-direction:column;min-width:0;min-height:0;flex:1 1 auto}
+.sheet-scroll-body{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+.sheet-scroll-indicator{display:none;position:absolute;z-index:5;top:6px;bottom:6px;right:3px;width:3px;height:calc(100% - 12px);pointer-events:none;overflow:visible;opacity:1;transition:opacity .25s ease}
+.sheet-scroll-indicator rect{fill:var(--vb-ink-faint)}
+.sheet-scroll-idle .sheet-scroll-indicator{opacity:.38}
+.sheet-scroll-frame::before,.sheet-scroll-frame::after{content:'';position:absolute;z-index:4;left:0;right:6px;height:16px;pointer-events:none;opacity:0;transition:opacity .16s ease}
+.sheet-scroll-frame::before{top:0;background:linear-gradient(to bottom,var(--vb-elevated),transparent)}
+.sheet-scroll-frame::after{bottom:0;background:linear-gradient(to top,var(--vb-elevated),transparent)}
+.sheet-scroll-frame.sheet-has-above::before,.sheet-scroll-frame.sheet-has-below::after{opacity:1}
+.sheet-scroll-inspect{display:contents}
+.sheet-dragging{transition:none;will-change:transform}
+.sheet-drag-returning{transition:transform .22s var(--vb-ease)}
+@media(prefers-reduced-motion:reduce){.sheet-drag-returning{transition:none}}
+@media(max-width:640px){
+ .sheet-card,.modal .card,.model-picker-dialog,#delete-box-card{display:flex;flex-direction:column;max-height:calc(100dvh - max(80px,env(safe-area-inset-top)));overflow:hidden}
+ .sheet-card>header,.modal .card>header,.model-picker-dialog>.model-picker-header,#delete-box-card>header{position:relative;z-index:2;flex:none;background:var(--vb-elevated)}
+ .sheet-card>.sheet-scroll-frame,.modal .card>.sheet-scroll-frame,.model-picker-dialog>.sheet-scroll-frame,#delete-box-card>.sheet-scroll-frame{min-height:0;margin:0 -1rem -1rem;padding:0 1rem 1rem}
+ .sheet-card>.sheet-scroll-frame>.sheet-scroll-body,.modal .card>.sheet-scroll-frame>.sheet-scroll-body,.model-picker-dialog>.sheet-scroll-frame>.sheet-scroll-body,#delete-box-card>.sheet-scroll-frame>.sheet-scroll-body{padding-bottom:env(safe-area-inset-bottom)}
+ .sheet-scroll-frame.sheet-can-scroll>.sheet-scroll-indicator{display:block}
+ .sheet-scroll-inspect{flex:1;min-height:0}
+ #inspect .sheet-scroll-inspect>#inspect-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+ #inspect .sheet-scroll-inspect>.sheet-scroll-indicator{right:4px}
+ #inspect .sheet-scroll-inspect::before,#inspect .sheet-scroll-inspect::after{background:none}
+ #inspect .sheet-scroll-inspect::before{background:linear-gradient(to bottom,var(--vb-bg-soft),transparent)}
+ #inspect .sheet-scroll-inspect::after{background:linear-gradient(to top,var(--vb-bg-soft),transparent)}
+ #new-box-card{max-height:calc(100dvh - max(20px,env(safe-area-inset-top)))}
+ #new-box-modal,#delete-box-modal,.modal{align-items:flex-end}
+ #new-box-card,#delete-box-card,.modal .card{width:100%;max-width:none;margin:0;border-radius:var(--r-surface) var(--r-surface) 0 0}
+ #new-box-card,#delete-box-card{max-height:calc(100dvh - max(80px,env(safe-area-inset-top)))}
+ #new-box-card .sheet-scroll-new-box{min-height:0;overflow:hidden}
+ #new-box-card .sheet-scroll-new-box>#create-box{height:100%;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+ #new-box-card .sheet-scroll-new-box>.sheet-scroll-indicator{right:4px}
+ .new-box-body{min-height:0}
+ .model-picker-dialog{width:calc(100vw - 16px);max-height:calc(100dvh - 24px)}
+ .model-picker-dialog[open]{position:fixed;inset:auto 0 0;width:100%;max-width:none;max-height:calc(100dvh - max(80px,env(safe-area-inset-top)));margin:auto 0 0;border-radius:var(--r-surface) var(--r-surface) 0 0}
+ .model-picker-dialog .model-picker-body{display:block}
+ .model-picker-dialog .model-picker-rail{border-right:0;padding-right:0}
+ #row-menu.touch-mode{display:flex;flex-direction:column;overflow:hidden;max-height:calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+ #row-menu.touch-mode .row-menu-heading{flex:none}
+ #row-menu.touch-mode .sheet-scroll-menu-frame{min-height:0}
+ #row-menu.touch-mode .sheet-scroll-menu-body{min-height:0;overflow-y:auto;overscroll-behavior:contain;touch-action:pan-y}
+ #row-menu.touch-mode .sheet-scroll-menu-frame.sheet-can-scroll>.sheet-scroll-indicator{display:block}
+ /* Permissions use standard settings rows instead of stacking the switch. */
+ :is(.role-editor-card,.modal .role-editor) .role-capabilities{margin:0}
+ :is(.role-editor-card,.modal .role-editor) .role-capability{margin:0;padding:12px 0;border-bottom:1px solid var(--vb-line)}
+ :is(.role-editor-card,.modal .role-editor) .role-capability:last-child{border-bottom:0}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-toggle{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;width:100%;margin:0}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-toggle>span{min-width:0}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-toggle>input[type=checkbox]{justify-self:end;align-self:center;flex:none;width:42px;height:24px;margin:0}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-toggle small{display:block;line-height:1.4}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-options{margin:8px 0 0;border-top:0;padding:0}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-options>summary{display:flex;align-items:center;gap:8px;min-height:44px;color:var(--vb-ink);font-size:var(--vb-type-px-14);font-weight:570;list-style:none}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-options>summary::-webkit-details-marker{display:none}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-options>summary::before{display:none}
+ :is(.role-editor-card,.modal .role-editor) .role-capability-options>summary::after{content:'›';margin-left:auto;color:var(--vb-ink-soft);font-size:20px;line-height:1}
+ :is(.role-editor-card,.modal .role-editor) .mcp-tool-options>summary{border-top:1px solid var(--vb-line)}
+ :is(.role-editor-card,.modal .role-editor) .mcp-tool-group .role-capability-options>summary{border-top:1px solid var(--vb-line)}
+}

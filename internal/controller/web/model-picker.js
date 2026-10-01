@@ -191,7 +191,7 @@
   async function open(){
    if(input.disabled)return;
    title.textContent='Choose '+({claude:'Claude',codex:'Codex',opencode:'OpenCode'}[application]||'agent')+' model';
-   selectedModel=input.value.trim();search.value='';exact.value='';effort.value=effortInput.value;models=normalize([...fallback,current()]);source.textContent=fallbackSource();loadingDone=false;renderEffort();render();displayPreview();dialog.showModal();search.focus();
+   selectedModel=input.value.trim();search.value='';exact.value='';effort.value=effortInput.value;models=normalize([...fallback,current()]);source.textContent=fallbackSource();loadingDone=false;renderEffort();render();displayPreview();dialog.showModal();if(!matchMedia('(pointer:coarse)').matches)search.focus();else search.blur();
    if(!loader)return;
    const version=++requestVersion;source.textContent='Loading provider models…';
    try{

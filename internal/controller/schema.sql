@@ -15,6 +15,12 @@ CREATE TABLE IF NOT EXISTS chat_sidebar_layouts (
 ALTER TABLE chat_sidebar_layouts ADD COLUMN IF NOT EXISTS mutes_json jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE chat_sidebar_layouts ADD COLUMN IF NOT EXISTS pins_json jsonb NOT NULL DEFAULT '[]'::jsonb;
 ALTER TABLE chat_sidebar_layouts ADD COLUMN IF NOT EXISTS sections_json jsonb NOT NULL DEFAULT '{}'::jsonb;
+CREATE TABLE IF NOT EXISTS chat_read_markers (
+  account_id uuid NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  chat_key text NOT NULL,
+  seen_at timestamptz NOT NULL,
+  PRIMARY KEY (account_id, chat_key)
+);
 CREATE TABLE IF NOT EXISTS users (
   id uuid PRIMARY KEY,
   account_id uuid NOT NULL REFERENCES accounts(id),

@@ -550,7 +550,68 @@ func TestClaudeChannelDoesNotResendWhileBusyOnSameConnection(t *testing.T) {
 	}
 }
 
-func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
+func TestClaudeChannelRecoversAfterTemporaryTmuxOutage(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("VMBOX_CHAT_SESSION", "claude-recover")
+	if err := StoreChatInbound(home, "claude-recover", ChatInbound{ID: "message-1", Text: "after outage"}); err != nil {
+		t.Fatal(err)
+	}
+	previousCurrent, previousInterval := claudeChannelCurrent, claudeChannelPollInterval
+	var current atomic.Bool
+	var checks atomic.Int32
+	claudeChannelCurrent = func(context.Context, string) bool {
+		checks.Add(1)
+		return current.Load()
+	}
+	claudeChannelPollInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		claudeChannelCurrent, claudeChannelPollInterval = previousCurrent, previousInterval
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	notifications := make(chan map[string]any, 2)
+	done := make(chan struct{})
+	go func() {
+		serveClaudeChannel(ctx, func(value any) error {
+			notifications <- value.(map[string]any)
+			return nil
+		})
+		close(done)
+	}()
+	deadline := time.After(time.Second)
+	for checks.Load() < 4 {
+		select {
+		case <-deadline:
+			t.Fatal("channel stopped checking tmux during the outage")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if owners, err := claudeChannelOwners(home, "claude-recover"); err != nil || len(owners) != 0 {
+		t.Fatalf("channel advertised readiness during outage: owners=%v error=%v", owners, err)
+	}
+	current.Store(true)
+	select {
+	case notification := <-notifications:
+		if notification["method"] != "notifications/claude/channel" {
+			t.Fatalf("unexpected notification: %v", notification)
+		}
+		params := notification["params"].(map[string]any)
+		if params["content"] != "after outage" {
+			t.Fatalf("wrong message after recovery: %v", params)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("pending message was not emitted after tmux recovered")
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("channel did not stop after cancellation")
+	}
+}
+
+func TestDesktopMCPRejectsOversizedChatBeforeControllerDelivery(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("VMBOX_CHAT_SESSION", "codex-long-reply")
@@ -582,14 +643,43 @@ func TestDesktopMCPAcceptsMaximumChatMessageFrame(t *testing.T) {
 		t.Fatalf("invalid MCP response %q: %v", output.String(), err)
 	}
 	if _, failed := response["error"]; failed {
-		t.Fatalf("maximum-size chat reply was rejected: %v", response)
+		t.Fatalf("oversized chat should receive a tool result: %v", response)
 	}
-	event, found, err := PullChatEvent(home, "codex-long-reply")
-	if err != nil || !found {
-		t.Fatalf("long chat event unavailable: found=%t err=%v", found, err)
+	result, ok := response["result"].(map[string]any)
+	if !ok || result["isError"] != true {
+		t.Fatalf("oversized chat was accepted: %v", response)
 	}
-	if event.Text != text {
-		t.Fatalf("stored reply has %d bytes, want %d", len(event.Text), len(text))
+	if _, found, err := PullChatEvent(home, "codex-long-reply"); err != nil || found {
+		t.Fatalf("oversized chat was written to local outbox: found=%t err=%v", found, err)
+	}
+}
+
+func TestDesktopMCPMessageCharacterLimit(t *testing.T) {
+	if err := validateDesktopMCPMessageLength(strings.Repeat("界", 2000)); err != nil {
+		t.Fatalf("2000 Unicode characters rejected: %v", err)
+	}
+	if err := validateDesktopMCPMessageLength(strings.Repeat("界", 2001)); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+		t.Fatalf("2001 Unicode characters accepted: %v", err)
+	}
+	for _, args := range []struct {
+		name string
+		body map[string]any
+	}{
+		{"owner message", map[string]any{"text": strings.Repeat("x", 2001)}},
+		{"contact message", map[string]any{"contact": "another-box", "text": strings.Repeat("x", 2001)}},
+	} {
+		encoded, _ := json.Marshal(args.body)
+		if _, err := callDesktopTool(context.Background(), "invalid", "chat_message", encoded); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+			t.Errorf("%s was not rejected on box: %v", args.name, err)
+		}
+	}
+	encoded, _ := json.Marshal(map[string]any{"question": strings.Repeat("x", 1999), "choices": []string{"yes", "no"}})
+	if _, err := callDesktopTool(context.Background(), "invalid", "chat_ask", encoded); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+		t.Errorf("oversized question was not rejected on box: %v", err)
+	}
+	encoded, _ = json.Marshal(map[string]any{"contact": "another-box", "question": strings.Repeat("x", 1997), "choices": []string{"yes"}})
+	if _, err := callDesktopTool(context.Background(), "invalid", "chat_ask", encoded); err == nil || !strings.Contains(err.Error(), "2000 characters") {
+		t.Errorf("formatted contact question was not rejected on box: %v", err)
 	}
 }
 

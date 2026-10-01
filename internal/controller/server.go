@@ -83,7 +83,10 @@ func (s *Server) startBoxTask(accountID string, task v1.BoxTask) {
 // delivery (including runtime repair) to the HTTP request deadline.
 func (s *Server) startBoxMessage(p Principal, task v1.BoxTask, message v1.BoxMessage, submit bool) {
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		// The box runtime may spend up to 90 seconds waiting for a native Codex
+		// receipt after startup checks. Keep the transport alive long enough to
+		// return its explicit ambiguous result instead of an unexpected EOF.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 		if err := s.deliverBoxMessage(ctx, p, task, message, submit); err != nil {
 			s.Logger.Warn("direct box message delivery stopped", "task", task.ID, "message", message.ID, "error", err)
@@ -240,6 +243,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/chat-commands", s.owner(s.chatCommandsHandler))
 	mux.HandleFunc("GET /v1/chat-sidebar-layout", s.auth(s.chatSidebarLayoutHandler))
 	mux.HandleFunc("PUT /v1/chat-sidebar-layout", s.auth(s.chatSidebarLayoutHandler))
+	mux.HandleFunc("GET /v1/chat-read-markers", s.auth(s.chatReadMarkersHandler))
+	mux.HandleFunc("PUT /v1/chat-read-markers", s.auth(s.chatReadMarkersHandler))
 	mux.HandleFunc("PUT /v1/chat-commands/{name}", s.owner(s.chatCommandHandler))
 	mux.HandleFunc("DELETE /v1/chat-commands/{name}", s.owner(s.chatCommandHandler))
 	mux.HandleFunc("PUT /v1/logical-boxes/{id}/contacts", s.owner(s.boxContactsHandler))
