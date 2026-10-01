@@ -395,7 +395,7 @@
   if(mascot.state!==mood||mascot.expression!==expression||mascot.signal!==signal)mascot.jump(mood,expression,signal);
   avatar.dataset.state=box.state;
   avatar.querySelector('.dot')?.classList.toggle('running',box.state==='running');
-  const host=avatar.querySelector('.avatar-mascot');if(host&&avatar.closest('.pair-avatar')===null)bindMascotTooltip(host,box);
+  const host=avatar.querySelector('.avatar-mascot');if(host&&avatar.closest('.pair-avatar')===null){if(avatar.closest('#chat-header-avatar'))refreshMascotTooltipLabel(host,box);else bindMascotTooltip(host,box)}
  }
  const accountMascots=[];
  function refreshAccountMascots(){
@@ -1529,7 +1529,7 @@
   const icon=tool.startsWith('chat_')?'message-square':tool.includes('screenshot')||tool==='capture_window'?'camera':tool.includes('contact')?'users':tool==='heartbeat'?'activity':'terminal';
   return {tool,label,icon,failed:parts.includes('failed')};
  }
-  // Measure each tail meta and reserve exactly its width on the last text line
+  // Measure every message meta and reserve its width on the last text line
   // so the inline time/ticks never overlap the message text.
   function sizeMetaSpacers(root=messagesEl){
    if(!root)return;
@@ -1537,7 +1537,7 @@
     const spacer=msg.querySelector('.meta-spacer');
     if(!spacer)continue;
     const meta=msg.querySelector(':scope > .meta');
-    if(!meta||!msg.classList.contains('tail')){spacer.style.width='0px';continue}
+    if(!meta){spacer.style.width='0px';continue}
     const width=Math.ceil(meta.getBoundingClientRect().width);
     spacer.style.width=width?width+6+'px':'0px';
    }
@@ -1896,7 +1896,7 @@
   $('#chat-header-state').replaceChildren(state);
   inputEl.placeholder='Message '+box.name+'…';
   const key=box.id;
-  if(key!==headerAvatarKey){headerAvatarKey=key;$('#chat-header-avatar').replaceChildren(avatarNode(box,false,true))}
+  if(key!==headerAvatarKey){headerAvatarKey=key;const avatar=avatarNode(box,false,true,false),mascot=avatar.querySelector('.avatar-mascot');mascot.setAttribute('role','img');refreshMascotTooltipLabel(mascot,box);$('#chat-header-avatar').replaceChildren(avatar)}
   else syncAvatarMascot($('#chat-header-avatar .avatar'),box);
   $('#chat-wake').hidden=!canWakeBox(box);
   $('#chat-wake').disabled=wakingBoxes.has(box.id);
@@ -1904,7 +1904,7 @@
   $('#thread-composer button').disabled=box.state!=='running';
   updateSendState();
   $('#chat-workspace').href='/boxes/'+encodeURIComponent(box.id);
-  renderResourceChips();
+  renderResourceCard();
   updateBanner();
  }
  // One banner for the two things that silently confuse people: a dropped
@@ -2098,7 +2098,7 @@ function pairTileStatus(tile,mode,label){
   const pair=pairs.get(key);if(!pair)return;
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
-  selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);closeResourcePopover();renderResourceChips();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
+  selected='';selectedPair=key;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);closeResourceEditor();renderResourceCard();selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   // Box-to-box chats are read-only activity logs: opening one starts at its
@@ -2108,7 +2108,7 @@ function pairTileStatus(tile,mode,label){
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;appEl.classList.add('in-chat');
   $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
   $('#chat-header-state').textContent='Direct messages between boxes · read only';
-  $('#chat-header-avatar').replaceChildren(pairAvatarNode(pair));headerAvatarKey='';
+  {const avatar=pairAvatarNode(pair);avatar.removeAttribute('aria-hidden');avatar.setAttribute('role','img');avatar.setAttribute('aria-label',pair.boxAName+' and '+pair.boxBName);$('#chat-header-avatar').replaceChildren(avatar)}headerAvatarKey='';
   messagesEl.append(startPairHero(pair));
   setBanner('');statusEl.textContent='';renderRows();doodle('Loading messages…');
   try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
@@ -2173,7 +2173,7 @@ function pairTileStatus(tile,mode,label){
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
-  if(selected!==id)cancelReply();closeResourcePopover();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceChips();scheduleResources(0);lastSignature='';hideComposerPicker();
+  if(selected!==id)cancelReply();closeResourceEditor();selected=id;resourceRequest++;resourceSnapshot=null;renderResourceCard();scheduleResources(0);lastSignature='';hideComposerPicker();
   selectedUsageProfile=null;renderChatUsage();if(owner)void loadChatUsageProfile(id);
   // Restore where this box was left instead of always jumping to the bottom;
   // first-time opens (no memory) start at the newest message.
@@ -2834,7 +2834,7 @@ function pairTileStatus(tile,mode,label){
   if(owner)act('Credentials…','Replace the login profiles imported into this box','key',()=>void openBoxCredentials(box));
   if(box.state==='running')act('Re-sync instructions','Re-push saved instructions to the running box','refresh-cw',()=>void resyncBox(box));
   if(box.state==='running')act('Restart…','Hibernate and start again; running sessions end','power',()=>void restartBox(box),true);
-  mountInspectMemory(box);
+  renderResourceCard();
   const idleRoot=$('#inspect-idle-policy');idleRoot.hidden=!owner;
   if(owner)window.VMBoxIdlePolicy?.mount(idleRoot,{boxId:box.id,boxName:box.name,request:seconds=>api(boxPath(box.id)+'/idle-policy',seconds===undefined?'GET':'PUT',{},seconds===undefined?undefined:{seconds})});
   const budgetRoot=$('#inspect-run-budget-policy');budgetRoot.hidden=!owner;
@@ -2869,12 +2869,12 @@ function pairTileStatus(tile,mode,label){
  }
  $('#chat-info').onclick=()=>{
   if(inspectOpen){closeInspect();return}
-  inspectOpen=true;inspect.hidden=false;$('#inspect-backdrop').hidden=false;
+  inspectOpen=true;inspect.hidden=false;$('#inspect-backdrop').hidden=false;scheduleResources(0);
   inspect.classList.toggle('with-contacts',owner);
   $('#chat-info').setAttribute('aria-expanded',String(inspectOpen));
   controllerPing=null;renderInspect();void samplePing();inspectTimer=setInterval(()=>void samplePing(),5000);
  };
- function closeInspect(){inspectOpen=false;inspect.hidden=true;stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
+ function closeInspect(){inspectOpen=false;inspect.hidden=true;clearTimeout(resourceTimer);resourceRequest++;closeResourceEditor();stopInspectHero();$('#inspect-backdrop').hidden=true;$('#chat-info').setAttribute('aria-expanded','false');clearInterval(inspectTimer);controllerPing=null;inspectContactsFor='';inspectContactCache=null;inspectProfilesFor='';inspectProfileCache=null;inspectAttachmentFor='';inspectAttachmentCache=null;inspectAttachmentRequest++;inspectInstructionsFor='';inspectInstructions=null;inspectInstructionsRequest++;inspectWorkerKey='';inspectWorker=null;const limit=$('#inspect-create-limit');limit.replaceChildren();delete limit.dataset.createLimitBox;const budget=$('#inspect-run-budget-policy');budget.replaceChildren();delete budget.dataset.budgetKey}
  $('#chat-header-open')?.addEventListener('click',()=>$('#chat-info').click());
  $('#chat-terminal')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('tmux',b.id)});
  $('#inspect-screen')?.addEventListener('click',()=>{const b=boxes.get(selected);if(b)void openTakeover('desktop',b.id)});
@@ -3578,11 +3578,11 @@ function pairTileStatus(tile,mode,label){
  }
  function scheduleActivity(delay=5000){clearTimeout(activityTimer);if(!document.hidden&&!appEl.hidden)activityTimer=setTimeout(tickActivity,delay)}
  async function tickActivity(){const generation=activityGeneration;await refreshBoxActivity();if(generation===activityGeneration)scheduleActivity()}
- function scheduleResources(delay=30000){clearTimeout(resourceTimer);if(owner&&selected&&!document.hidden&&!appEl.hidden&&!$('#chat-conversation').hidden)resourceTimer=setTimeout(tickResources,delay)}
+ function scheduleResources(delay=30000){clearTimeout(resourceTimer);if(owner&&inspectOpen&&selected&&!document.hidden&&!appEl.hidden&&!$('#chat-conversation').hidden)resourceTimer=setTimeout(tickResources,delay)}
  async function tickResources(){await refreshBoxResources();scheduleResources()}
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);clearTimeout(resourceTimer);closeResourcePopover();stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();scheduleResources(0);if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(activityTimer);clearTimeout(resourceTimer);closeResourceEditor();stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();void tickActivity();scheduleResources(0);if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);await refreshBoxActivity();if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
@@ -3595,7 +3595,7 @@ function pairTileStatus(tile,mode,label){
  };
  $('#logout').onclick=async()=>{
   await flushReadMarkers();clearInterval(readSyncTimer);
-  groupStorageKey='';activityGeneration++;activityPending=null;resourceRequest++;resourceSnapshot=null;closeResourcePopover();
+  groupStorageKey='';activityGeneration++;activityPending=null;resourceRequest++;resourceSnapshot=null;closeResourceEditor();
   clearTimeout(boxTimer);clearTimeout(msgTimer);clearTimeout(activityTimer);clearTimeout(resourceTimer);clearTimeout(pushTimer);clearTimeout(filterTimer);clearInterval(usageTimer);stopManualUsageRefresh();
   await disablePushSubscription();
   $('#usage-modal').hidden=true;
@@ -3644,77 +3644,55 @@ function pairTileStatus(tile,mode,label){
  document.addEventListener('visibilitychange',()=>{if(document.hidden)void flushReadMarkers()});
 
  /* ---------- imported profile usage ---------- */
- const resourcePopover=$('#chat-resource-popover'),memoryRoot=$('#inspect-memory-settings'),memoryHome=memoryRoot.parentElement;
- let resourcePopoverTrigger=null;
+ const memoryRoot=$('#inspect-memory-settings'),resourceEditor=$('#inspect-resource-editor');
  const resourceGiB=bytes=>{const value=bytes/(1024**3);return Number.isInteger(value)?String(value):value.toFixed(1)};
- const resourceTime=value=>value&&Number.isFinite(Date.parse(value))?new Date(value).toLocaleString():'Not observed';
- function closeResourcePopover(){
-  if(memoryRoot.parentElement===resourcePopover)memoryHome.append(memoryRoot);
-  resourcePopover.hidden=true;resourcePopover.replaceChildren();
-  if(resourcePopoverTrigger){resourcePopoverTrigger.setAttribute('aria-expanded','false');resourcePopoverTrigger.focus({preventScroll:true});resourcePopoverTrigger=null}
+ function closeResourceEditor(){resourceEditor.hidden=true;memoryRoot.hidden=true;memoryRoot.dataset.boxId='';memoryRoot.replaceChildren()}
+ function resourceMetric(data,kind){
+  const resources=data?.resources||{};
+  const total=kind==='ram'?Number(resources.memoryMiB||0)*1024**2:kind==='swap'?Number(resources.swapMiB||0)*1024**2:Number.isFinite(data?.diskTotalBytes)?data.diskTotalBytes:Number(resources.diskGiB||0)*1024**3;
+  const used=kind==='ram'?data?.memoryUsedBytes:kind==='swap'?data?.swapUsedBytes:data?.diskUsedBytes;
+  const measured=Number.isFinite(used)&&used>=0,ratio=measured&&total>0?used/total:null;
+  return {total,used,measured,ratio,text:(measured?resourceGiB(used):'–')+' / '+(total?resourceGiB(total):'–')+' GB'};
  }
- function renderResourceChips(){
-  const box=boxes.get(selected),data=resourceSnapshot?.id===selected?resourceSnapshot.data:null;
-  for(const [kind,button] of [['ram',$('#chat-ram')],['disk',$('#chat-disk')]]){
-   button.hidden=!owner||!box||box.state!=='running'||!data;
-   if(button.hidden)continue;
-   const total=kind==='ram'?Number(data.resources?.memoryMiB||0)*1024**2:Number.isFinite(data.diskTotalBytes)?data.diskTotalBytes:Number(data.resources?.diskGiB||0)*1024**3;
-   const used=kind==='ram'?data.memoryUsedBytes:data.diskUsedBytes;
-   const measured=Number.isFinite(used)&&used>=0,ratio=measured&&total>0?used/total:null;
-   const label=kind==='ram'?'RAM':'Disk',text=label+' '+(measured?resourceGiB(used):'–')+'/'+(total?resourceGiB(total):'–')+' GB';
-   button.querySelector('.chat-resource-value').textContent=text;
-   button.querySelector('.chat-resource-ring-value').setAttribute('stroke-dasharray',(ratio===null?0:Math.max(0,Math.min(100,ratio*100)))+' 100');
-   button.classList.toggle('resource-warning',ratio!==null&&ratio>=.85&&(kind==='disk'&&data.diskEnforced===false||ratio<.95));
-   button.classList.toggle('resource-danger',ratio!==null&&ratio>=.95&&!(kind==='disk'&&data.diskEnforced===false));
-   button.classList.toggle('resource-unknown',ratio===null);
-   const detail=kind==='ram'?'Swap '+(Number.isFinite(data.swapUsedBytes)?resourceGiB(data.swapUsedBytes):'–')+'/'+resourceGiB(Number(data.resources?.swapMiB||0)*1024**2)+' GB':'Disk '+(data.diskPartial?'at least ':'')+(measured?resourceGiB(used):'–')+' GB used';
-   const observed=resourceTime(kind==='ram'?data.observedAt:data.diskObservedAt);
-   const hostDisk=kind==='disk'&&Number.isFinite(data.hostDiskUsedBytes)&&Number.isFinite(data.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?' · Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
-   const note=kind==='disk'&&data.diskEnforced===false?' · Limit '+resourceGiB(total)+' GB is not enforced on this shared worker':'';
-   const reason=kind==='disk'&&data.diskUnavailableReason?' · Disk –: '+data.diskUnavailableReason:'';
-   button.title=text+' · '+detail+' · Observed '+observed+hostDisk+note+reason;
-   button.setAttribute('aria-label',button.title);
+ function renderResourceCard(){
+  const box=boxes.get(selected),data=resourceSnapshot?.id===selected?resourceSnapshot.data:null,card=$('#inspect-resources');
+  card.hidden=!inspectOpen||!box||!owner;
+  if(card.hidden)return;
+  const rows=$('#inspect-resource-rows'),adjust=$('#inspect-resources-adjust');rows.replaceChildren();
+  for(const kind of ['ram','swap','disk']){
+   const metric=resourceMetric(data,kind),row=mk('div');row.className='inspect-resource-row';row.dataset.kind=kind;
+   const label=mk('span',kind==='ram'?'RAM':kind==='swap'?'Swap':'Disk'),value=mk('strong',metric.text),track=mk('div'),fill=mk('span');
+   track.className='inspect-resource-track';fill.style.width=(metric.ratio===null?0:Math.max(0,Math.min(100,metric.ratio*100)))+'%';track.append(fill);
+   row.classList.toggle('resource-warning',metric.ratio!==null&&metric.ratio>=.85&&(kind==='disk'&&data?.diskEnforced===false||metric.ratio<.95));
+   row.classList.toggle('resource-danger',metric.ratio!==null&&metric.ratio>=.95&&!(kind==='disk'&&data?.diskEnforced===false));
+   if(kind==='ram'){const name=mk('span');name.className='inspect-resource-name';name.append(label,adjust);row.append(name,value,track)}
+   else row.append(label,value,track);
+   if(kind==='disk'&&data?.diskEnforced===false)row.append(Object.assign(mk('small','Limit not enforced on this shared worker'),{className:'inspect-resource-note'}));
+   rows.append(row);
   }
+  const context=$('#inspect-resources-context');const host=Number.isFinite(data?.hostDiskUsedBytes)&&Number.isFinite(data?.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?'Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
+  context.textContent=[host,data?.diskPartial?'Disk scan partial':null,data?.diskUnavailableReason||null].filter(Boolean).join(' · ');context.hidden=!context.textContent;
+  const observed=[data?.observedAt,data?.diskObservedAt].filter(value=>value&&Number.isFinite(Date.parse(value))).sort().at(-1);
+  $('#inspect-resources-updated').textContent=observed?'Updated '+fmtAgo(observed):'No live data (worker update needed)';
+  adjust.hidden=box.provider!=='shared-worker'||box.state!=='running';
  }
+ $('#inspect-resources-adjust').onclick=()=>{
+  const box=boxes.get(selected);if(!box)return;
+  if(!resourceEditor.hidden){closeResourceEditor();return}
+  resourceEditor.append(memoryRoot);resourceEditor.hidden=false;mountInspectMemory(box,true);
+ };
  async function refreshBoxResources(){
   const box=boxes.get(selected);
-  if(!owner||!box||box.state!=='running'||document.hidden||appEl.hidden||$('#chat-conversation').hidden)return;
+  if(!inspectOpen||!owner||!box||box.state!=='running'||document.hidden||appEl.hidden||$('#chat-conversation').hidden)return;
   const id=selected,request=++resourceRequest;
   try{
    const data=await api(boxPath(id)+'/resources');
-   if(request!==resourceRequest||selected!==id||document.hidden||!owner)return;
-   resourceSnapshot={id,data};renderResourceChips();
+   if(request!==resourceRequest||selected!==id||!inspectOpen||document.hidden||!owner)return;
+   resourceSnapshot={id,data};renderResourceCard();
   }catch{
-   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceChips()}
+   if(request===resourceRequest&&selected===id){resourceSnapshot=null;renderResourceCard()}
   }
  }
- function openResourcePopover(kind){
-  const button=$(kind==='ram'?'#chat-ram':'#chat-disk'),box=boxes.get(selected),data=resourceSnapshot?.id===selected?resourceSnapshot.data:null;
-  if(button.hidden||!box||!data)return;
-  if(!resourcePopover.hidden&&resourcePopoverTrigger===button){closeResourcePopover();return}
-  closeResourcePopover();resourcePopoverTrigger=button;button.setAttribute('aria-expanded','true');
-  const header=mk('div');header.className='resource-popover-heading';const title=mk('strong',kind==='ram'?'RAM and swap':'Disk');const close=mk('button','×');close.type='button';close.setAttribute('aria-label','Close resource details');close.onclick=closeResourcePopover;header.append(title,close);resourcePopover.append(header);
-  const detail=mk('p',button.querySelector('.chat-resource-value').textContent);resourcePopover.append(detail);
-  if(kind==='ram'){
-   resourcePopover.append(mk('p','Swap '+(Number.isFinite(data.swapUsedBytes)?resourceGiB(data.swapUsedBytes):'–')+'/'+resourceGiB(Number(data.resources?.swapMiB||0)*1024**2)+' GB'));
-   resourcePopover.append(mk('p','Observed '+resourceTime(data.observedAt)));
-   if(box.provider==='shared-worker'){mountInspectMemory(box,true);resourcePopover.append(memoryRoot)}
-  }else{
-   resourcePopover.append(mk('p','Observed '+resourceTime(data.diskObservedAt)));
-   if(data.diskUnavailableReason)resourcePopover.append(mk('p','Disk –: '+data.diskUnavailableReason+'.'));
-   if(data.diskPartial)resourcePopover.append(mk('p','The scan is partial; actual usage may be higher.'));
-   if(Number.isFinite(data.hostDiskUsedBytes)&&Number.isFinite(data.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0)resourcePopover.append(mk('p','Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'% used'));
-   if(data.diskEnforced===false)resourcePopover.append(mk('p','Limit '+resourceGiB(Number.isFinite(data.diskTotalBytes)?data.diskTotalBytes:Number(data.resources?.diskGiB||0)*1024**3)+' GB is not enforced on this shared worker.'));
-  }
-  resourcePopover.hidden=false;
-  const rect=button.getBoundingClientRect(),width=resourcePopover.offsetWidth,height=resourcePopover.offsetHeight;
-  resourcePopover.style.left=Math.max(8,Math.min(rect.left,innerWidth-width-8))+'px';
-  resourcePopover.style.top=Math.max(8,Math.min(rect.bottom+8,innerHeight-height-8))+'px';
-  close.focus({preventScroll:true});
- }
- $('#chat-ram').onclick=()=>openResourcePopover('ram');$('#chat-disk').onclick=()=>openResourcePopover('disk');
- document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!resourcePopover.hidden){event.preventDefault();closeResourcePopover()}});
- document.addEventListener('pointerdown',event=>{if(!resourcePopover.hidden&&!resourcePopover.contains(event.target)&&event.target!==resourcePopoverTrigger)closeResourcePopover()});
  function usageNumber(value){return typeof value==='number'&&Number.isFinite(value)?new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value):'—'}
  function usageDate(value){if(!value)return 'unknown';const date=new Date(value);return Number.isNaN(date.getTime())?'unknown':date.toLocaleString()}
  function usageCompactDate(value){if(!value)return 'unknown';const date=new Date(value);if(Number.isNaN(date.getTime()))return 'unknown';const options={month:'numeric',day:'numeric',hour:'numeric',minute:'2-digit'};if(date.getFullYear()!==new Date().getFullYear())options.year='numeric';return date.toLocaleString([],options)}

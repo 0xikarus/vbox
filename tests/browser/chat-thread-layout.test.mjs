@@ -40,6 +40,7 @@ test('desktop thread leaves the full conversation visible with and without Detai
    await page.goto(`http://127.0.0.1:${server.address().port}/chat#box=builder`);
    await page.waitForSelector('.msg-thread');await page.$eval('.msg-thread',node=>node.click());
    await page.waitForFunction(()=>!document.querySelector('#thread-panel').hidden);
+   assert.ok(await page.$$eval('#thread-messages .msg',nodes=>nodes.length>0&&nodes.every(node=>{const time=node.querySelector(':scope > .meta time');return time&&getComputedStyle(time.parentElement).display!=='none'&&time.getBoundingClientRect().width>0})), 'thread messages each show a time');
    const bounds=()=>page.evaluate(()=>({panel:document.querySelector('#thread-panel').getBoundingClientRect().left,bubbles:[...document.querySelectorAll('#chat-messages .msg')].map(node=>node.getBoundingClientRect().right),main:document.querySelector('#chat-main').getBoundingClientRect().right}));
    let result=await bounds();assert(result.bubbles.length>0);assert(result.bubbles.every(right=>right<=result.panel+1),JSON.stringify(result));assert(result.main<=result.panel+1,JSON.stringify(result));
    await page.$eval('#chat-info',node=>node.click());await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);

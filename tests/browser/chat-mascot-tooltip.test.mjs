@@ -65,9 +65,11 @@ test('mascot freshness tooltip updates, expires, and leaves mobile row navigatio
    if(mobile){await page.$eval('[data-box-id="builder"] .chat-meta',el=>el.click())}
    else await page.$eval('#chat-header-avatar .avatar-mascot',el=>el.scrollIntoView());
    await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat'));
-   if(mobile)assert.equal(await page.$eval(header,el=>{el.click();return document.querySelector('#mascot-mood-tooltip').hidden}),false,'header mascot tap shows tooltip');
-   else{await page.hover(header);await page.waitForSelector('#mascot-mood-tooltip:not([hidden])')}
-   await assertTooltipInViewport(page);
+   await page.evaluate(()=>document.querySelector('#mascot-mood-tooltip').hidden=true);
+   if(mobile)await page.$eval(header,el=>el.click());
+   else await page.hover(header);
+   await new Promise(resolve=>setTimeout(resolve,400));
+   assert.equal(await page.$eval('#mascot-mood-tooltip',el=>el.hidden),true,'header mascot has no hover or tap tooltip');
    if(captureDir)await page.screenshot({path:`${captureDir}/mascot-${width}-${theme}-header.png`});
    await page.$eval('#chat-info',el=>el.click());
    await page.waitForSelector('#inspect:not([hidden]) .inspect-hero-mascot');
