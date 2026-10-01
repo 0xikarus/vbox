@@ -1990,6 +1990,18 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 .modal .card,.sheet-card,.commands-card,.roles-card,.role-editor-card,.menu-card,#new-box-card,#delete-box-card,#takeover-card,#media-viewer-card,.model-picker-dialog{
   background:var(--vb-elevated);border:1px solid var(--vb-line);border-radius:var(--r-surface);box-shadow:var(--vb-shadow-lg);padding:1rem;overflow:hidden
 }
+@media(min-width:641px){
+ :is(.sheet-card,.modal .card,#delete-box-card){display:flex;flex-direction:column;max-height:min(90dvh,48rem)}
+ :is(.sheet-card,.modal .card,#delete-box-card)>.sheet-scroll-frame{min-height:0;flex:1 1 auto}
+ :is(.sheet-card,.modal .card,#delete-box-card)>.sheet-scroll-frame>.sheet-scroll-body{min-height:0;overflow-y:auto}
+ .model-picker-dialog[open]{display:flex;flex-direction:column;max-height:min(86dvh,46rem);overflow:hidden}
+ .model-picker-dialog>.sheet-scroll-frame,.model-picker-dialog>.sheet-scroll-frame>.sheet-scroll-body{display:contents}
+ .model-picker-dialog .model-picker-header,.model-picker-dialog .model-picker-source,.model-picker-dialog .model-picker-effort-label,.model-picker-dialog .model-picker-effort-note,.model-picker-dialog .model-picker-apply{flex:none}
+ .model-picker-dialog .model-picker-body{display:grid;grid-template-columns:minmax(9rem,11.5rem) minmax(0,1fr);gap:.9rem;flex:1 1 auto;min-height:0;grid-template-rows:minmax(0,1fr)}
+ .model-picker-dialog .model-picker-rail{min-height:0;overflow-y:auto}
+ .model-picker-dialog .model-picker-results{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+ .model-picker-dialog .model-picker-list{flex:1 1 auto;min-height:0;max-height:none;overflow-y:auto}
+}
 .modal .card>header,.sheet-card>header,.commands-card>header,.roles-card>header,.role-editor-card>header,#new-box-card>header,#takeover-card>header,#media-viewer-card>header,.model-picker-dialog>header{
   display:flex;align-items:center;gap:.6rem;padding:0 0 .7rem;margin:0 0 .2rem;border-bottom:1px solid var(--vb-line)
 }
