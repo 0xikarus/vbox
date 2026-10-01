@@ -240,7 +240,19 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   input in the same pane. This materializes the new thread before Chat uses
   app-server queueing: an idle thread may be absent from the recent-thread list
   while an older saved thread remains there. Claude uses its
-  experimental `claude/channel`, or OpenCode's loopback session API. The managed
+  experimental `claude/channel`, or OpenCode's loopback session API. A Codex
+  queue or steer acknowledgement is not a delivery receipt: Chat advances only
+  after the exact user item appears in Codex's native history. Each pending
+  message records the visible thread it targeted. If its turn ends without
+  consuming the message, the receipt reconciler may queue its durable inbox
+  copy once the same thread is visible and its native queue is empty. It must
+  never replay an uncertain message into a different thread. Claude channel
+  readiness is likewise not a delivery receipt; verify an exact native
+  transcript entry and linked reply in a live box before changing its launcher
+  flags. After changing chat transport code, run
+  `VMBOX_TOKEN=... python3 scripts/chat-delivery-canary.py --url URL --box DISPOSABLE_BOX`
+  against an idle, explicitly disposable box for each affected harness; a
+  checkmark without the linked canary reply is not a pass. The managed
   `vmbox-desktop` MCP exposes `chat_message`, `chat_ask`, and `set_busy`.
   Submitted prompts mark the active task busy in the controller; replies and
   questions clear it. `set_busy` is the explicit override for activity outside

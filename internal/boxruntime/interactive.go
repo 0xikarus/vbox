@@ -241,6 +241,9 @@ func persistentAgentArgv(session, agent string) ([]string, error) {
 	case "opencode":
 		return []string{agent, "--auto", "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
 	case "claude":
+		// Claude 2.1.286 advertised channel readiness with --channels but did
+		// not consume live notifications in production. Keep this startup mode
+		// until a real chat-to-transcript smoke test proves another flag works.
 		return []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", WorkloadHome() + "/.local/share/vmbox/chat", "--dangerously-load-development-channels", "server:vmbox-desktop"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported persistent agent %q", agent)
