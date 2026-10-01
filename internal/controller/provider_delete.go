@@ -143,9 +143,18 @@ func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request
 		return
 	}
 	completed := false
+	type claimedSlot struct {
+		providerDeleteSlot
+		gone bool
+	}
+	claimed := []*claimedSlot{}
 	defer func() {
 		if !completed {
-			_, _ = s.Store.DB.ExecContext(context.WithoutCancel(ctx), `UPDATE provider_credentials SET deleting=false WHERE account_id=$1 AND provider=$2 AND name=$3`, p.AccountID, name, alias)
+			cleanupCtx := context.WithoutCancel(ctx)
+			for _, slot := range claimed {
+				_, _ = s.Store.DB.ExecContext(cleanupCtx, `UPDATE compute_slots SET state=$3,health=CASE WHEN $4 THEN 'unhealthy' ELSE health END,updated_at=now() WHERE account_id=$1 AND id=$2 AND state='deprovisioning'`, p.AccountID, slot.ID, slot.State, slot.gone)
+			}
+			_, _ = s.Store.DB.ExecContext(cleanupCtx, `UPDATE provider_credentials SET deleting=false WHERE account_id=$1 AND provider=$2 AND name=$3`, p.AccountID, name, alias)
 		}
 	}()
 	plan, err := s.Store.providerDeletePlan(ctx, p.AccountID, name, alias)
@@ -196,8 +205,20 @@ func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request
 		if slot.ServiceID == "" {
 			continue
 		}
+		claimedRow := &claimedSlot{providerDeleteSlot: slot}
+		claimErr := s.Store.DB.QueryRowContext(ctx, `UPDATE compute_slots SET state='deprovisioning',updated_at=now() WHERE account_id=$1 AND id=$2 AND state=$3 AND state IN ('free','stopped','unhealthy') AND NOT EXISTS (SELECT 1 FROM logical_boxes WHERE slot_id=compute_slots.id) RETURNING id::text`, p.AccountID, slot.ID, slot.State).Scan(new(string))
+		if errors.Is(claimErr, sql.ErrNoRows) {
+			writeError(w, 409, fmt.Errorf("slot %s changed before deprovisioning; retry after it is idle", slot.ID))
+			return
+		}
+		if claimErr != nil {
+			writeError(w, 500, claimErr)
+			return
+		}
+		claimed = append(claimed, claimedRow)
 		box, inspectErr := prov.Inspect(ctx, slot.ServiceID)
 		if errors.Is(inspectErr, provider.ErrNotFound) {
+			claimedRow.gone = true
 			continue
 		}
 		if inspectErr != nil {
@@ -218,11 +239,13 @@ func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request
 		}
 		if err = prov.Delete(ctx, slot.ServiceID, box.Owner); err != nil && !errors.Is(err, provider.ErrNotFound) {
 			if _, checkErr := prov.Inspect(ctx, slot.ServiceID); errors.Is(checkErr, provider.ErrNotFound) {
+				claimedRow.gone = true
 				continue
 			}
 			writeError(w, 409, fmt.Errorf("deprovision service %s: %w", slot.ServiceID, err))
 			return
 		}
+		claimedRow.gone = true
 	}
 	tx, err := s.Store.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
@@ -241,7 +264,7 @@ func (s *Server) deleteProviderCredential(w http.ResponseWriter, r *http.Request
 		writeError(w, 500, err)
 		return
 	}
-	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM compute_slots WHERE account_id=$1 AND provider=$2 AND provider_credential=$3 AND state NOT IN ('free','stopped','unhealthy')`, p.AccountID, name, alias).Scan(&activeSlots)
+	err = tx.QueryRowContext(ctx, `SELECT count(*) FROM compute_slots WHERE account_id=$1 AND provider=$2 AND provider_credential=$3 AND state NOT IN ('free','stopped','unhealthy','deprovisioning')`, p.AccountID, name, alias).Scan(&activeSlots)
 	if err != nil {
 		writeError(w, 500, err)
 		return

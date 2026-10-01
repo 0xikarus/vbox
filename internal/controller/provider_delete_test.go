@@ -127,6 +127,7 @@ func TestProviderDeleteRetriesAfterServiceAlreadyGone(t *testing.T) {
 	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return fixture, nil }
 	mock.ExpectExec(`UPDATE provider_credentials SET deleting=true`).WillReturnResult(sqlmock.NewResult(0, 1))
 	expectProviderPlan(mock, true, false, sqlmock.NewRows([]string{"id", "name", "state"}), sqlmock.NewRows([]string{"id", "state", "service_id", "service_name"}).AddRow("slot-1", "free", "gone-service", "worker"))
+	mock.ExpectQuery(`UPDATE compute_slots SET state='deprovisioning'`).WithArgs("account-a", "slot-1", "free").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("slot-1"))
 	mock.ExpectBegin()
 	mock.ExpectQuery(`SELECT deleting FROM provider_credentials.*FOR UPDATE`).WillReturnRows(sqlmock.NewRows([]string{"deleting"}).AddRow(true))
 	mock.ExpectQuery(`SELECT count\(\*\) FROM logical_boxes`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
@@ -139,6 +140,26 @@ func TestProviderDeleteRetriesAfterServiceAlreadyGone(t *testing.T) {
 	w := httptest.NewRecorder()
 	server.deleteProviderCredential(w, deleteRequest(nil), owner)
 	if w.Code != http.StatusNoContent || fixture.deleted {
+		t.Fatalf("status=%d delete called=%t body=%s", w.Code, fixture.deleted, w.Body.String())
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProviderDeleteClaimRaceDoesNotDeprovisionReservedSlot(t *testing.T) {
+	server, mock, owner := deleteFixture(t)
+	fixture := &missingProviderService{}
+	server.Resolve = func(context.Context, string, string, string) (provider.Provider, error) { return fixture, nil }
+	mock.ExpectExec(`UPDATE provider_credentials SET deleting=true`).WillReturnResult(sqlmock.NewResult(0, 1))
+	expectProviderPlan(mock, true, false, sqlmock.NewRows([]string{"id", "name", "state"}), sqlmock.NewRows([]string{"id", "state", "service_id", "service_name"}).AddRow("slot-1", "free", "gone-service", "worker-1").AddRow("slot-2", "free", "active-service", "worker-2"))
+	mock.ExpectQuery(`UPDATE compute_slots SET state='deprovisioning'`).WithArgs("account-a", "slot-1", "free").WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("slot-1"))
+	mock.ExpectQuery(`UPDATE compute_slots SET state='deprovisioning'`).WithArgs("account-a", "slot-2", "free").WillReturnRows(sqlmock.NewRows([]string{"id"}))
+	mock.ExpectExec(`UPDATE compute_slots SET state=\$3,health=CASE`).WithArgs("account-a", "slot-1", "free", true).WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectExec(`UPDATE provider_credentials SET deleting=false`).WillReturnResult(sqlmock.NewResult(0, 1))
+	w := httptest.NewRecorder()
+	server.deleteProviderCredential(w, deleteRequest(nil), owner)
+	if w.Code != http.StatusConflict || fixture.deleted {
 		t.Fatalf("status=%d delete called=%t body=%s", w.Code, fixture.deleted, w.Body.String())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {

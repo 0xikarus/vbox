@@ -20,12 +20,17 @@ window.VMBoxWorkspaceNav=(()=>{
   try{
    plan=await read(path+'/delete-plan');if(!dialog.open)return;
    body.replaceChildren();
-   const summary=el('p',plan.boxes.length?`${plan.boxes.length} box(es) still use this provider. Delete or move them first.`:'No boxes use this provider.');body.append(summary);
+   const boxCount=plan.boxes.length;
+   const summary=el('p',boxCount?`${boxCount} ${boxCount===1?'box still uses':'boxes still use'} this provider. Delete or move ${boxCount===1?'it':'them'} first.`:'No boxes use this provider.');body.append(summary);
    if(plan.boxes.length){const list=el('ul');for(const box of plan.boxes){const item=el('li');const link=el('a',box.name+' · '+box.state);link.href='/chat#box='+encodeURIComponent(box.id);item.append(link);list.append(item)}body.append(list)}
-   const workers=el('p',`${plan.slots.length} worker slot(s); ${plan.cloudServers} cloud server(s) will be deprovisioned.`);body.append(workers);
-   if(plan.blockers.length){const list=el('ul');list.className='provider-delete-blockers';for(const blocker of plan.blockers)list.append(el('li',blocker));body.append(list)}
-   if(plan.isDefault){const label=el('label','New default');const prompt=el('option','Choose a replacement');prompt.value='';replacement.append(prompt);const clear=el('option','No default');clear.value='clear';replacement.append(clear);const providers=await read('/v1/provider-credentials');for(const candidate of providers){if(candidate.provider===provider.provider&&candidate.name===provider.name)continue;const option=el('option',candidate.provider+' / '+candidate.name);option.value=JSON.stringify({provider:candidate.provider,name:candidate.name});replacement.append(option)}label.append(replacement);body.append(label)}
-   const label=el('label','Type '+provider.name+' to confirm');label.append(input);body.append(label);ready();
+   const slotCount=plan.slots.length,cloudCount=plan.cloudServers;const workers=el('p',`${slotCount} worker ${slotCount===1?'slot':'slots'}; ${cloudCount} cloud ${cloudCount===1?'server':'servers'} will be deprovisioned.`);body.append(workers);
+   const otherBlockers=plan.blockers.filter(blocker=>!boxCount||!blocker.startsWith('Delete or move every box'));
+   if(otherBlockers.length){const list=el('ul');list.className='provider-delete-blockers';for(const blocker of otherBlockers)list.append(el('li',blocker));body.append(list)}
+   if(plan.canDelete){
+    if(plan.isDefault){const label=el('label','New default');const prompt=el('option','Choose a replacement');prompt.value='';replacement.append(prompt);const clear=el('option','No default');clear.value='clear';replacement.append(clear);const providers=await read('/v1/provider-credentials');for(const candidate of providers){if(candidate.provider===provider.provider&&candidate.name===provider.name)continue;const option=el('option',candidate.provider+' / '+candidate.name);option.value=JSON.stringify({provider:candidate.provider,name:candidate.name});replacement.append(option)}label.append(replacement);body.append(label)}
+    const label=el('label','Type '+provider.name+' to confirm');label.append(input);body.append(label);
+   }else{confirm.remove();cancel.textContent='Close'}
+   ready();
   }catch(error){status.textContent=error.message;if(!body.contains(status))body.append(status);return}
   form.addEventListener('submit',async event=>{event.preventDefault();if(confirm.disabled)return;confirm.disabled=true;status.textContent='Deleting provider…';body.append(status);try{
    const newDefault=plan.isDefault?(replacement.value==='clear'?null:JSON.parse(replacement.value)):undefined;

@@ -37,7 +37,7 @@ func (s *Store) ListFleetConfigs(ctx context.Context) ([]AccountFleetConfig, err
 }
 
 func (s *Store) SetComputeSlotState(ctx context.Context, accountID, id string, state v1.FleetSlotState, reason string) error {
-	result, err := s.DB.ExecContext(ctx, `UPDATE compute_slots SET state=$3,failure_reason=NULLIF($4,''),updated_at=now() WHERE account_id=$1 AND id=$2`, accountID, id, state, reason)
+	result, err := s.DB.ExecContext(ctx, `UPDATE compute_slots SET state=$3,failure_reason=NULLIF($4,''),updated_at=now() WHERE account_id=$1 AND id=$2 AND state<>'deprovisioning'`, accountID, id, state, reason)
 	if err != nil {
 		return err
 	}

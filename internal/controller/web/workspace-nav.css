@@ -64,6 +64,7 @@ dialog.providers-dialog .vb-sheet-header .providers-refresh:disabled{opacity:.55
 .provider-delete-dialog .danger{background:var(--vb-danger-text);color:var(--vb-bg)}
 .provider-delete-dialog .danger:disabled{opacity:.45;cursor:default}
 .provider-delete-dialog .provider-delete-blockers{color:var(--vb-danger-text)}
+.provider-delete-dialog .sheet-scroll-body a{color:var(--vb-accent-text);text-decoration:underline;text-underline-offset:2px}
 .provider-delete-dialog .sheet-scroll-body{overflow-y:auto}
 @media(max-width:600px){
  .vb-sheet-dialog.providers-dialog[open]{width:100%}

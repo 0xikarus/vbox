@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS compute_slots (
   provider text NOT NULL,
   provider_credential text NOT NULL DEFAULT '',
   ordinal integer NOT NULL CHECK (ordinal > 0),
-  state text NOT NULL CHECK (state IN ('starting','free','reserved','occupied','draining','unhealthy','stopped')),
+  state text NOT NULL CHECK (state IN ('starting','free','reserved','occupied','draining','unhealthy','stopped','deprovisioning')),
   service_id text,
   service_name text,
   deployment_instance_id text,
@@ -207,6 +207,8 @@ CREATE TABLE IF NOT EXISTS compute_slots (
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(account_id, provider, provider_credential, ordinal)
 );
+ALTER TABLE compute_slots DROP CONSTRAINT IF EXISTS compute_slots_state_check;
+ALTER TABLE compute_slots ADD CONSTRAINT compute_slots_state_check CHECK (state IN ('starting','free','reserved','occupied','draining','unhealthy','stopped','deprovisioning'));
 CREATE UNIQUE INDEX IF NOT EXISTS compute_slots_service_idx
   ON compute_slots(account_id, provider, service_id) WHERE service_id IS NOT NULL;
 CREATE TABLE IF NOT EXISTS logical_boxes (
