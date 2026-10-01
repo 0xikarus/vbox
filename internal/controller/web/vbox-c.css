@@ -566,9 +566,6 @@ form#login button:hover{background:var(--vb-swatch-000);border-color:var(--vb-sw
 
 
 
-@media (max-width:900px){#chat-app.in-chat .tv-preview{display:none}}
-
-
 /* avoid a headless repaint ghost of the header avatar thumbnail */
 @media (max-width:899px){
   #chat-header-text{-webkit-backdrop-filter:none;backdrop-filter:none;background:color-mix(in srgb,var(--vb-bg) 94%,transparent)}
@@ -1437,7 +1434,10 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-composer.is-processing #chat-interrupt{color:var(--vb-bg)}
 #chat-composer.is-processing #chat-interrupt svg{width:1rem;height:1rem;fill:currentColor}
 #chat-composer #chat-interrupt svg{width:1rem;height:1rem}
-.msg.processing .tv-button{display:none}
+.msg.processing .tv-button{display:grid;place-items:center;flex:none;width:28px;height:28px;padding:0;margin-left:2px;border:0;border-radius:var(--r-pill);background:transparent;color:var(--vb-ink-soft)}
+.msg.processing .tv-button svg{width:16px;height:16px}
+.msg.processing .tv-button:hover,.msg.processing .tv-button:focus-visible{background:var(--vb-surface-2);color:var(--vb-ink)}
+.msg.processing .tv-button[hidden]{display:none}
 
 /* list section labels + pin glyph + unread without text line */
 #chat-entries .conversation-group,#chat-entries .conversation-divider{display:block;padding:.75rem .55rem .25rem;margin:0;background:none;border:0;text-transform:uppercase;font-size:var(--vb-type-rem-0-63);font-weight:750;letter-spacing:.1em;color:var(--vb-ink-faint);text-align:left;cursor:default}

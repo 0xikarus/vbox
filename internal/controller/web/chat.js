@@ -904,10 +904,26 @@
   const ns='http://www.w3.org/2000/svg';
   const svg=document.createElementNS(ns,'svg');
   svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('fill','none');svg.setAttribute('stroke','currentColor');svg.setAttribute('stroke-width','2');svg.setAttribute('stroke-linecap','round');svg.setAttribute('stroke-linejoin','round');svg.setAttribute('aria-hidden','true');
-  const screen=document.createElementNS(ns,'rect');screen.setAttribute('width','20');screen.setAttribute('height','15');screen.setAttribute('x','2');screen.setAttribute('y','7');screen.setAttribute('rx','2');screen.setAttribute('ry','2');
-  const antenna=document.createElementNS(ns,'polyline');antenna.setAttribute('points','17 2 12 7 7 2');
-  svg.append(screen,antenna);
+  const screen=document.createElementNS(ns,'rect');screen.setAttribute('width','20');screen.setAttribute('height','14');screen.setAttribute('x','2');screen.setAttribute('y','3');screen.setAttribute('rx','2');
+  const stand=document.createElementNS(ns,'path');stand.setAttribute('d','M8 21h8M12 17v4');
+  svg.append(screen,stand);
   return svg;
+ }
+ const processingDesktopState=new Map();
+ function processingDesktopEnabled(box){
+  const cached=processingDesktopState.get(box.id),now=Date.now();
+  if(box.state!=='running')return false;
+  if(!cached||now-cached.checkedAt>30000){
+   if(!cached?.loading){
+    processingDesktopState.set(box.id,{enabled:cached?.enabled||false,checkedAt:cached?.checkedAt||0,loading:true});
+    void api(boxPath(box.id)+'/desktop').then(state=>{
+     const enabled=state?.enabled===true;
+     processingDesktopState.set(box.id,{enabled,checkedAt:Date.now(),loading:false});
+     if(selected===box.id){const button=messagesEl.querySelector('.msg.processing .tv-button');if(button)button.hidden=!enabled}
+    }).catch(()=>processingDesktopState.set(box.id,{enabled:false,checkedAt:Date.now(),loading:false}));
+   }
+  }
+  return cached?.enabled===true;
  }
  function showTvPreview(button,box){
   clearTimeout(tvPreviewHideTimer);
@@ -1570,6 +1586,7 @@
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
   const follow=stickToBottom;
   const painted=messagesEl.dataset.box===box.id?paintedMessages.get(box.id):null,nextPainted=new Set(),liveAvatars=new Map();
+  const liveProcessingButton=messagesEl.dataset.box===box.id?messagesEl.querySelector('.msg.processing .tv-button'):null;
   if(painted)for(const row of messagesEl.querySelectorAll('.msg[data-key]')){const avatar=row.querySelector(':scope > .msg-avatar');if(avatar)liveAvatars.set(row.dataset.key,avatar)}
   const paint=(node,key,settled=false)=>{node.dataset.key=key;nextPainted.add(key);if(painted&&!settled&&!painted.has(key))node.classList.add('msg-enter')};
   messagesEl.replaceChildren();
@@ -1620,8 +1637,9 @@
    const dots=document.createElement('span');dots.className='typing-dots';
    for(let i=0;i<3;i++)dots.append(document.createElement('span'));
    const label=document.createElement('span');label.className='typing-label sr-only';label.textContent='agent is processing…';
-   const tv=document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Hover or tap to preview; open it for Desktop/TMUX control';tv.setAttribute('aria-label','Preview the desktop and open Desktop or TMUX control');
-   tv.append(tvIcon());
+   const tv=liveProcessingButton||document.createElement('button');tv.type='button';tv.className='tv-button';tv.title='Preview desktop';tv.setAttribute('aria-label','Preview desktop');
+   if(!liveProcessingButton)tv.append(tvIcon());
+   tv.hidden=!processingDesktopEnabled(box);
    tv.onmouseenter=()=>{if(!coarsePointer())showTvPreview(tv,box)};
    tv.onmouseleave=scheduleHideTvPreview;
    tv.onfocus=()=>{if(!coarsePointer())showTvPreview(tv,box)};
