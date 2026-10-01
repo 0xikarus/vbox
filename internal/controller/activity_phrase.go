@@ -20,9 +20,12 @@ var activityGenerator = func() *activityphrase.Generator {
 	return model
 }()
 
-// Calibrated on 317 judged real model outputs from the v1 export: 7/70 shown
-// outputs were judged bad at this threshold. New generations need a new judge.
+// The v2 held-out judge found 3 bad model phrases among 94 at this gate.
+// The lower prose gate is deliberately limited to recent prose and excludes
+// Waiting/Awaiting, which caused all three v2 bad judgments. V3 outputs are
+// exported for a fresh semantic judge pass.
 const activityConfidenceThreshold = -0.525
+const activityProseConfidenceThreshold = -0.65
 
 var activityFileWord = regexp.MustCompile(`(?i)^[^\s/]+\.(?:png|jpe?g|gif|webp|go|js|ts|py|md|json|css|html)$`)
 
@@ -34,7 +37,7 @@ var activityFileVerbs = map[string]bool{
 	"patching": true, "formatting": true, "comparing": true, "inspecting": true,
 	"fixing": true, "testing": true, "running": true,
 }
-var activityTrivialCommands = map[string]bool{"cd": true, "ls": true, "echo": true, "cat": true, "pwd": true, "sleep": true, "true": true, "test": true, "command": true, "tool": true}
+var activityTrivialCommands = map[string]bool{"cd": true, "ls": true, "echo": true, "cat": true, "pwd": true, "sleep": true, "true": true, "test": true, "command": true, "tool": true, "gh": true, "shell": true, "bash": true}
 
 // activityPhrase prefers factual harness labels, then generates a short phrase
 // from bounded evidence. Low-confidence or invalid generations leave the UI's
@@ -48,10 +51,34 @@ func activityPhrase(text string) string {
 		return label
 	}
 	phrase, confidence := activityGenerator.GenerateScored(text)
-	if confidence >= activityConfidenceThreshold && validActivityPhrase(phrase) {
-		return phrase
+	lastLine := text[strings.LastIndexByte(text, '\n')+1:]
+	proseTail := !strings.HasPrefix(lastLine, "tool: ")
+	if validActivityPhrase(phrase) {
+		if confidence >= activityConfidenceThreshold {
+			return phrase
+		}
+		if proseTail && confidence >= activityProseConfidenceThreshold &&
+			!strings.HasPrefix(phrase, "Waiting ") && !strings.HasPrefix(phrase, "Awaiting ") &&
+			(!strings.HasPrefix(phrase, "Fixing ") || recentOwnFix(text)) {
+			return phrase
+		}
+	}
+	if proseTail {
+		if fallback := activityphrase.ExplicitProseActivity(text); validActivityPhrase(fallback) {
+			return fallback
+		}
 	}
 	return ""
+}
+
+func recentOwnFix(text string) bool {
+	line := text[strings.LastIndexByte(text, '\n')+1:]
+	line = strings.TrimSpace(strings.TrimPrefix(line, "assistant: "))
+	lower := strings.ToLower(line)
+	if strings.HasPrefix(lower, "fixing ") || strings.HasPrefix(lower, "now fixing ") {
+		return true
+	}
+	return strings.HasPrefix(activityphrase.ExplicitProseActivity(text), "Fixing ")
 }
 
 func validActivityPhrase(phrase string) bool {

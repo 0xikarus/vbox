@@ -97,6 +97,108 @@ def normalized_paths(synthetic_path, scratch_dir):
     return real_paths, synthetic
 
 
+def evidence_tail(text):
+    return re.sub(r"\s+", " ", text.casefold()).strip()[-200:]
+
+
+def tail_grams(tail):
+    return {tail[i:i + 7] for i in range(len(tail) - 6)}
+
+
+def input_grams(text):
+    tokens = source_tokens(text)
+    return {tuple(tokens[i:i + 5]) for i in range(len(tokens) - 4)}
+
+
+def filter_extra_real(extra, protected, original_ids):
+    """Remove near copies of validation/held-out examples before training.
+
+    A 200-character tail is the part most likely to survive different snippet
+    window sizes. We also compare the token input seen by the model. Requiring
+    at least 80% of both gram sets avoids matching a common short tool line
+    against an unrelated paragraph.
+    """
+    protected_tails = [evidence_tail(item.text) for item in protected]
+    protected_grams = [tail_grams(tail) if len(tail) >= 120 else set() for tail in protected_tails]
+    protected_inputs = [input_grams(item.text) for item in protected]
+    index = collections.defaultdict(set)
+    input_index = collections.defaultdict(set)
+    for item_index, grams in enumerate(protected_grams):
+        for gram in grams:
+            index[gram].add(item_index)
+        for gram in protected_inputs[item_index]:
+            input_index[gram].add(item_index)
+    kept, removed, seen_tails = [], collections.Counter(), set()
+    kept_tail_grams, kept_input_grams = [], []
+    kept_tail_index, kept_input_index = collections.defaultdict(set), collections.defaultdict(set)
+    for item in sorted(extra, key=lambda row: row.id):
+        if item.id in original_ids:
+            removed["existing_id"] += 1
+            continue
+        tail = evidence_tail(item.text)
+        if tail in seen_tails:
+            removed["duplicate_extra_tail"] += 1
+            continue
+        grams = tail_grams(tail)
+        if len(tail) >= 120:
+            possible = collections.Counter(index_id for gram in grams for index_id in index[gram])
+            if any(shared / max(len(grams), len(protected_grams[index_id])) >= .8
+                   for index_id, shared in possible.items()):
+                removed["protected_tail_overlap"] += 1
+                continue
+        elif len(tail) >= 80 and tail in protected_tails:
+            removed["protected_short_tail"] += 1
+            continue
+        input_features = input_grams(item.text)
+        if len(input_features) >= 12:
+            possible = collections.Counter(index_id for gram in input_features for index_id in input_index[gram])
+            if any(len(protected_inputs[index_id]) >= 12 and
+                   shared / max(len(input_features), len(protected_inputs[index_id])) >= .8
+                   for index_id, shared in possible.items()):
+                removed["protected_input_overlap"] += 1
+                continue
+        if len(tail) >= 120:
+            possible = collections.Counter(index_id for gram in grams for index_id in kept_tail_index[gram])
+            if any(shared / max(len(grams), len(kept_tail_grams[index_id])) >= .8
+                   for index_id, shared in possible.items()):
+                removed["duplicate_extra_tail"] += 1
+                continue
+        if len(input_features) >= 12:
+            possible = collections.Counter(index_id for gram in input_features for index_id in kept_input_index[gram])
+            if any(len(kept_input_grams[index_id]) >= 12 and
+                   shared / max(len(input_features), len(kept_input_grams[index_id])) >= .8
+                   for index_id, shared in possible.items()):
+                removed["duplicate_extra_input"] += 1
+                continue
+        seen_tails.add(tail)
+        new_index = len(kept)
+        kept_tail_grams.append(grams)
+        kept_input_grams.append(input_features)
+        if len(tail) >= 120:
+            for gram in grams:
+                kept_tail_index[gram].add(new_index)
+        if len(input_features) >= 12:
+            for gram in input_features:
+                kept_input_index[gram].add(new_index)
+        kept.append(item)
+    return kept, dict(removed)
+
+
+def balance_extra_real(extra, per_verb):
+    """Limit one session's repeated activity verbs from dominating training."""
+    if per_verb <= 0:
+        return extra, 0
+    groups = collections.defaultdict(list)
+    for item in extra:
+        groups[item.phrase.split()[0].casefold()].append(item)
+    selected = []
+    for rows in groups.values():
+        rows.sort(key=lambda item: hashlib.sha256(item.id.encode()).digest())
+        selected.extend(rows[:per_verb])
+    selected.sort(key=lambda item: item.id)
+    return selected, len(extra) - len(selected)
+
+
 def source_tokens(text, recent=True, max_input=MAX_INPUT):
     lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("user: ")]
     tokens = []
@@ -123,15 +225,76 @@ def latest_tool_label(text):
     if not lines or not lines[-1].strip().startswith("tool: "):
         return ""
     label = lines[-1].strip()[6:]
+    if label.startswith("Running ") and label[8:] in {"shell commands", "shell", "gh", "bash", "tool", "command"}:
+        return ""
     specific = ("Editing ", "Running ", "Reading ", "Reviewing ", "Messaging ", "Checking ", "Searching ")
     return label if label.startswith(specific) and label not in ("Running tool", "Running command") else ""
+
+
+ONGOING_ACTION = re.compile(r"\b(?:i['’]m|i am|we['’]re|we are)\s+([a-z]{3,}ing)\b([^.!?;:]*)", re.I)
+NOW_ACTION = re.compile(r"(?:^|[.!?]\s+)now\s+([a-z]{3,}ing)\b([^.!?;:]*)", re.I)
+ACTION_TAIL = re.compile(r"\s+(?:and|but|while|so|then)\b", re.I)
+ACTION_WORD = re.compile(r"[^\W\d_][\w'’-]*", re.UNICODE)
+FILLER_AFTER_VERB = {"a", "an", "the", "it", "its", "them", "that", "this", "my", "our"}
+TAIL_PREPOSITION = {"a", "an", "the", "for", "to", "with", "on", "in", "at", "of", "from", "by", "onto"}
+
+
+def explicit_prose_activity(text):
+    for raw in reversed(text.strip().splitlines()):
+        line = raw.strip()
+        if not line or line.startswith(("tool: ", "user: ")):
+            continue
+        line = line.removeprefix("assistant: ")
+        matches = list(ONGOING_ACTION.finditer(line)) or list(NOW_ACTION.finditer(line))
+        if not matches:
+            return ""
+        verb, rest = matches[-1].groups()
+        if rest.strip().lower().startswith("that "):
+            return ""
+        conjunction = ACTION_TAIL.search(rest)
+        if conjunction:
+            rest = rest[:conjunction.start()]
+        words = ACTION_WORD.findall(rest)
+        while words and words[0].lower() in FILLER_AFTER_VERB:
+            words.pop(0)
+        words = words[:3]
+        while words and words[-1].lower() in TAIL_PREPOSITION:
+            words.pop()
+        if not words:
+            return ""
+        kept = []
+        for word in [verb, *words]:
+            if len(" ".join([*kept, word])) > 32:
+                break
+            kept.append(word)
+        return display_phrase(kept) if len(kept) >= 2 else ""
+    return ""
+
+
+def final_phrase(text, generated, score, threshold=-.525, prose_threshold=-.65):
+    label = latest_tool_label(text)
+    if label:
+        return label, "tool"
+    prose_tail = not text.strip().splitlines()[-1].strip().startswith("tool: ") if text.strip() else False
+    latest_line = text.strip().splitlines()[-1].strip().removeprefix("assistant: ") if text.strip() else ""
+    own_fix = (latest_line.lower().startswith(("fixing ", "now fixing ")) or
+               explicit_prose_activity(text).startswith("Fixing "))
+    if valid_phrase(generated) and (score >= threshold or
+            prose_tail and score >= prose_threshold and not generated.startswith(("Waiting ", "Awaiting "))
+            and (not generated.startswith("Fixing ") or own_fix)):
+        return generated, "model"
+    if prose_tail:
+        fallback = explicit_prose_activity(text)
+        if valid_phrase(fallback):
+            return fallback, "prose"
+    return "", "none"
 
 
 FILE = re.compile(r"(?i)^[^\s/]+\.(?:png|jpe?g|gif|webp|go|js|ts|py|md|json|css|html)$")
 FILE_VERBS = {"editing", "reading", "reviewing", "opening", "saving", "writing", "updating", "creating", "checking",
               "merging", "renaming", "deleting", "patching", "formatting", "comparing", "inspecting", "fixing", "testing", "running"}
 CONTENT_STOPS = {"a", "an", "the", "and", "to", "for", "on", "in", "with", "of", "at", "from", "by"}
-TRIVIAL_COMMANDS = {"cd", "ls", "echo", "cat", "pwd", "sleep", "true", "test", "command", "tool"}
+TRIVIAL_COMMANDS = {"cd", "ls", "echo", "cat", "pwd", "sleep", "true", "test", "command", "tool", "gh", "shell", "bash"}
 
 
 def valid_phrase(phrase):
@@ -375,9 +538,7 @@ def evaluate(model, rows, vocab, output_path, golden_path, predictions_path, thr
     predictions = []
     for item in rows:
         generated, score = predict_scored(model, item, vocab)
-        label = latest_tool_label(item.text)
-        final = label or (generated if item.text.strip() and score >= threshold and valid_phrase(generated) else "")
-        source = "tool" if label else ("model" if final else "none")
+        final, source = final_phrase(item.text, generated, score, threshold)
         pairs.append({"id": item.id, "input_tail": "\n".join(item.text.splitlines()[-2:]), "output": final, "model": generated, "teacher": item.phrase, "source": source, "score": score})
         predictions.append({"id": item.id, "tail": item.text[-400:], "output": final, "teacher": item.phrase, "source": source})
         if len(golden) < 50:
@@ -387,7 +548,7 @@ def evaluate(model, rows, vocab, output_path, golden_path, predictions_path, thr
     model_hits = sum(token_overlap(pair["model"], pair["teacher"]) >= .6 for pair in pairs)
     coverage = sum(bool(pair["output"]) for pair in pairs)
     model_shown = [pair for pair in pairs if pair["source"] == "model"]
-    source_counts = {source: sum(pair["source"] == source for pair in pairs) for source in ("tool", "model", "none")}
+    source_counts = {source: sum(pair["source"] == source for pair in pairs) for source in ("tool", "model", "prose", "none")}
     report = {"heldout": len(rows), "top1_hits": hits, "exact": exact, "coverage": coverage,
               "model_only_hits": model_hits, "model_display_hits": sum(token_overlap(pair["output"], pair["teacher"]) >= .6 for pair in model_shown),
               "sources": source_counts, "threshold": threshold, "examples": pairs[:20]}
@@ -406,6 +567,10 @@ def evaluate(model, rows, vocab, output_path, golden_path, predictions_path, thr
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--synthetic", type=Path, default=ROOT / "scripts/activity-data/synthetic.jsonl")
+    parser.add_argument("--extra-real", type=Path,
+                        help="optional labeled prose corpus; omit to reproduce the bundled v2 weights")
+    parser.add_argument("--extra-verb-cap", type=int, default=100,
+                        help="maximum extra examples sharing an activity verb; zero disables balancing")
     parser.add_argument("--out", type=Path, default=ROOT / "internal/controller/activity_model.bin")
     parser.add_argument("--golden", type=Path, default=ROOT / "internal/activityphrase/testdata/activity_golden.jsonl")
     parser.add_argument("--eval", type=Path, default=ROOT / "scripts/activity-model/eval.json")
@@ -430,15 +595,23 @@ def main():
         exported, exported_vocab = load_export(args.out)
         evaluate(exported, heldout, exported_vocab, args.eval, args.golden, args.predictions, args.threshold)
         return
-    vocab = build_vocab(train + synthetic)
+    extra = []
+    if args.extra_real:
+        extra_path = normalize_file(args.extra_real, args.checkpoint.parent / "normalized-generator-v3-labeled.jsonl")
+        extra = [Sample(item["id"], item["text"], item["phrase"], "extra_real") for item in read_jsonl(extra_path)]
+        original_ids = {item.id for item in train + validation + heldout}
+        extra, removed = filter_extra_real(extra, validation + heldout, original_ids)
+        extra, balanced = balance_extra_real(extra, args.extra_verb_cap)
+        print(f"extra real: {len(extra)} kept, removed {removed}, verb-balanced away {balanced}", flush=True)
+    vocab = build_vocab(train + extra + synthetic)
     word_to_id = {word: index for index, word in enumerate(vocab)}
-    encoded_train = [encode_sample(item, word_to_id) for item in train for _ in range(3)]
+    encoded_train = [encode_sample(item, word_to_id) for item in train + extra for _ in range(3)]
     encoded_train += [encode_sample(item, word_to_id) for item in synthetic]
     encoded_validation = [encode_sample(item, word_to_id) for item in validation]
     model = PointerGenerator(len(vocab))
     optimizer = torch.optim.AdamW(model.parameters(), lr=.001)
     best_loss, stale = float("inf"), 0
-    print(f"real train/validation/held-out {len(train)}/{len(validation)}/{len(heldout)}, synthetic {len(synthetic)}, vocab {len(vocab)}", flush=True)
+    print(f"real train/validation/held-out {len(train)}+{len(extra)}/{len(validation)}/{len(heldout)}, synthetic {len(synthetic)}, vocab {len(vocab)}", flush=True)
     for epoch in range(args.epochs):
         model.train()
         total = 0.0

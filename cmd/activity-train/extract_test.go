@@ -82,3 +82,37 @@ func TestConfiguredProfileNameIsRedacted(t *testing.T) {
 		t.Fatalf("profile identifier leaked: %q", text)
 	}
 }
+
+func TestExtractGeneratorSnippetsKeepsProseWithoutCandidates(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "codex.jsonl")
+	lines := `{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The merge is complete."}]}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"go test ./...\"}"}}` + "\n" +
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The owner has the screenshots."}]}}` + "\n"
+	if err := os.WriteFile(input, []byte(lines), 0600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "generator.jsonl")
+	count, err := extractGeneratorSnippets(inputPaths{input}, nil, out, 100)
+	if err != nil || count != 2 {
+		t.Fatalf("extracted %d prose snippets: %v", count, err)
+	}
+	file, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		var sample snippet
+		if err := json.Unmarshal(scanner.Bytes(), &sample); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasSuffix(sample.Text, "The owner has the screenshots.") && !strings.HasSuffix(sample.Text, "The merge is complete.") {
+			t.Fatalf("sample ends in tool activity: %q", sample.Text)
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatal(err)
+	}
+}

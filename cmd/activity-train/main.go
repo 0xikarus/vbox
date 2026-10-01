@@ -23,6 +23,7 @@ func main() {
 	flag.Var(&claude, "claude", "Claude JSONL file or directory (repeatable)")
 	flag.Var(&redactions, "redact", "additional account/profile name to remove (repeatable)")
 	extract := flag.Bool("extract", false, "extract anonymized activity snippets")
+	generator := flag.Bool("generator", false, "with -extract, sample agent prose tails for generator labels")
 	check := flag.Bool("check", false, "verify the bundled ranker and report held-out accuracy")
 	out := flag.String("out", "", "output JSONL or ranker path")
 	limit := flag.Int("limit", 2500, "maximum snippets to retain")
@@ -47,7 +48,13 @@ func main() {
 		if *out == "" {
 			*out = "scripts/activity-data/snippets.jsonl"
 		}
-		count, err := extractSnippets(codex, claude, *out, *limit, redactions...)
+		var count int
+		var err error
+		if *generator {
+			count, err = extractGeneratorSnippets(codex, claude, *out, *limit, redactions...)
+		} else {
+			count, err = extractSnippets(codex, claude, *out, *limit, redactions...)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
