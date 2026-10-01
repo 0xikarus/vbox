@@ -65,10 +65,11 @@ type Store struct {
 }
 
 type diskObservation struct {
-	used       *int64
-	observedAt time.Time
-	startedAt  time.Time
-	running    bool
+	used              *int64
+	observedAt        time.Time
+	startedAt         time.Time
+	running           bool
+	unavailableReason string
 }
 
 func NewID() string {

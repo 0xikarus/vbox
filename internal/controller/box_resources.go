@@ -49,6 +49,9 @@ func (s *Server) boxResources(w http.ResponseWriter, r *http.Request, p Principa
 			if usage.DiskPartial {
 				response["diskPartial"] = true
 			}
+			if usage.DiskUnavailableReason != "" {
+				response["diskUnavailableReason"] = usage.DiskUnavailableReason
+			}
 			if usage.HostDiskUsedBytes != nil && usage.HostDiskTotalBytes != nil {
 				response["hostDiskUsedBytes"] = *usage.HostDiskUsedBytes
 				response["hostDiskTotalBytes"] = *usage.HostDiskTotalBytes

@@ -17,6 +17,8 @@ import (
 
 const diskObservationInterval = 5 * time.Minute
 
+var errDiskTooManyFiles = errors.New("too many files to measure")
+
 func slotMemoryUsage(cgroupRoot string) (int64, int64, error) {
 	memory, err := cgroupCounter(filepath.Join(cgroupRoot, "memory.current"))
 	if err != nil {
@@ -30,21 +32,28 @@ func slotMemoryUsage(cgroupRoot string) (int64, int64, error) {
 }
 
 func (s *Store) ResourceUsage(ctx context.Context, id string) (provider.ResourceUsage, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	linux, ok := s.Runtime.(*LinuxRuntime)
 	if !ok || linux.Container == nil {
 		return provider.ResourceUsage{}, provider.ErrUnsupported
 	}
+	return s.resourceUsageWithInspect(ctx, id, linux.Container.inspect)
+}
+
+func (s *Store) resourceUsageWithInspect(ctx context.Context, id string, inspect func(context.Context, Workspace) (*containerInspect, error)) (provider.ResourceUsage, error) {
+	s.mu.Lock()
 	slot, exists := s.state.Slots[id]
 	if !exists || slot.WorkspaceID == "" || slot.State != provider.StateRunning {
+		s.mu.Unlock()
 		return provider.ResourceUsage{}, provider.ErrNotFound
 	}
 	workspace, exists := s.state.Workspaces[slot.WorkspaceID]
 	if !exists {
+		s.mu.Unlock()
 		return provider.ResourceUsage{}, provider.ErrNotFound
 	}
-	current, err := linux.Container.inspect(ctx, workspace)
+	workspaceRoot := s.Runtime.(*LinuxRuntime).workspaceRoot(workspace)
+	s.mu.Unlock()
+	current, err := inspect(ctx, workspace)
 	if err != nil {
 		return provider.ResourceUsage{}, err
 	}
@@ -56,13 +65,13 @@ func (s *Store) ResourceUsage(ctx context.Context, id string) (provider.Resource
 	if err != nil {
 		return provider.ResourceUsage{}, err
 	}
-	used, observed := s.cachedDiskUsage(workspace, linux.workspaceRoot(workspace))
-	usage := provider.ResourceUsage{MemoryUsedBytes: memory, SwapUsedBytes: swap, DiskUsedBytes: used, DiskObservedAt: observed, ObservedAt: time.Now().UTC()}
+	used, observed, diskReason := s.cachedDiskUsage(workspace, workspaceRoot)
+	usage := provider.ResourceUsage{MemoryUsedBytes: memory, SwapUsedBytes: swap, DiskUsedBytes: used, DiskObservedAt: observed, DiskUnavailableReason: diskReason, ObservedAt: time.Now().UTC()}
 	if workspace.SizeGiB > 0 {
 		total := workspace.SizeGiB << 30
 		usage.DiskTotalBytes = &total
 	}
-	if total, used, err := filesystemUsage(linux.workspaceRoot(workspace)); err == nil {
+	if total, used, err := filesystemUsage(workspaceRoot); err == nil {
 		usage.HostDiskTotalBytes, usage.HostDiskUsedBytes = &total, &used
 	}
 	return usage, nil
@@ -70,7 +79,7 @@ func (s *Store) ResourceUsage(ctx context.Context, id string) (provider.Resource
 
 // Disk scanning is deliberately asynchronous. Chat polling always gets fresh
 // cgroup counters while the expensive workspace walk is reused for five minutes.
-func (s *Store) cachedDiskUsage(workspace Workspace, path string) (*int64, *time.Time) {
+func (s *Store) cachedDiskUsage(workspace Workspace, path string) (*int64, *time.Time, string) {
 	s.diskMu.Lock()
 	defer s.diskMu.Unlock()
 	if s.diskCache == nil {
@@ -84,11 +93,11 @@ func (s *Store) cachedDiskUsage(workspace Workspace, path string) (*int64, *time
 		go s.scanDisk(workspace.ID, path)
 	}
 	if entry.used == nil {
-		return nil, nil
+		return nil, nil, entry.unavailableReason
 	}
 	used := *entry.used
 	observed := entry.observedAt
-	return &used, &observed
+	return &used, &observed, ""
 }
 
 func (s *Store) scanDisk(id, path string) {
@@ -102,6 +111,10 @@ func (s *Store) scanDisk(id, path string) {
 	if err == nil {
 		entry.used = &used
 		entry.observedAt = time.Now().UTC()
+		entry.unavailableReason = ""
+	} else if errors.Is(err, errDiskTooManyFiles) {
+		entry.used = nil
+		entry.unavailableReason = errDiskTooManyFiles.Error()
 	}
 	s.diskCache[id] = entry
 }
@@ -152,7 +165,7 @@ func diskFileCount(ctx context.Context, path string, limit int64) error {
 	}
 	waitErr := command.Wait()
 	if count > limit {
-		return errors.New("workspace has too many files for a disk scan")
+		return errDiskTooManyFiles
 	}
 	if readErr != nil {
 		return readErr

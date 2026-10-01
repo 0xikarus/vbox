@@ -3670,7 +3670,8 @@ function pairTileStatus(tile,mode,label){
    const observed=resourceTime(kind==='ram'?data.observedAt:data.diskObservedAt);
    const hostDisk=kind==='disk'&&Number.isFinite(data.hostDiskUsedBytes)&&Number.isFinite(data.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0?' · Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'%':'';
    const note=kind==='disk'&&data.diskEnforced===false?' · Limit '+resourceGiB(total)+' GB is not enforced on this shared worker':'';
-   button.title=text+' · '+detail+' · Observed '+observed+hostDisk+note;
+   const reason=kind==='disk'&&data.diskUnavailableReason?' · Disk –: '+data.diskUnavailableReason:'';
+   button.title=text+' · '+detail+' · Observed '+observed+hostDisk+note+reason;
    button.setAttribute('aria-label',button.title);
   }
  }
@@ -3699,6 +3700,7 @@ function pairTileStatus(tile,mode,label){
    if(box.provider==='shared-worker'){mountInspectMemory(box,true);resourcePopover.append(memoryRoot)}
   }else{
    resourcePopover.append(mk('p','Observed '+resourceTime(data.diskObservedAt)));
+   if(data.diskUnavailableReason)resourcePopover.append(mk('p','Disk –: '+data.diskUnavailableReason+'.'));
    if(data.diskPartial)resourcePopover.append(mk('p','The scan is partial; actual usage may be higher.'));
    if(Number.isFinite(data.hostDiskUsedBytes)&&Number.isFinite(data.hostDiskTotalBytes)&&data.hostDiskTotalBytes>0)resourcePopover.append(mk('p','Host disk '+Math.round(data.hostDiskUsedBytes/data.hostDiskTotalBytes*100)+'% used'));
    if(data.diskEnforced===false)resourcePopover.append(mk('p','Limit '+resourceGiB(Number.isFinite(data.diskTotalBytes)?data.diskTotalBytes:Number(data.resources?.diskGiB||0)*1024**3)+' GB is not enforced on this shared worker.'));

@@ -51,16 +51,17 @@ type ResourceUsageProvider interface {
 }
 
 type ResourceUsage struct {
-	MemoryUsedBytes    int64      `json:"memoryUsedBytes"`
-	SwapUsedBytes      int64      `json:"swapUsedBytes"`
-	DiskUsedBytes      *int64     `json:"diskUsedBytes,omitempty"`
-	DiskTotalBytes     *int64     `json:"diskTotalBytes,omitempty"`
-	DiskEnforced       bool       `json:"diskEnforced"`
-	DiskObservedAt     *time.Time `json:"diskObservedAt,omitempty"`
-	DiskPartial        bool       `json:"diskPartial,omitempty"`
-	HostDiskUsedBytes  *int64     `json:"hostDiskUsedBytes,omitempty"`
-	HostDiskTotalBytes *int64     `json:"hostDiskTotalBytes,omitempty"`
-	ObservedAt         time.Time  `json:"observedAt"`
+	MemoryUsedBytes       int64      `json:"memoryUsedBytes"`
+	SwapUsedBytes         int64      `json:"swapUsedBytes"`
+	DiskUsedBytes         *int64     `json:"diskUsedBytes,omitempty"`
+	DiskTotalBytes        *int64     `json:"diskTotalBytes,omitempty"`
+	DiskEnforced          bool       `json:"diskEnforced"`
+	DiskObservedAt        *time.Time `json:"diskObservedAt,omitempty"`
+	DiskPartial           bool       `json:"diskPartial,omitempty"`
+	DiskUnavailableReason string     `json:"diskUnavailableReason,omitempty"`
+	HostDiskUsedBytes     *int64     `json:"hostDiskUsedBytes,omitempty"`
+	HostDiskTotalBytes    *int64     `json:"hostDiskTotalBytes,omitempty"`
+	ObservedAt            time.Time  `json:"observedAt"`
 }
 
 type HostResources struct {
