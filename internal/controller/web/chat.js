@@ -211,7 +211,7 @@
  function applyThreadWidth(width=preferredThreadWidth,persist=false){
   if(!matchMedia('(min-width:900px)').matches)return;
   const limits=threadLimits(),next=Math.round(Math.max(limits.min,Math.min(limits.max,width||416)));
-  threadPanel.style.setProperty('--chat-thread-width',next+'px');
+  appEl.style.setProperty('--chat-thread-width',next+'px');
   threadSplitter.setAttribute('aria-valuemin',String(limits.min));threadSplitter.setAttribute('aria-valuemax',String(limits.max));
   threadSplitter.setAttribute('aria-valuenow',String(next));threadSplitter.setAttribute('aria-valuetext',next+' pixels');
   if(persist){preferredThreadWidth=next;try{localStorage.setItem(threadStorageKey,String(next))}catch{}}
@@ -2511,6 +2511,7 @@ function pairTileStatus(tile,mode,label){
   if(takeoverKind==='terminal'&&/^Connected\b/.test(message))message='TMUX '+message.toLowerCase();
   takeoverStatus.textContent=message;
   takeoverStatus.dataset.state=/failed|disconnected|unavailable|error/i.test(message)?'error':/connected/i.test(message)?'connected':'connecting';
+  const error=$('#takeover-error');error.hidden=takeoverStatus.dataset.state!=='error';error.textContent=error.hidden?'':message;
  }
  async function openTakeover(kind,boxID=selected){
   const box=boxes.get(boxID);if(!box)return;

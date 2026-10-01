@@ -2851,3 +2851,47 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-conversation.pair-view #chat-messages .pair-msg.group-start{margin-top:8px}
 #chat-conversation.pair-view #chat-messages .pair-hero+.day-sep+.pair-msg.group-start{margin-top:0}
 @media(max-width:600px){#chat-entries li[data-pair-key]{--pair-avatar-bg:var(--vb-bg)}#chat-entries li[data-pair-key]:hover{--pair-avatar-bg:color-mix(in srgb,var(--vb-ink) 5%,var(--vb-bg))}#chat-entries li[data-pair-key].active{--pair-avatar-bg:color-mix(in srgb,var(--vb-ink) 9%,var(--vb-bg))}#chat-entries li[data-pair-key].active:hover{--pair-avatar-bg:color-mix(in srgb,var(--vb-ink) 12%,var(--vb-bg))}}
+
+/* Audit follow-up: reserve the thread's width in the desktop chat layout. */
+@media(min-width:900px){
+ #chat-app:has(#thread-panel:not([hidden])) #chat-main{margin-right:var(--chat-thread-width,26rem)}
+}
+
+/* Keep the full takeover failure visible when the viewer cannot connect. */
+#takeover-error:not([hidden]){position:absolute;z-index:3;top:50%;left:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(28rem,calc(100% - 2rem));margin:0;padding:1rem 1.2rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-surface);background:var(--vb-surface);color:var(--vb-ink);text-align:center;line-height:1.45;box-shadow:var(--vb-shadow-lg)}
+
+/* Mobile key strips retain their final key and indicate horizontal scrolling. */
+@media(max-width:760px){
+ .workspace-body .terminal-keys{padding-right:10px}
+ .workspace-body .terminal-keys .term-key-scroll-cue{position:sticky;right:88px;z-index:4;min-width:32px;width:32px;height:44px;padding:0;background:var(--vb-surface);color:var(--vb-ink);font-size:var(--vb-type-px-20);box-shadow:var(--vb-shadow)}
+ #takeover-scroll{padding-right:10px}
+ #takeover-pinned .term-key-scroll-cue{width:32px;min-width:32px;padding:0;font-size:var(--vb-type-px-20)}
+}
+.term-key-scroll-cue[hidden]{display:none!important}
+
+/* Give mobile permission identities the card width before actions. */
+@media(max-width:600px){
+ #roles .role-assignment-summary{grid-template-columns:auto minmax(0,1fr);align-items:center}
+ #roles .role-box-mark{grid-column:1;grid-row:1}
+ #roles .role-assignment-identity{grid-column:2;grid-row:1}
+ #roles .role-assignment-current{grid-column:1/-1;grid-row:2}
+ #roles .role-assignment-actions{grid-column:1/-1;grid-row:3;justify-content:flex-start}
+}
+
+/* Use shared ink and accent text in the Manage permission editor. */
+#role-editor-modal .role-capability h3,#role-editor-modal .role-capability strong{color:var(--vb-ink)}
+#role-editor-modal .role-capability small,#role-editor-modal .role-capability p{color:var(--vb-ink-soft)}
+#role-editor-modal .role-capability-options>summary{color:var(--vb-accent-text)}
+
+/* Native selectors size to their content on wide screens. */
+#agent-cli-versions select{width:max-content;min-width:min(100%,25rem);max-width:100%}
+
+/* Provider cards keep common actions visible and move extras to one menu. */
+#provider-list .provider-actions{flex-wrap:nowrap;align-items:stretch;min-width:0}
+#provider-list .provider-actions-more{position:relative;flex:none;margin:0;padding:0;border:0}
+#provider-list .provider-actions-more>summary{box-sizing:border-box;list-style:none;display:inline-flex;align-items:center;height:100%;min-height:34px;padding:.35rem .7rem;border:1px solid var(--vb-line-strong);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-ink);font:600 var(--vb-type-px-14)/1 var(--vb-font);cursor:pointer}
+#provider-list .provider-actions-more>summary::marker,#provider-list .provider-actions-more>summary::-webkit-details-marker{display:none;content:''}
+#provider-list .provider-actions-more>summary::before,#provider-list .provider-actions-more>summary::after{display:none}
+#provider-list .provider-actions-extra{position:absolute;z-index:10;top:calc(100% + 5px);right:0;display:grid;gap:3px;min-width:max-content;padding:5px;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-elevated);box-shadow:var(--vb-shadow-lg)}
+#provider-list .provider-actions-more:not([open]) .provider-actions-extra{display:none}
+#provider-list .provider-actions-extra button{width:100%;text-align:left;justify-content:flex-start}
