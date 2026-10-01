@@ -808,8 +808,20 @@
  }
  function pairAvatarNode(pair){
   const stack=document.createElement('span');stack.className='pair-avatar pair-avatar-stack';stack.setAttribute('aria-hidden','true');
-  for(const [id,name] of [[pair.boxAId,pair.boxAName],[pair.boxBId,pair.boxBName]])stack.append(avatarNode(boxes.get(id)||{id,name,state:'running'},true,false));
+  for(const [id,name] of [[pair.boxAId,pair.boxAName],[pair.boxBId,pair.boxBName]]){
+   const box=boxes.get(id)||{id,name,state:'running'};
+   const mascot=reuseMessageMascot(null,box,'pair-avatar-mascot',false);
+   mascot.dataset.pairMascotBox=id;stack.append(mascot);
+  }
   return stack;
+ }
+ function syncPairAvatar(stack,pair){
+  if(!stack)return;
+  for(const [id,name] of [[pair.boxAId,pair.boxAName],[pair.boxBId,pair.boxBName]]){
+   const live=stack.querySelector('[data-pair-mascot-box="'+id+'"]'),box=boxes.get(id)||{id,name,state:'running'};
+   const next=reuseMessageMascot(live,box,'pair-avatar-mascot',false);next.dataset.pairMascotBox=id;
+   if(next!==live){if(live)live.replaceWith(next);else stack.append(next)}
+  }
  }
 
  /* ---------- TV preview: hover the processing bubble for a bigger view ---- */
@@ -938,6 +950,7 @@
   return cached?.enabled===true;
  }
  function showTvPreview(button,box){
+  if(selectedPair)return;
   clearTimeout(tvPreviewHideTimer);
   if(tvPreviewBox!==box.id){stopTvReplay();tvReplayRequest++;if(tvReplayURL)URL.revokeObjectURL(tvReplayURL);tvReplayURL='';tvReplayIndex=null;tvPreviewDispose?.();tvPreviewDispose=null;tvPreviewLive.replaceChildren();tvPreviewConnected=false;tvPreviewBox=box.id}
   tvPreviewAnchor=button;
@@ -1182,7 +1195,7 @@
    row.querySelector('.name').textContent=name;row.querySelector('.name').title=name;
    row.querySelector('.mute-bell').hidden=false;
    row.classList.toggle('active',key===selectedPair);
-   for(const id of [pair.boxAId,pair.boxBId])if(boxes.has(id))syncAvatarMascot(row.querySelector('[data-avatar="'+id+'"]'),boxes.get(id));
+   syncPairAvatar(row.querySelector('.pair-avatar-stack'),pair);
    row.querySelector('time').textContent=pair.lastAt?fmtTime(pair.lastAt):'';
    row.querySelector('.preview').textContent=pair.lastText?plainPreview(pair.lastText):'No messages yet';
    const count=pairUnreadCount(pair),unread=row.querySelector('.unread');unread.hidden=!count;unread.textContent=unreadLabel(count);unread.setAttribute('aria-label',count+' unread');unread.classList.add('muted');
@@ -1728,6 +1741,7 @@
   if(owner)try{await loadPairs()}catch(e){if(selectedPair)statusEl.textContent='Could not refresh box conversations: '+e.message}
   if(selected)applySeen(selected);
   renderRows();
+  if(selectedPair&&pairHero){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}
   if(selected){renderHeader();renderInspect();if(owner)void loadChatUsageProfile(selected)}
  }
  async function loadPairs(){
@@ -1860,10 +1874,96 @@
   if(owner&&inspectOpen&&(force||hasNewReply))void loadInspectAttachmentStorage(box);
   if(owner&&box.state==='running'&&['codex','claude','opencode'].includes(box.defaultAgent))void refreshAgentResume(box);
  }
+ let pairHero=null,pairHeroEpoch=0;
+ const paintedPairMessages=new Map();
+ function stopPairHero(){
+  pairHeroEpoch++;
+  if(!pairHero)return;
+  for(const tile of pairHero.tiles){tile.dispose?.();tile.dispose=null;tile.screen.replaceChildren();tile.controls.replaceChildren()}
+  pairHero.node.remove();pairHero=null;
+ }
+ function pairHeroVisible(hero){return pairHero===hero&&selectedPair===hero.key&&!document.hidden&&takeover.hidden}
+ function pairTileStatus(tile,mode,label){
+  tile.mode=mode;tile.node.dataset.mode=mode;tile.placeholder.textContent=label;
+  tile.placeholder.hidden=mode==='desktop'||mode==='tmux';
+  tile.screen.hidden=mode==='off';
+  tile.label.lastChild.textContent=label;
+ }
+ async function connectPairTmux(hero,tile,box){
+  if(!pairHeroVisible(hero))return;
+  pairTileStatus(tile,'checking','Checking TMUX…');
+  try{
+   const inventory=await api(boxPath(box.id)+'/sessions');
+   if(!pairHeroVisible(hero))return;
+   const sessions=(inventory?.sessions||[]).filter(session=>session.name&&!session.name.startsWith('task-'));
+   if(inventory?.partial||inventory?.state!=='live'||!sessions.length)throw Error('No TMUX session');
+   const primary=await api(boxPath(box.id)+'/sessions/primary').catch(()=>null);
+   if(!pairHeroVisible(hero))return;
+   const session=sessions.find(item=>item.name===primary?.session)||sessions[0];
+   pairTileStatus(tile,'tmux','TMUX');
+   const dispose=openWorkspaceTerminal(box.id,session.name,status=>{
+    if(!pairHeroVisible(hero))return;
+    if(/^Connected\b/.test(status))pairTileStatus(tile,'tmux','TMUX live');
+    else if(/failed|disconnected/i.test(status)){tile.dispose?.();tile.dispose=null;tile.screen.replaceChildren();pairTileStatus(tile,'off','Desktop off')}
+   },{root:tile.screen,keys:tile.controls,viewOnly:true,autoFocus:false,onDisconnect:()=>{
+    if(!pairHeroVisible(hero))return;
+    tile.dispose?.();tile.dispose=null;tile.screen.replaceChildren();pairTileStatus(tile,'off','Desktop off');
+   }});
+   if(tile.mode==='off')dispose();else tile.dispose=dispose;
+  }catch{if(pairHeroVisible(hero))pairTileStatus(tile,'off','Desktop off')}
+ }
+ function fallbackPairTile(hero,tile,box){
+  if(!pairHeroVisible(hero)||tile.fallingBack)return;
+  tile.fallingBack=true;
+  tile.dispose?.();tile.dispose=null;tile.screen.replaceChildren();
+  void connectPairTmux(hero,tile,box);
+ }
+ async function connectPairTile(hero,tile,box){
+  if(box.state!=='running'){pairTileStatus(tile,'off','Desktop off');return}
+  pairTileStatus(tile,'checking','Connecting…');
+  try{
+   const state=await api(boxPath(box.id)+'/desktop');
+   if(!pairHeroVisible(hero))return;
+   if(state?.enabled!==true){fallbackPairTile(hero,tile,box);return}
+   const dispose=openWorkspaceDesktop(box.id,status=>{
+    if(!pairHeroVisible(hero))return;
+    if(status==='Desktop connected')pairTileStatus(tile,'desktop','Desktop live');
+    else if(/failed|disconnected|authentication/i.test(status))fallbackPairTile(hero,tile,box);
+   },{root:tile.screen,controls:tile.controls,viewOnly:true,onDisconnect:()=>{
+    fallbackPairTile(hero,tile,box);
+   }});
+   if(tile.fallingBack)dispose();else tile.dispose=dispose;
+  }catch{fallbackPairTile(hero,tile,box)}
+ }
+ function startPairHero(pair){
+  const key=pairKey(pair);
+  const stateKey=[pair.boxAId,pair.boxBId].map(id=>boxes.get(id)?.state||'unknown').join('|');
+  if(pairHero?.key===key&&pairHero.stateKey===stateKey)return pairHero.node;
+  stopPairHero();
+  const node=document.createElement('section');node.className='pair-hero';node.setAttribute('aria-label','Live views of '+pair.boxAName+' and '+pair.boxBName);
+  const hero={key,stateKey,node,tiles:[],epoch:++pairHeroEpoch};pairHero=hero;
+  for(const [id,name] of [[pair.boxAId,pair.boxAName],[pair.boxBId,pair.boxBName]]){
+   const box=boxes.get(id)||{id,name,state:'running'};
+   const button=document.createElement('button');button.type='button';button.className='pair-tile';button.dataset.pairTileBox=id;button.setAttribute('aria-label','Open '+name+' control');
+   const screen=document.createElement('div');screen.className='pair-tile-screen';screen.setAttribute('aria-hidden','true');
+   const placeholder=document.createElement('span');placeholder.className='pair-tile-placeholder';placeholder.textContent='Connecting…';
+   const mascotWrap=document.createElement('span');mascotWrap.className='pair-tile-mascot';mascotWrap.append(reuseMessageMascot(null,box,'pair-hero-mascot',false));
+   const label=document.createElement('span');label.className='pair-tile-label';label.append(document.createTextNode(name+' · '),document.createElement('span'));
+   const controls=document.createElement('div');
+   const tile={node:button,screen,placeholder,label,controls,mode:'checking',dispose:null};
+   button.append(screen,placeholder,mascotWrap,label);button.onclick=()=>void openTakeover(tile.mode==='tmux'||tile.mode==='off'?'terminal':'desktop',id);
+   hero.tiles.push(tile);node.append(button);
+   void connectPairTile(hero,tile,box);
+  }
+  return node;
+ }
  function renderPairMessages(pair){
   if(activeHorizontalGestures){pendingPair=pair;return}
   const follow=stickToBottom;
-  messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=pairKey(pair);
+  const key=pairKey(pair),painted=messagesEl.dataset.pair===key?paintedPairMessages.get(key):null,nextPainted=new Set(),liveAvatars=new Map();
+  if(painted)for(const row of messagesEl.querySelectorAll('.pair-msg[data-key]')){const avatar=row.querySelector(':scope > .msg-avatar');if(avatar)liveAvatars.set(row.dataset.key,avatar)}
+  const hero=startPairHero(pair);
+  messagesEl.replaceChildren(hero);delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   let day='',prevSender='';
   for(const message of pair.messages||[]){
    const label=dayLabel(message.createdAt);
@@ -1871,14 +1971,16 @@
    const fromB=message.senderBoxId===pair.boxBId;
    const node=bubble(pair,{...message,direction:'agent',pairAuthor:fromB?pair.boxBName:pair.boxAName},true);
    node.classList.add('pair-msg',fromB?'pair-right':'pair-left');
+   const messageID=messageKey(message);node.dataset.key=messageID;nextPainted.add(messageID);if(painted&&!painted.has(messageID))node.classList.add('msg-enter');
    if(prevSender!==(fromB?'b':'a'))node.classList.add('group-start');
    prevSender=fromB?'b':'a';
    const sender=boxes.get(message.senderBoxId);
-   if(sender)node.prepend(messageMascot(sender));
+   if(sender)node.prepend(reuseMessageMascot(liveAvatars.get(messageID),sender,'msg-avatar',false));
    messagesEl.append(node);
   }
   {const msgNodes=[...messagesEl.querySelectorAll('.msg')];msgNodes.forEach((m,i)=>{const next=msgNodes[i+1];const same=!!next&&next.classList.contains('pair-right')===m.classList.contains('pair-right');m.classList.toggle('tail',!same)})}
   if(!(pair.messages||[]).length){const empty=mk('p','No direct messages between these boxes yet.');empty.className='day-sep';messagesEl.append(empty)}
+  paintedPairMessages.set(key,nextPainted);
   statusEl.textContent='Read only · '+(pair.messages||[]).length+' messages'+((pair.messages||[]).length===500?' (latest 500)':'');
   if(follow)scrollMessagesToBottom();
  }
@@ -1902,7 +2004,7 @@
   const pair=pairs.get(key);if(!pair)return;
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
-  selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();closeTakeover();
+  selected='';selectedPair=key;selectedUsageProfile=null;chatUsageRequest++;renderChatUsage();lastSignature='';cancelReply();hideComposerPicker();closeInspect();closeForwardMenu();hideTvPreview();closeTakeover();stopPairHero();
   openThreadID='';threadPanel.hidden=true;threadMessages.replaceChildren();
   messagesEl.replaceChildren();delete messagesEl.dataset.box;messagesEl.dataset.pair=key;
   // Box-to-box chats are read-only activity logs: opening one starts at its
@@ -1913,6 +2015,7 @@
   $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
   $('#chat-header-state').textContent='Direct messages between boxes · read only';
   $('#chat-header-avatar').replaceChildren(pairAvatarNode(pair));headerAvatarKey='';
+  messagesEl.append(startPairHero(pair));
   setBanner('');statusEl.textContent='';renderRows();doodle('Loading messages…');
   try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
   if(epoch===viewEpoch&&selectedPair===key)requestAnimationFrame(()=>{
@@ -1972,7 +2075,7 @@
   if(!boxes.has(id))return;
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
-  selectedPair='';$('#chat-conversation').classList.remove('pair-view');
+  stopPairHero();selectedPair='';$('#chat-conversation').classList.remove('pair-view');
   // Never show one box's transcript while another is loading: drop the old
   // messages (and any floating preview) before the new history arrives.
   if(messagesEl.dataset.box!==id){messagesEl.replaceChildren();delete messagesEl.dataset.pair;messagesEl.dataset.box=id;hideTvPreview()}
@@ -2321,6 +2424,7 @@
   kind=kind==='tmux'?'terminal':kind;
   const epoch=++takeoverEpoch;
   takeoverDispose?.();takeoverDispose=null;takeoverScreen.replaceChildren();takeoverScroll.replaceChildren();takeoverPinned.replaceChildren();takeoverType.replaceChildren();takeoverType.hidden=true;
+  stopPairHero();
   stopInspectHero();
   takeover.hidden=false;takeoverKind=kind;
   takeoverScreen.classList.toggle('is-terminal',kind==='terminal');
@@ -2350,6 +2454,7 @@
   takeoverDispose?.();takeoverDispose=null;takeoverKind='';
   takeover.hidden=true;takeoverScreen.replaceChildren();takeoverScroll.replaceChildren();takeoverPinned.replaceChildren();takeoverType.replaceChildren();takeoverType.hidden=true;
   if(wasOpen&&inspectOpen)renderInspect();
+  if(wasOpen&&selectedPair&&messagesEl.dataset.pair===selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}
  }
  $('#chat-control').onclick=()=>void openTakeover('desktop');
  $('#chat-header-desktop').onclick=()=>void openTakeover('desktop');
@@ -3366,7 +3471,7 @@
  }
  async function tickBoxes(){try{if(!document.hidden)await loadBoxes()}catch{}boxTimer=setTimeout(tickBoxes,30000)}
  async function tickMessages(){try{if(!document.hidden){if(selected)await refreshMessages();if(selectedPair)await refreshPairMessages()}reconnecting=false}catch(e){reconnecting=!!(selected||selectedPair);if(selectedPair)statusEl.textContent=e.message}if(selected)updateBanner();msgTimer=setTimeout(tickMessages,3000)}
- document.addEventListener('visibilitychange',()=>{if(document.hidden)stopInspectHero();else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();if(inspectOpen)renderInspect()}});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden){stopInspectHero();stopPairHero()}else{clearTimeout(boxTimer);clearTimeout(msgTimer);void tickBoxes();void tickMessages();if(inspectOpen)renderInspect();if(selectedPair){const pair=pairs.get(selectedPair);if(pair)messagesEl.prepend(startPairHero(pair))}}});
  filterEl.addEventListener('input',()=>{clearTimeout(filterTimer);filterTimer=setTimeout(renderRows,130)});
  $('#refresh').onclick=async()=>{try{await loadBoxes(true);if(selected)await refreshMessages(true);if(selectedPair)await refreshPairMessages(true);$('#error').textContent=''}catch(e){$('#error').textContent=e.message}};
 
@@ -3385,7 +3490,7 @@
   $('#usage-modal').hidden=true;
   usageGeneration++;usagePending=null;usageProfiles=[];usageLoaded=false;usageScope=null;selectedUsageProfile=null;chatUsageRequest++;$('#usage-list').replaceChildren();$('#usage-status').textContent='';
   $('#usage-toggle').hidden=true;$('#chat-usage').hidden=true;owner=false;
-  closeTakeover();
+  closeTakeover();stopPairHero();
   inspectOpen=false;inspect.hidden=true;stopInspectHero();clearInterval(inspectTimer);controllerPing=null;
   try{await api('/v1/browser-session','DELETE')}catch{}
   releaseImageURLs();
