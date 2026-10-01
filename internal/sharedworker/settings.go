@@ -94,8 +94,12 @@ func (s *Store) limits() (provider.WorkerLimits, error) {
 	return limitsFor(specs, len(s.state.Slots), s.perBoxLimits()), nil
 }
 
+// wholeGiB rounds down to whole GiB, tolerating the few pages the kernel keeps
+// from a nominal size (a 4 GiB swap file reports slightly under 4 GiB).
+func wholeGiB(bytes int64) int64 { return (bytes + 16<<20) / gib }
+
 func limitsFor(specs provider.WorkerSpecs, slotsInUse int, perBox bool) provider.WorkerLimits {
-	memoryGiB := max(specs.MemoryBytes/gib, 1)
+	memoryGiB := max(wholeGiB(specs.MemoryBytes), 1)
 	limits := provider.WorkerLimits{
 		MinSlots: max(slotsInUse, 1),
 		// Each box needs at least 1 GiB, so more slots than GiB of RAM cannot
@@ -103,7 +107,7 @@ func limitsFor(specs provider.WorkerSpecs, slotsInUse int, perBox bool) provider
 		MaxSlots:      int(min(int64(maxWorkerSlots), memoryGiB)),
 		PerBoxLimits:  perBox,
 		BoxMin:        provider.BoxLimits{CPU: cpuStep, MemoryMiB: memoryStepMiB, SwapMiB: 0},
-		BoxMax:        provider.BoxLimits{CPU: max(math.Floor(specs.CPUs/cpuStep)*cpuStep, cpuStep), MemoryMiB: memoryGiB * memoryStepMiB, SwapMiB: specs.SwapBytes / gib * memoryStepMiB},
+		BoxMax:        provider.BoxLimits{CPU: max(math.Floor(specs.CPUs/cpuStep)*cpuStep, cpuStep), MemoryMiB: memoryGiB * memoryStepMiB, SwapMiB: wholeGiB(specs.SwapBytes) * memoryStepMiB},
 		CPUStep:       cpuStep,
 		MemoryStepMiB: memoryStepMiB,
 	}

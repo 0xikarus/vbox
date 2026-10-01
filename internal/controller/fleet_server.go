@@ -173,7 +173,11 @@ func (s *Server) setFleetSlots(w http.ResponseWriter, r *http.Request, p Princip
 				writeError(w, http.StatusBadRequest, err)
 				return
 			}
-			writeJSON(w, http.StatusOK, v1.FleetConfig{Provider: pool.Provider, ProviderCredential: pool.ProviderCredential, ComputeBoxSlots: pool.DesiredSlots})
+			config, err := s.Store.FleetConfig(r.Context(), p.AccountID, pool.Provider, pool.ProviderCredential)
+			if err != nil {
+				config = v1.FleetConfig{Provider: pool.Provider, ProviderCredential: pool.ProviderCredential, ComputeBoxSlots: pool.DesiredSlots}
+			}
+			writeJSON(w, http.StatusOK, config)
 			return
 		}
 	}

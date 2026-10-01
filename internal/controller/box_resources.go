@@ -65,6 +65,11 @@ func (s *Server) boxResources(w http.ResponseWriter, r *http.Request, p Principa
 		writeError(w, 409, fmt.Errorf("assignment changed; reload resource settings"))
 		return
 	}
+	if settings, ok := prov.(provider.WorkerSettingsProvider); ok {
+		if config, err := settings.WorkerConfig(r.Context()); err == nil {
+			response["limits"] = config.Limits
+		}
+	}
 	writeJSON(w, 200, response)
 }
 

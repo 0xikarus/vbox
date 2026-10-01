@@ -177,6 +177,13 @@ func TestContainerBoxDefaultsAreBoundedByMachine(t *testing.T) {
 	}
 }
 
+func TestLimitsRoundNominalSizes(t *testing.T) {
+	limits := limitsFor(provider.WorkerSpecs{CPUs: 8, MemoryBytes: 16553222144, SwapBytes: 4294963200}, 0, true)
+	if limits.BoxMax.SwapMiB != 4096 || limits.BoxMax.MemoryMiB != 15*1024 || limits.MaxSlots != 15 {
+		t.Fatalf("limits = %+v", limits)
+	}
+}
+
 func TestNoSwapHostLimitsSwapToZero(t *testing.T) {
 	host := smallHost
 	host.SwapBytes = 0

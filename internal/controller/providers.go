@@ -10,12 +10,78 @@ import (
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
 )
 
-var providerSchemas = map[string]map[string]string{
-	"shared-worker": {"endpoint": "string"},
-	"railway":       {"projectId": "string", "environmentId": "string", "tokenEnvironment": "string", "image": "string"},
-	"docker":        {"context": "string", "host": "string", "tlsVerify": "boolean", "certPath": "string", "image": "string"},
-	"incus":         {"remote": "string", "project": "string", "vm": "boolean", "image": "string"},
+// providerField describes one provider setting so clients can render a form
+// instead of asking owners for JSON. Secret fields go into the encrypted secret
+// and are never returned; only Mutable fields may change after creation.
+type providerField struct {
+	Name        string   `json:"name"`
+	Label       string   `json:"label"`
+	Type        string   `json:"type"`
+	Required    bool     `json:"required,omitempty"`
+	Secret      bool     `json:"secret,omitempty"`
+	Mutable     bool     `json:"mutable,omitempty"`
+	Options     []string `json:"options,omitempty"`
+	Placeholder string   `json:"placeholder,omitempty"`
+	Help        string   `json:"help,omitempty"`
 }
+
+type providerType struct {
+	Name   string          `json:"name"`
+	Label  string          `json:"label"`
+	Help   string          `json:"help,omitempty"`
+	Fields []providerField `json:"fields"`
+}
+
+var imageField = providerField{Name: "image", Label: "Worker image", Type: "string", Mutable: true, Placeholder: "registry/image@sha256:…", Help: "Optional. Applies to future boxes only."}
+
+var providerTypes = []providerType{
+	{Name: "shared-worker", Label: "Shared worker (your Linux server)", Help: "A vmbox-shared-worker installed on a machine. Slots and box sizes are set from its card after saving.", Fields: []providerField{
+		{Name: "endpoint", Label: "Worker URL", Type: "string", Required: true, Placeholder: "https://203.0.113.10", Help: "HTTPS origin of the worker."},
+		{Name: "token", Label: "Worker token", Type: "string", Required: true, Secret: true, Help: "VMBOX_SHARED_TOKEN from the worker's configuration."},
+	}},
+	{Name: "railway", Label: "Railway", Help: "One Railway service and volume per compute slot.", Fields: []providerField{
+		{Name: "projectId", Label: "Project ID", Type: "string", Required: true},
+		{Name: "environmentId", Label: "Environment ID", Type: "string", Required: true},
+		{Name: "tokenEnvironment", Label: "Token type", Type: "select", Options: []string{"RAILWAY_API_TOKEN", "RAILWAY_TOKEN"}, Help: "Account/team token or project token."},
+		imageField,
+		{Name: "token", Label: "Railway token", Type: "string", Required: true, Secret: true},
+	}},
+	{Name: "docker", Label: "Docker engine", Fields: []providerField{
+		{Name: "context", Label: "Docker context", Type: "string"},
+		{Name: "host", Label: "Docker host", Type: "string", Placeholder: "ssh://user@host"},
+		{Name: "tlsVerify", Label: "Verify TLS", Type: "boolean"},
+		{Name: "certPath", Label: "TLS certificate directory", Type: "string"},
+		imageField,
+	}},
+	{Name: "incus", Label: "Incus", Fields: []providerField{
+		{Name: "remote", Label: "Remote", Type: "string"},
+		{Name: "project", Label: "Project", Type: "string"},
+		{Name: "vm", Label: "Use virtual machines", Type: "boolean"},
+		imageField,
+	}},
+}
+
+// providerSchemas is the non-secret config allowlist, derived from providerTypes.
+var providerSchemas, providerRequired = func() (map[string]map[string]string, map[string][]string) {
+	schemas, required := map[string]map[string]string{}, map[string][]string{}
+	for _, typ := range providerTypes {
+		schemas[typ.Name] = map[string]string{}
+		for _, field := range typ.Fields {
+			if field.Secret {
+				continue
+			}
+			kind := field.Type
+			if kind == "select" {
+				kind = "string"
+			}
+			schemas[typ.Name][field.Name] = kind
+			if field.Required {
+				required[typ.Name] = append(required[typ.Name], field.Name)
+			}
+		}
+	}
+	return schemas, required
+}()
 
 func publicProviderConfig(name string, raw json.RawMessage) json.RawMessage {
 	var input map[string]any
@@ -65,12 +131,12 @@ func validateProviderConfig(name string, raw json.RawMessage) error {
 			}
 		}
 	}
-	if name == "railway" {
-		for _, k := range []string{"projectId", "environmentId"} {
-			if values[k] == nil || values[k] == "" {
-				return fmt.Errorf("Railway config requires %s", k)
-			}
+	for _, k := range providerRequired[name] {
+		if values[k] == nil || values[k] == "" {
+			return fmt.Errorf("%s config requires %s", name, k)
 		}
+	}
+	if name == "railway" {
 		if v, ok := values["tokenEnvironment"]; ok && v != "RAILWAY_TOKEN" && v != "RAILWAY_API_TOKEN" {
 			return fmt.Errorf("invalid tokenEnvironment")
 		}
@@ -79,7 +145,7 @@ func validateProviderConfig(name string, raw json.RawMessage) error {
 }
 
 func (s *Server) providerSchemasHandler(w http.ResponseWriter, r *http.Request, p Principal) {
-	writeJSON(w, 200, map[string]any{"providers": providerSchemas, "required": map[string][]string{"railway": {"projectId", "environmentId"}}, "secretInput": "JSON object; railway requires token", "update": "PATCH with If-Match=updatedAt; null deletes config fields; omitted secret preserved; replaceSecret required", "retarget": "Target fields are immutable; create a new alias. Deletion requires reviewed migration."})
+	writeJSON(w, 200, map[string]any{"types": providerTypes, "providers": providerSchemas, "required": providerRequired, "secretInput": "JSON object; railway and shared-worker require token", "update": "PATCH with If-Match=updatedAt; null deletes config fields; omitted secret preserved; replaceSecret required", "retarget": "Target fields are immutable; create a new alias. Deletion requires reviewed migration."})
 }
 
 func (s *Server) providerShowHandler(w http.ResponseWriter, r *http.Request, p Principal) {

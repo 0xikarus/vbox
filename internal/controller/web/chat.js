@@ -3054,7 +3054,7 @@ function pairTileStatus(tile,mode,label){
   root.hidden=false;
   if(!force&&root.dataset.boxId===box.id&&root.dataset.generation===String(box.assignmentGeneration))return;
   root.dataset.boxId=box.id;root.dataset.generation=String(box.assignmentGeneration);
-  root.innerHTML='<h4>RAM and swap</h4><div class="memory-availability" aria-live="polite">Checking worker availability…</div><form><label>RAM <span>GiB</span><input name="memory" type="number" min="1" max="8" step="1" required></label><label>Swap <span>GiB</span><input name="swap" type="number" min="0" max="4" step="1" required></label><button type="submit">Apply live</button></form><p class="memory-usage-warning" role="alert" hidden></p><p role="status">Loading limits…</p>';
+  root.innerHTML='<h4>CPU, RAM and swap</h4><div class="memory-availability" aria-live="polite">Checking worker availability…</div><form><label>CPU <input name="cpu" type="number" min="1" max="1" step="0.5" required></label><label>RAM <span>GiB</span><input name="memory" type="number" min="1" max="8" step="1" required></label><label>Swap <span>GiB</span><input name="swap" type="number" min="0" max="4" step="1" required></label><button type="submit">Apply live</button></form><p class="memory-usage-warning" role="alert" hidden></p><p role="status">Loading limits…</p>';
   const form=root.querySelector('form'),status=root.querySelector('[role="status"]'),availability=root.querySelector('.memory-availability'),warning=root.querySelector('.memory-usage-warning');form.hidden=true;
   const hostQuery=new URLSearchParams({provider:box.provider,providerCredential:box.providerCredential||''});
   void api('/v1/fleet/host-resources?'+hostQuery).then(host=>{
@@ -3068,6 +3068,12 @@ function pairTileStatus(tile,mode,label){
    try{
     const current=await api(boxPath(box.id)+'/resources');
     if(root.dataset.boxId!==box.id||root.dataset.generation!==String(box.assignmentGeneration))return null;
+    // Workers that predate remote settings report no limits and keep 1 CPU, 1–8 GiB RAM, 0–4 GiB swap.
+    const limits=current.limits||{boxMin:{cpu:1,memoryMiB:1024,swapMiB:0},boxMax:{cpu:1,memoryMiB:8192,swapMiB:4096},cpuStep:1};
+    current.bounds=limits;
+    for(const [name,key,scale] of [['cpu','cpu',1],['memory','memoryMiB',1024],['swap','swapMiB',1024]]){form.elements[name].min=String(limits.boxMin[key]/scale);form.elements[name].max=String(limits.boxMax[key]/scale)}
+    form.elements.cpu.step=String(limits.cpuStep||1);
+    form.elements.cpu.value=String(current.resources.cpu||1);
     form.elements.memory.value=String(current.resources.memoryMiB/1024);
     form.elements.swap.value=String((current.resources.swapMiB||0)/1024);
     form.hidden=false;status.textContent='Limits apply to this box and survive hibernation.';
@@ -3086,12 +3092,12 @@ function pairTileStatus(tile,mode,label){
   void load().then(value=>{current=value;updateWarning()});
   form.onsubmit=async event=>{
    event.preventDefault();if(!current)return;
-   const memory=Number(form.elements.memory.value),swap=Number(form.elements.swap.value);
-   if(!Number.isInteger(memory)||memory<1||memory>8||!Number.isInteger(swap)||swap<0||swap>4){status.textContent='Choose 1–8 GiB RAM and 0–4 GiB swap.';return}
+   const cpu=Number(form.elements.cpu.value),memory=Number(form.elements.memory.value),swap=Number(form.elements.swap.value),{boxMin:low,boxMax:high}=current.bounds;
+   if(!(cpu>=low.cpu&&cpu<=high.cpu)||!Number.isInteger(memory)||memory*1024<low.memoryMiB||memory*1024>high.memoryMiB||!Number.isInteger(swap)||swap<0||swap*1024>high.swapMiB){status.textContent='Choose '+low.cpu+'–'+high.cpu+' CPU, '+low.memoryMiB/1024+'–'+high.memoryMiB/1024+' GiB RAM and 0–'+high.swapMiB/1024+' GiB swap.';return}
    if(updateWarning())return;
    form.querySelector('button').disabled=true;status.textContent='Applying limits…';
    try{
-    await api(boxPath(box.id)+'/resources','PUT',{}, {slotId:current.slotId,assignmentGeneration:current.assignmentGeneration,cpu:1,memoryMiB:memory*1024,swapMiB:swap*1024});
+    await api(boxPath(box.id)+'/resources','PUT',{}, {slotId:current.slotId,assignmentGeneration:current.assignmentGeneration,cpu,memoryMiB:memory*1024,swapMiB:swap*1024});
     current=await load();if(current){status.textContent='Live limits saved.';void refreshBoxResources()}
    }catch(e){status.textContent=e.message}
    finally{form.querySelector('button').disabled=false;updateWarning()}
@@ -3352,10 +3358,24 @@ function pairTileStatus(tile,mode,label){
    }
    return [];
   }
+  // Box size inputs follow the selected worker's machine and default size.
+  function applyWorkerBoxBounds(pool){
+   const key=pool.provider+'/'+(pool.providerCredential||'');if(createForm.dataset.boundsPool===key)return;createForm.dataset.boundsPool=key;
+   void api('/v1/fleet/worker?'+new URLSearchParams({provider:pool.provider,providerCredential:pool.providerCredential||''})).then(view=>{
+    const limits=view?.worker?.limits,defaults=view?.worker?.settings?.boxDefaults,f=createForm.elements;
+    if(createForm.dataset.boundsPool!==key||!limits?.perBoxLimits||!f.memoryGiB||!f.swapGiB)return;
+    f.memoryGiB.max=String(limits.boxMax.memoryMiB/1024);f.swapGiB.max=String(limits.boxMax.swapMiB/1024);
+    if(!f.memoryGiB.dataset.edited)f.memoryGiB.value=String(defaults.memoryMiB/1024);
+    if(!f.swapGiB.dataset.edited)f.swapGiB.value=String(defaults.swapMiB/1024);
+    renderPreview();
+   }).catch(()=>{});
+  }
+  for(const name of ['memoryGiB','swapGiB'])createForm.elements[name]?.addEventListener('input',e=>{e.target.dataset.edited='1'});
   function renderPreview(){
    const selectedPool=createForm.elements.pool?.value||createForm.dataset.autoPool||'';
    const pool=selectedPool!==''?JSON.parse(createForm.dataset.pools||'[]')[Number(selectedPool)]:null;
    $('#create-memory-settings').hidden=pool?.provider!=='shared-worker';
+   if(pool?.provider==='shared-worker')applyWorkerBoxBounds(pool);
    const agent=createForm.elements.defaultAgent.selectedOptions[0]?.textContent||createForm.elements.defaultAgent.value;
    const placement=pool?.provider?pool.provider+(pool.providerCredential?'/'+pool.providerCredential:''):createForm.dataset.provider?(createForm.dataset.provider+(createForm.dataset.providerCredential?'/'+createForm.dataset.providerCredential:'')):'Automatic pool';
    const summary=$('#new-box-summary');summary.textContent=(createForm.elements.name.value.trim()||'my-agent-box')+' · '+agent+' · '+placement;summary.title=summary.textContent;
