@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import http from 'node:http';
-import {readFile} from 'node:fs/promises';
+import {readFile,mkdir} from 'node:fs/promises';
 import puppeteer from 'puppeteer-core';
 
 const assets=Object.fromEntries(await Promise.all(['chat.html','chat.js','motion.js','mascot.js','mascot.css','chat.css','vbox-tokens.css','vbox-c.css','app.css','markdown.js','model-picker.js'].map(async name=>[name,await readFile('internal/controller/web/'+name,'utf8')])));
@@ -15,6 +15,7 @@ test('consecutive MCP calls collapse into a divider and retain their open state 
   message('mcp-1','system','MCP · chat_message · contact',1),
   message('mcp-2','system','MCP · take_screenshot · failed',2),
   message('agent-1','agent','Inspection complete',3),
+  {...message('agent-image','agent','Screenshot attached',3),images:[{id:'image-1',number:1,mediaType:'image/png'}]},
   message('mcp-3','system','MCP · get_run_budget',4),
  ];
  const server=http.createServer((req,res)=>{
@@ -36,6 +37,9 @@ test('consecutive MCP calls collapse into a divider and retain their open state 
   const page=await browser.newPage();
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=mcp-fixture');
   await page.waitForSelector('.mcp-call-group');
+  const times=()=>page.$$eval('#chat-messages .msg:not(.system)',nodes=>nodes.map(node=>{const bubble=node.getBoundingClientRect(),time=node.querySelector(':scope > .meta time'),rect=time?.getBoundingClientRect();return {id:node.dataset.key,visible:!!rect&&getComputedStyle(time.parentElement).display!=='none'&&rect.width>0&&rect.height>0,inside:!!rect&&rect.right<=bubble.right+1&&rect.bottom<=bubble.bottom+1}}));
+  assert.equal(await page.$eval('#chat-messages .msg:has(.media-button)',node=>!!node.querySelector(':scope > .meta time')),true,'image bubble has a time');
+  assert.ok((await times()).every(item=>item.visible&&item.inside),JSON.stringify(await times()));
   assert.equal(await page.$$('.mcp-call-group').then(groups=>groups.length),2);
   assert.equal(await page.$eval('.mcp-call-group .mcp-call-toggle',button=>button.getAttribute('aria-expanded')),'false');
   assert.equal(await page.$eval('.mcp-call-group .mcp-call-list',list=>getComputedStyle(list).display),'none');
@@ -60,7 +64,15 @@ test('consecutive MCP calls collapse into a divider and retain their open state 
   await page.waitForFunction(()=>[...document.querySelectorAll('.mcp-call-count')].at(-1)?.textContent==='3');
   assert.equal(await page.$$eval('.mcp-call-group .mcp-call-toggle',buttons=>buttons.at(-1).getAttribute('aria-expanded')),'true');
   await page.setViewport({width:390,height:844,deviceScaleFactor:1,isMobile:true,hasTouch:true});
+  assert.ok((await times()).every(item=>item.visible&&item.inside),JSON.stringify(await times()));
   assert.equal(await page.$eval('#chat-messages',element=>element.scrollWidth<=element.clientWidth),true,'MCP dividers fit the mobile chat width');
   await page.close();
+  const captureDir=process.env.VMBOX_CAPTURE_DIR;
+  if(captureDir){await mkdir(captureDir,{recursive:true});for(const theme of ['light','dark'])for(const width of [390,1440]){
+   const shot=await browser.newPage();await shot.setViewport({width,height:width===390?844:900,isMobile:width===390,hasTouch:width===390});await shot.emulateMediaFeatures([{name:'prefers-color-scheme',value:theme}]);
+   await shot.goto('http://127.0.0.1:'+server.address().port+'/chat#box=mcp-fixture');await shot.waitForSelector('.mcp-call-group');
+   await new Promise(resolve=>setTimeout(resolve,400));
+   await (await shot.$('#chat-conversation')).screenshot({path:`${captureDir}/chat-${width}-${theme}.png`});await shot.close();
+  }}
  }finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 });

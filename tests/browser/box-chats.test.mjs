@@ -68,6 +68,10 @@ test('owner and box conversations share the Chats list and transcript',async()=>
   assert.equal(await page.$$eval('#chat-entries [data-box-id]',rows=>rows.length),2);
   assert.equal(await page.$$eval('#chat-entries [data-pair-key]',rows=>rows.length),1);
   assert.equal(await page.$eval('#chat-header-name',element=>element.textContent),'Builder ↔ Reviewer');
+  assert.equal(await page.$eval('#chat-header-avatar .pair-avatar-stack',node=>node.getAttribute('aria-label')),'Builder and Reviewer');
+  await page.hover('#chat-header-avatar .pair-avatar-stack');await new Promise(resolve=>setTimeout(resolve,400));
+  assert.equal(await page.$eval('#mascot-mood-tooltip',node=>node.hidden),true,'pair header avatar has no hover tooltip');
+  assert.ok(await page.$$eval('#chat-messages .pair-msg',nodes=>nodes.length===2&&nodes.every(node=>{const time=node.querySelector(':scope > .meta time');return time&&getComputedStyle(time.parentElement).display!=='none'&&time.getBoundingClientRect().width>0})), 'each pair message shows its time');
   assert.deepEqual(await page.$$eval('#chat-messages .agent-origin',elements=>elements.map(element=>element.textContent)),['Builder','Reviewer']);
   assert.deepEqual(await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>element.classList.contains('pair-right')?'right':'left')),['left','right']);
   const sides=await page.$$eval('#chat-messages .msg',elements=>elements.map(element=>({left:element.getBoundingClientRect().left,right:element.getBoundingClientRect().right})));
