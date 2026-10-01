@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	v1 "github.com/0xikarus/vmbox-service/internal/api/v1"
+	"github.com/0xikarus/vmbox-service/internal/provider"
 )
 
 func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request, p Principal) {
@@ -251,7 +252,7 @@ func (s *Server) agentBoxCreationHandler(w http.ResponseWriter, r *http.Request,
 	}
 	if customMemory {
 		workers = slices.DeleteFunc(workers, func(worker agentBoxWorker) bool {
-			return s.verifyBoxMemoryPool(r.Context(), p.AccountID, worker.Provider, worker.ProviderCredential) != nil
+			return s.verifyBoxMemoryPool(r.Context(), p.AccountID, worker.Provider, worker.ProviderCredential, &provider.BoxLimits{MemoryMiB: request.MemoryGiB * 1024, SwapMiB: *request.SwapGiB * 1024}) != nil
 		})
 		if len(workers) == 0 {
 			_, _ = s.Store.DB.ExecContext(r.Context(), `DELETE FROM agent_box_creations WHERE account_id=$1 AND id=$2 AND created_box_id IS NULL`, p.AccountID, reservationID)

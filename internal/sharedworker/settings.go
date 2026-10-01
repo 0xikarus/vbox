@@ -112,23 +112,6 @@ func limitsFor(specs provider.WorkerSpecs, slotsInUse int, perBox bool) provider
 	return limits
 }
 
-func checkBoxLimits(box provider.BoxLimits, limits provider.WorkerLimits) error {
-	steps := box.CPU / limits.CPUStep
-	if math.IsNaN(box.CPU) || steps != math.Trunc(steps) || box.CPU < limits.BoxMin.CPU || box.CPU > limits.BoxMax.CPU {
-		return fmt.Errorf("box CPU must be %g–%g in steps of %g", limits.BoxMin.CPU, limits.BoxMax.CPU, limits.CPUStep)
-	}
-	if box.MemoryMiB%limits.MemoryStepMiB != 0 || box.MemoryMiB < limits.BoxMin.MemoryMiB || box.MemoryMiB > limits.BoxMax.MemoryMiB {
-		return fmt.Errorf("box memory must be %d–%d GiB", limits.BoxMin.MemoryMiB/1024, limits.BoxMax.MemoryMiB/1024)
-	}
-	if box.SwapMiB%limits.MemoryStepMiB != 0 || box.SwapMiB < limits.BoxMin.SwapMiB || box.SwapMiB > limits.BoxMax.SwapMiB {
-		if limits.BoxMax.SwapMiB == 0 {
-			return errors.New("this machine has no swap; box swap must be 0 GiB")
-		}
-		return fmt.Errorf("box swap must be 0–%d GiB", limits.BoxMax.SwapMiB/1024)
-	}
-	return nil
-}
-
 // clampBoxLimits fits saved defaults to a machine that may have shrunk since.
 func clampBoxLimits(box provider.BoxLimits, limits provider.WorkerLimits) provider.BoxLimits {
 	box.CPU = min(max(box.CPU, limits.BoxMin.CPU), limits.BoxMax.CPU)
@@ -149,7 +132,7 @@ func (s *Store) newBoxLimits(resources provider.Resources) (provider.BoxLimits, 
 		return box, nil
 	}
 	box.MemoryMiB, box.SwapMiB = resources.MemoryMiB, resources.SwapMiB
-	return box, checkBoxLimits(box, limits)
+	return box, limits.CheckBox(box)
 }
 
 func (s *Store) workerConfig() (provider.WorkerConfig, error) {
@@ -210,7 +193,7 @@ func (s *Store) SetSettings(next provider.WorkerSettings) (provider.WorkerConfig
 		return config, fmt.Errorf("this machine supports at most %d slots (%d GiB RAM, 1 GiB minimum per box)", limits.MaxSlots, config.Specs.MemoryBytes/gib)
 	}
 	if limits.PerBoxLimits {
-		if err := checkBoxLimits(next.BoxDefaults, limits); err != nil {
+		if err := limits.CheckBox(next.BoxDefaults); err != nil {
 			return config, fmt.Errorf("default %w", err)
 		}
 	} else {

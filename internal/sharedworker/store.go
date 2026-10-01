@@ -332,7 +332,7 @@ func (s *Store) SetResourceLimits(ctx context.Context, id string, resources prov
 	if err != nil {
 		return err
 	}
-	if err := checkBoxLimits(provider.BoxLimits{CPU: resources.CPU, MemoryMiB: resources.MemoryMiB, SwapMiB: resources.SwapMiB}, limits); err != nil {
+	if err := limits.CheckBox(provider.BoxLimits{CPU: resources.CPU, MemoryMiB: resources.MemoryMiB, SwapMiB: resources.SwapMiB}); err != nil {
 		return err
 	}
 	slot, exists := s.state.Slots[id]

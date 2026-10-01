@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -163,6 +164,18 @@ func (s *Server) setFleetSlots(w http.ResponseWriter, r *http.Request, p Princip
 	if err := decodeJSON(r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	if request.Provider == "shared-worker" && request.ComputeBoxSlots > 0 {
+		// A shared worker's slot count is one number: raise or lower the worker
+		// itself along with the fleet. Older workers keep the fleet-only path.
+		if pool, err := s.setWorkerPoolSlots(r.Context(), p, request); !errors.Is(err, provider.ErrUnsupported) {
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, v1.FleetConfig{Provider: pool.Provider, ProviderCredential: pool.ProviderCredential, ComputeBoxSlots: pool.DesiredSlots})
+			return
+		}
 	}
 	config, err := s.Store.SetFleetConfig(r.Context(), p, v1.FleetConfig{
 		Provider: request.Provider, ProviderCredential: request.ProviderCredential,

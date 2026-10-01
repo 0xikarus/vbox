@@ -184,7 +184,7 @@ func TestNoSwapHostLimitsSwapToZero(t *testing.T) {
 	if limits.BoxMax.SwapMiB != 0 {
 		t.Fatalf("swap max = %d", limits.BoxMax.SwapMiB)
 	}
-	if err := checkBoxLimits(provider.BoxLimits{CPU: 1, MemoryMiB: 2048, SwapMiB: 1024}, limits); err == nil || !strings.Contains(err.Error(), "no swap") {
+	if err := limits.CheckBox(provider.BoxLimits{CPU: 1, MemoryMiB: 2048, SwapMiB: 1024}); err == nil || !strings.Contains(err.Error(), "no swap") {
 		t.Fatalf("err = %v", err)
 	}
 	if got := clampBoxLimits(legacyBoxDefaults, limits); got.SwapMiB != 0 {

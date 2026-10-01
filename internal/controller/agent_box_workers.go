@@ -112,7 +112,7 @@ func (s *Server) agentBoxWorkersHandler(w http.ResponseWriter, r *http.Request, 
 			worker.MemoryConfigurable = configurable
 			continue
 		}
-		worker.MemoryConfigurable = s.verifyBoxMemoryPool(r.Context(), p.AccountID, worker.Provider, worker.ProviderCredential) == nil
+		worker.MemoryConfigurable = s.verifyBoxMemoryPool(r.Context(), p.AccountID, worker.Provider, worker.ProviderCredential, nil) == nil
 		memoryPools[worker.ProviderCredential] = worker.MemoryConfigurable
 	}
 	writeJSON(w, 200, workers)

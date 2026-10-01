@@ -50,8 +50,10 @@ func (s *Store) BeginLogicalBoxCreation(ctx context.Context, p Principal, reques
 		return creation, fmt.Errorf("diskGiB must be between 1 and 1000")
 	}
 	if request.Provider == "shared-worker" {
-		if request.MemoryGiB != 0 && (request.MemoryGiB < 1 || request.MemoryGiB > 8 || request.SwapGiB == nil || *request.SwapGiB < 0 || *request.SwapGiB > 4) {
-			return creation, fmt.Errorf("shared-worker memoryGiB must be 1–8 and swapGiB 0–4")
+		// Upper bounds depend on the worker's machine and are checked against it
+		// before creation; the worker enforces them again when it creates storage.
+		if request.MemoryGiB != 0 && (request.MemoryGiB < 1 || request.MemoryGiB > v1.MaxBoxMemoryGiB || request.SwapGiB == nil || *request.SwapGiB < 0 || *request.SwapGiB > v1.MaxBoxMemoryGiB) {
+			return creation, fmt.Errorf("shared-worker memoryGiB must be at least 1 and swapGiB at least 0")
 		}
 	} else if request.MemoryGiB != 0 || request.SwapGiB != nil {
 		return creation, fmt.Errorf("per-box memory and swap limits require a container-isolated shared-worker pool")

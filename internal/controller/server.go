@@ -222,6 +222,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/fleet/costs", s.owner(s.fleetCosts))
 	mux.HandleFunc("GET /v1/fleet/slots", s.auth(s.fleetSlots))
 	mux.HandleFunc("PUT /v1/fleet/slots", s.owner(s.setFleetSlots))
+	mux.HandleFunc("GET /v1/fleet/worker", s.owner(s.fleetWorker))
+	mux.HandleFunc("PUT /v1/fleet/worker", s.owner(s.setFleetWorker))
 	mux.HandleFunc("GET /v1/fleet/regions", s.auth(s.fleetRegions))
 	mux.HandleFunc("PUT /v1/fleet/location", s.owner(s.setFleetLocation))
 	mux.HandleFunc("GET /v1/logical-boxes/{id}/resources", s.owner(s.boxResources))
