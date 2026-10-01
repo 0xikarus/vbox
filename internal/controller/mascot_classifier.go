@@ -65,7 +65,8 @@ func (s *Server) mascotObservationHandler(w http.ResponseWriter, r *http.Request
 	if runes := []rune(phrase); len(runes) > 48 {
 		phrase = string(runes[:48])
 	}
-	result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE box_tasks SET mascot_mood=$4,mascot_activity=$5,mascot_observed_at=now(),mascot_phrase=$6
+	result, err := s.Store.DB.ExecContext(r.Context(), `UPDATE box_tasks SET mascot_mood=$4,mascot_activity=$5,mascot_observed_at=now(),
+		mascot_phrase=COALESCE(NULLIF($6,''),mascot_phrase),mascot_phrase_at=CASE WHEN $6<>'' THEN now() ELSE mascot_phrase_at END
 		WHERE account_id=$1 AND logical_box_id=$2 AND session_name=$3 AND state='active' AND agent<>'shell'`, p.AccountID, r.PathValue("id"), request.Session, state.Mood, state.Activity, phrase)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("mascot state unavailable"))

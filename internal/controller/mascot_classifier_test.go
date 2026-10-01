@@ -76,7 +76,8 @@ func TestMascotModelHeldoutExamples(t *testing.T) {
 
 func TestMascotObservationScopesSessionAndStoresOnlyState(t *testing.T) {
 	store, mock := testStore(t)
-	mock.ExpectExec(`UPDATE box_tasks SET mascot_mood`).
+	update := `(?s)UPDATE box_tasks SET mascot_mood=.*mascot_observed_at=now\(\),\s*mascot_phrase=COALESCE\(NULLIF\(\$6,''\),mascot_phrase\),mascot_phrase_at=CASE WHEN \$6<>'' THEN now\(\) ELSE mascot_phrase_at END`
+	mock.ExpectExec(update).
 		WithArgs("account-a", "box-a", "codex-chat", "angry", "idle", "").
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	server := chatTestServer(store)
@@ -88,6 +89,16 @@ func TestMascotObservationScopesSessionAndStoresOnlyState(t *testing.T) {
 	server.mascotObservationHandler(response, request, Principal{AccountID: "account-a", Role: "desktop-agent", Subject: "desktop-box:box-a"})
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"mood":"angry"`) {
 		t.Fatalf("response %d: %s", response.Code, response.Body.String())
+	}
+	mock.ExpectExec(update).
+		WithArgs("account-a", "box-a", "codex-chat", sqlmock.AnyArg(), sqlmock.AnyArg(), "Editing chat.js").
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	request = httptest.NewRequest(http.MethodPost, "/v1/agent-desktop/mascot-observation", bytes.NewBufferString(`{"session":"codex-chat","text":"tool: Editing chat.js"}`))
+	request.SetPathValue("id", "box-a")
+	response = httptest.NewRecorder()
+	server.mascotObservationHandler(response, request, Principal{AccountID: "account-a", Role: "desktop-agent", Subject: "desktop-box:box-a"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("phrase response %d: %s", response.Code, response.Body.String())
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)
