@@ -1,22 +1,11 @@
 'use strict';
 window.VMBoxWorkspaceNav=(()=>{
- function updateUsagePill(button,profiles,owner=true){
+ function updateUsagePill(button,_profiles,owner=true){
   if(!button)return;
-  const remaining=(Array.isArray(profiles)?profiles:[]).flatMap(profile=>(profile.snapshot?.windows||profile.windows||[]).map(window=>window.usedPercent)).filter(used=>typeof used==='number'&&Number.isFinite(used)).map(used=>Math.max(0,Math.min(100,100-used)));
-  const lowest=remaining.length?Math.min(...remaining):null;
-  button.hidden=!owner||lowest===null;
-  if(button.hidden)return;
-  if(!button.querySelector('.workspace-usage-ring')){
-   const ns='http://www.w3.org/2000/svg',ring=document.createElementNS(ns,'svg');ring.classList.add('workspace-usage-ring');ring.setAttribute('viewBox','0 0 20 20');ring.setAttribute('aria-hidden','true');
-   for(const className of ['workspace-usage-ring-track','workspace-usage-ring-value']){const circle=document.createElementNS(ns,'circle');circle.classList.add(className);for(const [key,value] of Object.entries({cx:'10',cy:'10',r:'7',fill:'none','stroke-width':'3',pathLength:'100'}))circle.setAttribute(key,value);ring.append(circle)}
-   const value=document.createElement('span');value.className='workspace-usage-percent';const left=document.createElement('span');left.className='workspace-usage-left';left.textContent='left';button.replaceChildren(ring,value,left);
-  }
-  const percent=Math.round(lowest);
-  button.querySelector('.workspace-usage-ring-value').setAttribute('stroke-dasharray',lowest+' 100');
-  button.querySelector('.workspace-usage-percent').textContent=percent+'%';
-  button.classList.toggle('usage-low',lowest<=20);
-  button.setAttribute('aria-label','Usage limits for all saved profiles: '+percent+'% left');
-  button.title='Usage limits for all saved profiles · '+percent+'% left';
+  button.hidden=!owner;
+  button.textContent='Usage';
+  button.setAttribute('aria-label','Usage');
+  button.title='Usage';
  }
  function init({menuId,panelId,usageId}){
   const menu=menuId?document.getElementById(menuId):null,panel=panelId?document.getElementById(panelId):null,usage=document.getElementById(usageId);
@@ -37,12 +26,6 @@ window.VMBoxWorkspaceNav=(()=>{
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!panel.hidden){event.preventDefault();closeMenu();menu.focus()}})}
   const format=value=>new Intl.NumberFormat(undefined,{maximumFractionDigits:2}).format(value);
   let owner=false;
-  async function refreshIndicator(){
-   if(!owner||document.hidden)return;
-   try{const response=await fetch('/v1/profile-usage',{credentials:'same-origin',cache:'no-store'});if(!response.ok)throw Error('Usage unavailable');const data=await response.json();if(owner)updateUsagePill(usage,data.profiles,true)}
-   catch{if(owner)usage.hidden=true}
-  }
-  setInterval(()=>void refreshIndicator(),60000);
   async function showUsage(){
    closeMenu();list.replaceChildren();status.textContent='Loading profile usage…';dialog.showModal();
    try{
@@ -75,7 +58,7 @@ window.VMBoxWorkspaceNav=(()=>{
    }catch(error){if(dialog.open)status.textContent=error.message}
   }
   usage.onclick=()=>void showUsage();
-  return {setOwner(value){owner=!!value;usage.hidden=true;if(!owner&&dialog.open)dialog.close();if(owner)void refreshIndicator()},closeMenu,refreshUsage:refreshIndicator};
+  return {setOwner(value){owner=!!value;updateUsagePill(usage,null,owner);if(!owner&&dialog.open)dialog.close()},closeMenu};
  }
  return {init,updateUsagePill};
 })();
