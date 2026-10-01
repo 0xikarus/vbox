@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -87,7 +88,7 @@ func mascotJSONLTail(path string) ([][]byte, error) {
 }
 
 func appendMascotText(lines *[]string, role, value string) {
-	if role != "assistant" && role != "tool" && role != "user" {
+	if role != "assistant" && role != "tool" && role != "tool-output" && role != "user" {
 		return
 	}
 	for _, raw := range strings.Split(value, "\n") {
@@ -127,19 +128,141 @@ func mascotContentText(raw json.RawMessage) string {
 	return strings.Join(texts, "\n")
 }
 
-func mascotClaudeToolActivity(raw json.RawMessage) bool {
-	var blocks []struct {
-		Type string `json:"type"`
+func mascotToolLabel(name string, raw json.RawMessage) string {
+	var encoded string
+	if json.Unmarshal(raw, &encoded) == nil {
+		raw = json.RawMessage(encoded)
 	}
-	if json.Unmarshal(raw, &blocks) != nil {
-		return false
+	var input map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &input)
+	value := func(keys ...string) string {
+		for _, key := range keys {
+			var text string
+			if json.Unmarshal(input[key], &text) == nil && text != "" {
+				return text
+			}
+		}
+		return ""
 	}
-	for _, block := range blocks {
-		if block.Type == "tool_use" {
-			return true
+	tool := strings.ToLower(name)
+	switch {
+	case tool == "bash" || tool == "shell" || tool == "exec_command" || tool == "run_shell" || tool == "terminal":
+		return mascotClipToolLabel("Running " + mascotCommandActivity(value("command", "cmd")))
+	case tool == "edit" || tool == "write" || tool == "apply_patch" || tool == "multi_edit":
+		file := mascotToolBasename(value("file_path", "path", "filePath", "filename", "target_file"))
+		if file == "" && tool == "apply_patch" {
+			var patch string
+			_ = json.Unmarshal(input["patch"], &patch)
+			for _, line := range strings.Split(patch, "\n") {
+				if target, ok := strings.CutPrefix(line, "*** Update File: "); ok {
+					file = mascotToolBasename(target)
+					break
+				}
+				if target, ok := strings.CutPrefix(line, "*** Add File: "); ok {
+					file = mascotToolBasename(target)
+					break
+				}
+			}
+		}
+		if file == "" {
+			file = "file"
+		}
+		return mascotClipToolLabel("Editing " + file)
+	case tool == "read" || tool == "read_file" || tool == "view" || tool == "view_image":
+		file := mascotToolBasename(value("file_path", "path", "filePath", "filename"))
+		if file == "" {
+			file = "file"
+		}
+		return mascotClipToolLabel("Reading " + file)
+	case tool == "websearch" || tool == "webfetch" || tool == "web_search" || tool == "web_fetch":
+		return "Searching the web"
+	case tool == "grep" || tool == "glob" || tool == "search" || tool == "search_query" || tool == "rg":
+		return "Searching code"
+	default:
+		name = mascotSafeToolWord(name)
+		if name == "" {
+			name = "tool"
+		}
+		return mascotClipToolLabel("Using " + name)
+	}
+}
+
+func mascotClipToolLabel(label string) string {
+	runes := []rune(label)
+	// The transcript line includes the six-character "tool: " prefix.
+	if len(runes) > 42 {
+		return string(runes[:42])
+	}
+	return label
+}
+
+func mascotSafeToolWord(value string) string {
+	if value == "" {
+		return ""
+	}
+	for _, char := range value {
+		if !((char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_' || char == '-' || char == '.' || char == '+') {
+			return ""
 		}
 	}
-	return false
+	return value
+}
+
+func mascotToolBasename(value string) string {
+	file := path.Base(strings.ReplaceAll(strings.TrimSpace(value), "\\", "/"))
+	if file == "." || file == "/" {
+		return ""
+	}
+	return mascotSafeToolWord(file)
+}
+
+func mascotCommandActivity(command string) string {
+	words := strings.Fields(command)
+	if len(words) == 0 {
+		return "command"
+	}
+	first := mascotSafeToolWord(path.Base(strings.ReplaceAll(words[0], "\\", "/")))
+	if first == "" {
+		return "command"
+	}
+	known := map[string]map[string]bool{
+		"go":    {"test": true, "build": true, "vet": true, "run": true, "fmt": true, "mod": true, "generate": true},
+		"npm":   {"run": true, "test": true, "install": true, "ci": true, "build": true},
+		"pnpm":  {"run": true, "test": true, "install": true, "build": true},
+		"yarn":  {"run": true, "test": true, "install": true, "build": true},
+		"bun":   {"run": true, "test": true, "install": true, "build": true},
+		"cargo": {"test": true, "build": true, "check": true, "fmt": true},
+		"git":   {"status": true, "diff": true, "log": true, "fetch": true, "pull": true, "push": true, "rebase": true, "commit": true},
+	}
+	activity := first
+	if len(words) > 1 && known[strings.ToLower(first)][words[1]] {
+		activity += " " + words[1]
+		if len(words) > 2 && (first == "npm" || first == "pnpm" || first == "yarn" || first == "bun") && words[1] == "run" {
+			switch words[2] {
+			case "build", "test", "lint", "check", "typecheck", "format", "dev", "start":
+				activity += " " + words[2]
+			}
+		}
+	}
+	return activity
+}
+
+func mascotClaudeToolActivities(raw json.RawMessage) []string {
+	var blocks []struct {
+		Type  string          `json:"type"`
+		Name  string          `json:"name"`
+		Input json.RawMessage `json:"input"`
+	}
+	if json.Unmarshal(raw, &blocks) != nil {
+		return nil
+	}
+	var activities []string
+	for _, block := range blocks {
+		if block.Type == "tool_use" {
+			activities = append(activities, mascotToolLabel(block.Name, block.Input))
+		}
+	}
+	return activities
 }
 
 func mascotCodexTranscript(home, id string) (string, error) {
@@ -162,11 +285,13 @@ func mascotCodexTranscript(home, id string) (string, error) {
 		var record struct {
 			Type    string `json:"type"`
 			Payload struct {
-				Type    string          `json:"type"`
-				Role    string          `json:"role"`
-				Content json.RawMessage `json:"content"`
-				Message string          `json:"message"`
-				Output  string          `json:"output"`
+				Type      string          `json:"type"`
+				Role      string          `json:"role"`
+				Content   json.RawMessage `json:"content"`
+				Message   string          `json:"message"`
+				Output    string          `json:"output"`
+				Name      string          `json:"name"`
+				Arguments json.RawMessage `json:"arguments"`
 			} `json:"payload"`
 		}
 		if json.Unmarshal(line, &record) != nil {
@@ -176,9 +301,9 @@ func mascotCodexTranscript(home, id string) (string, error) {
 		case record.Type == "response_item" && record.Payload.Type == "message":
 			appendMascotText(&messages, record.Payload.Role, mascotContentText(record.Payload.Content))
 		case record.Type == "response_item" && record.Payload.Type == "function_call_output":
-			appendMascotText(&messages, "tool", record.Payload.Output)
+			appendMascotText(&messages, "tool-output", record.Payload.Output)
 		case record.Type == "response_item" && record.Payload.Type == "function_call":
-			appendMascotText(&messages, "tool", "Running tool")
+			appendMascotText(&messages, "tool", mascotToolLabel(record.Payload.Name, record.Payload.Arguments))
 		case record.Type == "event_msg" && record.Payload.Type == "agent_message":
 			appendMascotText(&events, "assistant", record.Payload.Message)
 		}
@@ -216,8 +341,10 @@ func mascotClaudeTranscript(home, workspace, id string) (string, error) {
 		}
 		if record.Type == "assistant" || record.Type == "user" {
 			appendMascotText(&lines, record.Message.Role, mascotContentText(record.Message.Content))
-			if record.Type == "assistant" && mascotClaudeToolActivity(record.Message.Content) {
-				appendMascotText(&lines, "tool", "Running tool")
+			if record.Type == "assistant" {
+				for _, activity := range mascotClaudeToolActivities(record.Message.Content) {
+					appendMascotText(&lines, "tool", activity)
+				}
 			}
 		}
 	}

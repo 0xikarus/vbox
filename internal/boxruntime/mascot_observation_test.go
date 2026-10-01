@@ -37,6 +37,12 @@ func TestMascotTranscriptEvidenceFiltersUserAndCode(t *testing.T) {
 	if got := mascotTranscriptEvidence("assistant: Tests passed.\ntool: Running tool"); got != "Tests passed.\nRunning tool" {
 		t.Fatalf("active native tool evidence: %q", got)
 	}
+	if got := mascotTranscriptEvidence("assistant: ```sh\nassistant: $ export TOKEN=abc\ntool: Running go test\nassistant: ```"); got != "Running go test" {
+		t.Fatalf("tool activity inside code fence was lost: %q", got)
+	}
+	if got := mascotTranscriptEvidence("tool-output: $ export TOKEN=abc\ntool: Running export"); got != "Running export" {
+		t.Fatalf("tool output was mistaken for safe activity: %q", got)
+	}
 }
 
 func TestMascotMCPSessionUsesBoxBindingWithoutTmux(t *testing.T) {
@@ -62,7 +68,7 @@ func writeMascotCodexFixture(t *testing.T, home, root, session, id string) {
 	}
 	content := `{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Please fix the error"}]}}` + "\n" +
 		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Fixed the build. All tests passed."}]}}` + "\n" +
-		`{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{}"}}` + "\n"
+		`{"type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"go test ./...\"}"}}` + "\n"
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +80,7 @@ func TestMascotReadsActiveCodexAndClaudeTranscripts(t *testing.T) {
 	id := "01234567-89ab-cdef-0123-456789abcdef"
 	writeMascotCodexFixture(t, home, root, "codex-managed", id)
 	text, err := mascotNativeSample(context.Background(), home, "codex-managed", "codex")
-	if err != nil || !strings.Contains(text, "assistant: Fixed the build. All tests passed.") || !strings.Contains(text, "user: Please fix the error") || !strings.Contains(text, "tool: Running tool") {
+	if err != nil || !strings.Contains(text, "assistant: Fixed the build. All tests passed.") || !strings.Contains(text, "user: Please fix the error") || !strings.Contains(text, "tool: Running go test") {
 		t.Fatalf("Codex sample=%q err=%v", text, err)
 	}
 	if _, err := mascotNativeSample(context.Background(), home, "codex-other", "codex"); err == nil {
@@ -86,13 +92,13 @@ func TestMascotReadsActiveCodexAndClaudeTranscripts(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := `{"type":"user","message":{"role":"user","content":"Why did it fail?"}}` + "\n" +
-		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The retry succeeded."},{"type":"tool_use","name":"Bash","input":{}}]}}` + "\n"
+		`{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The retry succeeded."},{"type":"tool_use","name":"Bash","input":{"command":"go test ./..."}}]}}` + "\n"
 	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("CLAUDE_CODE_SESSION_ID", id)
 	text, err = mascotNativeSample(context.Background(), home, "claude-managed", "claude")
-	if err != nil || !strings.Contains(text, "assistant: The retry succeeded.") || !strings.Contains(text, "user: Why did it fail?") || !strings.Contains(text, "tool: Running tool") {
+	if err != nil || !strings.Contains(text, "assistant: The retry succeeded.") || !strings.Contains(text, "user: Why did it fail?") || !strings.Contains(text, "tool: Running go test") {
 		t.Fatalf("Claude sample=%q err=%v", text, err)
 	}
 }
@@ -158,15 +164,21 @@ func TestMascotHeartbeatSendsNativeExcerptToController(t *testing.T) {
 	if err := writeTextAtomic(filepath.Join(home, ".config", "vmbox", "desktop-agent.json"), string(config), 0600); err != nil {
 		t.Fatal(err)
 	}
-	previous, err := sendMascotHeartbeat(context.Background(), "assignment", home, "codex-managed", "codex", "")
-	if err != nil || previous == "" {
-		t.Fatalf("first observation=%q err=%v", previous, err)
+	now := time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC)
+	state, err := sendMascotHeartbeat(context.Background(), "assignment", home, "codex-managed", "codex", mascotHeartbeatState{}, now)
+	if err != nil || state.text == "" || !state.sentAt.Equal(now) {
+		t.Fatalf("first observation=%+v err=%v", state, err)
 	}
-	if _, err := sendMascotHeartbeat(context.Background(), "assignment", home, "codex-managed", "codex", previous); err != nil {
+	state, err = sendMascotHeartbeat(context.Background(), "assignment", home, "codex-managed", "codex", state, now.Add(29*time.Second))
+	if err != nil {
 		t.Fatal(err)
 	}
 	if requests.Load() != 1 {
-		t.Fatalf("unchanged transcript sent %d observations", requests.Load())
+		t.Fatalf("unchanged transcript sent %d observations before keepalive", requests.Load())
+	}
+	state, err = sendMascotHeartbeat(context.Background(), "assignment", home, "codex-managed", "codex", state, now.Add(30*time.Second))
+	if err != nil || !state.sentAt.Equal(now.Add(30*time.Second)) || requests.Load() != 2 {
+		t.Fatalf("unchanged transcript missed 30s keepalive: state=%+v requests=%d err=%v", state, requests.Load(), err)
 	}
 }
 
