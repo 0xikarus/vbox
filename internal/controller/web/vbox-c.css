@@ -1400,9 +1400,8 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #chat-clear-context:disabled{opacity:.5;cursor:default}
 #chat-clear-context svg{width:1.05rem;height:1.05rem}
 
-/* composer: send morphs into stop */
+/* Keep stop beside Send while the selected agent is active. */
 #chat-composer #chat-interrupt{display:none}
-#chat-composer.is-processing #send{display:none}
 #chat-composer.is-processing #chat-interrupt{display:grid;place-items:center;background:var(--vb-ink);color:var(--vb-bg);border:0}
 
 /* fluid motion (presentational) */
