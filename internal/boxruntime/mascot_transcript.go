@@ -151,8 +151,16 @@ func mascotToolLabel(name string, raw json.RawMessage) string {
 	}
 	tool := strings.ToLower(name)
 	switch {
+	case tool == "chat_message":
+		return "Messaging a box"
+	case tool == "get_contacts":
+		return "Checking contacts"
 	case tool == "bash" || tool == "shell" || tool == "exec_command" || tool == "run_shell" || tool == "terminal":
-		return mascotClipToolLabel("Running " + mascotCommandActivity(value("command", "cmd")))
+		activity := mascotCommandActivity(value("command", "cmd"))
+		if activity == "" {
+			return ""
+		}
+		return mascotClipToolLabel("Running " + activity)
 	case tool == "edit" || tool == "write" || tool == "apply_patch" || tool == "multi_edit":
 		file := mascotToolBasename(value("file_path", "path", "filePath", "filename", "target_file"))
 		if file == "" && tool == "apply_patch" {
@@ -235,6 +243,10 @@ func mascotCommandActivity(command string) string {
 	if first == "" {
 		return "command"
 	}
+	switch strings.ToLower(first) {
+	case "cd", "echo", "sleep", "cat", "ls", "pwd", "true", "test":
+		return ""
+	}
 	known := map[string]map[string]bool{
 		"go":    {"test": true, "build": true, "vet": true, "run": true, "fmt": true, "mod": true, "generate": true},
 		"npm":   {"run": true, "test": true, "install": true, "ci": true, "build": true},
@@ -269,7 +281,9 @@ func mascotClaudeToolActivities(raw json.RawMessage) []string {
 	var activities []string
 	for _, block := range blocks {
 		if block.Type == "tool_use" {
-			activities = append(activities, mascotToolLabel(block.Name, block.Input))
+			if label := mascotToolLabel(block.Name, block.Input); label != "" {
+				activities = append(activities, label)
+			}
 		}
 	}
 	return activities
@@ -313,7 +327,9 @@ func mascotCodexTranscript(home, id string) (string, error) {
 		case record.Type == "response_item" && record.Payload.Type == "function_call_output":
 			appendMascotText(&messages, "tool-output", record.Payload.Output)
 		case record.Type == "response_item" && record.Payload.Type == "function_call":
-			appendMascotText(&messages, "tool", mascotToolLabel(record.Payload.Name, record.Payload.Arguments))
+			if label := mascotToolLabel(record.Payload.Name, record.Payload.Arguments); label != "" {
+				appendMascotText(&messages, "tool", label)
+			}
 		case record.Type == "event_msg" && record.Payload.Type == "agent_message":
 			appendMascotText(&events, "assistant", record.Payload.Message)
 		}

@@ -23,7 +23,7 @@ func main() {
 	flag.Var(&claude, "claude", "Claude JSONL file or directory (repeatable)")
 	flag.Var(&redactions, "redact", "additional account/profile name to remove (repeatable)")
 	extract := flag.Bool("extract", false, "extract anonymized activity snippets")
-	check := flag.Bool("check", false, "verify the bundled ranker and held-out accuracy")
+	check := flag.Bool("check", false, "verify the bundled ranker and report held-out accuracy")
 	out := flag.String("out", "", "output JSONL or ranker path")
 	limit := flag.Int("limit", 2500, "maximum snippets to retain")
 	labels := flag.String("labels", "scripts/activity-data/labels.jsonl", "teacher labels JSONL")

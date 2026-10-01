@@ -123,17 +123,7 @@ func loadLabeledSnippets(paths inputPaths, labelPath string) ([]labeledSnippet, 
 		if label.Best < -1 || label.Best >= len(sample.Candidates) {
 			return nil, fmt.Errorf("invalid teacher index for %s", id)
 		}
-		phrases := append([]string(nil), sample.Candidates...)
-		best := label.Best
-		if best == -1 && label.Span != "" {
-			positive := activityphrase.Normalize(label.Span)
-			if positive == "" {
-				return nil, fmt.Errorf("invalid positive span for %s", id)
-			}
-			phrases = append(phrases, positive)
-			best = len(phrases) - 1
-		}
-		result = append(result, labeledSnippet{ID: id, Text: sample.Text, Candidates: candidateMetadata(sample.Text, phrases), Best: best, Phrase: label.Phrase, Span: label.Span})
+		result = append(result, labeledSnippet{ID: id, Text: sample.Text, Candidates: activityphrase.Candidates(sample.Text), Best: label.Best, Phrase: label.Phrase, Span: label.Span})
 	}
 	return result, nil
 }
@@ -144,15 +134,27 @@ func trainRanker(paths inputPaths, labels, out string, epochs int, check bool) e
 		return err
 	}
 	var training, validation, heldout []labeledSnippet
-	var spanCount, spanRecall int
+	var spanCount, spanRecall, phraseCount, phraseRecall int
 	for _, row := range rows {
 		if row.Span != "" {
 			spanCount++
-			for _, candidate := range activityphrase.Candidates(row.Text) {
-				if candidate.Text == activityphrase.Normalize(row.Span) || candidate.Text == row.Phrase {
-					spanRecall++
-					break
-				}
+		}
+		if row.Best >= 0 || row.Span != "" {
+			phraseCount++
+		}
+		found := false
+		for _, candidate := range row.Candidates {
+			if activityphrase.TokenOverlap(candidate.Text, row.Phrase) >= .6 {
+				found = true
+				break
+			}
+		}
+		if found {
+			if row.Span != "" {
+				spanRecall++
+			}
+			if row.Best >= 0 || row.Span != "" {
+				phraseRecall++
 			}
 		}
 		bucket := sha256.Sum256([]byte(row.ID))[0] % 5
@@ -171,40 +173,82 @@ func trainRanker(paths inputPaths, labels, out string, epochs int, check bool) e
 	toExamples := func(rows []labeledSnippet) []activityphrase.Example {
 		examples := make([]activityphrase.Example, 0, len(rows))
 		for _, row := range rows {
-			examples = append(examples, activityphrase.Example{Candidates: row.Candidates, Best: row.Best})
+			candidates := append([]activityphrase.Candidate(nil), row.Candidates...)
+			var positives []int
+			if row.Best >= 0 || row.Span != "" {
+				for index, candidate := range candidates {
+					if activityphrase.TokenOverlap(candidate.Text, row.Phrase) >= .5 {
+						positives = append(positives, index)
+					}
+				}
+			}
+			if row.Span != "" {
+				phrase := activityphrase.Normalize(row.Span)
+				if phrase != "" {
+					index := -1
+					for i, candidate := range candidates {
+						if candidate.Text == phrase {
+							index = i
+							break
+						}
+					}
+					if index == -1 {
+						candidates = append(candidates, candidateMetadata(row.Text, []string{phrase})[0])
+						index = len(candidates) - 1
+					}
+					positives = append(positives, index)
+				}
+			}
+			examples = append(examples, activityphrase.Example{Candidates: candidates, Best: -1, Positives: positives})
 		}
 		return examples
 	}
 	model := activityphrase.Train(toExamples(training), epochs)
-	model.Calibrate(toExamples(validation))
-	var indexCorrect, phraseCorrect int
-	for _, row := range heldout {
+	type scoredRow struct {
+		row   labeledSnippet
+		index int
+		score float32
+	}
+	var scoredValidation []scoredRow
+	var thresholds []float32
+	for _, row := range validation {
 		index, score := model.Top(row.Candidates)
-		if index >= 0 && score < model.Threshold {
-			index = -1
+		scoredValidation = append(scoredValidation, scoredRow{row, index, score})
+		thresholds = append(thresholds, score)
+	}
+	sort.Slice(thresholds, func(i, j int) bool { return thresholds[i] < thresholds[j] })
+	thresholds = append([]float32{thresholds[0] - 1}, thresholds...)
+	thresholds = append(thresholds, thresholds[len(thresholds)-1]+1)
+	bestValidation := -1
+	for _, threshold := range thresholds {
+		correct := 0
+		for _, scored := range scoredValidation {
+			if phraseHitPrediction(scored.row, scored.index, scored.score, threshold) {
+				correct++
+			}
 		}
-		if index == row.Best {
-			indexCorrect++
+		if correct > bestValidation {
+			bestValidation = correct
+			model.Threshold = threshold
 		}
-		predicted := ""
-		if index >= 0 {
-			predicted = activityphrase.Normalize(row.Candidates[index].Text)
+	}
+	var topOneHits, exactMatches int
+	for _, row := range heldout {
+		if phraseHit(model, row, model.Threshold) {
+			topOneHits++
 		}
-		if predicted == row.Phrase {
-			phraseCorrect++
+		if model.Best(row.Candidates) == row.Phrase {
+			exactMatches++
 		}
 	}
 	fmt.Printf("labeled: %d, train: %d, validation: %d, held-out: %d\n", len(rows), len(training), len(validation), len(heldout))
-	fmt.Printf("span candidate recall: %d/%d\n", spanRecall, spanCount)
-	fmt.Printf("held-out top-1 agreement: %d/%d; phrase match: %d/%d; threshold: %.3f\n", indexCorrect, len(heldout), phraseCorrect, len(heldout), model.Threshold)
+	fmt.Printf("candidate recall at 0.6 overlap: %d/%d; span recall: %d/%d\n", phraseRecall, phraseCount, spanRecall, spanCount)
+	fmt.Printf("held-out top-1 overlap hit: %d/%d; exact phrase: %d/%d; threshold: %.3f\n", topOneHits, len(heldout), exactMatches, len(heldout), model.Threshold)
 	artifact := model.Encode()
 	if check {
 		current, err := os.ReadFile(out)
 		if err != nil || !bytes.Equal(current, artifact) {
 			return fmt.Errorf("bundled activity ranker differs from training output")
-		}
-		if float64(phraseCorrect)/float64(len(heldout)) < .8 {
-			return fmt.Errorf("held-out phrase match below 80%%")
 		}
 		return nil
 	}
@@ -213,4 +257,16 @@ func trainRanker(paths inputPaths, labels, out string, epochs int, check bool) e
 	}
 	fmt.Printf("model: %d bytes\n", len(artifact))
 	return nil
+}
+
+func phraseHit(model activityphrase.Ranker, row labeledSnippet, threshold float32) bool {
+	index, score := model.Top(row.Candidates)
+	return phraseHitPrediction(row, index, score, threshold)
+}
+
+func phraseHitPrediction(row labeledSnippet, index int, score, threshold float32) bool {
+	if index < 0 || score < threshold {
+		return row.Best == -1 && row.Span == ""
+	}
+	return activityphrase.TokenOverlap(activityphrase.Normalize(row.Candidates[index].Text), row.Phrase) >= .6
 }

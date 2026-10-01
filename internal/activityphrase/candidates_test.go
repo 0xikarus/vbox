@@ -48,3 +48,10 @@ func TestCandidatesSkipNonActions(t *testing.T) {
 		t.Fatalf("non-actions became candidates: %+v", got)
 	}
 }
+
+func TestCandidatesSummarizeConsecutiveScreenshots(t *testing.T) {
+	got := Candidates("tool: Reading image-1.png\ntool: Reading image-2.png\ntool: Reading image-3.png")
+	if len(got) != 1 || got[0].Text != "Reviewing screenshots" || !got[0].Tool {
+		t.Fatalf("screenshot sequence: %+v", got)
+	}
+}

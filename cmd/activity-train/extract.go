@@ -223,7 +223,7 @@ func codexTranscript(path string, emit func(string)) error {
 		case record.Type == "response_item" && payload.Type == "message" && payload.Role == "assistant":
 			emitAssistant(contentText(payload.Content), emit)
 		case record.Type == "response_item" && payload.Type == "function_call":
-			emit("tool: " + boxruntime.MascotToolLabel(payload.Name, payload.Arguments))
+			emitTool(boxruntime.MascotToolLabel(payload.Name, payload.Arguments), emit)
 		case record.Type == "event_msg" && payload.Type == "agent_message":
 			emitAssistant(payload.Message, emit)
 		case record.Type == "event_msg" && payload.Type == "item_completed":
@@ -244,16 +244,16 @@ func codexTranscript(path string, emit func(string)) error {
 				emitAssistant(contentText(item.Content), emit)
 			case "CommandExecution":
 				arg, _ := json.Marshal(map[string]string{"cmd": item.Command})
-				emit("tool: " + boxruntime.MascotToolLabel("exec_command", arg))
+				emitTool(boxruntime.MascotToolLabel("exec_command", arg), emit)
 			case "FileChange":
 				file := firstChangedPath(item.Changes)
 				arg, _ := json.Marshal(map[string]string{"file_path": file})
-				emit("tool: " + boxruntime.MascotToolLabel("Edit", arg))
+				emitTool(boxruntime.MascotToolLabel("Edit", arg), emit)
 			case "McpToolCall":
-				emit("tool: " + boxruntime.MascotToolLabel(item.Tool, item.Arguments))
+				emitTool(boxruntime.MascotToolLabel(item.Tool, item.Arguments), emit)
 			case "ImageView":
 				arg, _ := json.Marshal(map[string]string{"path": item.Path})
-				emit("tool: " + boxruntime.MascotToolLabel("view", arg))
+				emitTool(boxruntime.MascotToolLabel("view", arg), emit)
 			}
 		}
 	})
@@ -314,7 +314,7 @@ func claudeTranscript(path string, emit func(string)) error {
 				}
 			case "tool_use":
 				if record.Type == "assistant" {
-					emit("tool: " + boxruntime.MascotToolLabel(block.Name, block.Input))
+					emitTool(boxruntime.MascotToolLabel(block.Name, block.Input), emit)
 				}
 			case "tool_result":
 				// Native tool results are user-role context, not agent activity.
@@ -330,6 +330,12 @@ func emitAssistant(text string, emit func(string)) {
 		if line != "" && len(line) <= 400 {
 			emit("assistant: " + line)
 		}
+	}
+}
+
+func emitTool(label string, emit func(string)) {
+	if label != "" {
+		emit("tool: " + label)
 	}
 }
 

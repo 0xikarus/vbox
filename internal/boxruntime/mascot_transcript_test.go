@@ -26,7 +26,9 @@ func TestMascotNativeToolActivities(t *testing.T) {
 		{"web search", "web_search", "WebSearch", "Searching the web", map[string]string{"query": "secret"}},
 		{"web fetch", "web_fetch", "WebFetch", "Searching the web", map[string]string{"url": "https://example.test/token=abc"}},
 		{"other", "TaskTool", "TaskTool", "Using TaskTool", map[string]string{"prompt": "private data"}},
-		{"namespaced MCP", "mcp__vmbox-desktop__chat_message", "mcp__vmbox-desktop__chat_message", "Using chat_message", map[string]string{"text": "private data"}},
+		{"namespaced MCP", "mcp__vmbox-desktop__chat_message", "mcp__vmbox-desktop__chat_message", "Messaging a box", map[string]string{"text": "private data"}},
+		{"contact lookup", "mcp__vmbox-desktop__get_contacts", "mcp__vmbox-desktop__get_contacts", "Checking contacts", map[string]string{}},
+		{"trivial shell", "exec_command", "Bash", "", map[string]string{"cmd": "cd /private/work", "command": "cd /private/work"}},
 		{"secret command", "exec_command", "Bash", "Running export", map[string]string{"cmd": "export TOKEN=abc && curl -H 'Authorization: Bearer secret' https://example.test", "command": "export TOKEN=abc && curl -H 'Authorization: Bearer secret' https://example.test"}},
 	}
 	const id = "01234567-89ab-cdef-0123-456789abcdef"
@@ -49,7 +51,11 @@ func TestMascotNativeToolActivities(t *testing.T) {
 				t.Fatal(err)
 			}
 			codex, err := mascotCodexTranscript(home, id)
-			if err != nil || codex != "tool: "+tc.want {
+			want := ""
+			if tc.want != "" {
+				want = "tool: " + tc.want
+			}
+			if err != nil || codex != want {
 				t.Fatalf("Codex: got %q, want %q, err=%v", codex, tc.want, err)
 			}
 			claudeRecord, err := json.Marshal(map[string]any{"type": "assistant", "message": map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "tool_use", "name": tc.claudeTool, "input": tc.input}}}})
@@ -65,7 +71,7 @@ func TestMascotNativeToolActivities(t *testing.T) {
 				t.Fatal(err)
 			}
 			claude, err := mascotClaudeTranscript(home, workspace, id)
-			if err != nil || claude != "tool: "+tc.want {
+			if err != nil || claude != want {
 				t.Fatalf("Claude: got %q, want %q, err=%v", claude, tc.want, err)
 			}
 			for _, sample := range []string{codex, claude} {
@@ -74,5 +80,14 @@ func TestMascotNativeToolActivities(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestMascotTrivialShellCommandsAreOmitted(t *testing.T) {
+	for _, command := range []string{"cd /tmp", "echo hello", "sleep 1", "cat file", "ls -la", "pwd", "true", "test -f file"} {
+		input, _ := json.Marshal(map[string]string{"command": command})
+		if got := MascotToolLabel("Bash", input); got != "" {
+			t.Errorf("%q produced %q", command, got)
+		}
 	}
 }

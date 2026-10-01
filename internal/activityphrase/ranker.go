@@ -18,6 +18,7 @@ const rankerMagic = "ACTRANK1"
 type Example struct {
 	Candidates []Candidate
 	Best       int
+	Positives  []int
 }
 
 type Ranker struct {
@@ -31,6 +32,29 @@ type feature struct {
 }
 
 var rankerWords = regexp.MustCompile(`[\pL\pN]+`)
+
+// TokenOverlap is the F1 overlap of unique, case-folded words in two phrases.
+func TokenOverlap(left, right string) float64 {
+	leftWords := rankerWords.FindAllString(strings.ToLower(left), -1)
+	rightWords := rankerWords.FindAllString(strings.ToLower(right), -1)
+	if len(leftWords) == 0 || len(rightWords) == 0 {
+		return 0
+	}
+	leftSet, rightSet := make(map[string]bool), make(map[string]bool)
+	for _, word := range leftWords {
+		leftSet[word] = true
+	}
+	for _, word := range rightWords {
+		rightSet[word] = true
+	}
+	common := 0
+	for word := range leftSet {
+		if rightSet[word] {
+			common++
+		}
+	}
+	return 2 * float64(common) / float64(len(leftSet)+len(rightSet))
+}
 
 func hashedFeature(name string) (int, float32) {
 	hash := fnv.New64a()
@@ -138,15 +162,24 @@ func (model Ranker) Best(candidates []Candidate) string {
 func Train(examples []Example, epochs int) Ranker {
 	model := Ranker{Weights: make([]float32, featureCount)}
 	type prepared struct {
-		vectors [][]feature
-		best    int
+		vectors  [][]feature
+		best     int
+		positive map[int]bool
 	}
 	var corpus []prepared
 	for _, example := range examples {
 		if len(example.Candidates) == 0 || example.Best < -1 || example.Best >= len(example.Candidates) {
 			continue
 		}
-		row := prepared{best: example.Best}
+		row := prepared{best: example.Best, positive: make(map[int]bool)}
+		for _, index := range example.Positives {
+			if index >= 0 && index < len(example.Candidates) {
+				row.positive[index] = true
+			}
+		}
+		if len(row.positive) > 0 {
+			row.best = -1
+		}
 		for _, candidate := range example.Candidates {
 			row.vectors = append(row.vectors, features(candidate))
 		}
@@ -173,7 +206,9 @@ func Train(examples []Example, epochs int) Ranker {
 			for i, vector := range row.vectors {
 				probability := math.Exp(scores[i]-maximum) / denominator
 				gradient := -float32(probability)
-				if i == row.best {
+				if row.positive[i] {
+					gradient += 1 / float32(len(row.positive))
+				} else if i == row.best {
 					gradient++
 				}
 				for _, item := range vector {

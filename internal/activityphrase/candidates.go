@@ -15,6 +15,7 @@ type Candidate struct {
 }
 
 var activityWords = regexp.MustCompile(`[\pL][\pL\pN'’-]*`)
+var activityImageTool = regexp.MustCompile(`(?i)^tool: Reading [^\s]+\.(?:png|jpe?g|gif|webp)$`)
 
 var activityStops = map[string]bool{
 	"a": true, "an": true, "and": true, "but": true, "or": true, "then": true,
@@ -66,6 +67,25 @@ func Candidates(text string) []Candidate {
 	if len(lines) > 12 {
 		lines = lines[len(lines)-12:]
 	}
+	var collapsed []string
+	for i := 0; i < len(lines); {
+		if !activityImageTool.MatchString(lines[i]) {
+			collapsed = append(collapsed, lines[i])
+			i++
+			continue
+		}
+		end := i + 1
+		for end < len(lines) && activityImageTool.MatchString(lines[end]) {
+			end++
+		}
+		if end-i >= 2 {
+			collapsed = append(collapsed, "tool: Reviewing screenshots")
+		} else {
+			collapsed = append(collapsed, lines[i])
+		}
+		i = end
+	}
+	lines = collapsed
 	var result []Candidate
 	for lineIndex, line := range lines {
 		line = strings.TrimPrefix(line, "assistant: ")

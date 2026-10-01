@@ -31,6 +31,8 @@ jobs:
         run: |
           go run ./cmd/mascot-train -check
           go test ./internal/controller -run 'TestClassifyMascotText|TestMascotModelHeldoutExamples|TestMascotObservationScopesSessionAndStoresOnlyState'
+      - name: Verify bundled activity ranker and held-out agreement
+        run: go run ./cmd/activity-train -check
       - name: Test agent authorization and delivery boundaries
         run: >-
           go test ./internal/controller

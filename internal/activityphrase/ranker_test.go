@@ -32,3 +32,12 @@ func TestRankerLearnsCandidateChoiceAndRoundTrips(t *testing.T) {
 		t.Fatal("truncated ranker was accepted")
 	}
 }
+
+func TestTokenOverlap(t *testing.T) {
+	if got := TokenOverlap("Fixing the mobile layout", "fixing mobile layout"); got < .8 {
+		t.Fatalf("overlap=%f", got)
+	}
+	if got := TokenOverlap("Reading image.png", "Reviewing screenshots"); got != 0 {
+		t.Fatalf("unrelated overlap=%f", got)
+	}
+}
