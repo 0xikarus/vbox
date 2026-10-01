@@ -210,7 +210,7 @@
      <label>Disk (GiB) <input name="disk" type="number" min="1" max="1024" value="10"></label>
      <div id="create-memory-settings" hidden><label>RAM GiB <input name="memoryGiB" type="number" min="1" max="8" value="2"></label><label>Swap GiB <input name="swapGiB" type="number" min="0" max="4" value="1"></label></div>
      <label id="create-pool-label" class="field" hidden>Worker pool <select id="create-pool" name="pool"></select></label>
-     <p id="create-pool-status" class="hint" hidden></p>
+     <details id="create-pool-status" class="hint" hidden><summary></summary><p></p></details>
     </fieldset>
     <fieldset class="nb-step"><legend>2 · Logins</legend><div id="profile-choices" class="profiles"></div></fieldset>
     <fieldset class="nb-step"><legend>3 · Tools</legend><fieldset id="create-tools" class="tools"></fieldset><details class="custom-tools"><summary>Add custom tooling</summary><label>Install commands (Bash)<textarea name="setupScript" rows="3" maxlength="32768" placeholder="sudo apt-get update &amp;&amp; sudo apt-get install -y ripgrep"></textarea></label><p class="hint">Runs inside the box before work starts (5-min limit). Idempotent; reruns on resume.</p></details></fieldset>
@@ -225,7 +225,7 @@
     <p class="preview-note" id="create-preview-note">Prices come from the provider catalog; pool status refreshes live.</p>
    </aside>
   </div>
-  <footer class="new-box-footer"><p id="new-box-status" role="status"></p><button type="button" id="new-box-cancel" class="vb-ghost">Cancel</button><button id="create-box-submit" type="submit" form="create-box">Create and start box</button></footer>
+  <footer class="new-box-footer"><div class="new-box-footer-text"><p id="new-box-summary"></p><p id="new-box-status" role="status"></p></div><button type="button" id="new-box-cancel" class="vb-ghost">Cancel</button><button id="create-box-submit" type="submit" form="create-box">Create and start box</button></footer>
  </section>
 </div>
 

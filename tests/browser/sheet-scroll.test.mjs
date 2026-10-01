@@ -60,6 +60,14 @@ test('mobile menu and Permissions sheets scroll natively with a visible position
   await page.evaluate(()=>{const body=document.querySelector('#role-editor-modal .sheet-scroll-body');body.scrollTop=body.scrollHeight});
   await page.waitForFunction(()=>!document.querySelector('#role-editor-modal .sheet-scroll-frame').classList.contains('sheet-has-below'));
   assert.ok(await page.$eval('#role-editor-status',el=>el.getBoundingClientRect().bottom<=el.closest('.sheet-scroll-body').getBoundingClientRect().bottom+1));
+  await page.evaluate(()=>{const option=document.querySelector('.mcp-tool-group .role-capability-options');option.open=true;option.scrollIntoView({block:'center'})});
+  const tool=await page.$eval('input[name=mcpTools]',input=>({width:input.getBoundingClientRect().width,height:input.getBoundingClientRect().height,radius:getComputedStyle(input).borderRadius,before:input.checked,row:input.closest('label').getBoundingClientRect().height}));
+  assert.ok(tool.width>=18&&tool.height>=18,'MCP choices keep a visible checkbox');
+  assert.equal(tool.radius,'6px','tool choices use the shared rounded square checkbox');
+  assert.ok(tool.row>=44,'the whole tool row is a tap target');
+  await page.$eval('input[name=mcpTools]',input=>input.closest('label').click());
+  assert.equal(await page.$eval('input[name=mcpTools]',input=>input.checked),!tool.before,'tapping the row toggles its checkbox');
+  assert.equal(await page.$eval('.mcp-tool-group .role-capability-options',option=>getComputedStyle(option.querySelector('summary'),'::after').transform==='none'),false,'the expanded chevron rotates');
   await page.evaluate(()=>{document.querySelector('.mcp-tool-options').open=false});
   await page.waitForFunction(()=>!document.querySelector('#role-editor-modal .sheet-scroll-frame').classList.contains('sheet-can-scroll'));
   assert.equal((await permissions()).indicator,'none');
@@ -84,6 +92,12 @@ test('mobile menu and Permissions sheets scroll natively with a visible position
   await page.evaluate(()=>{document.querySelector('.model-picker-dialog').close();document.querySelector('#chat-group-dialog').showModal()});
   assert.equal(await page.$eval('#chat-group-dialog',dialog=>Math.round(dialog.getBoundingClientRect().bottom)),844,'group editor shares the mobile bottom-sheet surface');
   assert.equal(await page.$eval('#chat-group-dialog .sheet-scroll-body',body=>getComputedStyle(body).overflowY),'auto');
+  await page.evaluate(()=>{document.querySelector('#chat-group-dialog').close();document.querySelector('#new-box-modal').hidden=false});
+  await page.waitForSelector('#new-box-card .sheet-scroll-new-box #create-box');
+  const boxSheet=await page.$eval('#new-box-card',card=>({preview:getComputedStyle(card.querySelector('#create-preview')).display,scrollables:[...card.querySelectorAll('*')].filter(el=>getComputedStyle(el).overflowY==='auto'&&el.scrollHeight>el.clientHeight+2).map(el=>el.id||el.className),summary:getComputedStyle(card.querySelector('#new-box-summary')).display}));
+  assert.equal(boxSheet.preview,'none');assert.deepEqual(boxSheet.scrollables,['create-box'],'the form is the only scrollable region');assert.notEqual(boxSheet.summary,'none');
+  await page.$eval('#create-box',form=>form.scrollTop=form.scrollHeight);
+  assert.ok(await page.$eval('#create-box .nb-step:last-child',step=>step.getBoundingClientRect().bottom<=document.querySelector('#create-box').getBoundingClientRect().bottom+2),'the last New box field is reachable');
   assert.deepEqual(errors,[]);
   await page.close();
  }finally{await browser.close();server.close()}

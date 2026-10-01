@@ -535,7 +535,7 @@
   if(kind==='image'){
    const frame=document.createElement('span');frame.className='media-preview';
    const placeholder=document.createElement('span');placeholder.className='media-preview-placeholder';placeholder.textContent='Loading '+(label||'image')+'…';
-   const img=document.createElement('img');img.className='chat-image';img.alt=alt||'';img.loading='lazy';
+   const img=document.createElement('img');img.className='chat-image';img.alt=alt||'';img.loading='lazy';img.draggable=false;
    img.onload=()=>{placeholder.hidden=true;frame.classList.add('ready')};
    img.onerror=()=>{placeholder.textContent='Preview unavailable';frame.classList.add('failed')};
    frame.append(placeholder,img);btn.append(frame);
@@ -546,7 +546,7 @@
    const name=document.createElement('span');name.textContent=label||alt||(kind==='video'?'Play video':'Play audio');
    chip.append(glyph,name);btn.append(chip);
   }
-  btn.onclick=()=>openMediaViewer(gallery?.length?gallery:[{url,kind,alt,label}],index);
+  btn.onclick=event=>{if(btn.closest('.msg')?._swipeUntil>Date.now()){event.preventDefault();return}openMediaViewer(gallery?.length?gallery:[{url,kind,alt,label}],index)};
   return btn;
  }
  function enhanceMediaLinks(root){
@@ -1426,7 +1426,8 @@
   }
   row.addEventListener('pointerdown',event=>{
    if(event.pointerType!=='touch'&&event.pointerType!=='pen'||!event.isPrimary||event.button!==0)return;
-   if(event.target.closest('a,button,input,textarea,select,video,audio,img,pre,code,[contenteditable],.media-preview'))return;
+   if(event.target.closest('a,input,textarea,select,pre,code,[contenteditable]'))return;
+   if(event.target.closest('button,video,audio,img')&&!event.target.closest('.media-button'))return;
    const selection=getSelection();if(selection&&!selection.isCollapsed)return;
    for(let node=event.target;node&&node!==row;node=node.parentElement)if(node.scrollWidth>node.clientWidth+2&&getComputedStyle(node).overflowX!=='visible')return;
    clearTimeout(settleTimer);row.classList.remove('swipe-returning');
@@ -2790,6 +2791,9 @@
    const selectedPool=createForm.elements.pool?.value||createForm.dataset.autoPool||'';
    const pool=selectedPool!==''?JSON.parse(createForm.dataset.pools||'[]')[Number(selectedPool)]:null;
    $('#create-memory-settings').hidden=pool?.provider!=='shared-worker';
+   const agent=createForm.elements.defaultAgent.selectedOptions[0]?.textContent||createForm.elements.defaultAgent.value;
+   const placement=pool?.provider?pool.provider+(pool.providerCredential?'/'+pool.providerCredential:''):createForm.dataset.provider?(createForm.dataset.provider+(createForm.dataset.providerCredential?'/'+createForm.dataset.providerCredential:'')):'Automatic pool';
+   const summary=$('#new-box-summary');summary.textContent=(createForm.elements.name.value.trim()||'my-agent-box')+' · '+agent+' · '+placement;summary.title=summary.textContent;
    if(!previewCard)return;
    previewCard.replaceChildren();
    for(const [key,value] of previewRows()){
@@ -2901,7 +2905,12 @@
    $('#create-pool-label').hidden=pools.length===0;
    const poolHint=$('#create-pool-status');
    poolHint.hidden=pools.length===0;
-   if(pools.length)poolHint.textContent=pools.map((pool,index)=>poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared')).join(' · ')+' — boxes wait in the controller queue when their pool has no free slots.';
+   if(pools.length){
+    const unavailable=pools.findIndex((_,index)=>poolStatuses[index]?.free===0),available=pools.findIndex((_,index)=>poolStatuses[index]?.free>0);
+    const name=index=>pools[index].providerCredential||pools[index].provider;
+    poolHint.querySelector('summary').textContent=unavailable>=0?'No free slot in '+name(unavailable)+(available>=0?' · '+poolStatuses[available].free+' free in '+name(available):' · boxes will queue'):available>=0?poolStatuses[available].free+' free in '+name(available):'Pool status unavailable';
+    poolHint.querySelector('p').textContent=pools.map((pool,index)=>poolLabel(pool,poolStatuses[index]).replace('Dedicated · ','').replace('Shared worker','shared')).join(' · ')+' · Boxes wait in the controller queue when their pool has no free slots.';
+   }
    createForm.dataset.pools=JSON.stringify(pools);
    if(defaults.provider){createForm.dataset.provider=defaults.provider;createForm.dataset.providerCredential=defaults.providerCredential||''}
    renderCreationProfileChoices(profiles);
