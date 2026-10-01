@@ -34,6 +34,7 @@
 .workspace-usage-dialog .sheet-scroll-body{padding:16px}
 .workspace-usage-dialog h2{flex:1;margin:0;padding:0;border:0;font-size:var(--vb-type-rem-1-05);text-transform:none}
 .workspace-usage-dialog button{padding:.35rem .6rem;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-ink);text-transform:none;cursor:pointer}
+.workspace-usage-add-profile{padding:.35rem .6rem;border:1px solid var(--vb-line);border-radius:var(--r-control);background:var(--vb-surface);color:var(--vb-ink);font-weight:600;text-decoration:none;white-space:nowrap}
 .workspace-usage-dialog p{margin:.35rem 0;color:var(--vb-ink-soft)}
 .workspace-usage-profile{padding:.7rem;margin:.6rem 0;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-bg-soft)}
 .workspace-usage-profile h3{margin:0 0 .35rem;font-size:var(--vb-type-rem-0-9);text-transform:none}

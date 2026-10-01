@@ -91,6 +91,7 @@ test('usage shows remaining capacity and Conversations width can be resized and 
   await page.waitForFunction(()=>document.querySelector('#chat-usage')?.textContent.includes('10% left'));
   await page.click('#usage-toggle');
   assert.match(await page.$eval('#usage-title',element=>element.textContent),/Profile usage limits/);
+  assert.equal(await page.$eval('#usage-add-profile',element=>element.getAttribute('href')),'/?add-profile=1#profiles');
   assert.match(await page.$eval('#usage-list',element=>element.textContent),/claude · personal/);
   await page.click('#usage-refresh');
   await page.waitForFunction(()=>document.querySelector('#usage-status')?.textContent.includes('Usage updated.'));

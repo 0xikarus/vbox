@@ -66,6 +66,7 @@ type profileLoginView struct {
 var profileLoginURLs = regexp.MustCompile(`https://[^\s<>"']+`)
 var profileDeviceCode = regexp.MustCompile(`\b[A-Z0-9]{4,8}-[A-Z0-9]{4,8}\b`)
 var profileANSI = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
+var profileOSC = regexp.MustCompile(`\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)`)
 var profileEmail = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
 
 func newProfileLoginManager() *profileLoginManager {
@@ -131,11 +132,12 @@ func (s *profileLoginSession) ingest(output []byte) {
 			delete(s.watchers, watcher)
 		}
 	}
-	s.output += profileANSI.ReplaceAllString(string(output), "")
+	s.output += string(output)
 	if len(s.output) > 16384 {
 		s.output = s.output[len(s.output)-16384:]
 	}
-	for _, raw := range profileLoginURLs.FindAllString(s.output, -1) {
+	visible := profileANSI.ReplaceAllString(profileOSC.ReplaceAllString(s.output, ""), "")
+	for _, raw := range profileLoginURLs.FindAllString(visible, -1) {
 		if validated := officialProfileLoginURL(s.app, raw); validated != "" {
 			parsed, _ := url.Parse(validated)
 			if s.app != "codex" || (s.flow == "browser" && parsed.Path == "/oauth/authorize" && validCodexBrowserCallbackURL(codexBrowserRedirect(parsed))) || (s.flow != "browser" && parsed.Path == "/codex/device") {
@@ -147,7 +149,7 @@ func (s *profileLoginSession) ingest(output []byte) {
 		s.status = "waiting"
 	}
 	if s.app == "codex" && s.flow != "browser" && s.url != "" {
-		if code := profileDeviceCode.FindString(s.output); code != "" {
+		if code := profileDeviceCode.FindString(visible); code != "" {
 			s.code = code
 			s.status = "waiting"
 		}
@@ -189,8 +191,8 @@ func (s *Server) browserProfileLoginCallback(w http.ResponseWriter, r *http.Requ
 		writeError(w, 400, fmt.Errorf("paste the localhost callback URL from your browser"))
 		return
 	}
-	query := callback.Query()
-	if len(query) != 2 || len(query["code"]) != 1 || len(query["state"]) != 1 || query.Get("code") == "" || query.Get("state") == "" {
+	query, queryErr := url.ParseQuery(callback.RawQuery)
+	if queryErr != nil || len(query["code"]) != 1 || len(query["state"]) != 1 || query.Get("code") == "" || query.Get("state") == "" {
 		writeError(w, 400, fmt.Errorf("the callback URL is missing a sign-in code or state"))
 		return
 	}
