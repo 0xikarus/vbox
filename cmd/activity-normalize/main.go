@@ -1,5 +1,5 @@
-// activity-normalize applies the harness's tool-label parser to synthetic
-// examples before they enter the offline generator trainer.
+// activity-normalize applies the harness's tool-label parser and shared
+// evidence normalization to real and synthetic generator examples.
 package main
 
 import (
@@ -8,29 +8,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 
-	"github.com/0xikarus/vmbox-service/internal/boxruntime"
+	"github.com/0xikarus/vmbox-service/internal/activityphrase"
 )
-
-type example struct {
-	ID     string `json:"id"`
-	Text   string `json:"text"`
-	Phrase string `json:"phrase"`
-}
-
-func normalizeText(text string) string {
-	lines := strings.Split(text, "\n")
-	for i, line := range lines {
-		command, ok := strings.CutPrefix(line, "tool: Running ")
-		if !ok || command == "command" || command == "node tests" {
-			continue
-		}
-		input, _ := json.Marshal(map[string]string{"command": command})
-		lines[i] = "tool: " + boxruntime.MascotToolLabel("Bash", input)
-	}
-	return strings.Join(lines, "\n")
-}
 
 func run(input, output string) error {
 	source, err := os.Open(input)
@@ -46,16 +26,21 @@ func run(input, output string) error {
 	scanner := bufio.NewScanner(source)
 	scanner.Buffer(make([]byte, 64<<10), 4<<20)
 	for scanner.Scan() {
-		var item example
+		var item map[string]json.RawMessage
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			destination.Close()
 			return err
 		}
-		if item.ID == "" || item.Phrase == "" {
+		var id, content string
+		if err := json.Unmarshal(item["id"], &id); err != nil || id == "" {
 			destination.Close()
-			return fmt.Errorf("synthetic example missing id or phrase")
+			return fmt.Errorf("activity example missing id")
 		}
-		item.Text = normalizeText(item.Text)
+		if err := json.Unmarshal(item["text"], &content); err != nil {
+			destination.Close()
+			return fmt.Errorf("activity example %s missing text: %w", id, err)
+		}
+		item["text"], _ = json.Marshal(activityphrase.NormalizeEvidence(content))
 		data, err := json.Marshal(item)
 		if err != nil {
 			destination.Close()
@@ -78,7 +63,7 @@ func run(input, output string) error {
 }
 
 func main() {
-	input := flag.String("input", "scripts/activity-data/synthetic.jsonl", "synthetic training JSONL")
+	input := flag.String("input", "scripts/activity-data/synthetic.jsonl", "activity example JSONL")
 	output := flag.String("output", "", "normalized JSONL path")
 	flag.Parse()
 	if *output == "" {

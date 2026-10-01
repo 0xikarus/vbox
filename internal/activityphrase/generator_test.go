@@ -5,18 +5,20 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"testing"
 	"time"
 )
 
-const generatorArtifactSHA256 = "05ea5c498ba12b0da9afb00498edbbb50d77ca72cfbe94377fd38c0708805662"
+const generatorArtifactSHA256 = "ef43e1e311da14e4d3f2a9cab373e76becf8f9101afa7a58a9906ca644dd89cd"
 
 type generatorGolden struct {
-	ID     string `json:"id"`
-	Text   string `json:"text"`
-	Phrase string `json:"phrase"`
+	ID     string  `json:"id"`
+	Text   string  `json:"text"`
+	Phrase string  `json:"phrase"`
+	Score  float64 `json:"score"`
 }
 
 func loadGeneratorRows(t testing.TB, path string) []generatorGolden {
@@ -76,8 +78,12 @@ func TestGeneratorMatchesPythonExport(t *testing.T) {
 		t.Fatalf("want 50 golden inputs, got %d", len(goldens))
 	}
 	for _, golden := range goldens {
-		if got := model.Generate(golden.Text); got != golden.Phrase {
+		got, score := model.GenerateScored(golden.Text)
+		if got != golden.Phrase {
 			t.Errorf("%s: Go %q, Python %q", golden.ID, got, golden.Phrase)
+		}
+		if got != "" && math.Abs(score-golden.Score) > 1e-3 {
+			t.Errorf("%s: Go score %.6f, Python %.6f", golden.ID, score, golden.Score)
 		}
 	}
 }

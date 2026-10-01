@@ -29,9 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 MAGIC = b"ACTGEN01"
 TOKEN = re.compile(r"#?[\w]+(?:[._'-][\w]+)*", re.UNICODE)
 OVERLAP_TOKEN = re.compile(r"[^\W_]+", re.UNICODE)
-SPECIAL = ["<pad>", "<bos>", "<eos>", "<unk>", "<sep>"]
-PAD, BOS, EOS, UNK, SEP = range(5)
-MAX_INPUT = 192
+SPECIAL = ["<pad>", "<bos>", "<eos>", "<unk>", "<sep>", "<recent>"]
+PAD, BOS, EOS, UNK, SEP, RECENT = range(6)
+MAX_INPUT = 128
 MAX_OUTPUT = 8
 EMBED = 128
 ENC_HIDDEN = 128
@@ -54,10 +54,12 @@ def read_jsonl(path):
                 yield json.loads(line)
 
 
-def load_data(synthetic_path):
+def load_data(synthetic_path, real_paths=None):
     snippets = {}
-    for name in ("snippets.jsonl", "claude-snippets.jsonl"):
-        for item in read_jsonl(ROOT / "scripts/activity-data" / name):
+    if real_paths is None:
+        real_paths = [ROOT / "scripts/activity-data" / name for name in ("snippets.jsonl", "claude-snippets.jsonl")]
+    for path in real_paths:
+        for item in read_jsonl(path):
             snippets[item["id"]] = item["text"]
     labels = {item["id"]: item["phrase"] for item in read_jsonl(ROOT / "scripts/activity-data/labels.jsonl")}
     if snippets.keys() != labels.keys():
@@ -73,7 +75,7 @@ def load_data(synthetic_path):
         else:
             train.append(item)
     synthetic = []
-    if synthetic_path.exists():
+    if synthetic_path is not None and synthetic_path.exists():
         synthetic = [Sample(item["id"], item["text"], item["phrase"], "synthetic") for item in read_jsonl(synthetic_path)]
         real_ids = {item.id for item in real}
         if any(item.id in real_ids for item in synthetic):
@@ -81,22 +83,30 @@ def load_data(synthetic_path):
     return train, validation, heldout, synthetic
 
 
-def normalize_synthetic(input_path, output_path):
-    if not input_path.exists():
-        return input_path
+def normalize_file(input_path, output_path):
     go = shutil.which("go") or "/data/go/bin/go"
     subprocess.run([go, "run", "./cmd/activity-normalize", "-input", str(input_path), "-output", str(output_path)], cwd=ROOT, check=True)
     return output_path
 
 
-def source_tokens(text):
+def normalized_paths(synthetic_path, scratch_dir):
+    scratch_dir.mkdir(parents=True, exist_ok=True)
+    real_paths = [normalize_file(ROOT / "scripts/activity-data" / name, scratch_dir / ("normalized-" + name))
+                  for name in ("snippets.jsonl", "claude-snippets.jsonl")]
+    synthetic = normalize_file(synthetic_path, scratch_dir / "normalized-synthetic.jsonl") if synthetic_path.exists() else synthetic_path
+    return real_paths, synthetic
+
+
+def source_tokens(text, recent=True, max_input=MAX_INPUT):
     lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("user: ")]
     tokens = []
-    for line in lines[-6:]:
+    for index, line in enumerate(lines[-6:]):
         if tokens:
             tokens.append("<sep>")
+        if recent and index >= len(lines[-6:]) - 2:
+            tokens.append("<recent>")
         tokens.extend(TOKEN.findall(line.lower()))
-    return tokens[-MAX_INPUT:] or ["<unk>"]
+    return tokens[-max_input:] or ["<unk>"]
 
 
 def phrase_tokens(text):
@@ -113,14 +123,46 @@ def latest_tool_label(text):
     if not lines or not lines[-1].strip().startswith("tool: "):
         return ""
     label = lines[-1].strip()[6:]
-    return label if label != "Running tool" else ""
+    specific = ("Editing ", "Running ", "Reading ", "Reviewing ", "Messaging ", "Checking ", "Searching ")
+    return label if label.startswith(specific) and label not in ("Running tool", "Running command") else ""
+
+
+FILE = re.compile(r"(?i)^[^\s/]+\.(?:png|jpe?g|gif|webp|go|js|ts|py|md|json|css|html)$")
+FILE_VERBS = {"editing", "reading", "reviewing", "opening", "saving", "writing", "updating", "creating", "checking",
+              "merging", "renaming", "deleting", "patching", "formatting", "comparing", "inspecting", "fixing", "testing", "running"}
+CONTENT_STOPS = {"a", "an", "the", "and", "to", "for", "on", "in", "with", "of", "at", "from", "by"}
+TRIVIAL_COMMANDS = {"cd", "ls", "echo", "cat", "pwd", "sleep", "true", "test", "command", "tool"}
 
 
 def valid_phrase(phrase):
     words = phrase.split()
-    return (1 <= len(words) <= 6 and len(phrase) <= 32 and phrase[:1].isupper()
-            and len({word.lower() for word in words}) == len(words)
-            and all(not any(char in word for char in "<>\n\r") for word in words))
+    if not (1 <= len(words) <= 5 and len(phrase) <= 32 and phrase[:1].isupper()
+            and words[0].lower().endswith("ing")
+            and all(not any(char in word for char in "<>\n\r") for word in words)):
+        return False
+    if words[0].lower() == "running" and len(words) > 1 and words[1].lower() in TRIVIAL_COMMANDS:
+        return False
+    if phrase.lower() == "using a tool":
+        return False
+    if words[0].lower() in {"holding", "asking", "waking"} and any(word.lower() == "screenshots" for word in words[1:]):
+        return False
+    seen = set()
+    for word in words:
+        key = word.lower()
+        if key in CONTENT_STOPS:
+            continue
+        roots = {key}
+        if key.endswith("ing") and len(key) > 5:
+            stem = key[:-3]
+            roots.update((stem, stem + "e"))
+            if len(stem) > 2 and stem[-1] == stem[-2]:
+                roots.add(stem[:-1])
+        if roots & seen:
+            return False
+        seen.update(roots)
+    if len(words) > 1 and FILE.fullmatch(words[1]) and words[0].lower() not in FILE_VERBS:
+        return False
+    return True
 
 
 def token_overlap(left, right):
@@ -138,8 +180,8 @@ def build_vocab(training):
     return SPECIAL + words[: VOCAB_LIMIT - len(SPECIAL)]
 
 
-def encode_sample(item, word_to_id):
-    source = source_tokens(item.text)
+def encode_sample(item, word_to_id, max_input=MAX_INPUT):
+    source = source_tokens(item.text, "<recent>" in word_to_id, max_input)
     unknowns = []
     unknown_ids = {}
     src_ids, extended = [], []
@@ -182,6 +224,7 @@ class PointerGenerator(nn.Module):
     def __init__(self, vocab_size, embed=EMBED, enc_hidden=ENC_HIDDEN, dec_hidden=DEC_HIDDEN):
         super().__init__()
         self.vocab_size = vocab_size
+        self.max_input = MAX_INPUT
         self.embed_size = embed
         self.enc_hidden = enc_hidden
         self.dec_hidden = dec_hidden
@@ -230,33 +273,42 @@ class PointerGenerator(nn.Module):
 
 
 @torch.no_grad()
-def predict(model, item, vocab, device="cpu"):
+def predict_scored(model, item, vocab, device="cpu"):
     word_to_id = {word: index for index, word in enumerate(vocab)}
-    encoded_item = encode_sample(item, word_to_id)
+    encoded_item = encode_sample(item, word_to_id, model.max_input)
     src, ext, _, _, lengths, max_oov = collate([encoded_item], device)
     model.eval()
     encoded, projected, state, mask = model.encode(src, lengths)
     previous = torch.tensor([BOS], dtype=torch.long, device=device)
     generated = []
+    log_probs = []
     for _ in range(MAX_OUTPUT):
         probs, state = model.step(previous, state, encoded, projected, mask, ext, max_oov)
-        probs[:, [PAD, BOS, UNK, SEP]] = -1
+        forbidden = [PAD, BOS, UNK, SEP]
+        if "<recent>" in vocab:
+            forbidden.append(RECENT)
+        probs[:, forbidden] = -1
         chosen = int(probs.argmax(dim=1).item())
         if chosen == EOS:
             break
+        log_probs.append(math.log(max(float(probs[0, chosen]), 1e-12)))
         if chosen < len(vocab):
             generated.append(vocab[chosen])
             previous[0] = chosen
         else:
             generated.append(encoded_item[5][chosen - len(vocab)])
             previous[0] = UNK
-    return display_phrase(generated)
+    return display_phrase(generated), (sum(log_probs) / len(log_probs) if log_probs else -1000.0)
+
+
+def predict(model, item, vocab, device="cpu"):
+    return predict_scored(model, item, vocab, device)[0]
 
 
 def export_model(model, vocab, path):
     with open(path, "wb") as output:
         output.write(MAGIC)
-        output.write(struct.pack("<HHHHHI", model.embed_size, model.enc_hidden, model.dec_hidden, MAX_INPUT, MAX_OUTPUT, len(vocab)))
+        output.write(struct.pack("<HHHHHI", model.embed_size, model.enc_hidden, model.dec_hidden, model.max_input, MAX_OUTPUT, len(vocab)))
         tensors = sorted(model.state_dict().items())
         output.write(struct.pack("<I", len(tensors)))
         for token in vocab:
@@ -281,7 +333,7 @@ def load_export(path):
         if source.read(8) != MAGIC:
             raise ValueError("invalid generator artifact")
         embed, enc_hidden, dec_hidden, max_input, max_output, vocab_size = struct.unpack("<HHHHHI", source.read(14))
-        if max_input != MAX_INPUT or max_output != MAX_OUTPUT:
+        if not 1 <= max_input <= 192 or max_output != MAX_OUTPUT:
             raise ValueError("unsupported generator limits")
         count, = struct.unpack("<I", source.read(4))
         vocab = []
@@ -299,6 +351,7 @@ def load_export(path):
         if source.read(1):
             raise ValueError("trailing artifact bytes")
     model = PointerGenerator(vocab_size, embed, enc_hidden, dec_hidden)
+    model.max_input = max_input
     model.load_state_dict(state)
     model.eval()
     return model, vocab
@@ -316,26 +369,36 @@ def batches(rows, batch_size, seed):
     return groups
 
 
-def evaluate(model, rows, vocab, output_path, golden_path):
+def evaluate(model, rows, vocab, output_path, golden_path, predictions_path, threshold):
     pairs = []
     golden = []
+    predictions = []
     for item in rows:
-        generated = predict(model, item, vocab)
+        generated, score = predict_scored(model, item, vocab)
         label = latest_tool_label(item.text)
-        final = label or (generated if valid_phrase(generated) else "")
-        pairs.append({"id": item.id, "input_tail": "\n".join(item.text.splitlines()[-2:]), "output": final, "model": generated, "teacher": item.phrase})
+        final = label or (generated if item.text.strip() and score >= threshold and valid_phrase(generated) else "")
+        source = "tool" if label else ("model" if final else "none")
+        pairs.append({"id": item.id, "input_tail": "\n".join(item.text.splitlines()[-2:]), "output": final, "model": generated, "teacher": item.phrase, "source": source, "score": score})
+        predictions.append({"id": item.id, "tail": item.text[-400:], "output": final, "teacher": item.phrase, "source": source})
         if len(golden) < 50:
-            golden.append({"id": item.id, "text": item.text, "phrase": generated})
+            golden.append({"id": item.id, "text": item.text, "phrase": generated, "score": score, "output": final})
     hits = sum(token_overlap(pair["output"], pair["teacher"]) >= .6 for pair in pairs)
     exact = sum(pair["output"] == pair["teacher"] for pair in pairs)
     model_hits = sum(token_overlap(pair["model"], pair["teacher"]) >= .6 for pair in pairs)
     coverage = sum(bool(pair["output"]) for pair in pairs)
-    report = {"heldout": len(rows), "top1_hits": hits, "exact": exact, "coverage": coverage, "model_only_hits": model_hits, "examples": pairs[:20]}
+    model_shown = [pair for pair in pairs if pair["source"] == "model"]
+    source_counts = {source: sum(pair["source"] == source for pair in pairs) for source in ("tool", "model", "none")}
+    report = {"heldout": len(rows), "top1_hits": hits, "exact": exact, "coverage": coverage,
+              "model_only_hits": model_hits, "model_display_hits": sum(token_overlap(pair["output"], pair["teacher"]) >= .6 for pair in model_shown),
+              "sources": source_counts, "threshold": threshold, "examples": pairs[:20]}
     output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+    with open(predictions_path, "w", encoding="utf-8") as output:
+        for item in predictions:
+            output.write(json.dumps(item, ensure_ascii=False) + "\n")
     with open(golden_path, "w", encoding="utf-8") as output:
         for item in golden:
             output.write(json.dumps(item, ensure_ascii=False) + "\n")
-    print(f"REAL held-out: overlap>=0.6 {hits}/{len(rows)} ({hits/len(rows):.1%}), exact {exact}/{len(rows)}, coverage {coverage}/{len(rows)}, model-only {model_hits}/{len(rows)}")
+    print(f"REAL held-out: overlap>=0.6 {hits}/{len(rows)} ({hits/len(rows):.1%}), exact {exact}/{len(rows)}, coverage {coverage}/{len(rows)}, model-only {model_hits}/{len(rows)}, sources {source_counts}")
     for pair in pairs[:20]:
         print(f"  {pair['id']}: {pair['input_tail'][-70:]!r} -> {pair['output']!r} (teacher {pair['teacher']!r})")
 
@@ -346,6 +409,9 @@ def main():
     parser.add_argument("--out", type=Path, default=ROOT / "internal/controller/activity_model.bin")
     parser.add_argument("--golden", type=Path, default=ROOT / "internal/activityphrase/testdata/activity_golden.jsonl")
     parser.add_argument("--eval", type=Path, default=ROOT / "scripts/activity-model/eval.json")
+    parser.add_argument("--predictions", type=Path, default=ROOT / "scripts/activity-model/heldout-predictions.jsonl")
+    parser.add_argument("--threshold", type=float, default=-.525)
+    parser.add_argument("--eval-only", action="store_true", help="evaluate the already exported model")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--patience", type=int, default=3)
     parser.add_argument("--batch-size", type=int, default=32)
@@ -358,8 +424,12 @@ def main():
     torch.manual_seed(20261001)
     random.seed(20261001)
     args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
-    normalized_synthetic = normalize_synthetic(args.synthetic, args.checkpoint.with_name("activity-synthetic-normalized.jsonl"))
-    train, validation, heldout, synthetic = load_data(normalized_synthetic)
+    real_paths, normalized_synthetic = normalized_paths(args.synthetic, args.checkpoint.parent)
+    train, validation, heldout, synthetic = load_data(normalized_synthetic, real_paths)
+    if args.eval_only:
+        exported, exported_vocab = load_export(args.out)
+        evaluate(exported, heldout, exported_vocab, args.eval, args.golden, args.predictions, args.threshold)
+        return
     vocab = build_vocab(train + synthetic)
     word_to_id = {word: index for index, word in enumerate(vocab)}
     encoded_train = [encode_sample(item, word_to_id) for item in train for _ in range(3)]
@@ -409,7 +479,7 @@ def main():
     if not args.skip_eval:
         args.golden.parent.mkdir(parents=True, exist_ok=True)
         args.eval.parent.mkdir(parents=True, exist_ok=True)
-        evaluate(exported, heldout, exported_vocab, args.eval, args.golden)
+        evaluate(exported, heldout, exported_vocab, args.eval, args.golden, args.predictions, args.threshold)
     print(f"artifact {args.out.stat().st_size} bytes, sha256 {hashlib.sha256(args.out.read_bytes()).hexdigest()}")
 
 

@@ -34,7 +34,9 @@ jobs:
       - name: Verify bundled activity ranker and held-out agreement
         run: go run ./cmd/activity-train -check
       - name: Verify local activity generator export and Python parity
-        run: go test ./internal/activityphrase -run 'TestGeneratorArtifactChecksum|TestGeneratorMatchesPythonExport' -count=1
+        run: |
+          go test ./internal/activityphrase -run 'TestGeneratorArtifactChecksum|TestGeneratorMatchesPythonExport' -count=1
+          go test ./internal/controller -run 'TestActivityPhraseMatchesPythonFinalOutput' -count=1
       - name: Test agent authorization and delivery boundaries
         run: >-
           go test ./internal/controller

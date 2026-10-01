@@ -18,6 +18,7 @@ const (
 	genEOS
 	genUNK
 	genSEP
+	genRecent
 )
 
 var generatorToken = regexp.MustCompile(`#?[\pL\pN_]+(?:[._'-][\pL\pN_]+)*`)
@@ -116,7 +117,7 @@ func LoadGenerator(data []byte) (*Generator, error) {
 	if err != nil {
 		return nil, err
 	}
-	if model.embed < 1 || model.embed > 512 || model.encHidden < 1 || model.encHidden > 512 || model.decHidden < 1 || model.decHidden > 512 || model.maxInput < 1 || model.maxInput > 512 || model.maxOutput < 1 || model.maxOutput > 16 || vocabSize < 5 || vocabSize > 20000 || tensorCount > 64 {
+	if model.embed < 1 || model.embed > 512 || model.encHidden < 1 || model.encHidden > 512 || model.decHidden < 1 || model.decHidden > 512 || model.maxInput < 1 || model.maxInput > 512 || model.maxOutput < 1 || model.maxOutput > 16 || vocabSize < 6 || vocabSize > 20000 || tensorCount > 64 {
 		return nil, errors.New("invalid activity generator dimensions")
 	}
 	model.vocab = make([]string, vocabSize)
@@ -133,7 +134,7 @@ func LoadGenerator(data []byte) (*Generator, error) {
 		model.vocab[i] = string(word)
 		model.wordID[model.vocab[i]] = i
 	}
-	if len(model.vocab) < 5 || model.vocab[genPad] != "<pad>" || model.vocab[genBOS] != "<bos>" || model.vocab[genEOS] != "<eos>" || model.vocab[genUNK] != "<unk>" || model.vocab[genSEP] != "<sep>" {
+	if len(model.vocab) < 6 || model.vocab[genPad] != "<pad>" || model.vocab[genBOS] != "<bos>" || model.vocab[genEOS] != "<eos>" || model.vocab[genUNK] != "<unk>" || model.vocab[genSEP] != "<sep>" || model.vocab[genRecent] != "<recent>" {
 		return nil, errors.New("invalid activity generator vocabulary")
 	}
 	for i := 0; i < tensorCount; i++ {
@@ -214,11 +215,22 @@ func LoadGenerator(data []byte) (*Generator, error) {
 func (model *Generator) tensor(name string) []float32 { return model.tensors[name].data }
 
 func generatorDot(weights, vector []float32) float32 {
-	var sum float32
-	for i, value := range vector {
-		sum += weights[i] * value
+	if len(vector) == 0 {
+		return 0
 	}
-	return sum
+	_ = weights[len(vector)-1]
+	var a, b, c, d float32
+	i := 0
+	for ; i+3 < len(vector); i += 4 {
+		a += weights[i] * vector[i]
+		b += weights[i+1] * vector[i+1]
+		c += weights[i+2] * vector[i+2]
+		d += weights[i+3] * vector[i+3]
+	}
+	for ; i < len(vector); i++ {
+		a += weights[i] * vector[i]
+	}
+	return (a + b) + (c + d)
 }
 
 func generatorLinear(weight, bias, input []float32, rows int) []float32 {
@@ -238,6 +250,11 @@ func generatorSigmoid(value float32) float32 { return 1 / (1 + float32(math.Exp(
 func generatorGRU(input, previous, wInput, wHidden, bInput, bHidden []float32) []float32 {
 	hidden := len(previous)
 	x := generatorLinear(wInput, bInput, input, 3*hidden)
+	return generatorGRUProjected(x, previous, wHidden, bHidden)
+}
+
+func generatorGRUProjected(x, previous, wHidden, bHidden []float32) []float32 {
+	hidden := len(previous)
 	h := generatorLinear(wHidden, bHidden, previous, 3*hidden)
 	next := make([]float32, hidden)
 	for i := 0; i < hidden; i++ {
@@ -269,9 +286,12 @@ func (model *Generator) evidenceTokens(text string) []string {
 		lines = lines[len(lines)-6:]
 	}
 	var words []string
-	for _, line := range lines {
+	for i, line := range lines {
 		if len(words) > 0 {
 			words = append(words, "<sep>")
+		}
+		if i >= len(lines)-2 {
+			words = append(words, "<recent>")
 		}
 		words = append(words, generatorToken.FindAllString(strings.ToLower(line), -1)...)
 	}
@@ -307,12 +327,26 @@ func (model *Generator) encode(words []string) ([][]float32, []float32, [][]floa
 	}
 	forward, backward := make([][]float32, length), make([][]float32, length)
 	forwardState, backwardState := make([]float32, model.encHidden), make([]float32, model.encHidden)
+	forwardInputs, backwardInputs := make(map[int][]float32), make(map[int][]float32)
+	forwardW, forwardB := model.tensor("encoder.weight_ih_l0"), model.tensor("encoder.bias_ih_l0")
+	backwardW, backwardB := model.tensor("encoder.weight_ih_l0_reverse"), model.tensor("encoder.bias_ih_l0_reverse")
 	for i, id := range source {
-		forwardState = generatorGRU(model.embedding(id), forwardState, model.tensor("encoder.weight_ih_l0"), model.tensor("encoder.weight_hh_l0"), model.tensor("encoder.bias_ih_l0"), model.tensor("encoder.bias_hh_l0"))
+		input, ok := forwardInputs[id]
+		if !ok {
+			input = generatorLinear(forwardW, forwardB, model.embedding(id), 3*model.encHidden)
+			forwardInputs[id] = input
+		}
+		forwardState = generatorGRUProjected(input, forwardState, model.tensor("encoder.weight_hh_l0"), model.tensor("encoder.bias_hh_l0"))
 		forward[i] = forwardState
 	}
 	for i := length - 1; i >= 0; i-- {
-		backwardState = generatorGRU(model.embedding(source[i]), backwardState, model.tensor("encoder.weight_ih_l0_reverse"), model.tensor("encoder.weight_hh_l0_reverse"), model.tensor("encoder.bias_ih_l0_reverse"), model.tensor("encoder.bias_hh_l0_reverse"))
+		id := source[i]
+		input, ok := backwardInputs[id]
+		if !ok {
+			input = generatorLinear(backwardW, backwardB, model.embedding(id), 3*model.encHidden)
+			backwardInputs[id] = input
+		}
+		backwardState = generatorGRUProjected(input, backwardState, model.tensor("encoder.weight_hh_l0_reverse"), model.tensor("encoder.bias_hh_l0_reverse"))
 		backward[i] = backwardState
 	}
 	encoded, projected := make([][]float32, length), make([][]float32, length)
@@ -393,16 +427,24 @@ func (model *Generator) step(previous int, state []float32, encoded, projected [
 // Generate greedily decodes at most eight tokens. The controller validates
 // the display phrase before showing it.
 func (model *Generator) Generate(text string) string {
+	phrase, _ := model.GenerateScored(text)
+	return phrase
+}
+
+// GenerateScored returns the mean log probability of emitted tokens as a
+// confidence signal. The score excludes the end-of-sequence token.
+func (model *Generator) GenerateScored(text string) (string, float64) {
 	if model == nil {
-		return ""
+		return "", math.Inf(-1)
 	}
 	encoded, state, projected, extended, unknowns := model.encode(model.evidenceTokens(text))
 	previous := genBOS
 	var output []string
+	var logProbability float64
 	for step := 0; step < model.maxOutput; step++ {
 		probabilities, next := model.step(previous, state, encoded, projected, extended, len(unknowns))
 		state = next
-		for _, forbidden := range []int{genPad, genBOS, genUNK, genSEP} {
+		for _, forbidden := range []int{genPad, genBOS, genUNK, genSEP, genRecent} {
 			probabilities[forbidden] = -1
 		}
 		chosen := genEOS
@@ -414,6 +456,7 @@ func (model *Generator) Generate(text string) string {
 		if chosen == genEOS {
 			break
 		}
+		logProbability += math.Log(math.Max(float64(probabilities[chosen]), 1e-12))
 		if chosen < len(model.vocab) {
 			output = append(output, model.vocab[chosen])
 			previous = chosen
@@ -424,9 +467,9 @@ func (model *Generator) Generate(text string) string {
 	}
 	phrase := strings.Join(output, " ")
 	if phrase == "" {
-		return ""
+		return "", math.Inf(-1)
 	}
 	runes := []rune(phrase)
 	runes[0] = unicode.ToUpper(runes[0])
-	return string(runes)
+	return string(runes), logProbability / float64(len(output))
 }
