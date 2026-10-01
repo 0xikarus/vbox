@@ -15,10 +15,18 @@ const fakeDesktop=`window.fakeDesktop=[];window.NoVNC={default:class {
  emit(type,detail={}){for(const fn of this.handlers[type]||[])fn({detail})}
  disconnect(){this.closed=true}
 }};`;
-const fakeTerminal=`window.fakeTerminal=[];window.openWorkspaceTerminal=(box,session,onStatus,options={})=>{
+const mockTerminalSocket=`window.terminalSockets=[];window.WebSocket=class{
+ static OPEN=1;
+ constructor(url){this.url=url;this.frames=[];this.readyState=0;this.bufferedAmount=0;window.terminalSockets.push(this);setTimeout(()=>{if(this.readyState===0){this.readyState=1;this.onopen?.()}},20)}
+ send(data){this.frames.push(JSON.parse(data))}
+ close(){this.readyState=3}
+};window.fakeTerminal=[];`;
+const trackTerminal=`const realOpenWorkspaceTerminal=window.openWorkspaceTerminal;
+window.openWorkspaceTerminal=(box,session,onStatus,options={})=>{
  const viewer={box,session,viewOnly:options.viewOnly,closed:false};window.fakeTerminal.push(viewer);
- options.root.innerHTML='<div class="fake-tmux">TMUX live</div>';setTimeout(()=>{if(!viewer.closed)onStatus('Connected · '+session)},20);
- return()=>{viewer.closed=true;options.root.replaceChildren()};
+ const dispose=realOpenWorkspaceTerminal(box,session,onStatus,options);
+ window.terminalSockets.at(-1).viewOnly=options.viewOnly===true;
+ return()=>{viewer.closed=true;dispose()};
 };`;
 
 test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the selected box',async()=>{
@@ -27,7 +35,7 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   const path=req.url.split('?')[0];
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(await readFile(resolve(web,'chat.html')))}
   if(path==='/novnc.js'){res.setHeader('Content-Type','text/javascript');return res.end(fakeDesktop)}
-  if(path==='/workspace-terminal.js'){res.setHeader('Content-Type','text/javascript');return res.end(fakeTerminal)}
+  if(path==='/workspace-terminal.js'){res.setHeader('Content-Type','text/javascript');return res.end(mockTerminalSocket+await readFile(resolve(web,'workspace-terminal.js'),'utf8')+trackTerminal)}
   if(path.startsWith('/v1/')){
    res.setHeader('Content-Type','application/json');
    if(path==='/v1/whoami')return res.end('{"role":"owner","accountId":"acct"}');
@@ -61,6 +69,20 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   catch(error){console.log(await page.evaluate(()=>({text:document.querySelector('#chat-status')?.textContent,tiles:[...document.querySelectorAll('.pair-tile')].map(node=>({mode:node.dataset.mode,label:node.textContent})),desktop:window.fakeDesktop?.length,terminal:window.fakeTerminal?.length,body:document.body.textContent.slice(0,400)})));throw error}
   assert.deepEqual(await page.$$eval('.pair-tile',nodes=>nodes.map(node=>node.dataset.mode)),['desktop','tmux']);
   assert.deepEqual(await page.evaluate(()=>[window.fakeDesktop[0].viewOnly,window.fakeTerminal[0].viewOnly]),[true,true]);
+  await page.waitForFunction(()=>window.terminalSockets.length===1&&window.terminalSockets[0].readyState===1);
+  const sizeFrames=()=>page.evaluate(()=>window.terminalSockets.flatMap(socket=>socket.frames).filter(frame=>'cols'in frame||'rows'in frame));
+  assert.deepEqual(await sizeFrames(),[],'pair tile sends no terminal size on connect');
+  const terminalCrop=await page.$eval('.pair-tile[data-mode="tmux"] .pair-tile-screen',screen=>{
+   const outer=screen.getBoundingClientRect(),inner=screen.querySelector('.xterm').getBoundingClientRect();
+   return {overflow:getComputedStyle(screen).overflow,width:inner.width,visibleWidth:outer.width,height:inner.height,left:inner.left-outer.left,bottom:outer.bottom-inner.bottom};
+  });
+  assert.equal(terminalCrop.overflow,'hidden');
+  assert.ok(terminalCrop.width>terminalCrop.visibleWidth&&terminalCrop.height===384&&Math.abs(terminalCrop.left-8)<1&&Math.abs(terminalCrop.bottom-8)<1,'80×24 terminal is cropped from the bottom-left');
+  await page.setViewport({width:1440,height:900});
+  await new Promise(resolve=>setTimeout(resolve,100));
+  assert.deepEqual(await sizeFrames(),[],'pair tile sends no terminal size after viewport resize');
+  await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  await page.waitForFunction(()=>document.querySelectorAll('#chat-entries [data-pair-key] .pair-avatar-mascot svg').length===2);
   assert.equal(await page.$$eval('#chat-entries [data-pair-key] .pair-avatar-mascot svg',nodes=>nodes.length),2);
   assert.equal(await page.$$eval('#chat-header-avatar .pair-avatar-mascot svg',nodes=>nodes.length),2);
   assert.equal(await page.$$eval('#chat-entries [data-pair-key] img',nodes=>nodes.length),0);
@@ -126,6 +148,18 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   await page.waitForFunction(()=>document.querySelectorAll('.pair-tile[data-mode="tmux"]').length===2);
   assert.equal(await page.evaluate(()=>window.fakeDesktop.at(-1).closed),true,'failed desktop falls back to TMUX');
   assert.equal(await page.evaluate(()=>window.fakeTerminal.filter(viewer=>!viewer.closed).length),2,'one fallback stream per tile');
+  await page.evaluate(()=>{
+   const root=document.createElement('div'),keys=document.createElement('div');
+   root.style.width='70vw';root.style.height='200px';document.body.append(root,keys);
+   window.workspaceTestRoot=root;window.closeWorkspaceTestTerminal=openWorkspaceTerminal('workspace','agent',()=>{},{root,keys});
+  });
+  await page.waitForFunction(()=>window.terminalSockets.at(-1).frames.some(frame=>'cols'in frame&&'rows'in frame));
+  const workspaceSocket=await page.evaluate(()=>window.terminalSockets.length-1);
+  const beforeResize=await page.evaluate(index=>window.terminalSockets[index].frames.filter(frame=>'cols'in frame&&'rows'in frame).at(-1),workspaceSocket);
+  await page.evaluate(()=>{window.workspaceTestRoot.style.width='40vw'});
+  await page.waitForFunction((index,cols)=>window.terminalSockets[index].frames.some(frame=>'cols'in frame&&frame.cols!==cols),{},workspaceSocket,beforeResize.cols);
+  assert.deepEqual(await page.evaluate(()=>window.terminalSockets.filter(socket=>socket.viewOnly).flatMap(socket=>socket.frames).filter(frame=>'cols'in frame||'rows'in frame)),[],'view-only tiles never send resize while Workspace does');
+  await page.evaluate(()=>window.closeWorkspaceTestTerminal());
   desktopA=false;
   await page.close();
  }finally{await browser.close();await new Promise(done=>server.close(done))}
