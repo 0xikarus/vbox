@@ -1883,11 +1883,11 @@
   pairHero.node.remove();pairHero=null;
  }
  function pairHeroVisible(hero){return pairHero===hero&&selectedPair===hero.key&&!document.hidden&&takeover.hidden}
- function pairTileStatus(tile,mode,label){
+function pairTileStatus(tile,mode,label){
   tile.mode=mode;tile.node.dataset.mode=mode;tile.placeholder.textContent=label;
   tile.placeholder.hidden=mode==='desktop'||mode==='tmux';
   tile.screen.hidden=mode==='off';
-  tile.label.lastChild.textContent=label;
+  tile.status.textContent=mode==='desktop'?'Live':mode==='tmux'?'TMUX':mode==='off'?'Off':'…';
  }
  async function connectPairTmux(hero,tile,box){
   if(!pairHeroVisible(hero))return;
@@ -1948,10 +1948,14 @@
    const screen=document.createElement('div');screen.className='pair-tile-screen';screen.setAttribute('aria-hidden','true');
    const placeholder=document.createElement('span');placeholder.className='pair-tile-placeholder';placeholder.textContent='Connecting…';
    const mascotWrap=document.createElement('span');mascotWrap.className='pair-tile-mascot';mascotWrap.append(reuseMessageMascot(null,box,'pair-hero-mascot',false));
-   const label=document.createElement('span');label.className='pair-tile-label';label.append(document.createTextNode(name+' · '),document.createElement('span'));
+   const label=document.createElement('span');label.className='pair-tile-label';
+   const tileName=document.createElement('span');tileName.className='pair-tile-name';tileName.textContent=name;
+   const dot=document.createElement('span');dot.className='pair-tile-dot';dot.setAttribute('aria-hidden','true');
+   const status=document.createElement('span');status.className='pair-tile-status';status.textContent='…';
+   label.append(tileName,dot,status,mascotWrap);
    const controls=document.createElement('div');
-   const tile={node:button,screen,placeholder,label,controls,mode:'checking',dispose:null};
-   button.append(screen,placeholder,mascotWrap,label);button.onclick=()=>void openTakeover(tile.mode==='tmux'||tile.mode==='off'?'terminal':'desktop',id);
+   const tile={node:button,screen,placeholder,status,controls,mode:'checking',dispose:null};
+   button.append(screen,placeholder,label);button.onclick=()=>void openTakeover(tile.mode==='tmux'||tile.mode==='off'?'terminal':'desktop',id);
    hero.tiles.push(tile);node.append(button);
    void connectPairTile(hero,tile,box);
   }

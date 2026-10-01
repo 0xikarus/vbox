@@ -2,7 +2,7 @@
 window.openWorkspaceTerminal=function(boxID,session,onStatus,options={}){
  const root=options.root||document.querySelector('#terminal-screen');root.replaceChildren();
  const viewOnly=options.viewOnly===true;
- const terminal=new Terminal({cursorBlink:!viewOnly,disableStdin:viewOnly,fontSize:viewOnly?11:14,scrollback:5000,convertEol:false}),fit=new FitAddon.FitAddon();
+ const terminal=new Terminal({cursorBlink:!viewOnly,disableStdin:viewOnly,fontSize:viewOnly?12:14,lineHeight:viewOnly?4/3:1,scrollback:5000,convertEol:false}),fit=new FitAddon.FitAddon();
  terminal.loadAddon(fit);terminal.open(root);fit.fit();
  const url=new URL('/v1/logical-boxes/'+encodeURIComponent(boxID)+'/terminal/stream',location.href);url.protocol=location.protocol==='https:'?'wss:':'ws:';url.searchParams.set('session',session);
  const socket=new WebSocket(url);socket.binaryType='arraybuffer';let closed=false,latencyTimer,pendingProbe=null,probeSequence=0;

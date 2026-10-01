@@ -38,7 +38,11 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
    if(path.endsWith('/sessions'))return res.end('{"state":"live","partial":false,"sessions":[{"name":"agent"}]}');
    if(path.endsWith('/sessions/primary'))return res.end('{"session":"agent"}');
    if(path.endsWith('/sessions/interactive'))return res.end('{"session":"agent"}');
-   if(path.endsWith('/messages'))return res.end(JSON.stringify([{id:'m1',senderBoxId:a,recipientBoxId:b,direction:'box',text:'Review ready',state:'delivered',createdAt:now,updatedAt:now}]));
+   if(path.endsWith('/messages'))return res.end(JSON.stringify([
+    {id:'m1',senderBoxId:a,recipientBoxId:b,direction:'box',text:'Review ready',state:'delivered',createdAt:now,updatedAt:now},
+    {id:'m2',senderBoxId:a,recipientBoxId:b,direction:'box',text:'Checking now',state:'delivered',createdAt:now,updatedAt:now},
+    {id:'m3',senderBoxId:b,recipientBoxId:a,direction:'box',text:'Looks good',state:'delivered',createdAt:now,updatedAt:now}
+   ]));
    if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
    if(['/v1/tool-presets','/v1/chat-commands','/v1/notifications'].includes(path))return res.end('[]');
    return res.end('{}');
@@ -62,9 +66,49 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   assert.equal(await page.$$eval('#chat-entries [data-pair-key] img',nodes=>nodes.length),0);
   const geometry=await page.$$eval('.pair-tile',nodes=>nodes.map(node=>({width:node.getBoundingClientRect().width,height:node.getBoundingClientRect().height,left:node.getBoundingClientRect().left})));
   assert.ok(geometry[0].left<geometry[1].left&&Math.abs(geometry[0].width/geometry[0].height-1.6)<.05);
+  const layout=await page.evaluate(()=>{
+   const rect=node=>node.getBoundingClientRect();
+   const [tile]=document.querySelectorAll('.pair-tile');
+   const [first,second,third]=document.querySelectorAll('.pair-msg');
+   const day=document.querySelector('.pair-hero+.day-sep');
+   return {screenBottom:rect(tile.querySelector('.pair-tile-screen')).bottom,captionTop:rect(tile.querySelector('.pair-tile-label')).top,
+    nameRight:rect(tile.querySelector('.pair-tile-name')).right,mascotLeft:rect(tile.querySelector('.pair-tile-mascot')).left,
+    dayAbove:rect(day).top-rect(document.querySelector('.pair-hero')).bottom,dayBelow:rect(first).top-rect(day).bottom,
+    dayTotal:rect(first).top-rect(document.querySelector('.pair-hero')).bottom,
+    sameGap:rect(second).top-rect(first).bottom,senderGap:rect(third).top-rect(second).bottom,
+    avatarBackground:getComputedStyle(document.querySelector('[data-pair-key] .pair-avatar-mascot')).backgroundColor};
+  });
+  assert.ok(layout.screenBottom<=layout.captionTop+1&&layout.nameRight<=layout.mascotLeft,'caption is below the screen and mascot follows its label');
+  assert.ok(layout.dayAbove>=15&&layout.dayAbove<=17&&layout.dayBelow>=15&&layout.dayBelow<=17,'today label has 16px breathing room');
+  assert.ok(layout.dayTotal>=43&&layout.dayTotal<=45,'hero to first bubble is about 44px including the day label');
+  assert.ok(layout.sameGap>=3&&layout.sameGap<=5&&layout.senderGap>=12&&layout.senderGap<=14,'messages group at 4px and separate senders at 12–14px');
+  assert.equal(layout.avatarBackground,'rgba(0, 0, 0, 0)','pair mascots have no backing disc');
   await page.setViewport({width:360,height:780,isMobile:true,hasTouch:true});
   assert.ok(await page.$eval('.pair-tile:last-child',node=>node.getBoundingClientRect().right<=360),'both tiles fit a 360px phone');
   await page.setViewport({width:390,height:844,isMobile:true,hasTouch:true});
+  const listWidth=()=>page.evaluate(()=>{
+   const viewport=innerWidth,list=document.querySelector('#chat-list').getBoundingClientRect(),main=document.querySelector('#chat-main').getBoundingClientRect();
+   return {viewport,left:list.left,right:list.right,width:list.width,mainLeft:main.left};
+  });
+  await page.click('#chat-back');
+  await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  await new Promise(resolve=>setTimeout(resolve,280));
+  let list=await listWidth();
+  assert.ok(Math.abs(list.left)<1&&Math.abs(list.right-list.viewport)<1&&Math.abs(list.width-list.viewport)<1&&list.mainLeft>=list.viewport-1,'back tap restores full-width list without a peeking pane');
+  await page.$eval('[data-pair-key] .chat-meta',node=>node.click());
+  await page.waitForFunction(()=>document.querySelector('#chat-app').classList.contains('in-chat')&&document.querySelector('.pair-hero')&&document.querySelector('.pair-msg'));
+  await new Promise(resolve=>setTimeout(resolve,280));
+  const client=await page.createCDPSession();
+  const touch=(type,x,y)=>client.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x,y}]});
+  await touch('touchStart',25,450);await new Promise(resolve=>setTimeout(resolve,40));
+  await touch('touchMove',100,450);await new Promise(resolve=>setTimeout(resolve,40));
+  await touch('touchMove',260,450);await new Promise(resolve=>setTimeout(resolve,40));await touch('touchEnd',260,450);
+  await page.waitForFunction(()=>!document.querySelector('#chat-app').classList.contains('in-chat'));
+  await new Promise(resolve=>setTimeout(resolve,280));
+  list=await listWidth();
+  assert.ok(Math.abs(list.left)<1&&Math.abs(list.right-list.viewport)<1&&Math.abs(list.width-list.viewport)<1&&list.mainLeft>=list.viewport-1,'back swipe restores full-width list without a peeking pane');
+  await page.$eval('[data-pair-key] .chat-meta',node=>node.click());
+  await page.waitForFunction(()=>document.querySelector('.pair-hero')!==null);
   await page.evaluate(()=>{window.pairHeroBefore=document.querySelector('.pair-hero');window.pairMascotBefore=document.querySelector('.pair-msg .msg-avatar')});
   await page.$eval('#refresh',node=>node.click());
   await page.waitForFunction(()=>document.querySelector('.pair-hero')===window.pairHeroBefore);
