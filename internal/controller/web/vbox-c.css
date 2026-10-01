@@ -94,7 +94,7 @@ label{color:var(--vb-ink-soft)}
   border:1px solid var(--vb-line-strong);background:var(--vb-surface);
   color:var(--vb-ink);border-radius:var(--r-control)
 }
-.workspace-top button.workspace-nav-menu:hover,.workspace-top button.workspace-nav-usage:hover,.workspace-top button.workspace-nav-refresh:hover,
+.workspace-top button.workspace-nav-menu:hover,.workspace-top button.workspace-nav-usage:hover,.workspace-top button.workspace-nav-providers:hover,.workspace-top button.workspace-nav-refresh:hover,
 #chat-top.workspace-top button:hover{background:var(--vb-surface-2);border-color:var(--vb-ink-faint);color:var(--vb-ink)}
 .workspace-nav-panel{border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-elevated);box-shadow:var(--vb-shadow-lg)}
 .workspace-nav-panel a,.workspace-nav-panel button{color:var(--vb-ink);border-radius:var(--r-control)}
@@ -2895,3 +2895,10 @@ body:has(.manage-content),body:has(.workspace-body){background:var(--vb-bg-soft)
 #provider-list .provider-actions-extra{position:absolute;z-index:10;top:calc(100% + 5px);right:0;display:grid;gap:3px;min-width:max-content;padding:5px;border:1px solid var(--vb-line);border-radius:var(--r-surface);background:var(--vb-elevated);box-shadow:var(--vb-shadow-lg)}
 #provider-list .provider-actions-more:not([open]) .provider-actions-extra{display:none}
 #provider-list .provider-actions-extra button{width:100%;text-align:left;justify-content:flex-start}
+
+/* A closed <dialog> must never render, even where a sheet rule gives it display:flex. */
+dialog:not([open]){display:none}
+/* Touch screens keep :hover after a tap; only true hover devices get hover fills in the top bar. */
+@media(hover:none){
+ .workspace-top button.workspace-nav-menu:hover,.workspace-top button.workspace-nav-usage:hover,.workspace-top button.workspace-nav-providers:hover,.workspace-top button.workspace-nav-refresh:hover,#chat-top.workspace-top button:hover{background:var(--vb-surface);border-color:var(--vb-line-strong)}
+}
