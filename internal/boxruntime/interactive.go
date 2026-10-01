@@ -239,9 +239,9 @@ func persistentAgentArgv(session, agent string) ([]string, error) {
 			"-c", "suppress_unstable_features_warning=true",
 			"-c", "notice.hide_rate_limit_model_nudge=true"}, nil
 	case "opencode":
-		return []string{agent, "--auto", "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
+		return []string{"env", "VMBOX_CHAT_SESSION=" + session, agent, "--auto", "--hostname", "127.0.0.1", "--port", fmt.Sprintf("%d", OpenCodeChatPort(session))}, nil
 	case "claude":
-		return []string{"env", "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", WorkloadHome() + "/.local/share/vmbox/chat", "--dangerously-load-development-channels", "server:vmbox-desktop"}, nil
+		return []string{"env", "VMBOX_CHAT_SESSION=" + session, "DISABLE_AUTOUPDATER=1", "claude", "--add-dir", WorkloadHome() + "/.local/share/vmbox/chat", "--dangerously-load-development-channels", "server:vmbox-desktop"}, nil
 	default:
 		return nil, fmt.Errorf("unsupported persistent agent %q", agent)
 	}

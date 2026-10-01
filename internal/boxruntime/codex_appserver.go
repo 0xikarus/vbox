@@ -721,7 +721,7 @@ var EnsureCodexAppServer = func(ctx context.Context, session string) error {
 	}
 	if _, err := tmuxCommand(ctx, "", "has-session", "-t", "="+name); err != nil {
 		argv := []string{"new-session", "-d", "-s", name, "-c", WorkspaceDirectory(), "--",
-			"codex", "app-server", "--listen", fmt.Sprintf("ws://127.0.0.1:%d", CodexChatPort(session))}
+			"env", "VMBOX_CHAT_SESSION=" + session, "codex", "app-server", "--listen", fmt.Sprintf("ws://127.0.0.1:%d", CodexChatPort(session))}
 		if _, err := tmuxCommand(ctx, "", argv...); err != nil {
 			return fmt.Errorf("start codex app server: %w", err)
 		}

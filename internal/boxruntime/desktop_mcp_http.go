@@ -89,7 +89,6 @@ func ServeDesktopMCPHTTP(ctx context.Context, assignment, home string) error {
 	}
 	go runLocalHeartbeats(ctx, assignment, home, token)
 	go runLocalMCPActivity(ctx, assignment, home)
-	go runMascotHeartbeat(ctx, assignment)
 	server := &http.Server{Handler: desktopMCPHTTPHandler(assignment, token), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()

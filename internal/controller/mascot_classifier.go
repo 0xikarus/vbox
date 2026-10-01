@@ -24,8 +24,8 @@ var mascotPatterns = struct {
 	failure: regexp.MustCompile(`(?i)(?:^|\b)(?:error:|failed\b|failure\b|panic:|exception\b|fatal:|traceback\b|timed out\b|permission denied\b|cannot\b|unable to\b)`),
 	success: regexp.MustCompile(`(?i)(?:\btests? pass(?:ed)?\b|\bchecks? pass(?:ed)?\b|\bsuccess(?:ful(?:ly)?)?\b|\bcompleted\b|\bfinished\b|\bfixed\b|\bresolved\b|\bshipped\b|\bmerged\b|\blooks good\b)`),
 	laugh:   regexp.MustCompile(`(?i)(?:\bhaha(?:ha)*\b|\blol\b|\blmao\b|😂|🤣|\bthat's funny\b)`),
-	waiting: regexp.MustCompile(`(?i)(?:\bwaiting for (?:you|user|input|approval|confirmation)\b|\bplease (?:confirm|choose|approve|select)\b|\bneed your (?:input|approval|decision)\b|\bwhich (?:option|one)\b)`),
-	work:    regexp.MustCompile(`(?i)(?:\bthinking\b|\bworking\b|\brunning\b|\bbuilding\b|\bcompiling\b|\bsearching\b|\bimplementing\b|\btesting\b|\bwriting\b|\banalyzing\b|\bprocessing\b)`),
+	waiting: regexp.MustCompile(`(?i)(?:\bwaiting for (?:you|user|input|approval|confirmation)\b|\bplease (?:confirm|choose|approve|select)\b|\bneed your (?:input|approval|decision)\b|\bwhich (?:option|one)\b|\b(?:would you|could you|do you want|should I|shall I|can you)[^?\n]{0,120}\?)`),
+	work:    regexp.MustCompile(`(?i)(?:\bthinking\b|\bworking\b|\brunning\b|\bbuilding\b|\bcompiling\b|\bsearching\b|\bimplementing\b|\btesting\b|\bwriting\b|\banalyzing\b|\bprocessing\b|\binspecting\b|\breviewing\b|\bdebugging\b|\binvestigating\b|\bchecking\b|\bplanning\b)`),
 }
 
 // classifyMascotText weights the newest meaningful lines. Explicit result
@@ -40,14 +40,29 @@ func classifyMascotText(sample string) MascotState {
 	}
 	var failure, success, laugh, waiting, work int
 	seen := 0
+	activeTool := false
+	insideFence := false
 	for i := len(lines) - 1; i >= 0 && seen < 24; i-- {
 		line := strings.TrimSpace(lines[i])
 		if line == "" || len(line) > 1000 {
 			continue
 		}
+		// Native excerpts label roles. A user's request to fix an error is
+		// context, not evidence that the agent has failed.
+		if strings.HasPrefix(line, "user: ") {
+			continue
+		}
+		if seen == 0 && line == "tool: Running tool" {
+			activeTool = true
+		}
+		line = strings.TrimPrefix(strings.TrimPrefix(line, "assistant: "), "tool: ")
 		// Code and command text often mention errors as examples. Let status and
 		// prose lines supply the evidence instead.
-		if strings.HasPrefix(line, "```") || strings.HasPrefix(line, "$ ") || strings.HasPrefix(line, "> ") {
+		if strings.HasPrefix(line, "```") {
+			insideFence = !insideFence
+			continue
+		}
+		if insideFence || strings.HasPrefix(line, "$ ") || strings.HasPrefix(line, "> ") {
 			continue
 		}
 		weight := 1
@@ -82,6 +97,9 @@ func classifyMascotText(sample string) MascotState {
 		state.Mood = "angry"
 	case success > 0:
 		state.Mood = "happy"
+	}
+	if activeTool {
+		return MascotState{Mood: "idle", Activity: "working"}
 	}
 	if state.Activity == "idle" && work > 0 && work > success && work > failure {
 		state.Activity = "working"

@@ -16,13 +16,18 @@ func TestClassifyMascotText(t *testing.T) {
 	cases := []struct {
 		name, text, mood, activity string
 	}{
-		{"neutral", "Inspecting the repository layout.", "idle", "idle"},
+		{"neutral", "The repository contains source files.", "idle", "idle"},
+		{"inspection", "Inspecting the repository layout.", "idle", "working"},
 		{"work", "Running the build now", "idle", "working"},
 		{"failure", "error: compilation failed", "angry", "idle"},
 		{"recovery", "error: compilation failed\nFixed the issue. All tests passed.", "happy", "idle"},
 		{"approval", "Please confirm which option to use", "waiting", "waiting"},
 		{"humor", "Haha, that was funny 😂", "laughing", "idle"},
 		{"quoted command", "$ echo 'error: fake'", "idle", "idle"},
+		{"code example", "assistant: Example:\nassistant: ```text\nassistant: error: demonstration\nassistant: ```\nassistant: The repository contains source files.", "idle", "idle"},
+		{"user request", "user: Please fix the error\nassistant: I am inspecting it.", "idle", "working"},
+		{"assistant question", "assistant: Would you like me to run the build?", "waiting", "waiting"},
+		{"active tool after success", "assistant: Tests passed.\ntool: Running tool", "idle", "working"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -64,5 +69,13 @@ func TestMascotStateExpiresAndFollowsActiveTask(t *testing.T) {
 	state, fresh, err := store.boxMascotState(context.Background(), "account-a", "box-a")
 	if err != nil || !fresh || state.Mood != "happy" {
 		t.Fatalf("fresh state: %+v fresh=%t err=%v", state, fresh, err)
+	}
+}
+
+func BenchmarkClassifyMascotText(b *testing.B) {
+	sample := strings.Repeat("assistant: Inspecting the repository and running checks.\n", 100) + "assistant: Fixed the issue. Tests passed."
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		_ = classifyMascotText(sample)
 	}
 }

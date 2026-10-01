@@ -14,6 +14,9 @@ export default {
     await fs.mkdir(directory, {recursive: true, mode: 0o700});
     const socket = path.join(directory, pane.slice(1) + '.sock');
     const instance = randomUUID();
+    const managedSession = process.env.VMBOX_CHAT_SESSION;
+    const mascotMarker = /^[a-zA-Z0-9_-]{1,128}$/.test(managedSession || '')
+      ? path.join(directory, 'mascot-' + managedSession + '.json') : null;
     try {
       const existing = await fs.lstat(socket);
       if (!existing.isSocket()) throw Error('TUI socket path is occupied');
@@ -57,6 +60,33 @@ export default {
       response.setHeader('Content-Type', 'application/json');
       if (request.method === 'GET' && request.url === '/health') {
         response.end(JSON.stringify({pane, pid: process.pid, instance, sessionID: visibleSession()}));
+        return;
+      }
+      if (request.method === 'GET' && request.url === '/mascot-transcript') {
+        const sessionID = visibleSession();
+        if (!sessionID) { response.writeHead(409).end('{}'); return; }
+        try {
+          const result = await api.client.session.messages({sessionID, limit: 24});
+          if (result.error || !Array.isArray(result.data) || visibleSession() !== sessionID) throw Error('Visible conversation changed');
+          const lines = [];
+          for (const message of result.data) {
+            const role = message.info?.role;
+            if (role !== 'user' && role !== 'assistant') continue;
+            for (const part of message.parts || []) {
+              if (role === 'assistant' && part.type === 'tool' &&
+                  (part.state?.status === 'pending' || part.state?.status === 'running')) {
+                lines.push('tool: Running tool');
+              }
+              if (part.type !== 'text' || typeof part.text !== 'string') continue;
+              for (const line of part.text.split('\n')) {
+                const trimmed = line.trim();
+                if (trimmed) lines.push(role + ': ' + trimmed.slice(0, 1000));
+              }
+            }
+          }
+          const buffer = Buffer.from(lines.join('\n'));
+          response.end(JSON.stringify({instance, text: buffer.subarray(Math.max(0, buffer.length - 8192)).toString('utf8')}));
+        } catch { response.writeHead(503).end('{}'); }
         return;
       }
       if (request.method !== 'POST' || request.url !== '/prompt') { response.writeHead(404).end('{}'); return; }
@@ -114,6 +144,19 @@ export default {
     });
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
     await fs.chmod(socket, 0o600);
-    api.lifecycle.onDispose(() => new Promise(resolve => server.close(resolve)));
+    if (mascotMarker) {
+      const temporary = mascotMarker + '.' + instance;
+      await fs.writeFile(temporary, JSON.stringify({socket, instance}), {mode: 0o600});
+      await fs.rename(temporary, mascotMarker);
+    }
+    api.lifecycle.onDispose(async () => {
+      await new Promise(resolve => server.close(resolve));
+      if (mascotMarker) {
+        try {
+          const current = JSON.parse(await fs.readFile(mascotMarker, 'utf8'));
+          if (current.instance === instance) await fs.unlink(mascotMarker);
+        } catch {}
+      }
+    });
   }
 };

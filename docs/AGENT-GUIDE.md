@@ -244,15 +244,16 @@ apply. Shared desktop/terminal helpers accept tile roots and disconnect callback
   headers, so the UI does not guess that long-running work ended after ten
   minutes. Automatic clears are tied to the submitted message, so a late reply
   cannot hide a newer prompt that is still being processed.
-  The box-local MCP HTTP façade also sends a mascot heartbeat every 10 seconds
-  for each active managed tmux conversation. It captures up to 100 recent
-  terminal lines, caps the sample at 8 KiB, and posts it through the
-  assignment-scoped DesktopAgent route. The controller applies a small lexical
-  classifier and stores only mood, activity, and observation time on the active
-  task. Chat history returns fresh state in response headers; after 40 seconds
+  The box-local harness MCP process checks its managed conversation every 10
+  seconds. It reads the active native Codex, Claude, or OpenCode transcript,
+  caps the recent text sample at 8 KiB, and posts it when the text changes
+  through the assignment-scoped DesktopAgent route. The controller applies a
+  small lexical classifier and stores only mood, activity, and observation time
+  on the active task. Chat history returns fresh state in response headers; after 40 seconds
   without a heartbeat, the UI falls back to chat activity and lifecycle state.
+  The MCP sender reads native conversation text and does not capture tmux output.
   There is no `setMood` MCP tool. Entry points:
-  `internal/boxruntime/mascot_observation.go`,
+  `internal/boxruntime/mascot_observation.go`, `mascot_transcript.go`,
   `internal/controller/mascot_classifier.go`, `web/chat.js`.
   `chat_message` writes a message on its own; passing `replyTo` (the short chat
   key carried in the envelope) answers one specific message. The box durably

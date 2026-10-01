@@ -255,6 +255,9 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 	var channelOnce sync.Once
 	var policyWatchOnce sync.Once
 	var claudeChannelClient bool
+	var mascotAgent string
+	heartbeatCtx, stopHeartbeat := context.WithCancel(ctx)
+	defer stopHeartbeat()
 	for scanner.Scan() {
 		var request desktopMCPRequest
 		if err := json.Unmarshal(scanner.Bytes(), &request); err != nil {
@@ -266,6 +269,10 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 		if len(request.ID) == 0 {
 			if request.Method == "notifications/initialized" {
 				policyWatchOnce.Do(func() { go watchDesktopToolPolicy(ctx, assignment, resolve, encode) })
+				if mascotAgent != "" {
+					go runMascotHeartbeat(heartbeatCtx, assignment, mascotAgent)
+					mascotAgent = ""
+				}
 				if claudeChannelClient {
 					// The client only registers notification handlers after the
 					// initialize response. Waiting for its initialized notification
@@ -286,6 +293,7 @@ func serveDesktopMCP(ctx context.Context, assignment string, input io.Reader, ou
 			}
 			_ = json.Unmarshal(request.Params, &params)
 			claudeChannelClient = strings.Contains(strings.ToLower(params.ClientInfo.Name), "claude")
+			mascotAgent = mascotClientAgent(params.ClientInfo.Name)
 			version := params.ProtocolVersion
 			if version != "2024-11-05" && version != "2025-03-26" && version != "2025-06-18" && version != "2025-11-25" {
 				version = "2025-06-18"
