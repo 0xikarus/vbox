@@ -73,11 +73,11 @@ test('pair hero keeps two view-only tiles, falls back to TMUX, and opens the sel
   const sizeFrames=()=>page.evaluate(()=>window.terminalSockets.flatMap(socket=>socket.frames).filter(frame=>'cols'in frame||'rows'in frame));
   assert.deepEqual(await sizeFrames(),[],'pair tile sends no terminal size on connect');
   const terminalCrop=await page.$eval('.pair-tile[data-mode="tmux"] .pair-tile-screen',screen=>{
-   const outer=screen.getBoundingClientRect(),inner=screen.querySelector('.xterm').getBoundingClientRect();
-   return {overflow:getComputedStyle(screen).overflow,width:inner.width,visibleWidth:outer.width,height:inner.height,left:inner.left-outer.left,bottom:outer.bottom-inner.bottom};
+   const outer=screen.getBoundingClientRect(),inner=screen.querySelector('.xterm').getBoundingClientRect(),last=screen.querySelector('.xterm-rows').lastElementChild.getBoundingClientRect();
+   return {overflow:getComputedStyle(screen).overflow,width:inner.width,visibleWidth:outer.width,height:inner.height,left:inner.left-outer.left,bottom:outer.bottom-inner.bottom,rowHeight:last.height,lastRowBottom:last.bottom-outer.bottom};
   });
   assert.equal(terminalCrop.overflow,'hidden');
-  assert.ok(terminalCrop.width>terminalCrop.visibleWidth&&terminalCrop.height===384&&Math.abs(terminalCrop.left-8)<1&&Math.abs(terminalCrop.bottom-8)<1,'80×24 terminal is cropped from the bottom-left');
+  assert.ok(terminalCrop.width>terminalCrop.visibleWidth&&terminalCrop.height===384&&Math.abs(terminalCrop.left-8)<1&&Math.abs(terminalCrop.bottom-8)<1&&terminalCrop.rowHeight===16&&terminalCrop.lastRowBottom<=0,'80×24 terminal has 16px rows and is cropped from the bottom-left');
   await page.setViewport({width:1440,height:900});
   await new Promise(resolve=>setTimeout(resolve,100));
   assert.deepEqual(await sizeFrames(),[],'pair tile sends no terminal size after viewport resize');
