@@ -89,8 +89,8 @@ label{color:var(--vb-ink-soft)}
   background:var(--vb-surface-2);color:var(--vb-ink)
 }
 .manage-top .linkbtn,.grid-top #logout,.workspace-top #logout,.topbar.workspace-top #logout,
-.workspace-top button.workspace-nav-menu,.workspace-top button.workspace-nav-usage,.workspace-top button.workspace-nav-refresh,
-#chat-top.workspace-top button.workspace-nav-menu,#chat-top.workspace-top button.workspace-nav-usage,#chat-top.workspace-top button.workspace-nav-refresh{
+.workspace-top button.workspace-nav-menu,.workspace-top button.workspace-nav-usage,.workspace-top button.workspace-nav-providers,.workspace-top button.workspace-nav-refresh,
+#chat-top.workspace-top button.workspace-nav-menu,#chat-top.workspace-top button.workspace-nav-usage,#chat-top.workspace-top button.workspace-nav-providers,#chat-top.workspace-top button.workspace-nav-refresh{
   border:1px solid var(--vb-line-strong);background:var(--vb-surface);
   color:var(--vb-ink);border-radius:var(--r-control)
 }
@@ -2901,4 +2901,20 @@ dialog:not([open]){display:none}
 /* Touch screens keep :hover after a tap; only true hover devices get hover fills in the top bar. */
 @media(hover:none){
  .workspace-top button.workspace-nav-menu:hover,.workspace-top button.workspace-nav-usage:hover,.workspace-top button.workspace-nav-providers:hover,.workspace-top button.workspace-nav-refresh:hover,#chat-top.workspace-top button:hover{background:var(--vb-surface);border-color:var(--vb-line-strong)}
+}
+
+/* Phone touch extensions preserve the visible control sizes and desktop layout. */
+@media(max-width:600px){
+ .workspace-top button:is(.workspace-nav-menu,.workspace-nav-usage,.workspace-nav-providers,.workspace-nav-refresh),
+ #chat-top.workspace-top button:is(.workspace-nav-menu,.workspace-nav-usage,.workspace-nav-providers,.workspace-nav-refresh),
+ #box-list .box-details-action,#box-list .row-overflow-trigger,
+ #provider-list .provider-actions>button,#provider-list .provider-actions-more>summary,
+ #media-viewer-zoom button{position:relative}
+ .workspace-top button:is(.workspace-nav-menu,.workspace-nav-usage,.workspace-nav-providers,.workspace-nav-refresh)::after,
+ #chat-top.workspace-top button:is(.workspace-nav-menu,.workspace-nav-usage,.workspace-nav-providers,.workspace-nav-refresh)::after,
+ #box-list .row-overflow-trigger::after,#media-viewer-zoom button::after,
+ #chat-composer .ai-wand::after{content:'';position:absolute;inset:-4px;pointer-events:auto}
+ #box-list .box-details-action::after{content:'';position:absolute;inset:-7px 0;pointer-events:auto}
+ #provider-list .provider-actions>button::after,#provider-list .provider-actions-more>summary::after{content:'';display:block;position:absolute;inset:-4px 0;pointer-events:auto}
+ #media-viewer-close::after{content:'';position:absolute;inset:-2px;pointer-events:auto}
 }
