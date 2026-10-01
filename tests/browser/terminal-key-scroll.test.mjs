@@ -27,8 +27,9 @@ test('mobile workspace and takeover key strips scroll to their final key',async(
   data=await page.$eval('.workspace-body .terminal-keys',node=>{const last=[...node.querySelectorAll('button')].find(button=>button.textContent==='→'),pinned=node.querySelector('.term-key-scroll-cue');return {lastRight:last.getBoundingClientRect().right,cueLeft:pinned.getBoundingClientRect().left,atEnd:node.scrollLeft+node.clientWidth>=node.scrollWidth-2}});
   assert(data.atEnd);assert(data.lastRight<=data.cueLeft+1,JSON.stringify(data));
   await page.evaluate(()=>{window.disposeTakeover=openWorkspaceTerminal('builder','agent',()=>{},{root:document.querySelector('#takeover-screen'),keys:document.querySelector('#takeover-scroll'),pinnedKeys:document.querySelector('#takeover-pinned'),autoFocus:false})});
-  await page.waitForFunction(()=>{const cue=document.querySelector('#takeover-pinned .term-key-scroll-cue');return cue&&!cue.hidden});
-  await page.$eval('#takeover-pinned .term-key-scroll-cue',node=>node.click());await page.waitForFunction(()=>document.querySelector('#takeover-scroll').scrollLeft>0);
+  await page.waitForFunction(()=>{const cue=document.querySelector('#takeover-scroll .term-key-scroll-cue');return cue&&!cue.hidden});
+  assert.equal(await page.$$eval('#takeover-pinned button',buttons=>buttons.length),2);
+  await page.$eval('#takeover-scroll .term-key-scroll-cue',node=>node.click());await page.waitForFunction(()=>document.querySelector('#takeover-scroll').scrollLeft>0);
   await page.evaluate(()=>{window.disposeWorkspace();window.disposeTakeover()});await page.close();
  }finally{await browser.close();await new Promise(done=>server.close(done))}
 });
