@@ -1647,7 +1647,7 @@
  const paintedMessages=new Map();
  function messageKey(message){return message.id||[message.direction,message.createdAt,message.text].join('|')}
  function renderMessages(box){
-  if(activeHorizontalGestures){pendingMessages=box;return}
+  if(activeHorizontalGestures&&!(forwardPreview?.target?.box===box?.id)){pendingMessages=box;return}
   if(!box||box.id!==selected)return;
   if(tvPreviewBox&&tvPreviewBox!==box.id)hideTvPreview();
   const follow=stickToBottom;
@@ -1946,7 +1946,7 @@
   previewFetched.set(box.id,Date.now());
   // The processing bubble must use the state of this response, not the
   // previous poll's state (which can leave it beneath an agent reply).
-  applySeen(selected);
+  if(!forwardPreview)applySeen(selected);
   const signature=box.messages.map(m=>m.id+m.updatedAt+m.state).join('|')+'|'+box.processing+'|'+box.streaming;
   renderHeader();
   if(force||signature!==lastSignature){lastSignature=signature;renderMessages(box)}
@@ -2057,7 +2057,7 @@ function pairTileStatus(tile,mode,label){
   }
  }
  function renderPairMessages(pair){
-  if(activeHorizontalGestures){pendingPair=pair;return}
+  if(activeHorizontalGestures&&!(forwardPreview?.target?.pair===pairKey(pair))){pendingPair=pair;return}
   const follow=stickToBottom;
   const key=pairKey(pair),painted=messagesEl.dataset.pair===key?paintedPairMessages.get(key):null,nextPainted=new Set(),liveAvatars=new Map();
   if(painted)for(const row of messagesEl.querySelectorAll('.pair-msg[data-key]')){const avatar=row.querySelector(':scope > .msg-avatar');if(avatar)liveAvatars.set(row.dataset.key,avatar)}
@@ -2099,7 +2099,8 @@ function pairTileStatus(tile,mode,label){
   applyPairSeen(pair);
   renderRows();
  }
- async function openPair(key){
+ async function openPair(key,preview=false){
+  navSettleEnd?.();
   const pair=pairs.get(key);if(!pair)return;
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
@@ -2110,20 +2111,21 @@ function pairTileStatus(tile,mode,label){
   // latest message, even if the reader scrolled up on an earlier visit.
   scrollMemory.delete('pair:'+key);followMemory.set('pair:'+key,true);stickToBottom=true;
   $('#chat-conversation').classList.add('pair-view');
-  $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;appEl.classList.add('in-chat');
+  $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;if(!preview)appEl.classList.add('in-chat');
   $('#chat-header-name').textContent=pair.boxAName+' ↔ '+pair.boxBName;
   $('#chat-header-state').textContent='Direct messages between boxes · read only';
   {const avatar=pairAvatarNode(pair);avatar.removeAttribute('aria-hidden');avatar.setAttribute('role','img');avatar.setAttribute('aria-label',pair.boxAName+' and '+pair.boxBName);$('#chat-header-avatar').replaceChildren(avatar)}headerAvatarKey='';
   messagesEl.append(startPairHero(pair));
   setBanner('');statusEl.textContent='';renderRows();doodle('Loading messages…');
   try{await refreshPairMessages(true)}catch(e){if(selectedPair===key)statusEl.textContent=e.message}finally{if(selectedPair===key)doodle('')}
-  if(epoch===viewEpoch&&selectedPair===key)requestAnimationFrame(()=>{
+  const finish=()=>{
    if(epoch!==viewEpoch||selectedPair!==key)return;
    scrollMessagesToBottom();
-   applyPairSeen(pair,true);
+   if(!preview)applyPairSeen(pair,true);
    renderRows();
    restoringTranscript=false;
-  });
+  };
+  if(preview)await new Promise(resolve=>requestAnimationFrame(()=>{finish();resolve()}));else if(epoch===viewEpoch&&selectedPair===key)requestAnimationFrame(finish);
  }
  function agentLabel(box){return box.defaultAgent==='claude'?'Claude':box.defaultAgent==='opencode'?'OpenCode':'Codex'}
  async function refreshAgentResume(box){
@@ -2170,7 +2172,8 @@ function pairTileStatus(tile,mode,label){
    requestAnimationFrame(()=>{messagesEl.scrollTop=top+messagesEl.scrollHeight-height});
   }catch(e){box.historyLoading=false;statusEl.textContent=e.message;renderMessages(box)}
  }
- async function openBox(id){
+ async function openBox(id,preview=false){
+  navSettleEnd?.();
   if(!boxes.has(id))return;
   void flushReadMarkers();
   const epoch=++viewEpoch;restoringTranscript=true;newMessagesBtn.hidden=true;
@@ -2188,7 +2191,7 @@ function pairTileStatus(tile,mode,label){
   if(inputEl.value!==restoredDraft){inputEl.value=restoredDraft;grow()}
   renderDrafts();
   $('#chat-empty').hidden=true;$('#chat-conversation').hidden=false;scheduleResources(0);
-  appEl.classList.add('in-chat');
+  if(!preview)appEl.classList.add('in-chat');
   renderHeader();
   statusEl.textContent='';
   closeForwardMenu();
@@ -2196,11 +2199,12 @@ function pairTileStatus(tile,mode,label){
   renderInspect();
   if(!(boxes.get(id).messages||[]).length)doodle('Loading messages…');
   try{await refreshMessages(true)}catch(e){statusEl.textContent=e.message}finally{doodle('')}
-  if(epoch===viewEpoch&&selected===id)requestAnimationFrame(()=>{
+  const finish=()=>{
    if(epoch!==viewEpoch||selected!==id)return;
    if(stickToBottom)scrollMessagesToBottom();else if(savedScroll!=null)messagesEl.scrollTop=savedScroll;
    restoringTranscript=false;
-  });
+  };
+  if(preview)await new Promise(resolve=>requestAnimationFrame(()=>{finish();resolve()}));else if(epoch===viewEpoch&&selected===id)requestAnimationFrame(finish);
   // Deliberately do not focus the composer: on phones that pops the keyboard
   // the moment a chat is opened. Focus follows an explicit tap.
  }
@@ -2433,7 +2437,7 @@ function pairTileStatus(tile,mode,label){
  $('#chat-back').onclick=()=>{void flushReadMarkers();appEl.classList.remove('in-chat');history.replaceState(null,'',location.pathname)};
  // Both directions share one drag and settle path. The list moves at 30% of
  // the chat's distance, so it is visible beneath the page while dragging.
- let navSwipe=null,navSettleTimer=0,navFrame=0,suppressNavClickUntil=0;
+ let navSwipe=null,forwardPreview=null,navSettleTimer=0,navSettleEnd=null,navFrame=0,suppressNavClickUntil=0;
  const navMain=$('#chat-main'),navList=$('#chat-list');
  const reducedMotion=()=>matchMedia('(prefers-reduced-motion: reduce)').matches;
  function paintNavSwipe(){
@@ -2453,13 +2457,23 @@ function pairTileStatus(tile,mode,label){
   if(row?.dataset.pairKey&&pairs.has(row.dataset.pairKey))return {box:'',pair:row.dataset.pairKey};
   return null;
  }
- function showSwipeTarget(target){
-  if(target.pair){if(selectedPair!==target.pair)void openPair(target.pair)}
-  else if(target.box&&selected!==target.box)void openBox(target.box);
+ function showSwipeTarget(gesture){
+  const target=gesture.target;
+  if(!target||target.box&&target.box===selected&&!selectedPair||target.pair&&target.pair===selectedPair&&!selected){
+   if(stickToBottom)messagesEl.scrollTop=messagesEl.scrollHeight;
+   return;
+  }
+  forwardPreview=gesture;navMain.classList.add('nav-preview-loading');
+  const load=target.pair?openPair(target.pair,true):openBox(target.box,true);
+  void load.then(()=>requestAnimationFrame(()=>{
+   if(forwardPreview!==gesture)return;
+   if(stickToBottom)messagesEl.scrollTop=messagesEl.scrollHeight;
+   requestAnimationFrame(()=>{if(forwardPreview===gesture){navMain.classList.remove('nav-preview-loading');if(!navSwipe){forwardPreview=null;if(selected)applySeen(selected);else if(selectedPair)applyPairSeen(pairs.get(selectedPair),true)}}});
+  }));
  }
  function restoreSwipeSelection(target){
-  if(target?.pair&&pairs.has(target.pair)){void openPair(target.pair);return}
-  if(target?.box&&boxes.has(target.box)){void openBox(target.box);return}
+  if(target?.pair&&pairs.has(target.pair)){void openPair(target.pair,true);return}
+  if(target?.box&&boxes.has(target.box)){void openBox(target.box,true);return}
   selected='';selectedPair='';viewEpoch++;resourceRequest++;resourceSnapshot=null;clearTimeout(resourceTimer);renderResourceCard();
   $('#chat-conversation').hidden=true;$('#chat-empty').hidden=false;renderRows();
  }
@@ -2474,11 +2488,11 @@ function pairTileStatus(tile,mode,label){
   suppressNavClickUntil=Date.now()+500;
   gesture.row?.classList.remove('pressing');
   appEl.classList.remove('nav-swiping');
-  if(gesture.direction==='forward'&&!completed&&gesture.target)restoreSwipeSelection(gesture.previous);
   if(gesture.reduced){
    if(gesture.direction==='back'){if(completed)$('#chat-back').click()}
    else if(completed){appEl.classList.add('in-chat');history.replaceState(null,'',location.pathname+selectedChatHash())}
-   else appEl.classList.remove('in-chat');
+   else{forwardPreview=null;restoreSwipeSelection(gesture.previous)}
+   if(gesture.direction==='forward'){appEl.classList.remove('nav-forward');navMain.classList.remove('nav-preview-loading')}
    navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
    endHorizontalGesture();return;
   }
@@ -2490,12 +2504,23 @@ function pairTileStatus(tile,mode,label){
    navMain.style.transform=`translate3d(${completed?(gesture.direction==='back'?gesture.width:0):(gesture.direction==='back'?0:gesture.width)}px,0,0)`;
    navList.style.transform=`translate3d(${completed?(gesture.direction==='back'?0:-gesture.width*.3):(gesture.direction==='back'?-gesture.width*.3:0)}px,0,0)`;
   });
-  navSettleTimer=setTimeout(()=>{
-   if(gesture.direction==='forward'&&!completed)appEl.classList.remove('in-chat');
+  const settle=()=>{
+   clearTimeout(navSettleTimer);navMain.removeEventListener('transitionend',onSettled);
+   if(navSettleEnd===settle)navSettleEnd=null;
+   if(gesture.direction==='forward'){
+    if(completed){appEl.classList.add('in-chat');if(!navMain.classList.contains('nav-preview-loading'))forwardPreview=null;if(selected)applySeen(selected);else if(selectedPair)applyPairSeen(pairs.get(selectedPair),true)}
+    else{forwardPreview=null;restoreSwipeSelection(gesture.previous);navMain.classList.remove('nav-preview-loading')}
+    appEl.classList.remove('nav-forward');
+   }
    appEl.classList.remove('nav-returning','nav-completing');
    navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
-  },230);
-  endHorizontalGesture();
+   if(gesture.direction==='forward')endHorizontalGesture();
+  };
+  const onSettled=event=>{if(event.target===navMain&&event.propertyName==='transform')settle()};
+  navSettleEnd=settle;
+  navMain.addEventListener('transitionend',onSettled);
+  navSettleTimer=setTimeout(settle,900);
+  if(gesture.direction==='back')endHorizontalGesture();
  }
  function canStartNavSwipe(target,root,direction){
   if(direction==='forward'&&!target.closest?.('li[data-box-id],li[data-pair-key]')&&target.closest?.('button,a,input,textarea,select,[role="slider"]'))return false;
@@ -2512,7 +2537,7 @@ function pairTileStatus(tile,mode,label){
   if(event.touches.length!==1||innerWidth>600||direction==='back'&&!appEl.classList.contains('in-chat')||direction==='forward'&&(appEl.classList.contains('in-chat')||!target&&!selectedChatHash())||!canStartNavSwipe(event.target,root,direction))return;
   const touch=event.touches[0];
   if(direction==='forward'&&!row&&touch.clientX<innerWidth-24)return;
-  clearTimeout(navSettleTimer);appEl.classList.remove('nav-returning','nav-completing');navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
+  navSettleEnd?.();appEl.classList.remove('nav-returning','nav-completing');navMain.style.removeProperty('transform');navList.style.removeProperty('transform');
   navSwipe={direction,x:touch.clientX,y:touch.clientY,width:appEl.clientWidth,travel:0,reduced:reducedMotion(),axis:'',started:performance.now(),row,target,previous:{box:selected,pair:selectedPair}};
  }
  function moveNavSwipe(event,direction){
@@ -2525,10 +2550,10 @@ function pairTileStatus(tile,mode,label){
     if(direction==='forward'){
      suppressNavClickUntil=Date.now()+500;
      navMain.style.transform=`translate3d(${navSwipe.width}px,0,0)`;
-     if(navSwipe.target)showSwipeTarget(navSwipe.target);
-     appEl.classList.add('in-chat');
+     appEl.classList.add('nav-forward');
     }
     appEl.classList.add('nav-swiping');beginHorizontalGesture();
+    if(direction==='forward')showSwipeTarget(navSwipe);
    }
    else if(Math.abs(dy)>10||dx< -10){navSwipe=null;return}
    else return;
