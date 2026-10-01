@@ -57,7 +57,7 @@ Dark mode also covers the Grid view for several boxes at once.
 
 ![Animated mascot showing a box working, typing, and replying](docs/assets/ui/mascot-chat.gif)
 
-The mascot shows when a box is busy, typing, or ready with a reply.
+The mascot shows when a box is busy, typing, or ready with a reply. A running agent's box-local MCP process checks its active native conversation every 10 seconds and sends a small sample when it changes. A compact trained model on the controller derives mood and activity from the text; only the derived state is stored. See the [mascot classifier guide](docs/MASCOT-CLASSIFIER.md) for training and evaluation.
 
 ## How boxes work
 

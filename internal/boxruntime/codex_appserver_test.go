@@ -37,6 +37,9 @@ func TestEnsureCodexAppServerReplacesInterruptedHelper(t *testing.T) {
 			stale, killed = false, true
 			return nil, nil
 		case "new-session":
+			if !strings.Contains(strings.Join(args, " "), "env VMBOX_CHAT_SESSION=codex-test codex app-server") {
+				t.Fatalf("Codex app server lost its MCP session binding: %v", args)
+			}
 			ready = true
 			return nil, nil
 		default:

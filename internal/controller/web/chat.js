@@ -235,7 +235,7 @@
   if(r.status===401){showLogin('Please log in to the controller.');throw Error('Please log in to the controller.')}
   if(!r.ok){let e;try{e=await r.json()}catch{}throw Error(e?.error||'Request failed: '+r.status)}
   const rawBusy=r.headers.get('X-Vmbox-Agent-Busy');
-  return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||''};
+  return {messages:await r.json(),busy:rawBusy===null?null:rawBusy==='true',busySince:r.headers.get('X-Vmbox-Agent-Busy-Since')||'',mascotMood:r.headers.get('X-Vmbox-Mascot-Mood')||'',mascotActivity:r.headers.get('X-Vmbox-Mascot-Activity')||''};
  }
  const boxPath=id=>'/v1/logical-boxes/'+encodeURIComponent(id);
 
@@ -315,6 +315,12 @@
  function boxMascotPose(box){
   if(box.state==='hibernated')return ['sleeping','sleeping','sleeping'];
   if(box.state==='failed'||box.last?.state==='failed')return ['angry','error','failed'];
+  if(box.mascotActivity==='waiting')return ['waiting','surprised','asking'];
+  if(box.mascotActivity==='working')return ['working','focused','busy'];
+  if(box.mascotMood==='angry')return ['angry','error','failed'];
+  if(box.mascotMood==='laughing')return ['laughing',null,'idle'];
+  if(box.mascotMood==='happy')return ['happy','happy','idle'];
+  if(box.mascotMood==='idle')return ['idle',null,'idle'];
   const lastQuestion=[...(box.messages||[])].reverse().find(message=>message.direction!=='user'&&message.question&&!questionAnswered(box,message));
   if(lastQuestion)return ['waiting','surprised','asking'];
   if(box.processing)return ['working','focused','busy'];
@@ -1769,6 +1775,8 @@
   }));
  }
  function applyBusyState(box,history){
+  box.mascotMood=history.mascotMood||'';
+  box.mascotActivity=history.mascotActivity||'';
   if(history.busy===null){delete box.agentBusy;delete box.agentBusySince;return}
   box.agentBusy=history.busy;box.agentBusySince=history.busySince||'';
  }

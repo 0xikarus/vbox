@@ -123,6 +123,10 @@ func (s *Server) boxMessageHistory(w http.ResponseWriter, r *http.Request, p Pri
 			w.Header().Set("X-Vmbox-Agent-Busy-Since", updatedAt.UTC().Format(time.RFC3339Nano))
 		}
 	}
+	if mascot, fresh, mascotErr := s.Store.boxMascotState(r.Context(), p.AccountID, box.ID); mascotErr == nil && fresh {
+		w.Header().Set("X-Vmbox-Mascot-Mood", mascot.Mood)
+		w.Header().Set("X-Vmbox-Mascot-Activity", mascot.Activity)
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, 200, values)
 }

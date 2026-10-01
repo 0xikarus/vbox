@@ -1,0 +1,48 @@
+idle	The workspace contains a CLI and a controller.
+idle	Here is the structure of the JSON envelope.
+idle	The default timeout is thirty seconds.
+idle	This module owns the chat state.
+idle	The latest commit touches four source files.
+idle	There are several providers configured.
+idle	The browser fetches history on an interval.
+idle	The table links tasks to their boxes.
+working	I am hunting down the source of that behavior.
+working	I have begun rewriting the request path.
+working	The verification job has not finished yet.
+working	I am testing the proposed fix in a sandbox.
+working	Let me work through the edge cases.
+working	The image is being assembled right now.
+working	I am profiling the classifier under load.
+working	I will check the call sites before editing.
+waiting	What should I call the new component?
+waiting	I cannot move forward until you pick a target.
+waiting	Would you rather keep the old behavior?
+waiting	Please tell me where to publish this.
+waiting	I am awaiting a decision from you.
+waiting	Can you point me at the right workspace?
+waiting	The final choice is yours; which one works?
+waiting	Could you confirm that this is the correct box?
+angry	The test runner aborted with a nonzero exit code.
+angry	The service went down during the update.
+angry	I found an unexpected mismatch in the response.
+angry	The compiler refuses to accept this source.
+angry	The worker cannot reach the controller.
+angry	The patch broke the previously working flow.
+angry	The database refuses the new column.
+angry	The integration check is still red.
+happy	The correction did the trick and everything checks out.
+happy	The new behavior is verified and ready to ship.
+happy	The app is back to normal after the repair.
+happy	Every check finished cleanly.
+happy	I have wrapped up the changes.
+happy	The pipeline is green again.
+happy	The feature behaves correctly in the browser.
+happy	The troublesome case is fixed now.
+laughing	That line actually made me snort.
+laughing	I am amused by the accidental pun.
+laughing	This is such a silly bug name.
+laughing	I had a chuckle over the response.
+laughing	The entire thing is hilariously awkward.
+laughing	That is one goofy edge case.
+laughing	The typo turned into a great joke.
+laughing	Hehehe, I did not expect that.
