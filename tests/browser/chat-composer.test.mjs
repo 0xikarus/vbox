@@ -33,8 +33,12 @@ const agentThreadMessages=[
  {id:'66666666-6666-4666-8666-666666666666',taskId:'task-agent',direction:'agent',text:'Understood. Stable provider-side idempotency will be a hard requirement in the recommendation.',state:'delivered',parentMessageId:'55555555-5555-4555-8555-555555555555',threadId:agentThreadRoot,createdAt:'2026-09-21T10:03:00Z',updatedAt:'2026-09-21T10:03:00Z'}
 ];
 
-async function withChat(fn,messages=threadMessages,{boxList=boxes,postDelayMs=0}={}){
- const posts=[];
+async function withChat(fn,messages=threadMessages,{boxList=boxes,holdPosts=false}={}){
+ const posts=[],pendingResponses=[],postWaiters=[];
+ const releasePosts=expected=>new Promise(resolve=>{
+  const release=()=>{for(const respond of pendingResponses.splice(0))respond();resolve()};
+  if(pendingResponses.length>=expected)release();else postWaiters.push({expected,release});
+ });
  const server=http.createServer((req,res)=>{
   const path=req.url.split('?')[0];
   if(path==='/chat'){res.setHeader('Content-Type','text/html');return res.end(html)}
@@ -56,14 +60,14 @@ async function withChat(fn,messages=threadMessages,{boxList=boxes,postDelayMs=0}
   if(path==='/v1/push/vapid-key'){res.statusCode=404;return res.end('{}')}
   if(path==='/v1/logical-boxes/builder/messages'&&req.method==='POST'){
    let body='';req.on('data',chunk=>body+=chunk);
-   return req.on('end',()=>{posts.push(JSON.parse(body));setTimeout(()=>res.end(JSON.stringify({message:{state:'delivered'}})),postDelayMs)});
+   return req.on('end',()=>{posts.push(JSON.parse(body));const respond=()=>res.end(JSON.stringify({message:{state:'delivered'}}));if(holdPosts){pendingResponses.push(respond);for(const waiter of [...postWaiters])if(pendingResponses.length>=waiter.expected){postWaiters.splice(postWaiters.indexOf(waiter),1);waiter.release()}}else respond()});
   }
   if(path.endsWith('/messages'))return res.end(JSON.stringify(messages));
   return res.end('{}');
  });
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
- try{await fn(browser,'http://127.0.0.1:'+server.address().port,posts)}
+ try{await fn(browser,'http://127.0.0.1:'+server.address().port,posts,releasePosts)}
  finally{await browser.close();await new Promise(resolve=>server.close(resolve))}
 }
 
@@ -140,21 +144,26 @@ test('desktop Enter sends and Shift+Enter inserts a newline',async()=>{
 });
 
 test('a slow send clears the composer and allows the next draft',async()=>{
- await withChat(async(browser,base,posts)=>{
-  const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForSelector('#chat-input');
-  await p.type('#chat-input','First message');await p.click('#send');
+ await withChat(async(browser,base,posts,releasePosts)=>{
+  const p=await browser.newPage();await p.setViewport({width:1000,height:800});await p.goto(base+'/chat#box=builder');await p.waitForFunction(()=>!document.querySelector('#chat-conversation').hidden);
+  await p.type('#chat-input','First message');await p.waitForFunction(()=>!document.querySelector('#send').disabled);
+  const firstResponse=p.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes/builder/messages')&&response.request().postData()?.includes('First message'));
+  await p.click('#send');await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(await p.$eval('#chat-input',input=>input.value),'','the first draft clears before the server answers');
   await p.type('#chat-input','Next draft');
   assert.equal(await p.$eval('#send',button=>button.disabled),false,'the next draft can be sent while the first request is pending');
+  const secondResponse=p.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes/builder/messages')&&response.request().postData()?.includes('Next draft'));
   await p.click('#send');
+  await p.waitForFunction(()=>document.querySelector('#chat-input').value==='');
   assert.equal(await p.$eval('#chat-input',input=>input.value),'','the second send also clears immediately');
   await p.type('#chat-input','Third draft');
-  await new Promise(resolve=>setTimeout(resolve,1400));
+  await p.waitForFunction(()=>document.querySelector('#chat-input').value==='Third draft');
+  await releasePosts(2);await Promise.all([firstResponse,secondResponse]);
   assert.equal(await p.$eval('#chat-input',input=>input.value),'Third draft','earlier responses do not erase text typed meanwhile');
   assert.equal(await p.$eval('#send',button=>button.disabled),false);
   assert.deepEqual(posts.map(post=>post.text),['First message','Next draft']);
   await p.close();
- },threadMessages,{postDelayMs:1200});
+ },threadMessages,{holdPosts:true});
 });
 
 test('a disabled Send button shows why the box cannot accept a message',async()=>{
@@ -259,9 +268,9 @@ test('message actions open toward available space and stay inside the transcript
    }
   });
   async function check(block,expected){
-   await p.$eval('#chat-messages .msg.user .msg-more',(toggle,position)=>toggle.scrollIntoView({block:position}),block);
-   await p.focus('#chat-messages .msg.user .msg-more');
-   await p.click('#chat-messages .msg.user .msg-more');
+   await p.$eval('#chat-messages .msg.user .msg-more',(toggle,position)=>toggle.scrollIntoView({block:position,behavior:'instant'}),block);
+   await p.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+   await p.$eval('#chat-messages .msg.user .msg-more',toggle=>toggle.click());
    const result=await p.$eval('#chat-messages .msg.user .msg-actions-menu',menu=>{
     const rect=menu.getBoundingClientRect(),clip=document.querySelector('#chat-messages').getBoundingClientRect();
     return {placement:menu.dataset.placement,top:rect.top,bottom:rect.bottom,left:rect.left,right:rect.right,clipTop:clip.top,clipBottom:clip.bottom,clipLeft:clip.left,clipRight:clip.right};
@@ -269,7 +278,7 @@ test('message actions open toward available space and stay inside the transcript
    assert.equal(result.placement,expected);
    assert.ok(result.top>=result.clipTop-1&&result.bottom<=result.clipBottom+1,'menu must fit vertically inside the transcript: '+JSON.stringify(result));
    assert.ok(result.left>=result.clipLeft-1&&result.right<=result.clipRight+1,'menu must fit horizontally inside the transcript: '+JSON.stringify(result));
-   await p.click('#chat-messages .msg.user .msg-more');
+   await p.$eval('#chat-messages .msg.user .msg-more',toggle=>toggle.click());
   }
   await check('end','up');
   await check('start','down');

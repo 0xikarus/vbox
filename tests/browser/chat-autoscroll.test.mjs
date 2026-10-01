@@ -91,10 +91,11 @@ test('new messages follow the bottom without stealing an intentionally scrolled 
   assert.equal(await page.$eval('[data-box-id="builder"] .unread',badge=>badge.textContent),'1','the left list counts unread replies even in the active chat');
   await page.screenshot({path:'/tmp/vmbox-new-message-desktop.png'});
   await page.setViewport({width:390,height:844,deviceScaleFactor:2,isMobile:true,hasTouch:true});
-  await new Promise(resolve=>setTimeout(resolve,300)); // let the mobile layout settle
-  await page.$eval('#chat-messages',element=>{element.scrollTop=0});
-  await page.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop===0);
-  await new Promise(resolve=>setTimeout(resolve,120)); // allow the scroll event to update follow intent
+  await page.waitForFunction(()=>innerWidth===390&&document.querySelector('#chat-app').classList.contains('in-chat')&&!document.querySelector('#chat-conversation').hidden&&document.querySelector('#chat-loading').hidden&&document.querySelector('#chat-messages').scrollHeight>document.querySelector('#chat-messages').clientHeight);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  await page.$eval('#chat-messages',element=>element.scrollTo({top:0,behavior:'instant'}));
+  await page.waitForFunction(()=>document.querySelector('#chat-messages').scrollTop<3);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(resolve)));
   messages=[...messages,{id:'while-reading-mobile',direction:'agent',state:'delivered',text:'NEW REPLY ON MOBILE',createdAt:timestamp(33),updatedAt:timestamp(33)}];
   await page.$eval('#refresh',button=>button.click());
   await page.waitForFunction(()=>!document.querySelector('#chat-new-messages').hidden);

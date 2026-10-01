@@ -38,8 +38,9 @@ test('box details reports attachment use and clears delivered media after confir
   const page=await browser.newPage();
   await page.evaluateOnNewDocument(()=>{window.confirm=()=>{window.__attachmentClearConfirmed=true;return true}});
   await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
-  await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');
-  await page.click('#chat-info');
+  await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder'&&document.querySelector('#chat-loading').hidden);
+  await page.$eval('#chat-info',button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
   await page.waitForFunction(()=>document.querySelector('#inspect-attachment-rows')?.textContent.includes('5.0 MiB'));
   assert.match(await page.$eval('#inspect-attachment-rows',element=>element.textContent),/5\.0 MiB.*6\.0 MiB \/ 1\.00 GiB.*Unused uploads.*1\.0 MiB/);

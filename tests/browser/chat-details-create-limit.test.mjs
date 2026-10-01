@@ -37,7 +37,9 @@ test('chat details edits one box creation limit without changing its other permi
  const browser=await puppeteer.launch({executablePath:process.env.VMBOX_CHROMIUM||'/snap/bin/chromium',headless:true,args:['--no-sandbox','--disable-dev-shm-usage','--disable-gpu']});
  try{
   const page=await browser.newPage();await page.goto('http://127.0.0.1:'+server.address().port+'/chat#box=builder');
-  await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder');await page.click('#chat-info');
+  await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Builder'&&document.querySelector('#chat-loading').hidden);
+  await page.$eval('#chat-info',button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await page.evaluate(()=>{const fold=document.querySelector('details[data-fold=technical]');if(fold&&!fold.open)fold.querySelector('summary').click()});
   await page.waitForFunction(()=>document.querySelector('#inspect-create-limit .idle-policy-badge')?.textContent==='2 total');
   await page.$eval('#inspect-create-limit input',input=>{input.value='5';input.dispatchEvent(new Event('input',{bubbles:true}))});

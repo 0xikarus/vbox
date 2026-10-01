@@ -433,6 +433,7 @@ test('creation offers documented Claude choices and Codex account models',async(
  for(const model of ['sonnet','opus','haiku','fable','sonnet[1m]','opus[1m]','claude-sonnet-5','claude-opus-5','claude-haiku-4-5-20251001','claude-fable-5-1'])assert.ok(claude.includes(model),model+' is offered');
  assert.match(await page.$eval('.model-picker-source',node=>node.textContent),/Claude Code/);
  await page.click('dialog.model-picker-dialog .model-picker-close');
+ await page.waitForFunction(()=>!document.querySelector('dialog.model-picker-dialog').open);
  await page.select('#create select[name=defaultAgent]','codex');
  await page.select('#profile-choices select[name=loginProfile]',JSON.stringify({application:'codex',name:'personal-codex'}));
  assert.equal(await page.$eval(input,e=>e.value),'account-codex-model');
@@ -443,8 +444,11 @@ test('creation offers documented Claude choices and Codex account models',async(
  await page.click('dialog.model-picker-dialog .model-picker-option:not([hidden])');
  await page.select('dialog.model-picker-dialog .model-picker-effort','ultra');
  await page.click('dialog.model-picker-dialog .model-picker-apply');
+ await page.waitForFunction(()=>!document.querySelector('dialog.model-picker-dialog').open);
  assert.equal(await page.$eval(input,e=>e.value),'account-codex-model');
  await page.type('#create input[name=name]','disposable-model-fixture');
+ assert.equal(await page.$eval('#create input[name=name]',element=>element.value),'disposable-model-fixture');
+ assert.equal(await page.$eval('#create',form=>form.checkValidity()),true,'the creation form is valid before submission');
  const created=page.waitForResponse(response=>response.request().method()==='POST'&&response.url().endsWith('/v1/logical-boxes'));
  await page.$eval('#create',form=>form.requestSubmit());await created;
  assert.deepEqual(requests.findLast(request=>request.method==='POST'&&request.path==='/v1/logical-boxes').body.loginProfiles,[{application:'codex',name:'personal-codex',model:'account-codex-model',reasoningEffort:'ultra'}]);
@@ -501,9 +505,12 @@ test('worker placement distinguishes shared hosts and creation targets the selec
  await page.waitForFunction(()=>window.poolCreates.length===1);
  const created=await page.evaluate(()=>window.poolCreates[0]);assert.equal(created.provider,'shared-worker');assert.equal(created.providerCredential,'shared-02');
  assert.equal(created.memoryGiB,4);assert.equal(created.swapGiB,2);
- await page.waitForFunction(()=>document.querySelector('#capacity').textContent.includes('4 workers · 6 compute slots'));
+ await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Box comparison-box is starting.'));
+ assert.match(await page.$eval('#capacity',e=>e.textContent),/4 workers · 6 compute slots/);
  assert.equal(await page.$eval('#create-pool',e=>e.value),selected);
- await page.select('#capacity-pool',JSON.stringify({provider:'shared-worker',providerCredential:'shared-01'}));await page.click('#slots button');
+ await page.select('#capacity-pool',JSON.stringify({provider:'shared-worker',providerCredential:'shared-01'}));
+ await page.waitForFunction(()=>document.querySelector('#slots').checkValidity()&&document.querySelector('#slots input').value==='2');
+ await page.$eval('#slots',form=>form.requestSubmit());
  await page.waitForFunction(()=>window.poolCapacity.length===1);
  assert.deepEqual(await page.evaluate(()=>window.poolCapacity[0]),{provider:'shared-worker',providerCredential:'shared-01',compute_box_slots:2});
  await page.close();
@@ -530,8 +537,10 @@ test('automatic placement refreshes capacity and prefers a less occupied pool',a
  await page.type('#create input[name=name]','auto-box');await page.waitForNetworkIdle();await page.$eval('#create',form=>form.requestSubmit());
  await page.waitForFunction(()=>window.autoCreates.length===1);
  assert.equal(await page.evaluate(()=>window.autoCreates[0].providerCredential),'shared-02');
+ await page.waitForFunction(()=>document.querySelector('#error').textContent.includes('Box auto-box is starting.'));
  await page.evaluate(()=>{window.capacityMode='full'});
  await page.type('#create input[name=name]','fallback-box');
+ await page.waitForFunction(()=>document.querySelector('#create input[name=name]').value==='fallback-box'&&document.querySelector('#create').checkValidity());
  await page.waitForNetworkIdle();await page.$eval('#create',form=>form.requestSubmit());await page.waitForFunction(()=>window.autoCreates.length===2);
  assert.equal(await page.evaluate(()=>window.autoCreates[1].providerCredential),'primary');
  await page.close();

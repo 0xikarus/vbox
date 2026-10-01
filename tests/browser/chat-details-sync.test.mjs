@@ -73,9 +73,11 @@ test('existing Instructions editor saves custom Markdown and can clear it',async
   await page.click('#chat-menu');
   assert.equal(await page.$('#agents-file-toggle'),null,'the extra AGENTS.md menu entry was removed');
   await page.click('#chat-menu-sheet button[data-close]');
+  await page.waitForFunction(()=>document.querySelector('#chat-menu-sheet').hidden);
   await page.click('[data-box-id="reviewer"] .chat-meta');
-  await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Reviewer');
-  await page.click('#chat-info');
+  await page.waitForFunction(()=>document.querySelector('#chat-header-name')?.textContent==='Reviewer'&&document.querySelector('#chat-messages').dataset.box==='reviewer'&&document.querySelector('#chat-loading').hidden);
+  await page.$eval('#chat-info',button=>button.click());
+  await page.waitForFunction(()=>!document.querySelector('#inspect').hidden);
   await page.waitForFunction(()=>[...document.querySelectorAll('#inspect-config-actions button')].some(button=>button.textContent==='Instructions…'));
   await page.$$eval('#inspect-config-actions button',buttons=>buttons.find(button=>button.textContent==='Instructions…').click());
   await page.waitForFunction(()=>document.querySelector('#box-instructions-effective')?.textContent.includes('Managed instructions for reviewer'));
